@@ -376,12 +376,20 @@ jobs:
       # mid-rebuild where removing endpoints is the intended work. It annotates
       # the run rather than blocking it. Revisit if an independently deployed
       # consumer ever appears.
+      #
+      # `continue-on-error` on BOTH steps, and it is load-bearing: this job is a
+      # REQUIRED check, and these steps fetch a binary from the GitHub releases
+      # CDN at run time. Without it, a rate limit or a 5xx on that download turns
+      # an advisory signal into a merge block on every PR — a required gate whose
+      # availability depends on a third-party download.
       - name: Install oasdiff
         if: github.event_name == 'pull_request'
+        continue-on-error: true
         run: bash scripts/install-oasdiff.sh
 
       - name: Detect breaking API changes (advisory)
         if: github.event_name == 'pull_request'
+        continue-on-error: true
         run: npm run check:api-breaking -- --base "${{ github.event.pull_request.base.sha }}"
 
   # ── Architectural boundary linting (dependency-cruiser) ─────────────────
@@ -435,8 +443,14 @@ jobs:
   # drifted". That is too coarse to block a merge on, and the ratchet only ever
   # moves down as the consolidation work lands.
   #
-  # `continue-on-error` keeps the job's own result visible (a red X on a
-  # non-required check) while never failing the workflow.
+  # The job is simply allowed to FAIL when the threshold is breached. That is
+  # what "advisory" means here: `duplicate-detection` is deliberately absent
+  # from CI_CHECKS, so a red X reports loudly and blocks nothing, exactly like
+  # `web-visual-regression`.
+  #
+  # It must NOT be `continue-on-error`. That key rewrites the step's conclusion
+  # to success, so the job goes green and a breached threshold is invisible —
+  # an advisory gate nobody can see is not advisory, it is off.
   duplicate-detection:
     runs-on: ubuntu-latest
     permissions:
@@ -457,13 +471,14 @@ jobs:
         run: npm ci
 
       - name: Check duplication against the repo-wide threshold
-        continue-on-error: true
         run: npm run check:duplication
 
       # The console reporter prints the summary table only; the clone-by-clone
       # detail lives in the JSON report, which is the thing you actually need to
-      # act on a threshold breach.
+      # act on a threshold breach — so `always()`, or the artifact is missing in
+      # precisely the run that needed it.
       - name: Upload duplication report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: jscpd-report

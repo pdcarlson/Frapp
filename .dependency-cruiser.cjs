@@ -31,18 +31,43 @@
  * Run: `npm run check:dep-cruiser`
  */
 
-/** Set by scripts/check-dep-cruiser.mjs, e.g. "apps/api". */
-const WORKSPACE = process.env.DEPCRUISE_WORKSPACE ?? "";
+/**
+ * Set by scripts/check-dep-cruiser.mjs, e.g. "apps/api".
+ *
+ * Hard failure rather than a default, because the failure mode of a default is
+ * a clean run that checked almost nothing: with this unset, `isApi`,
+ * `isPackage` and `isApp` are all false and the three API layer rules plus both
+ * boundary rules silently disappear. Someone running `npx depcruise` by hand to
+ * check a layering import would get a green result and push.
+ */
+const WORKSPACE = process.env.DEPCRUISE_WORKSPACE;
+if (!WORKSPACE) {
+  throw new Error(
+    "DEPCRUISE_WORKSPACE is not set. This config is workspace-scoped — run the gate via " +
+      "`npm run check:dep-cruiser` (optionally `-- --workspace apps/api`) rather than calling " +
+      "depcruise directly, or the workspace-specific rules silently do not apply.",
+  );
+}
 const isApi = WORKSPACE === "apps/api";
 const isPackage = WORKSPACE.startsWith("packages/");
 const isApp = WORKSPACE.startsWith("apps/");
+const isEslintConfigPackage = WORKSPACE === "packages/eslint-config";
 
 /**
- * Build output, vendored code, and generated artifacts — never source.
- * Anchor-agnostic, since paths are workspace-relative (see above).
+ * Build output and generated artifacts — never source. Anchor-agnostic, since
+ * paths are workspace-relative (see above).
+ *
+ * `node_modules` is deliberately NOT here; it belongs in `doNotFollow` only.
+ * The two options are not interchangeable and getting it wrong disarms the
+ * gate silently: `exclude` drops the module *and every edge pointing at it*,
+ * whereas `doNotFollow` keeps the edge and merely stops traversal. With
+ * `node_modules` excluded, the graph contained no `npm-dev` dependency type at
+ * all — so `not-to-dev-dep` could never fire — and **zero** cross-workspace
+ * modules, because workspace packages resolve through the node_modules
+ * symlinks npm creates, so `packages-not-to-apps` and `no-cross-app-imports`
+ * could never fire either. Three of the rules below were structurally inert.
  */
 const NOT_SOURCE = [
-  "node_modules",
   "(^|/)dist/",
   "(^|/)build/",
   "(^|/)\\.next/",
@@ -60,11 +85,20 @@ const NOT_SOURCE = [
   "(^|/)api-sdk/src/types\\.ts$",
 ].join("|");
 
-/** Tests and config may reach for devDependencies and across layers. */
+/**
+ * Tests and tooling config may reach for devDependencies and across layers —
+ * none of it is installed in production, so `not-to-dev-dep` does not apply.
+ *
+ * `packages/eslint-config` is here as a whole workspace rather than by filename:
+ * its `base.js` / `next.js` / `react-internal.js` are ESLint configs that do not
+ * match `*.config.js`, and every dependency they have is by definition a
+ * devDependency. Nothing ships them.
+ */
 const NOT_SHIPPED_CODE =
   "\\.(spec|test|e2e-spec)\\.(ts|tsx|js|jsx|mjs)$" +
   "|(^|/)(tests?|__tests__|__mocks__|e2e)/" +
-  "|\\.config\\.(ts|js|mjs|cjs)$";
+  "|\\.config\\.(ts|js|mjs|cjs)$" +
+  (isEslintConfigPackage ? "|^[^/]+\\.(js|mjs|cjs|ts)$" : "");
 
 /**
  * apps/api layer direction: Interface → Application → Infrastructure → Domain.
@@ -181,10 +215,22 @@ module.exports = {
       from: {},
       to: { dependencyTypes: ["core"], path: "^(punycode|domain|sys)$" },
     },
+    {
+      name: "not-to-unresolvable",
+      severity: "error",
+      comment:
+        "An import that does not resolve is a broken reference the type-checker can still " +
+        "accept via a stale build artifact in dist/.",
+      from: {},
+      to: { couldNotResolve: true },
+    },
   ],
 
   options: {
-    doNotFollow: { path: NOT_SOURCE },
+    // `node_modules` is followed-into no further, but its edges stay in the
+    // graph — that is what makes `not-to-dev-dep` and the cross-workspace
+    // rules able to fire at all. See NOT_SOURCE above.
+    doNotFollow: { path: `node_modules|${NOT_SOURCE}` },
     exclude: { path: NOT_SOURCE },
 
     // Resolve TypeScript before it is compiled, so the graph reflects source

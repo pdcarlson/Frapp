@@ -31,7 +31,20 @@ Enforces two things the codebase already asserted in prose and nothing checked:
 - **Monorepo separation.** A package must not import an app; apps share code through `packages/`,
   never directly.
 
-Plus `no-circular`, `not-to-dev-dep`, and `no-deprecated-core`.
+Plus `no-circular`, `not-to-dev-dep`, `not-to-unresolvable`, and `no-deprecated-core`.
+
+### `exclude` vs `doNotFollow` — the setting that silently disarms this gate
+
+`node_modules` belongs in **`doNotFollow` only**, never in `exclude`. They are not interchangeable:
+`exclude` drops the module *and every edge pointing at it*, while `doNotFollow` keeps the edge and
+merely stops traversal. With `node_modules` excluded, the graph contained no `npm-dev` dependency
+type at all and **zero** cross-workspace modules — so `not-to-dev-dep`, `packages-not-to-apps` and
+`no-cross-app-imports` could never fire. Three of the rules were structurally inert while the gate
+reported a confident green.
+
+Nothing about the output reveals this: the violation count is *lower*, which reads as good news. If
+you change either option, re-verify by introducing a deliberate violation per rule and watching it
+fail — that is how this was caught, and each of the four rule families has been confirmed to fire.
 
 ### The baseline
 
@@ -60,9 +73,10 @@ only correct resolution is one run per workspace with that workspace as cwd, whi
 [`scripts/check-dep-cruiser.mjs`](../../../scripts/check-dep-cruiser.mjs) does.
 
 **This is worth knowing because getting it wrong is silent, not loud.** Cruising everything from the
-repo root "works" and reports **792 unresolvable-module violations** that are purely `@/*` failing to
-resolve. Baselining that run would have grandfathered 792 phantoms and left every real rule asleep
-underneath them. Resolved properly, `apps/web` cruises completely clean.
+repo root "works" and reports **806 violations, 792 of them `not-to-unresolvable`** — purely `@/*`
+failing to resolve, reproducible with `DEPCRUISE_WORKSPACE=apps/web npx depcruise . --config
+.dependency-cruiser.cjs`. Baselining that run would have grandfathered 792 phantoms and left every
+real rule asleep underneath them. Resolved per workspace, the true total is **7**.
 
 Two consequences follow, and both are easy to trip over when editing
 [`.dependency-cruiser.cjs`](../../../.dependency-cruiser.cjs):
@@ -132,7 +146,23 @@ Not an npm package (the `oasdiff` name on npm is a security placeholder).
 [`scripts/install-oasdiff.sh`](../../../scripts/install-oasdiff.sh) fetches a pinned release into
 `.cache/oasdiff/`, following the same reasoning as
 [gitleaks](SECRET_SCANNING.md): local and CI run the identical version, and no third-party GitHub
-Action enters the supply chain.
+Action enters the supply chain. It verifies the published SHA-256 checksum, retries transient
+failures, and moves the binary into place only once complete.
+
+Two details that are easy to get wrong:
+
+- **macOS uses the `darwin_all` asset.** oasdiff publishes one universal Darwin binary, so deriving
+  the asset name from the architecture produces a 404 on every Mac while Linux CI stays green.
+- **`oasdiff breaking` exits 0 even when it reports breaking changes.** `--fail-on ERR` is what makes
+  the exit status mean anything; without it a caller keying off exit status detects nothing, and one
+  keying off "is stdout non-empty" cannot tell a WARN-level note from a real break.
+
+### CI availability
+
+Both oasdiff steps live in the **required** `api-contract-check` job and both carry
+`continue-on-error: true`. That is deliberate: they fetch a binary from the GitHub releases CDN at
+run time, and without it a rate limit or a 5xx would turn an advisory signal into a merge block on
+every PR.
 
 ---
 
@@ -143,10 +173,12 @@ Action enters the supply chain.
 response generates `content?: never` in the SDK, so callers get no types for the body and the
 contract silently claims the route returns nothing.
 
-**Set to `warn`, and it must stay that way until the Wave 2 route-DTO backfill lands.** There are
-**142** findings today, ESLint has no native baseline mechanism, and `lint` is a required check — so
-`error` now would simply mean red on every PR until the entire backfill is done. Warnings do not fail
-ESLint, so `npm run lint` stays green and the backlog stays visible.
+**Set to `warn`, and it must stay that way until the Wave 2 route-DTO backfill lands.** The rule
+fires once per undecorated controller method and there are **142** today — measured, not estimated;
+the planning docs guessed ~30, which is out by roughly 5x and is exactly the figure someone would use
+to conclude the backfill was finished. ESLint has no native baseline mechanism, and `lint` is a
+required check, so `error` now would mean red on every PR until all 142 are done. Warnings do not
+fail ESLint, so `npm run lint` stays green and the backlog stays visible.
 
 Only that one rule is enabled. The plugin's bundled `flatRecommended` preset turns on 20+ rules at
 once, which is a separate and much larger decision.
@@ -171,6 +203,12 @@ that fails when exceeded. So the ratchet is:
 
 That mechanism is why this gate is advisory. A repo-wide percentage cannot distinguish one bad
 copy-paste from ordinary drift, which is too coarse to block a merge on.
+
+**Advisory here means the job is allowed to go red**, not that it is silenced. `duplicate-detection`
+is deliberately absent from `CI_CHECKS`, so a failure reports loudly and blocks nothing — the same
+shape as `web-visual-regression`. It must **not** carry `continue-on-error`: that key rewrites the
+step's conclusion to success, so the job goes green and a breached threshold becomes invisible. An
+advisory gate nobody can see is not advisory, it is off.
 
 Locally, `npx jscpd --config .jscpd.json --reporters consoleFull` prints every clone; the CI job uses
 the summary table plus the JSON artifact.

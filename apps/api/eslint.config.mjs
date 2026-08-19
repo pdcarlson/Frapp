@@ -45,11 +45,14 @@ export default tseslint.config(
   // the body and the contract silently says "returns nothing".
   //
   // ROLLOUT: deliberately "warn", not "error", and it must stay that way until
-  // the route-DTO backfill lands. There is a real backlog behind this rule
-  // (~30 routes), and ESLint has no native baseline mechanism the way
-  // dependency-cruiser does — so "error" today would simply turn `lint`, a
-  // required check, red on every PR until the whole backfill is done. Warn now,
-  // backfill, then flip to "error" and delete this paragraph.
+  // the route-DTO backfill lands. The rule fires once per undecorated controller
+  // method and there are **142** of them today (measured, not estimated — the
+  // planning docs guessed ~30, which is out by ~5x and is exactly the number
+  // someone would use to decide the backlog was finished). ESLint has no native
+  // baseline mechanism the way dependency-cruiser does, so "error" today would
+  // simply turn `lint`, a required check, red on every PR until every one of
+  // those routes is done. Warn now, backfill, then flip to "error" and delete
+  // this paragraph.
   //
   // Only the plugin's `nestjs-typed/api-method-should-specify-api-response` rule
   // is enabled. The bundled `flatRecommended` preset turns on 20+ rules at once,

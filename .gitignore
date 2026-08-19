@@ -64,5 +64,6 @@ lychee-*/
 # the threshold in .jscpd.json is the committed artifact, not the report)
 .jscpd/
 
-# oasdiff binary, fetched on demand by scripts/check-sdk-drift.mjs
+# oasdiff binary, fetched by scripts/install-oasdiff.sh and run by
+# scripts/check-api-breaking-changes.mjs
 .cache/oasdiff/

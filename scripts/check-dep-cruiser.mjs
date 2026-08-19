@@ -50,6 +50,19 @@ const CONFIG_PATH = path.join(REPO_ROOT, ".dependency-cruiser.cjs");
 /** Workspace globs, matching the root package.json `workspaces` field. */
 const WORKSPACE_ROOTS = ["apps", "packages"];
 
+/** Extensions depcruise reports for resolved source modules. */
+const SOURCE_EXTENSIONS = new Set([
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+  ".json",
+  ".vue",
+  ".svelte",
+]);
+
 /**
  * A violation's identity for baseline purposes: the rule plus the edge it
  * fired on. Deliberately NOT line numbers — a baseline keyed on lines churns on
@@ -70,13 +83,25 @@ export function violationKey({ rule, from, to }) {
  */
 export function toRepoRelative(workspace, filePath) {
   if (!filePath) return filePath;
-  // Bare specifiers (`react`, `node:fs`) are not paths and must pass through
-  // untouched, or `node:fs` becomes `apps/api/node:fs`.
+
+  // Anything not explicitly relative or absolute is ambiguous by shape:
+  // depcruise reports a local file as bare `src/domain/user.ts`, which is
+  // structurally identical to the bare specifier `fs/promises`. The
+  // distinguishing feature is the extension — depcruise reports resolved
+  // source files with one, and bare specifiers almost never carry one.
+  //
+  // Worth spelling out because two more obvious rules are both wrong. Matching
+  // on "has a slash" turns `fs/promises` into `apps/api/fs/promises`, writing a
+  // fabricated path into the baseline key. Testing existence on disk is
+  // accurate but makes normalisation filesystem-dependent, so the same input
+  // normalises differently depending on what happens to be checked out.
   if (!filePath.startsWith(".") && !filePath.startsWith("/")) {
-    if (!filePath.includes("/") || /^[a-z]+:/.test(filePath)) return filePath;
-    if (filePath.startsWith("node_modules/")) return filePath;
-    if (filePath.startsWith("@")) return filePath;
+    // Not workspace-owned: node_modules resolves against the hoisted root, and
+    // a scope or an unresolved `@/…` alias is a specifier, not a path.
+    if (filePath.startsWith("node_modules/") || filePath.startsWith("@")) return filePath;
+    if (!SOURCE_EXTENSIONS.has(path.extname(filePath))) return filePath;
   }
+
   const absolute = path.resolve(REPO_ROOT, workspace, filePath);
   return path.relative(REPO_ROOT, absolute).split(path.sep).join("/");
 }
@@ -97,14 +122,41 @@ function discoverWorkspaces() {
 }
 
 /**
- * Whether the workspace has any source worth cruising. `packages/eslint-config`
- * and `packages/typescript-config` are config-only, and depcruise exits
- * non-zero on an empty input set rather than reporting nothing.
+ * Whether the workspace has any source worth cruising.
+ *
+ * A workspace with no JS/TS at all (`packages/brand-assets`, `packages/typescript-config`)
+ * must be skipped, because depcruise errors on an empty input set rather than
+ * reporting nothing. But the test has to be "does it contain source", not "does
+ * it have a src/ directory": `packages/eslint-config` keeps real JavaScript at
+ * its package root (`base.js`, `next.js`), which every app's flat config
+ * imports. A directory-name check skipped it, and because each cruise drops
+ * violations from outside its own workspace, its files were then covered by
+ * nothing at all.
  */
 function hasCruisableSource(workspace) {
   const dir = path.join(REPO_ROOT, workspace);
-  const candidates = ["src", "app", "lib", "components", "index.ts", "index.tsx"];
-  return candidates.some((c) => existsSync(path.join(dir, c)));
+  const SKIP_DIRS = new Set(["node_modules", "dist", "build", ".next", ".expo", ".turbo"]);
+
+  const walk = (current, depth) => {
+    if (depth > 3) return false;
+    let entries;
+    try {
+      entries = readdirSync(current, { withFileTypes: true });
+    } catch {
+      return false;
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        if (SKIP_DIRS.has(entry.name)) continue;
+        if (walk(path.join(current, entry.name), depth + 1)) return true;
+      } else if (SOURCE_EXTENSIONS.has(path.extname(entry.name))) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  return walk(dir, 0);
 }
 
 function cruise(workspace, allWorkspaces) {
