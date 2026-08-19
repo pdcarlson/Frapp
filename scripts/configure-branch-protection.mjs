@@ -51,6 +51,29 @@ const CI_CHECKS = [
   // secret-scan — required only once the chapter-directory-seed job exists on the
   // target branch and has run green.
   "chapter-directory-seed",
+  // Web + shared-package unit tests (apps/web, packages/hooks, packages/ui,
+  // packages/chat-core). It is the ONLY suite covering packages/hooks, which the
+  // consolidation work ahead edits directly, so leaving it advisory means a broken
+  // shared hook merges green.
+  //
+  // Being path-gated does NOT stop it being required, which is the thing that looks
+  // wrong here and isn't. The gate is a JOB-level `if:`, and GitHub reports a job
+  // skipped by a conditional as "Success" — `success`, `skipped` and `neutral` all
+  // satisfy a required check. The case that does block is a whole WORKFLOW skipped by
+  // path/branch filtering, whose checks never report and sit "Pending" forever;
+  // ci.yml has no workflow-level `paths:` filter, so that case cannot arise here.
+  // (ADR-15 recorded the opposite belief — that path-gating a required job "needs a
+  // skip→success wrapper" — which is true only of the workflow-level form.)
+  // https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/collaborating-on-repositories-with-code-quality-features/troubleshooting-required-status-checks
+  //
+  // The one real caveat from the same table: a job skipped because a `needs:` parent
+  // FAILED "may not block merging". web-tests needs packages-build and changes, both
+  // of which are required checks themselves, so a red parent already blocks the PR on
+  // its own name and this cannot become a hole.
+  //
+  // ROLLOUT: same caveat as secret-scan. Verified green on main's latest run before
+  // being listed here.
+  "web-tests",
 ];
 
 const DOCS_CHECKS = [

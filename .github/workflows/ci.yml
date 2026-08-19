@@ -285,10 +285,13 @@ jobs:
       # phases: without it a red apps/web test skips both and hides two more
       # failures until the next push. Not `always()` — this workflow sets
       # `cancel-in-progress`, and `always()` keeps running after a cancellation,
-      # so every superseded run would still pay for both suites. Note this job
-      # is deliberately NOT a required check (ADR-15 /
-      # spec/architecture/README.md), so a red run here reports but does not
-      # block merge.
+      # so every superseded run would still pay for both suites.
+      #
+      # This job IS a required check as of the ADR-15 amendment — it is the only
+      # suite covering packages/hooks. The path gate above is compatible with
+      # that: GitHub reports a job skipped by a job-level conditional as
+      # "Success". See scripts/configure-branch-protection.mjs for the full
+      # reasoning and the caveat about skipped-because-a-parent-failed.
       - name: Run shared hooks package tests
         if: ${{ !cancelled() }}
         run: npm run test -w packages/hooks

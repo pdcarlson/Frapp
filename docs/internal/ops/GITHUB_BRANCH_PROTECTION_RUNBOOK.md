@@ -84,8 +84,14 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 | `secret-scan`        | gitleaks over the PR/push commit range (ADR-13 push-protection replacement)                     |
 | `clean-checkout-typecheck` | Bare `npm ci` + typecheck + lint with no prebuilt packages (guards `turbo.json` `^build`) |
 | `dependency-audit`   | npm audit gate: any high/critical advisory not allowlisted in `scripts/npm-audit-allowlist.json` fails (issue #618) |
+| `chapter-directory-seed` | `supabase/seed/chapter_directory.csv`: canonical `#RRGGBB` colors, real archetypes, no duplicate natural keys (issue #840) |
+| `web-tests`          | `apps/web` + the shared packages only this suite covers (`packages/hooks`, `packages/ui`, `packages/chat-core`) |
 
-**Not required on branches (informational):** `web-visual-regression` from `.github/workflows/ci.yml` runs Playwright snapshots on `main` / `production` PRs and pushes but is intentionally omitted from [`scripts/configure-branch-protection.mjs`](../../../scripts/configure-branch-protection.mjs) so merges are not blocked by visual flake; treat failures as a signal to investigate or update snapshots.
+**A path-gated job can still be required.** `web-tests` runs only when the `changes` filter matches (`apps/web/**`, `packages/**`, the lockfile, `turbo.json`), and that is compatible with being required: GitHub reports a job skipped by a **job-level** conditional as *Success*, and `success` / `skipped` / `neutral` all satisfy a required check. The blocking case is a whole **workflow** skipped by path or branch filtering, whose checks never report at all — `ci.yml` has no workflow-level `paths:` filter, so it cannot happen here. See [Troubleshooting required status checks](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/collaborating-on-repositories-with-code-quality-features/troubleshooting-required-status-checks).
+
+**Not required on branches (informational):** `web-visual-regression` from `.github/workflows/ci.yml` runs Playwright snapshots on `main` / `production` PRs and pushes but is intentionally omitted from [`scripts/configure-branch-protection.mjs`](../../../scripts/configure-branch-protection.mjs) so merges are not blocked by visual flake; treat failures as a signal to investigate or update snapshots. `pglite-migrations` is likewise advisory.
+
+> **Script vs live drift — check before you assume.** The arrays in the script are the *intended* state; the live config is whatever the last manual run applied. As of 2026-08-19 the live `main` protection carried 12 contexts and was missing `chapter-directory-seed`, which had been listed in the script since #840. Running `npm run configure:branch-protection` applies **everything** in the arrays, not just the entry you added — read the `--dry-run` output in full before applying.
 
 **Docs check (from `.github/workflows/docs.yml`):**
 
