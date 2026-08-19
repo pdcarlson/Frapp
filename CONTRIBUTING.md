@@ -58,6 +58,8 @@ Every PR must pass these checks before merging. Branch protection enforces this 
 | `chapter-directory-seed` | `supabase/seed/chapter_directory.csv`: canonical `#RRGGBB` colors, real archetypes, no duplicate natural keys (ROLLOUT†) |
 | `web-tests`          | `apps/web` unit tests plus the shared packages only this suite covers — `packages/hooks`, `packages/ui`, `packages/chat-core` (ROLLOUT†) |
 | `changes`            | Computes the path filter that decides whether `web-tests` runs. Required only because `web-tests` needs it — a required check with a non-required parent can be skipped *and* still count as passing (ROLLOUT†) |
+| `dependency-cruiser` | Architectural boundaries: API layer direction, no package→app imports, no cross-app imports, no cycles. Existing violations are grandfathered in `.dependency-cruiser-known-violations.json` (ROLLOUT†) |
+| `duplicate-detection` | jscpd against a repo-wide duplication threshold — **advisory, not merge-blocking** (no clone-level baseline exists; see [`docs/internal/ci-cd/QUALITY_GATES.md`](docs/internal/ci-cd/QUALITY_GATES.md)) |
 | `docs-spec-sync`     | Docs/spec sync **and** structure on PRs (`scripts/check-docs-impact.mjs` + `scripts/check-docs-structure.mjs`; no docs app build). A change with genuinely no docs impact can be waived with the `no-doc-change-needed` label |
 | `doc-paths`          | Backticked repo-path citations in docs resolve to real files (`scripts/check-doc-paths.mjs`, whole-tree) — **reports only, not yet required** (ROLLOUT‡) |
 | `branch-policy`      | `production`-targeting PRs must come from `main` (required on `production` only)                   |
