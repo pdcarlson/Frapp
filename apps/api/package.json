@@ -46,6 +46,7 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@darraghor/eslint-plugin-nestjs-typed": "^7.3.3",
     "@eslint/eslintrc": "^3.3.6",
     "@eslint/js": "^9.39.5",
     "@nestjs/cli": "^11.0.24",
@@ -89,6 +90,7 @@
       "**/*.(t|j)s"
     ],
     "coverageDirectory": "../coverage",
+    "coverageProvider": "v8",
     "testEnvironment": "node"
   }
 }

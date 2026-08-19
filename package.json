@@ -15,6 +15,10 @@
     "ci:local-gate": "node scripts/run-local-ci-gate.mjs",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "check-types": "turbo run check-types",
+    "test:cov": "turbo run test:cov",
+    "check:dep-cruiser": "node scripts/check-dep-cruiser.mjs",
+    "check:duplication": "jscpd --config .jscpd.json",
+    "check:api-breaking": "node scripts/check-api-breaking-changes.mjs",
     "check:api-contract": "node scripts/check-api-contract-drift.mjs",
     "check:migration-safety": "node scripts/check-migration-safety.mjs",
     "check:doc-paths": "node scripts/check-doc-paths.mjs",
@@ -32,10 +36,13 @@
     "prepare": "node -e \"try{const fs=require('fs');if(fs.existsSync('scripts/setup-git-hooks.mjs'))require('child_process').execFileSync(process.execPath,['scripts/setup-git-hooks.mjs'],{stdio:'inherit'})}catch{}\""
   },
   "devDependencies": {
-    "concurrently": "^10.0.5",
     "@electric-sql/pglite": "^0.5.5",
     "@electric-sql/pglite-pgvector": "^0.0.6",
     "@infisical/cli": "0.43.121",
+    "@vitest/coverage-v8": "4.1.10",
+    "concurrently": "^10.0.5",
+    "dependency-cruiser": "^18.2.0",
+    "jscpd": "^5.0.16",
     "prettier": "^3.9.6",
     "turbo": "^2.10.10",
     "typescript": "5.9.2"

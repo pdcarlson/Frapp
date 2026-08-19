@@ -23,6 +23,10 @@
     "check-types": {
       "dependsOn": ["^build"]
     },
+    "test:cov": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"]
+    },
     "dev": {
       "cache": false,
       "persistent": true
