@@ -27,6 +27,7 @@
  */
 
 import { execSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
 
 /** Artifacts that must stay in sync with API source. */
 const CONTRACT_ARTIFACTS = [
@@ -35,13 +36,38 @@ const CONTRACT_ARTIFACTS = [
 ];
 
 /**
+ * Shared workspace packages that `apps/api/src` imports. A value from one of
+ * these can reach a DTO decorator and therefore the emitted schema, so a change
+ * here can drift the contract with nothing under `apps/api/src/` touched.
+ * Keep in step with the `@repo/*` imports in apps/api.
+ */
+const API_CONSUMED_PACKAGES = [
+  "packages/validation/",
+  "packages/org-archetypes/",
+  "packages/chapter-theme/",
+];
+
+/**
  * A changed file is "API-related" (worth a regen) when it lives in the API
  * source tree (excluding tests and the exporter itself) or in the generated
  * artifacts / SDK package. Non-contract API files (services, repositories) are
  * included on purpose: regenerating is cheap and a clean diff still passes, so
  * we'd rather over-check than miss a contract change.
+ *
+ * Two categories beyond the API tree are included for a specific reason — both
+ * can change the generated output with **nothing** under `apps/api/src/`
+ * touched, which is precisely the shape this check would otherwise skip:
+ *
+ * - **The generators themselves.** `openapi.json` is emitted by
+ *   `@nestjs/swagger` and `types.ts` by `openapi-typescript`. Bumping either
+ *   can change the output, and a Dependabot bump touches only `package.json` /
+ *   `package-lock.json` — so the old filter skipped the regen and the stale
+ *   artifact merged.
+ * - **Shared packages the API imports.** See `API_CONSUMED_PACKAGES`.
+ *
+ * Exported for scripts/ci/__tests__/check-api-contract-drift.test.mjs.
  */
-function isApiRelated(filePath) {
+export function isApiRelated(filePath) {
   if (filePath.includes(".spec.") || filePath.includes(".e2e-spec.")) {
     return false;
   }
@@ -49,7 +75,10 @@ function isApiRelated(filePath) {
   return (
     filePath.startsWith("apps/api/src/") ||
     filePath === "apps/api/openapi.json" ||
-    filePath.startsWith("packages/api-sdk/")
+    filePath.startsWith("packages/api-sdk/") ||
+    filePath === "apps/api/package.json" ||
+    filePath === "package-lock.json" ||
+    API_CONSUMED_PACKAGES.some((pkg) => filePath.startsWith(pkg))
   );
 }
 
@@ -177,4 +206,15 @@ function main() {
   process.exit(1);
 }
 
-main();
+// Entry guard, load-bearing rather than boilerplate. `main()` runs a real
+// regeneration — it builds every shared package, boots NestJS, and writes over
+// the committed artifacts. Without this, merely importing the module to unit-test
+// `isApiRelated` would do all of that as a side effect of the import. The same
+// trap is documented at length in scripts/configure-branch-protection.mjs, which
+// once reconfigured branch protection because something read it.
+const isDirectRun =
+  process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isDirectRun) {
+  main();
+}

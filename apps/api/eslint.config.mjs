@@ -1,4 +1,5 @@
 // @ts-check
+import nestjsTyped from '@darraghor/eslint-plugin-nestjs-typed';
 import eslint from '@eslint/js';
 import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended';
 import globals from 'globals';
@@ -36,6 +37,32 @@ export default tseslint.config(
       '@typescript-eslint/no-base-to-string': 'warn',
       'no-empty': ['error', { allowEmptyCatch: true }],
       "prettier/prettier": ["error", { endOfLine: "auto" }],
+    },
+  },
+  // Response-schema rule: every controller method must declare the response type
+  // it returns. This is what makes the generated SDK usable — a route with no
+  // declared response generates `content?: never`, so callers get no types for
+  // the body and the contract silently says "returns nothing".
+  //
+  // ROLLOUT: deliberately "warn", not "error", and it must stay that way until
+  // the route-DTO backfill lands. There is a real backlog behind this rule
+  // (~30 routes), and ESLint has no native baseline mechanism the way
+  // dependency-cruiser does — so "error" today would simply turn `lint`, a
+  // required check, red on every PR until the whole backfill is done. Warn now,
+  // backfill, then flip to "error" and delete this paragraph.
+  //
+  // Only the plugin's `nestjs-typed/api-method-should-specify-api-response` rule
+  // is enabled. The bundled `flatRecommended` preset turns on 20+ rules at once,
+  // which is a different and much larger decision.
+  //
+  // `.buildpad/` needs no exclusion here: the lint script globs
+  // `{src,apps,libs,test}/**/*.ts` relative to apps/api and there is no
+  // repo-root ESLint config, so the canvas is unreachable from any lint run.
+  {
+    files: ['src/**/*.controller.ts'],
+    plugins: { 'nestjs-typed': nestjsTyped.plugin },
+    rules: {
+      'nestjs-typed/api-method-should-specify-api-response': 'warn',
     },
   },
   {
