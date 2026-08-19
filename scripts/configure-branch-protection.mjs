@@ -67,13 +67,36 @@ const CI_CHECKS = [
   // https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/collaborating-on-repositories-with-code-quality-features/troubleshooting-required-status-checks
   //
   // The one real caveat from the same table: a job skipped because a `needs:` parent
-  // FAILED "may not block merging". web-tests needs packages-build and changes, both
-  // of which are required checks themselves, so a red parent already blocks the PR on
-  // its own name and this cannot become a hole.
+  // FAILED "may not block merging". That is why `changes` is required below —
+  // web-tests needs [packages-build, changes], and a required check whose parent is
+  // NOT required is a hole, not a gate.
   //
   // ROLLOUT: same caveat as secret-scan. Verified green on main's latest run before
   // being listed here.
   "web-tests",
+  // Required only because `web-tests` needs it. `changes` computes the path filter and
+  // decides whether web-tests runs at all; on its own it asserts nothing.
+  //
+  // Without this entry the gate above has a hole with a real trigger. `changes` is the
+  // one job in CI that calls the GitHub API (dorny/paths-filter lists the PR's files),
+  // so it can fail — rate limit, API error, or the action-download failure this repo
+  // has already seen once (#659) — while packages-build, which shares none of that
+  // surface, goes green. web-tests is then skipped for a failed dependency, reports
+  // `skipped`, and `skipped` SATISFIES a required check. Every required context would
+  // be green with the only suite covering packages/hooks never having run.
+  //
+  // GitHub's prescribed alternative is `always()` on the dependent job plus explicit
+  // `needs.*.result` assertions. Rejected: `always()` keeps running through the
+  // `cancel-in-progress` cancellations ADR-15 banks on, so it would cost real minutes
+  // to fix a problem one array entry fixes for a checkout and one API call.
+  //
+  // The general invariant, which nothing currently enforces: EVERY `needs:` parent of a
+  // required check must itself be a required check. web-tests is the first job here to
+  // have needed it.
+  //
+  // Safe to require: `changes` has no job-level `if:` (the condition is on its filter
+  // STEP), so the job always runs and always reports, on both pull_request and push.
+  "changes",
 ];
 
 const DOCS_CHECKS = [

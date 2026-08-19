@@ -62,8 +62,23 @@ the `run:` string — a label is free-form text and would otherwise be shell-exe
 malformed value is treated as *no labels*, so a parse failure leaves the gate enforced rather than
 silently waived.
 
+A waived run also emits a `::warning::` annotation, so it shows up in the run summary and the Checks
+UI rather than rendering as an ordinary green check — the label alone is easy to miss among the
+routine `area:*` / `P2` / `in-review` labels every PR carries.
+
 The label does not exist in the repo's label set until it is first applied; create it under
 **Issues → Labels**, or type the name when applying it to a PR.
+
+**Locally**, `npm run ci:local-gate` runs the same script and inherits the environment, so the waiver
+works there too:
+
+```sh
+PR_LABELS_JSON='["no-doc-change-needed"]' npm run ci:local-gate
+```
+
+This matters more than it looks: the docs check runs **first** in that gate and a failure aborts the
+whole run, so without the waiver a pure-code PR never reaches lint, type-check, the API tests, the
+npm-audit gate, or the gitleaks scan. The failure output names this command.
 
 The `.buildpad/` exemption **ignores** those paths; it does not treat them as documentation. A PR that
 edits code *and* `.buildpad/` still owes a `docs/` or `spec/` edit, and the failure output names only

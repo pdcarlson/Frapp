@@ -123,6 +123,15 @@ function main() {
     // Print what the gate would have demanded before waiving it, so the waiver
     // is reviewable from the check's log rather than only from the label.
     if (hasExemptLabel(parseLabels(process.env.PR_LABELS_JSON))) {
+      // A waived run reports plain green, so without an annotation it is
+      // indistinguishable from a PR that genuinely had no docs to update — and
+      // the label sits among the routine area:*/P2/in-review labels every PR
+      // carries. `::warning::` surfaces it in the run summary and the Checks UI,
+      // which is where a reviewer would actually notice it. Ignored outside
+      // Actions, so local runs just see the lines below.
+      console.log(
+        `::warning::Docs/spec sync waived by the \`${EXEMPT_LABEL}\` label — ${requiresDocs.length} non-doc path(s) changed with no docs/spec update.`,
+      );
       console.log(`Docs/spec sync check waived by the \`${EXEMPT_LABEL}\` label.`);
       console.log("");
       console.log("Changes that would otherwise have required a docs/spec update:");
@@ -144,6 +153,12 @@ function main() {
     );
     console.error(
       `If this change genuinely has no docs impact, label the PR \`${EXEMPT_LABEL}\` and it will re-run.`,
+    );
+    // Naming the CI remedy alone is useless in the terminal a developer is looking
+    // at: locally there may be no PR yet, and nothing re-runs. The env var is the
+    // same one the workflow sets, and `npm run ci:local-gate` inherits it.
+    console.error(
+      `Running this locally? \`PR_LABELS_JSON='["${EXEMPT_LABEL}"]' npm run ci:local-gate\` waives it there too.`,
     );
     return 1;
   }
