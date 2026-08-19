@@ -41,6 +41,7 @@ agents satisfy the docs-sync CI gate. Enforced (in part) by [`scripts/check-docs
 | Visual design reference (committed design exports) | `spec/ui/design-system/reference/` |
 | Per-service performance notes | `docs/internal/services/` |
 | Work status / planning | **GitHub Issues** — not a doc; see [`ci-cd/GITHUB_PM.md`](ci-cd/GITHUB_PM.md) |
+| Product-planning canvas (Buildpad export) | `.buildpad/` — **read-only background, never a doc home**; see below |
 
 ## Satisfying the docs-sync gate (`scripts/check-docs-impact.mjs`)
 
@@ -55,7 +56,31 @@ them. Pick the **relevant** canonical home above:
   not create a new file for it.
 
 Root-level files like `AGENTS.md` / `CONTRIBUTING.md` count as outside `docs/`/`spec/` and still need a
-`docs/` or `spec/` change in the same PR when edited.
+`docs/` or `spec/` change in the same PR when edited. The one prefix the script ignores outright is
+`.buildpad/` — see the next section.
+
+## `.buildpad/` is background, not documentation
+
+`.buildpad/` is a periodically-synced git export of the Buildpad product-planning canvas: `blobs/`
+(research and audits), `documents/`, and `notes/`. It is committed so agents can read canvas research
+straight off the filesystem instead of having documents pasted into a prompt — point prompts at a path
+under `.buildpad/` rather than saying "I've attached X".
+
+Treat it as a running brainstorm, not a source of truth:
+
+1. **`spec/` wins.** The canvas can hold stale, superseded, or contradictory ideas — that is the nature
+   of a brainstorm. Nothing in it is a decision until the owner says so
+   ([`.buildpad/notes/process-note-everything-buildpad-and-claude-code.md`](../../.buildpad/notes/process-note-everything-buildpad-and-claude-code.md)).
+   Where it disagrees with `spec/`, `spec/` is the contract.
+2. **Never hand-edit it in a PR.** The next canvas sync overwrites it. A conclusion worth keeping gets
+   promoted into its canonical `spec/` or `docs/` home from the map above.
+3. **It cannot satisfy the docs-sync gate**, and cannot fail it either: `check-docs-impact.mjs` ignores
+   the prefix entirely, so a canvas-sync PR passes on its own while a PR that edits code *and*
+   `.buildpad/` still owes a `docs/` or `spec/` edit. Mechanics:
+   [`ci-cd/DOCS_CI.md`](ci-cd/DOCS_CI.md#exemptions).
+4. **Source tooling skips it.** It holds no code, so the `Links`, `doc-paths` and docs-structure gates
+   never walk it, and [`.prettierignore`](../../.prettierignore) keeps `npm run format` from rewriting
+   the whole export into a diff the next sync would just undo.
 
 ## See also
 

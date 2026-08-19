@@ -22,6 +22,7 @@ Hosted agent sessions may carry provider/research credentials and cloud-sandbox 
 Frapp is a Turborepo + npm workspaces monorepo (4 apps, 7 shared packages). Structure: `README.md`. Product/architecture: `spec/`. Developer docs: markdown in [`docs/guides/`](docs/guides/README.md) (no separate docs web app in-repo).
 
 - **Documentation map:** [`docs/README.md`](docs/README.md) — how `docs/` and `spec/` fit together. **Conventions:** [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md).
+- **Planning canvas:** `.buildpad/` — the Buildpad export (research, audits, notes), synced periodically. Read it for background and cite paths in it instead of asking for documents to be attached, but treat it as a **running brainstorm, not truth**: it can be stale or superseded, `spec/` wins on any disagreement, and nothing in it is a decision until the owner says so. Never hand-edit it — the next sync overwrites it. Rules: [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md#buildpad-is-background-not-documentation).
 
 ## Branch model
 
