@@ -166,7 +166,14 @@ CI runs as domain-specific parallel jobs on every PR to `main` or `production`. 
 | `secret-scan`        | gitleaks over the PR/push commit range (ADR-13 push-protection replacement)                          | Yes        |
 | `clean-checkout-typecheck` | Bare `npm ci` + typecheck + lint with no prebuilt packages (guards `turbo.json` `^build`)      | Yes        |
 | `dependency-audit`   | npm audit gate — non-allowlisted high/critical advisories fail (`scripts/check-npm-audit.mjs`, #618) | Yes (after one-time rollout: admin re-runs `npm run configure:branch-protection` once the job is green on the target branch) |
+| `chapter-directory-seed` | `supabase/seed/chapter_directory.csv` — canonical `#RRGGBB` colors, real archetypes, no duplicate natural keys (#840) | Yes (same one-time rollout) |
+| `web-tests`          | `apps/web` unit tests plus the shared packages nothing else covers — `packages/hooks`, `packages/ui`, `packages/chat-core` | Yes (same one-time rollout) |
+| `changes`            | Path filter deciding whether `web-tests` runs; asserts nothing itself                                | Yes (same one-time rollout) |
 | `branch-policy`      | PRs to `production` must come from `main`                                                            | Yes        |
+
+`web-tests` is **path-gated and still required**, which is only a contradiction if you assume a skip blocks. It does not: GitHub reports a job skipped by a *job-level* conditional as *Success*, and `success` / `skipped` / `neutral` all satisfy a required check. `changes` is required for a different and less obvious reason — a required check whose `needs:` parent fails is skipped and *may not block merging*, so a non-required parent would leave `web-tests` satisfiable without ever running. See the ADR-15 amendment in [`../architecture/README.md`](../architecture/README.md) and the comments in [`scripts/configure-branch-protection.mjs`](../../scripts/configure-branch-protection.mjs).
+
+`web-visual-regression` and `pglite-migrations` are also path-gated but remain **advisory** — visual flake should not block merge.
 
 ### Additional Docs Checks
 

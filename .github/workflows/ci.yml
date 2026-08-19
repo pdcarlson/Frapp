@@ -150,21 +150,19 @@ jobs:
       - name: Brand assets (icon sync)
         run: npm run check:brand-assets
 
-      # Second home of the docs/spec sync gate — `docs.yml` runs the same script
-      # for the required `docs-spec-sync` check. Both copies need the Dependabot
-      # exemption, and only `docs.yml` had it: a bump touches package.json /
-      # package-lock.json and nothing else, so this step failed every Dependabot
-      # PR here while `docs-spec-sync` went green, and `lint-and-typecheck` is
-      # itself a required check. The exemption was therefore a no-op in practice.
+      # The docs/spec sync gate used to run here too, a second copy of the same
+      # script `docs.yml` runs for the required `docs-spec-sync` check. It was
+      # removed rather than kept in sync.
       #
-      # Keep the two conditions identical, and see docs.yml for why this skips
-      # the STEP rather than the job and keys on the PR author rather than
-      # `github.actor`.
-      - name: Docs/spec impact (check-docs-impact.mjs)
-        if: >-
-          github.event_name == 'pull_request'
-          && github.event.pull_request.user.login != 'dependabot[bot]'
-        run: node scripts/check-docs-impact.mjs --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
+      # Two copies of one rule across two required checks means every exemption
+      # has to be duplicated exactly, and the copies had already drifted once:
+      # only `docs.yml` carried the Dependabot exemption, so this step failed
+      # every Dependabot PR while `docs-spec-sync` went green. The
+      # `no-doc-change-needed` waiver made the duplication actively expensive —
+      # honouring it here would mean re-running this entire workflow, Docker
+      # build included, on every label mutation on every PR.
+      #
+      # The gate now has exactly one home: `docs.yml`.
 
   # ── Clean-checkout guard (fresh-install path) ───────────────────────────
   # Reproduces a bare `npm install && npm run check-types` on a cold machine.
@@ -287,10 +285,13 @@ jobs:
       # phases: without it a red apps/web test skips both and hides two more
       # failures until the next push. Not `always()` — this workflow sets
       # `cancel-in-progress`, and `always()` keeps running after a cancellation,
-      # so every superseded run would still pay for both suites. Note this job
-      # is deliberately NOT a required check (ADR-15 /
-      # spec/architecture/README.md), so a red run here reports but does not
-      # block merge.
+      # so every superseded run would still pay for both suites.
+      #
+      # This job IS a required check as of the ADR-15 amendment — it is the only
+      # suite covering packages/hooks. The path gate above is compatible with
+      # that: GitHub reports a job skipped by a job-level conditional as
+      # "Success". See scripts/configure-branch-protection.mjs for the full
+      # reasoning and the caveat about skipped-because-a-parent-failed.
       - name: Run shared hooks package tests
         if: ${{ !cancelled() }}
         run: npm run test -w packages/hooks

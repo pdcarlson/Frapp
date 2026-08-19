@@ -33,8 +33,52 @@ for that reason, and each is deliberately narrow.
 
 | Exempt | Where | Why |
 |---|---|---|
-| Dependabot PRs | Workflow condition on the *step*, in both [`docs.yml`](../../../.github/workflows/docs.yml) and [`ci.yml`](../../../.github/workflows/ci.yml) | A bump touches `package.json` / `package-lock.json` and nothing else. Skipping the **step**, never the job, keeps the required check reporting — a skipped job never reports, leaving the PR blocked on a check that never arrives. |
+| Dependabot PRs | Workflow condition on the *step*, in [`docs.yml`](../../../.github/workflows/docs.yml) | A bump touches `package.json` / `package-lock.json` and nothing else. Skipping the **step**, never the job, keeps the required check reporting — a skipped job never reports, leaving the PR blocked on a check that never arrives. |
 | `.buildpad/**` | `NON_CODE_PREFIXES` in [`check-docs-impact.mjs`](../../../scripts/check-docs-impact.mjs) | The canvas export is neither code nor documentation, so it has no docs impact to sync. Every periodic sync would otherwise land as "N non-doc files changed, no docs updated". |
+| PRs labelled `no-doc-change-needed` | `EXEMPT_LABEL` in [`check-docs-impact.mjs`](../../../scripts/check-docs-impact.mjs) | A change with genuinely no docs impact — a pure-code consolidation that moves an implementation without changing behaviour any doc describes — cannot satisfy the gate, and the gate is required, so it would be unmergeable rather than merely red. |
+
+#### The `no-doc-change-needed` waiver
+
+Applying it needs **write access**, so it is not a self-serve bypass for an outside contributor, and it
+lands in the PR timeline as a named, reviewable act rather than a silent skip. The gate still **runs**
+and still **prints the paths it would have required a doc for**, so what was waived is auditable from
+the check's log, not just from the label.
+
+Two mechanics make it work, and both are easy to get wrong:
+
+- **The trigger.** `docs.yml` listens for `labeled`/`unlabeled` on top of the default
+  `opened`/`synchronize`/`reopened`. Without them the label would be applied, nothing would re-run, the
+  stale red conclusion would stand, and the PR would still be blocked. A waiver has to be able to
+  re-run the check it waives.
+- **The single home.** The same script used to run a second time as a step inside `ci.yml`'s
+  `lint-and-typecheck` — itself a required check — so honouring the label would have meant giving
+  `ci.yml` the same `labeled` trigger and re-running the entire suite, Docker build included, on every
+  label mutation on every PR. The duplicate was removed instead. **The sync gate now has exactly one
+  home: `docs.yml`.** The copies had already drifted once (only `docs.yml` carried the Dependabot
+  exemption), which is the other half of the argument for keeping one.
+
+Labels reach the script through `env:` (`PR_LABELS_JSON`, as `toJSON(...)`), never interpolated into
+the `run:` string — a label is free-form text and would otherwise be shell-executable. An absent or
+malformed value is treated as *no labels*, so a parse failure leaves the gate enforced rather than
+silently waived.
+
+A waived run also emits a `::warning::` annotation, so it shows up in the run summary and the Checks
+UI rather than rendering as an ordinary green check — the label alone is easy to miss among the
+routine `area:*` / `P2` / `in-review` labels every PR carries.
+
+The label does not exist in the repo's label set until it is first applied; create it under
+**Issues → Labels**, or type the name when applying it to a PR.
+
+**Locally**, `npm run ci:local-gate` runs the same script and inherits the environment, so the waiver
+works there too:
+
+```sh
+PR_LABELS_JSON='["no-doc-change-needed"]' npm run ci:local-gate
+```
+
+This matters more than it looks: the docs check runs **first** in that gate and a failure aborts the
+whole run, so without the waiver a pure-code PR never reaches lint, type-check, the API tests, the
+npm-audit gate, or the gitleaks scan. The failure output names this command.
 
 The `.buildpad/` exemption **ignores** those paths; it does not treat them as documentation. A PR that
 edits code *and* `.buildpad/` still owes a `docs/` or `spec/` edit, and the failure output names only
@@ -108,8 +152,7 @@ before you act on what a doc told you.
 
 If the team wants less noise or stricter mapping:
 
-- **Path-based rules:** e.g. changes under `apps/api/**` must touch `spec/` or `docs/**` matching an allowlist.
-- **Labels:** e.g. maintainer-only `skip-docs-check` with mandatory justification (easy to abuse; needs culture + review).
+- **Path-based rules:** e.g. changes under `apps/api/**` must touch `spec/` or `docs/**` matching an allowlist. Considered as the alternative to the label waiver and rejected for that purpose: a pure-code consolidation moves code *inside* `apps/*/src/**` and `packages/*/src/**`, the very paths any sane allowlist includes, so path-scoping never unblocks the case the waiver exists for. Still worth doing on its own merits, as noise reduction.
 - **Changelog:** allow a single audited file to count as the doc touch (still easy to make meaningless updates).
 
 Any change to the script should update this file, `AGENTS.md`, and the PR template so agents and humans share one story.

@@ -55,7 +55,10 @@ Every PR must pass these checks before merging. Branch protection enforces this 
 | `secret-scan`        | gitleaks over the PR/push commit range (ADR-13 push-protection replacement)                        |
 | `clean-checkout-typecheck` | Bare `npm ci` + typecheck + lint with no prebuilt packages (guards `turbo.json` `^build`)    |
 | `dependency-audit`   | npm audit gate: high/critical advisories not allowlisted in `scripts/npm-audit-allowlist.json` fail (ROLLOUT†) |
-| `docs-spec-sync`     | Docs/spec sync **and** structure on PRs (`scripts/check-docs-impact.mjs` + `scripts/check-docs-structure.mjs`; no docs app build) |
+| `chapter-directory-seed` | `supabase/seed/chapter_directory.csv`: canonical `#RRGGBB` colors, real archetypes, no duplicate natural keys (ROLLOUT†) |
+| `web-tests`          | `apps/web` unit tests plus the shared packages only this suite covers — `packages/hooks`, `packages/ui`, `packages/chat-core` (ROLLOUT†) |
+| `changes`            | Computes the path filter that decides whether `web-tests` runs. Required only because `web-tests` needs it — a required check with a non-required parent can be skipped *and* still count as passing (ROLLOUT†) |
+| `docs-spec-sync`     | Docs/spec sync **and** structure on PRs (`scripts/check-docs-impact.mjs` + `scripts/check-docs-structure.mjs`; no docs app build). A change with genuinely no docs impact can be waived with the `no-doc-change-needed` label |
 | `doc-paths`          | Backticked repo-path citations in docs resolve to real files (`scripts/check-doc-paths.mjs`, whole-tree) — **reports only, not yet required** (ROLLOUT‡) |
 | `branch-policy`      | `production`-targeting PRs must come from `main` (required on `production` only)                   |
 
@@ -123,7 +126,8 @@ type(scope): description
 ### 3. Open a PR targeting `main`
 
 - Run the local gate first: `npm run ci:local-gate`
-  - This runs docs/spec sync (`scripts/check-docs-impact.mjs`), docs build/lint, and the CI parity checks.
+  - This runs docs/spec sync (`scripts/check-docs-impact.mjs`), the gitleaks scan, then the CI parity checks (lint, type-check, API tests, contract freshness, migration safety, npm audit). There is no docs build or docs lint step.
+  - The docs/spec check runs **first** and a failure aborts the rest, so a pure-code change with no docs impact would never reach lint or the tests. Waive it the same way CI does: `PR_LABELS_JSON='["no-doc-change-needed"]' npm run ci:local-gate` — see [`docs/internal/ci-cd/DOCS_CI.md`](docs/internal/ci-cd/DOCS_CI.md).
 - If the docs/spec check needs a different base branch, use: `npm run ci:local-gate -- --base-ref origin/production`
 - Fill out the PR template completely.
 - Check the "Docs / Spec impact" section — if you changed product code, update `docs/` (e.g. `docs/guides/`) and/or `spec/`. Where to put what: [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md).

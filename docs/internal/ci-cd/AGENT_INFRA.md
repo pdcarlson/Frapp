@@ -206,9 +206,8 @@ override is no longer doing its work.
 
 ### Dependabot PRs are exempt from the docs/spec sync gate
 
-`check-docs-impact.mjs` runs from **two** workflows, and both skip it when the PR author is
-`dependabot[bot]`: `.github/workflows/docs.yml` (the required `docs-spec-sync` check) and
-`.github/workflows/ci.yml` (the last step of the required `lint-and-typecheck` job).
+`check-docs-impact.mjs` runs from **one** workflow — `.github/workflows/docs.yml` (the required
+`docs-spec-sync` check) — and skips when the PR author is `dependabot[bot]`.
 
 Without that exemption Dependabot would be unusable here, not merely noisy: its PRs change
 `package.json` / `package-lock.json` and nothing else, `check-docs-impact.mjs` fails any PR that
@@ -227,11 +226,19 @@ Two things to preserve if you ever edit that condition:
 `check-docs-structure.mjs` needs no exemption — it only inspects newly *added* paths under `docs/`
 and `spec/`, of which a dependency bump has none, so it passes trivially.
 
-**Both copies have to carry the condition, and for a long time only one did.** `ci.yml` ran the gate
-unguarded, so every Dependabot PR went green on `docs-spec-sync` and red on `lint-and-typecheck` for
-the identical reason the exemption exists — the exemption was real but inert, and the PRs were just
-as unmergeable. `ci.yml` now carries the same condition (#1011). If you add a third caller of
-`check-docs-impact.mjs`, it needs the same `if:` or it re-breaks this the same way.
+**There used to be a second copy, and keeping two in sync is exactly what failed.** `ci.yml` ran the
+same script as the last step of `lint-and-typecheck`, unguarded, so every Dependabot PR went green on
+`docs-spec-sync` and red on `lint-and-typecheck` for the identical reason the exemption exists — the
+exemption was real but inert, and the PRs were just as unmergeable. It was given the same condition
+(#1011) and then **removed entirely** when the `no-doc-change-needed` waiver landed: honouring a label
+in `ci.yml` would have meant re-running the whole suite, Docker build included, on every label
+mutation on every PR. **The gate now has exactly one home. Do not add a second** — the drift above is
+what a second copy buys you. Full contract: [`DOCS_CI.md`](DOCS_CI.md).
+
+One caller outside CI: [`scripts/run-local-ci-gate.mjs`](../../../scripts/run-local-ci-gate.mjs) runs
+the script locally. It needs no Dependabot exemption (a human runs it), and it inherits
+`PR_LABELS_JSON` from the shell, so the waiver works there too — see
+[`DOCS_CI.md`](DOCS_CI.md#the-no-doc-change-needed-waiver).
 
 ### `colorjs.io` is ignored: it is a vendored-generator pin, not a dependency
 
