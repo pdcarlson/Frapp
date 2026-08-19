@@ -311,7 +311,7 @@ watching session was never woken — the PR sat silent for ~2h until a human not
 | PR-activity webhook (`subscribe_pr_activity`) | CI **failure**, comments, reviews | success, cancelled, timed-out, merge-conflict — all silent |
 | `CI wake` watchdog comment (`ci-wake.yml`) | success / failure / cancelled / timed-out (and startup_failure/stale) of CI / Docs spec sync / Links on PR runs — comments are webhook events, so they wake subscribed sessions | outages that kill the watchdog run itself; merge-conflict; review-state changes; `skipped`/`neutral`/`action_required` conclusions and superseded runs (deliberately silent) |
 | `PR base sync` wake comment (`pr-base-sync.yml`) | `main` moving while this PR is conflicted with it, or behind it and not auto-updateable — the comment says which and what to do | base moves while the sweep run itself dies; PRs past the sweep's 20-PR cap this round (logged; the sweep processes least-recently-updated first, so deferred PRs rotate to the front of a later sweep); unknown mergeability (skipped fail-safe, deliberately silent) |
-| Scheduled self-wake (`send_later`, re-armed each wake) | anything — the session re-checks PR state via MCP | **the whole layer — it is unusable unattended on the cloud surface** (it prompts the owner every call, see below); where the tool works, it misses nothing |
+| Retired — do not call `send_later` | — | Entire layer. Unusable unattended on the cloud surface (prompts the owner every call). Do not re-add it to `permissions.allow`. |
 
 Layered conclusion: the watchdog comment is the fast path for CI outcomes, the base-sync comment is
 the fast path for base moves and merge conflicts, and the webhook is the fast path for failures and

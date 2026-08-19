@@ -135,8 +135,8 @@ not fake.
 Then act on every finding. Do one of exactly two things per finding:
 
 1. **Fix it** in the working tree, or
-2. **File a self-contained follow-up** as a GitHub issue (`issue_write` create, labels `triage` +
-   a priority + one `area:<x>`) with an explicit reason for deferring.
+2. **File a self-contained follow-up** per [`file-follow-up`](../file-follow-up/SKILL.md) (not a
+   drive-by `issue_write` with only `triage`) with an explicit reason for deferring.
 
 Record the disposition where it is auditable: after acting, re-call `ReportFindings` with `outcome`
 set per finding (`fixed` / `skipped` / `no_change_needed`) — that is what the field is for. A short

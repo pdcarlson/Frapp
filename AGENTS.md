@@ -49,7 +49,7 @@ Work lives in **GitHub Issues** on this repository. Linear is retired (ADR-16 am
 
 Closing is usually the PR that does the work (`Fixes #N`). Agents may also close directly when done, obsolete, or duplicate (`issue_write` + `state_reason`). The **GitHub MCP** is the only sanctioned tracker path in cloud sandboxes — never `gh` or raw REST. Board: `triage` → Backlog (no state label; priority expected) → `in-progress` → `in-review` → closed. Epics are parent issues with native sub-issues. Start work with `/next`. Policy: [`GITHUB_PM.md`](docs/internal/ci-cd/GITHUB_PM.md). Procedure: [`.claude/commands/next.md`](.claude/commands/next.md).
 
-Follow-up that does not belong in the current PR: [`.claude/skills/file-follow-up/SKILL.md`](.claude/skills/file-follow-up/SKILL.md).
+Follow-up that does not belong in the current PR: [`.claude/skills/file-follow-up/SKILL.md`](.claude/skills/file-follow-up/SKILL.md). Human-only blockers: file per that skill **and** ask in the end-of-run report — an issue is durable, not an interruption.
 
 ## Tech debt protocol (non-optional)
 
@@ -59,7 +59,7 @@ This repo is **mid-rebuild (Frapp → Signet)**. Treat existing code as *possibl
 
 **Never silently work around orphaned, superseded, or contradictory code.** Flag it in the response and the PR body, and file a GitHub issue per [`file-follow-up`](.claude/skills/file-follow-up/SKILL.md) — or fix it inline when it's small and in scope.
 
-**The tracker is the only debt list.** Do not start a running debt file. GitHub Issues already have status, ownership, priority, and close-on-merge.
+**The tracker is the only debt list.** Do not start a running debt file (`TECH-DEBT.md` or similar). GitHub Issues already have status, ownership, priority, and close-on-merge.
 
 **A cutover deletes what it replaces** in the same change, unless there is an explicit reason to keep both live (a flag, a documented migration window). "We might need it later" is not a reason. Checklist: [`.claude/skills/signet-cutover/SKILL.md`](.claude/skills/signet-cutover/SKILL.md).
 
@@ -150,6 +150,7 @@ All skills live under [`.claude/skills/`](.claude/skills/) and are invocable by 
 - Mobile needs Expo Go; not for headless VMs.
 - **React is pinned to an exact `19.2.3` in every workspace, plus a root `overrides` entry. Do not widen it to a caret range.** React Native 0.86.2 bundles `react-native-renderer` 19.2.3, which asserts *exact* version equality with `react` at runtime. Its peer range (`^19.2.0`) does not express that, so npm accepts a newer React without warning, hoists it to the root, and `apps/mobile` dies on first render with "Invalid hook call" / "Incompatible React versions". The pin *moves* with each Expo SDK bump (read the target from `expo/bundledNativeModules.json`) — moving it in lockstep across all six manifests is correct; widening it never is.
 - **Bumping an Expo SDK needs a lockfile regeneration, not just a `npm install`.** Peer-only deps like `@expo/vector-icons` (`expo-font: ">=14.0.4"`) stay satisfied by the *old* pinned versions, so npm leaves the entire previous SDK chain hoisted at the root alongside the new one. `rm -rf node_modules package-lock.json && npm install`; then confirm `node_modules/expo` is the only copy and is the new version.
+- **`Skill(skill: "code-review")` is only invocable when this turn's prompt carries `/code-review` as a whitespace-delimited token.** Backticks, quotes, and trailing punctuation all defeat it. `/diff-review` is always invocable and is the pre-push gate. Mechanics: [`AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
 - Branch protection uses `enforce_admins: true`.
 
 ## Developer notes for agents
@@ -164,7 +165,7 @@ A task is not "done" when the code is pushed — it's done when the PR is ready 
 
 1. **Open a PR** against the right base (feature → `main`; promotion → `production`). Don't wait to be asked.
 2. **Subscribe to PR activity** (`subscribe_pr_activity`). The webhook fires on CI **failure**, comments, and reviews only — not success, cancelled, timed-out, or merge-conflict.
-3. **Do not call `send_later`.** It prompts the owner; allowlisting does not stop that. Wake coverage is the PR-activity webhook, `CI wake` comments, and `PR base sync` comments. Anything that needs a schedule is a Routine in the UI.
+3. **Do not call `send_later`, and do not add it to `permissions.allow`.** It still prompts the owner. Wake coverage is the PR-activity webhook, `CI wake` comments, and `PR base sync` comments. Anything that needs a schedule is a Routine in the UI.
 4. **Triage CI failures before "fixing" them.** A job that died before its first repo step is GitHub Actions infra, not code — re-run it (`actions_run_trigger`), don't patch. Read the `CI wake` comment first; if it says infra, stand down unless the failure repeats.
 5. **Babysit until green:** real CI failure → diagnose and push a fix; review comment → address and resolve the thread. A `Base-branch sync` comment (`<!-- frapp-base-sync -->`) means merge `origin/main` (or follow the comment). Details: [`AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md) § Base-branch sync.
 6. **Stop conditions:** green and review-clean, OR out of scope (file an issue, report, stop), OR the user says to stop (`unsubscribe_pr_activity`).

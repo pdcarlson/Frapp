@@ -288,7 +288,7 @@ Compare output with expected checks in `CONTRIBUTING.md`.
 
 ## Spec compliance audit
 
-The spec is the source of truth — implementation follows spec. When auditing:
+**`spec/` is intended behavior; code is current behavior.** Disagreement is a tracked bug to file — do not silently rewrite working code to match a stale spec, or a spec to match a bug. When auditing:
 
 1. **Product**: Compare implemented features against domains under `spec/product/`
 2. **Behavior**: Verify edge cases and invariants from topics under `spec/behavior/` are tested

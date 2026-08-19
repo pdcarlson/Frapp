@@ -9,7 +9,7 @@
 | Monorepo       | Turborepo + npm workspaces                   | Single repo, task orchestration, caching.                                                                             |
 | Landing        | Next.js (App Router)                         | `apps/landing` at frapp.live. Static/SSG for speed.                                                                   |
 | Web App        | Next.js (App Router), Tailwind, ShadCN UI    | `apps/web` at app.frapp.live. Admin dashboard.                                                                        |
-| Mobile App     | Expo (React Native), Expo Router, NativeWind | `apps/mobile`. Member experience. iOS + Android.                                                                      |
+| Mobile App     | Expo (React Native), Expo Router             | `apps/mobile`. Signet StyleSheet tokens; NativeWind removed. iOS + Android.                                           |
 | Developer docs | Markdown in-repo                             | [`docs/guides/`](../../docs/guides/README.md) + `spec/`. No deployed docs web app; a public site may return post-launch. |
 | API            | NestJS 11, TypeScript (strict)               | `apps/api`. REST + WebSocket gateway.                                                                                 |
 | Database       | PostgreSQL (via Supabase)                    | Supabase-hosted Postgres. Migrations via Supabase CLI.                                                                |

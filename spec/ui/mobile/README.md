@@ -26,6 +26,7 @@ The app must feel iOS-native, not like a web view. These rules are binding for e
 | Reversible delete (remove a task, retract a message) | No confirm. Apply immediately and show an undo snackbar; only the snackbar timeout makes it permanent. |
 | Creation flow (new task, log service hours, upload document, adjust points) | Bottom sheet via `@gorhom/bottom-sheet` v5 — mechanics in [`patterns.md`](patterns.md). |
 | One-tap response (RSVP, poll vote, reaction) | Inline optimistic tap on the card itself. MUST NOT open a sheet, modal, or confirm — the tap is the whole interaction. Optimistic/rollback rules: [`../resilience.md`](../resilience.md). |
+| Confirming action (check-in success, point award, reaction) | Haptic feedback on the confirming action. |
 | Admin event creation | Web-only. It is not in the 23-screen set. If it is ever built on mobile it MUST be a full-screen modal route, never a sheet. |
 
 ## Run paths: Expo Go vs EAS

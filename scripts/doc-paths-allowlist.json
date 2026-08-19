@@ -41,6 +41,11 @@
 
   "perFile": [
     {
+      "file": "AGENTS.md",
+      "path": "TECH-DEBT.md",
+      "reason": "Named as a file that must NOT exist — the passage forbids starting a running debt ledger."
+    },
+    {
       "file": ".claude/skills/ui-development/SKILL.md",
       "path": "nativewind-env.d.ts",
       "reason": "Names the tsconfig entry removed with NativeWind in S1 of #937 — the citing sentence records the removal."
