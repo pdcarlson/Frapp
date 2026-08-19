@@ -1,0 +1,3 @@
+# Open ideas to revisit
+
+Bug reports should carry some kind of reward, and/or the app should have a built-in error report option on unexpected errors. A future way for users/chapters to request new modules, features, or integrations — possibly via Frapp's own MCP server (unconfirmed how this would work). A recruitment/rush module, inspired by rushpl.us, flagged as a potentially big future module — needs research into what rushpl.us actually offers. None of these are designed yet.

@@ -1,0 +1,3 @@
+# Event modal redesign spec
+
+Keep one Dialog, not a wizard (fields are interdependent). Two tiers: always-visible (name, start/end with smart default end=start+1h, location, attendance as ToggleGroup defaulting Optional, recurrence defaulting "Does not repeat") + collapsed "More options" (role targeting, points default 10, description, internal notes). Role checkbox list replaced by a searchable multi-select combobox with "Everyone" default and removable chips. Validation: wire existing unused @repo/validation Zod schema through React Hook Form, mode "onTouched" (blur then live), inline FormMessage errors, not toasts. Keep submit always enabled (don't disable-until-valid). Minimum viable create = name + start.

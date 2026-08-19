@@ -1,0 +1,3 @@
+# Onboarding UX research
+
+3-step admin wizard (identity, modules with sensible defaults, invite). One reusable join code/link, not CSV import - everyone joins as Member, officers promoted after. Member first-run: auto-join default channels, no self-select, permission priming in-context (not on launch), non-blank empty states. CSV import, permission matrices, and templates deferred to multi-chapter phase.

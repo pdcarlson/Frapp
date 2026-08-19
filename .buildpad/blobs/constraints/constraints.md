@@ -1,0 +1,3 @@
+# Constraints
+
+Solo founder, CS junior at RPI. Can push up to 10 hours/day for the next 2 weeks to hit the beta target, then time likely drops back toward roughly an hour a day with school. Codes entirely via Claude Code (20x Max plan). Self-funding all costs (hosting, Stripe fees, Claude plan) with no outside money; open to chapter reimbursement if the app proves out. Hasn't looked into what setting up a real business entity would require if this goes to market.
