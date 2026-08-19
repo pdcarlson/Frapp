@@ -12,6 +12,10 @@ description: >
 # UI Development
 
 > Read before building or modifying UI in the mobile app, web dashboard, landing site, or shared component packages.
+>
+> Signet vs legacy Frapp tokens, visual truth, and "a cutover deletes what it replaces":
+> [`signet-cutover`](../signet-cutover/SKILL.md). Realtime / connection / topic teardown:
+> [`realtime-resilience`](../realtime-resilience/SKILL.md).
 
 ---
 

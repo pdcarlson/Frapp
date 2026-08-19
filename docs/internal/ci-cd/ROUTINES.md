@@ -26,8 +26,8 @@ previously filed items against reality, sweeps recent (and progressively older) 
 human-action and deferred items — "Flagged for review" sections, agent-stated TODOs, unresolved
 review threads — researches how each gets done, files them into the **`triage`** inbox
 (`[pr-followup]` / `[pr-followup][human]`, `suggestion`-labeled, `fp=pr-followup/…` markers),
-audits the `fp=human/…` blocker issues any agent session may file under the AGENTS.md
-proven-blocker hard rule, and
+audits the `fp=human/…` blocker issues any agent session may file under the
+[`file-follow-up`](../../../.claude/skills/file-follow-up/SKILL.md) skill, and
 republishes the **"PR Follow-ups — Human Action List"** tracking issue; running it on Monday
 *before* #1–2 means that same morning's curator/triage passes maintain and rank what it filed. The
 routine prompts are thin — the real rules live in the skill files, which the routine session loads
@@ -38,6 +38,30 @@ from the repo.
 > `issue_write` close with the right `state_reason`. These routines never write to Linear (retired)
 > and never touch product code — their single repo-write permission is the
 > [self-maintenance](#self-maintenance-the-update-themselves-contract) docs-only PR.
+
+## Shared ownership boundary (all routines)
+
+The four routine-facing skills ([`issue-curator`](../../../.claude/skills/issue-curator/SKILL.md),
+[`issue-triage`](../../../.claude/skills/issue-triage/SKILL.md),
+[`pr-followups`](../../../.claude/skills/pr-followups/SKILL.md), and the tracker angle in
+[`diff-review`](../../../.claude/skills/diff-review/SKILL.md)) **point here** instead of restating
+this block. Policy detail: [`GITHUB_PM.md` → Ownership boundary](GITHUB_PM.md#ownership-boundary-organize-broadly-destroy-narrowly).
+
+1. **Issues live on GitHub Issues** (this repository). Linear is retired — never write to it,
+   never treat it as a fallback, never open a Linear issue.
+2. **Destructive writes** (close, mark-duplicate, re-body, including adding an Agent brief) are
+   allowed **only** on issues carrying the **`suggestion`** label. Confirm with `issue_read
+   get_labels` before every such write; if `suggestion` is absent, SKIP and log. Human-filed and
+   planning issues are strictly read-only for destructive actions.
+3. **Never modify product code. Never open feature PRs.** The single repo-write exception is the
+   [docs-only self-maintenance PR](#self-maintenance-the-update-themselves-contract), restricted to
+   the routine's own skill files and this runbook.
+4. **GitHub MCP only.** If it is unavailable, stop and report — no `gh`, no REST, no scratch file.
+5. **`issue_write` labels replace the whole set.** Always send the union of existing labels plus
+   the change.
+
+Triage (only) may *organize* any `triage` item (priority, `Blocked by`, promote). That exception
+is spelled in the triage skill; it does not widen destructive writes.
 
 ---
 

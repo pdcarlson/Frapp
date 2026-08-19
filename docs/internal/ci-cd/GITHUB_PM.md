@@ -172,12 +172,16 @@ scaling verification and review (never skipping steps, never shrinking `/diff-re
 
 ## `/next` (the work-selection command)
 
-[`.claude/commands/next.md`](../../../.claude/commands/next.md) is the canonical entry point: pull
-the **Backlog** (open, non-`triage`, unclaimed) ranked by **priority label** (P1→P4; unlabeled
+[`.claude/commands/next.md`](../../../.claude/commands/next.md) is the canonical **procedure**:
+pull the **Backlog** (open, non-`triage`, unclaimed) ranked by **priority label** (P1→P4; unlabeled
 last), tie-break by lower issue number, drop anything with a live `Blocked by #N` (verified against
 the repo), never auto-start `triage` items, and **stop if the GitHub MCP is unavailable**. It keeps
 the tracker in sync (`in-progress` on claim, a comment trail, the PR link) and opens the PR with
 `Fixes #N`.
+
+It stays a **command**, not a skill: `/next` is the user-invocable work-selection entry point.
+Skills are playbooks loaded when relevant. This section is policy. Where they disagree, **this
+document wins** and `next.md` is the bug — fix the command, don't fork policy into it.
 
 - **The claim is a comment; the label is a projection of it.** GitHub has no compare-and-swap —
   `issue_write` is last-write-wins. Issue comments are append-only and server-timestamped
@@ -192,11 +196,9 @@ the tracker in sync (`in-progress` on claim, a comment trail, the PR link) and o
   `AGENT-RECLAIM`; an `in-progress` issue with no claim comment and no linked PR for 72h is
   swept back to Backlog (label removed) with an `AGENT-STALE-FLAG`.
 - **Closing:** on merge, `Fixes #N` closes each named issue as `completed` natively — no tool call
-  needed (a parity *win* over Linear, whose close-sync needed babysitting). Direct closes use
+  needed. Direct closes use
   `issue_write` with `state: closed` + the right `state_reason` (`completed` / `not_planned` /
   `duplicate` + `duplicate_of`).
-
-Procedure lives in `next.md`; this section is policy. Where they disagree, this document wins.
 
 ## Filing an issue (agents)
 
@@ -225,8 +227,8 @@ Everything an agent files (follow-ups from `/next`, curator suggestions, PR-foll
   started by `/next`); the PR Follow-ups routine owns the `fp=human/` namespace — it lists every
   open item on the weekly Human Action List and closes them on proof (which is why `suggestion`
   is mandatory). Dedup for any filing path must also search `[human]` titles so a held blocker
-  doesn't get a promotable twin. Full rule:
-  [`AGENTS.md`](../../../AGENTS.md#filing-follow-up-work-as-github-issues).
+  doesn't get a promotable twin. Full playbook:
+  [`.claude/skills/file-follow-up/SKILL.md`](../../../.claude/skills/file-follow-up/SKILL.md).
 - **Before rewriting an existing body, read it with `search_issues`** — never `issue_read` or
   `list_issues`, both of which corrupt what they return. See
   [Reading a body you intend to rewrite](#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity)

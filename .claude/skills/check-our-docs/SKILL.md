@@ -20,8 +20,9 @@ description: >
 
 [`AGENTS.md`](../../../AGENTS.md) already states the doctrine:
 
-> **Code is ground truth for behavior; docs are ground truth for intent.** […] Fix the doc in the
-> same PR when it's in scope; file it when it isn't.
+> **`spec/` is the source of truth for intended behavior. Code is the source of truth for current
+> behavior.** Disagreement is a tracked bug — file it; fix the stale side in the same PR when it's
+> in scope.
 
 The repo has the rule and no mechanism for it. This skill is the mechanism.
 

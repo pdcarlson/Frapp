@@ -1,6 +1,6 @@
 # Contributing
 
-This guide defines how we work on Frapp: branch workflow, commit messages, and the spec-first development process.
+This guide defines how we work on Frapp: branch workflow, commit messages, and spec-driven development. **`spec/` is the source of truth for intended behavior; code is the source of truth for current behavior.** Disagreement is a tracked bug — see [`AGENTS.md`](../../AGENTS.md) § Spec vs code.
 
 ## 1. Branching model
 
@@ -139,7 +139,7 @@ In CI, we also run:
 - If you change **data model** — update `spec/architecture/README.md`.
 - If you change **developer workflow** — update the relevant file under **`docs/guides/`** (or another path under `docs/` if it is operator-only).
 
-> **Warning:** Out-of-date documentation is a real bug. When in doubt, fix the docs in the same PR as the implementation change.
+> **Warning:** Out-of-date documentation is a real bug. Spec-vs-code disagreement is a tracked bug, not silent discretion — file it or fix the stale side in the same PR. When in doubt, fix the docs in the same PR as the implementation change.
 
 ### CI enforcement (`scripts/check-docs-impact.mjs`)
 

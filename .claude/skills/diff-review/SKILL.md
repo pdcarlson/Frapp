@@ -96,8 +96,9 @@ failure mode, not a hypothetical.
 - **Doc-sync mandate.** Every non-doc change needs a matching update under `docs/` or `spec/`, in
   that content's canonical home per `docs/internal/DOCUMENTATION_CONVENTIONS.md`. A new stray file
   added just to satisfy the gate is itself a finding.
-- **Tracker rule.** Issues are opened on GitHub with the `triage` label; Linear is retired. Flag
-  any code, script, or workflow that writes to Linear.
+- **Tracker rule.** Issues are opened on GitHub with the `triage` label. Shared boundary:
+  [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
+  Flag any code, script, or workflow that writes to a retired tracker.
 - **Secrets.** No secret values in source, logs, error messages, or committed files. Local Supabase
   demo keys are not secrets; real Stripe or Infisical values are.
 - **Verification honesty.** Flag any comment, doc line, or PR text claiming a check was run that the

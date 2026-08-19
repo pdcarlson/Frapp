@@ -26,7 +26,7 @@ agents satisfy the docs-sync CI gate. Enforced (in part) by [`scripts/check-docs
 | -------------- | -------------- |
 | Product behavior, rules, flows, invariants | `spec/behavior/<topic>.md` (or `<topic>/README.md` if it has 2+ files) |
 | Product features, surfaces, positioning, module catalog | `spec/product/` |
-| Architecture, data model, API patterns, ADRs | `spec/architecture/README.md` |
+| Architecture, data model, API patterns, ADRs | `spec/architecture/README.md` — ADRs are append-only (amend or supersede, never rewrite) |
 | Engineering principles | `spec/engineering.md` |
 | Environments, CI/CD model | `spec/environments/README.md` |
 | UI requirements (design system, web, landing, mobile, brand, assets, resilience) | `spec/ui/` |
