@@ -188,6 +188,7 @@ All skills live under [`.claude/skills/`](.claude/skills/) and are invocable by 
 | [`/pr-followups`](.claude/skills/pr-followups/SKILL.md) | The weekly PR follow-ups harvester's behavior contract ([`ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md)). |
 | [`/diff-review`](.claude/skills/diff-review/SKILL.md) | The pre-push review gate (see the lifecycle above). Mechanics: [`AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md). |
 | [`/handoff`](.claude/skills/handoff/SKILL.md) | Draft a copy-pasteable prompt handing work to a fresh session — when context is filling up, a task is finishing, or a parallel track should run in its own chat. Offer it proactively. |
+| [`/needs-me`](.claude/skills/needs-me/SKILL.md) | Owner-facing: sweep the Human Action List, `[human]` issues, triage, and open PRs for what's waiting on Paul, pick one, and walk it to done. Reads only — it files nothing. |
 
 **Long sessions degrade.** Context fills with dead ends and superseded plans, and a fresh session on
 the same task is often more capable because its read of the codebase is uncontaminated. Treat
