@@ -31,6 +31,9 @@ import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
  * card (s01 / chapter picker). Canvas draws six cells for a shared code; joining
  * is single-use invite tokens, so this is one field that also accepts a pasted
  * URL (`spec/behavior/onboarding.md` wins over the drawing for the data model).
+ *
+ * First-officer creation is a secondary control here (`/create-chapter`) so an
+ * account with zero memberships can still start a chapter without leaving s02.
  */
 export default function JoinChapter() {
   const { tokens } = useFrappTheme();
@@ -55,8 +58,7 @@ export default function JoinChapter() {
           : "",
     );
     const fromLink = extractInviteToken(deepLinkUrl);
-    const next =
-      fromParams ?? fromLink ?? consumeRememberedInviteToken();
+    const next = fromParams ?? fromLink ?? consumeRememberedInviteToken();
     if (next) {
       rememberInviteToken(next);
       setToken((current) => (current.length > 0 ? current : next));
@@ -152,6 +154,17 @@ export default function JoinChapter() {
               Got an invite link? It opens here and fills the invite for you.
             </Text>
           </View>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityHint="Open the first-officer chapter creation wizard."
+            onPress={() => {
+              router.push("/create-chapter");
+            }}
+            style={styles.secondaryButton}
+          >
+            <Text style={styles.secondaryButtonText}>Create a chapter</Text>
+          </Pressable>
 
           <Pressable
             accessibilityRole="button"

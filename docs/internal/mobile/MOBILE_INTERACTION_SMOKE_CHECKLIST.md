@@ -23,7 +23,11 @@ and every row below is expected to fail.
 | Profile (`/(tabs)/profile`) | Sign out | Clears the session + routes to sign-in; relaunching the app does not restore it |
 | Join (`/(auth)/join`) | Join chapter with a valid invite | Redeems `POST /v1/invites/redeem`, selects the chapter, lands on welcome (s03) |
 | Join (`/(auth)/join`) | Expired / already-used invite | Shows the 410 sentence; stays on the screen |
+| Join (`/(auth)/join`) | Create a chapter | Opens `(auth)/create-chapter` |
 | Welcome (`/(auth)/welcome`) | Go to chat / Skip | PATCHes `has_completed_onboarding: true` and replaces into `/(tabs)` |
+| Chapter picker (empty) | Create a chapter | Opens `(auth)/create-chapter` |
+| Create chapter (`/(auth)/create-chapter`) | Directory row / Manual entry → archetype → identity + legal → Create chapter | `POST /v1/chapters/onboard`; invite step stays on this route |
+| Create chapter (`/(auth)/create-chapter`) | Generate invite / Share / Skip for now | Optional `POST /v1/invites`; Finish replaces into `/(tabs)` |
 
 Magic-link rows additionally need `frapp://` allowlisted in Supabase Auth →
 URL Configuration (#765), or the link opens the web app instead.
