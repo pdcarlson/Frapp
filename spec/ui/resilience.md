@@ -494,8 +494,8 @@ useEffect(() => {
 > import `@repo/chat-core` by subpath (`types`, `cache`, `chat-client`,
 > `dispatch`, `realtime-manager`, `topic-registry`, `adapters`). The six #937
 > S3 re-export shims are deleted. `packages/chat-core/src/topic-registry.ts` is
-> imported directly (`@repo/chat-core/topic-registry`); there is no web
-> `lib/realtime/topic-registry.ts`. `apps/web/lib/chat/offline-queue.ts` type-
+> imported directly (`@repo/chat-core/topic-registry`); the #937 web
+> topic-registry re-export shim is gone. `apps/web/lib/chat/offline-queue.ts` type-
 > imports `OutboxStore` from `@repo/chat-core/adapters`, not the package
 > barrel. `apps/web/lib/chat/` retains only the web glue:
 > `use-chat-channel.ts`, `chat-provider.tsx`, `offline-queue.ts`,
