@@ -1,4 +1,11 @@
 import { describe, it, expect } from "vitest";
+
+/**
+ * Moved here from `apps/web/lib/subscription.test.ts` with the Wave 1 item 9
+ * re-home, travelling with the implementation when it became the third shared
+ * client gate in `@repo/validation`. Unchanged otherwise — an unmodified suite
+ * passing against the moved code is the no-regression proof for the move.
+ */
 import {
   SUBSCRIPTION_GRACE_PERIOD_MS,
   isWithinSubscriptionGrace,
