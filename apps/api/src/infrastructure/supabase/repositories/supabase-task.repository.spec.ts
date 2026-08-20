@@ -27,7 +27,7 @@ const seed = () => ({
       assignee_id: USER_SHARED,
       created_by: USER_SHARED,
       due_date: '2026-09-01',
-      status: 'PENDING',
+      status: 'TODO',
       point_reward: 5,
       points_awarded: 0,
       completed_at: null,
@@ -41,7 +41,7 @@ const seed = () => ({
       assignee_id: USER_SHARED,
       created_by: USER_SHARED,
       due_date: '2026-09-01',
-      status: 'PENDING',
+      status: 'TODO',
       point_reward: 5,
       points_awarded: 0,
       completed_at: null,
@@ -76,7 +76,7 @@ describe('SupabaseTaskRepository — tenant scope', () => {
     ).rejects.toMatchObject({ code: 'PGRST116' });
 
     expect(harness.rows('tasks').find((r) => r.id === TASK_A)?.status).toBe(
-      'PENDING',
+      'TODO',
     );
   });
 
