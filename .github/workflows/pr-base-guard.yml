@@ -1,0 +1,73 @@
+name: PR base guard
+
+# The one workflow with NO `on.pull_request.branches` filter, and that is the
+# entire point (docs/internal/ci-cd/AGENT_INFRA.md § CI branch filters).
+#
+# `ci.yml`, `docs.yml`, and `links.yml` all filter on `[main, production]`,
+# which GitHub matches against the PR **base**. A PR whose base is a feature
+# branch therefore runs no checks at all — and GitHub still offers a green
+# squash-merge button and still shows MERGED afterwards, while `origin/main`
+# never moves. #1120 and #1123-#1125 landed that way on 2026-08-20 and were
+# caught only because a human happened to read a PR body.
+#
+# This job is the missing signal: it runs on every PR regardless of base, so a
+# PR that would otherwise have zero checks now has exactly one, and that one
+# turns red the moment the base is not `main` or `production`.
+#
+# Deliberately minimal action surface, matching ci-wake.yml and
+# pr-base-sync.yml: no checkout, no npm, no third-party action. It reads one
+# field off the event payload, so it cannot be taken down by the runner-setup
+# infra failures the other watchdogs exist to absorb.
+
+on:
+  pull_request:
+    # `edited` is load-bearing, not tidiness: retargeting a PR's base fires
+    # `edited` and nothing else. Without it, a PR opened against `main` and
+    # then repointed at a feature branch would keep this job's stale green.
+    types: [opened, reopened, synchronize, edited]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-base-guard-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  base-branch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Reject a base that is not main or production
+        env:
+          # Through env, never inlined into the script: a branch name is
+          # attacker-controlled text on a fork PR.
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          case "$BASE_REF" in
+            main|production)
+              echo "Base branch is '$BASE_REF' — CI, Docs spec sync, and Links all run on this PR."
+              ;;
+            *)
+              echo "::error title=PR targets a feature branch::Base is '$BASE_REF', not 'main' or 'production'."
+              cat <<'MSG'
+
+          This PR targets a feature branch, so CI, Docs spec sync, and Links are
+          ALL skipped on it — their `on.pull_request.branches` filter matches the
+          PR base, and this base is not in `[main, production]`.
+
+          GitHub will still let this PR be squash-merged and will still show it as
+          MERGED. The commits would land only on the base feature branch. They
+          would NOT reach `main`, and no CI would ever have run on them.
+
+          Fix: retarget this PR's base to `main` (Edit -> base branch). If it is a
+          stacked slice, rebase or cherry-pick the slice onto current `origin/main`
+          and open it against `main` instead. There is no sanctioned third base.
+
+          Background: docs/internal/ci-cd/AGENT_INFRA.md
+          § "CI branch filters: never target a feature branch"
+          MSG
+              exit 1
+              ;;
+          esac
