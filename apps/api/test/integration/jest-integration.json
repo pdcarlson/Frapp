@@ -15,7 +15,9 @@
         "tsconfig": {
           "module": "commonjs",
           "moduleResolution": "node",
-          "resolvePackageJsonExports": false
+          "resolvePackageJsonExports": false,
+          "rootDir": ".",
+          "ignoreDeprecations": "6.0"
         }
       }
     ]

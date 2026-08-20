@@ -110,6 +110,11 @@ This applies to the **root** scripts, which go through turbo. A single-workspace
 fails until the packages exist — run the root script once (or `npx turbo run build --filter='./packages/*'`)
 before reaching for the `-w` form.
 
+Type-checking runs TypeScript 7's native `tsc`. The package named `typescript` is the TypeScript
+6 compiler API (`npm:@typescript/typescript6`), which Nest, `typescript-eslint`, and `ts-jest`
+still import. Do not replace that alias with `typescript@7` — see
+[`docs/internal/ci-cd/AGENT_INFRA.md`](../internal/ci-cd/AGENT_INFRA.md) § TypeScript 7.
+
 `npm run lint` is **read-only** in every workspace — it reports violations and never edits your
 files, so it is safe in CI and in read-only audits. To apply ESLint's auto-fixes in `apps/api`, run
 the explicit fix script instead:

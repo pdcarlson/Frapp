@@ -5,7 +5,18 @@
   "testRegex": ".e2e-spec.ts$",
   "setupFiles": ["<rootDir>/setup-e2e.ts"],
   "transform": {
-    "^.+\\.(t|j)s$": ["ts-jest", { "tsconfig": { "module": "commonjs", "moduleResolution": "node", "resolvePackageJsonExports": false } }]
+    "^.+\\.(t|j)s$": [
+      "ts-jest",
+      {
+        "tsconfig": {
+          "module": "commonjs",
+          "moduleResolution": "node",
+          "resolvePackageJsonExports": false,
+          "rootDir": ".",
+          "ignoreDeprecations": "6.0"
+        }
+      }
+    ]
   },
   "moduleNameMapper": {
     "^@repo/org-archetypes$": "<rootDir>/../../../packages/org-archetypes/src/index.ts",

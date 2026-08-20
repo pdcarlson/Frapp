@@ -148,3 +148,14 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "@eslint/js"
         update-types: ["version-update:semver-major"]
+
+      # ── TypeScript 7 dual-install ────────────────────────────────────────
+      # TypeScript 7 is native tsc with no JS compiler API. The `typescript`
+      # package is aliased to `@typescript/typescript6@6.0.2` (Nest CLI,
+      # typescript-eslint peer <6.1.0, ts-jest peer <7). Native 7 lives at
+      # `@typescript/native` (`npm:typescript@7.0.2`) and provides `tsc`.
+      # Flattening `typescript` to 7.x is what failed #1031. Do not ignore
+      # these — 7.x patches on `@typescript/native` and 6.0.x patches on the
+      # alias should still flow — but do not "fix" the alias back to
+      # typescript@7. Canonical write-up:
+      # docs/internal/ci-cd/AGENT_INFRA.md § TypeScript 7.
