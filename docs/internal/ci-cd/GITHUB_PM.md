@@ -215,12 +215,18 @@ Everything an agent files (follow-ups from `/next`, curator suggestions, PR-foll
 - Body: summary · meta block (`Blocked by #N` / `Estimate:` as applicable) · problem/context with
   exact `file:line` refs · acceptance criteria (objectively verifiable checkboxes) · an
   **Agent brief**.
-- **`fp=` dedup markers are the routines' mechanism, per-namespace:** the curator embeds
-  `<!-- agent-suggestion: v1 fp=<area>/<slug> file=<path> -->`; the PR Follow-ups harvester embeds
-  `<!-- agent-suggestion: v1 fp=pr-followup/<slug> pr=#<N> -->`; human-action blockers (filed by
-  *any* session, see below) embed `<!-- agent-suggestion: v1 fp=human/<slug> source=<...> -->`
-  (namespaces partition lifecycle ownership — PR Follow-ups owns both `pr-followup/` and
-  `human/`). Ad-hoc filings (`/next` follow-ups, review deferrals) need no marker.
+- **`fp=` dedup markers are the routines' mechanism, per-namespace.** They are **visible lines,
+  not HTML comments** — every MCP read path deletes HTML comments, which hides a comment-form
+  marker from both the read and the search index (see
+  [Reading a body you intend to rewrite](#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity)).
+  The curator embeds `` `agent-suggestion: v1 fp=<area>/<slug> file=<path>` ``; the PR Follow-ups
+  harvester embeds `` `agent-suggestion: v1 fp=pr-followup/<slug> pr=#<N>` ``; human-action
+  blockers (filed by *any* session, see below) embed
+  `` `agent-suggestion: v1 fp=human/<slug> source=<...>` `` (namespaces partition lifecycle
+  ownership — PR Follow-ups owns both `pr-followup/` and `human/`). The `fp=` grammar is unchanged,
+  so existing dedup queries keep working, and **legacy comment-form markers remain valid** — they
+  are stored, merely unreadable, so a missing marker means "unknown", never "absent". Ad-hoc
+  filings (`/next` follow-ups, review deferrals) need no marker.
 - **Search before filing** (`search_issues`, open **and** closed) — refresh a near-match instead
   of duplicating it. This applies to every filing path, marker or not.
 - **Human-action blockers (owner mandate 2026-08-12):** when an agent has *proven* a step needs
@@ -235,8 +241,9 @@ Everything an agent files (follow-ups from `/next`, curator suggestions, PR-foll
   is mandatory). Dedup for any filing path must also search `[human]` titles so a held blocker
   doesn't get a promotable twin. Full playbook:
   [`.claude/skills/file-follow-up/SKILL.md`](../../../.claude/skills/file-follow-up/SKILL.md).
-- **Before rewriting an existing body, read it with `search_issues`** — never `issue_read` or
-  `list_issues`, both of which corrupt what they return. See
+- **Never source a body rewrite from an MCP read** — `issue_read`, `list_issues` *and*
+  `search_issues` all corrupt what they return (regression confirmed 2026-08-20). Append a comment
+  instead, or author the replacement body yourself. See
   [Reading a body you intend to rewrite](#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity)
   below; it is the canonical statement of that rule and the routines defer to it.
 
@@ -256,83 +263,131 @@ every run, so a hand-edit there is both overwritten and capable of destroying it
 
 ## Reading a body you intend to rewrite (MCP read fidelity)
 
-**Only `search_issues` returns an issue body faithfully. `issue_read` and `list_issues` both
-corrupt it.** Any edit sourced from those two silently destroys content — most visibly the `fp=`
-dedup marker, but code snippets too, which are unrecoverable.
+**No GitHub MCP read path returns an issue body faithfully.** As of **2026-08-20**, `search_issues`
+corrupts bodies the same three ways `issue_read` and `list_issues` always have. The alternative this
+section used to recommend no longer exists.
 
-The damage is **entirely on read**. Stored bodies on GitHub are intact; nothing needs back-filling,
-and a body rewritten from a `search_issues` read round-trips byte-for-byte.
+**The damage is entirely on read.** Stored bodies on GitHub are intact and `issue_write` stores what
+it is given — both re-proven out of band below. **Nothing needs back-filling for loss.** What is
+gone is your ability to *see* a body accurately, which is what makes a rewrite unsafe.
 
-| Read path | HTML comments (`fp=` markers) | HTML/JSX tags | `'` `"` `&` | Safe to re-body from? |
+| Read path | HTML comments (`fp=` markers) | HTML/JSX tags | `'` `"` `&` `>` | Safe to re-body from? |
 | --- | --- | --- | --- | --- |
 | `issue_read method:get` | ❌ stripped | ❌ stripped | ❌ → `&#39;` `&#34;` `&amp;` | **No** |
 | `list_issues fields:["body"]` | ❌ stripped | ❌ stripped | ❌ → `&#39;` `&#34;` `&amp;` | **No** |
-| `search_issues fields:["number","title","body"]` | ✅ intact | ✅ intact | ✅ literal | **Yes** |
+| `search_issues fields:["number","title","body"]` | ❌ stripped | ❌ stripped | ❌ escaped | **No** |
 
-Three independent corruption vectors, found across three separate runs (2026-08-09, -08-10, -08-12)
-because each one masks the others:
+The three vectors, each of which masks the others:
 
-1. **HTML comments are deleted** — the `<!-- agent-suggestion: v1 fp=… -->` marker vanishes, so a
-   rewrite drops it and the curator re-files the issue as net-new on its next run.
+1. **HTML comments are deleted** — an `<!-- agent-suggestion: v1 fp=… -->` marker vanishes, so a
+   rewrite drops it and the curator re-files the issue as net-new. This is why the marker contract
+   is now a **visible line**, not a comment (see below).
 2. **Unrecognised tags are deleted**, including JSX *inside fenced code blocks* — a ` ```tsx ` fence
-   comes back as blank lines. This one is unrecoverable by convention: a dropped marker can be
-   reconstructed from `fp=<area>/<slug>`, a dropped snippet cannot.
-3. **`'`, `"`, `&` are entity-escaped** — inside code fences the quoted JSON, SQL, and shell stop
-   being copy-pasteable.
+   comes back as blank lines. Unrecoverable by convention: a dropped marker can be reconstructed
+   from `fp=<area>/<slug>`, a dropped snippet cannot.
+3. **`'`, `"`, `&`, `>` are entity-escaped** — inside code fences the quoted JSON, SQL, and shell
+   stop being copy-pasteable. This vector alone *is* mechanically reversible (see the escape hatch).
 
 The tag sanitizer is **allowlist-based, not blanket** — `<br>` survives while `<Tabs.Screen …/>`
-does not, which is why the defect reads as intermittent and went three rounds before being pinned.
+does not, which is why the defect reads as intermittent and has now gone two full rounds
+(2026-08-09→-08-12, then a regression caught 2026-08-20) before being pinned each time.
+
+### The operative rule
+
+**Never source a body rewrite from any MCP read.** In practice:
+
+- **Default: don't rewrite — append a comment instead.** `add_issue_comment` is lossless in both
+  directions and is the right tool for anything additive (verification notes, status, findings).
+- **You may rewrite when you authored the replacement text yourself** — a body you composed this
+  run, or a full replacement you wrote from scratch. The hazard is *round-tripping* a body through
+  a lossy read, not writing one.
+- **Escape hatch, narrow:** a rewrite sourced from a read is permissible only when you have
+  confirmed via `WebFetch` of the rendered issue page that the body contains **no HTML comment and
+  no tags anywhere (including inside code fences)**, and you un-escape vector 3 (`&#39;`→`'`,
+  `&#34;`→`"`, `&amp;`→`&`, `&gt;`→`>`) before writing back. If you cannot confirm that, leave a
+  comment instead. Deleted content cannot be un-deleted; only escaping is reversible.
+
+### The `fp=` marker is a visible line, not an HTML comment
+
+Because every read path eats HTML comments, a comment-form marker is invisible to **both** the read
+*and* the search index — one root cause, two symptoms. The contract is therefore a plain visible
+line, which is proven to survive both:
+
+```markdown
+`agent-suggestion: v1 fp=<area>/<slug> file=<primary-path>`
+```
+
+The `fp=` grammar is unchanged, so every existing dedup query keeps working. **Legacy
+`<!-- agent-suggestion … -->` and `<!-- cursor-suggestion … -->` comment markers are still valid
+and still stored** — they are simply unreadable through the MCP, so treat a missing marker as
+"unknown", never as "absent", and never re-file on that basis alone.
+
+### Lookup still works — dedup is broken once, not twice
+
+`search_issues` is a **semantic** matcher, but it resolves `fp=` fingerprints exactly. Verified
+2026-08-20:
+
+| Probe | Result |
+| --- | --- |
+| `fp=docs/search-issues-marker-roundtrip-regression` | 1 hit (#1086) — precise true positive |
+| `fp=drop-theme-brand-aliases` | 1 hit (#917) — precise true positive |
+| `fp=zzz/this-fingerprint-does-not-exist-anywhere-qqxz` | **0 hits** — correct true negative, no semantic noise |
+| `repo:pdcarlson/Frapp is:issue "fp=…"` | 1 hit — qualifier syntax is tolerated, not poisoning |
+
+So the dedup *step* needs no redesign. A historical `"agent-suggestion"` search returning 0 is the
+comment-stripping defect showing up in the index, **not** evidence of a broken matcher — do not
+re-derive that conclusion.
+
+**It is index-backed, so it lags writes.** A just-created or just-edited issue can be missing from
+`search_issues` for a short window. Never treat an empty result on a fresh issue as "no marker";
+allow a retry before concluding a write failed.
 
 ### Re-verifying this (the probe)
 
-Four calls, on two fixture issues chosen because each carries content the others miss. Re-run it if
-the MCP version changes or a read looks suspicious:
+The discriminator that makes this diagnosable: **#697 and #357 quote the corrupted content inside a
+code span/fence**, where GitHub renders `<!-- … -->` and `<Tabs.Screen …/>` as *visible literal
+text*. That lets `WebFetch` witness content HTML-comment invisibility would otherwise hide — which
+is how storage was separated from serialization. Re-run all five steps if the MCP version changes:
 
-| Step | Call | Expected on a faithful read |
-| --- | --- | --- |
-| 1 | `search_issues` `"Ship mobile Backwork browse and upload"`, `fields:["number","title","body"]` | #357's ` ```tsx ` fence holds five `<Tabs.Screen name="chat" ... />` lines; `Frapp's` has a literal `'` |
-| 2 | `issue_read method:get` on **#357** | Contrast: fence is six blank lines, marker absent, `Frapp&#39;s` |
-| 3 | `search_issues` `"Backfill missing fp= dedup markers legacy"` | #697's body contains a literal `<!-- agent-suggestion: v1 fp=docs/backfill-missing-dedup-markers … -->` and nested `<issue id="…">` tags |
-| 4 | `WebFetch` `https://github.com/pdcarlson/Frapp/issues/357` | Out-of-band ground truth — the rendered page must agree with step 1, not step 2 |
+| Step | Call | Faithful-read expectation | Observed 2026-08-20 |
+| --- | --- | --- | --- |
+| 1 | `search_issues` `"Ship mobile Backwork browse and upload"`, `fields:["number","title","body"]` | #357's ` ```tsx ` fence holds five `<Tabs.Screen …/>` lines; `Frapp's` has a literal `'` | ❌ five blank lines; `Frapp&#39;s` |
+| 2 | `search_issues` `"Backfill missing fp= dedup markers legacy"` | #697's body shows a literal `<!-- cursor-suggestion: v1 fp=... -->` inside a code span | ❌ empty code span |
+| 3 | `WebFetch` `https://github.com/pdcarlson/Frapp/issues/357` | Ground truth — must agree with step 1 | ✅ five `<Tabs.Screen …/>` lines **present** → stored, read-stripped |
+| 4 | `WebFetch` `https://github.com/pdcarlson/Frapp/issues/697` | Ground truth — must agree with step 2 | ✅ `<!-- cursor-suggestion: v1 fp=... -->` **present** → stored, read-stripped |
+| 5 | `search_issues` a real `fp=` and a fabricated one | 1 precise hit / 0 hits | ✅ both correct — lookup healthy |
 
-Last verified **2026-08-14** (all three vectors, against the table above). The 2026-08-11 check
-that preceded it covered only vector 1, which is why two subsequent triage runs still refused to
-write: a rule naming just HTML comments gives an agent no cover when the body holds a `tsx` fence.
-State which vectors a re-verification covered, so the next one extends this rather than re-deriving it.
+State which vectors and which paths a re-verification covered, so the next one extends this rather
+than re-deriving it. A check naming only HTML comments is what let the 2026-08-11 round pass while
+a `tsx` fence was still being eaten.
 
-### The write side is faithful too (proven end to end)
+**`api.github.com` is not an available fallback.** The agent proxy returns `403 "GitHub access is
+not enabled for this session"` to both unauthenticated and `GITHUB_PAT`-authenticated requests
+(measured 2026-08-20), so REST cannot be used as a ground-truth channel and `gh` is not installed.
+`WebFetch` on the rendered page is the only out-of-band read. It cannot see HTML comments except
+where they are quoted inside a code span — don't read a `WebFetch` miss as a dropped marker.
 
-Read fidelity alone doesn't license a rewrite — `issue_write` also has to store what it is given.
-It does. Proven 2026-08-14 on a throwaway fixture (#888, closed) carrying all three vectors at
-once, by performing **the exact edit the blocked runs refused**: adding an `### Agent brief`
-section to a body containing an `fp=` marker, a `tsx` fence with JSX, and quotes/ampersands.
+### The write side is faithful
 
-`create → search_issues → edit → issue_write → search_issues` returned the body byte-identical
-apart from the intended addition: marker present, `<Tabs.Screen name="chat" options={{ title:
-'Chat' }} />` intact, `it's a "quoted" phrase with Rationale & impact` intact. `WebFetch` on the
-rendered page agreed on every visible element. So a brief backfill sourced from `search_issues` is
-safe, and criteria of the form *"a marker known to exist survives a simulated refresh"* are met.
+`issue_write` stores what it is given; the 2026-08-14 end-to-end fixture (#888, closed) established
+this and the 2026-08-20 ground-truth reads above re-confirm it — content written long ago is still
+byte-present on GitHub today. **What no longer follows is the old conclusion that "a brief backfill
+sourced from `search_issues` is safe."** It is not, because the read half regressed. Backfills are
+safe only under the escape hatch above, or when you author the whole body.
 
-(HTML comments are invisible in rendered HTML by design, so `WebFetch` cannot confirm the marker —
-`search_issues`, which reads the stored body, is the authority for that one. Don't read a
-`WebFetch` miss as a dropped marker.)
+### Marker-count guard (so the next regression surfaces in one run)
 
-### Using it
+This defect went ~6 days unnoticed because nothing watched it. **Every routine run starts by
+counting marker visibility** and reports the number:
 
-`search_issues` is a **semantic** search, not fetch-by-number. Query it with distinctive words from
-the target's own title, then **confirm the returned `number` is the issue you mean** before using
-the body. If the issue doesn't come back, **skip the body edit and leave a comment instead** —
-never fall back to `issue_read` to source a rewrite. After writing, confirm the marker survived.
+1. `search_issues` for `agent-suggestion` and for a known-good visible fingerprint
+   (`fp=docs/search-issues-marker-roundtrip-regression`, #1086 — this section's own control).
+2. If the known-good fingerprint does **not** resolve to exactly its issue, the read or index path
+   has regressed again: **stop, do no body writes, and report it** rather than filing around it.
+3. Report the count in the run's summary. A drop from the previous run is the signal.
 
-**It is index-backed, so it lags writes.** A just-created or just-edited issue can be missing from
-`search_issues` results for a short window — observed 2026-08-14 on a seconds-old issue, which
-returned `total_count: 0` and then resolved normally moments later. Two consequences: never treat
-an empty result on a fresh issue as "the issue has no marker" (that misreads as the bootstrap
-trigger for the PR Follow-ups tracking issue), and when a write must be read back to confirm, allow
-for a retry rather than concluding the write failed.
-
-This unblocks **#697** (backfill `fp=` markers on legacy Cursor-filed suggestions), which was held
-pending a lossless path, and it is why routines may resume Agent-brief backfills.
+Cheap — two calls — and it fails closed, which is the behavior that made the 2026-08-20 triage run
+correctly refuse every body edit instead of silently corrupting bodies.
 
 ## Ownership boundary (organize broadly, destroy narrowly)
 
