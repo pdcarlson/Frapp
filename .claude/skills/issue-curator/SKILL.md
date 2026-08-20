@@ -69,7 +69,7 @@ per issue, grounded in **current code and `spec/`** (not a hunch):
 | Referenced behavior now **exists / implemented** — the suggestion is **done** | Close as **`completed`** + comment citing the proving file/path (and PR if known) |
 | Code/spec **moved on** so it's **moot / superseded** | Close as **`not_planned`** + comment why it's obsolete |
 | **Duplicate** of another `suggestion` issue | **Close the newer/worse-specified one** as `duplicate` with `duplicate_of` the canonical, comment the link. Never edit the canonical beyond a back-link |
-| Intent **still valid** but file/line refs or context **drifted** | **Refresh the description** (fix paths/snippet/spec quote); keep the `fp=` marker; add an [Agent brief](#agent-brief) if missing. Leave open |
+| Intent **still valid** but file/line refs or context **drifted** | **Comment the correction** (the drifted paths/snippet/spec quote, and an [Agent brief](#agent-brief) if missing) — a comment is lossless, and re-bodying means round-tripping the body through a lossy read. Rewrite the description only when you author the whole replacement, or under the escape hatch; if you do, keep the `fp=` marker. Leave open |
 | **Aging / uncertain** — you **cannot prove** resolved/duplicate/obsolete | Add the **`stale`** label + a short comment ("no longer matches X as of <date>; confirm or close"). **Leave it open** |
 | Still accurate and active | **Skip** — leave untouched |
 
@@ -92,6 +92,10 @@ goes in `add_issue_comment`, which is lossless. Rewrite only when you author the
 yourself, or under the narrow escape hatch (`WebFetch`-confirm the body has no comments and no
 tags, then un-escape entities):
 [`GITHUB_PM.md` → Reading a body you intend to rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity).
+
+Whenever you *do* write a body, **confirm the `fp=` marker is present in what you sent** — it is a
+visible line now, so it reads back, and a missing one makes the next run re-file the issue as
+net-new.
 
 **The `fp=` lookup is unaffected.** `search_issues` resolves fingerprints precisely — a real one
 returns exactly its issue, a fabricated one returns zero — so dedup below needs no redesign. Since

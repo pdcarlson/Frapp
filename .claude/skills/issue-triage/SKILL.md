@@ -96,7 +96,9 @@ each:
    (template in the [curator skill](../issue-curator/SKILL.md#agent-brief); field policy in
    [`GITHUB_PM.md`](../../../docs/internal/ci-cd/GITHUB_PM.md#agent-briefs-depth--model--ultracode));
    fix a brief that is obviously mis-calibrated (a schema-touching change marked `skim`). **Err
-   deeper**: when unsure between two depths, pick the deeper one.
+   deeper**: when unsure between two depths, pick the deeper one. **Deliver it as a comment**, not
+   as a body edit — per the read-fidelity block above, adding a section to an existing body means
+   round-tripping that body through a lossy read. `/next` reads the brief either way.
 4. **Blocked-by.** Add `Blocked by #N` body lines where a dependency is obvious.
 5. **Epic attach.** Attach as a sub-issue (`sub_issue_write`) when it clearly belongs to an open
    `[Epic]`. If none fit, leave it standalone.
@@ -127,7 +129,8 @@ runs walk the whole Backlog):
   suggestion is `P3`/`P4`; `P2` is for genuine high-impact (security, data-loss, broken core
   flows). Correct priority is what protects real work in `/next`.
 - **Agent briefs:** within the same batch, backfill missing briefs on `suggestion`-owned issues
-  and correct mis-calibrated ones — same rules as Pass A step 3.
+  and correct mis-calibrated ones — same rules as Pass A step 3, **including delivering them as
+  comments rather than body edits**.
 - **Epic-attach ONLY clear fits:** attach a suggestion as an epic's sub-issue **only when it
   unambiguously belongs** to that epic's scope. **Leave general, cross-cutting, infra, or
   speculative suggestions standalone — most suggestions stay standalone, and that's correct.**

@@ -380,11 +380,17 @@ safe only under the escape hatch above, or when you author the whole body.
 This defect went ~6 days unnoticed because nothing watched it. **Every routine run starts by
 counting marker visibility** and reports the number:
 
-1. `search_issues` for `agent-suggestion` and for a known-good visible fingerprint
-   (`fp=docs/search-issues-marker-roundtrip-regression`, #1086 — this section's own control).
-2. If the known-good fingerprint does **not** resolve to exactly its issue, the read or index path
-   has regressed again: **stop, do no body writes, and report it** rather than filing around it.
-3. Report the count in the run's summary. A drop from the previous run is the signal.
+1. **The control.** `search_issues` for `fp=docs/search-issues-marker-roundtrip-regression`
+   (#1086 — this section's own control, a visible-line marker). It must return exactly #1086.
+2. **The negative control.** `search_issues` for a fingerprint you know does not exist. It must
+   return zero — a non-zero result means the matcher has gone fuzzy and dedup will start throwing
+   false "already filed" skips.
+3. If either control fails, the read or index path has regressed again: **stop, do no body writes,
+   and report it** rather than filing around it.
+4. **The trend.** Count visible `agent-suggestion` markers and report the number. Note that this
+   count legitimately started near zero on 2026-08-20 — pre-existing markers are comment-form and
+   therefore invisible — so it should *climb* as issues are touched. A **fall** is the signal; a
+   low absolute number is not.
 
 Cheap — two calls — and it fails closed, which is the behavior that made the 2026-08-20 triage run
 correctly refuse every body edit instead of silently corrupting bodies.
