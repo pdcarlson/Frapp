@@ -1,4 +1,4 @@
-import { serverMessageOf, statusOf } from "@/lib/api-error";
+import { serverMessageOf, statusOf } from "@repo/api-sdk";
 
 /**
  * Copy for a failed invite redemption. Status is the reliable split: 410 is
