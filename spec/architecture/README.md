@@ -116,7 +116,7 @@ Frapp/
 | `@repo/color`             | Shared WCAG contrast math. DOM-free so theme packages and the API share one implementation. |
 | `@repo/eslint-config`     | Shared ESLint rules.                                                      |
 | `@repo/hooks`             | Shared React hooks wrapping api-sdk with TanStack Query.                  |
-| `@repo/org-archetypes`    | Greek-org directory / archetype data for onboarding autofill.             |
+| `@repo/org-archetypes`    | Greek-org directory / archetype data for onboarding autofill. Consumed by the API (chapter config seed), web Settings + first-officer wizard, and `apps/mobile` (`package.json` declares the workspace dependency; the wizard reads `ARCHETYPES` directly). |
 | `@repo/theme`             | Tailwind config presets, global CSS. Legacy bone/bronze tokens until web/landing reskin; Signet tokens are specified in `spec/ui/design-system/`. |
 | `@repo/typescript-config` | Shared tsconfig presets.                                                  |
 | `@repo/validation`        | Shared Zod 4 schemas, upload MIME/size allowlists (`image` / `proof` / `document`), field-length caps, plus client gates (`can`, `isModuleEnabled`, `subscriptionWriteState`) used by API + clients. `z.record` requires a key schema and a value schema. |

@@ -20,15 +20,15 @@ import {
   useOnboardChapter,
   type ChapterDirectoryResult,
 } from "@repo/hooks";
+import {
+  ARCHETYPES,
+  getArchetype,
+  type ArchetypeKey,
+} from "@repo/org-archetypes";
 import { SignetTokens } from "@repo/theme/signet";
 import { serverMessageOf } from "@repo/api-sdk";
 import { useAuthSession } from "@/lib/auth-session";
 import { LEGAL_LINKS } from "@/lib/more/legal";
-import {
-  CHAPTER_ARCHETYPES,
-  resolveArchetypeKey,
-  type ChapterArchetypeKey,
-} from "@/lib/onboarding/chapter-wizard/archetypes";
 import {
   EMPTY_IDENTITY,
   identityIsValid,
@@ -50,8 +50,9 @@ import { MONO_FONT_FAMILY, tint, typeRole, useFrappTheme } from "@/lib/theme";
  * Web hosts this as a non-dismissable overlay. Mobile is a deliberate `(auth)`
  * route so the wizard can own its lifecycle after `POST /v1/chapters/onboard`
  * flips membership count to 1 — the gate must not yank the officer off the
- * invite step. `package.json` is frozen, so the archetype catalog is the slim
- * local copy in `lib/onboarding/chapter-wizard/archetypes.ts`.
+ * invite step. Archetype keys, labels, shorts, and councils come from
+ * `@repo/org-archetypes` (declared in `apps/mobile/package.json`); the
+ * module/role seed is still applied server-side from the chosen key.
  */
 
 type WizardStep = "find" | "archetype" | "identity" | "invite";
@@ -86,7 +87,7 @@ export default function CreateChapter() {
   const [rawQuery, setRawQuery] = useState("");
   const debouncedQuery = useDebouncedValue(rawQuery, 250);
   const [directoryId, setDirectoryId] = useState<string | null>(null);
-  const [archetype, setArchetype] = useState<ChapterArchetypeKey>("ifc");
+  const [archetype, setArchetype] = useState<ArchetypeKey>("ifc");
   const [identity, setIdentity] = useState<IdentityForm>(EMPTY_IDENTITY);
   const [acceptedLegal, setAcceptedLegal] = useState(false);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
@@ -101,7 +102,7 @@ export default function CreateChapter() {
 
   function applyDirectoryMatch(row: ChapterDirectoryResult) {
     setDirectoryId(row.id);
-    setArchetype(resolveArchetypeKey(row.archetype));
+    setArchetype(getArchetype(row.archetype ?? "").key);
     setIdentity({
       name: row.org_name ?? "",
       university: row.university ?? "",
@@ -474,8 +475,8 @@ function ArchetypeStep({
   onSelect,
   styles,
 }: {
-  selected: ChapterArchetypeKey;
-  onSelect: (key: ChapterArchetypeKey) => void;
+  selected: ArchetypeKey;
+  onSelect: (key: ArchetypeKey) => void;
   styles: Styles;
 }) {
   return (
@@ -484,7 +485,7 @@ function ArchetypeStep({
         Your archetype sets sensible defaults for modules, roles, and
         vocabulary. You can fine-tune everything later in Settings.
       </Text>
-      {CHAPTER_ARCHETYPES.map((item) => {
+      {Object.values(ARCHETYPES).map((item) => {
         const isActive = item.key === selected;
         return (
           <Pressable
