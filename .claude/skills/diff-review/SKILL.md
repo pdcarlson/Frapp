@@ -96,8 +96,9 @@ failure mode, not a hypothetical.
 - **Doc-sync mandate.** Every non-doc change needs a matching update under `docs/` or `spec/`, in
   that content's canonical home per `docs/internal/DOCUMENTATION_CONVENTIONS.md`. A new stray file
   added just to satisfy the gate is itself a finding.
-- **Tracker rule.** Issues are opened on GitHub with the `triage` label; Linear is retired. Flag
-  any code, script, or workflow that writes to Linear.
+- **Tracker rule.** Issues are opened on GitHub with the `triage` label. Shared boundary:
+  [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
+  Flag any code, script, or workflow that writes to a retired tracker.
 - **Secrets.** No secret values in source, logs, error messages, or committed files. Local Supabase
   demo keys are not secrets; real Stripe or Infisical values are.
 - **Verification honesty.** Flag any comment, doc line, or PR text claiming a check was run that the
@@ -134,8 +135,8 @@ not fake.
 Then act on every finding. Do one of exactly two things per finding:
 
 1. **Fix it** in the working tree, or
-2. **File a self-contained follow-up** as a GitHub issue (`issue_write` create, labels `triage` +
-   a priority + one `area:<x>`) with an explicit reason for deferring.
+2. **File a self-contained follow-up** per [`file-follow-up`](../file-follow-up/SKILL.md) (not a
+   drive-by `issue_write` with only `triage`) with an explicit reason for deferring.
 
 Record the disposition where it is auditable: after acting, re-call `ReportFindings` with `outcome`
 set per finding (`fixed` / `skipped` / `no_change_needed`) — that is what the field is for. A short

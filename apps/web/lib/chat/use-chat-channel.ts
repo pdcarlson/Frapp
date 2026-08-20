@@ -20,14 +20,14 @@ import {
   type ChatMessage,
   type RawChatMessage,
   type RawChatMessageAction,
-} from "./types";
+} from "@repo/chat-core/types";
 import {
   applyReactionInsert,
   emptyCache,
   mergeServerRows,
   selectMessages,
-} from "./cache";
-import { chatRealtime, type ConnectionStatus } from "./realtime-manager";
+} from "@repo/chat-core/cache";
+import { chatRealtime, type ConnectionStatus } from "@repo/chat-core/realtime-manager";
 import {
   actOnCard,
   discardOutboxRow,
@@ -38,8 +38,8 @@ import {
   sendMessage,
   unreact as unreactAction,
   type ToastFn,
-} from "./chat-client";
-import { dispatchSlashCommand, type ResolveMember } from "./dispatch";
+} from "@repo/chat-core/chat-client";
+import { dispatchSlashCommand, type ResolveMember } from "@repo/chat-core/dispatch";
 import type { SlashCommand } from "@repo/chat-integrations";
 import {
   clearDraft,

@@ -1,4 +1,4 @@
-import { renderHook, act } from "@testing-library/react";
+import { renderHook, act, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
@@ -11,7 +11,9 @@ vi.mock("@repo/hooks", () => ({
   useActiveChapterId: () => "chap-1",
 }));
 
-const { usePatchOrgConfig } = await import("./use-org-config");
+const { usePatchOrgConfig, usePendingConfigKeys } = await import(
+  "./use-org-config"
+);
 
 const QUERY_KEY = ["chapter-config", "chap-1"] as const;
 
@@ -75,5 +77,52 @@ describe("usePatchOrgConfig optimistic cache", () => {
       QUERY_KEY,
     );
     expect(cached?.vocabulary.recruitment).toBe("Rush");
+  });
+});
+
+describe("usePendingConfigKeys (#881)", () => {
+  beforeEach(() => {
+    mockPatch.mockReset();
+  });
+
+  it("reports only the in-flight config leaves so sibling controls stay interactive", async () => {
+    const qc = makeClient();
+    let resolvePatch!: (value: { data: unknown; error: unknown }) => void;
+    mockPatch.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePatch = resolve;
+        }),
+    );
+
+    const { result } = renderHook(
+      () => ({
+        patch: usePatchOrgConfig(),
+        pending: usePendingConfigKeys(),
+      }),
+      { wrapper: makeWrapper(qc) },
+    );
+
+    act(() => {
+      void result.current.patch.mutateAsync({
+        enabled_modules: { events: false },
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.pending.has("enabled_modules")).toBe(true);
+      expect(result.current.pending.has("enabled_modules.events")).toBe(true);
+    });
+    expect(result.current.pending.has("enabled_modules.tasks")).toBe(false);
+    expect(result.current.pending.has("dues")).toBe(false);
+    expect(result.current.pending.has("branding")).toBe(false);
+
+    await act(async () => {
+      resolvePatch({ data: {}, error: undefined });
+    });
+
+    await waitFor(() => {
+      expect(result.current.pending.size).toBe(0);
+    });
   });
 });

@@ -2,6 +2,8 @@ Guiding rule: Cursor is a one-project tool for mechanical fan-out only. No .curs
 
 ## Wave 0 — Foundation (Claude Code, supervised, serialized, must fully merge before any fan-out)
 
+**Status: COMPLETE (Aug 19-20).** A landed via PR #1080/#1081, B via PR #1082, C via PR #1083, all merged to main. Before starting Wave 1, read the "Wave 0 close-out" section below — one risk item (repo test coverage) was deliberately deferred, not fixed, and should be addressed first.
+
 ### A. CI/CD gate fixes (do first — these literally block everything else)
 1. Fix the docs-spec-sync gate — it currently has zero exemption besides dependabot and will permanently block every pure-code consolidation PR. Add a label-based or explicit "no doc change needed" override.
 2. Decide the review policy — main requires no human approval and the only review gate (pre-push hook) is Claude-Code-only. Minimum: personally review every PR before merge regardless of origin. Consider temporarily requiring 1 approval on main for the duration of this project.
@@ -28,9 +30,31 @@ Guiding rule: Cursor is a one-project tool for mechanical fan-out only. No .curs
 11. Sweep the 21 dead permission entries in .claude/settings.json, the stale Linear references (keep the legitimate ADR ones), the stale "chunk" references, and the "4 apps, 7 packages" count (actually 13) in README.md/AGENTS.md.
 
 ### C. Code foundation work kept supervised (per the CI/CD audit — not safe to hand to an autonomous agent)
-1. Supabase repository layer: wire the generated Database type properly into the client (TablesInsert/TablesUpdate generics) so the as never casts disappear. Do this by hand, or add real repository tests first — 33 repos have zero tests today, flagged as the single highest-risk item in the whole plan.
-2. Build the chapter-scoped query-key factory shell in packages/hooks — Wave 1 call sites migrate to this.
-3. Fix the real bugs already found regardless of anything else: /polls and /backwork infinite-spinner (disabled-query pattern never resolves), chat-card poll vote missing domain validation (no open/closed or single-choice check), settings-page sharing one isPending across all 4 tabs.
+**DONE via PR #1083 (Aug 20).**
+1. Supabase repository layer: done the type-wiring way, not the test-first way. All 33 repositories plus service-layer writes now use `TablesInsert`/`TablesUpdate` generics with `FrappSupabaseClient` injected at every `SUPABASE_CLIENT` site — zero `as never` casts remain. A compile-only regression check (`no-as-never.spec.ts`, `database.types.insert-check.ts`) guards against them coming back. **This did not add behavioral tests to the repositories** — that half of the original either/or was not taken. See Wave 0D below.
+2. Chapter-scoped query-key factory (`createChapterQueryKeys` in packages/hooks) built and verified against `taskKeys`/`notificationKeys`, `chapterId: string` required. Call-site migration deliberately not done — that's Wave 1 item 5.
+3. All three real bugs fixed and tested: /polls and /backwork disabled-query spinner (now distinguishes paused/loading/denied-empty), chat-card poll vote validation (brought up to polls-page parity, 12+5 tests), settings-page per-tab pending state (was actually already fixed on main pre-PR; this PR added the locking tests).
+
+**Flagged by the PR itself, carried forward as debt:**
+- `Insert`/`Update` types are `Partial` of the row (all keys optional) — enough to kill `as never` and catch a wrong-type value like `{ title: 123 }`, but weaker than what `supabase gen types` would produce (which would make required columns actually required on insert). The PR explicitly says leave `database.types.ts` hand-maintained, don't overwrite it. **Accepted as-is for now** — see "Known accepted debt" below.
+- Query-key factory has a real gotcha for Wave 1: `list(chapterId)` includes an `undefined` filters slot and is **not the same tuple** as `lists(chapterId)` (the invalidation prefix). Wave 1 item 5's prompt must say explicitly: mount queries on `list`, invalidate with `lists`.
+- The canvas document titled "Claude Code prompt: code quality/duplication audit" was referenced by the Phase 3 prompt but was not actually present in `.buildpad/` on main — second time this exact gap has happened. See "Process fix" section below.
+
+## Wave 0D — Supabase repository baseline tests (Claude Code, supervised — do before Wave 1 item 5 touches these files)
+
+**STATUS: DONE (PR #1087, merged).** 24 of 33 repositories now have tenant-scope specs via one shared harness; remaining 9 are recorded backlog with reasons, enforced by a coverage-ledger spec that fails CI if a repo has neither a test nor a logged reason. Harness was adversarially reviewed twice and had 8 real holes fixed (an `.or()` disjunct wrongly counting as scoped, an RPC check comparing argument values instead of argument identity, a write-check that was silently off for exactly the 3 indirectly-scoped tables). Verified by injecting 3 real tenant bugs (dropped filter, wrong column, lost filter in a bulk write) — all 3 caught. No active cross-tenant leak found.
+
+**New findings that need action, not just filing (no GitHub MCP again — same recurring gap):**
+- `RbacService.transferPresidency` doesn't re-check `currentMember.chapter_id` after `findById` — this reads like a real cross-tenant risk on a sensitive action, worth fixing directly rather than just filing. Recommend doing this now, not backlogging.
+- 5 more items (orphan repo methods with no callers, inconsistent `findByCode`/`findByName` argument order that already caused test-writing mistakes, `study_sessions` filtering on `id` alone despite having `chapter_id`, `scheduled-jobs.repository.ts` sitting outside the coverage ledger's directory scan) — listed in PR #1087, need filing as real issues once a session has GitHub MCP.
+
+This is the one piece of Wave 0 that was flagged repeatedly (CI/CD audit, code-quality audit, PR #1083's own "debt spotted") as the single highest-risk item in the whole plan, and it's still open: 33 repositories, 0 have direct behavioral tests, only 7 have any indirect coverage via one cross-tenant e2e spec. TypeScript now catches a wrong *type*, but nothing catches a wrong `.eq()` column or a dropped tenant filter — the actual failure mode that matters (cross-tenant data leakage), and the one thing type-wiring in PR #1083 could not fix.
+
+Don't try to reach full behavioral coverage on all 33 in one pass — that's a multi-week job competing with the beta deadline. Scope it down:
+1. One shared test harness/fixture (seed two chapters, two users, assert repo methods never return or mutate rows outside the caller's `chapterId`) — build this once.
+2. Apply it first to the repositories Wave 1 item 5 will actually touch when it migrates query-key call sites, plus anything security/dues/points-adjacent (members, invites, chapters, points, dues, roles). Treat the rest as backlog, not this pass.
+3. Definition of done per repository: one test proving a tenant-scope filter is present and enforced, not full CRUD coverage.
+4. Do this before or in parallel with Wave 1 item 5, not after — the whole point is to have a safety net in place before hooks call sites (and therefore real user traffic patterns) start changing.
 
 ## Wave 1 — Mechanical fan-out (Cursor cloud agents, parallel, cap 3-5, only after Wave 0 fully merges)
 
@@ -43,7 +67,7 @@ One goal per independent item:
 2. Consolidate 9 MIME/content-type allowlists + field-limits.ts into @repo/validation.
 3. Delete the dead @repo/ui package and its apps/landing dependency entry.
 4. Rewrite the 21 chat files importing shim paths to point at @repo/chat-core directly; delete the 6 shim files.
-5. Migrate call sites to the chapter-scoped query-key factory built in Wave 0; confirm the 18 previously-ungated keys are fixed.
+5. Migrate call sites to the chapter-scoped query-key factory built in Wave 0; confirm the 18 previously-ungated keys are fixed. Gotcha flagged by PR #1083: `list(chapterId)` (includes an `undefined` filters slot) and `lists(chapterId)` (the invalidation prefix) are not the same tuple — mount queries on `list`, invalidate with `lists`. State this explicitly in the goal prompt; don't rely on the agent inferring it from the factory code.
 6. Consolidate the 8 getErrorMessage implementations into the shared apps/web/lib/utils.ts version; promote mobile's api-error.ts into @repo/api-sdk.
 7. Merge the AnalyticsProvider duplicate (web/mobile) into @repo/hooks; delete the stale fork-justifying comment.
 8. Move web's 5 stranded hooks (use-org-config, use-custom-roles, use-custom-fields, use-subscription-write-state, use-chapter-theme) into @repo/hooks; wire mobile's module-gating to the shared one.
@@ -57,6 +81,14 @@ One goal per independent item:
 - Any judgment call on docs tone/structure, or which incidents graduate to durable rules.
 - The Supabase repository work beyond the type-wiring fix (zero test coverage today).
 - Anything touching a visually-tested surface — Playwright baselines are pinned to CI's Chromium; an agent "fixing" a failure by regenerating locally silently corrupts the fixture. If a goal ever nears one, tell it explicitly never to regenerate snapshots.
+
+## Known accepted debt (not blocking, revisit later if ever)
+- `Insert`/`Update` Supabase types are `Partial` of the row rather than matching what `supabase gen types` would generate (which would make required columns actually required, not optional, on insert). PR #1083 made this call deliberately and flagged `database.types.ts` as intentionally hand-maintained, not to be overwritten. Leave it — the practical gap (catching a wrong-type value) is closed; the remaining gap (catching a missing-required-value) is a smaller, cheaper-to-live-with risk. Only worth revisiting if we ever wire up real Supabase CLI type generation for another reason.
+
+## Process fix: Buildpad → `.buildpad/` sync gap (recurring, second time)
+Both PR #1082 and PR #1083's prompts told the agent to read a specific canvas document by title from `.buildpad/` on main. It wasn't there — the canvas has it, but the periodic manual git-sync of the Buildpad canvas into the repo missed it before the prompt ran. This is a process gap, not a one-off: it will keep happening as long as sync is manual and prompts assume it's current.
+
+Fix going forward: before kicking off any Cursor/Claude Code prompt that references a specific canvas document by title, sync `.buildpad/` first and confirm that document is actually present on main (`rg -l "title text"` or `ls`), not just committed to Buildpad at some point. If it's missing, either sync it before running the prompt, or paste the relevant content directly into the prompt instead of pointing at a title. No GitHub MCP was available in the session that hit this, so the debt couldn't be filed as an issue automatically — worth filing #1083's "debt spotted" items as real GitHub issues by hand next session that has MCP access, so they don't just live in a PR description.
 
 ## Cost and process guardrails
 - Set a conservative monthly Cursor spend limit (~$50-75) before Wave 1 starts — Cursor has no per-run cap, only a monthly one plus manual cancellation.

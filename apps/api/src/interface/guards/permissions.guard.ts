@@ -8,7 +8,7 @@ import {
   Type,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
+import { PostgrestError } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import {
   PERMISSIONS_KEY,
@@ -17,6 +17,7 @@ import {
 import { WILDCARD } from '../../domain/constants/permissions';
 import { flattenPermissionSets } from '../../domain/utils/permissions';
 import type { RequestContext } from '../types/request-context.types';
+import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 
 interface RolePermissionRow {
   permissions: string[];
@@ -30,7 +31,7 @@ interface CustomRoleCapabilityRow {
 export class PermissionsGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {

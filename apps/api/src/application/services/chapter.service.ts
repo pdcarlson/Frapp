@@ -28,8 +28,11 @@ import {
   DEFAULT_CHANNELS,
   SystemRoleKeys,
 } from '../../domain/constants/permissions';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+} from '../../infrastructure/supabase/database.types';
 
 const BRANDING_BUCKET = 'branding';
 const ALLOWED_LOGO_CONTENT_TYPES = new Set([
@@ -61,7 +64,7 @@ export class ChapterService {
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
     @Inject(STORAGE_PROVIDER)
     private readonly storageProvider: IStorageProvider,
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
     @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
   ) {}
 
@@ -205,15 +208,16 @@ export class ChapterService {
     // `required_permissions` must be persisted, not defaulted: a ROLE_GATED
     // channel seeded without one is denied by `canAccessChannel`, and before
     // that gate closed it fell open to every chapter member instead (FRA-321).
-    const defaultChannels = DEFAULT_CHANNELS.map((channelDef) => ({
-      chapter_id: chapter.id,
-      name: channelDef.name,
-      type: channelDef.type,
-      is_read_only: channelDef.is_read_only,
-      required_permissions: channelDef.required_permissions
-        ? [...channelDef.required_permissions]
-        : null,
-    }));
+    const defaultChannels: TablesInsert<'chat_channels'>[] =
+      DEFAULT_CHANNELS.map((channelDef) => ({
+        chapter_id: chapter.id,
+        name: channelDef.name,
+        type: channelDef.type,
+        is_read_only: channelDef.is_read_only,
+        required_permissions: channelDef.required_permissions
+          ? [...channelDef.required_permissions]
+          : null,
+      }));
 
     const { error } = await this.supabase
       .from('chat_channels')

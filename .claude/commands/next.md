@@ -6,8 +6,9 @@ argument-hint: "[123 ...] [--plan-only N]"
 Work tracking lives in **GitHub Issues** on `pdcarlson/Frapp` (issue numbers like `#123`), reached
 via the **GitHub MCP** — the canonical hub. New issues are created with the `triage` label; PRs
 close work with `Fixes #N` (native close-on-merge, one line per issue). Policy lives in
-[`GITHUB_PM.md`](../../docs/internal/ci-cd/GITHUB_PM.md); this file is procedure. Where they
-disagree, the doc wins and this file is the bug.
+[`GITHUB_PM.md`](../../docs/internal/ci-cd/GITHUB_PM.md); this file is procedure. Policy does not
+belong here — if a rule is needed on every `/next` run *and* in other skills, put it in
+`GITHUB_PM.md` and link. Where they disagree, the doc wins and this file is the bug.
 
 Claim one **unit** of work — usually a single issue, sometimes a small coherent batch — complete it,
 and leave the tracker cleaner than you found it. **Several sessions run this at once** — the claim
@@ -26,7 +27,7 @@ plan — it lands where a sibling agent or Paul will actually see it. Plan mode 
 veto, where a human is genuinely about to be asked something.
 
 **GitHub Issues is canonical and has no fallback.** If any `mcp__github__*` tracker call fails,
-**stop and say so**. Do not proceed unclaimed, do not substitute Linear (retired) or a scratch
+**stop and say so**. Do not proceed unclaimed, do not substitute another tracker or a scratch
 file, do not defer the writes. No claim means no work. The MCP is the only sanctioned tracker
 path — shell access to `api.github.com` is session-dependent; never fall back to `gh`/REST. Load
 schemas first, e.g.
@@ -166,8 +167,7 @@ pre-composed batch — the batch decision is the orchestrator's, made at claim t
 subagent's. A deterministic
 partition beats optimistic claiming whenever a coordinator exists. **After the fan-out, reconcile
 every issue you claimed** — a subagent that errored, timed out, or returned nothing is
-indistinguishable from one that died, and its claim leaks exactly like FRA-38 did in the Linear
-era. `in-review` with a PR → leave it; `in-progress` with a branch → post `AGENT-HANDOFF` on its
+indistinguishable from one that died, and its claim leaks. `in-review` with a PR → leave it; `in-progress` with a branch → post `AGENT-HANDOFF` on its
 behalf; `in-progress` with nothing → `AGENT-RELEASE` `session-ending` and back to Backlog (remove
 the label). Reconcile even when the workflow fails.
 
@@ -446,7 +446,7 @@ a run finish instead of stopping to ask. Its sub-agents inherit the session mode
 **The *Flagged for review* block is a record, not an ask.** Anything on it that needs Paul to *act
 or decide* — a dashboard toggle, a credential, an unmet acceptance criterion you are shipping
 around — also goes in your **end-of-run report as an explicit question**, per
-[`AGENTS.md`](../../AGENTS.md) § Filing follow-up work. A PR section is read after merge if at all;
+[`.claude/skills/file-follow-up/SKILL.md`](../skills/file-follow-up/SKILL.md). A PR section is read after merge if at all;
 the report is the only thing guaranteed to be read. File the issue *and* ask. And if Paul is
 present and the action is small, just ask on the spot — a 15-second toggle is not worth a
 follow-up issue's lifecycle.
@@ -493,8 +493,7 @@ Move **every member** to **In Review**: swap its `in-progress` label for **`in-r
 `AGENT-RELEASE` — the open PR is the marker now, and the claim comments stay as the record of who
 did the work. **Babysit the PR to merge-ready per [`AGENTS.md`](../../AGENTS.md) § Autonomous PR
 lifecycle**: rely on the wake layers that don't prompt (PR-activity webhook + `CI wake` and
-`PR base sync` comments) — **do not arm a `send_later` self-wake**, which prompts the owner and
-cannot be allowlisted (AGENT_INFRA § "Applied permission allows", the ceiling rule) — triage each
+`PR base sync` comments) — **do not call `send_later`**. Triage each
 red check infra-vs-code before pushing a "fix" (the `CI wake` comment says which — re-run infra,
 patch code), address and resolve review threads. On merge, GitHub closes each `Fixes`-named issue as `completed`; for any member
 where it didn't fire, `issue_write` state closed + `completed` yourself. Remove a closed member's

@@ -24,13 +24,13 @@ description: >
 | API `nest build` (Render / Docker parity) | `npm run build -w apps/api` |
 | API image (optional, needs Docker) | `docker build -f apps/api/Dockerfile .` |
 | API unit tests | `npm run test -w apps/api` |
+| Repository tenant-scope specs only | `npm run test -w apps/api -- --testPathPatterns="repositories/"` |
 | API E2E tests (mocked Supabase, no live services) | `npm run test:e2e -w apps/api` |
 | Web unit tests (Vitest / jsdom) | `npm run test -w apps/web` |
 | Mobile unit tests (Vitest) | `npm run test -w apps/mobile` |
-| Shared validation tests (Vitest) | `npm run test -w @repo/validation` |
 | Shared hooks tests (Vitest / jsdom) | `npm run test -w packages/hooks` |
-| Shared UI tests (Vitest) | `npm run test -w packages/ui` |
-| Single test file | `npm run test -w apps/api -- --testPathPattern=<pattern>` |
+| Shared validation tests (Vitest) | `npm run test -w @repo/validation` |
+| Single test file | `npm run test -w apps/api -- --testPathPatterns=<pattern>` |
 | PGlite migration validator | `npm run check:pglite-migrations` |
 | Contract check | `npm run check:api-contract` |
 | Migration check | `npm run check:migration-safety` |
@@ -106,7 +106,36 @@ const module: TestingModule = await Test.createTestingModule({
 }).compile();
 ```
 
-Repositories and adapters are mocked via `jest.fn()` on each method. No shared mock factories — each spec defines its own fixtures inline.
+Repositories and adapters are mocked via `jest.fn()` on each method. Service specs define their own
+fixtures inline.
+
+**Repository tenant-scope specs are the exception, and they must use the shared harness.**
+`createTenantHarness` (`apps/api/test/helpers/tenant-scope.harness.ts`) seeds two chapters whose rows
+collide on every column except `id` and `chapter_id`, so any predicate but the tenant one matches
+both rows and only a real tenant filter narrows the result:
+
+```typescript
+const harness = createTenantHarness({
+  tables: { roles: [inA({ id: ROLE_A, name: 'Treasurer' }), inB({ id: ROLE_B, name: 'Treasurer' })] },
+});
+const repo = new SupabaseRoleRepository(harness.client);
+
+await harness.expectTenantScoped(CHAPTER_B, () => repo.findByChapter(CHAPTER_B));
+```
+
+`expectTenantScoped` asserts the tenant predicate was applied, no foreign row was written, and no
+foreign row was returned. Hand-rolling a double instead loses the colliding-twin check, which is what
+stops a spec passing for the wrong reason — `tenant-scope-coverage.spec.ts` fails if a repository
+spec does not call `createTenantHarness`. Full treatment, including `tenantColumns`,
+`untenantedTables` and `collisionExempt`: [`docs/guides/testing.md`](../../../docs/guides/testing.md) §4a.
+
+Two rules when touching this area:
+
+- Extending the harness means extending `tenant-scope.harness.spec.ts`, which proves each guard still
+  fails against a deliberately broken repository. A harness that cannot fail is indistinguishable
+  from a clean codebase.
+- Adding a repository under `infrastructure/supabase/repositories/` means adding its tenant-scope
+  spec, or a reason in `TENANT_SCOPE_BACKLOG`. CI fails if you do neither.
 
 For the full treatment — service coverage goals, guard/interceptor test targets, coverage
 expectations, and the E2E scaffolding (the `jest-e2e.json` CommonJS transform quirks and the
@@ -123,11 +152,12 @@ secrets needed. Details and gotchas (env defaults, UUID-valid fixtures) are in
 ### Running a subset
 
 ```bash
-# Single file (via npm workspace flag)
-npm run test -w apps/api -- --testPathPattern="event.service"
+# Single file (via npm workspace flag). Jest 30 uses the plural
+# `--testPathPatterns`; the singular `--testPathPattern` flag is gone.
+npm run test -w apps/api -- --testPathPatterns="event.service"
 
 # Pattern match
-npm run test -w apps/api -- --testPathPattern="billing"
+npm run test -w apps/api -- --testPathPatterns="billing"
 ```
 
 ---
@@ -211,12 +241,12 @@ Before pushing, verify these pass locally (mirrors the CI pipeline):
 6. `npm run test -w apps/web` → `CI / web-tests` (Vitest / jsdom unit suite; the
    Playwright visual tests under `tests/visual/**` are excluded by
    `apps/web/vitest.config.ts` and run separately — see item 12).
-   The same job also runs the two shared packages web consumes:
-   `npm run test -w packages/hooks` and `npm run test -w packages/ui`. Run those
-   too when you touch `packages/**` — the job's path filter covers that glob, so
-   a change there exercises all three suites. Note `web-tests` is **not** a
-   required check (ADR-15), so a red run reports without blocking the merge —
-   check it yourself
+   The same job also runs the shared packages web consumes that nothing else
+   covers: `npm run test -w packages/hooks` and
+   `npm run test -w packages/chat-core`. Run those too when you touch
+   `packages/**` — the job's path filter covers that glob, so a change there
+   exercises those suites. `web-tests` is a required check (ADR-15 2026-08-19
+   amendment).
 7. `npm run test -w @repo/validation` → `CI / lint-and-typecheck` (Vitest; the
    package is consumed by the API, web, and mobile, so a regression here reaches
    all three). Not covered by items 1–2: the root has no `test` script and

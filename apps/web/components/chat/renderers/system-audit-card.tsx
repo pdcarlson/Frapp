@@ -1,7 +1,7 @@
 "use client";
 
 import { ShieldAlert } from "lucide-react";
-import type { ChatMessage } from "@/lib/chat/types";
+import type { ChatMessage } from "@repo/chat-core/types";
 import type { SystemAuditPayload } from "@repo/chat-integrations";
 
 interface SystemAuditCardProps {

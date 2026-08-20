@@ -20,9 +20,10 @@ in order**: **(1) AUDIT** previously harvested items against reality, **(2) HARV
 from recent (and progressively older) PRs, **(3) PUBLISH** the human-action list.
 
 **Check-off is issue state — not this routine's memory.** An item is "done" when its issue is
-closed; the harvested list never lives in a scratch file. **Issues live in GitHub Issues. Linear
-is retired — never write to it.** Read-only on product code; the sole repo-write exception is the
-docs-only self-maintenance PR defined in
+closed; the harvested list never lives in a scratch file. **Ownership, tracker, and the
+product-code ban** —
+[`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
+The sole repo-write exception is the docs-only self-maintenance PR defined in
 [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md#self-maintenance-the-update-themselves-contract).
 
 ## Access
@@ -37,19 +38,18 @@ lives in [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md#tracker-access
 PR reads use `list_pull_requests` and `pull_request_read` (`get`, `get_comments`,
 `get_review_comments`).
 
-## Ownership boundary (hard invariant, shared with the other routines)
+## Ownership boundary (this routine's partition)
 
-Destructive writes (close, re-body, mark-duplicate) only on issues carrying the **`suggestion`**
-label — confirm via `issue_read get_labels` before every such write, else SKIP and log.
-Human-filed and planning issues are strictly read-only. Policy:
-[`GITHUB_PM.md` → Ownership boundary](../../../docs/internal/ci-cd/GITHUB_PM.md#ownership-boundary-organize-broadly-destroy-narrowly).
+Shared rules:
+[`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
+Policy: [`GITHUB_PM.md` → Ownership boundary](../../../docs/internal/ci-cd/GITHUB_PM.md#ownership-boundary-organize-broadly-destroy-narrowly).
 
 Within the `suggestion` set, lifecycle ownership is partitioned by fingerprint namespace: issues
 whose marker starts `fp=pr-followup/` **or `fp=human/`** belong to **this** routine — the daily
 curator skips them (its "provable from code/spec" close bar and instant-`stale` rule don't fit
 human actions), and this routine never touches `suggestion` issues outside its namespaces beyond
 dedup reads. The `fp=human/` namespace holds **human-only blocker issues filed by any agent
-session** per the AGENTS.md hard rule (owner mandate 2026-08-12): title `[human] <action>`,
+session** per [file-follow-up](../file-follow-up/SKILL.md): title `[human] <action>`,
 `suggestion`-labeled, hold-in-triage opener, `source=` instead of `pr=` in the marker. This
 routine audits and closes them exactly like `[pr-followup][human]` items and publishes them on
 the Human Action List.
@@ -199,8 +199,8 @@ judgment-laden drift → file a `suggestion` (`area:docs`) instead.
 
 ## Guardrails
 
-- Never write to Linear (retired); never modify product code; never push feature branches. The
-  docs-only self-maintenance PR is the single exception.
+- Shared ownership boundary:
+  [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
 - Never print secret values; reference secret **names** only (follow `AGENTS.md`).
 - Close only on proof; when unsure, leave open and say why.
 - Don't re-litigate decisions a human already made in the PR thread — if the thread shows Paul

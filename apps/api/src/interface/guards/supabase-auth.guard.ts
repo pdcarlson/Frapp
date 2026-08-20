@@ -5,14 +5,15 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { SupabaseClient, type JwtPayload } from '@supabase/supabase-js';
+import type { JwtPayload } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { RequestContext, getHeaderValue } from '../types/request-context.types';
+import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 
 @Injectable()
 export class SupabaseAuthGuard implements CanActivate {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {

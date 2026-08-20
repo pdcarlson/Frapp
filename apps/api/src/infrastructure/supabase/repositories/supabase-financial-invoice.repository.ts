@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+  TablesUpdate,
+} from '../database.types';
 import { IFinancialInvoiceRepository } from '../../../domain/repositories/financial-invoice.repository.interface';
 import { FinancialInvoice } from '../../../domain/entities/financial-invoice.entity';
 
@@ -68,10 +72,12 @@ export class SupabaseFinancialInvoiceRepository implements IFinancialInvoiceRepo
     return data || [];
   }
 
-  async create(data: Partial<FinancialInvoice>): Promise<FinancialInvoice> {
+  async create(
+    data: TablesInsert<'financial_invoices'>,
+  ): Promise<FinancialInvoice> {
     const { data: created, error } = await this.supabase
       .from('financial_invoices')
-      .insert(data as never)
+      .insert(data)
       .select()
       .single();
     if (error) throw error;
@@ -81,11 +87,11 @@ export class SupabaseFinancialInvoiceRepository implements IFinancialInvoiceRepo
   async update(
     id: string,
     chapterId: string,
-    data: Partial<FinancialInvoice>,
+    data: TablesUpdate<'financial_invoices'>,
   ): Promise<FinancialInvoice> {
     const { data: updated, error } = await this.supabase
       .from('financial_invoices')
-      .update(data as never)
+      .update(data)
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .select()
@@ -118,7 +124,9 @@ export class SupabaseFinancialInvoiceRepository implements IFinancialInvoiceRepo
   ): Promise<FinancialInvoice | null> {
     const { data, error } = await this.supabase
       .from('financial_invoices')
-      .update({ stripe_payment_intent_id: paymentIntentId } as never)
+      .update({
+        stripe_payment_intent_id: paymentIntentId,
+      } satisfies TablesUpdate<'financial_invoices'>)
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .eq('status', 'OPEN')

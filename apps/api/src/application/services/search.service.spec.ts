@@ -2,11 +2,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { SearchService } from './search.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { RbacService } from './rbac.service';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 
 describe('SearchService', () => {
   let service: SearchService;
-  let mockSupabase: jest.Mocked<Pick<SupabaseClient, 'from'>>;
+  let mockSupabase: jest.Mocked<Pick<FrappSupabaseClient, 'from'>>;
   let mockRbacService: { getEffectivePermissions: jest.Mock };
 
   const makeChain = (resolveValue: { data: unknown[]; error: unknown }) => {

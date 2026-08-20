@@ -57,16 +57,16 @@ Signet must not read as another generic Google/Material utility, and must not be
 
 | Layer | Location | Ownership |
 | --- | --- | --- |
-| Shared primitives | `packages/ui` | Cross-app foundational controls only |
+| Web primitives (shadcn/Radix) | `apps/web/components/ui/` | Dashboard foundational controls (Button, Card, Dialog, …) |
 | Theme/tokens | `packages/theme` | Semantic tokens + motion/elevation defaults |
 | Dashboard composites | `apps/web/components/*` | Workflow-specific and shadcn/radix compositions |
-| Landing sections | `apps/landing/app/*` | Marketing-specific content modules |
+| Landing sections | `apps/landing/app/*` | Marketing-specific content modules (inline Tailwind; no shared component package) |
 | Mobile composites | `apps/mobile/components/*` | React Native/Expo-specific UX patterns |
 
 Rules:
 
 1. If a component is workflow-specific, keep it app-local.
-2. If a component is style-agnostic and reusable across web/landing, promote it to `packages/ui`.
+2. If a component is a reusable dashboard primitive, keep it in `apps/web/components/ui/` (shadcn/Radix). Landing uses inline Tailwind; mobile uses React Native composites. Do not recreate a shared web-component workspace for that.
 3. Never duplicate token values in app-local files when semantic tokens exist.
 4. If no existing token role fits, extend or amend the token definitions (`packages/theme/src/tokens.ts`) and adopt the new role consistently — never one-off the value at the call site.
 
@@ -83,6 +83,8 @@ Every async view MUST include all relevant states:
 5. Success confirmation (for mutating actions)
 
 Skeleton, empty, and error render as one visual family — the states panel (4f) in [`reference/signet-design-system.dc.html`](reference/signet-design-system.dc.html) is the model. Web dashboards use the shared state modules in `apps/web/components/shared/async-states.tsx` unless there is a strong reason to diverge.
+
+**A disabled query is not a loading state.** TanStack Query v5 keeps `isPending` true for a query whose `enabled` flag is false — nothing is in flight, and nothing will be (`fetchStatus: "idle"`). Gate spinners on `isLoading` (`isPending && isFetching`) or `fetchStatus === "paused"` (offline, no cached data). Treat `isPending && fetchStatus === "idle"` as the entitlement/empty branch (permission denied, no chapter selected), not as a spinner. Do not use `isPending && !isFetching` for that branch — paused queries share those flags and are not disabled. `/polls` (`polls:view_all`) and `/backwork` (no chapter) are the reference surfaces.
 
 ---
 
@@ -106,7 +108,7 @@ All three gate classes now have a client counterpart — `<Can>` for permissions
 
 **Writes only.** `enforceSubscription` returns early for `GET`/`HEAD`/`OPTIONS`, so a lapsed chapter can still read everything it owns. Mirror the gate on write affordances; never gate a read surface on subscription state.
 
-**The subscription mirror is a predicate, not a wrapper.** `subscriptionWriteState()` (`apps/web/lib/subscription.ts`) reproduces the guard branch-for-branch — all four structured codes (`chapter.subscription.required` / `write_locked` / `invite_blocked` / `canceled`), the 3-day `past_due` grace window, and the `@FreeTier` / `@GraceBlocked` carve-outs — and `useSubscriptionWriteState` feeds it the active chapter. It is shaped as a hook rather than a `<Can>`-style wrapper because §5 rule 4 requires *disabling* the control, which means the caller needs the reason, not just a boolean. Pass the `writeClass` matching the route's decorators; `paid` is the default and the safe one.
+**The subscription mirror is a predicate, not a wrapper.** `subscriptionWriteState()` (`packages/validation/src/subscription.ts`, exported from `@repo/validation` next to `can` and `isModuleEnabled`) reproduces the guard branch-for-branch — all four structured codes (`chapter.subscription.required` / `write_locked` / `invite_blocked` / `canceled`), the 3-day `past_due` grace window, and the `@FreeTier` / `@GraceBlocked` carve-outs — and `useSubscriptionWriteState` feeds it the active chapter. It is shaped as a hook rather than a `<Can>`-style wrapper because §5 rule 4 requires *disabling* the control, which means the caller needs the reason, not just a boolean. Pass the `writeClass` matching the route's decorators; `paid` is the default and the safe one.
 
 **Gate every write on the surface, not just the headline one.** A screen that disables its primary action while leaving sibling writes live is worse than one that gates nothing: it states that writes are blocked and then offers three. The invoice card gates its create trigger, its dialog submit, and its per-row status transitions off one predicate, because all four hit routes behind the same guard.
 

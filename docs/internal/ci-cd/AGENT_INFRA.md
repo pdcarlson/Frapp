@@ -48,7 +48,7 @@ it. Design + policy: [`GITHUB_PM.md`](GITHUB_PM.md).
 
 | Item                | Location / notes                                                                                                                                      |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CI                  | `.github/workflows/ci.yml` — parallel jobs (`lint-and-typecheck` includes `nest build` for `apps/api` + landing and `@repo/validation` unit tests; `api-tests` runs `apps/api` Jest unit + E2E suites (`test` then `test:e2e`); `web-tests` runs `apps/web` Vitest plus the `packages/hooks`, `packages/ui`, and `packages/chat-core` suites; `api-docker-build` runs `apps/api/Dockerfile`) |
+| CI                  | `.github/workflows/ci.yml` — parallel jobs (`lint-and-typecheck` includes `nest build` for `apps/api` + landing and `@repo/validation` unit tests; `api-tests` runs `apps/api` Jest unit + E2E suites (`test` then `test:e2e`); `web-tests` runs `apps/web` Vitest plus the `packages/hooks` and `packages/chat-core` suites; `api-docker-build` runs `apps/api/Dockerfile`) |
 | API deploy          | `.github/workflows/deploy-api.yml` — after CI (`workflow_run`)                                                                                        |
 | Deploy outcome      | `.github/workflows/deploy-api.yml` → terminal `deploy-outcome` job — the only job in that workflow with a write scope (job-scoped `issues: write`; the workflow-level grant stays `contents: read`). Writes a step summary + annotation saying whether the run **deployed** or **declined to deploy**, and upserts one `routine-state` alert issue on failure, closing it on the next successful deploy. Logic in `scripts/ci/deploy-alert.mjs` (tests: `scripts/ci/__tests__/deploy-alert.test.mjs`). **Not** a required check. See "Deploy visibility" below. |
 | Deploy verification | `.github/workflows/verify-deployments.yml` — post-push Render + Vercel state polling                                                                  |
@@ -263,7 +263,7 @@ under Dependabot; the reasoning for each is in
 blocker is `eslint-plugin-react`: 7.37.5 is its newest published release and its peer range still
 ends at `^9.7`. ESLint 10 removed the deprecated `context` methods the plugin calls, so it throws
 `contextOrFilename.getFilename is not a function` out of its React-version detection path and takes
-`@repo/ui`'s lint down with it.
+React workspace lint (`apps/web`, `apps/landing`) down with it.
 
 The two packages move as a set — `@eslint/js@10` peer-requires `eslint@^10`, so bumping either alone
 fails `npm ci` with `ERESOLVE`. That is why both carry the ignore rather than just one.
@@ -290,7 +290,7 @@ Confirming those toggles is tracked as a `[human]` issue (#921).
 | Key               | Value  | Effect                                                                                                                                                                                                                                                           |
 | ----------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `doneMeansMerged` | `true` | The session is not "done" when code is pushed — it's done when the PR is green and review-clean. Drives the babysit-until-merge loop — the six-step contract in AGENTS.md § "Autonomous PR lifecycle": open PR → subscribe → **read the wake comments** (the self-wake step was retired 2026-08-08 — it prompts and cannot be allowlisted; see "Wake coverage") → **triage infra-vs-code** → fix until merge-ready (or a self-contained next step). |
-| `permissions.allow` | `Workflow` + claude-code-remote scheduling/PR-watch rules | Auto-approves launches of the multi-agent **Workflow** tool (bare tool name = allow all invocations), so `/next ultracode` and other opted-in turns orchestrate fan-outs without a permission prompt breaking autonomy. Also lists the claude-code-remote scheduling and PR-watch tools (`send_later`, `create/update/delete/list_triggers`, `subscribe/unsubscribe_pr_activity`). **Only the PR-watch pair actually takes effect** — it also surfaces via the GitHub MCP server, which the harness wildcard covers, and it is step 2 of the AGENTS.md babysit loop. The scheduling entries are **inert** on the cloud surface — observed directly: `send_later` still prompts despite all three spellings (likely mechanism: the ceiling rule in "Applied permission allows"). That is why the babysit loop no longer arms a self-wake. Each tool is listed under **every observed server naming** (`mcp__Claude_Code_Remote__*` and the connector-UUID prefix `mcp__bf7c680d-…__*`; the PR-watch pair additionally surfaces via the GitHub MCP server as `mcp__github__subscribe/unsubscribe_pr_activity`, so it carries a third spelling): permission rules are exact string matches against the surfaced tool name, an unmatched rule is silently inert, and each listed spelling has been seen live in cloud sessions — re-verify if a connector is ever re-registered. The list also carries a **curated GitHub MCP set** for the babysit loop and the tracker — reads, tracker writes (`issue_write`, `sub_issue_write` — GitHub Issues is the work tracker, added 2026-08-08 at the owner's request), plus `actions_run_trigger`, comment/thread, and PR create/update writes. `merge_pull_request`, `enable_pr_auto_merge`, `push_files`, `create_or_update_file`, and `delete_file` stay unlisted — merging and direct repo-content writes are not repo-sanctioned; note the sandbox harness wildcard may auto-approve even these, so the merge gate is standing policy, not an enforced prompt (see "Applied permission allows"). (On cloud sandboxes the harness's own `--allowed-tools` carries the `mcp__github__*` wildcard (agent-observed), and a fresh-sandbox **tracker write specifically** ran prompt-free per the owner's report in #680 — that report covers `issue_write`, not the whole server; prompt behavior elsewhere is unverified — only the owner can observe prompts.) The Linear entries #667/#669 added were removed when Linear was retired — see "Applied permission allows" below and [#680](https://github.com/pdcarlson/Frapp/issues/680). |
+| `permissions.allow` | `Workflow` + GitHub MCP babysit/tracker tools | Auto-approves the multi-agent **Workflow** tool so `/next ultracode` fan-outs don't stall on a prompt. Lists the **GitHub MCP** tools the babysit loop and tracker need (`subscribe`/`unsubscribe_pr_activity`, issue/PR reads and writes, `actions_run_trigger`). The 21 `Claude_Code_Remote` / kebab-case / connector-UUID entries for `send_later` and the trigger family were **removed** — they were inert on the cloud surface (ceiling rule) and were being misread as permission. Do not re-add them to "allowlist" `send_later`; it still prompts. `merge_pull_request`, `enable_pr_auto_merge`, `push_files`, `create_or_update_file`, and `delete_file` stay unlisted — merging and direct repo-content writes are not repo-sanctioned (the harness `mcp__github__*` wildcard may still auto-approve them on cloud; the merge gate is policy — see "Applied permission allows"). Linear allows were removed with the retirement (#680). |
 | `skipWorkflowUsageWarning` | `true` | Marks the multi-agent workflow usage warning as accepted. Per the settings schema (an `@internal` key, read out of the 2.1.220 build — re-verify on newer builds): "Until set, auto permission mode prompts before running a workflow." Set so unattended sessions don't stall on that prompt; a launch that prompts anyway on some build falls back to inline checks (see `/next`). |
 | `hooks` | PreToolUse + SessionStart | Wires [`pre-push-review-gate.sh`](../../../.claude/hooks/pre-push-review-gate.sh) (Bash matcher — the single pre-PR review gate) and [`session-start.sh`](../../../.claude/hooks/session-start.sh) (cloud-sandbox bringup). A second PreToolUse hook (`linear-autoallow.sh`, PR #676) auto-approved Linear's write tools; it was deleted with the Linear retirement — see "Applied permission allows" below. Details: [`AI_CODE_REVIEW_RUNBOOK.md`](AI_CODE_REVIEW_RUNBOOK.md) and the "Claude Code web sandbox" section of [`AGENTS.md`](../../../AGENTS.md). |
 
@@ -311,7 +311,7 @@ watching session was never woken — the PR sat silent for ~2h until a human not
 | PR-activity webhook (`subscribe_pr_activity`) | CI **failure**, comments, reviews | success, cancelled, timed-out, merge-conflict — all silent |
 | `CI wake` watchdog comment (`ci-wake.yml`) | success / failure / cancelled / timed-out (and startup_failure/stale) of CI / Docs spec sync / Links on PR runs — comments are webhook events, so they wake subscribed sessions | outages that kill the watchdog run itself; merge-conflict; review-state changes; `skipped`/`neutral`/`action_required` conclusions and superseded runs (deliberately silent) |
 | `PR base sync` wake comment (`pr-base-sync.yml`) | `main` moving while this PR is conflicted with it, or behind it and not auto-updateable — the comment says which and what to do | base moves while the sweep run itself dies; PRs past the sweep's 20-PR cap this round (logged; the sweep processes least-recently-updated first, so deferred PRs rotate to the front of a later sweep); unknown mergeability (skipped fail-safe, deliberately silent) |
-| Scheduled self-wake (`send_later`, re-armed each wake) | anything — the session re-checks PR state via MCP | **the whole layer — it is unusable unattended on the cloud surface** (it prompts the owner every call, see below); where the tool works, it misses nothing |
+| Retired — do not call `send_later` | — | Entire layer. Unusable unattended on the cloud surface (prompts the owner every call). Do not re-add it to `permissions.allow`. |
 
 Layered conclusion: the watchdog comment is the fast path for CI outcomes, the base-sync comment is
 the fast path for base moves and merge conflicts, and the webhook is the fast path for failures and
@@ -323,14 +323,14 @@ Sandbox shell access to `api.github.com` is session-dependent (the org-connect 4
 2026-08-08; a 200 was observed the same day in another session), so background polling of GitHub
 cannot be relied on — treat GitHub as reachable only through MCP tools, only while awake.
 
-**Do not arm the `send_later` self-wake on the cloud surface, and do not try to fix it from the
-repo.** What is directly observed (2026-08-08): `.claude/settings.json` lists `send_later` under
-three name spellings, and it **still prompted the owner** — so those entries are demonstrably
-inert, whatever the mechanism. The likely mechanism is the ceiling rule
+**Do not call `send_later` on the cloud surface, and do not try to fix it from the
+repo.** Directly observed (2026-08-08): it **still prompted the owner** through every allow-list
+spelling then present. Those 21 entries were later removed so they would stop being misread as
+permission. The likely mechanism is the ceiling rule
 ([below](#applied-permission-allows)) — the harness's `--allowed-tools` snapshot contains no
 `mcp__Claude_Code_Remote__*` entry at all — but that rule is a working hypothesis, and the
 practical conclusion does not depend on it: **more allow entries have already been tried and did
-not work.**
+not work.** Do not re-add them.
 
 Two earlier claims about this tool are corrected: on this surface the call does **not** dead-end in
 `-32003`, and approval is **not** converted to a denial — the owner approved and the call succeeded,
@@ -639,8 +639,8 @@ carries and why:
 > ```
 >
 > **Status: strongly supported, not proven — and deliberately labelled that way.** Supporting
-> evidence (2026-08-08): `mcp__Claude_Code_Remote__send_later` is absent from the snapshot, carries
-> three spellings in the allow list, and still prompts (owner-observed); every `mcp__github__*` call
+> evidence (2026-08-08): `mcp__Claude_Code_Remote__send_later` is absent from the snapshot, was
+> allowlisted under three spellings, and still prompts (owner-observed); every `mcp__github__*` call
 > is covered by the snapshot's wildcard and ran prompt-free across a whole `/next` run
 > (owner-observed). It is also retrodictive — it would explain all three failed Linear attempts
 > (#667, #669, #676), whose common feature was adding allow entries for tools the snapshot omitted.
@@ -683,16 +683,15 @@ carries and why:
 - GitHub MCP writes the babysit loop needs: `actions_run_trigger` (re-run infra-failed CI),
   `add_issue_comment`, `add_reply_to_pull_request_comment`, `resolve_review_thread`,
   `create_pull_request`, `update_pull_request`, `update_pull_request_branch`.
-- **The `Claude_Code_Remote` trigger entries are currently inert — keep them, don't trust them.**
-  The list carries `send_later` / `create_trigger` / `update_trigger` / `delete_trigger` /
-  `list_triggers` / `subscribe_pr_activity` / `unsubscribe_pr_activity` under three name spellings
-  (server name, kebab-case, connector UUID). Those entries do nothing on the cloud surface today —
-  the owner confirmed `send_later` still prompts through all three (2026-08-08); the ceiling rule
-  above is the likely why. They are kept because they cost nothing
-  and would become live if the harness ever adds the family; they are recorded as inert here so
-  their presence is never again misread as evidence the tool is permitted. (`subscribe_pr_activity`
-  is the exception that visibly works — it is served by the harness's own tool surface, not the
-  trigger family.)
+- **The `Claude_Code_Remote` trigger entries were removed from `permissions.allow`.** Twenty-one
+  spellings (`send_later` / `create_trigger` / `update_trigger` / `delete_trigger` /
+  `list_triggers` / `subscribe_pr_activity` / `unsubscribe_pr_activity` × server name, kebab-case,
+  connector UUID) were inert on the cloud surface — `send_later` still prompted through all three
+  (2026-08-08); the ceiling rule above is the likely why. They were misread as permission, so they
+  came out. Do not re-add them to "allowlist" a tool the harness snapshot does not grant.
+  `subscribe_pr_activity` that actually works is the **GitHub MCP** spelling, which stays listed.
+  If the harness ever adds the trigger family to `--allowed-tools`, that is a new ADR, not a
+  reason to restore dead allow-lines.
 - Deliberately **excluded from the project allows**: `merge_pull_request`, `enable_pr_auto_merge`,
   `push_files`, `create_or_update_file`, `delete_file` — merging and direct repo-content writes
   are not repo-sanctioned, per the PAT policy above. **Know the limit of that exclusion:** on
@@ -702,14 +701,10 @@ carries and why:
   these five prompt anywhere (only the owner can observe prompts). Agents must treat the
   exclusion as a standing instruction — never call them without explicit human direction —
   rather than trusting a prompt to stop the call.
-- The claude-code-remote scheduling/PR-watch tools are listed under **three** observed server
-  namings — `mcp__Claude_Code_Remote__*`, `mcp__claude-code-remote__*`, and the connector-UUID
-  prefix. The hyphenated-lowercase spelling was observed live 2026-08-07, when `delete_trigger`
-  prompted despite the other two spellings being allowlisted; add any newly observed spelling the
-  same way rather than replacing existing ones. **But check the ceiling first:** for the trigger
-  family that 2026-08-07 prompt was never a spelling problem — the family is absent from the
-  harness snapshot, so no spelling can help. Adding spellings is only worth doing for a tool the
-  snapshot actually carries.
+- Permission allow-lines are exact string matches. An unmatched spelling is silently inert.
+  Adding a spelling is only worth doing for a tool the harness `--allowed-tools` snapshot
+  actually carries (the ceiling rule). The trigger family is absent from that snapshot, so
+  no spelling of `send_later` belongs in `permissions.allow`.
 
 Also verified: an "always allow" click in one session/surface does not propagate to fresh cloud
 containers — only rules committed to `.claude/settings.json` travel with the repo, and even those
@@ -718,7 +713,7 @@ are bounded by the ceiling rule above.
 The in-session trigger family (`send_later` / `create_trigger` / `list_triggers` …) is a
 **dead end for unattended use on the cloud surface — do not chase it.** Not an account-side
 Routines gate (disproven 2026-08-08: the owner's Routines page was healthy and scheduled Routines
-fired normally) and not a permissions-file miss (three spellings are allowlisted, and the family is
+fired normally) and not a permissions-file miss (three spellings were allowlisted, and the family is
 absent from the harness `--allowed-tools` snapshot — see the ceiling rule above).
 
 **Symptoms differ per tool; record what you actually saw.** `send_later`, 2026-08-08: prompted the

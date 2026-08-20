@@ -16,10 +16,10 @@ split what's oversized — then **(2) DISCOVER** high-value new work and file it
 inbox**. The paired **triage** routine ([`issue-triage`](../issue-triage/SKILL.md)) runs ~1h later
 and prioritizes/promotes what lands in triage — this skill does **not** do triage.
 
-**Issues live in GitHub Issues on `pdcarlson/Frapp`. Linear is retired — never write to it.**
-**Read-only on product code** — never edit application code or open feature PRs. The single,
-narrow exception is the [self-maintenance step](#self-maintenance-update-yourself) at the end of
-the run.
+**Ownership, tracker, and the product-code ban** — read
+[`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines)
+first. The single repo-write exception is the [self-maintenance step](#self-maintenance-update-yourself)
+at the end of the run.
 
 ## Tracker access
 
@@ -33,8 +33,10 @@ session-dependent — never rely on it), no scratch files. The label roster and 
 
 ## Ownership boundary (read first — hard invariant)
 
-This routine owns **only the issues it filed** — those carrying the **`suggestion`** label. It may
-close, re-label, comment on, re-body, mark-duplicate, set priority, or split **only those**.
+Shared rules:
+[`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
+This routine's extra constraint: it owns **only** `suggestion` issues, including organizational
+writes (re-label, split), not just destructive ones.
 
 > **Every other issue — epics, planning items, anything a human filed — is strictly READ-ONLY.**
 > Reference or link to them freely; **never edit, reopen, close, or re-label them.**
@@ -114,9 +116,7 @@ spec, the UX, and the runtime — not just whatever prompted the run.
   **> 40 open `suggestion` issues**, cap at **~2** and spend the run consolidating. (The backlog
   has been well past 40 for a while — treat consolidation as the standing mode until Phase 1 says
   otherwise.) A run that **nets negative** is a great outcome.
-- **No platform cap.** GitHub Issues has no active-issue limit (the Linear Free 250-active
-  accounting is gone). The backlog stays lean **by choice** — the net-new budget above is the only
-  throttle, and it exists for signal quality.
+- **No platform cap.** GitHub Issues has no active-issue limit. The backlog stays lean **by choice** — the net-new budget above is the only throttle, and it exists for signal quality.
 - **No quota, quality gate only.** Filing **zero** is valid and common. Never pad a run.
 - **Fan-out is fine; the budget still binds.** You may parallelize the lenses (e.g. with the
   Workflow tool) to *find* candidates, but every candidate still passes the dedup check, the
@@ -260,10 +260,9 @@ is the **only** repo write this routine is permitted, ever.
 
 ## Guardrails
 
-- **Ownership boundary is absolute** — pre-write label gate before every write; never touch a
-  non-`suggestion` issue.
-- **Never** modify product code, push feature branches, or open feature PRs. **Never** write to
-  Linear — it is retired. The docs-only self-maintenance PR above is the single exception.
+- **Ownership boundary is absolute** — see
+  [`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
+  Pre-write label gate before every write; never touch a non-`suggestion` issue.
 - **Never** print secret values (follow `AGENTS.md`).
 - Ground every close in code/spec you can cite; else mark `stale`. Don't invent unscoped features.
 - If a check can't run (e.g. Supabase down), note it in the issue rather than guessing.

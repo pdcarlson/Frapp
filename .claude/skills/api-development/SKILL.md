@@ -85,6 +85,10 @@ Conventions:
 - Single row: `.maybeSingle()` (returns `null`), not `.single()` (throws)
 - Always `if (error) throw error;`
 - Return `data ?? []` for lists, `data` for singles
+- Write methods take `TablesInsert<'widgets'>` / `TablesUpdate<'widgets'>`
+  and pass them to `.insert()` / `.update()` with no `as never`. Domain
+  interfaces stay `Partial<Widget>`. Do not extract a generic base
+  repository for this.
 
 ### 4. Write the service
 
@@ -279,13 +283,36 @@ Two constraints worth knowing before you fight the compiler:
   permissive typing and *every* query stops being checked, with no error to
   tell you. The mapped type flattens the interface into an anonymous object
   type, which does get the index signature.
+* **`Insert` and `Update` use the same mapped-type trick**
+  (`{ [K in keyof Row]?: Row[K] }`), not `Record<string, unknown>`. The
+  untyped index signature is why every `.insert()` / `.update()` needed
+  `as never`. Repository write methods take `TablesInsert<'table'>` /
+  `TablesUpdate<'table'>` (exported from `database.types.ts`) and pass
+  them to PostgREST with no cast. Domain interfaces stay `Partial<Entity>`
+  — domain must not import `Database`. That shape is assignable to the
+  table Insert/Update types, so the infrastructure method still
+  `implements` the domain interface. `database.types.insert-check.ts` is
+  the compile-only proof: a typed insert is accepted, a mistyped column
+  (`{ title: 123 }`) is rejected. If GenericSchema silently degrades, that
+  `@ts-expect-error` becomes unused and `nest build` fails.
 * **Insert/upsert payload types must be type aliases, not interfaces**, for
   the same reason. `DuesConfig` in `chapter-config.service.ts` carries a
   comment to this effect.
+* **Do not introduce a generic base repository.** Each repository keeps
+  its own query logic. The type wiring is per-call: parameterize the
+  write method, leave the rest of the class alone. Every repository under
+  `infrastructure/supabase/repositories/` follows this; `no-as-never.spec.ts`
+  fails the suite if the file count drifts, a file injects a bare
+  `SupabaseClient`, or an `as never` write cast returns. Direct
+  service-layer writes (chapter config, custom fields/roles, chapter-create
+  channel seed, onboarding, chat-bridge, scheduled-jobs) use the same
+  `TablesInsert` / `TablesUpdate` locals.
 
 Consumers only get the checking if they declare the injected client as
-`FrappSupabaseClient`; annotating it as the bare `SupabaseClient` from
-`@supabase/supabase-js` erases the schema types at the injection site.
+`FrappSupabaseClient` and construct it with `createClient<Database>(...)`.
+Annotating it as the bare `SupabaseClient` from `@supabase/supabase-js`
+erases the schema types at the injection site — that applies to services,
+guards, workers, and health as well as repositories.
 
 ---
 

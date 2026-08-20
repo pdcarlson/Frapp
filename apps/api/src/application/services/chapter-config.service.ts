@@ -1,6 +1,11 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+  TablesUpdate,
+} from '../../infrastructure/supabase/database.types';
+import type { DuesCadence } from '../../domain/entities/chapter-dues-config.entity';
 import {
   buildChapterConfigFromArchetype,
   getArchetype,
@@ -58,13 +63,12 @@ function deepMerge(base: unknown, patch: unknown): unknown {
 /**
  * Dues config returned by `getConfig` and persisted by `patchConfig`.
  *
- * A `type` rather than an `interface` on purpose: PostgREST's insert/upsert
- * payloads are constrained to `Record<string, unknown>`, and only type
- * aliases get an implicit index signature — an interface does not, so an
- * interface here would not be assignable to an upsert.
+ * API-facing subset of `chapter_dues_config` (no timestamps). Writes use
+ * `TablesInsert<'chapter_dues_config'>`; `cadence` is `DuesCadence` so the
+ * upsert is assignable without `as never`.
  */
 export type DuesConfig = {
-  cadence: string;
+  cadence: DuesCadence;
   active_amount_cents: number;
   new_member_amount_cents: number;
   alumni_amount_cents: number;
@@ -225,7 +229,7 @@ export class ChapterConfigService {
 
     // Build the diff for the audit log
     const diff: Record<string, { from: unknown; to: unknown }> = {};
-    const update: Record<string, unknown> = {};
+    const update: TablesUpdate<'chapters'> = {};
 
     if (
       dto.org_archetype !== undefined &&
@@ -261,7 +265,7 @@ export class ChapterConfigService {
     if (dto.enabled_modules !== undefined) {
       const merged = deepMerge(existing.enabled_modules, dto.enabled_modules);
       diff['enabled_modules'] = { from: existing.enabled_modules, to: merged };
-      update['enabled_modules'] = merged;
+      update['enabled_modules'] = merged as Record<string, boolean>;
 
       const before = existing.enabled_modules as Record<string, boolean>;
       const after = merged as Record<string, boolean>;
@@ -272,11 +276,14 @@ export class ChapterConfigService {
     if (dto.vocabulary !== undefined) {
       const merged = deepMerge(existing.vocabulary, dto.vocabulary);
       diff['vocabulary'] = { from: existing.vocabulary, to: merged };
-      update['vocabulary'] = merged;
+      update['vocabulary'] = merged as Record<string, unknown>;
     }
-    let mergedBranding: unknown;
+    let mergedBranding: Record<string, unknown> | undefined;
     if (dto.branding !== undefined) {
-      mergedBranding = deepMerge(existing.branding, dto.branding);
+      mergedBranding = deepMerge(existing.branding, dto.branding) as Record<
+        string,
+        unknown
+      >;
       diff['branding'] = { from: existing.branding, to: mergedBranding };
       update['branding'] = mergedBranding;
 
@@ -302,18 +309,13 @@ export class ChapterConfigService {
     if (dto.beta_config !== undefined) {
       const merged = deepMerge(existing.beta_config, dto.beta_config);
       diff['beta_config'] = { from: existing.beta_config, to: merged };
-      update['beta_config'] = merged;
+      update['beta_config'] = merged as Record<string, unknown>;
     }
 
     // Workflows are persisted to their own table (chapter_workflows). Incoming
     // keys are validated against the chapter catalog (from getConfig) so an
     // unknown key can never write a row, and only changed rows are upserted.
-    const workflowUpserts: Array<{
-      chapter_id: string;
-      key: string;
-      enabled: boolean;
-      threshold: number | null;
-    }> = [];
+    const workflowUpserts: TablesInsert<'chapter_workflows'>[] = [];
     if (dto.workflows !== undefined) {
       const catalog = new Map(
         (
@@ -359,7 +361,7 @@ export class ChapterConfigService {
     // Dues are a singleton row (chapter_dues_config, PK = chapter_id). A partial
     // PATCH merges the provided fields onto the current row; only a real change
     // writes (and audits). Numeric/enum guards are enforced by the DTO.
-    let duesUpsert: (DuesConfig & { chapter_id: string }) | null = null;
+    let duesUpsert: TablesInsert<'chapter_dues_config'> | null = null;
     if (dto.dues !== undefined) {
       const current = existing.dues;
       const next: DuesConfig = { ...current };
@@ -376,7 +378,7 @@ export class ChapterConfigService {
     }
 
     // Service-hours policy is the same singleton merge as dues.
-    let serviceUpsert: (ServiceConfig & { chapter_id: string }) | null = null;
+    let serviceUpsert: TablesInsert<'chapter_service_config'> | null = null;
     if (dto.service !== undefined) {
       const current = existing.service;
       const next: ServiceConfig = { ...current };
@@ -451,18 +453,19 @@ export class ChapterConfigService {
 
     // Write audit log entry. The audit trail is a hard requirement, so a
     // failure here surfaces as an error rather than being silently dropped.
+    const audit: TablesInsert<'chapter_audit_log'> = {
+      chapter_id: chapterId,
+      actor_user_id: actorUserId,
+      action: 'chapter_config_updated',
+      target_type: 'chapter',
+      target_id: chapterId,
+      scope: 'chapter',
+      diff,
+      member_visible: true,
+    };
     const { error: auditError } = await this.supabase
       .from('chapter_audit_log')
-      .insert({
-        chapter_id: chapterId,
-        actor_user_id: actorUserId,
-        action: 'chapter_config_updated',
-        target_type: 'chapter',
-        target_id: chapterId,
-        scope: 'chapter',
-        diff,
-        member_visible: true,
-      });
+      .insert(audit);
 
     if (auditError) {
       this.logger.error('Failed to write chapter audit log', auditError);
@@ -549,9 +552,12 @@ export class ChapterConfigService {
       );
     }
 
+    const patch: TablesUpdate<'chapters'> = {
+      theme_palette: { ...result.palette },
+    };
     const { error } = await this.supabase
       .from('chapters')
-      .update({ theme_palette: result.palette })
+      .update(patch)
       .eq('id', chapterId);
 
     if (error) {

@@ -7,7 +7,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import type { ChatMessage } from "@/lib/chat/types";
+import type { ChatMessage } from "@repo/chat-core/types";
 
 function formatClock(value: string | null | undefined): string {
   if (!value) return "";

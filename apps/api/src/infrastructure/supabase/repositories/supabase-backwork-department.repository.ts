@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+  TablesUpdate,
+} from '../database.types';
 import type { IBackworkDepartmentRepository } from '../../../domain/repositories/backwork.repository.interface';
 import { BackworkDepartment } from '../../../domain/entities/backwork.entity';
 
@@ -35,10 +39,12 @@ export class SupabaseBackworkDepartmentRepository implements IBackworkDepartment
     return data;
   }
 
-  async create(data: Partial<BackworkDepartment>): Promise<BackworkDepartment> {
+  async create(
+    data: TablesInsert<'backwork_departments'>,
+  ): Promise<BackworkDepartment> {
     const { data: created, error } = await this.supabase
       .from('backwork_departments')
-      .insert(data as never)
+      .insert(data)
       .select()
       .single();
     if (error) throw error;
@@ -48,7 +54,7 @@ export class SupabaseBackworkDepartmentRepository implements IBackworkDepartment
   async update(
     id: string,
     chapterId: string,
-    data: Partial<BackworkDepartment>,
+    data: TablesUpdate<'backwork_departments'>,
   ): Promise<BackworkDepartment | null> {
     // `chapter_id` is part of the filter, not just a post-hoc check: the update
     // itself must be unable to touch another chapter's row. `maybeSingle`
@@ -56,7 +62,7 @@ export class SupabaseBackworkDepartmentRepository implements IBackworkDepartment
     // can raise a 404 instead of a PostgREST error.
     const { data: updated, error } = await this.supabase
       .from('backwork_departments')
-      .update(data as never)
+      .update(data)
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .select()

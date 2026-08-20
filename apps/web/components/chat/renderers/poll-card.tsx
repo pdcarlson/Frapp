@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import type { ChatMessage } from "@/lib/chat/types";
+import type { ChatMessage } from "@repo/chat-core/types";
 import {
   POLL_VOTE_ACTION_TYPE,
   type PollOption,

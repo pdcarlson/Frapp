@@ -18,9 +18,10 @@ right (the main job, since `/next` ranks by priority), backfill
 [Agent briefs](../../../docs/internal/ci-cd/GITHUB_PM.md#agent-briefs-depth--model--ultracode),
 and attach issues to epics only when they *clearly* fit.
 
-**Read-only on product code** — this routine only organizes the tracker; it never writes
-application code or opens feature PRs, and it never writes to Linear (retired). The single
-exception is the shared [self-maintenance step](#self-maintenance-update-yourself).
+**Ownership, tracker, and the product-code ban** —
+[`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
+This routine only organizes the tracker. The single exception is the shared
+[self-maintenance step](#self-maintenance-update-yourself).
 
 ## Tracker access
 
@@ -54,10 +55,12 @@ fallback.** The label roster and shared routine config live in
 
 ## Ownership: organize freely, destroy narrowly
 
+Shared rules:
+[`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
 Triage's job is to **organize the whole inbox**, whoever filed it — so setting a **priority
 label**, an **`Estimate:` line**, and **`Blocked by #N`** lines on any `triage` item is in scope.
 But **destructive** actions (close, mark duplicate, re-body) are limited to **`suggestion`-owned**
-issues, exactly as in the curator skill:
+issues:
 
 - **Organize (any `triage` item):** fill an *absent* priority label (never overwrite a human-set
   one), add Blocked-by lines, attach to an epic where it clearly belongs, promote to Backlog
@@ -159,10 +162,9 @@ permitted, ever.
 
 ## Guardrails
 
-- **Organize broadly, destroy narrowly** — close/duplicate/re-body only `suggestion`-owned issues;
+- **Organize broadly, destroy narrowly** — close/duplicate/re-body only `suggestion`-owned issues
+  ([shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines));
   never close a human-filed issue.
-- **Never** modify product code, open feature PRs, or write to Linear (retired) — GitHub Issues
-  only (docs-only self-maintenance PR excepted).
 - **Never** auto-promote a human-filed triage item that reads like a real decision — surface it
   instead.
 - **Never** print secret values.

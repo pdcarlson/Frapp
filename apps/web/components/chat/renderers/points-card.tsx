@@ -1,7 +1,7 @@
 "use client";
 
 import { Coins } from "lucide-react";
-import type { ChatMessage } from "@/lib/chat/types";
+import type { ChatMessage } from "@repo/chat-core/types";
 import type { PointsPayload } from "@repo/chat-integrations";
 
 interface PointsCardProps {
