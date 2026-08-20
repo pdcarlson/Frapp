@@ -75,30 +75,44 @@ comment at the end:
 If the issue or marker is missing, bootstrap: window = PRs updated in the last 8 days,
 `backfill-oldest` = the oldest PR in that window.
 
-> **Read this issue's body with `search_issues`, never `issue_read` or `list_issues`.** Those two
-> corrupt the body they return three ways — HTML comments deleted, unrecognised tags deleted, and
-> `'`/`"`/`&` entity-escaped — so the `pr-followups-state` marker above is invisible in their
-> output even when it is there. Republishing the tracking issue from that text deletes the marker,
-> and because a missing marker is the bootstrap trigger, the next run silently resets to an 8-day
-> window and re-crawls history it had already audited, rather than failing loudly. The
-> `search_issues` lookup named above already returns the raw body intact on all three counts;
-> keep using it, and confirm the marker is present in what you write back. Verified 2026-08-14 —
-> full table and the probe to re-verify:
+> **No MCP read returns this issue's body faithfully — `search_issues` included.** All three read
+> paths corrupt what they return three ways — HTML comments deleted, unrecognised tags deleted
+> (including inside code fences), and `'`/`"`/`&`/`>` entity-escaped — so a `pr-followups-state`
+> marker written as an **HTML comment** is invisible in every one of them, even when it is there.
+> `search_issues` was the lossless exception until it regressed on all three vectors, confirmed
+> 2026-08-20. Republishing the tracking issue from that text deletes the marker, and because a
+> missing marker is the bootstrap trigger, the next run silently resets to an 8-day window and
+> re-crawls history it had already audited, rather than failing loudly. Full table, probe, and the
+> narrow escape hatch:
 > [`GITHUB_PM.md` → Reading a body you intend to rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity).
 >
-> **Reconcile #814's duplicated marker on your next rebuild.** #814 currently carries the state
-> twice — the HTML comment *and* a visible code fence — with a parenthetical declaring the **fence**
-> authoritative. That was the right call when no lossless read was known; it is now stale, and two
-> markers with two authority claims will silently diverge the first time one is updated alone. Both
-> presently agree, so there is nothing to recover: when you next rebuild the body, keep the HTML
-> comment as the single source of truth and drop the parenthetical's authority claim. Keeping the
-> fence as a human-readable copy is fine — just don't leave it declared authoritative.
+> Because this routine **rebuilds the whole tracking-issue body from live issue state every run**,
+> it is on the safe side of that rule: it authors the replacement text rather than round-tripping
+> the old one. Keep it that way — never patch the existing body, and never source the state marker
+> from a read.
+>
+> **#814's state marker: the visible fence is authoritative.** #814 carries the state twice — an
+> HTML comment *and* a visible code fence — with a parenthetical declaring the **fence**
+> authoritative. **That parenthetical is correct and must stay.** (A 2026-08-14 revision of this
+> file told the next run to invert it and make the HTML comment the source of truth; that
+> instruction was written while `search_issues` was believed lossless and would have made the
+> watermark unreadable. It has been reverted.) When you rebuild the body, write both, keep the
+> fence declared authoritative, and read the state from the fence.
 
 ## Job 1 — Audit previously harvested items
 
 Fetch open issues whose description contains the `fp=pr-followup/` **or `fp=human/`** marker
 (`search_issues query:"fp=pr-followup in:body state:open"` **and**
-`search_issues query:"fp=human in:body state:open"`, plus a description check). For each,
+`search_issues query:"fp=human in:body state:open"`, plus a description check).
+
+> **These queries cannot see comment-form markers.** Items filed before 2026-08-20 may carry
+> `fp=` inside an `<!-- … -->` comment, which every MCP read deletes — so it is absent from the
+> search index too and these lookups return nothing for it. **Do not read a miss as "never
+> filed."** Cross-check the `[pr-followup]` / `[human]` **title** prefixes, which are visible and
+> reliable, before concluding an item is unharvested; when you touch such an issue for any other
+> reason, promote its marker to the visible form.
+
+For each,
 decide **from current code, config, CI history, or runtime evidence** — never from the issue's
 age:
 
@@ -165,7 +179,9 @@ For each surviving item:
      (the research) · acceptance criteria · an **Agent brief**
      ([`GITHUB_PM.md` → Agent briefs](../../../docs/internal/ci-cd/GITHUB_PM.md#agent-briefs-depth--model--ultracode))
      for agent-doable items · optionally an `Estimate:` line · ending with
-     `<!-- agent-suggestion: v1 fp=pr-followup/<slug> pr=#<N> -->`.
+     a visible `` `agent-suggestion: v1 fp=pr-followup/<slug> pr=#<N>` `` line (a visible line, not
+     an HTML comment — every MCP read deletes comments, which hides the marker from the search
+     index too).
    - `[human]` items additionally open with `**Human action required — hold in triage; not for
      /next.**` so the triage routine keeps them in the inbox instead of promoting them.
 - **Budget:** at most **~10** new issues per run, highest-impact first; log what was dropped and

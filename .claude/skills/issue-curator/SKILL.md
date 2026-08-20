@@ -79,24 +79,31 @@ makes it so. Otherwise mark **`stale`** and leave it open. When in doubt, do not
 **Label writes replace the whole set.** `issue_write`'s `labels` field overwrites — always send
 the union of the existing labels plus your change, never just the addition.
 
-**Reading a body you intend to rewrite.** **Source it from `search_issues`
-(`fields: ["number","title","body"]`) — never `issue_read` or `list_issues`.** Those two corrupt a
-body three ways on read: HTML comments deleted (your `fp=` marker), unrecognised tags deleted
-(including JSX inside ` ```tsx ` fences), and `'`/`"`/`&` entity-escaped. Refreshing or splitting
-from that text silently destroys content — the marker breaks dedup and causes a re-file, and a
-dropped code snippet is **unrecoverable**, unlike a marker you could rebuild from `fp=<area>/<slug>`.
-`search_issues` returns all three intact (verified 2026-08-14; full table, the probe to re-verify,
-and the reasoning: [`GITHUB_PM.md` → Reading a body you intend to rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity)).
+**Reading a body you intend to rewrite.** **No MCP read path returns a body faithfully — not
+`issue_read`, not `list_issues`, and no longer `search_issues`.** All three corrupt a body three
+ways on read: HTML comments deleted (a legacy `fp=` marker), unrecognised tags deleted (including
+JSX inside ` ```tsx ` fences), and `'`/`"`/`&`/`>` entity-escaped. `search_issues` was the lossless
+exception until it regressed on all three vectors, confirmed 2026-08-20. Refreshing or splitting
+from that text silently destroys content — a dropped code snippet is **unrecoverable**, unlike a
+marker you could rebuild from `fp=<area>/<slug>`.
 
-Because `search_issues` matches *semantically* rather than by number, query it with distinctive
-words from the target's own title and **verify the returned `number` is the issue you mean**; if it
-does not come back, skip the rewrite rather than falling back to `issue_read`. Confirm the marker
-survived in what you sent back.
+**So: prefer a comment over a rewrite.** Anything additive — a note, a finding, an Agent brief —
+goes in `add_issue_comment`, which is lossless. Rewrite only when you author the replacement body
+yourself, or under the narrow escape hatch (`WebFetch`-confirm the body has no comments and no
+tags, then un-escape entities):
+[`GITHUB_PM.md` → Reading a body you intend to rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity).
 
-**Legacy markers.** Older suggestions carry a `<!-- cursor-suggestion: v1 fp=… -->` marker from a
-previous automation platform. It is equivalent to the current `agent-suggestion` marker — dedup
-matches on the `fp=` string, which is unchanged. When you refresh a body for any other reason,
-upgrade the marker prefix to `agent-suggestion`; never rewrite a body *only* to rename the marker.
+**The `fp=` lookup is unaffected.** `search_issues` resolves fingerprints precisely — a real one
+returns exactly its issue, a fabricated one returns zero — so dedup below needs no redesign. Since
+it matches *semantically* rather than by number, verify the returned `number` is the issue you mean.
+Start each run with the marker-count guard in `GITHUB_PM.md`.
+
+**Legacy markers.** Older suggestions carry a `<!-- cursor-suggestion: v1 fp=… -->` or
+`<!-- agent-suggestion: v1 fp=… -->` marker as an **HTML comment**. Those are still stored and still
+valid — they are merely unreadable through the MCP, so **a marker you cannot see is "unknown", never
+"absent"**; never re-file on that basis alone. New filings use the visible-line form below. When you
+refresh a body for any other reason, promote the marker to the visible form; never rewrite a body
+*only* to change the marker.
 
 **Split a genuinely oversized suggestion** into native **sub-issues** (`sub_issue_write` with the
 parent) only when each child is independently executable; each child is a normal suggestion (its
@@ -180,12 +187,16 @@ Every issue this routine **creates**:
 
 **Dedup (idempotent re-runs).** Fingerprint `fp = <area>/<slug(title)>` anchored to
 `file=<primary-path>` (no line number). Before creating: `search_issues` (open **and** closed) for
-the `fp=` string; if found → **skip** (or refresh the open one). Legacy `cursor-suggestion`
-markers use the same `fp=` format and count as matches. **Also search the finding's key terms
+the `fp=` string; if found → **skip** (or refresh the open one). Legacy `cursor-suggestion` and
+comment-form `agent-suggestion` markers use the same `fp=` format and count as matches — but a
+comment-form marker is invisible to the search index as well as to the read, so **absence of a hit
+is weak evidence**; also search the finding's key terms before concluding an issue is net-new. **Also search the finding's key terms
 against `[human]` titles** — if an open `fp=human/` blocker already tracks the same action
 (dashboard toggles and advisor findings are the usual overlap), skip: filing a promotable twin
 would route `/next` into a wall the held issue already documents. Embed the marker:
-`<!-- agent-suggestion: v1 fp=<area>/<slug> file=<path> -->`.
+a visible `` `agent-suggestion: v1 fp=<area>/<slug> file=<path>` `` line — **a visible line, not an
+HTML comment**, because every MCP read deletes comments and that hides the marker from the search
+index too.
 
 ### Agent brief
 
@@ -233,8 +244,11 @@ cross-cutting, architectural, security-sensitive, or subtle-correctness work; `m
 - [ ] <objectively verifiable outcome>
 
 ---
-<!-- agent-suggestion: v1 fp=<area>/<slug> file=<primary-path> -->
-_Filed by the Issue Curator routine. Edit freely; keep the marker for dedup._
+
+`agent-suggestion: v1 fp=<area>/<slug> file=<primary-path>`
+
+_Filed by the Issue Curator routine. Edit freely; keep the `fp=` line above — it is the dedup key,
+and it must stay a visible line (an HTML comment is invisible to every MCP read)._
 ```
 
 Title format: `[suggestion] <imperative title>`. `type:` is body metadata, not a label.
