@@ -276,39 +276,28 @@ outside its declared peer range and hardcodes a React version that has to be han
 real pin. When `eslint-plugin-react` declares v10 support, drop these two ignore entries and the
 upgrade should be close to a no-op. Original PRs: #943 (`eslint`), #944 (`@eslint/js`).
 
-### eslint-plugin-react-hooks 7 compiler rules (partially held)
+### eslint-plugin-react-hooks 7 compiler rules
 
 `eslint-plugin-react-hooks` 7.x `recommended` enables React Compiler rules on top of the two
 classic Rules of Hooks. We do not run `babel-plugin-react-compiler`. Shared presets
 ([`packages/eslint-config/react-hooks.js`](../../../packages/eslint-config/react-hooks.js))
-**opt in** to a named allowlist at upstream severity; anything else in `recommended` stays
-`"off"` so a later plugin bump cannot re-open `--max-warnings 0`.
+**opt in** to a named allowlist at upstream severity; anything else in `recommended`
+(or `recommended-latest` extras such as `void-use-memo`) stays `"off"` so a later
+plugin bump cannot re-open `--max-warnings 0`.
 
-**Enabled at upstream severity** (re-measured 2026-08-20: 0 findings on `apps/web`,
-`apps/mobile`, `apps/landing`, `packages/hooks` after chat, auth, and
-realtime/events cleanups): `rules-of-hooks`, `exhaustive-deps`, `config`,
-`error-boundaries`, `gating`, `globals`, `immutability`, `incompatible-library`,
-`preserve-manual-memoization`, `purity`, `set-state-in-render`,
-`static-components`, `unsupported-syntax`, `use-memo`.
+**Enabled at upstream severity** (re-measured 2026-08-20: 0 remaining findings on
+`apps/web`, `apps/mobile`, `apps/landing`, `packages/hooks` after the area
+cleanups — chat #1122, auth #1123, realtime #1124, forms follow-up): every rule in v7
+`recommended`, including `set-state-in-effect`, `refs`,
+`preserve-manual-memoization`, and `use-memo`. Intentional effect-synced
+drafts (dialog/form reset, invite-token seed, network-banner slide-out) use
+scoped `eslint-disable-next-line` / tight block disables with a reason, never
+a rule-level `"off"`.
 
-**Still held `"off"`** until remaining form/dialog and a couple of
-connection/notification sites land:
-
-| Rule | Severity when on | Remaining findings |
-| --- | --- | --- |
-| `react-hooks/set-state-in-effect` | error | 27 |
-| `react-hooks/refs` | error | 2 |
-
-Realtime/connection follow-up derives web `NetworkProvider` state from
-`navigator.onLine` + health-failure count, writes the realtime invalidate
-callback in `useLayoutEffect` so the subscription is not re-keyed (ping loss),
-and stores the network-banner `Animated.Value` in `useState`. Events list
-ticks via `useNow`. Remaining findings are intentional form/dialog draft
-resets, invite-token seed, banner slide-out mount, and two request-time ref
-getters.
-Adopting a held-off rule is a dedicated cleanup (fix or scoped disable each
-finding, then add the rule to the allowlist), not a Dependabot follow-through.
-#1108 is the bump that introduced the hold.
+#1108 is the bump that introduced the original hold. Adopting a *new*
+compiler rule that appears in a later plugin bump is still a dedicated
+cleanup (fix or scoped disable each finding, then add the rule to the
+allowlist), not a Dependabot follow-through.
 
 ### TypeScript 7 is native `tsc` plus a TypeScript 6 compiler API
 

@@ -179,8 +179,10 @@ export function PayInvoiceDialog({
 
   useEffect(() => {
     if (!open || !invoiceId || !stripePromise) return;
+    /* eslint-disable react-hooks/set-state-in-effect -- new PaymentIntent per open/invoice; a leftover secret would charge the previous invoice */
     setClientSecret(null);
     setOutcome(null);
+    /* eslint-enable react-hooks/set-state-in-effect */
     resetIntent();
     createIntent(invoiceId, {
       onSuccess: (data) => {

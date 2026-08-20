@@ -6,14 +6,12 @@ import pluginReactHooks from "eslint-plugin-react-hooks";
  * New compiler rules that appear in a later plugin bump stay `"off"`
  * until they are added here — a bump must not re-open `--max-warnings 0`.
  *
- * Still held off (findings remain on web/mobile): `set-state-in-effect`,
- * `refs`. Details:
- * `docs/internal/ci-cd/AGENT_INFRA.md`.
+ * `recommended-latest` extras (e.g. `void-use-memo`) are not in `recommended`
+ * and stay off until a dedicated cleanup.
  */
 const ENABLED_REACT_HOOKS_RULES = new Set([
   "react-hooks/rules-of-hooks",
   "react-hooks/exhaustive-deps",
-  // Compiler rules with 0 findings on web, mobile, landing, and packages/hooks.
   "react-hooks/config",
   "react-hooks/error-boundaries",
   "react-hooks/gating",
@@ -22,6 +20,8 @@ const ENABLED_REACT_HOOKS_RULES = new Set([
   "react-hooks/incompatible-library",
   "react-hooks/preserve-manual-memoization",
   "react-hooks/purity",
+  "react-hooks/refs",
+  "react-hooks/set-state-in-effect",
   "react-hooks/set-state-in-render",
   "react-hooks/static-components",
   "react-hooks/unsupported-syntax",
