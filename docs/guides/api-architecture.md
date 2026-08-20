@@ -156,9 +156,14 @@ Example: adding a `polls` module.
 
 We use a global `AllExceptionsFilter` to normalize error responses:
 
-- Shape: `{ statusCode, error, message, requestId }`
+- Shape: `{ statusCode, error, message, requestId }` (`message` is a string, or a string array from the validation pipe)
 - All unhandled exceptions are logged with the request ID.
 - 5xx errors are reported to Sentry with full context.
+
+Clients must not use `instanceof Error` to read this body. `openapi-fetch` throws the parsed JSON, which is a plain object, so `instanceof Error` always misses and the UI shows a generic fallback. Two helpers own that read:
+
+- Web toasts: `getErrorMessage` in `apps/web/lib/utils.ts` — string `message`, otherwise the caller-supplied fallback.
+- Status / structured code / array `message`: `statusOf`, `serverMessageOf`, and `codeOf` from `@repo/api-sdk` (hand-written `src/api-error.ts`; survives OpenAPI codegen, which overwrites only `src/types.ts`).
 
 When adding new modules:
 
