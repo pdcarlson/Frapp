@@ -1,9 +1,9 @@
-import type { CurrentChapterPayload } from "@repo/validation";
-
 /**
  * Client-side mirror of `ChapterGuard.enforceSubscription`
  * (`apps/api/src/interface/guards/chapter.guard.ts`).
  *
+ * **Shared, deliberately.** This lived in `apps/web/lib/subscription.ts` and
+ * moved here as the third client gate alongside `can` and `isModuleEnabled`.
  * `spec/ui/design-system/README.md` §5 requires every server gate to have a
  * client counterpart at the control that starts the flow. Permissions have
  * `<Can>` and modules have `isModuleEnabled`; subscription state had nothing,
@@ -22,14 +22,19 @@ import type { CurrentChapterPayload } from "@repo/validation";
  * and server can be diffed by grepping one string.
  */
 
-export type SubscriptionStatus = CurrentChapterPayload["subscription_status"];
-
-const SUBSCRIPTION_STATUSES: readonly SubscriptionStatus[] = [
+/**
+ * Same four values as `CurrentChapterPayload["subscription_status"]` /
+ * `subscriptionStatusEnum` in `index.ts`. Derived from this tuple so this
+ * file does not import the barrel it is re-exported from.
+ */
+const SUBSCRIPTION_STATUSES = [
   "incomplete",
   "active",
   "past_due",
   "canceled",
-];
+] as const;
+
+export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
 
 /**
  * Narrows an unknown value off the wire to a `SubscriptionStatus`.

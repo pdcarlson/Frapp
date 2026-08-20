@@ -17,3 +17,8 @@ deleted when the project wraps, so nothing durable may live only here.
 - [ ] 7. `AnalyticsProvider` (web/mobile) → `@repo/hooks`
 - [ ] 8. 5 stranded web hooks → `@repo/hooks`; wire mobile's module-gating
 - [ ] 9. `apps/web/lib/subscription.ts` → `@repo/validation`
+  - [ ] File move: `apps/web/lib/subscription.ts` → `packages/validation/src/subscription.ts` (barrel re-export from `src/index.ts`)
+  - [ ] Importer: `apps/web/lib/hooks/use-subscription-write-state.ts`
+  - [ ] Importer: `apps/web/components/shared/subscription-gate.tsx`
+  - [ ] Importer: `apps/web/components/shared/subscription-gate.test.tsx`
+  - [ ] Importer: `apps/web/lib/subscription.test.ts` (moves with the file → `packages/validation/src/subscription.spec.ts`)
