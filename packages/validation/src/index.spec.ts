@@ -13,11 +13,13 @@ import {
 const UUID = "11111111-1111-4111-8111-111111111111";
 
 /**
- * Pins the Zod 4 APIs `@repo/validation` actually uses. Dependabot's 3 → 4
- * bump failed CI solely on `z.record`'s new arity; these cases would have
- * caught that and also trip if `.uuid()`, `.email()`, `.url()`, `.default()`,
- * `.coerce`, `.passthrough()`, or `.strict()` stop matching the v3 shapes
- * callers still send.
+ * Runtime smoke for the Zod 4 APIs `@repo/validation` still uses. The
+ * Dependabot 3 → 4 bump failed CI on `z.record`'s TypeScript arity
+ * (`tsc` on `index.ts`); these cases do not catch that (specs are
+ * excluded from the package `tsc`), but they would trip if `.uuid()`,
+ * `.email()`, `.url()`, `.default()`, `.coerce`, `.passthrough()`,
+ * `.strict()`, or record *runtime* parsing stopped matching the v3
+ * shapes callers still send.
  */
 describe("Zod 4 schema smoke", () => {
   describe("z.record(key, value)", () => {
