@@ -126,10 +126,11 @@ npm run lint:api:fix        # or: npm run lint:fix -w apps/api
 `apps/api` is the only workspace with a fix script; everywhere else, resolve the reported
 violations by hand (or with your editor's ESLint integration).
 
-Shared React lint (`@repo/eslint-config/next-js` and `react-internal`) enforces the two core
-Rules of Hooks (`react-hooks/rules-of-hooks`, `react-hooks/exhaustive-deps`).
-`eslint-plugin-react-hooks` v7's `recommended` preset also enables React Compiler rules; those
-stay off until we adopt the compiler — see
+Shared React lint (`@repo/eslint-config/next-js` and `react-internal`) takes an **allowlist**
+from `eslint-plugin-react-hooks` v7 `recommended` (core Rules of Hooks plus the compiler rules
+that currently have 0 findings). Remaining compiler rules (`set-state-in-effect`, `refs`,
+`purity`, `preserve-manual-memoization`, `static-components`, `use-memo`) stay off until their
+call sites are cleaned up — see
 [`docs/internal/ci-cd/AGENT_INFRA.md`](../internal/ci-cd/AGENT_INFRA.md) § eslint-plugin-react-hooks 7.
 
 Keep `--fix` out of any `lint` script. Under `apps/api`'s config `prettier/prettier` is an

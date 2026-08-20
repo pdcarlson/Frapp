@@ -276,22 +276,34 @@ outside its declared peer range and hardcodes a React version that has to be han
 real pin. When `eslint-plugin-react` declares v10 support, drop these two ignore entries and the
 upgrade should be close to a no-op. Original PRs: #943 (`eslint`), #944 (`@eslint/js`).
 
-### eslint-plugin-react-hooks 7 compiler rules are held
+### eslint-plugin-react-hooks 7 compiler rules (partially held)
 
-`eslint-plugin-react-hooks` 7.x `recommended` enables React Compiler rules
-(`set-state-in-effect`, `refs`, `purity`, `preserve-manual-memoization`, …) on top of the two
-classic Rules of Hooks. We do not run `babel-plugin-react-compiler`, and those rules currently
-fail `--max-warnings 0`: 37 findings in `apps/web` and 26 in `apps/mobile` when measured on
-#1108, mostly intentional render-time ref updates and effect-synced state in auth, chat,
-realtime, and React Native animation.
+`eslint-plugin-react-hooks` 7.x `recommended` enables React Compiler rules on top of the two
+classic Rules of Hooks. We do not run `babel-plugin-react-compiler`. Shared presets
+([`packages/eslint-config/react-hooks.js`](../../../packages/eslint-config/react-hooks.js))
+**opt in** to a named allowlist at upstream severity; anything else in `recommended` stays
+`"off"` so a later plugin bump cannot re-open `--max-warnings 0`.
 
-The shared presets therefore take only `react-hooks/rules-of-hooks` and
-`react-hooks/exhaustive-deps` from the v7 flat `recommended` config and turn the rest off
-([`packages/eslint-config/react-hooks.js`](../../../packages/eslint-config/react-hooks.js)). A
-later plugin bump cannot re-open the lint gate by adding a new compiler rule to `recommended`.
-Adopting the compiler subset is a dedicated cleanup (rewrite those call sites, then delete the
-filter), not a Dependabot follow-through. The package bump itself is still wanted: 7.x adds
-ESLint v10 support and compiler-lint bugfixes we can take when the cleanup lands.
+**Enabled at upstream severity** (re-measured 2026-08-20: 0 findings on `apps/web`,
+`apps/mobile`, `apps/landing`, `packages/hooks`): `rules-of-hooks`, `exhaustive-deps`,
+`config`, `error-boundaries`, `gating`, `globals`, `immutability`, `incompatible-library`,
+`set-state-in-render`, `unsupported-syntax`.
+
+**Still held `"off"`** until area cleanups land (63 findings: 37 web, 26 mobile):
+
+| Rule | Severity when on | Findings |
+| --- | --- | --- |
+| `react-hooks/set-state-in-effect` | error | 42 |
+| `react-hooks/refs` | error | 14 |
+| `react-hooks/purity` | error | 3 |
+| `react-hooks/preserve-manual-memoization` | error | 2 |
+| `react-hooks/static-components` | error | 1 |
+| `react-hooks/use-memo` | error | 1 |
+
+Findings concentrate in auth, chat, realtime/connection, notifications, and form/dialog
+reset effects — not React Native animation (none remaining). Adopting a held-off rule is a
+dedicated cleanup (fix or scoped disable each finding, then add the rule to the allowlist),
+not a Dependabot follow-through. #1108 is the bump that introduced the hold.
 
 ### TypeScript 7 is native `tsc` plus a TypeScript 6 compiler API
 
