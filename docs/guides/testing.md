@@ -202,7 +202,7 @@ guarantee stays with `test/cross-tenant-isolation.e2e-spec.ts`.
 
 ## 5. CI parity (lint job)
 
-The **`lint-and-typecheck`** job in the **GitHub Actions** workflow `.github/workflows/ci.yml` runs ESLint, TypeScript, the `apps/landing` and `@repo/validation` unit suites, and **`npm run check:brand-assets`**.
+The **`lint-and-typecheck`** job in the **GitHub Actions** workflow `.github/workflows/ci.yml` runs ESLint, TypeScript, the `apps/landing` and `@repo/validation` unit suites, and **`npm run check:brand-assets`**. The validation suite includes a Zod 4 runtime smoke (`packages/validation/src/index.spec.ts`) for record maps plus the string-check, coerce, passthrough, and strict APIs the package still uses. The `z.record(key, value)` TypeScript arity is enforced by `tsc` on `packages/validation/src/index.ts`, not by that spec (specs are excluded from the package `tsc`).
 
 The docs/spec sync gate runs **elsewhere** — the `docs-spec-sync` job in `.github/workflows/docs.yml` is its only home, so a non-doc change that skipped its `docs/` or `spec/` update fails *there*, not here. `lint-and-typecheck` used to run a second copy; it was removed so the gate has one home and one exemption list. Contract, exemptions, and the `no-doc-change-needed` waiver: [`docs/internal/ci-cd/DOCS_CI.md`](../internal/ci-cd/DOCS_CI.md).
 
