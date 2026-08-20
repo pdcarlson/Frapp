@@ -553,9 +553,7 @@ export class ChapterConfigService {
     }
 
     const patch: TablesUpdate<'chapters'> = {
-      // jsonb column is `Record<string, unknown>` on the chapter row;
-      // ChapterPalette is a fixed-key interface with no index signature.
-      theme_palette: { ...result.palette } as Record<string, unknown>,
+      theme_palette: { ...result.palette },
     };
     const { error } = await this.supabase
       .from('chapters')

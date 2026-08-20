@@ -396,7 +396,7 @@ export class ReportService {
             p_since: since ? since.toISOString() : null,
           })
           .order('member_name', { ascending: true })
-          .range(from, to) as PromiseLike<QueryResult<PointsReportRpcRow>>,
+          .range(from, to),
     );
 
     return {
@@ -562,7 +562,7 @@ export class ReportService {
         return query
           .order('date', { ascending: false })
           .order('id', { ascending: true })
-          .range(from, to) as PromiseLike<QueryResult<ServiceEntryRow>>;
+          .range(from, to);
       },
     );
     if (!entries.length) return { rows: [], truncated, limit: REPORT_MAX_ROWS };
