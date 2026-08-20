@@ -74,7 +74,7 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 | Check name           | What it validates                                                                               |
 | -------------------- | ----------------------------------------------------------------------------------------------- |
 | `packages-build`     | Shared packages compile                                                                         |
-| `lint-and-typecheck` | ESLint + TypeScript (all workspaces); `npm run build -w apps/api` (`nest build`, Render parity); landing and `@repo/validation` unit tests |
+| `lint-and-typecheck` | ESLint + TypeScript (all workspaces); `npm run build -w apps/api` (`nest build`, Render parity); landing plus `@repo/validation`, `@repo/color`, `@repo/chapter-theme`, and `@repo/api-sdk` unit tests |
 | `api-docker-build`   | `docker build -f apps/api/Dockerfile .` (API image compile path)                                |
 | `api-tests`          | API Jest unit tests                                                                             |
 | `api-contract-check` | openapi.json + api-sdk freshness                                                                |

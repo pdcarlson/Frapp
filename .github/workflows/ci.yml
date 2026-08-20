@@ -147,6 +147,13 @@ jobs:
       - name: Chapter theme package tests
         run: npm run test -w @repo/chapter-theme
 
+      # Hand-written `statusOf` / `serverMessageOf` / `codeOf` live in
+      # `@repo/api-sdk` (consumed by API + web + mobile). Same trap as
+      # validation: an unrun suite protects nothing. The package uses the
+      # hoisted workspace vitest; this step does not add a lockfile entry.
+      - name: Shared api-sdk package tests
+        run: npm run test -w @repo/api-sdk
+
       - name: Brand assets (icon sync)
         run: npm run check:brand-assets
 

@@ -156,7 +156,7 @@ CI runs as domain-specific parallel jobs on every PR to `main` or `production`. 
 | Job                  | What it validates                                                                                    | Blocker?   |
 | -------------------- | ---------------------------------------------------------------------------------------------------- | ---------- |
 | `packages-build`     | Shared packages compile                                                                              | Yes        |
-| `lint-and-typecheck` | ESLint + TypeScript across all workspaces; `npm run build -w apps/api` (`nest build`, Render parity); landing and `@repo/validation` unit tests | Yes        |
+| `lint-and-typecheck` | ESLint + TypeScript across all workspaces; `npm run build -w apps/api` (`nest build`, Render parity); landing plus `@repo/validation`, `@repo/color`, `@repo/chapter-theme`, and `@repo/api-sdk` unit tests | Yes        |
 | `api-docker-build`   | `docker build -f apps/api/Dockerfile .` (API image compile path)                                     | Yes        |
 | `api-tests`          | API Jest unit tests (377+ tests)                                                                     | Yes (hard) |
 | `api-contract-check` | `openapi.json` and `packages/api-sdk/src/types.ts` freshness                                                      | Yes        |

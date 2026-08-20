@@ -21,7 +21,7 @@ Implementation homes (do not fork a third):
 | Realtime + polling fallback | `packages/chat-core/src/realtime-manager.ts` |
 | Mobile connection banner / write gating | `apps/mobile/lib/connection/` |
 | Chat outbox network port | `@repo/chat-core` `NetworkState` (more conservative than the banner) |
-| Web dashboard ping subscriptions | `apps/web/lib/realtime/` — must use the same release |
+| Web dashboard ping subscriptions | `apps/web/lib/realtime/supabase-realtime.ts` — imports `@repo/chat-core/topic-registry` (the #937 web shim is gone) |
 
 ## 1. Reopening a topic requires a completed teardown
 

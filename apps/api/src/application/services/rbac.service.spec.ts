@@ -1030,7 +1030,7 @@ describe('RbacService', () => {
 
     it('refuses to set system_key when creating a custom role', async () => {
       mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
-      mockRoleRepo.create.mockResolvedValue({} as Role);
+      mockRoleRepo.create.mockResolvedValue({});
 
       await service.create('ch-1', {
         name: 'Impostor',
