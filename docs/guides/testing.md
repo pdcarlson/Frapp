@@ -269,10 +269,13 @@ suite needs. TypeScript 6/7 also require an explicit `rootDir` (they no longer i
 files in the program); without `"rootDir": "."` on the overlay, compiling a single spec fails with
 `TS5011`. The unit suite (`package.json` `jest` config) doesn't need the CommonJS overlay because
 the specs that touch these two packages `jest.mock()` them directly (they're pure helper functions)
-rather than transforming their ESM `dist`, but it does set `"rootDir": "."` for the same `TS5011`
-reason. The same CommonJS overlay (`module` / `moduleResolution` / `resolvePackageJsonExports` /
-`rootDir` / `ignoreDeprecations`) also lives on `test/integration/jest-integration.json` and
-`test/ai-evals/jest-ai-evals.json` — keep the three in lockstep when those keys change.
+rather than transforming their ESM `dist`, but it still sets `"rootDir": "."` (same `TS5011`) and
+`"ignoreDeprecations": "6.0"` so the four ts-jest configs share those two keys. Unit tests do
+not set `moduleResolution: "node"`, so they do not currently hit `TS5107`; the CommonJS suites
+do, and that is why they need `ignoreDeprecations`. The same CommonJS overlay (`module` /
+`moduleResolution` / `resolvePackageJsonExports` / `rootDir` / `ignoreDeprecations`) also lives
+on `test/integration/jest-integration.json` and `test/ai-evals/jest-ai-evals.json` — keep the
+three in lockstep when those keys change. Do not copy the CommonJS keys onto the unit overlay.
 
 `expo-server-sdk` 6+ is the same shape of problem from a published package rather than a workspace:
 it is `"type": "module"` (7.x also declares `engines.node >= 22.12.0` for stable `require(esm)`).

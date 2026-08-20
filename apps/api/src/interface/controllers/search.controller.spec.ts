@@ -43,7 +43,7 @@ describe('SearchController', () => {
   });
 
   it('returns the service results and does not set the header on a normal search', async () => {
-    const results = { ...emptyResult, events: [{ id: 'ev-1' }] } as never;
+    const results = { ...emptyResult, events: [{ id: 'ev-1' }] };
     searchService.searchWithinBudget.mockResolvedValue({
       results,
       timedOut: false,

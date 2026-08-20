@@ -337,7 +337,7 @@ describe('SearchService', () => {
     };
 
     it('passes through results when search resolves within the budget', async () => {
-      const results = { ...emptyResult, events: [{ id: 'ev-1' }] } as never;
+      const results = { ...emptyResult, events: [{ id: 'ev-1' }] };
       jest.spyOn(service, 'search').mockResolvedValue(results);
 
       const outcome = await service.searchWithinBudget(

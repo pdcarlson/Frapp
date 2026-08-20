@@ -13,6 +13,11 @@
     "target": "ES2023",
     "sourceMap": true,
     "outDir": "./dist",
+    // Do not set `rootDir` here. This program includes `src/` and `test/`
+    // (ESLint's project service). An explicit `"."` would let a stray
+    // `tsc -p tsconfig.json` emit `dist/src/main.js` instead of failing
+    // TS5011; `"./src"` would exclude `test/` from the ESLint project.
+    // Emit uses `tsconfig.build.json`, which sets `"rootDir": "./src"`.
     "incremental": true,
     "skipLibCheck": true,
     // TypeScript 6/7 default `strict` to true. This app never opted into the

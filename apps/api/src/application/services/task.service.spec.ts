@@ -191,7 +191,7 @@ describe('TaskService', () => {
       mockUserRepo.findByIds.mockResolvedValue([
         { id: 'admin-1', display_name: 'Admin Alice' },
         { id: 'user-1', display_name: 'Member Bob' },
-      ] as never);
+      ]);
 
       await service.create({
         chapter_id: 'ch-1',
