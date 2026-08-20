@@ -20,6 +20,7 @@ import {
   SubscriptionNotice,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
+import { getErrorMessage } from "@/lib/utils";
 
 type MemberOption = {
   userId: string;
@@ -40,13 +41,6 @@ type PointsAdjustmentDialogProps = {
    */
   onCloseAutoFocus?: (event: Event) => void;
 };
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return "Something went wrong. Please retry.";
-}
 
 export function PointsAdjustmentDialog({
   open,
@@ -146,7 +140,7 @@ export function PointsAdjustmentDialog({
     } catch (error) {
       toast({
         title: "Could not adjust points",
-        description: getErrorMessage(error),
+        description: getErrorMessage(error, "Something went wrong. Please retry."),
         variant: "destructive",
       });
       return;

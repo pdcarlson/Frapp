@@ -23,15 +23,9 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { normalizeRoleOptions } from "@/lib/roles";
+import { getErrorMessage } from "@/lib/utils";
 
 type EventRecord = Record<string, unknown>;
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return "Something went wrong. Please retry.";
-}
 
 function isoToLocalInput(value: unknown): string {
   if (typeof value !== "string") return "";
@@ -241,7 +235,7 @@ export function EventEditorDialog({
     } catch (error) {
       toast({
         title: mode === "create" ? "Could not create event" : "Could not update event",
-        description: getErrorMessage(error),
+        description: getErrorMessage(error, "Something went wrong. Please retry."),
         variant: "destructive",
       });
       return;
