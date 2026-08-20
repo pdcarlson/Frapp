@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   BookOpen,
   CalendarDays,
@@ -115,7 +115,6 @@ export function OnboardingTutorial() {
   });
   const updateOnboarding = useUpdateOnboarding();
 
-  const [stepIndex, setStepIndex] = useState(0);
   const [manuallyDismissed, setManuallyDismissed] = useState(false);
 
   const activeMembership = useMemo(() => {
@@ -140,15 +139,6 @@ export function OnboardingTutorial() {
     activeMembership?.has_completed_onboarding === false &&
     !manuallyDismissed;
 
-  useEffect(() => {
-    if (shouldShow) setStepIndex(0);
-  }, [shouldShow]);
-
-  if (!shouldShow) return null;
-
-  const step = STEPS[stepIndex] ?? STEPS[0]!;
-  const isLast = stepIndex === STEPS.length - 1;
-
   async function completeOnboarding() {
     setManuallyDismissed(true);
     try {
@@ -160,11 +150,32 @@ export function OnboardingTutorial() {
     }
   }
 
+  if (!shouldShow) return null;
+
+  return (
+    <OnboardingTutorialDialog
+      chapterName={chapterName}
+      onComplete={() => void completeOnboarding()}
+    />
+  );
+}
+
+function OnboardingTutorialDialog({
+  chapterName,
+  onComplete,
+}: {
+  chapterName: string;
+  onComplete: () => void;
+}) {
+  const [stepIndex, setStepIndex] = useState(0);
+  const step = STEPS[stepIndex] ?? STEPS[0]!;
+  const isLast = stepIndex === STEPS.length - 1;
+
   return (
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open) void completeOnboarding();
+        if (!open) onComplete();
       }}
     >
       <DialogContent className="sm:max-w-lg">
@@ -198,10 +209,7 @@ export function OnboardingTutorial() {
         </div>
 
         <DialogFooter className="flex items-center justify-between gap-2 sm:justify-between">
-          <Button
-            variant="ghost"
-            onClick={() => void completeOnboarding()}
-          >
+          <Button variant="ghost" onClick={onComplete}>
             Skip tour
           </Button>
           <div className="flex gap-2">
@@ -213,9 +221,7 @@ export function OnboardingTutorial() {
               Back
             </Button>
             {isLast ? (
-              <Button onClick={() => void completeOnboarding()}>
-                Finish
-              </Button>
+              <Button onClick={onComplete}>Finish</Button>
             ) : (
               <Button onClick={() => setStepIndex((i) => i + 1)}>Next</Button>
             )}
