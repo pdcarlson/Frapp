@@ -98,7 +98,7 @@ Seven files are **frozen** now that the nav restructure has landed:
 - Slices that build screens **only add files**. They do not edit the seven.
 - Every known future route is already registered in `app/(tabs)/_layout.tsx` as a hidden `Tabs.Screen` (`href: null`) with a stub backing file, so adding a screen means filling in the stub, never touching the layout. A `Tabs.Screen` without a file throws at runtime, which is why the stubs exist rather than the registrations alone.
 - Changes that genuinely need one of the seven — a new dependency, a config plugin, a new shared prop — go through a single integrator as a small standalone PR, not as part of a feature slice.
-- **"A new dependency" includes internal `@repo/*` workspace packages**, not just external npm ones. npm workspace hoisting means an undeclared `@repo/*` import usually resolves anyway, so the missing entry produces no error and is easy to skip — but the dependency is real, and it breaks under isolated installs or a hoisting change. Declare it in `package.json` through the integrator like any other. `@repo/chat-core` reached `apps/mobile` this way for C1 (#937); `apps/web/package.json` had declared the same package from the start.
+- **"A new dependency" includes internal `@repo/*` workspace packages**, not just external npm ones. npm workspace hoisting means an undeclared `@repo/*` import usually resolves anyway, so the missing entry produces no error and is easy to skip — but the dependency is real, and it breaks under isolated installs or a hoisting change. Declare it in `package.json` through the integrator like any other. `@repo/chat-core` reached `apps/mobile` this way for C1 (#937); `@repo/org-archetypes` reached it the same way for the first-officer wizard (the #1102 screen slice shipped a slim local catalog rather than edit this file). `apps/web/package.json` had declared both packages from the start.
 
 The point is contention: these files are the ones every parallel slice would otherwise edit at once, and a rename or a prop added in two branches at the same time is a merge conflict in the one place that breaks the whole app.
 
@@ -113,3 +113,8 @@ of `expo-network` that [`../resilience.md`](../resilience.md) § 2 now forbids, 
 had to go, and every future app-wide runtime hangs off `components/app-runtime.tsx`
 instead of adding another hook call here — which is the whole reason that component
 exists.
+
+**`package.json` later gained `@repo/org-archetypes`** so the first-officer wizard
+can import the shared catalog instead of the slim local copy #1102 shipped while
+this file was frozen. That is the same integrator carve-out as `@repo/chat-core`
+and `expo-notifications`. The other six hotspots stay frozen.
