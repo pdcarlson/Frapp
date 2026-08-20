@@ -113,7 +113,7 @@ Frapp/
 | `@repo/brand-assets`      | Canonical SVG marks (favicon + lockup).                                   |
 | `@repo/chapter-theme`     | Chapter accent palette derivation. Legacy 8-token CSS map until the Signet engine lands. |
 | `@repo/chat-core`         | Platform-neutral chat hot path — normalized cache, optimistic send client, realtime manager, shared topic registry — behind injected `KeyValueStore` / `NetworkState` / `OutboxStore` ports. |
-| `@repo/chat-integrations` | Chat slash-command / integration helpers.                                 |
+| `@repo/chat-integrations` | Chat slash-command / integration helpers. `/points` reason length is `POINTS_REASON_MAX_LENGTH` from `@repo/validation`, not a local copy. |
 | `@repo/color`             | Shared WCAG contrast math. DOM-free so theme packages and the API share one implementation. |
 | `@repo/eslint-config`     | Shared ESLint rules.                                                      |
 | `@repo/formatting`        | Shared date/time/duration display helpers. Generic locale formatters (`formatClock`, `formatLocaleDateTime`, `formatLocaleDate`) plus three **protected clusters** that must stay distinct: stopwatch padding (`formatPaddedStopwatch` / `formatTimer`), bare-date timezone parsing (`parseBareDateLocalMidnight` / `parseBareDateUtcNoon`), and minute-duration rounding (`formatMinutesExact` / `formatMinutesRounded`). Used by web + mobile. |

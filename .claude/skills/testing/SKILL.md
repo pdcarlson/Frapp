@@ -243,8 +243,9 @@ Before pushing, verify these pass locally (mirrors the CI pipeline):
    Playwright visual tests under `tests/visual/**` are excluded by
    `apps/web/vitest.config.ts` and run separately — see item 12).
    The same job also runs the shared packages web consumes that nothing else
-   covers: `npm run test -w packages/hooks` and
-   `npm run test -w packages/chat-core`. Run those too when you touch
+   covers: `npm run test -w packages/hooks`,
+   `npm run test -w packages/chat-core`, and
+   `npm run test -w packages/chat-integrations`. Run those too when you touch
    `packages/**` — the job's path filter covers that glob, so a change there
    exercises those suites. `web-tests` is a required check (ADR-15 2026-08-19
    amendment).
