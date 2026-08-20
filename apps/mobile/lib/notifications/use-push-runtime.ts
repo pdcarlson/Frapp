@@ -42,7 +42,7 @@
  * do nothing about it.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "expo-router";
 import {
   useMarkNotificationRead,
@@ -110,11 +110,13 @@ export function usePushRuntime(): void {
   // Mutation objects are new every render; the effects below must not re-run on
   // that, only on the auth edges they actually care about.
   const registerRef = useRef(registerToken);
-  registerRef.current = registerToken;
   const removeRef = useRef(removeToken);
-  removeRef.current = removeToken;
   const markReadRef = useRef(markRead);
-  markReadRef.current = markRead;
+  useLayoutEffect(() => {
+    registerRef.current = registerToken;
+    removeRef.current = removeToken;
+    markReadRef.current = markRead;
+  }, [registerToken, removeToken, markRead]);
 
   const handleResponse = useCallback((response: PushNotificationResponse) => {
     const data = response.notification.request.content.data;
