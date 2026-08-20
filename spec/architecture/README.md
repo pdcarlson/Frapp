@@ -32,7 +32,7 @@ Frapp/
     web/            # Next.js admin dashboard (app.frapp.live)
     mobile/         # Expo mobile app (iOS + Android)
     landing/        # Next.js marketing site (frapp.live)
-  packages/         # 12 shared workspaces
+  packages/         # 13 shared workspaces
     api-sdk/        # Generated API client + TypeScript types
     brand-assets/   # Canonical SVG marks (favicon + lockup)
     chapter-theme/  # Chapter accent palette derivation (legacy web token map until Signet reskin)
@@ -40,6 +40,7 @@ Frapp/
     chat-integrations/ # Chat slash-command / integration helpers
     color/          # Shared WCAG contrast math
     eslint-config/  # Shared ESLint configuration
+    formatting/     # Shared date/time/duration display helpers (web + mobile)
     hooks/          # Shared React hooks (use-members, use-frapp-client, etc.)
     org-archetypes/ # Greek-org directory / archetype data
     theme/          # Tailwind config + global styles (legacy bone/bronze until web/landing reskin)
@@ -115,6 +116,7 @@ Frapp/
 | `@repo/chat-integrations` | Chat slash-command / integration helpers.                                 |
 | `@repo/color`             | Shared WCAG contrast math. DOM-free so theme packages and the API share one implementation. |
 | `@repo/eslint-config`     | Shared ESLint rules.                                                      |
+| `@repo/formatting`        | Shared date/time/duration display helpers. Generic locale formatters (`formatClock`, `formatLocaleDateTime`, `formatLocaleDate`) plus three **protected clusters** that must stay distinct: stopwatch padding (`formatPaddedStopwatch` / `formatTimer`), bare-date timezone parsing (`parseBareDateLocalMidnight` / `parseBareDateUtcNoon`), and minute-duration rounding (`formatMinutesExact` / `formatMinutesRounded`). Used by web + mobile. |
 | `@repo/hooks`             | Shared React hooks wrapping api-sdk with TanStack Query.                  |
 | `@repo/org-archetypes`    | Greek-org directory / archetype data for onboarding autofill.             |
 | `@repo/theme`             | Tailwind config presets, global CSS. Legacy bone/bronze tokens until web/landing reskin; Signet tokens are specified in `spec/ui/design-system/`. |

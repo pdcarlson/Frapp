@@ -141,6 +141,12 @@ jobs:
       - name: Shared color package tests
         run: npm run test -w @repo/color
 
+      # Locale date/datetime helpers plus the three protected clusters
+      # (stopwatch padding, bare-date timezone parsing, minute rounding)
+      # that must not fold into the generic formatter.
+      - name: Shared formatting package tests
+        run: npm run test -w @repo/formatting
+
       # The accent engine. Its contrast guarantee is only as good as the exact
       # behaviour of the vendored generator, so a dependency bump is precisely
       # what this suite exists to catch.

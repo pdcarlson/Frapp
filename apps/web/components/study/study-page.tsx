@@ -46,6 +46,10 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
+import {
+  formatLocaleDateTime as formatShortDate,
+  formatPaddedStopwatch as formatDuration,
+} from "@repo/formatting";
 import { asArray, getErrorMessage } from "@/lib/utils";
 
 type Geofence = {
@@ -88,22 +92,6 @@ const TERMINAL_STATUSES: StudySession["status"][] = [
 ];
 
 const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes, matches mobile
-
-function formatDuration(totalSeconds: number): string {
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = Math.floor(totalSeconds % 60);
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  if (hours > 0) return `${hours}:${pad(minutes)}:${pad(seconds)}`;
-  return `${pad(minutes)}:${pad(seconds)}`;
-}
-
-function formatShortDate(value: string | null): string {
-  if (!value) return "—";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "—";
-  return parsed.toLocaleString();
-}
 
 function getCurrentPosition(): Promise<GeolocationPosition> {
   if (typeof navigator === "undefined" || !navigator.geolocation) {

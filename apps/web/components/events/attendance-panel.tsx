@@ -35,6 +35,7 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
+import { formatLocaleDateTime as formatDate } from "@repo/formatting";
 import { asArray } from "@/lib/utils";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
 import { Can } from "@/components/shared/can";
@@ -79,13 +80,6 @@ function statusVariant(
     default:
       return "outline";
   }
-}
-
-function formatDate(value: string | null | undefined): string {
-  if (!value) return "—";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "—";
-  return parsed.toLocaleString();
 }
 
 export function AttendancePanel({ eventId }: { eventId: string }) {

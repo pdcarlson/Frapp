@@ -30,6 +30,7 @@ description: >
 | Mobile unit tests (Vitest) | `npm run test -w apps/mobile` |
 | Shared hooks tests (Vitest / jsdom) | `npm run test -w packages/hooks` |
 | Shared validation tests (Vitest) | `npm run test -w @repo/validation` |
+| Shared formatting tests (Vitest) | `npm run test -w @repo/formatting` |
 | Single test file | `npm run test -w apps/api -- --testPathPatterns=<pattern>` |
 | PGlite migration validator | `npm run check:pglite-migrations` |
 | Contract check | `npm run check:api-contract` |
@@ -247,10 +248,7 @@ Before pushing, verify these pass locally (mirrors the CI pipeline):
    `packages/**` — the job's path filter covers that glob, so a change there
    exercises those suites. `web-tests` is a required check (ADR-15 2026-08-19
    amendment).
-7. `npm run test -w @repo/validation` → `CI / lint-and-typecheck` (Vitest; the
-   package is consumed by the API, web, and mobile, so a regression here reaches
-   all three). Not covered by items 1–2: the root has no `test` script and
-   `turbo.json` declares no `test` task, so nothing else runs it.
+7. `npm run test -w @repo/validation` and `npm run test -w @repo/formatting` → `CI / lint-and-typecheck` (Vitest; validation is consumed by the API, web, and mobile; formatting by web and mobile). Not covered by items 1–2: the root has no `test` script and `turbo.json` declares no `test` task, so nothing else runs them.
 8. `npm run test -w apps/mobile` → `CI / mobile-validate` (Vitest; likewise not
    reached by the mobile lint or typecheck steps)
 9. `npm run check:api-contract` → `CI / api-contract-check`

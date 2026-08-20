@@ -8,7 +8,7 @@ GitHub Issues with the `triage` label, per `AGENTS.md` ("Never track work in a s
 [`.claude/skills/file-follow-up/SKILL.md`](.claude/skills/file-follow-up/SKILL.md). This file is
 deleted when the project wraps, so nothing durable may live only here.
 
-- [ ] 1. Date-formatting functions → `@repo/formatting`
+- [x] 1a. Date-formatting C1–C3 → `@repo/formatting`; protected clusters stay distinct (stopwatch / bare-date / minute rounding). Tests: `npm run test -w @repo/formatting`.
 - [x] 2. MIME/content-type allowlists + `field-limits.ts` → `@repo/validation`
   Shared kinds `image` / `proof` / `document` + field caps in `@repo/validation`.
   GIF drift fixed (Backwork now uses the shared `document` kind). Legacy Office

@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { dashboardFilterSelectClassName } from "@/components/shared/table-controls";
+import { formatLocaleDateTime as formatDate } from "@repo/formatting";
 import { getErrorMessage } from "@/lib/utils";
 
 type RoleRow = {
@@ -41,14 +42,6 @@ type InviteRow = {
   expires_at: string;
   used_at: string | null;
 };
-
-function formatDate(value: string): string {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return "—";
-  }
-  return parsed.toLocaleString();
-}
 
 function normalizeInvites(input: unknown): InviteRow[] {
   const source = Array.isArray(input) ? input : input ? [input] : [];

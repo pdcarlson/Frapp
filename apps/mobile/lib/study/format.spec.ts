@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { formatTimer } from "@repo/formatting";
 import {
   formatHoursLabel,
   formatHoursValue,
   formatSessionRange,
-  formatTimer,
   startOfWeek,
 } from "./format";
 

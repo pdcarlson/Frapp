@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-import { formatTimer } from "@/lib/study/format";
+import { formatTimer } from "@repo/formatting";
 
 /**
  * The live-session card — `canvas-screens.dc.html`, `id="s10"`.
