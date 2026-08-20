@@ -1,7 +1,7 @@
 "use client";
 
 import { CloudOff, Loader2, RefreshCw } from "lucide-react";
-import type { ConnectionStatus } from "@/lib/chat/realtime-manager";
+import type { ConnectionStatus } from "@repo/chat-core/realtime-manager";
 
 /**
  * Small status indicator rendered near the channel header. Stays out of the

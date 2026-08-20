@@ -56,15 +56,15 @@ shim `lib/realtime/topic-registry.ts`.
 - [x] `apps/web/components/chat/message-timeline.tsx` — import → `@repo/chat-core/types`; tsc no new errors; vitest `components/chat/message-item.test.tsx`  Test Files  1 passed (1);      Tests  5 passed (5);
 - [x] `apps/web/components/chat/message-item.tsx` — import → `@repo/chat-core/types`; tsc no new errors; vitest `components/chat/message-item.test.tsx`  Test Files  1 passed (1);      Tests  5 passed (5);
 - [x] `apps/web/components/chat/message-item.test.tsx` — import → `@repo/chat-core/types`; tsc no new errors; vitest `components/chat/message-item.test.tsx`  Test Files  1 passed (1);      Tests  5 passed (5);
-- [ ] `apps/web/components/chat/chat-shell.tsx`
-- [ ] `apps/web/components/chat/reaction-bar.tsx`
-- [ ] `apps/web/components/chat/reconnect-pill.tsx`
-- [ ] `apps/web/lib/realtime/supabase-realtime.ts`
+- [x] `apps/web/components/chat/chat-shell.tsx` — `dispatch`+`types` → `@repo/chat-core/{dispatch,types}`; tsc no new errors; vitest 4 files / 18 tests passed
+- [x] `apps/web/components/chat/reaction-bar.tsx` — `actionTypeFromEmoji`/`emojiFromActionType`/`ReactionState` → `@repo/chat-core/types`; tsc no new errors; vitest `message-item.test.tsx` 5 passed
+- [x] `apps/web/components/chat/reconnect-pill.tsx` — `ConnectionStatus` → `@repo/chat-core/realtime-manager`; tsc no new errors; vitest `reconnect-pill.test.tsx` 5 passed
+- [x] `apps/web/lib/realtime/supabase-realtime.ts` — `isTopicOccupied`/`releaseTopic` → `@repo/chat-core/topic-registry`; tsc no new errors; vitest `lib/realtime` 2 files / 20 tests passed
 
 ### Importers — relative (2; invisible to `@/`-only grep)
 
-- [ ] `apps/web/lib/chat/use-chat-channel.ts`
-- [ ] `apps/web/lib/chat/chat-provider.tsx`
+- [x] `apps/web/lib/chat/use-chat-channel.ts` — five relative shim imports → `@repo/chat-core/{types,cache,realtime-manager,chat-client,dispatch}`; preserved `react as reactAction` / `unreact as unreactAction`; tsc no new errors; vitest `lib/chat`+`components/chat` 7 files / 96 tests + chat-core 30/30
+- [x] `apps/web/lib/chat/chat-provider.tsx` — relative shims + barrel `browserNetworkState` → `@repo/chat-core/{realtime-manager,chat-client,types,adapters}`; tsc no new errors; vitest `lib/chat`+`components/chat`+`lib/realtime` 9 files / 116 tests passed
 
 ### Shims to delete (6) — only after all importers pass
 
