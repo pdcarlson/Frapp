@@ -3,13 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, Shield, Trash2, UserRound } from "lucide-react";
 import {
+  useCustomRoles,
   useMember,
   useMyPermissions,
   useRemoveMember,
   useRoles,
   useUpdateMemberRoles,
 } from "@repo/hooks";
-import { useCustomRoles } from "@/lib/hooks/use-custom-roles";
 import { can } from "@repo/validation";
 import { formatLocaleDate as formatDate } from "@repo/formatting";
 import { useToast } from "@/hooks/use-toast";

@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { SettingsDuesTab } from "./settings-dues-tab";
-import type { OrgDues } from "@/lib/hooks/use-org-config";
+import type { OrgDues } from "@repo/hooks";
 
 const DUES: OrgDues = {
   cadence: "per_semester",

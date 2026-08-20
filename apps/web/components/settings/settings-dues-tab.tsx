@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import type { OrgDues } from "@/lib/hooks/use-org-config";
+import type { OrgDues } from "@repo/hooks";
 
 type Props = {
   /** The chapter's singleton dues config (table defaults when unconfigured). */

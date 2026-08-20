@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useFrappClient, useActiveChapterId } from "@repo/hooks";
+import { useFrappClient, useActiveChapterId } from "./use-frapp-client";
 import type {
   ChapterCustomRole,
   CreateCustomRole,

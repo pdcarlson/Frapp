@@ -4,9 +4,13 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AlertTriangle, CreditCard, Loader2, Trash2 } from "lucide-react";
 import {
+  type OrgDues,
   useCreatePortal,
   useCurrentChapter,
   useMyPermissions,
+  useOrgConfig,
+  usePatchOrgConfig,
+  usePendingConfigKeys,
   usePermissionsCatalog,
   useSemesterRollover,
   useSemesters,
@@ -44,12 +48,6 @@ import { useToast } from "@/hooks/use-toast";
 import { can } from "@repo/validation";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { asArray, getErrorMessage } from "@/lib/utils";
-import {
-  useOrgConfig,
-  usePatchOrgConfig,
-  usePendingConfigKeys,
-  type OrgDues,
-} from "@/lib/hooks/use-org-config";
 import { SettingsOrgTab } from "@/components/settings/settings-org-tab";
 import { SettingsModulesTab } from "@/components/settings/settings-modules-tab";
 import { SettingsWorkflowsTab } from "@/components/settings/settings-workflows-tab";

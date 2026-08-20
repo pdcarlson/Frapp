@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import type { OrgWorkflow } from "@/lib/hooks/use-org-config";
+import type { OrgWorkflow } from "@repo/hooks";
 
 type WorkflowDraft = {
   key: string;

@@ -13,6 +13,7 @@ vi.mock("@repo/hooks", () => ({
   useUpdateMemberRoles: () => ({ mutateAsync: updateRolesMutateAsync, isPending: false }),
   // The custom-roles section is permission-gated; grant everything by default.
   useMyPermissions: () => ({ data: { permissions: ["*"] } }),
+  useCustomRoles: () => customRolesState,
 }));
 
 vi.mock("@/hooks/use-toast", () => ({
@@ -26,10 +27,6 @@ const customRolesState: {
   isSuccess: boolean;
   isError: boolean;
 } = { data: [], isSuccess: true, isError: false };
-
-vi.mock("@/lib/hooks/use-custom-roles", () => ({
-  useCustomRoles: () => customRolesState,
-}));
 
 import { MemberDetailSheet } from "./member-detail-sheet";
 
