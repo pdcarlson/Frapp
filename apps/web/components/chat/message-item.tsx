@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ReactionChips, ReactionQuickPick } from "./reaction-bar";
 import { MessageRenderer } from "./renderers";
-import type { ChatMessage } from "@/lib/chat/types";
+import type { ChatMessage } from "@repo/chat-core/types";
 import { initials } from "@/lib/utils";
 
 function formatClock(value: string | null | undefined): string {

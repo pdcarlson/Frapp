@@ -2,7 +2,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { EventCard } from "./event-card";
-import type { ChatMessage } from "@/lib/chat/types";
+import type { ChatMessage } from "@repo/chat-core/types";
 
 // ── Mocks ────────────────────────────────────────────────────────────────
 // The card is hook-driven, so we stub the attendance query + check-in mutation

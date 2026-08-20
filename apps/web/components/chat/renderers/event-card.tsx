@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { CalendarDays, Check, MapPin } from "lucide-react";
 import { useAttendance, useCheckIn, useMyPermissions } from "@repo/hooks";
-import type { ChatMessage } from "@/lib/chat/types";
+import type { ChatMessage } from "@repo/chat-core/types";
 import type { EventPayload } from "@repo/chat-integrations";
 import { can } from "@repo/validation";
 import { Badge } from "@/components/ui/badge";

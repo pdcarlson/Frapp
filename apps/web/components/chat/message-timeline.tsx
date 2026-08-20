@@ -8,7 +8,7 @@ import {
   LoadingState,
 } from "@/components/shared/async-states";
 import { MessageItem } from "./message-item";
-import type { ChatMessage } from "@/lib/chat/types";
+import type { ChatMessage } from "@repo/chat-core/types";
 
 const GROUPING_GAP_MS = 5 * 60 * 1000;
 
