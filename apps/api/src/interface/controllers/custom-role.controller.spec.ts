@@ -21,7 +21,7 @@ describe('CustomRoleController', () => {
       create: jest.fn(),
       update: jest.fn(),
       remove: jest.fn(),
-    } as unknown as jest.Mocked<CustomRoleService>;
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [CustomRoleController],

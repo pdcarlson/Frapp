@@ -353,9 +353,7 @@ describe('SearchService', () => {
       jest.useFakeTimers();
       try {
         // A search that never settles within the budget window.
-        jest
-          .spyOn(service, 'search')
-          .mockReturnValue(new Promise(() => {}) as never);
+        jest.spyOn(service, 'search').mockReturnValue(new Promise(() => {}));
 
         const promise = service.searchWithinBudget('ch-1', 'user-1', 'hello');
         await jest.advanceTimersByTimeAsync(500);
