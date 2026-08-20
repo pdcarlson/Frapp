@@ -22,7 +22,7 @@
  * edge in.
  */
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useFrappClient, useViewerUserId } from "@repo/hooks";
 import type { ChatActionContext } from "@repo/chat-core/chat-client";
@@ -136,7 +136,9 @@ export function useChatRuntime(): ChatRuntime {
   // ride the same port: `flushOutbox` consults `net` internally, so subscribing
   // through it keeps the two consistent.
   const ctxRef = useRef(ctx);
-  ctxRef.current = ctx;
+  useLayoutEffect(() => {
+    ctxRef.current = ctx;
+  }, [ctx]);
   useEffect(() => {
     if (!ctx) return;
     void bootChatAdapters().then(() => {
