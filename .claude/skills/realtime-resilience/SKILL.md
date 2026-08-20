@@ -41,8 +41,8 @@ unchanged topic and hits the same case. A `useEffect` cleanup is synchronous and
 is not — serialize attach and release per topic through a queue, or a cleanup's teardown lands
 *after* its successor has registered and kills the live channel.
 
-**Do not** invent a second `releaseTopic`. Web's `lib/realtime/topic-registry.ts` re-exports the
-chat-core implementation.
+**Do not** invent a second `releaseTopic`. Import `packages/chat-core/src/topic-registry.ts`
+(`@repo/chat-core/topic-registry`) from web and mobile. There is one implementation.
 
 ## 2. Do not re-key the chat topic to dodge a collision
 
