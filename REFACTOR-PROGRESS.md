@@ -10,7 +10,7 @@ deleted when the project wraps, so nothing durable may live only here.
 
 - [ ] 1. Date-formatting functions → `@repo/formatting`
 - [ ] 2. MIME/content-type allowlists + `field-limits.ts` → `@repo/validation`
-- [x] 3. Delete the dead unused shared UI workspace and its dependency entries — directory gone; live primitives are `apps/web/components/ui/`; landing is inline Tailwind
+- [x] 3. Delete the dead unused shared UI workspace and its dependency entries — directory gone; live primitives are `apps/web/components/ui/`; landing is inline Tailwind. Tests: docs-sync + structure + doc-paths pass; `npm run check-types` 19/19; `npm run build -w apps/web` and `apps/landing` succeed; live-file search for the deleted workspace token is empty
 - [ ] 4. Chat shim imports → `@repo/chat-core`; delete the 6 shim files
 - [ ] 5. Query-key call sites → `createChapterQueryKeys`
 - [ ] 6. `getErrorMessage` → `apps/web/lib/utils.ts`; mobile `api-error.ts` → `@repo/api-sdk`
@@ -59,3 +59,14 @@ scope to rewrite) and `.buildpad/` (never hand-edit).
 - [x] `README.md` — removed `ui/` from the tree; 13→12 shared workspaces
 - [x] `scripts/ci/__tests__/check-doc-paths.test.mjs` — fixtures now cite `packages/hooks` instead of the deleted tree
 - [x] `scripts/ci/__tests__/check-api-contract-drift.test.mjs` — negative-path fixture now `packages/theme/src/globals.css`
+
+### Item 3 verification
+
+- docs-sync (`check-docs-impact.mjs` vs `origin/main`): passed
+- docs-structure: passed
+- doc-paths: passed (1417 citations / 133 files)
+- `npm run test:ci-scripts`: 383 pass / 0 fail
+- `npm run check-types`: 19/19 tasks, unused UI workspace not in turbo scope
+- `npm run build -w apps/web`: compiled + prerendered 27 routes (stand-in `NEXT_PUBLIC_SUPABASE_*` from `apps/web/playwright.config.ts`, per ENV_REFERENCE build-time note)
+- `npm run build -w apps/landing`: compiled + prerendered
+- `rg` for the deleted workspace npm name, excluding the historical plan + `.buildpad/`: zero matches
