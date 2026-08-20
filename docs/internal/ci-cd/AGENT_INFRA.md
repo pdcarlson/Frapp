@@ -286,28 +286,27 @@ classic Rules of Hooks. We do not run `babel-plugin-react-compiler`. Shared pres
 `"off"` so a later plugin bump cannot re-open `--max-warnings 0`.
 
 **Enabled at upstream severity** (re-measured 2026-08-20: 0 findings on `apps/web`,
-`apps/mobile`, `apps/landing`, `packages/hooks` after the chat-area cleanup):
-`rules-of-hooks`, `exhaustive-deps`, `config`, `error-boundaries`, `gating`,
-`globals`, `immutability`, `incompatible-library`, `purity`,
-`set-state-in-render`, `static-components`, `unsupported-syntax`.
+`apps/mobile`, `apps/landing`, `packages/hooks` after chat, auth, and
+realtime/events cleanups): `rules-of-hooks`, `exhaustive-deps`, `config`,
+`error-boundaries`, `gating`, `globals`, `immutability`, `incompatible-library`,
+`preserve-manual-memoization`, `purity`, `set-state-in-render`,
+`static-components`, `unsupported-syntax`, `use-memo`.
 
-**Still held `"off"`** until remaining area cleanups land:
+**Still held `"off"`** until remaining form/dialog and a couple of
+connection/notification sites land:
 
 | Rule | Severity when on | Remaining findings |
 | --- | --- | --- |
-| `react-hooks/set-state-in-effect` | error | 31 (36 − 5 auth/onboarding) |
-| `react-hooks/refs` | error | 11 |
-| `react-hooks/preserve-manual-memoization` | error | 2 |
-| `react-hooks/use-memo` | error | 1 |
+| `react-hooks/set-state-in-effect` | error | 27 |
+| `react-hooks/refs` | error | 2 |
 
-Chat-area findings (web shell/composer/renderers + mobile chat runtime/channel)
-were resolved by deriving state instead of effect-syncing it, a render-safe
-clock for event/poll windows, and moving latest-callback refs out of render.
-Auth/onboarding follow-up derived invite-token and chapter-claim state,
-remounted the tutorial on show, and replaced the theme-toggle hydration
-`setState` with `useSyncExternalStore`. Remaining findings concentrate in
-realtime/connection, notifications, and form/dialog reset effects — not
-React Native animation (none remaining).
+Realtime/connection follow-up derives web `NetworkProvider` state from
+`navigator.onLine` + health-failure count, writes the realtime invalidate
+callback in `useLayoutEffect` so the subscription is not re-keyed (ping loss),
+and stores the network-banner `Animated.Value` in `useState`. Events list
+ticks via `useNow`. Remaining findings are intentional form/dialog draft
+resets, invite-token seed, banner slide-out mount, and two request-time ref
+getters.
 Adopting a held-off rule is a dedicated cleanup (fix or scoped disable each
 finding, then add the rule to the allowlist), not a Dependabot follow-through.
 #1108 is the bump that introduced the hold.

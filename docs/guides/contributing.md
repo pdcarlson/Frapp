@@ -132,9 +132,8 @@ violations by hand (or with your editor's ESLint integration).
 
 Shared React lint (`@repo/eslint-config/next-js` and `react-internal`) takes an **allowlist**
 from `eslint-plugin-react-hooks` v7 `recommended` (core Rules of Hooks plus the compiler rules
-that currently have 0 findings). Remaining compiler rules (`set-state-in-effect`, `refs`,
-`preserve-manual-memoization`, `use-memo`) stay off until their
-call sites are cleaned up — see
+that currently have 0 findings). Remaining compiler rules (`set-state-in-effect`, `refs`)
+stay off until their call sites are cleaned up — see
 [`docs/internal/ci-cd/AGENT_INFRA.md`](../internal/ci-cd/AGENT_INFRA.md) § eslint-plugin-react-hooks 7.
 
 Keep `--fix` out of any `lint` script. Under `apps/api`'s config `prettier/prettier` is an

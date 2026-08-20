@@ -1,6 +1,13 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+  useSyncExternalStore,
+} from "react";
 import { normalizeApiBaseUrl } from "@repo/api-sdk";
 
 export type ConnectionState = "ONLINE" | "DEGRADED" | "OFFLINE";
@@ -36,20 +43,39 @@ function getHealthCheckUrl() {
 
 const DEGRADED_THRESHOLD = 3;
 
+function subscribeLinkOnline(onStoreChange: () => void): () => void {
+  window.addEventListener("online", onStoreChange);
+  window.addEventListener("offline", onStoreChange);
+  return () => {
+    window.removeEventListener("online", onStoreChange);
+    window.removeEventListener("offline", onStoreChange);
+  };
+}
+
+function getLinkOnline(): boolean {
+  return navigator.onLine;
+}
+
+function getLinkOnlineServer(): boolean {
+  return true;
+}
+
 export function NetworkProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<ConnectionState>("ONLINE");
+  const linkOnline = useSyncExternalStore(
+    subscribeLinkOnline,
+    getLinkOnline,
+    getLinkOnlineServer,
+  );
   const [failureCount, setFailureCount] = useState(0);
 
   const checkHealth = useCallback(async () => {
     if (!navigator.onLine) {
-      setState("OFFLINE");
       return;
     }
 
     const healthCheckUrl = getHealthCheckUrl();
     if (!healthCheckUrl) {
       setFailureCount(0);
-      setState("ONLINE");
       return;
     }
 
@@ -65,7 +91,6 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
 
         if (res.ok) {
           setFailureCount(0);
-          setState("ONLINE");
         } else {
           setFailureCount((prev) => prev + 1);
         }
@@ -78,35 +103,21 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (failureCount >= DEGRADED_THRESHOLD) {
-      setState("DEGRADED");
-    }
-  }, [failureCount]);
-
-  useEffect(() => {
     const interval = setInterval(checkHealth, 30_000);
     return () => clearInterval(interval);
   }, [checkHealth]);
 
   useEffect(() => {
-    const handleOnline = () => {
-      setState("ONLINE");
-      setFailureCount(0);
-    };
-    const handleOffline = () => setState("OFFLINE");
-
+    const handleOnline = () => setFailureCount(0);
     window.addEventListener("online", handleOnline);
-    window.addEventListener("offline", handleOffline);
-
-    if (!navigator.onLine) {
-      setState("OFFLINE");
-    }
-
-    return () => {
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
-    };
+    return () => window.removeEventListener("online", handleOnline);
   }, []);
+
+  const state: ConnectionState = !linkOnline
+    ? "OFFLINE"
+    : failureCount >= DEGRADED_THRESHOLD
+      ? "DEGRADED"
+      : "ONLINE";
 
   const value: NetworkContextValue = {
     state,
