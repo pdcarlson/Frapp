@@ -90,7 +90,8 @@ describe("protected clusters stay distinct from the generic formatter", () => {
     });
 
     it("is not a stopwatch reading", () => {
-      expect(formatMinutesRounded(90)).toBe("2h");
+      // 90 minutes → 1h 30m. 90 elapsed seconds → 01:30 / 1:30 on a stopwatch.
+      expect(formatMinutesRounded(90)).toBe("1h 30m");
       expect(formatPaddedStopwatch(90)).toBe("01:30");
       expect(formatTimer(90)).toBe("1:30");
     });
