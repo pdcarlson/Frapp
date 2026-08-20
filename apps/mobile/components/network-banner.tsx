@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Animated, Pressable, StyleSheet, Text } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SignetTokens } from "@repo/theme/signet";
@@ -58,17 +58,18 @@ export function NetworkBanner() {
   const styles = createStyles(tokens);
   const { state, message, isOffline } = useConnection();
 
-  const [dismissed, setDismissed] = useState(false);
-  const slide = useRef(new Animated.Value(0)).current;
-
-  // A change of state is new information, so it clears a dismissal.
-  useEffect(() => {
-    setDismissed(false);
-  }, [state]);
+  const [dismissedForState, setDismissedForState] = useState<string | null>(
+    null,
+  );
+  const dismissed = dismissedForState === state;
+  const [slide] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
     if (!dismissed) return;
-    const timer = setTimeout(() => setDismissed(false), REAPPEAR_AFTER_MS);
+    const timer = setTimeout(
+      () => setDismissedForState(null),
+      REAPPEAR_AFTER_MS,
+    );
     return () => clearTimeout(timer);
   }, [dismissed]);
 
@@ -101,7 +102,10 @@ export function NetworkBanner() {
     });
   }, [visible, slide]);
 
-  const onDismiss = useCallback(() => setDismissed(true), []);
+  const onDismiss = useCallback(
+    () => setDismissedForState(state),
+    [state],
+  );
 
   if (message === null || !mounted) return null;
 

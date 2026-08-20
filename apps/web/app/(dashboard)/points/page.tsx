@@ -75,7 +75,7 @@ export default function PointsPage() {
     | undefined;
   const transactions = useMemo(() => {
     return Array.isArray(summary?.transactions) ? summary.transactions : [];
-  }, [summary?.transactions]);
+  }, [summary]);
   const filteredLeaderboard = useMemo(() => {
     const query = leaderboardSearch.trim().toLowerCase();
     if (!query) return leaderboard;

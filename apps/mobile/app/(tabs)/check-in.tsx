@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -98,7 +98,9 @@ export default function CheckInScreen() {
    */
   const { writeBlockedReason } = useConnection();
   const writeBlockedReasonRef = useRef(writeBlockedReason);
-  writeBlockedReasonRef.current = writeBlockedReason;
+  useLayoutEffect(() => {
+    writeBlockedReasonRef.current = writeBlockedReason;
+  }, [writeBlockedReason]);
 
   /**
    * Read the member's position, but only when the event actually has a zone.
@@ -140,7 +142,7 @@ export default function CheckInScreen() {
         latchRef.current.release();
       }
     },
-    [checkIn, event?.point_value, eventId, resolveLocation],
+    [checkIn, event, eventId, resolveLocation],
   );
 
   const handleBarcode = useCallback(

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { CalendarDays, Plus, Search, Shield } from "lucide-react";
 import { useEvents } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
@@ -31,10 +31,9 @@ import { useNetwork } from "@/lib/providers/network-provider";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
 import { formatLocaleDateTime as formatDate } from "@repo/formatting";
 import { useChapterStore } from "@/lib/stores/chapter-store";
+import { useNow } from "@/lib/use-now";
 
 type EventRow = Record<string, unknown>;
-
-const EVENTS_TIME_FILTER_TICK_MS = 60_000;
 
 export function EventsPage() {
   const { isOffline } = useNetwork();
@@ -76,17 +75,7 @@ export function EventsPage() {
     return [];
   }, [eventsQuery.data]);
 
-  const [nowTick, setNowTick] = useState(() => Date.now());
-  useEffect(() => {
-    if (timeFilter === "all") {
-      return;
-    }
-    setNowTick(Date.now());
-    const intervalId = window.setInterval(() => {
-      setNowTick(Date.now());
-    }, EVENTS_TIME_FILTER_TICK_MS);
-    return () => window.clearInterval(intervalId);
-  }, [timeFilter]);
+  const nowTick = useNow();
 
   const filteredEvents = useMemo(() => {
     const queryLower = query.trim().toLowerCase();
