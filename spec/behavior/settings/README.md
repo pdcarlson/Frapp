@@ -22,6 +22,7 @@ Related canon lives in:
 - `enabled_modules` is a boolean map (`Record<string, boolean>`). The tab renders per-module **on/off toggles**.
 - Modules are labeled by tier: **Free** (always-on, locked on) or **Chapter Pro** (the single paid tier). There is no per-module price.
 - `enabled_modules` writes go through the config PATCH mutation (optimistic update, rollback on error). No tab component writes directly to the database.
+- **In-flight state is per control, not per page.** `usePendingConfigKeys()` reports the config leaves currently saving (`enabled_modules.events`, `dues`, `branding`, …). Toggling one module switch disables only that switch; sibling switches and the other settings tabs stay interactive. Concurrent PATCHes against the same chapter config are serialised so two overlapping toggles cannot clobber each other.
 - **Disabling a module immediately:**
   - Hides its nav item (gated on `isModuleEnabled`).
   - Removes its slash commands from the chat palette.
