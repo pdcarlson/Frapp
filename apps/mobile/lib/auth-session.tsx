@@ -190,17 +190,24 @@ export function AuthSessionProvider({
   const url = Linking.useURL();
   const accessToken = session?.access_token ?? null;
   const userId = session?.user?.id ?? null;
+  /**
+   * Key for the derived claim store. Prefer `user.id` so a magic-link account
+   * swap drops the previous chapter on the same render. When the session has a
+   * token but no user id (tests, some hydrations), a stable sentinel still
+   * lets the claim read run — using the access token itself would re-key on
+   * every refresh and re-block the routing gate.
+   */
+  const claimKey = accessToken ? (userId ?? "__no_user_id__") : null;
   const chapterId =
-    accessToken && claimedChapter.userId === userId
+    claimKey && claimedChapter.userId === claimKey
       ? claimedChapter.chapterId
       : null;
   /**
    * Whether the *first* chapter-claim read for the current account has finished.
    * False with no token (do not treat the pre-`getSession()` mount as resolved)
-   * and false the moment `userId` changes, even before the claim effect re-runs.
+   * and false the moment `claimKey` changes, even before the claim effect re-runs.
    */
-  const hasReadChapterClaim =
-    Boolean(accessToken) && claimReadForUserId === userId;
+  const hasReadChapterClaim = Boolean(claimKey) && claimReadForUserId === claimKey;
 
   // Hydrate from persisted storage, then follow every subsequent change.
   useEffect(() => {
@@ -272,7 +279,7 @@ export function AuthSessionProvider({
   useEffect(() => {
     if (!supabase) return;
 
-    if (!accessToken || !userId) {
+    if (!accessToken || !claimKey) {
       // Do NOT mark the claim as read here. This branch runs on mount, before
       // `getSession()` has resolved, and marking it read would let the gate
       // commit a render of the whole tab navigator on the next tick — which
@@ -281,7 +288,7 @@ export function AuthSessionProvider({
       return;
     }
 
-    const claimUserId = userId;
+    const claimUserId = claimKey;
     let cancelled = false;
 
     // Stop *waiting* on the claim after a bounded delay — but keep listening.
@@ -333,7 +340,7 @@ export function AuthSessionProvider({
       cancelled = true;
       clearTimeout(resolveTimer);
     };
-  }, [supabase, accessToken, userId]);
+  }, [supabase, accessToken, claimKey]);
 
   // supabase-js refreshes tokens on a timer, and the OS suspends timers in the
   // background. Restart the loop whenever the app is foregrounded, or a session
