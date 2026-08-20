@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { beyondGrace, chapterSubscription } from "@/tests/chapter-subscription";
-import type { SubscriptionWriteClass } from "@/lib/subscription";
+import type { SubscriptionWriteClass } from "@repo/validation";
 
 const { mockCurrentChapter, mockMyPermissions } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
