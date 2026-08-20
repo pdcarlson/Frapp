@@ -21,7 +21,7 @@ import {
   type ChapterDirectoryResult,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { serverMessageOf } from "@/lib/api-error";
+import { serverMessageOf } from "@repo/api-sdk";
 import { useAuthSession } from "@/lib/auth-session";
 import { LEGAL_LINKS } from "@/lib/more/legal";
 import {
