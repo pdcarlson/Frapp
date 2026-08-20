@@ -390,17 +390,16 @@ export function PollsPage() {
 
         {/*
           `usePolls` is `enabled: !!chapterId && polls:view_all`. A disabled
-          TanStack Query v5 stays `isPending` forever (`isLoading` is the flag
-          that means a fetch is actually in flight). Gating the spinner on
-          `isPending` is how a member without `polls:view_all` used to spin
-          forever — `<Can>` hides this tree when it is live, but the query
-          state still has to resolve to a real surface, not a spinner, when
-          the wrapper is bypassed or the query is disabled for any other
-          reason (#872).
+          TanStack Query v5 stays `isPending` forever with `fetchStatus:
+          "idle"`. `isLoading` is a fetch in flight; `fetchStatus ===
+          "paused"` is offline with no data — same `isPending &&
+          !isFetching` pair as disabled, but the member has the grant.
+          Gating the spinner on `isPending` is how a member without
+          `polls:view_all` used to spin forever (#872).
         */}
-        {pollsQuery.isLoading ? (
+        {pollsQuery.isLoading || pollsQuery.fetchStatus === "paused" ? (
           <LoadingState message="Loading chapter polls..." />
-        ) : pollsQuery.isPending ? (
+        ) : pollsQuery.isPending && pollsQuery.fetchStatus === "idle" ? (
           <EmptyState
             title="Poll list requires polls:view_all"
             description="Ask your chapter president to grant it if you need this view. You can still vote on polls from chat channels you can access."

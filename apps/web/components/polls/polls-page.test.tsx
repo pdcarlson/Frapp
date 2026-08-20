@@ -15,6 +15,7 @@ const { mockCurrentChapter, mockVote, mockUnvote, mockRefetch, pollsQuery } =
       isPending: false,
       isLoading: false,
       isFetching: false,
+      fetchStatus: "idle" as "idle" | "fetching" | "paused",
       isError: false,
       refetch: () => undefined as unknown,
     },
@@ -102,6 +103,7 @@ function resolvedPollsQuery() {
   pollsQuery.isPending = false;
   pollsQuery.isLoading = false;
   pollsQuery.isFetching = false;
+  pollsQuery.fetchStatus = "idle";
   pollsQuery.isError = false;
   pollsQuery.refetch = mockRefetch;
 }
@@ -121,6 +123,7 @@ describe("PollsPage disabled-query handling", () => {
     pollsQuery.isPending = true;
     pollsQuery.isLoading = false;
     pollsQuery.isFetching = false;
+    pollsQuery.fetchStatus = "idle";
 
     render(<PollsPage />);
 
@@ -137,10 +140,29 @@ describe("PollsPage disabled-query handling", () => {
     pollsQuery.isPending = true;
     pollsQuery.isLoading = true;
     pollsQuery.isFetching = true;
+    pollsQuery.fetchStatus = "fetching";
 
     render(<PollsPage />);
 
     expect(screen.getByText("Loading chapter polls...")).toBeInTheDocument();
+  });
+
+  it("spins when the query is paused (offline) rather than claiming view_all is missing", () => {
+    // `isPending && !isFetching` is also true for fetchStatus "paused".
+    // That is not a disabled query — the member has the grant, the network
+    // does not. The idle branch is the enabled:false signal.
+    pollsQuery.data = undefined as unknown as unknown[];
+    pollsQuery.isPending = true;
+    pollsQuery.isLoading = false;
+    pollsQuery.isFetching = false;
+    pollsQuery.fetchStatus = "paused";
+
+    render(<PollsPage />);
+
+    expect(screen.getByText("Loading chapter polls...")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/poll list requires polls:view_all/i),
+    ).not.toBeInTheDocument();
   });
 
   it("shows the Can denied copy, not a spinner, when the caller lacks polls:view_all", () => {
@@ -149,6 +171,7 @@ describe("PollsPage disabled-query handling", () => {
     pollsQuery.isPending = true;
     pollsQuery.isLoading = false;
     pollsQuery.isFetching = false;
+    pollsQuery.fetchStatus = "idle";
 
     render(<PollsPage />);
 

@@ -37,6 +37,9 @@ describe("createChapterQueryKeys", () => {
     expect(list).not.toEqual(detail);
     expect(taskFactory.lists(CHAPTER)[2]).toBe("list");
     expect(taskFactory.detail(CHAPTER, "x")[2]).toBe("detail");
+    // `list(id)` always includes the filters slot, even when omitted, so it
+    // is not the same tuple as the `lists(id)` invalidation prefix.
+    expect(taskFactory.list(CHAPTER)).not.toEqual(taskFactory.lists(CHAPTER));
   });
 
   it("is stricter than today's notificationKeys.list, which still allows null", () => {

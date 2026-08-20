@@ -18,6 +18,7 @@ const {
     data: [] as unknown[],
     isPending: false,
     isLoading: false,
+    fetchStatus: "idle" as "idle" | "fetching" | "paused",
     isError: false,
     refetch: () => undefined as unknown,
   },
@@ -81,6 +82,7 @@ function resolvedResourcesQuery() {
   resourcesQuery.data = [RESOURCE];
   resourcesQuery.isPending = false;
   resourcesQuery.isLoading = false;
+  resourcesQuery.fetchStatus = "idle";
   resourcesQuery.isError = false;
   resourcesQuery.refetch = vi.fn();
 }
@@ -97,6 +99,7 @@ describe("BackworkPage disabled-query handling", () => {
     resourcesQuery.data = undefined as unknown as unknown[];
     resourcesQuery.isPending = true;
     resourcesQuery.isLoading = false;
+    resourcesQuery.fetchStatus = "idle";
 
     render(<BackworkPage />);
 
@@ -107,10 +110,11 @@ describe("BackworkPage disabled-query handling", () => {
     ).toBeInTheDocument();
   });
 
-  it("does not spin when the resources query is pending but not fetching", () => {
+  it("does not spin when the resources query is disabled (pending and idle)", () => {
     resourcesQuery.data = undefined as unknown as unknown[];
     resourcesQuery.isPending = true;
     resourcesQuery.isLoading = false;
+    resourcesQuery.fetchStatus = "idle";
 
     render(<BackworkPage />);
 
@@ -121,10 +125,25 @@ describe("BackworkPage disabled-query handling", () => {
     resourcesQuery.data = undefined as unknown as unknown[];
     resourcesQuery.isPending = true;
     resourcesQuery.isLoading = true;
+    resourcesQuery.fetchStatus = "fetching";
 
     render(<BackworkPage />);
 
     expect(screen.getByText("Loading backwork...")).toBeInTheDocument();
+  });
+
+  it("spins when the query is paused (offline) instead of showing an empty library", () => {
+    resourcesQuery.data = undefined as unknown as unknown[];
+    resourcesQuery.isPending = true;
+    resourcesQuery.isLoading = false;
+    resourcesQuery.fetchStatus = "paused";
+
+    render(<BackworkPage />);
+
+    expect(screen.getByText("Loading backwork...")).toBeInTheDocument();
+    expect(
+      screen.queryByText("No backwork matches this view"),
+    ).not.toBeInTheDocument();
   });
 });
 

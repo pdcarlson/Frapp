@@ -846,13 +846,12 @@ export function BackworkPage() {
         <CardContent>
           {/*
             Same trap as `/polls` (#872 / #873): `useBackworkResources` is
-            `enabled: !!chapterId`, and a disabled query stays `isPending`.
-            The no-chapter branch above handles the usual disabled case;
-            `isLoading` (`isPending && isFetching`) is the in-flight flag so
-            any other disabled path still resolves to empty/error instead of
-            a spinner that never stops.
+            `enabled: !!chapterId`, and a disabled query stays `isPending`
+            with `fetchStatus: "idle"`. `isLoading` is a fetch in flight;
+            `paused` is offline with no data — not an empty library.
           */}
-          {resourcesQuery.isLoading ? (
+          {resourcesQuery.isLoading ||
+          resourcesQuery.fetchStatus === "paused" ? (
             <LoadingState message="Loading backwork..." />
           ) : resourcesQuery.isError ? (
             <ErrorState

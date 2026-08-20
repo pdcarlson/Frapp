@@ -84,7 +84,7 @@ Every async view MUST include all relevant states:
 
 Skeleton, empty, and error render as one visual family — the states panel (4f) in [`reference/signet-design-system.dc.html`](reference/signet-design-system.dc.html) is the model. Web dashboards use the shared state modules in `apps/web/components/shared/async-states.tsx` unless there is a strong reason to diverge.
 
-**A disabled query is not a loading state.** TanStack Query v5 keeps `isPending` true for a query whose `enabled` flag is false — nothing is in flight, and nothing will be. Gate spinners on `isLoading` (`isPending && isFetching`) and treat `isPending && !isFetching` as the entitlement/empty branch (permission denied, no chapter selected), not as a spinner. `/polls` (`polls:view_all`) and `/backwork` (no chapter) are the reference surfaces.
+**A disabled query is not a loading state.** TanStack Query v5 keeps `isPending` true for a query whose `enabled` flag is false — nothing is in flight, and nothing will be (`fetchStatus: "idle"`). Gate spinners on `isLoading` (`isPending && isFetching`) or `fetchStatus === "paused"` (offline, no cached data). Treat `isPending && fetchStatus === "idle"` as the entitlement/empty branch (permission denied, no chapter selected), not as a spinner. Do not use `isPending && !isFetching` for that branch — paused queries share those flags and are not disabled. `/polls` (`polls:view_all`) and `/backwork` (no chapter) are the reference surfaces.
 
 ---
 

@@ -24,7 +24,13 @@ export function createChapterQueryKeys<const TScope extends string>(
     all: [scope] as const,
     /** Everything cached for one chapter. */
     chapter: (chapterId: string) => [scope, chapterId] as const,
+    /** Prefix for every list in this chapter (invalidate here, don't fetch). */
     lists: (chapterId: string) => [scope, chapterId, "list"] as const,
+    /**
+     * Concrete list key. Always includes the filters slot — even `undefined`
+     * — so it is not the same tuple as `lists(chapterId)`. Mount queries on
+     * `list`; invalidate with `lists`.
+     */
     list: (chapterId: string, filters?: unknown) =>
       [scope, chapterId, "list", filters] as const,
     details: (chapterId: string) => [scope, chapterId, "detail"] as const,

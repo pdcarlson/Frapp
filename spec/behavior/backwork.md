@@ -39,7 +39,7 @@ Files are stored in Supabase Storage under `chapters/{chapter_id}/backwork/{reso
 - Resources are browsable by department, course, professor, semester/year, assignment type, and tags.
 - Full-text search across title, tags, course name, and professor name.
 - Results are always scoped to the user's active chapter.
-- **Dashboard `/backwork`:** `useBackworkResources` is `enabled: !!chapterId`. With no chapter selected the page shows "No chapter selected", never a spinner. The resource list gates its spinner on `isLoading` (`isPending && isFetching`); a disabled TanStack Query v5 stays `isPending` forever and must not be treated as in-flight.
+- **Dashboard `/backwork`:** `useBackworkResources` is `enabled: !!chapterId`. With no chapter selected the page shows "No chapter selected", never a spinner. The resource list gates its spinner on `isLoading` or `fetchStatus === "paused"` (offline, no data); a disabled TanStack Query v5 stays `isPending` with `fetchStatus: "idle"` and must not be treated as in-flight or as an empty library.
 
 ## PDF Redaction (Phase: v2)
 
