@@ -48,7 +48,7 @@ it. Design + policy: [`GITHUB_PM.md`](GITHUB_PM.md).
 
 | Item                | Location / notes                                                                                                                                      |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CI                  | `.github/workflows/ci.yml` — parallel jobs (`lint-and-typecheck` includes `nest build` for `apps/api` + landing, `@repo/validation`, `@repo/color`, `@repo/chapter-theme`, and `@repo/api-sdk` unit tests; `api-tests` runs `apps/api` Jest unit + E2E suites (`test` then `test:e2e`); `web-tests` runs `apps/web` Vitest plus the `packages/hooks` and `packages/chat-core` suites; `api-docker-build` runs `apps/api/Dockerfile`) |
+| CI                  | `.github/workflows/ci.yml` — parallel jobs (`lint-and-typecheck` includes `nest build` for `apps/api` + landing, `@repo/validation`, `@repo/color`, `@repo/chapter-theme`, and `@repo/api-sdk` unit tests; `api-tests` runs `apps/api` Jest unit + E2E suites (`test` then `test:e2e`); `web-tests` runs `apps/web` Vitest plus the `packages/hooks`, `packages/chat-core`, and `packages/chat-integrations` suites; `api-docker-build` runs `apps/api/Dockerfile`) |
 | API deploy          | `.github/workflows/deploy-api.yml` — after CI (`workflow_run`)                                                                                        |
 | Deploy outcome      | `.github/workflows/deploy-api.yml` → terminal `deploy-outcome` job — the only job in that workflow with a write scope (job-scoped `issues: write`; the workflow-level grant stays `contents: read`). Writes a step summary + annotation saying whether the run **deployed** or **declined to deploy**, and upserts one `routine-state` alert issue on failure, closing it on the next successful deploy. Logic in `scripts/ci/deploy-alert.mjs` (tests: `scripts/ci/__tests__/deploy-alert.test.mjs`). **Not** a required check. See "Deploy visibility" below. |
 | Deploy verification | `.github/workflows/verify-deployments.yml` — post-push Render + Vercel state polling                                                                  |
@@ -275,6 +275,23 @@ v10 incompatibility we trip. That workaround was rejected for now because it run
 outside its declared peer range and hardcodes a React version that has to be hand-synced with the
 real pin. When `eslint-plugin-react` declares v10 support, drop these two ignore entries and the
 upgrade should be close to a no-op. Original PRs: #943 (`eslint`), #944 (`@eslint/js`).
+
+### eslint-plugin-react-hooks 7 compiler rules are held
+
+`eslint-plugin-react-hooks` 7.x `recommended` enables React Compiler rules
+(`set-state-in-effect`, `refs`, `purity`, `preserve-manual-memoization`, …) on top of the two
+classic Rules of Hooks. We do not run `babel-plugin-react-compiler`, and those rules currently
+fail `--max-warnings 0`: 37 findings in `apps/web` and 26 in `apps/mobile` when measured on
+#1108, mostly intentional render-time ref updates and effect-synced state in auth, chat,
+realtime, and React Native animation.
+
+The shared presets therefore take only `react-hooks/rules-of-hooks` and
+`react-hooks/exhaustive-deps` from the v7 flat `recommended` config and turn the rest off
+([`packages/eslint-config/react-hooks.js`](../../../packages/eslint-config/react-hooks.js)). A
+later plugin bump cannot re-open the lint gate by adding a new compiler rule to `recommended`.
+Adopting the compiler subset is a dedicated cleanup (rewrite those call sites, then delete the
+filter), not a Dependabot follow-through. The package bump itself is still wanted: 7.x adds
+ESLint v10 support and compiler-lint bugfixes we can take when the cleanup lands.
 
 ### TypeScript 7 is native `tsc` plus a TypeScript 6 compiler API
 

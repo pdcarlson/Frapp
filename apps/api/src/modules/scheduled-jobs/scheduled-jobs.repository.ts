@@ -223,8 +223,14 @@ export class ScheduledJobsRepository {
    * suppress that reminder forever, so the caller compensates by releasing.
    * A failed release is not fatal — it degrades to the previous at-most-once
    * behavior for that one reminder.
+   *
+   * `chapterId` is taken from the same sweep row that claimed the dispatch, not
+   * from ambient request context. The unique key on this table is the entity
+   * tuple (entity ids are globally unique UUIDs), but the delete still binds
+   * `chapter_id` so a compensating release cannot drop another chapter's claim.
    */
   async releaseDispatch(
+    chapterId: string,
     entityType: DispatchEntityType,
     entityId: string,
     threshold: DispatchThreshold,
@@ -233,6 +239,7 @@ export class ScheduledJobsRepository {
     const { error } = await this.supabase
       .from('scheduled_notification_dispatches')
       .delete()
+      .eq('chapter_id', chapterId)
       .eq('entity_type', entityType)
       .eq('entity_id', entityId)
       .eq('threshold', threshold)
