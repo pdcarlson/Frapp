@@ -113,11 +113,19 @@ export interface TenantHarnessOptions {
    */
   tenantColumns?: Record<string, string>;
   /**
-   * Tables with no tenant column at all — `users`, `stripe_webhook_events`. Listed
-   * explicitly so "this table is global" is an assertion in the spec rather than
-   * something inferred from the seed happening to omit `chapter_id`.
+   * Tables with no `chapter_id` column of their own, so the harness can neither
+   * require a tenant predicate nor check twin collision on them. Two different
+   * situations end up here and the spec should say which it means:
+   *
+   * - genuinely global (`users`, `stripe_webhook_events`);
+   * - indirectly scoped, where the chapter lives on a parent row
+   *   (`event_attendance` via `events`, `poll_votes` and `chat_messages` via
+   *   `chat_channels`).
+   *
+   * Listed explicitly, because inferring it from a seed that happens to omit
+   * `chapter_id` would silently disarm every check in this file.
    */
-  globalTables?: string[];
+  untenantedTables?: string[];
   /**
    * Columns allowed to differ between a table's chapter-A and chapter-B twins.
    * `id` and the tenant column are always exempt.
@@ -337,12 +345,12 @@ export function createTenantHarness(
   options: TenantHarnessOptions,
 ): TenantHarness {
   const seed = clone(options.tables);
-  const globalTables = new Set(options.globalTables ?? []);
+  const untenanted = new Set(options.untenantedTables ?? []);
   const tenantColumnFor = (table: string) =>
     options.tenantColumns?.[table] ?? 'chapter_id';
 
   for (const [table, rows] of Object.entries(options.tables)) {
-    if (globalTables.has(table)) continue;
+    if (untenanted.has(table)) continue;
     // An embed path (`chat_channels.chapter_id`) still collides on the row's own
     // `chapter_id` when the spec seeds one; fall back to it for the twin check.
     const column = tenantColumnFor(table).includes('.')
@@ -365,6 +373,7 @@ export function createTenantHarness(
     const orGroups: Filter[][] = [];
     let mode: RecordedOp['mode'] = 'select';
     let payload: Row[] = [];
+    let conflictColumns: string[] = ['id'];
     let head = false;
     let limit: number | null = null;
     let range: [number, number] | null = null;
@@ -394,19 +403,29 @@ export function createTenantHarness(
       let matched: Row[];
       if (mode === 'insert' || mode === 'upsert') {
         const stored = (tables[table] ??= []);
+        // The conflict target decides which existing row an upsert overwrites,
+        // which makes it a tenancy control in its own right: drop `chapter_id`
+        // from `onConflict` and one chapter's write lands on another's row.
+        const conflictMatch = (candidate: Row, row: Row) =>
+          conflictColumns.every(
+            (column) =>
+              readColumn(candidate, column) === readColumn(row, column),
+          );
+        matched = [];
         for (const row of payload) {
           const existing =
             mode === 'upsert'
-              ? stored.find((candidate) => candidate.id === row.id)
+              ? stored.find((candidate) => conflictMatch(candidate, row))
               : undefined;
-          if (existing) Object.assign(existing, row);
-          else stored.push(clone(row));
+          if (existing) {
+            Object.assign(existing, row);
+            matched.push(existing);
+          } else {
+            const inserted = clone(row);
+            stored.push(inserted);
+            matched.push(inserted);
+          }
         }
-        matched = payload.map((row) =>
-          mode === 'upsert'
-            ? ((tables[table] ?? []).find((c) => c.id === row.id) ?? row)
-            : row,
-        );
       } else if (mode === 'update') {
         matched = matching();
         for (const row of matched) Object.assign(row, payload[0] ?? {});
@@ -447,9 +466,12 @@ export function createTenantHarness(
         payload = Array.isArray(value) ? value : [value];
         return builder;
       }),
-      upsert: jest.fn((value: Row | Row[]) => {
+      upsert: jest.fn((value: Row | Row[], opts?: { onConflict?: string }) => {
         mode = 'upsert';
         payload = Array.isArray(value) ? value : [value];
+        conflictColumns = opts?.onConflict
+          ? opts.onConflict.split(',').map((column) => column.trim())
+          : ['id'];
         return builder;
       }),
       update: jest.fn((value: Row) => {
@@ -586,7 +608,7 @@ export function createTenantHarness(
     const rpcs = rpcCalls.slice();
 
     for (const op of relevant) {
-      if (globalTables.has(op.table)) continue;
+      if (untenanted.has(op.table)) continue;
       const column = tenantColumnFor(op.table);
 
       if (op.mode === 'insert' || op.mode === 'upsert') {
@@ -640,7 +662,7 @@ export function createTenantHarness(
       ...Object.keys(before),
       ...Object.keys(tables),
     ])) {
-      if (globalTables.has(table)) continue;
+      if (untenanted.has(table)) continue;
       const priorRows = before[table] ?? [];
       const currentRows = tables[table] ?? [];
 

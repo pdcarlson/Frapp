@@ -197,6 +197,34 @@ describe('tenant-scope harness', () => {
       ).rejects.toThrow(/ran without a tenant predicate/);
     });
 
+    it('honours an upsert conflict target that includes the chapter', async () => {
+      const harness = createTenantHarness({ tables: widgets() });
+
+      // A conflict target without `chapter_id` would merge onto whichever twin
+      // matched first. Modelling `onConflict` is what lets a spec prove the
+      // chapter is part of the key.
+      await harness.expectTenantScoped(CHAPTER_B, async () => {
+        await (harness.client as any)
+          .from('widgets')
+          .upsert(
+            {
+              user_id: USER_SHARED,
+              chapter_id: CHAPTER_B,
+              name: 'Treasurer',
+              archived: true,
+            },
+            { onConflict: 'user_id,chapter_id,name' },
+          )
+          .select()
+          .single();
+      });
+
+      const rows = harness.rows('widgets');
+      expect(rows).toHaveLength(2);
+      expect(rows.find((r) => r.id === ROW_B)!.archived).toBe(true);
+      expect(rows.find((r) => r.id === ROW_A)!.archived).toBe(false);
+    });
+
     it('fails an insert written under another chapter', async () => {
       const harness = createTenantHarness({ tables: widgets() });
 
@@ -248,11 +276,11 @@ describe('tenant-scope harness', () => {
       ).toThrow(/must be seeded in both chapters/);
     });
 
-    it('skips the twin requirement for declared global tables', () => {
+    it('skips the twin requirement for declared untenanted tables', () => {
       expect(() =>
         createTenantHarness({
           tables: { users: [{ id: USER_SHARED, email: 'a@example.com' }] },
-          globalTables: ['users'],
+          untenantedTables: ['users'],
         }),
       ).not.toThrow();
     });
