@@ -18,7 +18,7 @@
  * into `@repo/hooks` beside `usePayInvoice` is filed separately — doing it here
  * would change web's behaviour inside a mobile slice.
  */
-import { serverMessageOf, statusOf } from "../api-error";
+import { serverMessageOf, statusOf } from "@repo/api-sdk";
 
 export function payIntentErrorCopy(error: unknown): string {
   const status = statusOf(error);

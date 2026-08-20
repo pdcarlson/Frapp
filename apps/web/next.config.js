@@ -2,7 +2,7 @@ import { withSentryConfig } from "@sentry/nextjs";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  transpilePackages: ["@repo/theme", "@repo/ui"],
+  transpilePackages: ["@repo/theme"],
   env: {
     /**
      * The Sentry environment tag, **derived** rather than configured.

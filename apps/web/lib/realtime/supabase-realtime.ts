@@ -2,7 +2,7 @@
 
 import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import { isTopicOccupied, releaseTopic } from "@/lib/realtime/topic-registry";
+import { isTopicOccupied, releaseTopic } from "@repo/chat-core/topic-registry";
 
 /**
  * Singleton browser Supabase client for realtime subscriptions.

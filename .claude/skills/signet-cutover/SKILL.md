@@ -68,7 +68,7 @@ documented migration window). Concrete:
 
 - Do not add a parallel token set "next to" the one in use on that surface.
 - Do not leave a shim that still serves the old look after the new one ships.
-- Do not extend `@repo/ui` / `@repo/theme` patterns onto Signet mobile — confirm real consumers
+- Do not extend `apps/web/components/ui` (shadcn/Radix) or `@repo/theme` (legacy web exports) patterns onto Signet mobile — confirm real consumers
   first ([`AGENTS.md`](../../../AGENTS.md) tech-debt protocol).
 - A definition or `index.ts` re-export is not evidence anything still calls it.
 

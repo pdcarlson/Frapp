@@ -32,7 +32,7 @@ import {
   readForegroundPermission,
   requestForegroundPermission,
 } from "@/lib/location";
-import { statusOf } from "@/lib/api-error";
+import { statusOf } from "@repo/api-sdk";
 import {
   clearStudyPausedNotification,
   notifyStudyPaused,

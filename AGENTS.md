@@ -24,7 +24,7 @@ One-off incidents and decisions are logged **once** as an immutable ADR in [`spe
 
 ## Project overview
 
-Frapp is a Turborepo + npm workspaces monorepo (**4 apps, 13 shared packages**). Structure: `README.md`. Product/architecture: `spec/`. Developer docs: markdown in [`docs/guides/`](docs/guides/README.md) (no separate docs web app in-repo).
+Frapp is a Turborepo + npm workspaces monorepo (**4 apps, 12 shared packages**). Structure: `README.md`. Product/architecture: `spec/`. Developer docs: markdown in [`docs/guides/`](docs/guides/README.md) (no separate docs web app in-repo).
 
 - **Documentation map:** [`docs/README.md`](docs/README.md). **Conventions:** [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md).
 

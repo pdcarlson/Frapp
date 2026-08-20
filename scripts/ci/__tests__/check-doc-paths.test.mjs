@@ -33,7 +33,7 @@ test("docs, spec, skills, AGENTS.md and the root contract files are in scope", (
 });
 
 test("source files and non-contract READMEs stay out of scope", () => {
-  for (const p of ["apps/api/src/main.ts", "packages/ui/README.md", "docs/guides/img.png"]) {
+  for (const p of ["apps/api/src/main.ts", "packages/hooks/README.md", "docs/guides/img.png"]) {
     assert.equal(inScope(p), false, p);
   }
 });
@@ -112,7 +112,7 @@ const TRACKED = [
   "docs/guides/testing.md",
   "scripts/setup.sh",
   ".gitleaks.toml",
-  "packages/ui/src/index.ts",
+  "packages/hooks/src/index.ts",
   "packages/hooks/src/index.ts",
 ];
 

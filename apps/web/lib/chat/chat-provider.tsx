@@ -16,12 +16,12 @@ import { useFrappClient } from "@repo/hooks";
 import { useChapterTheme } from "@/lib/hooks/use-chapter-theme";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useToast } from "@/hooks/use-toast";
-import { browserNetworkState } from "@repo/chat-core";
+import { browserNetworkState } from "@repo/chat-core/adapters";
 import { getRealtimeClient } from "@/lib/realtime/supabase-realtime";
-import { chatRealtime } from "./realtime-manager";
-import { flushOutbox } from "./chat-client";
+import { chatRealtime } from "@repo/chat-core/realtime-manager";
+import { flushOutbox } from "@repo/chat-core/chat-client";
 import { dexieOutboxStore } from "./offline-queue";
-import type { RawChatMessage } from "./types";
+import type { RawChatMessage } from "@repo/chat-core/types";
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();

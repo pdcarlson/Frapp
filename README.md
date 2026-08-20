@@ -11,7 +11,7 @@ apps/
   mobile/     — Expo mobile app (iOS + Android)
   landing/    — Next.js marketing site (frapp.live)
   (Developer docs: repo-root `docs/guides/` — no Next.js docs app.)
-packages/    — 13 shared workspaces
+packages/    — 12 shared workspaces
   api-sdk/            — Generated TypeScript API client
   brand-assets/       — Canonical SVG marks (favicon + lockup); sync via `npm run sync:brand-assets`
   chapter-theme/      — Chapter accent palette derivation (legacy web token map until Signet reskin)
@@ -23,7 +23,6 @@ packages/    — 13 shared workspaces
   org-archetypes/     — Greek-org directory / archetype data
   theme/              — Tailwind config + global styles (legacy bone/bronze until web/landing reskin)
   typescript-config/  — Shared tsconfig
-  ui/                 — Shared UI components
   validation/         — Shared Zod schemas
 spec/         — Product spec, behavior spec, architecture, environments
 supabase/     — Supabase project config + migrations

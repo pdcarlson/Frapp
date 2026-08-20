@@ -13,7 +13,7 @@ import {
   actionTypeFromEmoji,
   emojiFromActionType,
   type ReactionState,
-} from "@/lib/chat/types";
+} from "@repo/chat-core/types";
 
 const QUICK_REACTIONS: readonly string[] = ["👍", "🙏", "✅", "🔥"] as const;
 
