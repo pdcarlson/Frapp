@@ -108,7 +108,7 @@ Frapp/
 
 | Package                   | Purpose                                                                   |
 | ------------------------- | ------------------------------------------------------------------------- |
-| `@repo/api-sdk`           | Auto-generated TypeScript client from OpenAPI spec. Used by web + mobile. |
+| `@repo/api-sdk`           | OpenAPI-generated TypeScript client plus a hand-written error reader (`statusOf`, `serverMessageOf`, `codeOf` in `src/api-error.ts`). Codegen overwrites only `src/types.ts`. Used by web + mobile + hooks + chat-core. |
 | `@repo/brand-assets`      | Canonical SVG marks (favicon + lockup).                                   |
 | `@repo/chapter-theme`     | Chapter accent palette derivation. Legacy 8-token CSS map until the Signet engine lands. |
 | `@repo/chat-core`         | Platform-neutral chat hot path — normalized cache, optimistic send client, realtime manager, shared topic registry — behind injected `KeyValueStore` / `NetworkState` / `OutboxStore` ports. |

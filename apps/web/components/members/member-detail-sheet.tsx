@@ -23,7 +23,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { dashboardTableCheckboxClassName } from "@/components/shared/table-controls";
-import { asArray } from "@/lib/utils";
+import { asArray, getErrorMessage } from "@/lib/utils";
 
 type MemberRecord = Record<string, unknown>;
 
@@ -73,13 +73,6 @@ function parseCustomFields(member: MemberRecord | null): CustomFieldValue[] {
       },
     ];
   });
-}
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return "Something went wrong. Please retry.";
 }
 
 type MemberDetailSheetProps = {
@@ -277,7 +270,7 @@ export function MemberDetailSheet({
     } catch (error) {
       toast({
         title: "Could not update roles",
-        description: getErrorMessage(error),
+        description: getErrorMessage(error, "Something went wrong. Please retry."),
         variant: "destructive",
       });
     }
@@ -300,7 +293,7 @@ export function MemberDetailSheet({
     } catch (error) {
       toast({
         title: "Could not remove member",
-        description: getErrorMessage(error),
+        description: getErrorMessage(error, "Something went wrong. Please retry."),
         variant: "destructive",
       });
     }
