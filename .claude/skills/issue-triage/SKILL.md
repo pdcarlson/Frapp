@@ -32,26 +32,31 @@ verify access at the start of the run. **If the GitHub MCP is unavailable, stop 
 fallback.** The label roster and shared routine config live in
 [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md).
 
-> **Never source a body edit from `issue_read` or `list_issues`.** Both corrupt the body they
-> return, three independent ways: HTML comments deleted (the `<!-- agent-suggestion: v1 fp=… -->`
-> dedup marker), unrecognised tags deleted (including JSX inside ` ```tsx ` fences), and `'`/`"`/`&`
-> entity-escaped. Rewriting from that text silently destroys content — a dropped marker makes the
-> curator re-file the issue as a duplicate, and a dropped code snippet is **unrecoverable**.
-> **Read the raw body with `search_issues` (`fields: ["number","title","body"]`), which returns all
-> three intact**, edit that, and confirm the marker survives in what you send back. Verified
-> 2026-08-14 across all three vectors — full table and the probe to re-verify:
+> **Never source a body edit from an MCP read — `search_issues` included.** All three read paths
+> (`issue_read`, `list_issues`, `search_issues`) corrupt the body they return, three independent
+> ways: HTML comments deleted (a legacy `<!-- agent-suggestion: v1 fp=… -->` dedup marker),
+> unrecognised tags deleted (including JSX inside ` ```tsx ` fences), and `'`/`"`/`&`/`>`
+> entity-escaped. `search_issues` was the lossless exception until it regressed on all three —
+> confirmed 2026-08-20. Rewriting from that text silently destroys content — a dropped marker makes
+> the curator re-file the issue as a duplicate, and a dropped code snippet is **unrecoverable**.
+> Full table, the probe, and the narrow escape hatch:
 > [`GITHUB_PM.md` → Reading a body you intend to rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity).
 > The same hazard applies to every routine that re-bodies an issue.
 >
-> **Agent-brief backfills are unblocked.** Earlier runs (2026-08-10, -08-12) correctly refused to
-> write briefs because only the HTML-comment vector was known to be safe; with `search_issues`
-> verified lossless on all three, Pass A step 3 and Pass B brief work proceed normally.
+> **Agent-brief backfills are blocked again — and that is the correct behavior.** Runs on
+> 2026-08-10 and -08-12 refused to write briefs; 2026-08-14 unblocked them on the strength of
+> `search_issues` being lossless; the 2026-08-20 run refused again, correctly, because it is not.
+> **Add a brief by leaving a comment**, or by authoring the full replacement body yourself under
+> the escape hatch. Do not round-trip a body through a read to add a brief to it — that is exactly
+> the destructive edit Pass A step 3 and Pass B would otherwise perform at scale.
+>
+> **What still works:** the `fp=` **lookup**. `search_issues` resolves fingerprints precisely (1 hit
+> for a real one, 0 for a fabricated one), so dedup needs no redesign — only the marker format
+> changed, to a **visible line**. Start each run with the marker-count guard in `GITHUB_PM.md`.
 >
 > `search_issues` is a **semantic** search, not a fetch-by-number, so it can miss or mis-rank the
 > issue you want. Query it with distinctive words from the target's own title, then **check that a
-> returned item's `number` is the issue you intend** before using its body. If the target does not
-> come back, **skip the body edit and say so** — leave a comment instead. Never fall back to
-> `issue_read` to source a rewrite; that is the failure this paragraph exists to prevent.
+> returned item's `number` is the issue you intend** before using it.
 
 ## Ownership: organize freely, destroy narrowly
 
@@ -91,7 +96,9 @@ each:
    (template in the [curator skill](../issue-curator/SKILL.md#agent-brief); field policy in
    [`GITHUB_PM.md`](../../../docs/internal/ci-cd/GITHUB_PM.md#agent-briefs-depth--model--ultracode));
    fix a brief that is obviously mis-calibrated (a schema-touching change marked `skim`). **Err
-   deeper**: when unsure between two depths, pick the deeper one.
+   deeper**: when unsure between two depths, pick the deeper one. **Deliver it as a comment**, not
+   as a body edit — per the read-fidelity block above, adding a section to an existing body means
+   round-tripping that body through a lossy read. `/next` reads the brief either way.
 4. **Blocked-by.** Add `Blocked by #N` body lines where a dependency is obvious.
 5. **Epic attach.** Attach as a sub-issue (`sub_issue_write`) when it clearly belongs to an open
    `[Epic]`. If none fit, leave it standalone.
@@ -122,7 +129,8 @@ runs walk the whole Backlog):
   suggestion is `P3`/`P4`; `P2` is for genuine high-impact (security, data-loss, broken core
   flows). Correct priority is what protects real work in `/next`.
 - **Agent briefs:** within the same batch, backfill missing briefs on `suggestion`-owned issues
-  and correct mis-calibrated ones — same rules as Pass A step 3.
+  and correct mis-calibrated ones — same rules as Pass A step 3, **including delivering them as
+  comments rather than body edits**.
 - **Epic-attach ONLY clear fits:** attach a suggestion as an epic's sub-issue **only when it
   unambiguously belongs** to that epic's scope. **Leave general, cross-cutting, infra, or
   speculative suggestions standalone — most suggestions stay standalone, and that's correct.**

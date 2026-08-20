@@ -33,7 +33,9 @@ purchase or product decision — file a GitHub issue before moving on.
 `area:<x>` + a priority. Body opens with `**Human action required — hold in triage; not for /next.**`
 followed by what you tried, the exact error/output as proof, and precisely what the human must do
 (exact setting/secret/file names), ending with
-`<!-- agent-suggestion: v1 fp=human/<slug> source=<session|pr#N|issue#N> -->`.
+a visible `` `agent-suggestion: v1 fp=human/<slug> source=<session|pr#N|issue#N>` `` line — a
+visible line, not an HTML comment, which every MCP read deletes (hiding it from the search index
+too).
 
 The weekly **PR Follow-ups** routine owns the `fp=human/` namespace: it audits these against
 reality, publishes every open one on the **Human Action List**, and closes them on proof — the

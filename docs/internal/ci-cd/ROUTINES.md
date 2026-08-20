@@ -76,16 +76,22 @@ GitHub MCP tool schemas (via `ToolSearch`, e.g.
 and verifying access (e.g. `issue_read` on a known issue resolves). **If the MCP is unavailable,
 the routine stops and reports — there is no fallback tracker.**
 
-> **`issue_read` strips HTML comments — never source a body rewrite from it.** `issue_read
-> method:get` omits HTML comments from the body it returns, so the hidden `fp=` dedup markers and
-> the `pr-followups-state` marker are invisible in its output even when the issue carries them
-> (verified 2026-08-11 against #618 and #619, whose markers `search_issues` returned and
-> `issue_read` did not). Rewriting a body from that text deletes the marker without any error, and
-> because markers are how the routines recognise their own issues across runs, the damage surfaces
-> a run later as a duplicate filing or a reset watermark. **Read raw bodies with `search_issues`
-> (`fields: ["number","title","body"]`), which returns HTML comments intact** — and since that tool
-> matches semantically rather than by number, confirm the returned `number` is the issue you meant
-> before writing back. Each skill states the rule for its own writes.
+> **No MCP read path returns a body faithfully — never source a body rewrite from one.**
+> `issue_read`, `list_issues` **and** `search_issues` all strip HTML comments (the `fp=` dedup and
+> `pr-followups-state` markers), strip tags including JSX inside ` ```tsx ` fences, and
+> entity-escape `'` `"` `&` `>`. `search_issues` was the lossless exception until it regressed on
+> all three vectors — confirmed 2026-08-20 against #357, #697 and #1086. Rewriting a body from any
+> of them deletes content without any error, and because markers are how the routines recognise
+> their own issues across runs, the damage surfaces a run later as a duplicate filing or a reset
+> watermark. **The damage is read-only: stored bodies are intact and nothing needs back-filling.**
+> So: **append a comment instead of rewriting**, or author the replacement body yourself; a rewrite
+> sourced from a read needs the narrow escape hatch in
+> [`GITHUB_PM.md` → Reading a body you intend to rewrite](GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity),
+> which is the canonical statement of this rule. Two consequences worth stating here: the `fp=`
+> marker is now a **visible line, not an HTML comment**, and the `fp=` **lookup is healthy** —
+> `search_issues` resolves fingerprints precisely, so dedup needs no redesign. Since it matches
+> semantically rather than by number, still confirm the returned `number` is the issue you meant.
+> Each skill states the rule for its own writes.
 
 **Label roster** (auto-created on first use; re-verify with `issue_read get_labels` on a labeled
 issue if anything looks off):
