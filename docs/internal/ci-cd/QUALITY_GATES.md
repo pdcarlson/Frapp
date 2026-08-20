@@ -101,6 +101,15 @@ runs perfectly on a modern Node and only fails on the runner. Before bumping the
 Node first, which is a separate decision with its own constraints (`apps/api` pins Node 20
 deliberately; see the WebSocket note in `apps/api/src/infrastructure/supabase/supabase.provider.ts`).
 
+`expo-server-sdk` 7.x is the same class of engines mismatch, with a different symptom. 6.0.0
+went ESM-only; 7.0.0 raised `engines.node` to `>=22.12.0` (stable `require(esm)`). npm does not
+fail `npm ci` on that (unlike undici 8.x, which is `EBADENGINE`-hard in
+[`SECURITY_FIXES.md`](../security/SECURITY_FIXES.md)), so `api-docker-build` stays green on
+`node:20-alpine`. Jest's CommonJS E2E runtime cannot parse the ESM entry, which is what turns
+`api-tests` red — the stub in [`docs/guides/testing.md`](../../guides/testing.md) §6. Do not treat
+a green Docker build as proof the major is Node-20-safe; lift Docker + CI Node together if a
+future 7.x actually needs 22.12 APIs.
+
 ### Why the baseline is ours rather than `--ignore-known`
 
 depcruise's native `--ignore-known` matches the paths a run reports, which here are

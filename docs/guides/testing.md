@@ -144,12 +144,15 @@ E2E config file: `apps/api/test/jest-e2e.json`:
   "rootDir": ".",
   "testEnvironment": "node",
   "testRegex": ".e2e-spec.ts$",
+  "setupFiles": ["<rootDir>/setup-e2e.ts"],
   "transform": {
     "^.+\\.(t|j)s$": ["ts-jest", { "tsconfig": { "module": "commonjs", "moduleResolution": "node", "resolvePackageJsonExports": false } }]
   },
   "moduleNameMapper": {
     "^@repo/org-archetypes$": "<rootDir>/../../../packages/org-archetypes/src/index.ts",
-    "^@repo/chapter-theme$": "<rootDir>/../../../packages/chapter-theme/src/index.ts"
+    "^@repo/chapter-theme$": "<rootDir>/../../../packages/chapter-theme/src/index.ts",
+    "^expo-server-sdk$": "<rootDir>/helpers/expo-server-sdk.stub.ts",
+    "^(\\.{1,2}/.*)\\.js$": "$1"
   }
 }
 ```
@@ -165,6 +168,16 @@ shallow-merges over `apps/api/tsconfig.json` (which sets `module`/`moduleResolut
 must be set together with `module: commonjs` or TypeScript errors with `TS5098`. The unit suite
 (`package.json` `jest` config) doesn't need this because the specs that touch these two packages
 `jest.mock()` them directly (they're pure helper functions) rather than transforming their ESM `dist`.
+
+`expo-server-sdk` 6+ is the same shape of problem from a published package rather than a workspace:
+it is `"type": "module"` (7.x also declares `engines.node >= 22.12.0` for stable `require(esm)`).
+Jest still treats `node_modules` as a script, so `import Expo from 'expo-server-sdk'` in
+`ExpoPushProvider` throws `SyntaxError: Cannot use import statement outside a module` before any
+spec runs. Transforming the real package is a worse fix — it then `import`s ESM `undici` and a
+JSON module via `with { type: 'json' }`. The mapper points at
+`test/helpers/expo-server-sdk.stub.ts` instead. Production Nest still `require()`s the real SDK
+(Node 20.19+ and 22.12+ both load it); the unit suite already `jest.mock`s it. E2E never sends
+push, so the stub only has to construct when `AppModule` boots.
 
 E2E specs build the Nest app from `AppModule` but **mock external dependencies** rather than hitting a
 live backend: the Supabase client is overridden via the `SUPABASE_CLIENT` provider token (see
