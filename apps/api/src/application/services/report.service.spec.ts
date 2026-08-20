@@ -6,11 +6,11 @@ import {
 } from './report.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { SEMESTER_ARCHIVE_REPOSITORY } from '../../domain/repositories/semester-archive.repository.interface';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 
 describe('ReportService', () => {
   let service: ReportService;
-  let mockSupabase: jest.Mocked<Pick<SupabaseClient, 'from' | 'rpc'>>;
+  let mockSupabase: jest.Mocked<Pick<FrappSupabaseClient, 'from' | 'rpc'>>;
   let mockSemesterArchiveRepo: { findLatestByChapter: jest.Mock };
 
   /**

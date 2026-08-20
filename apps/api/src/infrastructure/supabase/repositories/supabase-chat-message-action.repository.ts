@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+  TablesUpdate,
+} from '../database.types';
 import type { IChatMessageActionRepository } from '../../../domain/repositories/chat.repository.interface';
 import {
   ChatMessageActionDuplicateError,
@@ -21,14 +25,15 @@ export class SupabaseChatMessageActionRepository implements IChatMessageActionRe
     action_type: string;
     payload?: Record<string, unknown>;
   }): Promise<ChatMessageAction> {
+    const row: TablesInsert<'chat_message_actions'> = {
+      message_id: data.message_id,
+      user_id: data.user_id,
+      action_type: data.action_type,
+      payload: data.payload ?? {},
+    };
     const { data: created, error } = await this.supabase
       .from('chat_message_actions')
-      .insert({
-        message_id: data.message_id,
-        user_id: data.user_id,
-        action_type: data.action_type,
-        payload: data.payload ?? {},
-      } as never)
+      .insert(row)
       .select('*')
       .single();
     if (error) {
@@ -66,12 +71,13 @@ export class SupabaseChatMessageActionRepository implements IChatMessageActionRe
     actionType: string,
     payload: Record<string, unknown>,
   ): Promise<ChatMessageAction | null> {
+    const patch: TablesUpdate<'chat_message_actions'> = {
+      payload,
+      created_at: new Date().toISOString(),
+    };
     const { data, error } = await this.supabase
       .from('chat_message_actions')
-      .update({
-        payload,
-        created_at: new Date().toISOString(),
-      } as never)
+      .update(patch)
       .eq('message_id', messageId)
       .eq('user_id', userId)
       .eq('action_type', actionType)

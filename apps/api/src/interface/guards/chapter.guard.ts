@@ -7,7 +7,6 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import {
   MemberContext,
@@ -23,6 +22,7 @@ import {
 import { REQUIRED_MODULE_KEY } from '../decorators/module.decorator';
 import { isModuleEnabled } from '@repo/validation';
 import type { SubscriptionStatus } from '../../domain/entities/chapter.entity';
+import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
@@ -34,7 +34,7 @@ const GRACE_PERIOD_MS = 3 * 24 * 60 * 60 * 1000;
 @Injectable()
 export class ChapterGuard implements CanActivate {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
     private readonly reflector: Reflector,
   ) {}
 

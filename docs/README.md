@@ -31,4 +31,9 @@ What to update in a PR, and where docs vs. spec belong: **[`docs/internal/DOCUME
 
 The docs/spec CI gate (a change outside `docs/` or `spec/` must also touch one of them) is described in [`internal/ci-cd/DOCS_CI.md`](internal/ci-cd/DOCS_CI.md).
 
+The other quality gates — dependency-cruiser boundaries, oasdiff breaking-change detection, the
+`nestjs-typed` response-schema rule, jscpd duplication, and coverage — are in
+[`internal/ci-cd/QUALITY_GATES.md`](internal/ci-cd/QUALITY_GATES.md), which also records *why* each
+one is required, advisory, or `warn`.
+
 Tech debt found in the Frapp → Signet rebuild is tracked as **GitHub Issues**, not in a doc — see [`AGENTS.md` § Tech debt protocol](../AGENTS.md#tech-debt-protocol-non-optional) for what to do when you find orphaned or contradictory code.

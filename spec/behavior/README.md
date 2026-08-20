@@ -1,6 +1,8 @@
 # Behavior Specification: Frapp
 
-This folder defines the rules, invariants, edge cases, and error behavior that the system must uphold. Implementation (API, database, clients) must conform to these behaviors.
+This folder defines the rules, invariants, edge cases, and error behavior the system is **intended** to uphold.
+
+**`spec/` is the source of truth for intended behavior. Code is the source of truth for current behavior.** Implementation should conform to these behaviors; when shipped code disagrees, that is a tracked bug to file — not a license to silently treat either side as automatically winning. See [`AGENTS.md`](../../AGENTS.md) § Spec vs code.
 
 Each topic lives in its own file. Cross-cutting concerns (visual themeing, error shape, security invariants) live in this README.
 
@@ -32,14 +34,14 @@ Each topic lives in its own file. Cross-cutting concerns (visual themeing, error
 | Data retention                                       | [`data-retention.md`](data-retention.md)   |
 | Alumni features                                      | [`alumni.md`](alumni.md)                   |
 | Chapter branding                                     | [`branding.md`](branding.md)               |
-| Settings shell, customization, audit (chunks 06–08)  | [`settings/`](settings/README.md)          |
-| Ops integrations (chunk 10a–10h)                     | [`integrations.md`](integrations.md)       |
+| Settings shell, customization, audit                 | [`settings/`](settings/README.md)          |
+| Ops integrations                                     | [`integrations.md`](integrations.md)       |
 | Meetings (transcription + AI summary)                | [`meetings.md`](meetings.md)               |
 | Vault (encrypted private storage)                    | [`vault.md`](vault.md)                     |
 | AI features (corpus scope, citations, non-goals)     | [`ai.md`](ai.md)                           |
 | Chapter config endpoints                             | [`chapter-config.md`](chapter-config.md)   |
 
-Each topic file is canonical behavior. Delivery of the chat-rework chunks (which is shipped vs. queued) is tracked in **GitHub Issues** (see [`docs/internal/ci-cd/GITHUB_PM.md`](../../docs/internal/ci-cd/GITHUB_PM.md)), not in this spec.
+Each topic file is canonical **intended** behavior. Delivery (which is shipped vs. queued) is tracked in **GitHub Issues** (see [`docs/internal/ci-cd/GITHUB_PM.md`](../../docs/internal/ci-cd/GITHUB_PM.md)), not in this spec.
 
 ---
 
@@ -48,7 +50,7 @@ Each topic file is canonical behavior. Delivery of the chat-rework chunks (which
 - Full dark mode support across web and mobile.
 - Respects the device/OS system preference by default.
 - Manual override available in user settings (Light, Dark, System).
-- The "Modern Ivy" color palette has dark-mode variants defined in the theme package.
+- Palette, typeface, and dark-first Signet tokens live in [`spec/ui/brand-identity.md`](../ui/brand-identity.md) and [`spec/ui/design-system/`](../ui/design-system/README.md) — do not duplicate values here. Frozen web/landing still ship the legacy `@repo/theme` tokens until their reskin.
 
 ---
 

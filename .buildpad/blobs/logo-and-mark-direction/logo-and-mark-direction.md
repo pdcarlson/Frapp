@@ -1,0 +1,3 @@
+# Logo and mark direction
+
+Decided (tentative on exact color): lead logo concept is an "S" monogram built like a seal impression — bold weight, large negative space, works at 16px favicon size — paired with a humanist rounded-sans wordmark. House color: warm gold/amber, tentative pending contrast workshopping in Claude Design. Mark stays fixed across all tenants; only UI takes the chapter accent, never the logo/icon. Avoid: blue, serif, checkmarks, literal rings/wax seals, hexagons/swirls/gradients (generic-AI cliche vocabulary).

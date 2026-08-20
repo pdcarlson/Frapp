@@ -1,0 +1,3 @@
+# Tech debt management system
+
+Resolved (confirmed by Aug 19 audit): TECH-DEBT.md was actually built (PR #870, 134 lines, 15 seeded items) and deliberately deleted the same day (PR #886, ~7 hours later) in favor of tracking debt as GitHub issues only. Now enforced by a CI check that asserts the file must not exist. Keep this decision — it's sound. The more valuable half survived: the protocol itself ("confirm existing code has real consumers before extending it," "a cutover deletes what it replaces") lives on in AGENTS.md and is genuinely useful, unlike the ledger file, which nothing was reaching for unprompted.

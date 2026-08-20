@@ -9,7 +9,7 @@
 | Monorepo       | Turborepo + npm workspaces                   | Single repo, task orchestration, caching.                                                                             |
 | Landing        | Next.js (App Router)                         | `apps/landing` at frapp.live. Static/SSG for speed.                                                                   |
 | Web App        | Next.js (App Router), Tailwind, ShadCN UI    | `apps/web` at app.frapp.live. Admin dashboard.                                                                        |
-| Mobile App     | Expo (React Native), Expo Router, NativeWind | `apps/mobile`. Member experience. iOS + Android.                                                                      |
+| Mobile App     | Expo (React Native), Expo Router             | `apps/mobile`. Signet StyleSheet tokens; NativeWind removed. iOS + Android.                                           |
 | Developer docs | Markdown in-repo                             | [`docs/guides/`](../../docs/guides/README.md) + `spec/`. No deployed docs web app; a public site may return post-launch. |
 | API            | NestJS 11, TypeScript (strict)               | `apps/api`. REST + WebSocket gateway.                                                                                 |
 | Database       | PostgreSQL (via Supabase)                    | Supabase-hosted Postgres. Migrations via Supabase CLI.                                                                |
@@ -32,15 +32,19 @@ Frapp/
     web/            # Next.js admin dashboard (app.frapp.live)
     mobile/         # Expo mobile app (iOS + Android)
     landing/        # Next.js marketing site (frapp.live)
-  packages/
+  packages/         # 12 shared workspaces
     api-sdk/        # Generated API client + TypeScript types
+    brand-assets/   # Canonical SVG marks (favicon + lockup)
+    chapter-theme/  # Chapter accent palette derivation (legacy web token map until Signet reskin)
     chat-core/      # Platform-neutral chat hot path (cache, send client, realtime manager) behind injected adapters
-    hooks/          # Shared React hooks (use-members, use-frapp-client, etc.)
-    ui/             # Shared React components (button, card, etc.)
-    theme/          # Tailwind config + global styles (light + dark mode)
-    validation/     # Shared Zod schemas (used by API + web + mobile)
+    chat-integrations/ # Chat slash-command / integration helpers
+    color/          # Shared WCAG contrast math
     eslint-config/  # Shared ESLint configuration
+    hooks/          # Shared React hooks (use-members, use-frapp-client, etc.)
+    org-archetypes/ # Greek-org directory / archetype data
+    theme/          # Tailwind config + global styles (legacy bone/bronze until web/landing reskin)
     typescript-config/ # Shared tsconfig
+    validation/     # Shared Zod schemas (used by API + web + mobile)
   spec/             # Product spec, behavior spec, architecture, environments
   supabase/         # Supabase project config, migrations, seed files
 ```
@@ -94,7 +98,7 @@ Frapp/
 
 - **Authoring:** Developer guides in **[`docs/guides/`](../../docs/guides/README.md)**; product and architecture in **`spec/`**. Read and edit in GitHub or your editor; there is no separate Next.js documentation deployment in this repo for now.
 - **Spec rendering:** Previously the removed docs app rendered `spec/*.md` in a browser. Today, use the repo view on GitHub (or a local markdown preview). A future public docs site may restore styled rendering.
-- **Sync rule:** When behavior, architecture, or workflows change, update **`docs/`** and/or **`spec/`** in the same change set. Divergence is a bug.
+  - **Sync rule:** When behavior, architecture, or workflows change, update **`docs/`** and/or **`spec/`** in the same change set. Spec is intended behavior; code is current behavior; disagreement is a tracked bug (see [`AGENTS.md`](../../AGENTS.md) § Spec vs code).
   - **Enforcement:** CI fails PRs that change product code without also updating **`docs/`** or **`spec/`**. See [`docs/internal/ci-cd/DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md).
   - **Workflow:** The PR template requires a “Docs / Spec impact” section; treat “None” as an explicit claim that reviewers should challenge.
 
@@ -105,13 +109,17 @@ Frapp/
 | Package                   | Purpose                                                                   |
 | ------------------------- | ------------------------------------------------------------------------- |
 | `@repo/api-sdk`           | Auto-generated TypeScript client from OpenAPI spec. Used by web + mobile. |
-| `@repo/chat-core`         | Platform-neutral chat hot path — normalized cache, optimistic send client, realtime manager, shared topic registry — behind injected `KeyValueStore` / `NetworkState` / `OutboxStore` ports. Web today; mobile with Signet Phase 2 (#937). |
-| `@repo/hooks`             | Shared React hooks wrapping api-sdk with TanStack Query.                  |
-| `@repo/ui`                | Shared UI components (buttons, cards, inputs). Used by web + landing.     |
-| `@repo/theme`             | Tailwind config presets, global CSS, light/dark mode color tokens.        |
-| `@repo/validation`        | Shared Zod 4 schemas for form/request validation (used by API + clients). `z.record` requires a key schema and a value schema. |
+| `@repo/brand-assets`      | Canonical SVG marks (favicon + lockup).                                   |
+| `@repo/chapter-theme`     | Chapter accent palette derivation. Legacy 8-token CSS map until the Signet engine lands. |
+| `@repo/chat-core`         | Platform-neutral chat hot path — normalized cache, optimistic send client, realtime manager, shared topic registry — behind injected `KeyValueStore` / `NetworkState` / `OutboxStore` ports. |
+| `@repo/chat-integrations` | Chat slash-command / integration helpers.                                 |
+| `@repo/color`             | Shared WCAG contrast math. DOM-free so theme packages and the API share one implementation. |
 | `@repo/eslint-config`     | Shared ESLint rules.                                                      |
+| `@repo/hooks`             | Shared React hooks wrapping api-sdk with TanStack Query.                  |
+| `@repo/org-archetypes`    | Greek-org directory / archetype data for onboarding autofill.             |
+| `@repo/theme`             | Tailwind config presets, global CSS. Legacy bone/bronze tokens until web/landing reskin; Signet tokens are specified in `spec/ui/design-system/`. |
 | `@repo/typescript-config` | Shared tsconfig presets.                                                  |
+| `@repo/validation`        | Shared Zod 4 schemas plus client gates (`can`, `isModuleEnabled`, `subscriptionWriteState`) used by API + clients. `z.record` requires a key schema and a value schema. |
 
 ---
 
@@ -252,6 +260,7 @@ All Supabase repository implementations follow these conventions:
 - **Read-list queries** check the `error` field before returning data and default to an empty array only when no error is present.
 - **All read methods** destructure `{ data, error }` and throw if `error` is truthy, ensuring infrastructure failures (connectivity issues, permission errors) are never silently swallowed.
 - **Write methods** (`create`, `update`, `delete`) already follow this pattern — they check `error` and throw.
+- **Write payloads are `TablesInsert<'table'>` / `TablesUpdate<'table'>`**, not `as never`. `Insert`/`Update` in `database.types.ts` are mapped types of the domain entity (same index-signature trick as `Row`), so PostgREST accepts the payload without a cast and still rejects mistyped columns. Domain repository interfaces stay `Partial<Entity>` so the domain layer does not import `Database`. There is no generic base repository — each class keeps its own queries; only the write-method parameter type changes. `apps/api/src/infrastructure/supabase/repositories/no-as-never.spec.ts` fails if an `as never` cast returns, the repository count drifts, or a file injects a bare `SupabaseClient`. Direct service-layer writes (chapter config, custom fields/roles, chapter-create channel seed, onboarding, chat-bridge, scheduled-jobs) use the same table types; inject `FrappSupabaseClient` everywhere the `SUPABASE_CLIENT` token is taken, never the bare `SupabaseClient`.
 
 ### Invite redemption atomicity
 
@@ -668,8 +677,8 @@ The chosen path is Path D + Path C from #401. Path A (per-session Supabase branc
 
 - The three caches share the repo's ~10 GB Actions cache (LRU). `.turbo` is tiny and Playwright ~0.3 GB; the Docker `mode=max` cache (~1–3 GB) is the only real consumer — downgrade to `mode=min` if eviction is observed.
 - First run after merge is a cold miss everywhere (expected, one-time). Turbo's own input hashing remains the correctness arbiter, so a stale `.turbo` never replays wrong output — a miss simply rebuilds as before. No correctness risk.
-- `web-tests`, `web-visual-regression`, and `pglite-migrations` now **skip on out-of-scope PRs**; because they are not required checks, a skip cannot block merge, and every push to `main`/`production` still runs them in full. Filters are deliberately broad (`packages/**`, lockfile, `turbo.json`) to avoid missing a transitive dependency.
-- The required checks (the eight CI jobs + `docs-spec-sync`, and `branch-policy` on production) are never path-gated and keep reporting on every PR; branch protection is untouched. *(ADR-14's `claude-review-gate` was removed in the 2026-06-04 amendment.)*
+- `web-tests`, `web-visual-regression`, and `pglite-migrations` now **skip on out-of-scope PRs**; because they are not required checks, a skip cannot block merge, and every push to `main`/`production` still runs them in full. Filters are deliberately broad (`packages/**`, lockfile, `turbo.json`) to avoid missing a transitive dependency. *(Superseded for `web-tests` by the 2026-08-19 amendment: it is now required, and path-gating turned out never to have been in tension with that.)*
+- The required checks (the eight CI jobs + `docs-spec-sync`, and `branch-policy` on production) are never path-gated and keep reporting on every PR; branch protection is untouched. *(ADR-14's `claude-review-gate` was removed in the 2026-06-04 amendment. The "never path-gated" half no longer holds — see the 2026-08-19 amendment.)*
 - Fork PRs get read-only tokens, so the Docker `cache-to` export is a no-op there (the build still passes).
 
 **Trigger to revisit:**
@@ -677,6 +686,18 @@ The chosen path is Path D + Path C from #401. Path A (per-session Supabase branc
 - Docker GHA cache evicting the smaller caches → `cache-to: type=gha,mode=min` (or scope/prune).
 - Savings still insufficient → adopt a Turbo remote cache (reassessing the in-house-vs-Vercel privacy trade-off), path-gate the required jobs behind a skip→success wrapper, or cache `node_modules`.
 - A required job is renamed/added/removed → update `scripts/configure-branch-protection.mjs` and re-run it.
+
+- **Amendment (2026-08-19) — `web-tests` becomes a required check, and the "skip→success wrapper" premise was wrong.** `web-tests` is the **only** suite covering `packages/hooks`, `packages/ui` and `packages/chat-core`; the consolidation work now beginning edits `packages/hooks` directly, so leaving it advisory meant a broken shared hook could merge green. It is added to `CI_CHECKS` in [`scripts/configure-branch-protection.mjs`](../../scripts/configure-branch-protection.mjs).
+
+  The original decision assumed path-gating and required-ness were incompatible — hence "path-gate the required jobs behind a **skip→success wrapper**" above, and the consequence note that these jobs are safe to gate *because* they are not required. **No wrapper is needed, and the two properties were never in tension for the form used here.** GitHub's [required-status-check troubleshooting table](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/collaborating-on-repositories-with-code-quality-features/troubleshooting-required-status-checks) distinguishes two cases: a **workflow** skipped by path/branch filtering or a skip-commit-message leaves its checks "Pending" forever and **does** block merging; a **job** skipped by a conditional "reports Success". `success`, `skipped` and `neutral` all satisfy a required check. `web-tests` is gated by a job-level `if:` and `ci.yml` carries no workflow-level `paths:` filter, so only the benign case applies.
+
+  One real caveat from the same table, and it is why **`changes` is now required too**: a job skipped because a `needs:` parent **failed** "may not block merging". `web-tests` needs `[packages-build, changes]`, and `changes` was not a required check — so a `changes` failure would skip `web-tests`, report `skipped`, satisfy the requirement, and merge with the only suite covering `packages/hooks` never having run. The trigger is real rather than theoretical: `changes` is the one CI job that calls the GitHub API (`dorny/paths-filter` lists the PR's files), so it can fail on a rate limit or an action-download error — the failure mode this repo already hit once on #659 — while `packages-build`, which shares none of that surface, stays green. GitHub's prescribed alternative, `always()` plus explicit `needs.*.result` assertions, is rejected here because `always()` keeps running through the `cancel-in-progress` cancellations this ADR exists to bank.
+
+  **The general invariant, which nothing currently enforces: every `needs:` parent of a required check must itself be a required check.** `web-tests` is the first job in this repo to have needed it.
+
+  `web-visual-regression` stays advisory (visual flake should not block merge) and `pglite-migrations` stays advisory. **Applying this needs a manual `npm run configure:branch-protection` run** — and note that run will *also* newly apply `chapter-directory-seed`, which has been listed in the script since #840 but was never pushed to the live config. Both were verified green on `main` first.
+
+- **Amendment (2026-08-20) — `web-tests` no longer covers a deleted unused UI workspace.** A later consolidation deleted the unused shared UI workspace under `packages/` (zero importers; dashboard primitives live in `apps/web/components/ui/`; landing uses inline Tailwind). `web-tests` still uniquely covers `packages/hooks` and `packages/chat-core` plus `apps/web`. The 2026-08-19 required-check rationale is unchanged for those remaining suites. The 2026-08-19 text naming the deleted workspace is historical.
 
 ### ADR-16: Project management — retire the in-repo backlog, adopt Linear as canonical (2026-06-01)
 
@@ -846,6 +867,25 @@ an agent cannot observe permission prompts. Decision record, probe table, and mi
 - The repo re-opens or adopts GitHub Advanced Security → native push protection returns and the CI job can become redundant.
 - Recurring false positives or a need for shared org config → tune `.gitleaks.toml`, re-baseline (a baseline is already adopted), or move to a managed scanner.
 - Metered-minute pressure → the job is already minimal, but it can be folded into an existing job or made `paths`-aware.
+
+### ADR-18: Agent operating docs — recurring rules vs immutable ADRs; spec vs code (2026-08-19)
+
+**Decision:** Split agent operating knowledge by half-life.
+
+- **`AGENTS.md`** holds only rules that are (1) recurring, (2) still true, and (3) something an agent would not derive by reading the code. Target: short enough to load every session (~200 lines).
+- **ADRs** in this file are the immutable, append-only log of one-off incidents and decisions. Never edit an ADR in place; supersede it with an amendment or a new ADR. Incident narration (dated outages, specific PR numbers, permission-tool archaeology) lives here, not in `AGENTS.md`.
+- **Skills** under `.claude/skills/` hold task playbooks (including filing follow-up issues). **Commands** under `.claude/commands/` hold user-invocable procedures (`/next` stays a command).
+- **Spec vs code:** `spec/` is the source of truth for *intended* behavior; code is the source of truth for *current* behavior. Disagreement is a tracked bug to file, not silent agent discretion.
+
+**Rationale:** `AGENTS.md` had grown into a mix of durable rules, one-off incident write-ups, and a 60-line issue-filing playbook. Agents either drowned in archaeology or treated a stale spec sentence as current behavior (or the reverse). The three-way split matches how the knowledge is actually used: always-on constraints, historical decisions, and on-demand playbooks.
+
+**Consequences:**
+
+- A new "we hit X, don't do Y" story is an ADR (or an amendment), not a paragraph in `AGENTS.md`, unless it meets the three-part graduation test.
+- `README.md`, `spec/behavior/README.md`, and `spec/README.md` use the same spec-vs-code formulation. Do not reintroduce "the spec is the single source of truth" or "code is ground truth for behavior; docs are ground truth for intent" as competing slogans.
+- Filing follow-up work lives in `.claude/skills/file-follow-up/SKILL.md`. Routine ownership boilerplate lives once in [`ROUTINES.md`](../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
+
+**Trigger to revisit:** `AGENTS.md` grows past ~200 lines again, or a rule in it is no longer true.
 
 ---
 

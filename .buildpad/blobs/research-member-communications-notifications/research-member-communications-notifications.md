@@ -1,0 +1,13 @@
+# Research: member communications & notifications
+
+Bottom line: ship email broadcast first (Resend free tier during beta, ~$20/mo after), defer SMS. SMS requires A2P 10DLC carrier registration (1-2 week approval, ~$20-60 one-time + $1.50-10/mo per campaign) before any text is delivered at all, plus TCPA consent and STOP handling — a real launch blocker, not a nice-to-have. Email only needs CAN-SPAM basics (footer address + working unsubscribe).
+
+Permission model: borrow Flocknote's role x target-group matrix — broadcast is a role-gated capability scoped to the groups that role administers (president/exec = whole chapter, committee chair = only their committee). This extends Signet's existing role/permission system rather than needing new infrastructure.
+
+Notifications: start rules-based (query the user's own pending tasks/mentions/points, fill a template), not LLM-generated — LLM digests are cheap (~$0.0005/user/day) but add reliability risk not worth taking before RAG infra exists. Preference center should be category x channel x frequency (Tasks/Mentions/Events/Points, in-app/email/push, off/daily/weekly). Scheduling: node-cron is fine at current scale; pg-boss (Postgres-based, no Redis) is the upgrade path.
+
+Recommended build order: (A) email broadcast + rules-based digest, (B) preference center + push (registration already stubbed server-side), (C) SMS once adoption is proven, (D) LLM-wrapped recaps as a RAG fast-follow.
+
+Open flag: TCPA scope for informational (non-marketing) texts to already-opted-in members couldn't be confirmed from public sources — worth a real compliance check before Phase C, not before launch.
+
+**Reality check from codebase audit (Aug 19):** confirmed email/SMS are genuinely greenfield — no provider integrated anywhere. SMS is deeper greenfield than assumed: no phone number field exists in the data model at all, so shipping SMS means building phone collection + consent from scratch, not just wiring a provider. Good news: the notification data model is already mature (6 tables — notifications, push_tokens, notification_preferences, user_settings/quiet-hours, chat_notification_preferences, scheduled_notification_dispatches) and RBAC already supports role-based send gating; adding a messages:broadcast permission is a small config change, not new infrastructure. Two real gaps to design around: (1) #1041 (open) — announcements deliberately aren't member-mutable today because URGENT broadcasts aren't yet exempted from the preference gate; a mass-messaging feature is blocked on this landing first. (2) no delivery receipts — notifyChapter swallows per-recipient failures, so any broadcast needing accountability needs new tracking, reusing the scheduled_notification_dispatches idempotency pattern.

@@ -85,4 +85,21 @@ describe("SettingsModulesTab", () => {
       screen.getByRole("switch", { name: /events enabled/i }),
     ).toBeDisabled();
   });
+
+  it("disables only the switch whose module key is currently saving", () => {
+    render(
+      <SettingsModulesTab
+        enabledModules={{}}
+        canManage
+        onToggle={() => {}}
+        pendingModuleKeys={new Set(["enabled_modules.events"])}
+      />,
+    );
+    expect(
+      screen.getByRole("switch", { name: /events enabled/i }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("switch", { name: /tasks enabled/i }),
+    ).toBeEnabled();
+  });
 });

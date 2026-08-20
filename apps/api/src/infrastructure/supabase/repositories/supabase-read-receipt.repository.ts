@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type { IChannelReadReceiptRepository } from '../../../domain/repositories/chat.repository.interface';
 import {
   ChannelReadReceipt,
@@ -33,16 +33,14 @@ export class SupabaseReadReceiptRepository implements IChannelReadReceiptReposit
     userId: string,
     lastReadAt: string,
   ): Promise<ChannelReadReceipt> {
+    const row: TablesInsert<'channel_read_receipts'> = {
+      channel_id: channelId,
+      user_id: userId,
+      last_read_at: lastReadAt,
+    };
     const { data, error } = await this.supabase
       .from('channel_read_receipts')
-      .upsert(
-        {
-          channel_id: channelId,
-          user_id: userId,
-          last_read_at: lastReadAt,
-        } as never,
-        { onConflict: 'channel_id,user_id' },
-      )
+      .upsert(row, { onConflict: 'channel_id,user_id' })
       .select()
       .single();
     if (error) throw error;

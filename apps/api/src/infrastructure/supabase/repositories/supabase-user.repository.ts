@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+  TablesUpdate,
+} from '../database.types';
 import { IUserRepository } from '../../../domain/repositories/user.repository.interface';
 import {
   User,
@@ -78,20 +82,20 @@ export class SupabaseUserRepository implements IUserRepository {
     return data;
   }
 
-  async create(userData: Partial<User>): Promise<User> {
+  async create(userData: TablesInsert<'users'>): Promise<User> {
     const { data, error } = await this.supabase
       .from('users')
-      .insert(userData as never)
+      .insert(userData)
       .select()
       .single();
     if (error) throw error;
     return data;
   }
 
-  async update(id: string, userData: Partial<User>): Promise<User> {
+  async update(id: string, userData: TablesUpdate<'users'>): Promise<User> {
     const { data, error } = await this.supabase
       .from('users')
-      .update(userData as never)
+      .update(userData)
       .eq('id', id)
       // Hard backstop for the account-deletion race: the service-level
       // tombstone check is check-then-write, so a stalled request could

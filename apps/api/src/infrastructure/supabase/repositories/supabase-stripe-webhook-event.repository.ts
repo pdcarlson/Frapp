@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type { FrappSupabaseClient, TablesUpdate } from '../database.types';
 import type {
   IStripeWebhookEventRepository,
   StripeWebhookClaim,
@@ -44,25 +44,27 @@ export class SupabaseStripeWebhookEventRepository implements IStripeWebhookEvent
   }
 
   async markProcessed(eventId: string): Promise<void> {
+    const patch: TablesUpdate<'stripe_webhook_events'> = {
+      status: 'processed',
+      processed_at: new Date().toISOString(),
+      last_error: null,
+    };
     const { error } = await this.supabase
       .from('stripe_webhook_events')
-      .update({
-        status: 'processed',
-        processed_at: new Date().toISOString(),
-        last_error: null,
-      } as never)
+      .update(patch)
       .eq('event_id', eventId);
 
     if (error) throw error;
   }
 
   async markFailed(eventId: string, message: string): Promise<void> {
+    const patch: TablesUpdate<'stripe_webhook_events'> = {
+      status: 'failed',
+      last_error: message.slice(0, MAX_ERROR_LENGTH),
+    };
     const { error } = await this.supabase
       .from('stripe_webhook_events')
-      .update({
-        status: 'failed',
-        last_error: message.slice(0, MAX_ERROR_LENGTH),
-      } as never)
+      .update(patch)
       .eq('event_id', eventId);
 
     if (error) throw error;

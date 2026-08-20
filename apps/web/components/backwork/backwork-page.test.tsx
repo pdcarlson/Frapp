@@ -3,13 +3,26 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
-const { mockCurrentChapter, mockRequestUpload, mockConfirmUpload } = vi.hoisted(
-  () => ({
-    mockCurrentChapter: vi.fn(),
-    mockRequestUpload: vi.fn().mockResolvedValue({}),
-    mockConfirmUpload: vi.fn().mockResolvedValue({}),
-  }),
-);
+const {
+  mockCurrentChapter,
+  mockRequestUpload,
+  mockConfirmUpload,
+  mockChapterId,
+  resourcesQuery,
+} = vi.hoisted(() => ({
+  mockCurrentChapter: vi.fn(),
+  mockRequestUpload: vi.fn().mockResolvedValue({}),
+  mockConfirmUpload: vi.fn().mockResolvedValue({}),
+  mockChapterId: { value: "chap-1" as string | null },
+  resourcesQuery: {
+    data: [] as unknown[],
+    isPending: false,
+    isLoading: false,
+    fetchStatus: "idle" as "idle" | "fetching" | "paused",
+    isError: false,
+    refetch: () => undefined as unknown,
+  },
+}));
 
 // Only the chapter payload is stubbed — `useSubscriptionWriteState` and
 // `subscriptionWriteState` run for real, so this covers the whole path from the
@@ -32,12 +45,7 @@ const RESOURCE = {
 
 vi.mock("@repo/hooks", () => ({
   useCurrentChapter: () => mockCurrentChapter(),
-  useBackworkResources: () => ({
-    data: [RESOURCE],
-    isPending: false,
-    isError: false,
-    refetch: vi.fn(),
-  }),
+  useBackworkResources: () => resourcesQuery,
   useBackworkResource: () => ({ refetch: vi.fn() }),
   useDepartments: () => ({ data: [] }),
   useProfessors: () => ({ data: [] }),
@@ -52,8 +60,8 @@ vi.mock("@repo/hooks", () => ({
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
-  useChapterStore: (selector: (s: { activeChapterId: string }) => unknown) =>
-    selector({ activeChapterId: "chap-1" }),
+  useChapterStore: (selector: (s: { activeChapterId: string | null }) => unknown) =>
+    selector({ activeChapterId: mockChapterId.value }),
 }));
 
 vi.mock("@/components/shared/can", () => ({
@@ -69,8 +77,81 @@ const chapter = chapterSubscription(mockCurrentChapter);
 /** Closed-dialog state: the trigger is the only button named "Upload". */
 const uploadTrigger = () => screen.getByRole("button", { name: /^upload$/i });
 
+function resolvedResourcesQuery() {
+  mockChapterId.value = "chap-1";
+  resourcesQuery.data = [RESOURCE];
+  resourcesQuery.isPending = false;
+  resourcesQuery.isLoading = false;
+  resourcesQuery.fetchStatus = "idle";
+  resourcesQuery.isError = false;
+  resourcesQuery.refetch = vi.fn();
+}
+
+describe("BackworkPage disabled-query handling", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resolvedResourcesQuery();
+    chapter.active();
+  });
+
+  it("shows an empty chapter-pick state instead of spinning when no chapter is selected", () => {
+    mockChapterId.value = null;
+    resourcesQuery.data = undefined as unknown as unknown[];
+    resourcesQuery.isPending = true;
+    resourcesQuery.isLoading = false;
+    resourcesQuery.fetchStatus = "idle";
+
+    render(<BackworkPage />);
+
+    expect(screen.queryByText("Loading backwork...")).not.toBeInTheDocument();
+    expect(screen.getByText("No chapter selected")).toBeInTheDocument();
+    expect(
+      screen.getByText(/pick a chapter from the switcher/i),
+    ).toBeInTheDocument();
+  });
+
+  it("does not spin when the resources query is disabled (pending and idle)", () => {
+    resourcesQuery.data = undefined as unknown as unknown[];
+    resourcesQuery.isPending = true;
+    resourcesQuery.isLoading = false;
+    resourcesQuery.fetchStatus = "idle";
+
+    render(<BackworkPage />);
+
+    expect(screen.queryByText("Loading backwork...")).not.toBeInTheDocument();
+  });
+
+  it("still spins while a fetch is actually in flight", () => {
+    resourcesQuery.data = undefined as unknown as unknown[];
+    resourcesQuery.isPending = true;
+    resourcesQuery.isLoading = true;
+    resourcesQuery.fetchStatus = "fetching";
+
+    render(<BackworkPage />);
+
+    expect(screen.getByText("Loading backwork...")).toBeInTheDocument();
+  });
+
+  it("spins when the query is paused (offline) instead of showing an empty library", () => {
+    resourcesQuery.data = undefined as unknown as unknown[];
+    resourcesQuery.isPending = true;
+    resourcesQuery.isLoading = false;
+    resourcesQuery.fetchStatus = "paused";
+
+    render(<BackworkPage />);
+
+    expect(screen.getByText("Loading backwork...")).toBeInTheDocument();
+    expect(
+      screen.queryByText("No backwork matches this view"),
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe("BackworkPage subscription gating", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resolvedResourcesQuery();
+  });
 
   it("leaves the upload flow alone on an active chapter", () => {
     chapter.active();

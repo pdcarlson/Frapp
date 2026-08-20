@@ -25,8 +25,8 @@
 
 ## Checklist
 
-- [ ] This PR keeps `spec/` and implementation in sync (divergence is a bug).
-- [ ] If this PR changes non-doc files, it also updates related files in `docs/` and/or `spec/` (satisfies `check-docs-impact.mjs`).
+- [ ] This PR keeps intended behavior (`spec/`) and current behavior (code) aligned — disagreement is a tracked bug, not silent discretion (see `AGENTS.md` § Spec vs code).
+- [ ] If this PR changes non-doc files, it also updates related files in `docs/` and/or `spec/` (satisfies `check-docs-impact.mjs`; `.buildpad/` canvas-sync paths are exempt, and a change with genuinely no docs impact can be labelled `no-doc-change-needed` — see `docs/internal/ci-cd/DOCS_CI.md`).
 - [ ] If I changed API/domain/workflows, I updated `docs/` and/or `spec/` in the same change set.
 - [ ] If I changed API source, I regenerated `openapi.json` and `packages/api-sdk/src/types.ts`.
 - [ ] If targeting `production`, this PR source branch is `main`.

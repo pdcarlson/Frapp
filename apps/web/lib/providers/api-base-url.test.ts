@@ -5,8 +5,8 @@ import { normalizeApiBaseUrl } from "@repo/api-sdk";
  * `normalizeApiBaseUrl` lives in `@repo/api-sdk`, but its tests live here.
  *
  * `packages/api-sdk` has no test runner and no CI job. CI does run the
- * `@repo/validation`, `packages/hooks` and `packages/ui` suites — the latter two
- * added by #819 — but not this package, so a suite placed beside the code would
+ * `@repo/validation`, `packages/hooks` and `packages/chat-core` suites — the
+ * latter two added by #819 — but not this package, so a suite placed beside the code would
  * never execute, which is the defect #762 / #766 / #775 exist to fix. The web
  * suite does run, and web is the consumer whose every request this governs.
  * Once `packages/api-sdk` has a `test` task wired into CI (#775), these belong

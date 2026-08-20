@@ -1,7 +1,7 @@
 "use client";
 
 import { Hammer } from "lucide-react";
-import type { ChatMessage } from "@/lib/chat/types";
+import type { ChatMessage } from "@repo/chat-core/types";
 
 interface ComingSoonCardProps {
   message: ChatMessage;

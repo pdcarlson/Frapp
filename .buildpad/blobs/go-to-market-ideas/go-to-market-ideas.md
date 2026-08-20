@@ -1,0 +1,3 @@
+# Go-to-market ideas
+
+Demand is untested outside Paul's own experience — no other chapter or national org has confirmed interest yet. Plan: after own chapter beta, aim for a "beta 2.0" with full AI suite at a second RPI chapter or another Fiji chapter. Longer-term GTM: sell to other chapters/national orgs (e.g. Fiji leadership meetings, still aspirational), group discounts for multi-chapter national org signups, referral credits for invites, possible interschool communication channels.

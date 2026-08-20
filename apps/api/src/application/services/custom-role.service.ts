@@ -9,7 +9,11 @@ import {
 } from '@nestjs/common';
 import { PostgrestError } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+  TablesUpdate,
+} from '../../infrastructure/supabase/database.types';
 import type { ChapterCustomRole } from '../../domain/entities/chapter-custom-role.entity';
 import { WILDCARD } from '../../domain/constants/permissions';
 import type {
@@ -84,19 +88,20 @@ export class CustomRoleService {
     dto: CreateCustomRoleDto,
   ): Promise<ChapterCustomRole> {
     this.assertNoWildcard(dto.capabilities);
+    const row: TablesInsert<'chapter_custom_roles'> = {
+      chapter_id: chapterId,
+      key: dto.key,
+      label: dto.label,
+      rank: dto.rank ?? 99,
+      capabilities: dto.capabilities ?? [],
+      // `core` is never client-settable: only system seeding marks a role
+      // core (and core roles can't be deleted). User-created roles are
+      // always non-core so they remain deletable.
+      core: false,
+    };
     const { data, error }: RowResponse = await this.supabase
       .from('chapter_custom_roles')
-      .insert({
-        chapter_id: chapterId,
-        key: dto.key,
-        label: dto.label,
-        rank: dto.rank ?? 99,
-        capabilities: dto.capabilities ?? [],
-        // `core` is never client-settable: only system seeding marks a role
-        // core (and core roles can't be deleted). User-created roles are
-        // always non-core so they remain deletable.
-        core: false,
-      })
+      .insert(row)
       .select()
       .single();
 
@@ -131,7 +136,7 @@ export class CustomRoleService {
     this.assertNoWildcard(dto.capabilities);
     const existing = await this.findOne(id, chapterId);
 
-    const patch: Record<string, unknown> = {};
+    const patch: TablesUpdate<'chapter_custom_roles'> = {};
     if (dto.label !== undefined) patch.label = dto.label;
     if (dto.rank !== undefined) patch.rank = dto.rank;
     if (dto.capabilities !== undefined) patch.capabilities = dto.capabilities;
@@ -225,19 +230,20 @@ export class CustomRoleService {
     targetId: string,
     diff: Record<string, { from: unknown; to: unknown }>,
   ): Promise<void> {
+    const audit: TablesInsert<'chapter_audit_log'> = {
+      chapter_id: chapterId,
+      actor_user_id: actorUserId,
+      action,
+      target_type: 'chapter_custom_role',
+      // The role being changed — lets the audit log filter by entity.
+      target_id: targetId,
+      scope: 'chapter',
+      diff,
+      member_visible: true,
+    };
     const { error }: MutateResponse = await this.supabase
       .from('chapter_audit_log')
-      .insert({
-        chapter_id: chapterId,
-        actor_user_id: actorUserId,
-        action,
-        target_type: 'chapter_custom_role',
-        // The role being changed — lets the audit log filter by entity.
-        target_id: targetId,
-        scope: 'chapter',
-        diff,
-        member_visible: true,
-      });
+      .insert(audit);
     if (error) {
       this.logger.error('Failed to write chapter audit log', error);
       throw error;

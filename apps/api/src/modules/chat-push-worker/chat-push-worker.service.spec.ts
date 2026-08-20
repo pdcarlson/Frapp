@@ -1,5 +1,4 @@
 import { Test } from '@nestjs/testing';
-import type { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import { NotificationService } from '../../application/services/notification.service';

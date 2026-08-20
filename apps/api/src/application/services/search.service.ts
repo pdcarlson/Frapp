@@ -3,9 +3,9 @@ import {
   Injectable,
   InternalServerErrorException,
 } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { canAccessChannel } from '@repo/validation';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { escapeFilterValue } from '../../infrastructure/supabase/supabase.utils';
 import { RbacService } from './rbac.service';
 import type { BackworkResource } from '../../domain/entities/backwork.entity';
@@ -57,7 +57,7 @@ function throwIfError(error: QueryError | null): void {
 @Injectable()
 export class SearchService {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
     private readonly rbacService: RbacService,
   ) {}
 

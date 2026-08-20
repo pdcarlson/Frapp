@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+  TablesUpdate,
+} from '../database.types';
 import { IServiceEntryRepository } from '../../../domain/repositories/service-entry.repository.interface';
 import {
   ServiceEntry,
@@ -65,10 +69,10 @@ export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
     return data ?? [];
   }
 
-  async create(data: Partial<ServiceEntry>): Promise<ServiceEntry> {
+  async create(data: TablesInsert<'service_entries'>): Promise<ServiceEntry> {
     const { data: created, error } = await this.supabase
       .from('service_entries')
-      .insert(data as never)
+      .insert(data)
       .select()
       .single();
 
@@ -79,11 +83,11 @@ export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
   async update(
     id: string,
     chapterId: string,
-    data: Partial<ServiceEntry>,
+    data: TablesUpdate<'service_entries'>,
   ): Promise<ServiceEntry> {
     const { data: updated, error } = await this.supabase
       .from('service_entries')
-      .update(data as never)
+      .update(data)
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .select()

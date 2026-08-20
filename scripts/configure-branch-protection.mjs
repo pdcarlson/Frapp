@@ -51,6 +51,65 @@ const CI_CHECKS = [
   // secret-scan — required only once the chapter-directory-seed job exists on the
   // target branch and has run green.
   "chapter-directory-seed",
+  // Web + shared-package unit tests (apps/web, packages/hooks,
+  // packages/chat-core). It is the ONLY suite covering packages/hooks, which the
+  // consolidation work ahead edits directly, so leaving it advisory means a broken
+  // shared hook merges green.
+  //
+  // Being path-gated does NOT stop it being required, which is the thing that looks
+  // wrong here and isn't. The gate is a JOB-level `if:`, and GitHub reports a job
+  // skipped by a conditional as "Success" — `success`, `skipped` and `neutral` all
+  // satisfy a required check. The case that does block is a whole WORKFLOW skipped by
+  // path/branch filtering, whose checks never report and sit "Pending" forever;
+  // ci.yml has no workflow-level `paths:` filter, so that case cannot arise here.
+  // (ADR-15 recorded the opposite belief — that path-gating a required job "needs a
+  // skip→success wrapper" — which is true only of the workflow-level form.)
+  // https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/collaborating-on-repositories-with-code-quality-features/troubleshooting-required-status-checks
+  //
+  // The one real caveat from the same table: a job skipped because a `needs:` parent
+  // FAILED "may not block merging". That is why `changes` is required below —
+  // web-tests needs [packages-build, changes], and a required check whose parent is
+  // NOT required is a hole, not a gate.
+  //
+  // ROLLOUT: same caveat as secret-scan. Verified green on main's latest run before
+  // being listed here.
+  "web-tests",
+  // Required only because `web-tests` needs it. `changes` computes the path filter and
+  // decides whether web-tests runs at all; on its own it asserts nothing.
+  //
+  // Without this entry the gate above has a hole with a real trigger. `changes` is the
+  // one job in CI that calls the GitHub API (dorny/paths-filter lists the PR's files),
+  // so it can fail — rate limit, API error, or the action-download failure this repo
+  // has already seen once (#659) — while packages-build, which shares none of that
+  // surface, goes green. web-tests is then skipped for a failed dependency, reports
+  // `skipped`, and `skipped` SATISFIES a required check. Every required context would
+  // be green with the only suite covering packages/hooks never having run.
+  //
+  // GitHub's prescribed alternative is `always()` on the dependent job plus explicit
+  // `needs.*.result` assertions. Rejected: `always()` keeps running through the
+  // `cancel-in-progress` cancellations ADR-15 banks on, so it would cost real minutes
+  // to fix a problem one array entry fixes for a checkout and one API call.
+  //
+  // The general invariant, which nothing currently enforces: EVERY `needs:` parent of a
+  // required check must itself be a required check. web-tests is the first job here to
+  // have needed it.
+  //
+  // Safe to require: `changes` has no job-level `if:` (the condition is on its filter
+  // STEP), so the job always runs and always reports, on both pull_request and push.
+  "changes",
+  // Architectural boundary linting (dependency-cruiser): the API's layer direction
+  // and the monorepo's app/package separation. HARD GATE from day one, which is only
+  // survivable because `.dependency-cruiser-known-violations.json` grandfathers the
+  // violations that existed when it landed — a baseline is what lets a gate be strict
+  // immediately instead of "advisory until someone gets around to it".
+  //
+  // ROLLOUT: same caveat as secret-scan — required only once the dependency-cruiser
+  // job exists on the target branch and has run green.
+  "dependency-cruiser",
+  // NOT here on purpose: `duplicate-detection` (jscpd). jscpd has no clone-level
+  // baseline, so the only lever is a repo-wide duplication percentage — too coarse
+  // to block a merge on, since it cannot tell one bad copy-paste from ordinary
+  // drift. It runs and reports; the threshold ratchets down as consolidations land.
 ];
 
 const DOCS_CHECKS = [

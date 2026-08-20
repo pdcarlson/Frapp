@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+  TablesUpdate,
+} from '../database.types';
 import { IMemberRepository } from '../../../domain/repositories/member.repository.interface';
 import { Member } from '../../../domain/entities/member.entity';
 
@@ -53,20 +57,23 @@ export class SupabaseMemberRepository implements IMemberRepository {
     return data || [];
   }
 
-  async create(memberData: Partial<Member>): Promise<Member> {
+  async create(memberData: TablesInsert<'members'>): Promise<Member> {
     const { data, error } = await this.supabase
       .from('members')
-      .insert(memberData as never)
+      .insert(memberData)
       .select()
       .single();
     if (error) throw error;
     return data;
   }
 
-  async update(id: string, memberData: Partial<Member>): Promise<Member> {
+  async update(
+    id: string,
+    memberData: TablesUpdate<'members'>,
+  ): Promise<Member> {
     const { data, error } = await this.supabase
       .from('members')
-      .update(memberData as never)
+      .update(memberData)
       .eq('id', id)
       .select()
       .single();

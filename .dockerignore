@@ -17,7 +17,6 @@ apps/mobile
 apps/landing
 
 # Packages not used by the API
-packages/ui
 packages/hooks
 packages/api-sdk
 packages/theme

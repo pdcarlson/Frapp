@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+  TablesUpdate,
+} from '../database.types';
 import { IRoleRepository } from '../../../domain/repositories/role.repository.interface';
 import { Role } from '../../../domain/entities/role.entity';
 
@@ -74,29 +78,29 @@ export class SupabaseRoleRepository implements IRoleRepository {
     return data;
   }
 
-  async create(roleData: Partial<Role>): Promise<Role> {
+  async create(roleData: TablesInsert<'roles'>): Promise<Role> {
     const { data, error } = await this.supabase
       .from('roles')
-      .insert(roleData as never)
+      .insert(roleData)
       .select()
       .single();
     if (error) throw error;
     return data;
   }
 
-  async createMany(rolesData: Partial<Role>[]): Promise<Role[]> {
+  async createMany(rolesData: TablesInsert<'roles'>[]): Promise<Role[]> {
     const { data, error } = await this.supabase
       .from('roles')
-      .insert(rolesData as never)
+      .insert(rolesData)
       .select();
     if (error) throw error;
     return data ?? [];
   }
 
-  async update(id: string, roleData: Partial<Role>): Promise<Role> {
+  async update(id: string, roleData: TablesUpdate<'roles'>): Promise<Role> {
     const { data, error } = await this.supabase
       .from('roles')
-      .update(roleData as never)
+      .update(roleData)
       .eq('id', id)
       .select()
       .single();

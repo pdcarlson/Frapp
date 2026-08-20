@@ -6,7 +6,8 @@ This guide documents how we test the Frapp API using Jest and NestJS testing uti
 
 We use three main test layers:
 
-- **Unit tests** — services, guards, interceptors (mocking repositories and Supabase)
+- **Unit tests** — services, guards, interceptors (mocking repositories and Supabase), plus the
+  repository tenant-scope specs (see §4a)
 - **Integration tests** — service queries issued against a **real** PostgREST on the local Supabase
   stack (see §6a)
 - **E2E tests** — supertest-based flows (e.g. auth → create chapter → add member)
@@ -38,6 +39,13 @@ All three CI suites run in the **`api-tests`** job (`.github/workflows/ci.yml`) 
 `scripts/configure-branch-protection.mjs`), so all three gate PRs to `main`/`production` without a
 separate status. The E2E specs override the Supabase client with mocks (see §6) and the evals are
 pure fixtures, so the job is deterministic and needs no live database or secrets.
+
+To run a subset of unit tests, pass Jest 30's `--testPathPatterns` (the singular
+`--testPathPattern` flag was removed):
+
+```bash
+npm run test -w apps/api -- --testPathPatterns="event.service"
+```
 
 Each suite needs its own config because their file patterns don't overlap: unit jest is
 `rootDir: "src"` matching `*.spec.ts`, E2E matches `*.e2e-spec.ts` under `test/`, and the evals match
@@ -98,9 +106,122 @@ Interceptors:
 - `RequestIdInterceptor` — attaches `x-request-id` when missing and forwards when present
 - Logging interceptor — ensures it logs request/response metadata (can be smoke-tested)
 
+## 4a. Repository tenant-scope tests
+
+The 33 Supabase repositories under `apps/api/src/infrastructure/supabase/repositories/` long had no
+direct behavioural tests; seven were covered indirectly through
+`test/cross-tenant-isolation.e2e-spec.ts`. Wiring the generated `Database` type into the client
+(#1083) closed the *type* hole and not the *column* one — a repository that filters
+`.eq('id', chapterId)` instead of `.eq('chapter_id', chapterId)`, or that loses a tenant filter in a
+refactor, compiles cleanly and leaks another chapter's rows.
+
+**The harness:** `apps/api/test/helpers/tenant-scope.harness.ts` (`createTenantHarness`). It is a
+recording Supabase double that actually applies filters, alongside `createSupabaseMock` and
+`createTableAwareSupabaseMock` in `supabase-mock.factory.ts` (§6).
+
+**The fixture is adversarial by construction.** Chapter A's row and chapter B's row are identical in
+every column except `id` and `chapter_id` — same `user_id`, same `name`, same `status`. Every
+predicate other than the tenant one therefore matches *both* rows, so only a real tenant filter can
+narrow the result. This is enforced, not assumed: seeding twins that differ on any other column
+fails with a message naming it, and a column that legitimately has to differ (a foreign key to a
+chapter-scoped parent) must be listed in `collisionExempt`. Without that check a spec can pass while
+proving nothing, which is worse than having no spec.
+
+```typescript
+const harness = createTenantHarness({
+  tables: {
+    roles: [
+      inA({ id: ROLE_A, name: 'Treasurer', system_key: 'TREASURER' }),
+      inB({ id: ROLE_B, name: 'Treasurer', system_key: 'TREASURER' }),
+    ],
+  },
+});
+const repo = new SupabaseRoleRepository(harness.client);
+
+const role = await harness.expectTenantScoped(CHAPTER_B, () =>
+  repo.findByChapterAndName(CHAPTER_B, 'Treasurer'),
+);
+expect(role?.id).toBe(ROLE_B);
+```
+
+`expectTenantScoped` asserts three things in this order, because the first failure is the
+informative one:
+
+1. **The filter is present** — every recorded table operation binds that table's tenant column to
+   the caller's chapter (or, for an RPC, passes it as an argument). Checked first so a dropped
+   filter reports as "ran without a tenant predicate" rather than as the `PGRST116` that
+   `.single()` raises when it matches both twins.
+2. **Enforced on writes** — no row outside the caller's chapter was inserted, updated, deleted, or
+   reassigned into another chapter by the payload.
+3. **Enforced on reads** — nothing returned carries a foreign `chapter_id`, walked recursively so
+   embedded rows count.
+
+Two ways to pass check 1 that do **not** count, both learned from a review of the harness itself: a
+tenant filter that is one arm of an `.or()` (the other arm still matches every chapter), and a call
+that issued no query at all — `expectTenantScoped` fails rather than certifying a code path that
+never touched the database.
+
+**Options.** `tenantColumns` overrides the default `chapter_id` — `chapters` scopes by its own `id`.
+`untenantedTables` names tables with no `chapter_id` of their own, covering both the genuinely global
+(`users`) and the indirectly scoped (`event_attendance`, `poll_votes`, `chat_messages`); the spec
+should say which it means, because the two need different treatment. `parentTenant` is that
+treatment: `{ event_attendance: { column: 'event_id', table: 'events' } }` lets the harness resolve a
+row's chapter through its parent, so check 2 still applies to a table that has no chapter of its own.
+Resolution chains, so `poll_votes → chat_messages → chat_channels` works. Without it,
+`untenantedTables` turns off check 2 as well as check 1 — and the indirectly scoped tables are
+exactly the ones whose whole risk is that the chapter lives elsewhere. `rpc` supplies canned RPC
+responses; every RPC issued inside the window must carry the chapter as an argument.
+
+**Scope, and what it cannot see.** The harness implements the PostgREST subset the repositories use
+and **throws** on anything else rather than passing rows through — a silently-ignored operator widens
+the result set, and a widened result set makes a tenancy assertion pass without proving anything.
+Negation follows Postgres three-valued logic rather than JavaScript truthiness, and `maybeSingle`
+reports `PGRST116` on multiple matches instead of picking one — matching `postgrest-js`, which
+synthesises that error client-side — both for the same reason.
+
+It is not a Postgres emulator, and two limits follow that a spec must not claim around: the
+`select()` projection is ignored, so dropping `!inner` from an embed is invisible here; and joins are
+not resolved, so an embed is whatever the seed row carries. Both belong to the live-PostgREST
+integration suite (§6a), which exists for exactly that class of defect.
+
+**Two meta-specs keep this honest:**
+
+- `tenant-scope.harness.spec.ts` runs each guard against a deliberately broken repository stand-in,
+  so a harness that can no longer fail is itself a failure. Extend it whenever you extend the harness.
+- `tenant-scope-coverage.spec.ts` is the coverage ledger: every `supabase-*.repository.ts` in that
+  directory either has a `*.repository.spec.ts` driving `createTenantHarness`, or a line in
+  `TENANT_SCOPE_BACKLOG` giving the reason. A new repository added there without either fails CI.
+  Clearing a backlog entry means writing the spec and raising the pinned count. The ledger scans one
+  directory, so a repository living elsewhere — `modules/scheduled-jobs/scheduled-jobs.repository.ts`
+  — is outside it.
+
+**What these tests do not replace.** Methods that take a row `id` and no chapter (`memberRepo.findById`,
+`roleRepo.update`, `attendanceRepo.update`) are scoped by their callers, not by the query. Those are
+characterised — asserted as unscoped, with a comment naming the enforcing service — and the route-level
+guarantee stays with `test/cross-tenant-isolation.e2e-spec.ts`.
+
 ## 5. CI parity (lint job)
 
-The **`lint-and-typecheck`** job in the **GitHub Actions** workflow `.github/workflows/ci.yml` runs ESLint, TypeScript, the `apps/landing` and `@repo/validation` unit suites, **`npm run check:brand-assets`**, and (on pull requests, except Dependabot's) **`scripts/check-docs-impact.mjs`** so non-doc code changes must include related `docs/` or `spec/` updates in the same PR. The Dependabot exemption matches the one in `docs.yml`; both are explained in [`docs/internal/ci-cd/AGENT_INFRA.md`](../internal/ci-cd/AGENT_INFRA.md). The validation suite includes a Zod 4 runtime smoke (`packages/validation/src/index.spec.ts`) for record maps plus the string-check, coerce, passthrough, and strict APIs the package still uses. The `z.record(key, value)` TypeScript arity is enforced by `tsc` on `packages/validation/src/index.ts`, not by that spec (specs are excluded from the package `tsc`).
+The **`lint-and-typecheck`** job in the **GitHub Actions** workflow `.github/workflows/ci.yml` runs ESLint, TypeScript, the `apps/landing` and `@repo/validation` unit suites, and **`npm run check:brand-assets`**. The validation suite includes a Zod 4 runtime smoke (`packages/validation/src/index.spec.ts`) for record maps plus the string-check, coerce, passthrough, and strict APIs the package still uses. The `z.record(key, value)` TypeScript arity is enforced by `tsc` on `packages/validation/src/index.ts`, not by that spec (specs are excluded from the package `tsc`).
+
+The docs/spec sync gate runs **elsewhere** — the `docs-spec-sync` job in `.github/workflows/docs.yml` is its only home, so a non-doc change that skipped its `docs/` or `spec/` update fails *there*, not here. `lint-and-typecheck` used to run a second copy; it was removed so the gate has one home and one exemption list. Contract, exemptions, and the `no-doc-change-needed` waiver: [`docs/internal/ci-cd/DOCS_CI.md`](../internal/ci-cd/DOCS_CI.md).
+
+`lint` also surfaces the `nestjs-typed` response-schema rule as **warnings** (142 today). Warnings do not fail ESLint, so this job stays green while the backlog stays visible; it flips to `error` once the route-DTO backfill lands. See [`docs/internal/ci-cd/QUALITY_GATES.md`](../internal/ci-cd/QUALITY_GATES.md).
+
+## 5a. Coverage
+
+Coverage runs on demand, not in CI, and has **no threshold** — it is a measurement, not a gate.
+
+```bash
+npm run test:cov                  # every workspace, via turbo
+npm run test:cov -w apps/api      # Jest, v8 provider
+npm run test:cov -w packages/hooks # Vitest, @vitest/coverage-v8
+```
+
+Both runners report through the V8 engine. `apps/api` uses `coverageProvider: "v8"` rather than the
+Jest default specifically to route around a `minimatch`/`test-exclude` collision that made
+`test:cov` throw; the details are in [`QUALITY_GATES.md`](../internal/ci-cd/QUALITY_GATES.md) and
+matter before anyone touches the root `overrides` block.
 
 The **`api-tests`** job runs **three** suites after building shared packages: the unit suite (`npm run test -w apps/api`), the E2E suite (`npm run test:e2e -w apps/api`), and the adversarial AI evals (`npm run test:ai-evals -w apps/api`). Because the E2E specs mock Supabase (§6) and the evals are pure fixtures, the job stays deterministic in GitHub Actions and requires no external services.
 

@@ -3,6 +3,18 @@ name: Docs spec sync
 on:
   pull_request:
     branches: [main, production]
+    # `labeled`/`unlabeled` are load-bearing, not tidiness. `no-doc-change-needed`
+    # waives the sync gate, and the default trigger set (opened/synchronize/
+    # reopened) does not fire on a label change — so without these the label
+    # would be applied, nothing would re-run, the stale red conclusion would
+    # stand, and the PR would still be blocked on a REQUIRED check. The waiver
+    # has to be able to re-run the check it waives.
+    #
+    # Affordable here precisely because this workflow is two small jobs. The
+    # same trigger on ci.yml would re-run the whole suite (Docker build
+    # included) on every label mutation, which is why the duplicate copy of
+    # this gate was removed from ci.yml rather than given the same trigger.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches: [main, production]
 
@@ -32,10 +44,17 @@ jobs:
       #
       # Keyed on the PR author rather than `github.actor` so a human re-running
       # the workflow doesn't flip the exemption off mid-PR.
+      # Labels reach the script through `env:` rather than the `run:` string:
+      # a label is free-form text set by anyone with write access, and
+      # interpolating it directly into the shell command would make it
+      # executable. JSON (not a comma-joined list) because label names may
+      # legitimately contain commas.
       - name: Enforce docs/spec sync (PR only)
         if: >-
           github.event_name == 'pull_request'
           && github.event.pull_request.user.login != 'dependabot[bot]'
+        env:
+          PR_LABELS_JSON: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: node scripts/check-docs-impact.mjs --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
 
       - name: Enforce docs/spec structure (PR only)

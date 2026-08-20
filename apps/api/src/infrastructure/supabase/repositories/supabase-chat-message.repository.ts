@@ -1,7 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { escapeFilterValue } from '../supabase.utils';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+  TablesUpdate,
+} from '../database.types';
 import type { IChatMessageRepository } from '../../../domain/repositories/chat.repository.interface';
 import {
   ChatMessageDuplicateError,
@@ -159,10 +163,10 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
     return data;
   }
 
-  async create(data: Partial<ChatMessage>): Promise<ChatMessage> {
+  async create(data: TablesInsert<'chat_messages'>): Promise<ChatMessage> {
     const { data: created, error } = await this.supabase
       .from('chat_messages')
-      .insert(data as never)
+      .insert(data)
       .select()
       .single();
     if (error) {
@@ -186,10 +190,13 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
     return created;
   }
 
-  async update(id: string, data: Partial<ChatMessage>): Promise<ChatMessage> {
+  async update(
+    id: string,
+    data: TablesUpdate<'chat_messages'>,
+  ): Promise<ChatMessage> {
     const { data: updated, error } = await this.supabase
       .from('chat_messages')
-      .update(data as never)
+      .update(data)
       .eq('id', id)
       .select()
       .single();

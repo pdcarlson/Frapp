@@ -1,0 +1,3 @@
+# AI integration UI research
+
+One global "Ask" entry point (pill in top bar, all six surfaces) beats six per-surface entry points. Sourced-answer card with internal-source citation chips (chat/file/note, not favicons) that deep-link in-app. Refuse-don't-fabricate on low confidence; no staleness badges needed (industry doesn't do this). Stub now: build the real Ask sheet shell + entry point, gated with "coming soon," so RAG fast-follow only swaps the sheet body.

@@ -2,7 +2,7 @@
 
 The chat-first product (see [`spec/README.md`](../README.md#active-work)) inverts the historical "12 modules side-by-side" model. **Chat is the magnum opus**; every other capability (events, tasks, dues, points, polls) is a *chat integration* — surfaced inline in conversation, not behind a separate nav tab. Chat is non-optional, free, and the default landing route on web (`/chat`) and mobile (chat tab).
 
-The paid tier gates the ops integrations (events with check-in, dues invoicing, points ledger, reports) and the AI features (meeting transcription/summary, Q&A over chapter content). The free tier — unlimited chat, unlimited members, unlimited chapters — is the wedge. The chunk roadmap in [`spec/README.md`](../README.md#active-work) is the canonical context for that direction; this spec captures the current ship state.
+The paid tier gates the ops integrations (events with check-in, dues invoicing, points ledger, reports) and the AI features (meeting transcription/summary, Q&A over chapter content). The free tier — unlimited chat, unlimited members, unlimited chapters — is the wedge. Delivery sequencing lives in **GitHub Issues**, not a chunk roadmap; [`spec/README.md`](../README.md#active-work) is the index. This spec captures positioning, not ship state.
 
 **AI features are anchored on authoritative content, not casual chat.** The AI corpus is meeting minutes, uploaded documents, structured chapter data, and announcements — not the general channels. This is an intentional product call: smaller AI that's reliably right, instead of bigger AI that's frequently embarrassing. See [`spec/behavior/ai.md`](../behavior/ai.md) for scope and non-goals.
 
@@ -44,36 +44,8 @@ The first-officer flow is school search → chapter search → archetype confirm
 
 ## Full chapter theming
 
-A chapter picks two colors — a dark and an accent. Sidebar tint, header band, message-accent stripe, mention pills, link colors, and reaction highlights all derive from those two colors via a controlled palette generator that respects WCAG contrast against the bone (light) and ink (dark) backgrounds. Theming runs deeper than an accent chip: it themes the entire experience. The derivation algorithm is specified in [`spec/architecture/README.md`](../architecture/README.md).
+A chapter picks an accent seed (plus, on legacy web, a dark). Chrome, message accents, mention pills, links, and reaction highlights derive from that seed via the accent engine — not from a hand-picked second palette. Theming runs deeper than an accent chip. Derivation: [`spec/ui/design-system/accent-engine.md`](../ui/design-system/accent-engine.md).
 
----
+## Visual identity
 
-# Visual Identity: "Modern Ivy"
-
-Frapp balances the prestige of traditional Greek life with the clean feel of modern SaaS.
-
-**Cross-app tokens, CTA color semantics, and motifs** are specified in **[`spec/ui/brand-identity.md`](../ui/brand-identity.md)** and implemented in `@repo/theme`. This section summarizes product-facing labels; where naming differs, **`spec/ui/brand-identity.md` wins** (the shipping web theme's `primary` is bronze, not royal blue; Signet surfaces follow [`spec/ui/design-system/`](../ui/design-system/README.md)).
-
-## Color Palette
-
-| Role                                    | Color                         | Hex       |
-| --------------------------------------- | ----------------------------- | --------- |
-| Navy (headlines, body text, trust)      | Professional, trustworthy     | `#0F172A` |
-| Royal blue (**primary** actions, links) | Action-oriented CTAs          | `#2563EB` |
-| Success (Emerald)                       | Growth, positive transactions | `#10B981` |
-| Background (Slate)                      | Clean, focused                | `#F8FAFC` |
-
-Dark mode variants defined in `@repo/theme`. Dark mode respects system preference with manual override.
-
-## Typography
-
-- **Primary font:** Geist Sans (see [`spec/ui/brand-identity.md`](../ui/brand-identity.md) §4).
-- **Web dashboards:** High density, compact spacing.
-- **Mobile:** Generous spacing, touch-friendly targets (minimum 44x44px).
-
-## Mobile Design
-
-- Unified codebase (Expo/React Native) for iOS and Android.
-- System-adaptive design via NativeWind. No platform-specific UI forks.
-- Haptic feedback on key actions (check-in, point award, reactions).
-- Swipe gestures for chat (swipe to reply, swipe to archive DM).
+Do not duplicate brand values here. **Signet** (dark-first, warm, Figtree, house gold) is specified in [`spec/ui/brand-identity.md`](../ui/brand-identity.md); token values live in [`spec/ui/design-system/foundations.md`](../ui/design-system/foundations.md). Frozen web/landing still ship the legacy Frapp look until their reskin — see brand-identity §5. Touch targets ≥ 44px: [`foundations.md`](../ui/design-system/foundations.md). Haptics on confirming actions: [`spec/ui/mobile/README.md`](../ui/mobile/README.md) (native-feel table). Chat swipe-to-reply / swipe-to-archive is **not** in the Signet inventory (`screens.md` s05 is live with no reply-quote) — do not resurrect NativeWind-era gesture copy from older positioning drafts.
