@@ -1,5 +1,20 @@
 # Cursor /goal + CI/CD implementation plan
 
+**Wave 0 Phase 1 — DONE (Aug 19), run in Cursor as regular Agent mode, not Claude Code.** Landed across two PRs (#1080, #1081 — #1080 got squash-merged mid-flight, splitting the work; both merged clean, verified byte-identical). All 5 phase items landed: docs-spec-sync waiver (`no-doc-change-needed` label), web-tests + changes promoted to required, all 4 quality gates (dependency-cruiser hard/baselined, oasdiff advisory folded into the existing required contract-check job rather than a new one, nestjs-typed response-schema as warn, jscpd advisory at 4.5% threshold vs 4.37% measured), and coverage tooling fixed (coverageProvider: v8 sidesteps the minimatch/test-exclude collision entirely).
+
+Quality signal worth noting: the agent caught and fixed several of its own bugs before asking for review — dependency-cruiser was silently enforcing zero of three rule families (node_modules was in both doNotFollow and exclude, which aren't interchangeable), a Node-version incompatibility that only surfaced in CI not locally, and coverage artifacts silently breaking lint locally. Each rule family was verified by introducing a deliberate violation and confirming it fails. This is exactly the discipline the docs-rewrite phase (Phase 2) is trying to encode as a habit, not a one-off.
+
+**Needs Paul's hands, not yet done:**
+1. Create the `no-doc-change-needed` label in the repo.
+2. Run `npm run configure:branch-protection` (dry-run first) — applies web-tests, changes, chapter-directory-seed, and dependency-cruiser as required checks on main (16 contexts).
+3. Item 2 (review policy) — still an open decision, deliberately not implemented.
+4. **The public-repo mismatch, flagged in both PRs**: repo is actually public but multiple docs and some waived controls (secret push protection, environment reviewer rules) assume it went private. Real gap, not cosmetic.
+5. Minor flagged follow-ups for later: nothing yet enforces the "every required check's needs: parent must itself be required" invariant as a test; `vitest` doesn't resolve under dependency-cruiser in apps/web (rule works in apps/api, looks like an exports-map quirk).
+
+Phase 2 (docs/agentic framework rewrite) and Phase 3 (supervised code foundation) are next, prompts already on canvas.
+
+---
+
 Goal: figure out how to execute the combined docs+code refactor using Cursor's cloud agents alongside Claude Code, and update CI/CD to support it. **Cursor is a one-project tool, not a daily driver** — no permanent .cursor/ folder, no lasting footprint. Lucky break: AGENTS.md is already what Cursor reads automatically, so we don't need any Cursor-specific config files at all — put anything Cursor needs to know in AGENTS.md (which helps Claude Code too) or directly in each goal's prompt text, ephemeral.
 
 **Real audit findings (Aug 19) — three hard blockers before any Cursor goal touches this repo:**
