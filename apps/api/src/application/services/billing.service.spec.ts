@@ -160,7 +160,6 @@ describe('BillingService', () => {
 
     mockChapterRepo = {
       findById: jest.fn(),
-      findByStripeCustomerId: jest.fn(),
       findBySubscriptionId: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),

@@ -63,8 +63,8 @@ Chat is not a module — it is the spine of the app, and every other capability 
 
 - Users can attach files to messages. Images render as inline previews; other files render as downloadable links with filename, size, and type.
 - Files are stored in Supabase Storage under `chapters/{chapter_id}/chat/{channel_id}/{message_id}/{filename}`.
-- Size limit: 25 MB per file. Configurable per chapter (admin setting).
-- Allowed file types: images (JPEG, PNG, GIF, WebP), PDFs, and common document formats (DOCX, XLSX, PPTX, TXT, CSV). Executables and scripts are blocked.
+- Size limit: 25 MB per file (`MAX_UPLOAD_BYTES` in `@repo/validation`). Configurable per chapter (admin setting) is specified, not yet implemented.
+- Allowed file types: the `document` kind in `@repo/validation` — images (JPEG, PNG, GIF, WebP), PDFs, Open XML Office (DOCX, XLSX, PPTX), legacy Office (DOC, XLS, PPT), TXT, and CSV. Executables, scripts, and SVG are blocked. Same list as chapter documents and Backwork; see [`chapter-docs.md`](../chapter-docs.md) § Upload allowlist.
 - Upload flow: client requests signed URL from API, uploads directly to Storage, then sends message with attachment metadata.
 
 **Reply threads:**

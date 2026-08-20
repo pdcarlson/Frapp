@@ -47,25 +47,13 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useOrgConfig } from "@/lib/hooks/use-org-config";
 import { asArray, getErrorMessage } from "@/lib/utils";
+import {
+  MAX_UPLOAD_LABEL,
+  acceptAttribute,
+  inspectUploadFile,
+} from "@repo/validation";
 
 type ServiceStatus = "PENDING" | "APPROVED" | "REJECTED";
-
-// Mirrors the API's proof allowlist (images + PDF); the bucket enforces the
-// same set plus the 25MB cap on the actual upload.
-const PROOF_CONTENT_TYPE_BY_EXTENSION: Record<string, string> = {
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  png: "image/png",
-  gif: "image/gif",
-  webp: "image/webp",
-  pdf: "application/pdf",
-};
-
-function extensionOf(name: string): string {
-  const dot = name.lastIndexOf(".");
-  if (dot < 0 || dot === name.length - 1) return "";
-  return name.slice(dot + 1).toLowerCase();
-}
 
 type ServiceEntry = {
   id: string;
@@ -206,17 +194,25 @@ export function ServiceHoursPage() {
       });
       return;
     }
-    const proofContentType = proofFile
-      ? PROOF_CONTENT_TYPE_BY_EXTENSION[extensionOf(proofFile.name)]
+    const proofInspected = proofFile
+      ? inspectUploadFile("proof", proofFile)
       : undefined;
-    if (proofFile && !proofContentType) {
+    if (proofFile && proofInspected && !proofInspected.ok) {
       toast({
-        title: "File type not allowed",
-        description: "Proof accepts photos (JPG, PNG, GIF, WebP) or a PDF.",
+        title:
+          proofInspected.reason === "size"
+            ? "File too large"
+            : "File type not allowed",
+        description:
+          proofInspected.reason === "size"
+            ? `Proof accepts photos or a PDF up to ${MAX_UPLOAD_LABEL}.`
+            : "Proof accepts photos (JPG, PNG, GIF, WebP) or a PDF.",
         variant: "destructive",
       });
       return;
     }
+    const proofContentType =
+      proofInspected && proofInspected.ok ? proofInspected.contentType : undefined;
     setSubmitting(true);
     try {
       let proofPath: string | undefined;
@@ -249,7 +245,7 @@ export function ServiceHoursPage() {
         });
         if (!response.ok) {
           throw new Error(
-            `Storage rejected upload (${response.status}). Proof accepts images/PDF up to 25MB.`,
+            `Storage rejected upload (${response.status}). Proof accepts images/PDF up to ${MAX_UPLOAD_LABEL}.`,
           );
         }
         proofPath = storagePath;
@@ -491,7 +487,7 @@ export function ServiceHoursPage() {
                   <Input
                     id="service-proof"
                     type="file"
-                    accept=".jpg,.jpeg,.png,.gif,.webp,.pdf"
+                    accept={acceptAttribute("proof")}
                     onChange={(event) =>
                       setProofFile(event.target.files?.[0] ?? null)
                     }

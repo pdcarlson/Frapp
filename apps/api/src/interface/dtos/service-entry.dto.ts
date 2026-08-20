@@ -8,7 +8,7 @@ import {
   Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { POINTS_ADJUSTMENT_MAX } from '../../domain/constants/field-limits';
+import { POINTS_ADJUSTMENT_MAX } from '@repo/validation';
 
 export class CreateServiceEntryDto {
   @ApiProperty({ description: 'Date of service (YYYY-MM-DD)' })

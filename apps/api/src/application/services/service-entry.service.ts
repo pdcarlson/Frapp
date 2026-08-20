@@ -6,6 +6,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import {
+  isAllowedUploadExtension,
+  isAllowedUploadMime,
+} from '@repo/validation';
 import { SERVICE_ENTRY_REPOSITORY } from '../../domain/repositories/service-entry.repository.interface';
 import type { IServiceEntryRepository } from '../../domain/repositories/service-entry.repository.interface';
 import type {
@@ -26,24 +30,6 @@ import { isUnsafeStoragePath } from '../../domain/utils/storage-path';
 import { ChapterServiceConfigService } from './chapter-service-config.service';
 
 const SERVICE_BUCKET = 'service';
-
-/** Proof is "photo, PDF, etc." per spec/behavior/service-hours.md — no office docs. */
-const ALLOWED_PROOF_CONTENT_TYPES = new Set([
-  'image/jpeg',
-  'image/png',
-  'image/gif',
-  'image/webp',
-  'application/pdf',
-]);
-
-const ALLOWED_PROOF_EXTENSIONS = new Set([
-  '.jpg',
-  '.jpeg',
-  '.png',
-  '.gif',
-  '.webp',
-  '.pdf',
-]);
 
 /**
  * Folder holding one chapter's service-proof uploads (trailing slash
@@ -97,11 +83,13 @@ export class ServiceEntryService {
       ? input.filename.slice(input.filename.lastIndexOf('.')).toLowerCase()
       : '';
 
-    if (!ALLOWED_PROOF_EXTENSIONS.has(ext)) {
+    // Proof is images + PDF per spec/behavior/service-hours.md — kind "proof"
+    // in @repo/validation; no office docs.
+    if (!isAllowedUploadExtension('proof', ext)) {
       throw new BadRequestException('File extension is not allowed');
     }
 
-    if (!ALLOWED_PROOF_CONTENT_TYPES.has(input.contentType)) {
+    if (!isAllowedUploadMime('proof', input.contentType)) {
       throw new BadRequestException(
         `Content type "${input.contentType}" is not allowed`,
       );

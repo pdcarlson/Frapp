@@ -51,6 +51,14 @@ import {
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useToast } from "@/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
+import {
+  ASSIGNMENT_TYPES,
+  DOCUMENT_VARIANTS,
+  MAX_UPLOAD_LABEL,
+  SEMESTERS,
+  acceptAttribute,
+  inspectUploadFile,
+} from "@repo/validation";
 
 type Department = { id: string; code: string; name: string | null };
 type Professor = { id: string; name: string };
@@ -70,60 +78,16 @@ type Resource = {
   created_at: string;
 };
 
-const ALLOWED_EXTENSIONS = new Set([
-  "pdf",
-  "docx",
-  "xlsx",
-  "pptx",
-  "txt",
-  "csv",
-  "jpg",
-  "jpeg",
-  "png",
-  "webp",
-]);
-
-const CONTENT_TYPE_BY_EXTENSION: Record<string, string> = {
-  pdf: "application/pdf",
-  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  txt: "text/plain",
-  csv: "text/csv",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  png: "image/png",
-  webp: "image/webp",
-};
-
-const SEMESTERS = ["Spring", "Summer", "Fall", "Winter"] as const;
-const ASSIGNMENT_TYPES = [
-  "Exam",
-  "Midterm",
-  "Final Exam",
-  "Quiz",
-  "Homework",
-  "Lab",
-  "Project",
-  "Study Guide",
-  "Notes",
-  "Other",
-] as const;
-const DOCUMENT_VARIANTS = [
-  "Student Copy",
-  "Blank Copy",
-  "Answer Key",
-] as const;
+function uploadRejectionDescription(reason: "type" | "size"): string {
+  if (reason === "size") {
+    return `Backwork accepts files up to ${MAX_UPLOAD_LABEL}.`;
+  }
+  return "Backwork accepts PDF, Office, text/CSV, and common images (no SVG).";
+}
 
 // Sentinel used by Radix Select, which rejects empty-string values. Maps to
 // "no filter" / "no selection" in local state before we hit the API.
 const ANY = "__any__";
-
-function extensionOf(name: string): string {
-  const dot = name.lastIndexOf(".");
-  if (dot < 0 || dot === name.length - 1) return "";
-  return name.slice(dot + 1).toLowerCase();
-}
 
 /** SHA-256 hex digest for the browser — matches the server's file_hash format. */
 async function sha256Hex(file: File): Promise<string> {
@@ -297,17 +261,19 @@ export function BackworkPage() {
       });
       return;
     }
-    const ext = extensionOf(file.name);
-    if (!ALLOWED_EXTENSIONS.has(ext)) {
+    const inspected = inspectUploadFile("document", file);
+    if (!inspected.ok) {
       toast({
-        title: "File type not allowed",
-        description:
-          "Backwork accepts PDF, Office, text/CSV, and common images (no SVG).",
+        title:
+          inspected.reason === "size"
+            ? "File too large"
+            : "File type not allowed",
+        description: uploadRejectionDescription(inspected.reason),
         variant: "destructive",
       });
       return;
     }
-    const contentType = CONTENT_TYPE_BY_EXTENSION[ext] ?? file.type;
+    const contentType = inspected.contentType;
 
     setUploading(true);
     try {
@@ -459,7 +425,7 @@ export function BackworkPage() {
                   <Input
                     id="bw-file"
                     type="file"
-                    accept=".pdf,.docx,.xlsx,.pptx,.txt,.csv,.jpg,.jpeg,.png,.webp"
+                    accept={acceptAttribute("document")}
                     onChange={(event) =>
                       setUploadDraft((prev) => ({
                         ...prev,

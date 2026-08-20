@@ -18,7 +18,6 @@ export interface IStudyGeofenceRepository {
 export const STUDY_SESSION_REPOSITORY = 'STUDY_SESSION_REPOSITORY';
 
 export interface IStudySessionRepository {
-  findById(id: string): Promise<StudySession | null>;
   findActiveByUserAndChapter(
     userId: string,
     chapterId: string,
@@ -28,5 +27,9 @@ export interface IStudySessionRepository {
     chapterId: string,
   ): Promise<StudySession[]>;
   create(data: Partial<StudySession>): Promise<StudySession>;
-  update(id: string, data: Partial<StudySession>): Promise<StudySession>;
+  update(
+    id: string,
+    chapterId: string,
+    data: Partial<StudySession>,
+  ): Promise<StudySession>;
 }

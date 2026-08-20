@@ -20,8 +20,12 @@
  */
 
 import Dexie, { type Table } from "dexie";
-// Row shapes are canonical in `@repo/chat-core` (the `OutboxStore` port).
-import type { NewOutboxRow, OutboxRow, OutboxStore } from "@repo/chat-core";
+// Row shapes are canonical on the `@repo/chat-core/adapters` port (OutboxStore).
+import type {
+  NewOutboxRow,
+  OutboxRow,
+  OutboxStore,
+} from "@repo/chat-core/adapters";
 
 export interface DraftRow {
   channelId: string;
@@ -164,8 +168,8 @@ export async function getOutboxRow(
 
 /**
  * The web `OutboxStore`: the Dexie functions above, surfaced through the
- * platform port `@repo/chat-core` consumes (`ChatActionContext.outbox`). A
- * module const so React callers can close over it without memoization.
+ * `@repo/chat-core/adapters` `OutboxStore` port (`ChatActionContext.outbox`).
+ * A module const so React callers can close over it without memoization.
  */
 export const dexieOutboxStore: OutboxStore = {
   enqueue: enqueueOutbox,

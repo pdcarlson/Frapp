@@ -41,8 +41,8 @@ export class SupabaseChapterDocumentFolderRepository implements IChapterDocument
   }
 
   async findByName(
-    name: string,
     chapterId: string,
+    name: string,
   ): Promise<ChapterDocumentFolder | null> {
     const { data, error } = await this.supabase
       .from('chapter_document_folders')

@@ -8,6 +8,10 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import {
+  isAllowedUploadExtension,
+  isAllowedUploadMime,
+} from '@repo/validation';
 import { assertSafeStoragePath } from '../../domain/utils/storage-path';
 import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
 import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
@@ -35,13 +39,6 @@ import type {
 } from '../../infrastructure/supabase/database.types';
 
 const BRANDING_BUCKET = 'branding';
-const ALLOWED_LOGO_CONTENT_TYPES = new Set([
-  'image/jpeg',
-  'image/png',
-  'image/gif',
-  'image/webp',
-]);
-const ALLOWED_LOGO_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp']);
 const CHANNEL_SEEDING_ERROR_MESSAGE =
   'Unable to create default chat channels for this chapter';
 
@@ -285,13 +282,13 @@ export class ChapterService {
       ? (filename.split('.').pop()?.toLowerCase() ?? 'png')
       : 'png';
 
-    if (!ALLOWED_LOGO_CONTENT_TYPES.has(contentType)) {
+    if (!isAllowedUploadMime('image', contentType)) {
       throw new BadRequestException(
         'Invalid content type. Only images are allowed.',
       );
     }
 
-    if (!ALLOWED_LOGO_EXTENSIONS.has(ext)) {
+    if (!isAllowedUploadExtension('image', ext)) {
       throw new BadRequestException(
         'Invalid file extension. Only image files are allowed.',
       );
