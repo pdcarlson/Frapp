@@ -240,6 +240,136 @@ describe('tenant-scope harness', () => {
     });
   });
 
+  describe('predicates that only look like scoping', () => {
+    it('does not accept a tenant filter that is one arm of an .or()', async () => {
+      const harness = createTenantHarness({ tables: widgets() });
+
+      // `.or('chapter_id.eq.B,name.eq.Treasurer')` returns *both* chapters,
+      // because the second arm matches the twin by design. Flattening the
+      // disjuncts into the conjunctive filter list would make this read as a
+      // bound tenant predicate.
+      await expect(
+        harness.expectTenantScoped(CHAPTER_B, async () => {
+          const { data } = await (harness.client as any)
+            .from('widgets')
+            .select('id')
+            .or(`chapter_id.eq.${CHAPTER_B},name.eq.Treasurer`);
+          return (data as { id: string }[]).map((r) => r.id);
+        }),
+      ).rejects.toThrow(/\.or\(\) group\(s\), which do not count/);
+    });
+
+    it('fails when nothing was queried at all', async () => {
+      const harness = createTenantHarness({ tables: widgets() });
+
+      // A method that early-returns on an empty input list would otherwise be
+      // certified "tenant-scoped" without touching the database.
+      await expect(
+        harness.expectTenantScoped(CHAPTER_B, async () => []),
+      ).rejects.toThrow(/issued no query and no RPC/);
+    });
+
+    it('checks every RPC in the window, not just calls that touched no table', async () => {
+      const harness = createTenantHarness({
+        tables: widgets(),
+        rpc: { do_thing: { data: [] } },
+      });
+
+      await expect(
+        harness.expectTenantScoped(CHAPTER_B, async () => {
+          await (harness.client as any)
+            .from('widgets')
+            .select('*')
+            .eq('chapter_id', CHAPTER_B);
+          await (harness.client as any).rpc('do_thing', { p_widget_id: ROW_B });
+        }),
+      ).rejects.toThrow(/rpc do_thing ran without a chapter argument/);
+    });
+
+    it('does not let an earlier call satisfy a later unscoped RPC', async () => {
+      const harness = createTenantHarness({
+        tables: widgets(),
+        rpc: { scoped: { data: [] }, unscoped: { data: [] } },
+      });
+
+      await harness.expectTenantScoped(CHAPTER_B, () =>
+        (harness.client as any).rpc('scoped', { p_chapter_id: CHAPTER_B }),
+      );
+
+      // Reading the whole RPC history rather than the current window would let
+      // the first call's argument vouch for the second.
+      await expect(
+        harness.expectTenantScoped(CHAPTER_B, () =>
+          (harness.client as any).rpc('unscoped', { p_widget_id: ROW_B }),
+        ),
+      ).rejects.toThrow(/rpc unscoped ran without a chapter argument/);
+    });
+  });
+
+  describe('indirectly scoped tables', () => {
+    const nested = () => ({
+      widgets: [
+        inA({ id: ROW_A, name: 'Treasurer' }),
+        inB({ id: ROW_B, name: 'Treasurer' }),
+      ],
+      parts: [
+        { id: 'part-a', widget_id: ROW_A, label: 'bolt' },
+        { id: 'part-b', widget_id: ROW_B, label: 'bolt' },
+      ],
+    });
+
+    const harnessFor = () =>
+      createTenantHarness({
+        tables: nested(),
+        untenantedTables: ['parts'],
+        parentTenant: { parts: { column: 'widget_id', table: 'widgets' } },
+      });
+
+    it('catches a write that reaches the other chapter through the parent', async () => {
+      const harness = harnessFor();
+
+      // `parts` has no chapter_id, so the predicate check cannot run. Resolving
+      // through `widget_id` is what keeps the write check alive — without it
+      // this update passes silently.
+      await expect(
+        harness.expectTenantScoped(CHAPTER_B, async () => {
+          await (harness.client as any)
+            .from('parts')
+            .update({ label: 'nut' })
+            .eq('label', 'bolt');
+        }),
+      ).rejects.toThrow(/belongs to chapter .* and was MUTATED/);
+    });
+
+    it('catches a delete that empties the other chapter through the parent', async () => {
+      const harness = harnessFor();
+
+      await expect(
+        harness.expectTenantScoped(CHAPTER_B, async () => {
+          await (harness.client as any)
+            .from('parts')
+            .delete()
+            .eq('label', 'bolt');
+        }),
+      ).rejects.toThrow(/belongs to chapter .* and was DELETED/);
+    });
+
+    it('passes a write confined to the caller chapter subtree', async () => {
+      const harness = harnessFor();
+
+      await harness.expectTenantScoped(CHAPTER_B, async () => {
+        await (harness.client as any)
+          .from('parts')
+          .update({ label: 'nut' })
+          .eq('widget_id', ROW_B);
+      });
+
+      const parts = harness.rows('parts');
+      expect(parts.find((p) => p.id === 'part-b')!.label).toBe('nut');
+      expect(parts.find((p) => p.id === 'part-a')!.label).toBe('bolt');
+    });
+  });
+
   describe('fixture guards', () => {
     it('rejects twins that differ on a non-tenant column', () => {
       expect(() =>
@@ -274,6 +404,22 @@ describe('tenant-scope harness', () => {
           tables: { widgets: [inA({ id: ROW_A, name: 'Treasurer' })] },
         }),
       ).toThrow(/must be seeded in both chapters/);
+    });
+
+    it('rejects an unevenly seeded table instead of skipping the collision check', () => {
+      // Returning quietly here would disable the guard the design rests on, for
+      // that table, with no signal to the author.
+      expect(() =>
+        createTenantHarness({
+          tables: {
+            widgets: [
+              inA({ id: ROW_A, name: 'Treasurer' }),
+              inA({ id: 'a2', name: 'Secretary' }),
+              inB({ id: ROW_B, name: 'President' }),
+            ],
+          },
+        }),
+      ).toThrow(/seeded unevenly/);
     });
 
     it('skips the twin requirement for declared untenanted tables', () => {
@@ -325,6 +471,114 @@ describe('tenant-scope harness', () => {
         .select('*')
         .not('meta->>flagged', 'is', null);
       expect(byNot).toHaveLength(2);
+    });
+
+    it('negates with Postgres three-valued logic, not JS truthiness', async () => {
+      const harness = createTenantHarness({
+        tables: {
+          widgets: [
+            inA({ id: ROW_A, meta: null }),
+            inB({ id: ROW_B, meta: null }),
+          ],
+        },
+      });
+
+      // `NOT (NULL @> '{"flagged":true}')` is NULL in Postgres and the row is
+      // dropped. A plain `!` would keep it — widening, which is the direction a
+      // tenancy test must never fail in.
+      const { data } = await (harness.client as any)
+        .from('widgets')
+        .select('*')
+        .not('meta', 'cs', '{"flagged":true}');
+
+      expect(data).toHaveLength(0);
+    });
+
+    it('applies order() so limit(1) means "the latest"', async () => {
+      const harness = createTenantHarness({
+        tables: {
+          widgets: [
+            inA({ id: ROW_A, created_at: '2026-01-01' }),
+            inB({ id: ROW_B, created_at: '2026-01-01' }),
+            inA({ id: 'a2', created_at: '2026-06-01' }),
+            inB({ id: 'b2', created_at: '2026-06-01' }),
+          ],
+        },
+      });
+
+      const { data } = await (harness.client as any)
+        .from('widgets')
+        .select('*')
+        .eq('chapter_id', CHAPTER_B)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      // A no-op order would return whichever row the seed listed first.
+      expect((data as { id: string }[])[0].id).toBe('b2');
+    });
+
+    it('parses .or() literals and the not. prefix', async () => {
+      const harness = createTenantHarness({
+        tables: {
+          widgets: [
+            inA({ id: ROW_A, mandatory: true, roles: null }),
+            inB({ id: ROW_B, mandatory: true, roles: null }),
+          ],
+        },
+      });
+
+      // The form already shipped in scheduled-jobs.repository.ts. Typing the
+      // operand as a string would compare 'true' === true and match nothing.
+      const { data } = await (harness.client as any)
+        .from('widgets')
+        .select('*')
+        .or('mandatory.eq.true,roles.not.is.null');
+
+      expect(data).toHaveLength(2);
+    });
+
+    it('splits .or() on top-level commas only', async () => {
+      const harness = createTenantHarness({
+        tables: {
+          widgets: [
+            inA({ id: ROW_A, title: 'CHEM 101, Midterm' }),
+            inB({ id: ROW_B, title: 'CHEM 101, Midterm' }),
+          ],
+        },
+      });
+
+      const { data } = await (harness.client as any)
+        .from('widgets')
+        .select('*')
+        .or('title.ilike."%101, Mid%"');
+
+      expect(data).toHaveLength(2);
+    });
+
+    it('maybeSingle reports multiple matches instead of picking one', async () => {
+      const harness = createTenantHarness({ tables: widgets() });
+
+      // PostgREST's maybeSingle is "zero or one". Returning rows[0] would make
+      // a dropped tenant filter look like a successful lookup.
+      const { data, error } = await (harness.client as any)
+        .from('widgets')
+        .select('*')
+        .eq('name', 'Treasurer')
+        .maybeSingle();
+
+      expect(data).toBeNull();
+      expect(error).toMatchObject({ code: 'PGRST116' });
+    });
+
+    it('counts the full match, not the current page', async () => {
+      const harness = createTenantHarness({ tables: widgets() });
+
+      const { count } = await (harness.client as any)
+        .from('widgets')
+        .select('*', { count: 'exact', head: true })
+        .limit(1);
+
+      expect(count).toBe(2);
     });
 
     it('supports count/head queries', async () => {

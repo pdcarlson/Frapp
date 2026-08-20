@@ -22,13 +22,14 @@ import {
 
 const INVITE_A = '0a000000-0000-4000-8000-000000000010';
 const INVITE_B = '0b000000-0000-4000-8000-000000000010';
-const SHARED_TOKEN = 'shared-token-value';
+const TOKEN_A = 'token-for-chapter-a';
+const TOKEN_B = 'token-for-chapter-b';
 
 const seed = () => ({
   invites: [
     inA({
       id: INVITE_A,
-      token: SHARED_TOKEN,
+      token: TOKEN_A,
       role: 'MEMBER',
       created_by: USER_SHARED,
       used_at: null,
@@ -37,7 +38,7 @@ const seed = () => ({
     }),
     inB({
       id: INVITE_B,
-      token: SHARED_TOKEN,
+      token: TOKEN_B,
       role: 'MEMBER',
       created_by: USER_SHARED,
       used_at: null,
@@ -52,7 +53,13 @@ describe('SupabaseInviteRepository — tenant scope', () => {
   let repo: SupabaseInviteRepository;
 
   beforeEach(() => {
-    harness = createTenantHarness({ tables: seed() });
+    harness = createTenantHarness({
+      tables: seed(),
+      // A token is a secret that identifies exactly one invite; making the two
+      // collide would model a state the unique index forbids, and would make
+      // `findByToken` untestable.
+      collisionExempt: { invites: ['token'] },
+    });
     repo = new SupabaseInviteRepository(harness.client);
   });
 
@@ -105,28 +112,45 @@ describe('SupabaseInviteRepository — tenant scope', () => {
   });
 
   describe('deliberately unscoped surfaces', () => {
-    it('findByToken spans chapters — the token is the boundary, not the chapter', async () => {
+    it('findByToken resolves across chapters — the token is the boundary', async () => {
       // `POST /invites/redeem` runs without `ChapterGuard` on purpose: the
       // caller is joining a chapter they are not yet a member of, so there is no
       // request chapter to scope by. `InviteService.redeem` then creates the
       // membership from `invite.chapter_id`, never from a client-supplied one.
-      const invite = await repo.findByToken(SHARED_TOKEN);
+      // The query carries no chapter predicate in either direction.
+      const fromA = await repo.findByToken(TOKEN_A);
+      const fromB = await repo.findByToken(TOKEN_B);
 
-      expect(invite).not.toBeNull();
-      expect([CHAPTER_A, CHAPTER_B]).toContain(invite?.chapter_id);
+      expect(fromA?.chapter_id).toBe(CHAPTER_A);
+      expect(fromB?.chapter_id).toBe(CHAPTER_B);
+      expect(harness.ops[0].filters.map((f) => f.column)).toEqual(['token']);
     });
 
-    it('markUsedAtomically claims by id and is scoped by its caller', async () => {
-      // No `chapter_id` filter: `InviteService.revoke` checks
-      // `invite.chapter_id !== chapterId` first, and `redeem` reaches it only
-      // through a validated token. The `is('used_at', null)` guard here is
-      // idempotency, not tenancy.
+    it('markUsedAtomically (redeem path) claims by id alone', async () => {
+      // `InviteService.redeem` reaches this only through a token it has already
+      // validated. The `is('used_at', null)` guard is idempotency, not tenancy.
       const claimed = await repo.markUsedAtomically(INVITE_A);
 
       expect(claimed).toBe(true);
+      const row = harness.rows('invites').find((r) => r.id === INVITE_A);
+      expect(row).toBeDefined();
+      // Asserting `not.toBeNull()` on the field alone would also pass if the
+      // row had been deleted, because `find` returns undefined.
+      expect(row?.used_at).toEqual(expect.any(String));
+    });
+
+    it('markUsed (revoke path) claims by id alone', async () => {
+      // The other id-only writer, and the one reachable from a client-supplied
+      // `:id` via `DELETE /invites/:id`. `InviteService.revoke` compares
+      // `invite.chapter_id !== chapterId` and 404s before calling this; the
+      // repository applies no chapter filter of its own.
+      await repo.markUsed(INVITE_A);
+
+      const [op] = harness.ops;
+      expect(op.filters.map((f) => f.column)).toEqual(['id']);
       expect(
         harness.rows('invites').find((r) => r.id === INVITE_A)?.used_at,
-      ).not.toBeNull();
+      ).toEqual(expect.any(String));
     });
   });
 });

@@ -75,6 +75,13 @@ describe('SupabaseAttendanceRepository — tenant scope', () => {
     harness = createTenantHarness({
       tables: seed(),
       untenantedTables: ['event_attendance'],
+      // Lets the harness resolve an attendance row's chapter through its event,
+      // so the foreign-write check still applies to a table that has no
+      // `chapter_id` of its own. Both twins share `user_id`, so an update
+      // matched on the member rather than the row would reach across.
+      parentTenant: {
+        event_attendance: { column: 'event_id', table: 'events' },
+      },
       rpc: { check_in_event: { data: [{ id: ATTEND_B }] } },
     });
     repo = new SupabaseAttendanceRepository(harness.client);

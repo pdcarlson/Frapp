@@ -74,6 +74,18 @@ describe('SupabaseChapterDocumentRepository — tenant scope', () => {
     expect(docs.map((d) => d.id)).toEqual([DOC_B]);
   });
 
+  it('moveToRoot does not unfile an identically-named folder in another chapter', async () => {
+    // Reached from `ChapterDocumentService.deleteFolder`. Same shape as
+    // `renameFolder`: a bulk update matched on a chapter-chosen folder name.
+    await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.moveToRoot(FOLDER, CHAPTER_B),
+    );
+
+    const rows = harness.rows('chapter_documents');
+    expect(rows.find((r) => r.id === DOC_B)?.folder).toBeNull();
+    expect(rows.find((r) => r.id === DOC_A)?.folder).toBe(FOLDER);
+  });
+
   it('renameFolder does not rename an identically-named folder in another chapter', async () => {
     await harness.expectTenantScoped(CHAPTER_B, () =>
       repo.renameFolder(FOLDER, 'Governing documents', CHAPTER_B),

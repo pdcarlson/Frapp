@@ -2,6 +2,8 @@ import { SupabasePollVoteRepository } from './supabase-poll-vote.repository';
 import {
   USER_SHARED,
   createTenantHarness,
+  inA,
+  inB,
   type TenantHarness,
 } from '../../../../test/helpers/tenant-scope.harness';
 
@@ -26,7 +28,18 @@ const MESSAGE_B = '0b000000-0000-4000-8000-000000000150';
 const VOTE_A = '0a000000-0000-4000-8000-000000000151';
 const VOTE_B = '0b000000-0000-4000-8000-000000000151';
 
+const CHANNEL_A = '0a000000-0000-4000-8000-000000000152';
+const CHANNEL_B = '0b000000-0000-4000-8000-000000000152';
+
 const seed = () => ({
+  chat_channels: [
+    inA({ id: CHANNEL_A, name: 'general', type: 'PUBLIC' }),
+    inB({ id: CHANNEL_B, name: 'general', type: 'PUBLIC' }),
+  ],
+  chat_messages: [
+    { id: MESSAGE_A, channel_id: CHANNEL_A, type: 'POLL' },
+    { id: MESSAGE_B, channel_id: CHANNEL_B, type: 'POLL' },
+  ],
   poll_votes: [
     {
       id: VOTE_A,
@@ -52,7 +65,14 @@ describe('SupabasePollVoteRepository — tenant scope', () => {
   beforeEach(() => {
     harness = createTenantHarness({
       tables: seed(),
-      untenantedTables: ['poll_votes'],
+      untenantedTables: ['poll_votes', 'chat_messages'],
+      // A vote's chapter is two hops away: vote → message → channel. Wiring it
+      // up keeps the foreign-write check alive for a table that could otherwise
+      // be emptied by a mis-filtered delete without anything noticing.
+      parentTenant: {
+        poll_votes: { column: 'message_id', table: 'chat_messages' },
+        chat_messages: { column: 'channel_id', table: 'chat_channels' },
+      },
     });
     repo = new SupabasePollVoteRepository(harness.client);
   });

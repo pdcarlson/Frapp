@@ -4,6 +4,8 @@ import {
   CHAPTER_B,
   USER_SHARED,
   createTenantHarness,
+  inA,
+  inB,
   type TenantHarness,
 } from '../../../../test/helpers/tenant-scope.harness';
 
@@ -15,11 +17,17 @@ import {
  * `findById(channelId, chapterId)` — so the chapter check happens one table
  * over.
  *
- * `findPollsByChapter` is the exception and the one that needs a real
- * assertion: it takes a `chapterId` and applies it through a PostgREST inner
- * join (`.eq('chat_channels.chapter_id', …)`). An embed filter is easy to get
- * wrong in a way that reads fine — drop the `!inner` and the join stops
- * filtering — and no other test in the suite exercises it.
+ * `findPollsByChapter` is the exception: it takes a `chapterId` and applies it
+ * through a PostgREST inner join (`.eq('chat_channels.chapter_id', …)`), and no
+ * other test in the suite exercises that path.
+ *
+ * What that assertion does *not* cover, because the harness records the
+ * `select()` string without parsing it: dropping `!inner` from
+ * `'*, chat_channels!inner(chapter_id)'`. Against real PostgREST that turns the
+ * embed filter into a non-filter — the row comes back with a nulled embed
+ * instead of being excluded — and every chapter's polls leak. That is query
+ * shape, and it belongs to the live-PostgREST integration suite
+ * (`test/integration/`), not here.
  */
 
 const CHANNEL_A = '0a000000-0000-4000-8000-000000000160';
@@ -45,6 +53,10 @@ const message = (id: string, channelId: string, chapterId: string) => ({
 });
 
 const seed = () => ({
+  chat_channels: [
+    inA({ id: CHANNEL_A, name: 'general', type: 'PUBLIC' }),
+    inB({ id: CHANNEL_B, name: 'general', type: 'PUBLIC' }),
+  ],
   chat_messages: [
     message(POLL_A, CHANNEL_A, CHAPTER_A),
     message(POLL_B, CHANNEL_B, CHAPTER_B),
@@ -58,8 +70,13 @@ describe('SupabaseChatMessageRepository — tenant scope', () => {
   beforeEach(() => {
     harness = createTenantHarness({
       tables: seed(),
-      tenantColumns: { chat_messages: 'chat_channels.chapter_id' },
+      // `chat_messages` has no `chapter_id`, so the predicate check cannot run.
+      // Resolving the chapter through the channel — the way production does —
+      // keeps the foreign-write check alive for it.
       untenantedTables: ['chat_messages'],
+      parentTenant: {
+        chat_messages: { column: 'channel_id', table: 'chat_channels' },
+      },
     });
     repo = new SupabaseChatMessageRepository(harness.client);
   });

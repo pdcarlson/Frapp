@@ -47,13 +47,24 @@ import type { FrappSupabaseClient } from '../../src/infrastructure/supabase/data
  * 3. **The filter is enforced on reads.** Nothing returned carries a foreign
  *    `chapter_id`, walked recursively so embedded rows count too.
  *
- * ## Scope
+ * ## Scope, and what it cannot see
  *
  * The fake implements the PostgREST subset the repositories actually use. Anything
  * else throws instead of passing rows through, because a silently-ignored operator
  * widens the result set, and a widened result set in a tenancy test is a *pass*
- * that means nothing. This is deliberately not a Postgres emulator: query shape
- * against a real PostgREST belongs in `test/integration/`.
+ * that means nothing.
+ *
+ * It is deliberately not a Postgres emulator, and two limits follow that a spec
+ * must not claim around:
+ *
+ * - **The `select()` projection is ignored.** Column lists and embed hints are
+ *   recorded, never parsed, so dropping `!inner` from
+ *   `'*, chat_channels!inner(chapter_id)'` — which turns a filtering join into a
+ *   non-filtering one against real PostgREST — is invisible here.
+ * - **Joins are not resolved.** An embed is whatever the seed row carries.
+ *
+ * Both belong to the live-PostgREST integration suite (`test/integration/`),
+ * which exists for exactly this class of defect.
  */
 
 /** Rows keyed by table name. */
@@ -90,7 +101,15 @@ interface Filter {
 export interface RecordedOp {
   table: string;
   mode: 'select' | 'insert' | 'update' | 'upsert' | 'delete';
+  /** Top-level conjunctive predicates only — everything ANDed onto the query. */
   filters: Filter[];
+  /**
+   * Each `.or()` as its own group of disjuncts, kept out of `filters`.
+   * Flattening them together would let one arm of
+   * `.or('chapter_id.eq.X,name.eq.Y')` read as a binding tenant predicate while
+   * the query returns every chapter whose row matches the other arm.
+   */
+  orGroups: Filter[][];
   /** Rows the filter chain resolved to (reads, updates, deletes). */
   matched: Row[];
   /** Payload rows for inserts/upserts. */
@@ -127,6 +146,17 @@ export interface TenantHarnessOptions {
    */
   untenantedTables?: string[];
   /**
+   * How to resolve the chapter of an untenanted table through its parent, e.g.
+   * `{ event_attendance: { column: 'event_id', table: 'events' } }`.
+   *
+   * Without this, listing a table in `untenantedTables` turns off the
+   * foreign-write check as well as the predicate check — and the indirectly
+   * scoped tables are precisely the ones whose whole risk is that the chapter
+   * lives somewhere else. With it, an update matched on a colliding column
+   * (`user_id`, say) that reaches the other chapter's child row is still caught.
+   */
+  parentTenant?: Record<string, { column: string; table: string }>;
+  /**
    * Columns allowed to differ between a table's chapter-A and chapter-B twins.
    * `id` and the tenant column are always exempt.
    */
@@ -153,6 +183,10 @@ export interface TenantHarness {
 }
 
 const clone = <T>(value: T): T => structuredClone(value);
+
+/** Chapter ids are strings; anything else means the lookup went wrong. */
+const describeChapter = (value: unknown): string =>
+  typeof value === 'string' ? value : JSON.stringify(value);
 
 /**
  * Resolves `metadata->>expires_at` and `chat_channels.chapter_id` against a row,
@@ -213,8 +247,18 @@ function containsValue(actual: unknown, expected: unknown): boolean {
 function applyFilter(row: Row, filter: Filter): boolean {
   // `.not(column, op, value)` is stored with the inner predicate as its value so
   // negation resolves here rather than needing a parallel evaluator.
+  //
+  // Postgres negates three-valued logic: `NOT (NULL @> …)` is NULL, and a NULL
+  // predicate does not match. A plain `!` would turn "false because the column
+  // is NULL" into a match and hand back rows the real query drops — widening,
+  // which is the one direction this file must not fail in.
   if (filter.op === '__not__') {
-    return !applyFilter(row, filter.value as Filter);
+    const inner = filter.value as Filter;
+    if (readColumn(row, inner.column) === undefined) return false;
+    if (readColumn(row, inner.column) === null && inner.op !== 'is') {
+      return false;
+    }
+    return !applyFilter(row, inner);
   }
 
   const actual = readColumn(row, filter.column);
@@ -224,7 +268,8 @@ function applyFilter(row: Row, filter: Filter): boolean {
     case 'eq':
       return actual === expected;
     case 'neq':
-      return actual !== expected;
+      // `col <> x` is NULL, not true, when col is NULL.
+      return actual !== null && actual !== undefined && actual !== expected;
     case 'is':
       return actual === expected || (expected === null && actual === undefined);
     case 'in':
@@ -259,8 +304,24 @@ function applyFilter(row: Row, filter: Filter): boolean {
   }
 }
 
+/** PostgREST spells literals inside a filter string; `.eq()` passes them typed. */
+function coerceFilterLiteral(raw: string): unknown {
+  const unquoted =
+    raw.startsWith('"') && raw.endsWith('"') ? raw.slice(1, -1) : raw;
+  if (raw.startsWith('"')) return unquoted;
+  if (unquoted === 'null') return null;
+  if (unquoted === 'true') return true;
+  if (unquoted === 'false') return false;
+  if (unquoted !== '' && !Number.isNaN(Number(unquoted))) {
+    return Number(unquoted);
+  }
+  return unquoted;
+}
+
 /** Parses one `column.op.value` term of a PostgREST `.or()` string. */
 function parseOrTerm(term: string): Filter {
+  // A JSON path (`metadata->>expires_at`) contains no dot, but the arrow does,
+  // so the column/operator split starts after it.
   const jsonSplit = term.lastIndexOf('->>');
   const searchFrom = jsonSplit === -1 ? 0 : jsonSplit + 3;
   const first = term.indexOf('.', searchFrom);
@@ -273,16 +334,46 @@ function parseOrTerm(term: string): Filter {
   }
 
   const column = term.slice(0, first);
-  const op = term.slice(first + 1, second);
-  const raw = term.slice(second + 1);
-  const unquoted =
-    raw.startsWith('"') && raw.endsWith('"') ? raw.slice(1, -1) : raw;
+  let op = term.slice(first + 1, second);
+  let rest = term.slice(second + 1);
 
-  return {
-    op,
-    column,
-    value: unquoted === 'null' ? null : unquoted,
-  };
+  // PostgREST negates inside the term: `col.not.is.null`.
+  if (op === 'not') {
+    const inner = rest.indexOf('.');
+    if (inner === -1) {
+      throw new Error(
+        `tenant-scope harness: cannot parse negated .or() term "${term}". ` +
+          `Expected "column.not.operator.value".`,
+      );
+    }
+    op = rest.slice(0, inner);
+    rest = rest.slice(inner + 1);
+    return {
+      op: '__not__',
+      column,
+      value: { op, column, value: coerceFilterLiteral(rest) },
+    };
+  }
+
+  return { op, column, value: coerceFilterLiteral(rest) };
+}
+
+/** Splits on top-level commas only — a quoted operand may contain them. */
+function splitOrTerms(expression: string): string[] {
+  const terms: string[] = [];
+  let current = '';
+  let quoted = false;
+  for (const char of expression) {
+    if (char === '"') quoted = !quoted;
+    if (char === ',' && !quoted) {
+      terms.push(current);
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+  terms.push(current);
+  return terms;
 }
 
 function parseOr(expression: string): Filter[] {
@@ -292,7 +383,7 @@ function parseOr(expression: string): Filter[] {
         `("${expression}").`,
     );
   }
-  return expression.split(',').map((term) => parseOrTerm(term.trim()));
+  return splitOrTerms(expression).map((term) => parseOrTerm(term.trim()));
 }
 
 /**
@@ -318,7 +409,19 @@ function assertTwinsCollide(
         `demonstrate that a tenant filter is doing anything.`,
     );
   }
-  if (a.length !== b.length) return;
+  if (a.length !== b.length) {
+    // Returning quietly here would disable the guard the whole design rests on
+    // for that table, and the spec author would get no signal. An unbalanced
+    // seed is the natural shape once a spec needs two rows in one chapter for
+    // ordering or paging — and it is exactly then that a non-tenant predicate
+    // can narrow on its own.
+    throw new Error(
+      `tenant-scope harness: table "${table}" is seeded unevenly (${a.length} ` +
+        `in A, ${b.length} in B), so the twins cannot be paired and the ` +
+        `collision guard would silently check nothing. Seed the same number of ` +
+        `rows in both chapters.`,
+    );
+  }
 
   const ignored = new Set(['id', tenantColumn, ...exempt]);
   for (let i = 0; i < a.length; i++) {
@@ -378,6 +481,8 @@ export function createTenantHarness(
     let limit: number | null = null;
     let range: [number, number] | null = null;
     let executed = false;
+    let totalBeforePaging: number | null = null;
+    const orderBy: { column: string; ascending: boolean }[] = [];
 
     const matching = (): Row[] => {
       const stored = tables[table] ?? [];
@@ -386,6 +491,23 @@ export function createTenantHarness(
           filters.every((f) => applyFilter(row, f)) &&
           orGroups.every((group) => group.some((f) => applyFilter(row, f))),
       );
+
+      // `.order()` has to be real: `.order('created_at', { ascending: false })
+      // .limit(1)` is how "the latest row" is spelled, and a no-op `order` makes
+      // that return whichever row the seed happened to list first.
+      for (const { column, ascending } of [...orderBy].reverse()) {
+        rows = [...rows].sort((left, right) => {
+          const a = readColumn(left, column);
+          const b = readColumn(right, column);
+          if (a === b) return 0;
+          if (a === null || a === undefined) return 1;
+          if (b === null || b === undefined) return -1;
+          return ascending ? compare(a, b) : -compare(a, b);
+        });
+      }
+
+      // PostgREST's `count` is the total matching the filters, before paging.
+      totalBeforePaging = rows.length;
       if (range) rows = rows.slice(range[0], range[1] + 1);
       if (limit !== null) rows = rows.slice(0, limit);
       return rows;
@@ -441,12 +563,16 @@ export function createTenantHarness(
       ops.push({
         table,
         mode,
-        filters: [...filters, ...orGroups.flat()],
+        filters: [...filters],
+        orGroups: orGroups.map((group) => [...group]),
         matched: clone(matched),
         payload: clone(payload),
       });
 
-      return { rows: clone(matched), count: matched.length };
+      return {
+        rows: clone(matched),
+        count: totalBeforePaging ?? matched.length,
+      };
     };
 
     const addFilter = (op: string, column: string, value: unknown) => {
@@ -513,7 +639,10 @@ export function createTenantHarness(
         return builder;
       }),
 
-      order: jest.fn(() => builder),
+      order: jest.fn((column: string, opts?: { ascending?: boolean }) => {
+        orderBy.push({ column, ascending: opts?.ascending !== false });
+        return builder;
+      }),
       limit: jest.fn((n: number) => {
         limit = n;
         return builder;
@@ -539,6 +668,19 @@ export function createTenantHarness(
       }),
       maybeSingle: jest.fn(() => {
         const { rows } = execute();
+        // PostgREST returns PGRST116 for *more than one* row too — it is
+        // "zero or one", not "the first one". Returning `rows[0]` would make a
+        // dropped tenant filter look like a successful lookup.
+        if (rows.length > 1) {
+          return Promise.resolve({
+            data: null,
+            count: rows.length,
+            error: {
+              code: 'PGRST116',
+              message: `JSON object requested, multiple (or no) rows returned (got ${rows.length})`,
+            },
+          });
+        }
         return Promise.resolve({
           data: rows[0] ?? null,
           error: null,
@@ -581,7 +723,26 @@ export function createTenantHarness(
 
   const snapshot = () => clone(tables);
 
-  const tenantValueOf = (row: Row, table: string): unknown => {
+  /**
+   * The chapter a row belongs to, or `undefined` when it cannot be determined —
+   * a genuinely global table, or an untenanted one with no `parentTenant`.
+   */
+  const tenantValueOf = (
+    row: Row,
+    table: string,
+    world: SeededTables,
+  ): unknown => {
+    const parent = options.parentTenant?.[table];
+    if (parent) {
+      const parentId = readColumn(row, parent.column);
+      const parentRow = (world[parent.table] ?? []).find(
+        (candidate) => candidate.id === parentId,
+      );
+      return parentRow
+        ? tenantValueOf(parentRow, parent.table, world)
+        : undefined;
+    }
+    if (untenanted.has(table)) return undefined;
     const column = tenantColumnFor(table);
     return readColumn(row, column.includes('.') ? 'chapter_id' : column);
   };
@@ -603,9 +764,22 @@ export function createTenantHarness(
     return found;
   };
 
-  const assertTenantPredicate = (chapterId: string, since: number): void => {
+  const assertTenantPredicate = (
+    chapterId: string,
+    since: number,
+    rpcSince: number,
+  ): void => {
     const relevant = ops.slice(since);
-    const rpcs = rpcCalls.slice();
+    const rpcs = rpcCalls.slice(rpcSince);
+
+    if (relevant.length === 0 && rpcs.length === 0) {
+      throw new Error(
+        `tenant-scope: the call issued no query and no RPC, so nothing was ` +
+          `verified. expectTenantScoped resolving here would report "scoped" ` +
+          `about a code path that never touched the database — assert on the ` +
+          `return value directly instead.`,
+      );
+    }
 
     for (const op of relevant) {
       if (untenanted.has(op.table)) continue;
@@ -625,6 +799,9 @@ export function createTenantHarness(
         continue;
       }
 
+      // Only top-level conjunctive predicates count. A tenant filter that is
+      // one arm of an `.or()` binds nothing: the other arm still matches every
+      // chapter.
       const bound = op.filters.some(
         (f) => f.op === 'eq' && f.column === column && f.value === chapterId,
       );
@@ -634,21 +811,26 @@ export function createTenantHarness(
             `predicate. Expected .eq('${column}', '${chapterId}'); the query ` +
             `applied ${JSON.stringify(
               op.filters.map((f) => [f.op, f.column, f.value]),
-            )}. A query with no tenant filter returns every chapter's rows.`,
+            )}${
+              op.orGroups.length > 0
+                ? ` plus ${op.orGroups.length} .or() group(s), which do not ` +
+                  `count — a disjunct leaves the other arm unscoped`
+                : ''
+            }. A query with no tenant filter returns every chapter's rows.`,
         );
       }
     }
 
-    if (relevant.length === 0 && rpcs.length > 0) {
-      const carried = rpcs.some((call) =>
-        Object.values(call.args).includes(chapterId),
-      );
-      if (!carried) {
+    // Every RPC in the window must carry the chapter, regardless of whether the
+    // call also touched a table. Gating this on "no table op ran" meant adding
+    // one pre-flight SELECT to an RPC method retired its only tenancy control.
+    for (const call of rpcs) {
+      if (!Object.values(call.args).includes(chapterId)) {
         throw new Error(
-          `tenant-scope: rpc ${rpcs.map((c) => c.fn).join(', ')} ran without a ` +
-            `chapter argument (${chapterId}). Args: ${JSON.stringify(
-              rpcs.map((c) => c.args),
-            )}.`,
+          `tenant-scope: rpc ${call.fn} ran without a chapter argument ` +
+            `(${chapterId}). Args: ${JSON.stringify(call.args)}. The work ` +
+            `happens inside SQL, so this argument is the only tenancy control ` +
+            `on the path.`,
         );
       }
     }
@@ -662,21 +844,28 @@ export function createTenantHarness(
       ...Object.keys(before),
       ...Object.keys(tables),
     ])) {
-      if (untenanted.has(table)) continue;
       const priorRows = before[table] ?? [];
       const currentRows = tables[table] ?? [];
+      const chapterOfPrior = (row: Row) => tenantValueOf(row, table, before);
+      const chapterOfCurrent = (row: Row) => tenantValueOf(row, table, tables);
 
       for (const prior of priorRows) {
-        if (tenantValueOf(prior, table) === chapterId) {
+        const priorChapter = chapterOfPrior(prior);
+        // `undefined` means the row's chapter is not determinable — a global
+        // table, or an untenanted one with no `parentTenant` mapping. Nothing
+        // can be concluded about it either way, so it is left alone.
+        if (priorChapter === undefined) continue;
+
+        if (priorChapter === chapterId) {
           // A write that rewrites `chapter_id` hands the row to another tenant.
           // The predicate check cannot see this — the query is correctly scoped;
           // it is the *payload* that escapes.
           const moved = currentRows.find((row) => row.id === prior.id);
-          if (moved && tenantValueOf(moved, table) !== chapterId) {
+          if (moved && chapterOfCurrent(moved) !== chapterId) {
             throw new Error(
               `tenant-scope: row ${String(prior.id)} in "${table}" was ` +
                 `REASSIGNED from chapter ${chapterId} to ` +
-                `${String(tenantValueOf(moved, table))}.`,
+                `${describeChapter(chapterOfCurrent(moved))}.`,
             );
           }
           continue;
@@ -685,14 +874,14 @@ export function createTenantHarness(
         if (!current) {
           throw new Error(
             `tenant-scope: row ${String(prior.id)} in "${table}" belongs to ` +
-              `chapter ${String(tenantValueOf(prior, table))} and was DELETED by a ` +
+              `chapter ${describeChapter(priorChapter)} and was DELETED by a ` +
               `call scoped to ${chapterId}.`,
           );
         }
         if (JSON.stringify(current) !== JSON.stringify(prior)) {
           throw new Error(
             `tenant-scope: row ${String(prior.id)} in "${table}" belongs to ` +
-              `chapter ${String(tenantValueOf(prior, table))} and was MUTATED by a ` +
+              `chapter ${describeChapter(priorChapter)} and was MUTATED by a ` +
               `call scoped to ${chapterId}.\n  before: ${JSON.stringify(prior)}\n` +
               `  after:  ${JSON.stringify(current)}`,
           );
@@ -702,11 +891,12 @@ export function createTenantHarness(
       const priorIds = new Set(priorRows.map((row) => row.id));
       for (const current of currentRows) {
         if (priorIds.has(current.id)) continue;
-        if (tenantValueOf(current, table) !== chapterId) {
+        const insertedChapter = chapterOfCurrent(current);
+        if (insertedChapter !== undefined && insertedChapter !== chapterId) {
           throw new Error(
             `tenant-scope: a call scoped to ${chapterId} INSERTED row ` +
               `${String(current.id)} into "${table}" under chapter ` +
-              `${String(tenantValueOf(current, table))}.`,
+              `${describeChapter(insertedChapter)}.`,
           );
         }
       }
@@ -741,6 +931,7 @@ export function createTenantHarness(
     ): Promise<T> {
       const before = snapshot();
       const opsBefore = ops.length;
+      const rpcBefore = rpcCalls.length;
 
       let result: T | undefined;
       let failure: { reason: unknown } | null = null;
@@ -750,12 +941,21 @@ export function createTenantHarness(
         failure = { reason };
       }
 
-      assertTenantPredicate(chapterId, opsBefore);
-      assertNoForeignWrites(before, chapterId);
-      // The repository's own failure is re-surfaced only after the tenancy
-      // assertions have had their say. A dropped filter usually shows up first
-      // as `.single()` matching both twins, and `PGRST116` reads like an
-      // unrelated bug — the tenancy message is the one worth seeing.
+      // The tenancy assertions run first, but the repository's own failure is
+      // the evidence for whatever they report, so it rides along as `cause`
+      // rather than being discarded. A dropped filter usually surfaces first as
+      // `.single()` matching both twins, and `PGRST116` on its own reads like an
+      // unrelated bug.
+      try {
+        assertTenantPredicate(chapterId, opsBefore, rpcBefore);
+        assertNoForeignWrites(before, chapterId);
+      } catch (assertion) {
+        if (failure && assertion instanceof Error) {
+          assertion.cause = failure.reason;
+        }
+        throw assertion;
+      }
+
       if (failure) return Promise.reject(failure.reason);
       assertReturnedRowsScoped(result, chapterId);
       return result as T;

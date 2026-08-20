@@ -156,16 +156,32 @@ informative one:
 3. **Enforced on reads** — nothing returned carries a foreign `chapter_id`, walked recursively so
    embedded rows count.
 
-**Options.** `tenantColumns` overrides the default `chapter_id` — `chapters` scopes by its own `id`,
-and `chat_messages` scopes through the embed path `chat_channels.chapter_id`. `untenantedTables`
-names tables with no `chapter_id` of their own; that covers both the genuinely global (`users`) and
-the indirectly scoped (`event_attendance` via `events`, `poll_votes` via `chat_channels`), and the
-spec should say which it means. `rpc` supplies canned RPC responses.
+Two ways to pass check 1 that do **not** count, both learned from a review of the harness itself: a
+tenant filter that is one arm of an `.or()` (the other arm still matches every chapter), and a call
+that issued no query at all — `expectTenantScoped` fails rather than certifying a code path that
+never touched the database.
 
-**Scope.** The harness implements the PostgREST subset the repositories use and **throws** on
-anything else rather than passing rows through — a silently-ignored operator widens the result set,
-and a widened result set makes a tenancy assertion pass without proving anything. It is not a
-Postgres emulator; query shape against a real PostgREST belongs in the integration suite (§6a).
+**Options.** `tenantColumns` overrides the default `chapter_id` — `chapters` scopes by its own `id`.
+`untenantedTables` names tables with no `chapter_id` of their own, covering both the genuinely global
+(`users`) and the indirectly scoped (`event_attendance`, `poll_votes`, `chat_messages`); the spec
+should say which it means, because the two need different treatment. `parentTenant` is that
+treatment: `{ event_attendance: { column: 'event_id', table: 'events' } }` lets the harness resolve a
+row's chapter through its parent, so check 2 still applies to a table that has no chapter of its own.
+Resolution chains, so `poll_votes → chat_messages → chat_channels` works. Without it,
+`untenantedTables` turns off check 2 as well as check 1 — and the indirectly scoped tables are
+exactly the ones whose whole risk is that the chapter lives elsewhere. `rpc` supplies canned RPC
+responses; every RPC issued inside the window must carry the chapter as an argument.
+
+**Scope, and what it cannot see.** The harness implements the PostgREST subset the repositories use
+and **throws** on anything else rather than passing rows through — a silently-ignored operator widens
+the result set, and a widened result set makes a tenancy assertion pass without proving anything.
+Negation follows Postgres three-valued logic rather than JavaScript truthiness, and `maybeSingle`
+reports `PGRST116` on multiple matches instead of picking one, both for the same reason.
+
+It is not a Postgres emulator, and two limits follow that a spec must not claim around: the
+`select()` projection is recorded but never parsed, so dropping `!inner` from an embed is invisible
+here; and joins are not resolved, so an embed is whatever the seed row carries. Both belong to the
+live-PostgREST integration suite (§6a), which exists for exactly that class of defect.
 
 **Two meta-specs keep this honest:**
 
