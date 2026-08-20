@@ -294,16 +294,19 @@ classic Rules of Hooks. We do not run `babel-plugin-react-compiler`. Shared pres
 
 | Rule | Severity when on | Remaining findings |
 | --- | --- | --- |
-| `react-hooks/set-state-in-effect` | error | 36 (42 − 6 chat) |
-| `react-hooks/refs` | error | 11 (14 − 3 chat) |
+| `react-hooks/set-state-in-effect` | error | 31 (36 − 5 auth/onboarding) |
+| `react-hooks/refs` | error | 11 |
 | `react-hooks/preserve-manual-memoization` | error | 2 |
 | `react-hooks/use-memo` | error | 1 |
 
 Chat-area findings (web shell/composer/renderers + mobile chat runtime/channel)
 were resolved by deriving state instead of effect-syncing it, a render-safe
 clock for event/poll windows, and moving latest-callback refs out of render.
-Findings concentrate in auth, realtime/connection, notifications, and
-form/dialog reset effects — not React Native animation (none remaining).
+Auth/onboarding follow-up derived invite-token and chapter-claim state,
+remounted the tutorial on show, and replaced the theme-toggle hydration
+`setState` with `useSyncExternalStore`. Remaining findings concentrate in
+realtime/connection, notifications, and form/dialog reset effects — not
+React Native animation (none remaining).
 Adopting a held-off rule is a dedicated cleanup (fix or scoped disable each
 finding, then add the rule to the allowlist), not a Dependabot follow-through.
 #1108 is the bump that introduced the hold.

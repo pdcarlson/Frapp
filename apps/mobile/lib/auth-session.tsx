@@ -155,9 +155,20 @@ export function AuthSessionProvider({
     supabase ? "hydrating" : "unauthenticated",
   );
   const [session, setSession] = useState<Session | null>(null);
-  const [chapterId, setChapterId] = useState<string | null>(null);
   /**
-   * Whether the *first* chapter-claim read for the current account has finished.
+   * Last successfully read chapter claim, tagged with the user it belongs to.
+   *
+   * Chapter id and "has the first claim been read" are *derived* from this plus
+   * the current session. An effect that `setState(null)` on user change would
+   * lag one paint behind a magic-link account swap; deriving means the previous
+   * member's chapter cannot appear on the new member's first render.
+   */
+  const [claimedChapter, setClaimedChapter] = useState<{
+    userId: string | null;
+    chapterId: string | null;
+  }>({ userId: null, chapterId: null });
+  /**
+   * User id for whom the *first* chapter-claim read has finished.
    *
    * Deliberately not "a read is in flight". The claim is re-read on every token
    * change — the hourly auto-refresh, every foreground, every chapter switch —
@@ -171,11 +182,25 @@ export function AuthSessionProvider({
    * token carries the claim), which means "we already have a chapter" cannot be
    * the thing that skips the wait — this has to be.
    */
-  const [hasReadChapterClaim, setHasReadChapterClaim] = useState(false);
+  const [claimReadForUserId, setClaimReadForUserId] = useState<string | null>(
+    null,
+  );
   const [callbackError, setCallbackError] = useState<string | null>(null);
 
   const url = Linking.useURL();
   const accessToken = session?.access_token ?? null;
+  const userId = session?.user?.id ?? null;
+  const chapterId =
+    accessToken && claimedChapter.userId === userId
+      ? claimedChapter.chapterId
+      : null;
+  /**
+   * Whether the *first* chapter-claim read for the current account has finished.
+   * False with no token (do not treat the pre-`getSession()` mount as resolved)
+   * and false the moment `userId` changes, even before the claim effect re-runs.
+   */
+  const hasReadChapterClaim =
+    Boolean(accessToken) && claimReadForUserId === userId;
 
   // Hydrate from persisted storage, then follow every subsequent change.
   useEffect(() => {
@@ -221,28 +246,6 @@ export function AuthSessionProvider({
   }, [accessToken]);
 
   /**
-   * Drop the chapter the moment the account changes.
-   *
-   * The claim effect below deliberately *retains* the last known chapter when a
-   * read fails, so a network blip cannot evict a member mid-use. That retention
-   * must not survive a change of user: a magic link signs a different account in
-   * through `onAuthStateChange` without any sign-out, and a failed first read
-   * would otherwise leave the previous member's chapter in place. The API
-   * rejects it (`ChapterGuard` re-checks membership and answers 403
-   * `chapter.context.invalid`, so nothing leaks) — but the app would be
-   * inexplicably broken until a read finally succeeded.
-   *
-   * Declared before the claim effect so it clears first when both run.
-   */
-  const userId = session?.user?.id ?? null;
-
-  useEffect(() => {
-    setChapterId(null);
-    // The new account has not been read for yet, so the gate must wait again.
-    setHasReadChapterClaim(false);
-  }, [userId]);
-
-  /**
    * Chapter context comes from the token claim, never from a local pick.
    *
    * Per `spec/behavior/multi-tenancy.md`, the `active_chapter_id` claim is
@@ -260,19 +263,25 @@ export function AuthSessionProvider({
    * server-side and then refreshes the session — the new token arrives here as
    * a changed `accessToken` and this effect re-reads the claim. That is why
    * there is still no local override: the claim stays the only source.
+   *
+   * Retention on a failed *read* is scoped to `claimedChapter.userId`. A magic
+   * link can swap accounts with no sign-out; deriving `chapterId` from that tag
+   * drops the previous member's chapter on the same render as the new session,
+   * without an effect `setState(null)` that would lag one paint.
    */
   useEffect(() => {
     if (!supabase) return;
 
-    if (!accessToken) {
-      setChapterId(null);
+    if (!accessToken || !userId) {
       // Do NOT mark the claim as read here. This branch runs on mount, before
       // `getSession()` has resolved, and marking it read would let the gate
       // commit a render of the whole tab navigator on the next tick — which
-      // then blanks and remounts the moment the real read starts.
+      // then blanks and remounts the moment the real read starts. `chapterId`
+      // and `hasReadChapterClaim` already derive to "not ready" without token.
       return;
     }
 
+    const claimUserId = userId;
     let cancelled = false;
 
     // Stop *waiting* on the claim after a bounded delay — but keep listening.
@@ -288,7 +297,7 @@ export function AuthSessionProvider({
     // The request is deliberately not aborted: if it lands later, the claim
     // still applies.
     const resolveTimer = setTimeout(() => {
-      if (!cancelled) setHasReadChapterClaim(true);
+      if (!cancelled) setClaimReadForUserId(claimUserId);
     }, CLAIM_READ_TIMEOUT_MS);
 
     supabase.auth
@@ -304,9 +313,11 @@ export function AuthSessionProvider({
         // last known chapter and let the next token try again.
         if (error || !data?.claims) return;
         const claim = data.claims[ACTIVE_CHAPTER_CLAIM];
-        setChapterId(
-          typeof claim === "string" && claim.length > 0 ? claim : null,
-        );
+        setClaimedChapter({
+          userId: claimUserId,
+          chapterId:
+            typeof claim === "string" && claim.length > 0 ? claim : null,
+        });
       })
       .catch(() => {
         // Same reasoning as above — retain, do not demote.
@@ -314,7 +325,7 @@ export function AuthSessionProvider({
       .finally(() => {
         // Each run owns its own `cancelled`, so a superseded read can never
         // clear the flag out from under the newer one that replaced it.
-        if (!cancelled) setHasReadChapterClaim(true);
+        if (!cancelled) setClaimReadForUserId(claimUserId);
         clearTimeout(resolveTimer);
       });
 
@@ -322,7 +333,7 @@ export function AuthSessionProvider({
       cancelled = true;
       clearTimeout(resolveTimer);
     };
-  }, [supabase, accessToken]);
+  }, [supabase, accessToken, userId]);
 
   // supabase-js refreshes tokens on a timer, and the OS suspends timers in the
   // background. Restart the loop whenever the app is foregrounded, or a session
@@ -404,8 +415,8 @@ export function AuthSessionProvider({
     // the member believes they ended.
     await clearAuthToken();
     setSession(null);
-    setChapterId(null);
-    setHasReadChapterClaim(false);
+    setClaimedChapter({ userId: null, chapterId: null });
+    setClaimReadForUserId(null);
     setStatus("unauthenticated");
   }, [supabase]);
 
