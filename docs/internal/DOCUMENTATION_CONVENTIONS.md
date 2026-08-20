@@ -42,6 +42,7 @@ agents satisfy the docs-sync CI gate. Enforced (in part) by [`scripts/check-docs
 | Per-service performance notes | `docs/internal/services/` |
 | Work status / planning | **GitHub Issues** — not a doc; see [`ci-cd/GITHUB_PM.md`](ci-cd/GITHUB_PM.md) |
 | Product-planning canvas (Buildpad export) | `.buildpad/` — **read-only background, never a doc home**; see below |
+| In-flight consolidation scope + progress | `REFACTOR-PLAN.md` / `REFACTOR-PROGRESS.md` at repo root — **temporary scratch, never a doc home**; see below |
 
 ## Satisfying the docs-sync gate (`scripts/check-docs-impact.mjs`)
 
@@ -81,6 +82,25 @@ Treat it as a running brainstorm, not a source of truth:
 4. **Source tooling skips it.** It holds no code, so the `Links`, `doc-paths` and docs-structure gates
    never walk it, and [`.prettierignore`](../../.prettierignore) keeps `npm run format` from rewriting
    the whole export into a diff the next sync would just undo.
+
+## `REFACTOR-PLAN.md` / `REFACTOR-PROGRESS.md` are scratch, not documentation
+
+Two tool-neutral files at repo root carry the scope and running state of the in-flight consolidation
+project: `REFACTOR-PLAN.md` (per-item `file:line` inventories, shared homes, call sites, and the
+cross-item collision map that keeps two parallel agents off the same file) and `REFACTOR-PROGRESS.md`
+(one checkbox per item). They exist so each isolated agent gets exact scope instead of re-deriving it,
+and they are **deleted when the project wraps**.
+
+The same rules as `.buildpad/` apply, with one difference that matters:
+
+1. **`spec/` still wins.** A plan file records what the code looks like today and what an agent should
+   do next. It is not a behavior contract.
+2. **They are not exempt from the docs-sync gate.** Unlike `.buildpad/`, root-level paths are not in
+   `NON_CODE_PREFIXES`, so a PR that edits either file still owes a `docs/` or `spec/` change —
+   editing them cannot satisfy the gate either. That is deliberate: they are short-lived, and
+   exempting a root path would weaken a gate required under `enforce_admins: true`.
+3. **A conclusion worth keeping gets promoted** into its canonical `spec/` or `docs/` home from the map
+   above before the files are deleted.
 
 ## See also
 
