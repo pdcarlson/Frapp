@@ -142,9 +142,27 @@ export default function ChapterPicker() {
           // with no way back to sign-in.
           <View style={styles.stateBlock}>
             <Text style={styles.helperText}>
-              This account is not a member of any chapter yet. Ask an officer for
-              an invite, then sign in again.
+              This account is not a member of any chapter yet. Join with an
+              invite, or create a chapter if you&apos;re the first officer.
             </Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                router.push("/join");
+              }}
+              style={styles.primaryButton}
+            >
+              <Text style={styles.primaryButtonText}>Join a chapter</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                router.push("/create-chapter");
+              }}
+              style={styles.secondaryButton}
+            >
+              <Text style={styles.secondaryButtonText}>Create a chapter</Text>
+            </Pressable>
           </View>
         ) : (
           <ScrollView contentContainerStyle={styles.list}>

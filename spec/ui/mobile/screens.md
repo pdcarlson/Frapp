@@ -44,7 +44,7 @@ Status legend — **Live**: route exists and carries real content. **Routed, stu
 | s22 | Host check-in (admin) | `(tabs)/host-check-in.tsx` | Live — rotating QR, `events:update`-gated. Reached from the More hub's admin section, which resolves the next hostable event and passes its `eventId` |
 | s23 | Adjust points sheet (admin) | *sheet* on `more.tsx` | Sheet — **not built**: the More hub's Adjust points row renders disabled, because the sheet needs a member picker plus amount/category/reason. Server rules (reason required, audit-logged) stand: [`../../behavior/points.md`](../../behavior/points.md) |
 
-Supporting route with no drawn screen: `(auth)/chapter-picker.tsx` — chapter selection when an account resolves to more than one chapter during join/sign-in. It reuses s02's visual language.
+Supporting routes with no drawn Canvas screen: `(auth)/chapter-picker.tsx` — chapter selection when an account resolves to more than one chapter during join/sign-in, reusing s02's visual language — and `(auth)/create-chapter.tsx` — first-officer wizard (`POST /v1/chapters/onboard`), Live.
 
 ## Removed screens
 
