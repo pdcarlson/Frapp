@@ -6,7 +6,8 @@ This guide documents how we test the Frapp API using Jest and NestJS testing uti
 
 We use three main test layers:
 
-- **Unit tests** — services, guards, interceptors (mocking repositories and Supabase)
+- **Unit tests** — services, guards, interceptors (mocking repositories and Supabase), plus the
+  repository tenant-scope specs (see §4a)
 - **Integration tests** — service queries issued against a **real** PostgREST on the local Supabase
   stack (see §6a)
 - **E2E tests** — supertest-based flows (e.g. auth → create chapter → add member)
@@ -104,6 +105,81 @@ Interceptors:
 
 - `RequestIdInterceptor` — attaches `x-request-id` when missing and forwards when present
 - Logging interceptor — ensures it logs request/response metadata (can be smoke-tested)
+
+## 4a. Repository tenant-scope tests
+
+The 33 Supabase repositories under `apps/api/src/infrastructure/supabase/repositories/` had no direct
+behavioural tests until #1084; seven were covered indirectly through
+`test/cross-tenant-isolation.e2e-spec.ts`. Wiring the generated `Database` type into the client
+(Wave 0C, #1083) closed the *type* hole and not the *column* one — a repository that filters
+`.eq('id', chapterId)` instead of `.eq('chapter_id', chapterId)`, or that loses a tenant filter in a
+refactor, compiles cleanly and leaks another chapter's rows.
+
+**The harness:** `apps/api/test/helpers/tenant-scope.harness.ts` (`createTenantHarness`). It is a
+recording Supabase double that actually applies filters, alongside `createSupabaseMock` and
+`createTableAwareSupabaseMock` in `supabase-mock.factory.ts` (§6).
+
+**The fixture is adversarial by construction.** Chapter A's row and chapter B's row are identical in
+every column except `id` and `chapter_id` — same `user_id`, same `name`, same `token`. Every
+predicate other than the tenant one therefore matches *both* rows, so only a real tenant filter can
+narrow the result. This is enforced, not assumed: seeding twins that differ on any other column
+fails with a message naming it, and a column that legitimately has to differ (a foreign key to a
+chapter-scoped parent) must be listed in `collisionExempt`. Without that check a spec can pass while
+proving nothing, which is worse than having no spec.
+
+```typescript
+const harness = createTenantHarness({
+  tables: {
+    roles: [
+      inA({ id: ROLE_A, name: 'Treasurer', system_key: 'TREASURER' }),
+      inB({ id: ROLE_B, name: 'Treasurer', system_key: 'TREASURER' }),
+    ],
+  },
+});
+const repo = new SupabaseRoleRepository(harness.client);
+
+const role = await harness.expectTenantScoped(CHAPTER_B, () =>
+  repo.findByChapterAndName(CHAPTER_B, 'Treasurer'),
+);
+expect(role?.id).toBe(ROLE_B);
+```
+
+`expectTenantScoped` asserts three things in this order, because the first failure is the
+informative one:
+
+1. **The filter is present** — every recorded table operation binds that table's tenant column to
+   the caller's chapter (or, for an RPC, passes it as an argument). Checked first so a dropped
+   filter reports as "ran without a tenant predicate" rather than as the `PGRST116` that
+   `.single()` raises when it matches both twins.
+2. **Enforced on writes** — no row outside the caller's chapter was inserted, updated, deleted, or
+   reassigned into another chapter by the payload.
+3. **Enforced on reads** — nothing returned carries a foreign `chapter_id`, walked recursively so
+   embedded rows count.
+
+**Options.** `tenantColumns` overrides the default `chapter_id` — `chapters` scopes by its own `id`,
+and `chat_messages` scopes through the embed path `chat_channels.chapter_id`. `untenantedTables`
+names tables with no `chapter_id` of their own; that covers both the genuinely global (`users`) and
+the indirectly scoped (`event_attendance` via `events`, `poll_votes` via `chat_channels`), and the
+spec should say which it means. `rpc` supplies canned RPC responses.
+
+**Scope.** The harness implements the PostgREST subset the repositories use and **throws** on
+anything else rather than passing rows through — a silently-ignored operator widens the result set,
+and a widened result set makes a tenancy assertion pass without proving anything. It is not a
+Postgres emulator; query shape against a real PostgREST belongs in the integration suite (§6a).
+
+**Two meta-specs keep this honest:**
+
+- `tenant-scope.harness.spec.ts` runs each guard against a deliberately broken repository stand-in,
+  so a harness that can no longer fail is itself a failure. Extend it whenever you extend the harness.
+- `tenant-scope-coverage.spec.ts` is the coverage ledger: every repository either has a
+  `*.repository.spec.ts` driving `createTenantHarness`, or a line in `TENANT_SCOPE_BACKLOG` giving
+  the reason. A new repository added without either fails CI. Clearing a backlog entry means writing
+  the spec and raising the pinned count.
+
+**What these tests do not replace.** Methods that take a row `id` and no chapter (`memberRepo.findById`,
+`roleRepo.update`, `attendanceRepo.update`) are scoped by their callers, not by the query. Those are
+characterised — asserted as unscoped, with a comment naming the enforcing service — and the route-level
+guarantee stays with `test/cross-tenant-isolation.e2e-spec.ts`.
 
 ## 5. CI parity (lint job)
 

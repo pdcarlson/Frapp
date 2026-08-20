@@ -24,6 +24,7 @@ description: >
 | API `nest build` (Render / Docker parity) | `npm run build -w apps/api` |
 | API image (optional, needs Docker) | `docker build -f apps/api/Dockerfile .` |
 | API unit tests | `npm run test -w apps/api` |
+| Repository tenant-scope specs only | `npm run test -w apps/api -- --testPathPatterns="repositories/"` |
 | API E2E tests (mocked Supabase, no live services) | `npm run test:e2e -w apps/api` |
 | Web unit tests (Vitest / jsdom) | `npm run test -w apps/web` |
 | Mobile unit tests (Vitest) | `npm run test -w apps/mobile` |
@@ -106,7 +107,36 @@ const module: TestingModule = await Test.createTestingModule({
 }).compile();
 ```
 
-Repositories and adapters are mocked via `jest.fn()` on each method. No shared mock factories — each spec defines its own fixtures inline.
+Repositories and adapters are mocked via `jest.fn()` on each method. Service specs define their own
+fixtures inline.
+
+**Repository tenant-scope specs are the exception, and they must use the shared harness.**
+`createTenantHarness` (`apps/api/test/helpers/tenant-scope.harness.ts`) seeds two chapters whose rows
+collide on every column except `id` and `chapter_id`, so any predicate but the tenant one matches
+both rows and only a real tenant filter narrows the result:
+
+```typescript
+const harness = createTenantHarness({
+  tables: { roles: [inA({ id: ROLE_A, name: 'Treasurer' }), inB({ id: ROLE_B, name: 'Treasurer' })] },
+});
+const repo = new SupabaseRoleRepository(harness.client);
+
+await harness.expectTenantScoped(CHAPTER_B, () => repo.findByChapter(CHAPTER_B));
+```
+
+`expectTenantScoped` asserts the tenant predicate was applied, no foreign row was written, and no
+foreign row was returned. Hand-rolling a double instead loses the colliding-twin check, which is what
+stops a spec passing for the wrong reason — `tenant-scope-coverage.spec.ts` fails if a repository
+spec does not call `createTenantHarness`. Full treatment, including `tenantColumns`,
+`untenantedTables` and `collisionExempt`: [`docs/guides/testing.md`](../../../docs/guides/testing.md) §4a.
+
+Two rules when touching this area:
+
+- Extending the harness means extending `tenant-scope.harness.spec.ts`, which proves each guard still
+  fails against a deliberately broken repository. A harness that cannot fail is indistinguishable
+  from a clean codebase.
+- Adding a repository means adding its tenant-scope spec, or a reason in `TENANT_SCOPE_BACKLOG`. CI
+  fails on neither.
 
 For the full treatment — service coverage goals, guard/interceptor test targets, coverage
 expectations, and the E2E scaffolding (the `jest-e2e.json` CommonJS transform quirks and the

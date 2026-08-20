@@ -42,3 +42,12 @@ Users with more than one membership switch from the dashboard sidebar (`ChapterS
   **403 vs 404.** Both are acceptable and the choice is about disclosure, not correctness: a bare 403 confirms the ID exists somewhere. Return **404** wherever the ID space is guessable and the caller should not learn whether the row exists at all — the chat surfaces (see `spec/behavior/chat/README.md`) and `PATCH /v1/backwork/departments/:id` do this. Return **403** where the caller already legitimately knows the resource exists, as the member and role endpoints do. Never leak the other chapter's data in either body.
 - **Permission resolution is itself chapter-scoped.** Roles carry `chapter_id`, so effective permissions are resolved only from roles in the active chapter; a stale or cross-chapter role ID on a member row grants nothing.
 - Cross-chapter data leaks are treated as critical security bugs.
+
+**How the invariant is tested.** Two layers, because neither covers the other:
+
+- **Route level** — `apps/api/test/cross-tenant-isolation.e2e-spec.ts` drives the real `ChapterGuard` over HTTP and proves the rejections above (403 `chapter.context.invalid`/`chapter.context.mismatch`, 404 for guessable ID spaces).
+- **Repository level** — a tenant-scope spec per repository, built on `createTenantHarness` (`apps/api/test/helpers/tenant-scope.harness.ts`). Each seeds two chapters whose rows are identical except `id` and `chapter_id`, so every predicate but the tenant one matches both and only a real tenant filter narrows the result; the harness then asserts the filter was applied, no foreign row was written, and no foreign row came back. This is the layer type-checking cannot reach: `.eq('id', chapterId)` in place of `.eq('chapter_id', chapterId)` compiles.
+
+  Coverage is a ledger, not a count — `apps/api/src/infrastructure/supabase/repositories/tenant-scope-coverage.spec.ts` requires every repository to have either a spec or a recorded reason, so an uncovered one cannot be added quietly.
+
+  Repositories whose methods take a row `id` and no chapter are scoped by their callers instead, per the "mutate a single resource by ID" rule above. Those specs characterise the method as unscoped and name the enforcing service, so the reliance is written down rather than assumed.
