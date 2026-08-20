@@ -110,6 +110,21 @@ describe('SupabaseChatMessageRepository — tenant scope', () => {
     expect(messages.map((m) => m.id)).toEqual([POLL_B]);
   });
 
+  it('update stays inside the caller chapter subtree', async () => {
+    // `chat_messages` has no chapter, so the guard leans entirely on
+    // `parentTenant` resolving through the channel. An edit matched on
+    // something both twins share would reach chapter A and be caught here.
+    await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.update(POLL_B, { content: 'Edited' }),
+    );
+
+    const rows = harness.rows('chat_messages');
+    expect(rows.find((m) => m.id === POLL_B)?.content).toBe('Edited');
+    expect(rows.find((m) => m.id === POLL_A)?.content).toBe(
+      'Are you coming to formal?',
+    );
+  });
+
   it('findById filters on the message id alone', async () => {
     // Characterisation. `ChatService.assertMessageAccess` loads the message,
     // then runs `assertChannelAccess(message.channel_id, chapterId, …)` and

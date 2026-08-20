@@ -94,7 +94,7 @@ describe('tenant-scope harness', () => {
       const harness = createTenantHarness({ tables: widgets() });
 
       // `.eq('id', chapterId)` type-checks and is the exact class of bug the
-      // Wave 0C type-wiring could not catch.
+      // type-wiring in #1083 could not catch.
       await expect(
         harness.expectTenantScoped(CHAPTER_B, async () => {
           const { data } = await (harness.client as any)
@@ -283,7 +283,25 @@ describe('tenant-scope harness', () => {
             .eq('chapter_id', CHAPTER_B);
           await (harness.client as any).rpc('do_thing', { p_widget_id: ROW_B });
         }),
-      ).rejects.toThrow(/rpc do_thing ran without a chapter argument/);
+      ).rejects.toThrow(/rpc do_thing did not pass p_chapter_id/);
+    });
+
+    it('checks the chapter argument by name, not by value anywhere in the args', async () => {
+      const harness = createTenantHarness({
+        tables: widgets(),
+        rpc: { check_in: { data: [] } },
+      });
+
+      // Transposing two arguments is an ordinary refactor slip, and a
+      // "some argument equals the chapter" check certifies it.
+      await expect(
+        harness.expectTenantScoped(CHAPTER_B, () =>
+          (harness.client as any).rpc('check_in', {
+            p_user_id: CHAPTER_B,
+            p_chapter_id: USER_SHARED,
+          }),
+        ),
+      ).rejects.toThrow(/did not pass p_chapter_id/);
     });
 
     it('does not let an earlier call satisfy a later unscoped RPC', async () => {
@@ -302,7 +320,7 @@ describe('tenant-scope harness', () => {
         harness.expectTenantScoped(CHAPTER_B, () =>
           (harness.client as any).rpc('unscoped', { p_widget_id: ROW_B }),
         ),
-      ).rejects.toThrow(/rpc unscoped ran without a chapter argument/);
+      ).rejects.toThrow(/rpc unscoped did not pass p_chapter_id/);
     });
   });
 
@@ -352,6 +370,19 @@ describe('tenant-scope harness', () => {
             .eq('label', 'bolt');
         }),
       ).rejects.toThrow(/belongs to chapter .* and was DELETED/);
+    });
+
+    it('refuses a parent chain whose parent table is not seeded', () => {
+      // An unseeded parent makes every child's chapter unknowable, which turns
+      // the foreign-write check back off — silently, which is the same failure
+      // the twin-collision guard exists to prevent.
+      expect(() =>
+        createTenantHarness({
+          tables: { parts: [{ id: 'part-a', widget_id: ROW_A }] },
+          untenantedTables: ['parts'],
+          parentTenant: { parts: { column: 'widget_id', table: 'widgets' } },
+        }),
+      ).toThrow(/resolves its chapter through "widgets", which is not seeded/);
     });
 
     it('passes a write confined to the caller chapter subtree', async () => {

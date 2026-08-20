@@ -10,9 +10,9 @@ import {
 } from '../../../../test/helpers/tenant-scope.harness';
 
 /**
- * Tenant scope for `tasks`. `use-tasks` is one of the hooks Wave 1 item 5
- * migrates onto the chapter-scoped query-key factory, so this is a repository
- * whose call sites are about to move.
+ * Tenant scope for `tasks`. `use-tasks` is one of the hooks due to migrate onto
+ * `createChapterQueryKeys` in `packages/hooks`, so this is a repository whose
+ * call sites are about to move.
  */
 
 const TASK_A = '0a000000-0000-4000-8000-000000000060';

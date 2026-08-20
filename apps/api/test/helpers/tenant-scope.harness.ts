@@ -5,7 +5,7 @@ import type { FrappSupabaseClient } from '../../src/infrastructure/supabase/data
  *
  * ## What this exists to catch
  *
- * Wave 0C wired the generated `Database` type into every repository, so the
+ * #1083 wired the generated `Database` type into every repository, so the
  * compiler now rejects a wrong *type*. It cannot reject a wrong *column*: a
  * repository that filters `.eq('id', chapterId)` instead of
  * `.eq('chapter_id', chapterId)`, or that loses a tenant filter in a refactor,
@@ -22,7 +22,7 @@ import type { FrappSupabaseClient } from '../../src/infrastructure/supabase/data
  *
  * So the seed is deliberately adversarial: for each table, chapter A's row and
  * chapter B's row are identical in **every** column except `id` and `chapter_id`.
- * Same `user_id`, same `name`, same `token`, same `status`. Every predicate a
+ * Same `user_id`, same `name`, same `status`. Every predicate a
  * repository applies other than the tenant one therefore matches *both* rows, and
  * the only thing that can narrow the result to one chapter is a real tenant
  * filter. Drop it and the query returns the twin.
@@ -163,6 +163,15 @@ export interface TenantHarnessOptions {
   collisionExempt?: Record<string, string[]>;
   /** Canned RPC responses keyed by function name. */
   rpc?: Record<string, { data?: unknown; error?: unknown }>;
+  /**
+   * Argument name expected to carry the chapter on an RPC. Every repository
+   * spells it `p_chapter_id`.
+   *
+   * Checking the *name* rather than "some argument equals the chapter" matters:
+   * transposing two arguments — `{ p_user_id: chapterId, p_chapter_id: userId }` —
+   * is an ordinary refactor slip, and a value-only check certifies it.
+   */
+  rpcChapterArg?: string;
 }
 
 export interface TenantHarness {
@@ -451,6 +460,20 @@ export function createTenantHarness(
   const untenanted = new Set(options.untenantedTables ?? []);
   const tenantColumnFor = (table: string) =>
     options.tenantColumns?.[table] ?? 'chapter_id';
+
+  // An unseeded parent makes every child's chapter unresolvable, which silently
+  // turns the foreign-write check back off — the same failure shape the
+  // twin-collision guard exists to prevent, so it fails loudly too.
+  for (const [table, parent] of Object.entries(options.parentTenant ?? {})) {
+    if (options.tables[table] && !options.tables[parent.table]) {
+      throw new Error(
+        `tenant-scope harness: "${table}" resolves its chapter through ` +
+          `"${parent.table}", which is not seeded. Every row would have an ` +
+          `unknowable chapter and the foreign-write check would pass on ` +
+          `anything. Seed "${parent.table}".`,
+      );
+    }
+  }
 
   for (const [table, rows] of Object.entries(options.tables)) {
     if (untenanted.has(table)) continue;
@@ -824,13 +847,14 @@ export function createTenantHarness(
     // Every RPC in the window must carry the chapter, regardless of whether the
     // call also touched a table. Gating this on "no table op ran" meant adding
     // one pre-flight SELECT to an RPC method retired its only tenancy control.
+    const chapterArg = options.rpcChapterArg ?? 'p_chapter_id';
     for (const call of rpcs) {
-      if (!Object.values(call.args).includes(chapterId)) {
+      if (call.args[chapterArg] !== chapterId) {
         throw new Error(
-          `tenant-scope: rpc ${call.fn} ran without a chapter argument ` +
-            `(${chapterId}). Args: ${JSON.stringify(call.args)}. The work ` +
-            `happens inside SQL, so this argument is the only tenancy control ` +
-            `on the path.`,
+          `tenant-scope: rpc ${call.fn} did not pass ${chapterArg}=${chapterId} ` +
+            `(got ${JSON.stringify(call.args[chapterArg])}). Args: ` +
+            `${JSON.stringify(call.args)}. The work happens inside SQL, so this ` +
+            `argument is the only tenancy control on the path.`,
         );
       }
     }

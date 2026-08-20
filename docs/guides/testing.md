@@ -108,10 +108,10 @@ Interceptors:
 
 ## 4a. Repository tenant-scope tests
 
-The 33 Supabase repositories under `apps/api/src/infrastructure/supabase/repositories/` had no direct
-behavioural tests until #1084; seven were covered indirectly through
+The 33 Supabase repositories under `apps/api/src/infrastructure/supabase/repositories/` long had no
+direct behavioural tests; seven were covered indirectly through
 `test/cross-tenant-isolation.e2e-spec.ts`. Wiring the generated `Database` type into the client
-(Wave 0C, #1083) closed the *type* hole and not the *column* one — a repository that filters
+(#1083) closed the *type* hole and not the *column* one — a repository that filters
 `.eq('id', chapterId)` instead of `.eq('chapter_id', chapterId)`, or that loses a tenant filter in a
 refactor, compiles cleanly and leaks another chapter's rows.
 
@@ -120,7 +120,7 @@ recording Supabase double that actually applies filters, alongside `createSupaba
 `createTableAwareSupabaseMock` in `supabase-mock.factory.ts` (§6).
 
 **The fixture is adversarial by construction.** Chapter A's row and chapter B's row are identical in
-every column except `id` and `chapter_id` — same `user_id`, same `name`, same `token`. Every
+every column except `id` and `chapter_id` — same `user_id`, same `name`, same `status`. Every
 predicate other than the tenant one therefore matches *both* rows, so only a real tenant filter can
 narrow the result. This is enforced, not assumed: seeding twins that differ on any other column
 fails with a message naming it, and a column that legitimately has to differ (a foreign key to a
@@ -176,21 +176,24 @@ responses; every RPC issued inside the window must carry the chapter as an argum
 and **throws** on anything else rather than passing rows through — a silently-ignored operator widens
 the result set, and a widened result set makes a tenancy assertion pass without proving anything.
 Negation follows Postgres three-valued logic rather than JavaScript truthiness, and `maybeSingle`
-reports `PGRST116` on multiple matches instead of picking one, both for the same reason.
+reports `PGRST116` on multiple matches instead of picking one — matching `postgrest-js`, which
+synthesises that error client-side — both for the same reason.
 
 It is not a Postgres emulator, and two limits follow that a spec must not claim around: the
-`select()` projection is recorded but never parsed, so dropping `!inner` from an embed is invisible
-here; and joins are not resolved, so an embed is whatever the seed row carries. Both belong to the
-live-PostgREST integration suite (§6a), which exists for exactly that class of defect.
+`select()` projection is ignored, so dropping `!inner` from an embed is invisible here; and joins are
+not resolved, so an embed is whatever the seed row carries. Both belong to the live-PostgREST
+integration suite (§6a), which exists for exactly that class of defect.
 
 **Two meta-specs keep this honest:**
 
 - `tenant-scope.harness.spec.ts` runs each guard against a deliberately broken repository stand-in,
   so a harness that can no longer fail is itself a failure. Extend it whenever you extend the harness.
-- `tenant-scope-coverage.spec.ts` is the coverage ledger: every repository either has a
-  `*.repository.spec.ts` driving `createTenantHarness`, or a line in `TENANT_SCOPE_BACKLOG` giving
-  the reason. A new repository added without either fails CI. Clearing a backlog entry means writing
-  the spec and raising the pinned count.
+- `tenant-scope-coverage.spec.ts` is the coverage ledger: every `supabase-*.repository.ts` in that
+  directory either has a `*.repository.spec.ts` driving `createTenantHarness`, or a line in
+  `TENANT_SCOPE_BACKLOG` giving the reason. A new repository added there without either fails CI.
+  Clearing a backlog entry means writing the spec and raising the pinned count. The ledger scans one
+  directory, so a repository living elsewhere — `modules/scheduled-jobs/scheduled-jobs.repository.ts`
+  — is outside it.
 
 **What these tests do not replace.** Methods that take a row `id` and no chapter (`memberRepo.findById`,
 `roleRepo.update`, `attendanceRepo.update`) are scoped by their callers, not by the query. Those are

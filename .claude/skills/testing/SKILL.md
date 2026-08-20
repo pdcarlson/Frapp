@@ -135,8 +135,8 @@ Two rules when touching this area:
 - Extending the harness means extending `tenant-scope.harness.spec.ts`, which proves each guard still
   fails against a deliberately broken repository. A harness that cannot fail is indistinguishable
   from a clean codebase.
-- Adding a repository means adding its tenant-scope spec, or a reason in `TENANT_SCOPE_BACKLOG`. CI
-  fails on neither.
+- Adding a repository under `infrastructure/supabase/repositories/` means adding its tenant-scope
+  spec, or a reason in `TENANT_SCOPE_BACKLOG`. CI fails if you do neither.
 
 For the full treatment — service coverage goals, guard/interceptor test targets, coverage
 expectations, and the E2E scaffolding (the `jest-e2e.json` CommonJS transform quirks and the

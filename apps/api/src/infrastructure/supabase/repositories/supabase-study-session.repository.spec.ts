@@ -109,11 +109,13 @@ describe('SupabaseStudySessionRepository — tenant scope', () => {
 
   describe('deliberately unscoped surfaces', () => {
     it('findById and update filter on id alone', async () => {
-      // Characterisation. `StudyService` never passes a client-supplied id: the
-      // study routes take only `@CurrentUser` and `@CurrentChapterId`, so the
-      // row reaching `update` always came from a chapter-scoped lookup. If a
-      // route ever starts accepting a session id, this repository has no filter
-      // of its own to fall back on.
+      // Characterisation. No route accepts a *session* id — the study session
+      // routes take `@CurrentUser` and `@CurrentChapterId`, and the one id a
+      // client does supply (`geofence_id` on start) is resolved through
+      // `geofenceRepo.findById(geofenceId, chapterId)`. So the row reaching
+      // `update` always came from a chapter-scoped lookup. If a route ever
+      // starts accepting a session id, this repository has no filter of its own
+      // to fall back on.
       const foreign = await repo.findById(SESSION_A);
       expect(foreign?.chapter_id).toBe(CHAPTER_A);
 

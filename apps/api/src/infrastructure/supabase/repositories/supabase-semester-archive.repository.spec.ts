@@ -9,7 +9,8 @@ import {
 
 /**
  * Tenant scope for `semester_archives` (backs `use-semesters`, whose
- * `["semesters"]` query key is one of the ungated ones Wave 1 item 5 fixes).
+ * `["semesters"]` query key is one of the ungated ones due to move onto
+ * `createChapterQueryKeys`).
  *
  * `findLatestByChapter` drives semester rollover, so a cross-chapter match does
  * not merely display the wrong label — it decides which points get archived.

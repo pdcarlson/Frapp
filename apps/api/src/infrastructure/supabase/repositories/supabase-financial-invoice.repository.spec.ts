@@ -15,9 +15,12 @@ import {
  * another chapter charges its members, and a cross-chapter write marks somebody
  * else's invoice paid.
  *
- * Both write paths are covered here rather than reads alone, because `update`
- * and `setPaymentIntentIfOpen` are the methods a Stripe webhook reaches with an
- * id it learned from outside the request.
+ * Both write paths are covered here rather than reads alone. `applyPayment` is
+ * the one a Stripe webhook reaches, with an invoice id it learned from outside
+ * the request, and it does its work inside SQL — so `p_chapter_id` is the whole
+ * control. `update` and `setPaymentIntentIfOpen` are officer and member routes
+ * that carry the request's chapter, and both scope the statement itself rather
+ * than reading first and checking after.
  */
 
 const INVOICE_A = '0a000000-0000-4000-8000-000000000040';

@@ -13,8 +13,10 @@ import {
  *
  * This table has no `chapter_id`; an attendance row's chapter is its parent
  * event's. `AttendanceService` establishes that parent with
- * `eventRepo.findById(eventId, chapterId)` on every entry point, and the routes
- * only ever accept an `:eventId`, never an attendance row id.
+ * `eventRepo.findById(eventId, chapterId)` on every entry point, and no route
+ * accepts an attendance row id — `AttendanceController` is mounted at
+ * `events/:eventId/attendance`, so the id it takes is always the event's (plus
+ * a `:userId` on the status route).
  *
  * So the two things worth pinning here are: the RPC that *does* take a chapter
  * carries it, and the event-scoped reads really are narrowed by `event_id` —
@@ -122,13 +124,19 @@ describe('SupabaseAttendanceRepository — tenant scope', () => {
     expect(row?.id).toBe(ATTEND_B);
   });
 
-  it('update filters on the attendance row id alone', async () => {
-    // Characterisation: no chapter and no event predicate. Safe today because
-    // `AttendanceService.updateStatus` derives the id from
-    // `findByEventAndUser(eventId, userId)` after `eventRepo.findById(eventId,
-    // chapterId)` has already rejected a foreign event — never from a route
-    // parameter.
-    await repo.update(ATTEND_B, { status: 'EXCUSED' });
+  it('update stays inside the caller chapter and filters on the row id alone', async () => {
+    // Two things at once. The guard proves the write stayed in chapter B —
+    // `parentTenant` resolves the row's chapter through its event, so a filter
+    // matching the shared `user_id` instead of the id would be caught.
+    //
+    // The filter assertion is the characterisation: no chapter and no event
+    // predicate of its own. Safe today because `AttendanceService.updateStatus`
+    // derives the id from `findByEventAndUser(eventId, userId)` after
+    // `eventRepo.findById(eventId, chapterId)` has already rejected a foreign
+    // event.
+    await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.update(ATTEND_B, { status: 'EXCUSED' }),
+    );
 
     const [op] = harness.ops;
     expect(op.filters.map((f) => f.column)).toEqual(['id']);

@@ -35,7 +35,7 @@ const TENANT_SCOPE_BACKLOG: Record<string, string> = {
   'supabase-stripe-webhook-event.repository.ts':
     'stripe_webhook_events is a global idempotency ledger keyed by Stripe event id.',
   'supabase-notification.repository.ts':
-    'notifications carries chapter_id but every read filters by user_id only; needs a scoping decision before a test can pin behaviour.',
+    'notifications carries chapter_id but no read filters by it — findByUser filters by user_id, findById by id alone; needs a scoping decision before a test can pin behaviour.',
   'supabase-message-reaction.repository.ts':
     'reactions are message-scoped like poll_votes; covered indirectly by the chat-channel boundary. Backlog.',
   'supabase-chat-message-action.repository.ts':
@@ -43,7 +43,7 @@ const TENANT_SCOPE_BACKLOG: Record<string, string> = {
   'supabase-read-receipt.repository.ts':
     'read receipts are channel-scoped; the unread-count RPC does take p_chapter_id. Backlog.',
   'supabase-activation-milestone.repository.ts':
-    'chapter-scoped and upsert-only; low blast radius, no query-key call site in Wave 1 item 5. Backlog.',
+    'chapter-scoped and upsert-only; low blast radius, and no hook call site in the query-key migration. Backlog.',
 };
 
 describe('Supabase repository tenant-scope coverage', () => {

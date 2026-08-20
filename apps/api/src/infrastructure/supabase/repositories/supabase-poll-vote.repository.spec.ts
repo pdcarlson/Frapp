@@ -1,5 +1,6 @@
 import { SupabasePollVoteRepository } from './supabase-poll-vote.repository';
 import {
+  CHAPTER_B,
   USER_SHARED,
   createTenantHarness,
   inA,
@@ -90,7 +91,13 @@ describe('SupabasePollVoteRepository — tenant scope', () => {
   });
 
   it('deleteByMessageAndUser leaves the other chapter vote in place', async () => {
-    await repo.deleteByMessageAndUser(MESSAGE_B, USER_SHARED);
+    // Routed through the guard rather than asserted by hand: `parentTenant`
+    // resolves each vote's chapter through message → channel, so a delete that
+    // matched on the shared `user_id` instead of the message would be caught
+    // here even though `poll_votes` has no chapter of its own.
+    await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.deleteByMessageAndUser(MESSAGE_B, USER_SHARED),
+    );
 
     expect(harness.rows('poll_votes').map((v) => v.id)).toEqual([VOTE_A]);
   });

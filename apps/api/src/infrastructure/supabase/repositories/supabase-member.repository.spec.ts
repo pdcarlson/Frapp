@@ -68,7 +68,7 @@ describe('SupabaseMemberRepository — tenant scope', () => {
 
     // Both chapters hold a membership for this user, so without the chapter
     // predicate the query matches two rows — `.maybeSingle()` is "zero or one",
-    // and PostgREST answers two with `PGRST116` rather than picking one.
+    // and `postgrest-js` raises `PGRST116` rather than picking one.
     expect(member?.id).toBe(MEMBER_B);
   });
 

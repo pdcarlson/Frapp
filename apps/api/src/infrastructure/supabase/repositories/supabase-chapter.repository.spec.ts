@@ -12,11 +12,15 @@ import {
  * instead of letting the harness assume the default and quietly check nothing.
  *
  * The Stripe lookups are the interesting case. They resolve a chapter *from* an
- * external identifier, which means they are cross-tenant by construction — a
- * webhook has no chapter context until one of them answers. They are asserted
- * here as deliberate rather than left to look like oversights, and their
- * distinguishing columns are declared `collisionExempt` so the fixture states
- * that decision out loud.
+ * external identifier, so they are cross-tenant by construction: a Stripe
+ * webhook has no chapter context until one of them answers. `findBySubscriptionId`
+ * is reached that way, through `BillingService.findChapterBySubscription`.
+ * `findByStripeCustomerId` has **no production caller at all** — flagged rather
+ * than quietly tested as though it did; see the PR's debt note.
+ *
+ * Both are asserted as deliberate rather than left to look like oversights, and
+ * their distinguishing columns are declared `collisionExempt` so the fixture
+ * states that decision out loud.
  */
 
 const STRIPE_CUSTOMER_B = 'cus_chapter_b';
@@ -84,14 +88,14 @@ describe('SupabaseChapterRepository — tenant scope', () => {
   });
 
   describe('deliberately unscoped surfaces', () => {
-    it('findByStripeCustomerId resolves the chapter for a webhook that has no chapter context', async () => {
-      const chapter = await repo.findByStripeCustomerId(STRIPE_CUSTOMER_B);
+    it('findBySubscriptionId resolves the chapter for a webhook that has no chapter context', async () => {
+      const chapter = await repo.findBySubscriptionId(SUBSCRIPTION_B);
 
       expect(chapter?.id).toBe(CHAPTER_B);
     });
 
-    it('findBySubscriptionId likewise resolves from the external identifier', async () => {
-      const chapter = await repo.findBySubscriptionId(SUBSCRIPTION_B);
+    it('findByStripeCustomerId resolves the same way, though nothing calls it', async () => {
+      const chapter = await repo.findByStripeCustomerId(STRIPE_CUSTOMER_B);
 
       expect(chapter?.id).toBe(CHAPTER_B);
     });
