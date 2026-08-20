@@ -13,7 +13,7 @@ deleted when the project wraps, so nothing durable may live only here.
 - [ ] 3. Delete the dead `@repo/ui` package and its dependency entries
 - [ ] 4. Chat shim imports → `@repo/chat-core`; delete the 6 shim files
 - [ ] 5. Query-key call sites → `createChapterQueryKeys`
-- [ ] 6. `getErrorMessage` → `apps/web/lib/utils.ts`; mobile `api-error.ts` → `@repo/api-sdk`
+- [x] 6. `getErrorMessage` → `apps/web/lib/utils.ts`; mobile `api-error.ts` → `@repo/api-sdk` — one helper, 8 dupes deleted, 4 mobile importers rewired. Before: web 54/474, mobile 50/587. After: web 55/477 (3 new `utils.test.ts` cases), mobile 50/587. `check-types` pass. `check:dep-cruiser` pass. PR #1098.
 - [ ] 7. `AnalyticsProvider` (web/mobile) → `@repo/hooks`
 - [ ] 8. 5 stranded web hooks → `@repo/hooks`; wire mobile's module-gating
 - [ ] 9. `apps/web/lib/subscription.ts` → `@repo/validation`
@@ -21,59 +21,60 @@ deleted when the project wraps, so nothing durable may live only here.
 ## Item 6 inventory
 
 Baseline (before edits): `npm run test -w apps/web` → 54 files / 474 passed; `npm run test -w apps/mobile` → 50 files / 587 passed.
+After: web 55 / 477; mobile 50 / 587. `npm run check-types` 20/20. `npm run check:dep-cruiser` 7 baselined / 0 new.
 
 ### Implementations (9)
 
-- [ ] Canonical — `apps/web/lib/utils.ts` `getErrorMessage(error, fallback)` (reads `"message" in` a plain object)
-- [ ] Dupe, `instanceof Error` — `apps/web/components/points-adjustment-dialog.tsx`
-- [ ] Dupe, `instanceof Error` — `apps/web/components/events/event-editor-dialog.tsx`
-- [ ] Dupe, `instanceof Error` — `apps/web/components/events/event-detail-sheet.tsx`
-- [ ] Dupe, `instanceof Error` — `apps/web/components/members/member-detail-sheet.tsx`
-- [ ] Dupe, `instanceof Error` — `apps/web/components/members/invite-member-dialog.tsx`
-- [ ] Dupe, already `"message" in` — `apps/web/app/sign-up/page.tsx`
-- [ ] Dupe, already `"message" in` — `apps/web/app/sign-in/page.tsx`
-- [ ] Dupe, already `"message" in` (no return type) — `apps/web/app/join/page.tsx`
+- [x] Canonical — `apps/web/lib/utils.ts` `getErrorMessage(error, fallback)` — unchanged body; pinned by `utils.test.ts` (plain-object / Error / fallback). After: 3 new tests passed.
+- [x] Dupe, `instanceof Error` — `apps/web/components/points-adjustment-dialog.tsx` — deleted; imports `@/lib/utils`. After: `points-adjustment-dialog.test.tsx` still green in the 477.
+- [x] Dupe, `instanceof Error` — `apps/web/components/events/event-editor-dialog.tsx` — deleted; imports `@/lib/utils`. After: `event-editor-dialog.test.tsx` green.
+- [x] Dupe, `instanceof Error` — `apps/web/components/events/event-detail-sheet.tsx` — deleted; imports `@/lib/utils`. After: `event-detail-sheet.test.tsx` green.
+- [x] Dupe, `instanceof Error` — `apps/web/components/members/member-detail-sheet.tsx` — deleted; added to existing `asArray` import. After: `member-detail-sheet.test.tsx` green.
+- [x] Dupe, `instanceof Error` — `apps/web/components/members/invite-member-dialog.tsx` — deleted; imports `@/lib/utils`. After: `invite-member-dialog.test.tsx` green.
+- [x] Dupe, already `"message" in` — `apps/web/app/sign-up/page.tsx` — deleted; fallback passed as argument (`Please try again.`).
+- [x] Dupe, already `"message" in` — `apps/web/app/sign-in/page.tsx` — deleted; both toasts pass `Please try again.`
+- [x] Dupe, already `"message" in` (no return type) — `apps/web/app/join/page.tsx` — deleted; fallback passed as argument.
 
 ### Call sites that change (11; 7 change user-visible copy)
 
-- [ ] `points-adjustment-dialog.tsx` adjust-points toast — **copy change** (was `instanceof Error`)
-- [ ] `event-editor-dialog.tsx` create/update toast — **copy change** (was `instanceof Error`)
-- [ ] `event-detail-sheet.tsx` delete toast — **copy change** (was `instanceof Error`)
-- [ ] `member-detail-sheet.tsx` update-roles toast — **copy change** (was `instanceof Error`)
-- [ ] `member-detail-sheet.tsx` remove-member toast — **copy change** (was `instanceof Error`)
-- [ ] `invite-member-dialog.tsx` generate-invite toast — **copy change** (was `instanceof Error`)
-- [ ] `invite-member-dialog.tsx` revoke-invite toast — **copy change** (was `instanceof Error`)
-- [ ] `sign-up/page.tsx` create-account toast — fallback becomes an argument (behavior unchanged)
-- [ ] `sign-in/page.tsx` password-sign-in toast — fallback becomes an argument (behavior unchanged)
-- [ ] `sign-in/page.tsx` magic-link toast — fallback becomes an argument (behavior unchanged)
-- [ ] `join/page.tsx` redeem-invite toast — fallback becomes an argument (behavior unchanged)
+- [x] `points-adjustment-dialog.tsx` adjust-points toast — **copy change** — now `getErrorMessage(error, "Something went wrong. Please retry.")`. After: web 477.
+- [x] `event-editor-dialog.tsx` create/update toast — **copy change** — same fallback. After: web 477.
+- [x] `event-detail-sheet.tsx` delete toast — **copy change** — same fallback. After: web 477.
+- [x] `member-detail-sheet.tsx` update-roles toast — **copy change** — same fallback. After: web 477.
+- [x] `member-detail-sheet.tsx` remove-member toast — **copy change** — same fallback. After: web 477.
+- [x] `invite-member-dialog.tsx` generate-invite toast — **copy change** — same fallback. After: web 477.
+- [x] `invite-member-dialog.tsx` revoke-invite toast — **copy change** — same fallback. After: web 477.
+- [x] `sign-up/page.tsx` create-account toast — fallback is now an argument (`Please try again.`); behavior unchanged.
+- [x] `sign-in/page.tsx` password-sign-in toast — fallback is now an argument; behavior unchanged.
+- [x] `sign-in/page.tsx` magic-link toast — fallback is now an argument; behavior unchanged.
+- [x] `join/page.tsx` redeem-invite toast — fallback is now an argument; behavior unchanged.
 
 ### Call sites already on the canonical helper (51; no change)
 
-- [ ] `tasks-board.tsx` (5)
-- [ ] `study-page.tsx` (4)
-- [ ] `settings-roles-tab.tsx` (3)
-- [ ] `settings-page.tsx` (5)
-- [ ] `chapter-wizard.tsx` (2)
-- [ ] `geofences-admin-page.tsx` (4)
-- [ ] `documents-page.tsx` (3)
-- [ ] `chat/renderers/task-card.tsx` (1)
-- [ ] `service-page.tsx` (5)
-- [ ] `roles-page.tsx` (4)
-- [ ] `profile-panel.tsx` (3)
-- [ ] `polls-page.tsx` (2)
-- [ ] `settings-fields-tab.tsx` (3)
-- [ ] `chat/renderers/event-card.tsx` (1)
-- [ ] `subscription-checkout-card.tsx` (2)
-- [ ] `invoice-admin-card.tsx` (2)
-- [ ] `backwork-page.tsx` (2)
+- [x] `tasks-board.tsx` (5) — already `@/lib/utils`; no edit. After: web 477.
+- [x] `study-page.tsx` (4) — already `@/lib/utils`; no edit. After: web 477.
+- [x] `settings-roles-tab.tsx` (3) — already `@/lib/utils`; no edit. After: web 477.
+- [x] `settings-page.tsx` (5) — already `@/lib/utils`; no edit. After: web 477.
+- [x] `chapter-wizard.tsx` (2) — already `@/lib/utils`; no edit. After: web 477.
+- [x] `geofences-admin-page.tsx` (4) — already `@/lib/utils`; no edit. After: web 477.
+- [x] `documents-page.tsx` (3) — already `@/lib/utils`; no edit. After: web 477.
+- [x] `chat/renderers/task-card.tsx` (1) — already `@/lib/utils`; no edit. After: web 477.
+- [x] `service-page.tsx` (5) — already `@/lib/utils`; no edit. After: web 477.
+- [x] `roles-page.tsx` (4) — already `@/lib/utils`; no edit. After: web 477.
+- [x] `profile-panel.tsx` (3) — already `@/lib/utils`; no edit. After: web 477.
+- [x] `polls-page.tsx` (2) — already `@/lib/utils`; no edit. After: web 477.
+- [x] `settings-fields-tab.tsx` (3) — already `@/lib/utils`; no edit. After: web 477.
+- [x] `chat/renderers/event-card.tsx` (1) — already `@/lib/utils`; no edit. After: web 477.
+- [x] `subscription-checkout-card.tsx` (2) — already `@/lib/utils`; no edit. After: web 477.
+- [x] `invoice-admin-card.tsx` (2) — already `@/lib/utils`; no edit. After: web 477.
+- [x] `backwork-page.tsx` (2) — already `@/lib/utils`; no edit. After: web 477.
 
 ### Mobile `api-error.ts` → `@repo/api-sdk`
 
-- [ ] Promote `apps/mobile/lib/api-error.ts` to `packages/api-sdk/src/api-error.ts` (no test harness)
-- [ ] Export from `packages/api-sdk/src/index.ts` (`.` only; no subpath)
-- [ ] Rewire `apps/mobile/lib/study/errors.ts`
-- [ ] Rewire `apps/mobile/lib/dues/pay-errors.ts`
-- [ ] Rewire `apps/mobile/app/(tabs)/study.tsx`
-- [ ] Rewire `apps/mobile/app/(tabs)/check-in.tsx`
-- [ ] Delete `apps/mobile/lib/api-error.ts`
+- [x] Promote `apps/mobile/lib/api-error.ts` to `packages/api-sdk/src/api-error.ts` (no test harness) — git recorded as a rename; `statusOf`/`serverMessageOf`/`codeOf` unchanged. After: mobile 587; `check-types -w @repo/api-sdk` pass.
+- [x] Export from `packages/api-sdk/src/index.ts` (`.` only; no subpath) — `export * from './api-error'`. After: api-sdk lint + check-types pass.
+- [x] Rewire `apps/mobile/lib/study/errors.ts` — `from "@repo/api-sdk"`. After: `errors.spec.ts` still covers `statusOf`/`serverMessageOf` via re-export (587).
+- [x] Rewire `apps/mobile/lib/dues/pay-errors.ts` — `from "@repo/api-sdk"`. After: `pay-errors.spec.ts` green (587).
+- [x] Rewire `apps/mobile/app/(tabs)/study.tsx` — `from "@repo/api-sdk"`. After: mobile check-types pass.
+- [x] Rewire `apps/mobile/app/(tabs)/check-in.tsx` — `from "@repo/api-sdk"`. After: mobile check-types pass.
+- [x] Delete `apps/mobile/lib/api-error.ts` — `ls` → No such file. Grep for `from "…api-error"` only hits the sdk barrel.
