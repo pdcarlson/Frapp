@@ -1,12 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient, isAuthApiError } from '@supabase/supabase-js';
+import { isAuthApiError } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from './supabase.provider';
 import type { IAuthAdminProvider } from '../../domain/adapters/auth-admin.interface';
+import type { FrappSupabaseClient } from './database.types';
 
 @Injectable()
 export class SupabaseAuthAdminService implements IAuthAdminProvider {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async deleteAuthUser(supabaseAuthId: string): Promise<void> {

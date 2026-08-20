@@ -141,9 +141,13 @@ npx supabase db reset
   GenericSchema stays bound; write methods take `TablesInsert<'table'>` /
   `TablesUpdate<'table'>` instead of `as never`). The client is
   `createClient<Database>(...)` in `supabase.provider.ts` (and the live
-  PostgREST test helper). Do not add a generic base repository to share
-  that pattern — keep each repository's query logic and only parameterize
-  the write methods.
+  PostgREST test helper). Inject `FrappSupabaseClient` everywhere the
+  `SUPABASE_CLIENT` token is taken (repositories, services, guards,
+  workers, health) — a bare `SupabaseClient` annotation drops the schema.
+  Do not add a generic base repository; keep each repository's query
+  logic and only parameterize the write methods.
+  `no-as-never.spec.ts` guards the repository folder (file count,
+  `FrappSupabaseClient` injection, no `as never`).
 - Any relevant behavior under `spec/behavior/`
 
 ## 5. RLS and security

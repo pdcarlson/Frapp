@@ -10,6 +10,7 @@ import { PostgrestError } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type {
   FrappSupabaseClient,
+  TablesInsert,
   TablesUpdate,
 } from '../../infrastructure/supabase/database.types';
 import type {
@@ -133,22 +134,23 @@ export class CustomFieldService {
       );
     }
 
+    const row: TablesInsert<'chapter_custom_fields'> = {
+      chapter_id: chapterId,
+      key: dto.key,
+      label: dto.label,
+      type: dto.type,
+      required: dto.required ?? false,
+      visibility: dto.visibility ?? 'chapter',
+      sensitive: dto.sensitive ?? false,
+      // Options are deep-cloned so the persisted jsonb never shares a
+      // reference with the request payload — each chapter owns its own
+      // options list (spec: "options lists are deep-cloned per chapter").
+      options: dto.options ? structuredClone(dto.options) : null,
+      sort: dto.sort ?? 0,
+    };
     const { data, error }: RowResponse = await this.supabase
       .from('chapter_custom_fields')
-      .insert({
-        chapter_id: chapterId,
-        key: dto.key,
-        label: dto.label,
-        type: dto.type,
-        required: dto.required ?? false,
-        visibility: dto.visibility ?? 'chapter',
-        sensitive: dto.sensitive ?? false,
-        // Options are deep-cloned so the persisted jsonb never shares a
-        // reference with the request payload — each chapter owns its own
-        // options list (spec: "options lists are deep-cloned per chapter").
-        options: dto.options ? structuredClone(dto.options) : null,
-        sort: dto.sort ?? 0,
-      })
+      .insert(row)
       .select()
       .single();
 
@@ -288,19 +290,20 @@ export class CustomFieldService {
     targetId: string,
     diff: Record<string, { from: unknown; to: unknown }>,
   ): Promise<void> {
+    const audit: TablesInsert<'chapter_audit_log'> = {
+      chapter_id: chapterId,
+      actor_user_id: actorUserId,
+      action,
+      target_type: 'chapter_custom_field',
+      // The field being changed — lets the audit log filter by entity.
+      target_id: targetId,
+      scope: 'chapter',
+      diff,
+      member_visible: true,
+    };
     const { error }: MutateResponse = await this.supabase
       .from('chapter_audit_log')
-      .insert({
-        chapter_id: chapterId,
-        actor_user_id: actorUserId,
-        action,
-        target_type: 'chapter_custom_field',
-        // The field being changed — lets the audit log filter by entity.
-        target_id: targetId,
-        scope: 'chapter',
-        diff,
-        member_visible: true,
-      });
+      .insert(audit);
     if (error) {
       this.logger.error('Failed to write chapter audit log', error);
       throw error;

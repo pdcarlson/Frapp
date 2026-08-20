@@ -20,15 +20,28 @@ export function insertCheck(
   task: TablesInsert<'tasks'>,
   member: TablesInsert<'members'>,
   invite: TablesInsert<'invites'>,
+  user: TablesInsert<'users'>,
+  event: TablesInsert<'events'>,
+  channel: TablesInsert<'chat_channels'>,
+  audit: TablesInsert<'chapter_audit_log'>,
   taskPatch: TablesUpdate<'tasks'>,
+  chapterPatch: TablesUpdate<'chapters'>,
 ): void {
   void client.from('tasks').insert(task);
   void client.from('members').insert(member);
   void client.from('invites').insert(invite);
+  void client.from('users').insert(user);
+  void client.from('events').insert(event);
+  void client.from('chat_channels').insert(channel);
+  void client.from('chapter_audit_log').insert(audit);
   void client.from('tasks').update(taskPatch);
+  void client.from('chapters').update(chapterPatch);
+  void client.from('invites').upsert(invite);
 }
 
-export function insertCheckRejectsMistypedColumn(client: FrappSupabaseClient): void {
+export function insertCheckRejectsMistypedColumn(
+  client: FrappSupabaseClient,
+): void {
   // @ts-expect-error title is a string on tasks
   void client.from('tasks').insert({ title: 123 });
 }

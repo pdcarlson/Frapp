@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { ChatBridgeWorkerService } from './chat-bridge-worker.service';
 
@@ -32,7 +32,7 @@ function buildMockSupabase(
       }
       return {};
     },
-  } as unknown as SupabaseClient;
+  } as unknown as FrappSupabaseClient;
   return { client, insertCalls };
 }
 
@@ -50,7 +50,7 @@ describe('ChatBridgeWorkerService.handleAuditRow', () => {
     created_at: '',
   };
 
-  async function instantiate(supabase: SupabaseClient) {
+  async function instantiate(supabase: FrappSupabaseClient) {
     const mod = await Test.createTestingModule({
       providers: [
         ChatBridgeWorkerService,

@@ -280,10 +280,10 @@ export class ChapterConfigService {
     }
     let mergedBranding: Record<string, unknown> | undefined;
     if (dto.branding !== undefined) {
-      mergedBranding = deepMerge(
-        existing.branding,
-        dto.branding,
-      ) as Record<string, unknown>;
+      mergedBranding = deepMerge(existing.branding, dto.branding) as Record<
+        string,
+        unknown
+      >;
       diff['branding'] = { from: existing.branding, to: mergedBranding };
       update['branding'] = mergedBranding;
 
@@ -315,12 +315,7 @@ export class ChapterConfigService {
     // Workflows are persisted to their own table (chapter_workflows). Incoming
     // keys are validated against the chapter catalog (from getConfig) so an
     // unknown key can never write a row, and only changed rows are upserted.
-    const workflowUpserts: Array<{
-      chapter_id: string;
-      key: string;
-      enabled: boolean;
-      threshold: number | null;
-    }> = [];
+    const workflowUpserts: TablesInsert<'chapter_workflows'>[] = [];
     if (dto.workflows !== undefined) {
       const catalog = new Map(
         (
@@ -383,7 +378,7 @@ export class ChapterConfigService {
     }
 
     // Service-hours policy is the same singleton merge as dues.
-    let serviceUpsert: (ServiceConfig & { chapter_id: string }) | null = null;
+    let serviceUpsert: TablesInsert<'chapter_service_config'> | null = null;
     if (dto.service !== undefined) {
       const current = existing.service;
       const next: ServiceConfig = { ...current };
@@ -458,18 +453,19 @@ export class ChapterConfigService {
 
     // Write audit log entry. The audit trail is a hard requirement, so a
     // failure here surfaces as an error rather than being silently dropped.
+    const audit: TablesInsert<'chapter_audit_log'> = {
+      chapter_id: chapterId,
+      actor_user_id: actorUserId,
+      action: 'chapter_config_updated',
+      target_type: 'chapter',
+      target_id: chapterId,
+      scope: 'chapter',
+      diff,
+      member_visible: true,
+    };
     const { error: auditError } = await this.supabase
       .from('chapter_audit_log')
-      .insert({
-        chapter_id: chapterId,
-        actor_user_id: actorUserId,
-        action: 'chapter_config_updated',
-        target_type: 'chapter',
-        target_id: chapterId,
-        scope: 'chapter',
-        diff,
-        member_visible: true,
-      });
+      .insert(audit);
 
     if (auditError) {
       this.logger.error('Failed to write chapter audit log', auditError);
@@ -556,13 +552,14 @@ export class ChapterConfigService {
       );
     }
 
+    const patch: TablesUpdate<'chapters'> = {
+      // jsonb column is `Record<string, unknown>` on the chapter row;
+      // ChapterPalette is a fixed-key interface with no index signature.
+      theme_palette: { ...result.palette } as Record<string, unknown>,
+    };
     const { error } = await this.supabase
       .from('chapters')
-      .update({
-        // jsonb column is `Record<string, unknown>` on the chapter row;
-        // ChapterPalette is a fixed-key interface with no index signature.
-        theme_palette: { ...result.palette } as Record<string, unknown>,
-      })
+      .update(patch)
       .eq('id', chapterId);
 
     if (error) {

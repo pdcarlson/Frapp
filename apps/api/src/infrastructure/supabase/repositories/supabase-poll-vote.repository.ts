@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type {
   IPollVoteRepository,
   PollUserVoteRow,
@@ -91,24 +91,24 @@ export class SupabasePollVoteRepository implements IPollVoteRepository {
     return data || [];
   }
 
-  async create(data: Partial<PollVote>): Promise<PollVote> {
+  async create(data: TablesInsert<'poll_votes'>): Promise<PollVote> {
     const { data: created, error } = await this.supabase
       .from('poll_votes')
-      .insert(data as never)
+      .insert(data)
       .select()
       .single();
     if (error) throw error;
     return created;
   }
 
-  async createMany(data: Partial<PollVote>[]): Promise<PollVote[]> {
+  async createMany(data: TablesInsert<'poll_votes'>[]): Promise<PollVote[]> {
     if (data.length === 0) {
       return [];
     }
 
     const { data: created, error } = await this.supabase
       .from('poll_votes')
-      .insert(data as never)
+      .insert(data)
       .select();
     if (error) throw error;
     return created || [];

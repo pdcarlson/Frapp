@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+  TablesUpdate,
+} from '../database.types';
 import { IAttendanceRepository } from '../../../domain/repositories/attendance.repository.interface';
 import { EventAttendance } from '../../../domain/entities/event-attendance.entity';
 
@@ -44,10 +48,12 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
     return data;
   }
 
-  async create(data: Partial<EventAttendance>): Promise<EventAttendance> {
+  async create(
+    data: TablesInsert<'event_attendance'>,
+  ): Promise<EventAttendance> {
     const { data: created, error } = await this.supabase
       .from('event_attendance')
-      .insert(data as any as never)
+      .insert(data)
       .select()
       .single();
 
@@ -56,14 +62,14 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
   }
 
   async createMany(
-    rows: Partial<EventAttendance>[],
+    rows: TablesInsert<'event_attendance'>[],
   ): Promise<EventAttendance[]> {
     if (rows.length === 0) {
       return [];
     }
     const { data, error } = await this.supabase
       .from('event_attendance')
-      .insert(rows as never)
+      .insert(rows)
       .select();
     if (error) throw error;
     return data ?? [];
@@ -71,11 +77,11 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
 
   async update(
     id: string,
-    data: Partial<EventAttendance>,
+    data: TablesUpdate<'event_attendance'>,
   ): Promise<EventAttendance> {
     const { data: updated, error } = await this.supabase
       .from('event_attendance')
-      .update(data as never)
+      .update(data)
       .eq('id', id)
       .select()
       .single();

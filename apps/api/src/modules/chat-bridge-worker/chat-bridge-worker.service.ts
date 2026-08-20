@@ -8,9 +8,12 @@ import {
 import type {
   RealtimeChannel,
   RealtimePostgresInsertPayload,
-  SupabaseClient,
 } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+} from '../../infrastructure/supabase/database.types';
 
 /**
  * System sender id for server-originated chat messages. Must exist in the
@@ -58,7 +61,7 @@ export class ChatBridgeWorkerService
   private channel: RealtimeChannel | null = null;
 
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -139,19 +142,20 @@ export class ChatBridgeWorkerService
         return;
       }
 
+      const message: TablesInsert<'chat_messages'> = {
+        channel_id: channel.id,
+        sender_id: SYSTEM_SENDER_ID,
+        content: this.summarize(row),
+        kind: 'system_audit',
+        payload: {
+          action: row.action,
+          actor_user_id: row.actor_user_id,
+          diff: row.diff ?? {},
+        },
+      };
       const { error: insertError } = await this.supabase
         .from('chat_messages')
-        .insert({
-          channel_id: channel.id,
-          sender_id: SYSTEM_SENDER_ID,
-          content: this.summarize(row),
-          kind: 'system_audit',
-          payload: {
-            action: row.action,
-            actor_user_id: row.actor_user_id,
-            diff: row.diff ?? {},
-          },
-        });
+        .insert(message);
       if (insertError) {
         this.logger.warn(
           `chat-bridge: system_audit insert failed for audit ${row.id}`,

@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+  TablesUpdate,
+} from '../database.types';
 import type { INotificationRepository } from '../../../domain/repositories/notification.repository.interface';
 import type { Notification } from '../../../domain/entities/notification.entity';
 
@@ -11,16 +15,17 @@ export class SupabaseNotificationRepository implements INotificationRepository {
     private readonly supabase: FrappSupabaseClient,
   ) {}
 
-  async create(data: Partial<Notification>): Promise<Notification> {
+  async create(data: TablesInsert<'notifications'>): Promise<Notification> {
+    const row: TablesInsert<'notifications'> = {
+      chapter_id: data.chapter_id,
+      user_id: data.user_id,
+      title: data.title,
+      body: data.body,
+      data: data.data ?? {},
+    };
     const { data: created, error } = await this.supabase
       .from('notifications')
-      .insert({
-        chapter_id: data.chapter_id,
-        user_id: data.user_id,
-        title: data.title,
-        body: data.body,
-        data: data.data ?? {},
-      } as never)
+      .insert(row)
       .select()
       .single();
 
@@ -59,9 +64,12 @@ export class SupabaseNotificationRepository implements INotificationRepository {
   }
 
   async markRead(id: string, userId: string): Promise<Notification> {
+    const patch: TablesUpdate<'notifications'> = {
+      read_at: new Date().toISOString(),
+    };
     const { data, error } = await this.supabase
       .from('notifications')
-      .update({ read_at: new Date().toISOString() } as never)
+      .update(patch)
       .eq('id', id)
       .eq('user_id', userId)
       .select()

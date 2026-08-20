@@ -300,14 +300,19 @@ Two constraints worth knowing before you fight the compiler:
   comment to this effect.
 * **Do not introduce a generic base repository.** Each repository keeps
   its own query logic. The type wiring is per-call: parameterize the
-  write method, leave the rest of the class alone. Wave 0C proved this on
-  tasks / members / invites; remaining repositories still use `as never`
-  until a supervised follow-up.
+  write method, leave the rest of the class alone. Every repository under
+  `infrastructure/supabase/repositories/` follows this; `no-as-never.spec.ts`
+  fails the suite if the file count drifts, a file injects a bare
+  `SupabaseClient`, or an `as never` write cast returns. Direct
+  service-layer writes (chapter config, custom fields/roles, chapter-create
+  channel seed, onboarding, chat-bridge, scheduled-jobs) use the same
+  `TablesInsert` / `TablesUpdate` locals.
 
 Consumers only get the checking if they declare the injected client as
 `FrappSupabaseClient` and construct it with `createClient<Database>(...)`.
 Annotating it as the bare `SupabaseClient` from `@supabase/supabase-js`
-erases the schema types at the injection site.
+erases the schema types at the injection site — that applies to services,
+guards, workers, and health as well as repositories.
 
 ---
 

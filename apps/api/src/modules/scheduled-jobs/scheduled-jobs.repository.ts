@@ -1,6 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+} from '../../infrastructure/supabase/database.types';
 import { TaskStatus } from '../../domain/entities';
 
 // Re-exported from the entity so the sweep signatures and the typed
@@ -191,15 +194,16 @@ export class ScheduledJobsRepository {
     threshold: DispatchThreshold,
     dueDate: string,
   ): Promise<boolean> {
+    const row: TablesInsert<'scheduled_notification_dispatches'> = {
+      chapter_id: chapterId,
+      entity_type: entityType,
+      entity_id: entityId,
+      threshold,
+      due_date: dueDate,
+    };
     const { error } = await this.supabase
       .from('scheduled_notification_dispatches')
-      .insert({
-        chapter_id: chapterId,
-        entity_type: entityType,
-        entity_id: entityId,
-        threshold,
-        due_date: dueDate,
-      });
+      .insert(row);
 
     if (!error) return true;
     if (error.code === UNIQUE_VIOLATION) return false;

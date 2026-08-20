@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { ActivationMilestone } from '@repo/validation';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type { IActivationMilestoneRepository } from '../../../domain/repositories/activation-milestone.repository.interface';
 
 @Injectable()
@@ -25,15 +25,16 @@ export class SupabaseActivationMilestoneRepository implements IActivationMilesto
     // *common* path here (every message after the first hits it), and routing
     // the common path through an exception makes it both slower and noisier in
     // logs than the branch it represents.
+    const row: TablesInsert<'chapter_activation_milestones'> = {
+      chapter_id: chapterId,
+      milestone,
+    };
     const { data, error } = await this.supabase
       .from('chapter_activation_milestones')
-      .upsert(
-        {
-          chapter_id: chapterId,
-          milestone,
-        } as never,
-        { onConflict: 'chapter_id,milestone', ignoreDuplicates: true },
-      )
+      .upsert(row, {
+        onConflict: 'chapter_id,milestone',
+        ignoreDuplicates: true,
+      })
       .select('id');
 
     if (error) throw error;

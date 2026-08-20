@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient, TablesInsert, TablesUpdate } from '../database.types';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+  TablesUpdate,
+} from '../database.types';
 import { IInviteRepository } from '../../../domain/repositories/invite.repository.interface';
 import { Invite } from '../../../domain/entities/invite.entity';
 

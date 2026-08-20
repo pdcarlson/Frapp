@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+  TablesUpdate,
+} from '../database.types';
 import { IChapterRepository } from '../../../domain/repositories/chapter.repository.interface';
 import { Chapter } from '../../../domain/entities/chapter.entity';
 
@@ -41,20 +45,23 @@ export class SupabaseChapterRepository implements IChapterRepository {
     return data;
   }
 
-  async create(chapterData: Partial<Chapter>): Promise<Chapter> {
+  async create(chapterData: TablesInsert<'chapters'>): Promise<Chapter> {
     const { data, error } = await this.supabase
       .from('chapters')
-      .insert(chapterData as never)
+      .insert(chapterData)
       .select()
       .single();
     if (error) throw error;
     return data;
   }
 
-  async update(id: string, chapterData: Partial<Chapter>): Promise<Chapter> {
+  async update(
+    id: string,
+    chapterData: TablesUpdate<'chapters'>,
+  ): Promise<Chapter> {
     const { data, error } = await this.supabase
       .from('chapters')
-      .update(chapterData as never)
+      .update(chapterData)
       .eq('id', id)
       .select()
       .single();

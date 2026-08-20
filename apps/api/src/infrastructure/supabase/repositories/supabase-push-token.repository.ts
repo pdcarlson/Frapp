@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type { IPushTokenRepository } from '../../../domain/repositories/notification.repository.interface';
 import type { PushToken } from '../../../domain/entities/notification.entity';
 
@@ -11,14 +11,15 @@ export class SupabasePushTokenRepository implements IPushTokenRepository {
     private readonly supabase: FrappSupabaseClient,
   ) {}
 
-  async create(data: Partial<PushToken>): Promise<PushToken> {
+  async create(data: TablesInsert<'push_tokens'>): Promise<PushToken> {
+    const row: TablesInsert<'push_tokens'> = {
+      user_id: data.user_id,
+      token: data.token,
+      device_name: data.device_name ?? null,
+    };
     const { data: created, error } = await this.supabase
       .from('push_tokens')
-      .insert({
-        user_id: data.user_id,
-        token: data.token,
-        device_name: data.device_name ?? null,
-      } as never)
+      .insert(row)
       .select()
       .single();
 

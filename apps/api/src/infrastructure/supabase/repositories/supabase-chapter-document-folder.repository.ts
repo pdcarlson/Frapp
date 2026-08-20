@@ -1,10 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
 import type {
-  IChapterDocumentFolderRepository,
-  ChapterDocumentFolderUpdate,
-} from '../../../domain/repositories/chapter-document-folder.repository.interface';
+  FrappSupabaseClient,
+  TablesInsert,
+  TablesUpdate,
+} from '../database.types';
+import type { IChapterDocumentFolderRepository } from '../../../domain/repositories/chapter-document-folder.repository.interface';
 import type { ChapterDocumentFolder } from '../../../domain/entities/chapter-document.entity';
 
 @Injectable()
@@ -58,9 +59,10 @@ export class SupabaseChapterDocumentFolderRepository implements IChapterDocument
     name: string;
     sort_order: number;
   }): Promise<ChapterDocumentFolder> {
+    const row: TablesInsert<'chapter_document_folders'> = data;
     const { data: created, error } = await this.supabase
       .from('chapter_document_folders')
-      .insert(data as never)
+      .insert(row)
       .select()
       .single();
     if (error) throw error;
@@ -70,11 +72,11 @@ export class SupabaseChapterDocumentFolderRepository implements IChapterDocument
   async update(
     id: string,
     chapterId: string,
-    data: ChapterDocumentFolderUpdate,
+    data: TablesUpdate<'chapter_document_folders'>,
   ): Promise<ChapterDocumentFolder> {
     const { data: updated, error } = await this.supabase
       .from('chapter_document_folders')
-      .update(data as never)
+      .update(data)
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .select()

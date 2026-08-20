@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+  TablesUpdate,
+} from '../database.types';
 import type { IStudySessionRepository } from '../../../domain/repositories/study.repository.interface';
 import type { StudySession } from '../../../domain/entities/study.entity';
 
@@ -50,10 +54,10 @@ export class SupabaseStudySessionRepository implements IStudySessionRepository {
     return data || [];
   }
 
-  async create(data: Partial<StudySession>): Promise<StudySession> {
+  async create(data: TablesInsert<'study_sessions'>): Promise<StudySession> {
     const { data: created, error } = await this.supabase
       .from('study_sessions')
-      .insert(data as never)
+      .insert(data)
       .select()
       .single();
 
@@ -61,10 +65,13 @@ export class SupabaseStudySessionRepository implements IStudySessionRepository {
     return created;
   }
 
-  async update(id: string, data: Partial<StudySession>): Promise<StudySession> {
+  async update(
+    id: string,
+    data: TablesUpdate<'study_sessions'>,
+  ): Promise<StudySession> {
     const { data: updated, error } = await this.supabase
       .from('study_sessions')
-      .update(data as never)
+      .update(data)
       .eq('id', id)
       .select()
       .single();

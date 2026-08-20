@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+  TablesUpdate,
+} from '../database.types';
 import type {
   IChapterDocumentRepository,
   ChapterDocumentFilter,
@@ -57,10 +61,12 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
     return data || [];
   }
 
-  async create(data: Partial<ChapterDocument>): Promise<ChapterDocument> {
+  async create(
+    data: TablesInsert<'chapter_documents'>,
+  ): Promise<ChapterDocument> {
     const { data: created, error } = await this.supabase
       .from('chapter_documents')
-      .insert(data as never)
+      .insert(data)
       .select()
       .single();
     if (error) throw error;
@@ -77,9 +83,10 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
   }
 
   async moveToRoot(folder: string, chapterId: string): Promise<void> {
+    const patch: TablesUpdate<'chapter_documents'> = { folder: null };
     const { error } = await this.supabase
       .from('chapter_documents')
-      .update({ folder: null } as never)
+      .update(patch)
       .eq('chapter_id', chapterId)
       .eq('folder', folder);
     if (error) throw error;
@@ -90,9 +97,10 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
     toFolder: string,
     chapterId: string,
   ): Promise<void> {
+    const patch: TablesUpdate<'chapter_documents'> = { folder: toFolder };
     const { error } = await this.supabase
       .from('chapter_documents')
-      .update({ folder: toFolder } as never)
+      .update(patch)
       .eq('chapter_id', chapterId)
       .eq('folder', fromFolder);
     if (error) throw error;

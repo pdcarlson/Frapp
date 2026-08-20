@@ -8,7 +8,6 @@ import {
 import type {
   RealtimeChannel,
   RealtimePostgresInsertPayload,
-  SupabaseClient,
 } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
@@ -19,6 +18,7 @@ import { ChatNotificationPreferenceRepository } from './chat-notification-prefer
 import { decidePush } from './push-rules';
 import { canAccessChannel } from '@repo/validation';
 import { RbacService } from '../../application/services/rbac.service';
+import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 
 /** How long a cached channel row may inform an authorization decision. */
 const CHANNEL_CACHE_TTL_MS = 30_000;
@@ -95,7 +95,7 @@ export class ChatPushWorkerService
   >();
 
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
     @Inject(MEMBER_REPOSITORY)
     private readonly memberRepo: IMemberRepository,
     private readonly notificationService: NotificationService,

@@ -1,6 +1,5 @@
 import { ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { SupabaseClient } from '@supabase/supabase-js';
 import {
   assertContentFreeProperties,
   hashChapterIdForAnalytics,
@@ -17,6 +16,7 @@ import {
   type IMemberRepository,
 } from '../../domain/repositories/member.repository.interface';
 import type { Member } from '../../domain/entities/member.entity';
+import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 
 export interface TrackOptions {
   /**
@@ -48,7 +48,7 @@ export class AnalyticsService {
 
   constructor(
     private readonly config: ConfigService,
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
     @Inject(ANALYTICS_PROVIDER) private readonly provider: IAnalyticsProvider,
     @Inject(MEMBER_REPOSITORY) private readonly members: IMemberRepository,
   ) {

@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import {
   IPointTransactionRepository,
   type ListChapterPointTransactionsOptions,
@@ -14,10 +14,12 @@ export class SupabasePointTransactionRepository implements IPointTransactionRepo
     private readonly supabase: FrappSupabaseClient,
   ) {}
 
-  async create(data: Partial<PointTransaction>): Promise<PointTransaction> {
+  async create(
+    data: TablesInsert<'point_transactions'>,
+  ): Promise<PointTransaction> {
     const { data: created, error } = await this.supabase
       .from('point_transactions')
-      .insert(data as never)
+      .insert(data)
       .select()
       .single();
 
