@@ -15,16 +15,6 @@ export class SupabaseStudySessionRepository implements IStudySessionRepository {
     private readonly supabase: FrappSupabaseClient,
   ) {}
 
-  async findById(id: string): Promise<StudySession | null> {
-    const { data, error } = await this.supabase
-      .from('study_sessions')
-      .select('*')
-      .eq('id', id)
-      .maybeSingle();
-    if (error) throw error;
-    return data;
-  }
-
   async findActiveByUserAndChapter(
     userId: string,
     chapterId: string,
@@ -67,12 +57,14 @@ export class SupabaseStudySessionRepository implements IStudySessionRepository {
 
   async update(
     id: string,
+    chapterId: string,
     data: TablesUpdate<'study_sessions'>,
   ): Promise<StudySession> {
     const { data: updated, error } = await this.supabase
       .from('study_sessions')
       .update(data)
       .eq('id', id)
+      .eq('chapter_id', chapterId)
       .select()
       .single();
 
