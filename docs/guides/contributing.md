@@ -74,6 +74,10 @@ PR targets:
 
 - Feature work: `feature/*` → `main`
 - Production promotion: `main` → `production`
+- **Never** another feature branch. `pull_request.branches` is only `[main, production]`, so a
+  stacked PR skips CI and a squash-merge can show MERGED while `origin/main` never receives the
+  work. Playbook: [`docs/internal/ci-cd/AGENT_INFRA.md`](../internal/ci-cd/AGENT_INFRA.md#ci-branch-filters-never-target-a-feature-branch)
+  (incidents #1120, #1123–#1125). Re-land by cherry-pick onto `origin/main`.
 
 ## 5. Linting, types, and tests
 
