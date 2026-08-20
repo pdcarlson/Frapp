@@ -18,7 +18,6 @@ import { POLL_VOTE_REPOSITORY } from '../../domain/repositories/poll-vote.reposi
 import type { IPollVoteRepository } from '../../domain/repositories/poll-vote.repository.interface';
 import type { ChatMessage } from '../../domain/entities/chat.entity';
 import type { ChatChannel } from '../../domain/entities/chat.entity';
-import type { Member } from '../../domain/entities/member.entity';
 import type { PollVote } from '../../domain/entities/poll-vote.entity';
 
 describe('PollService', () => {
@@ -131,7 +130,7 @@ describe('PollService', () => {
     // Individual tests override these to exercise PRIVATE / ROLE_GATED / 404.
     mockMemberRepo.findByUserAndChapter.mockResolvedValue({
       id: 'm-1',
-    } as Member);
+    });
     mockRbac.getEffectivePermissions.mockResolvedValue([]);
     mockChannelRepo.findByChapter.mockResolvedValue([
       { ...baseChannel, id: 'channel-1', type: 'PUBLIC', member_ids: null },
@@ -754,7 +753,7 @@ describe('PollService', () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue({
         id: 'm-1',
         role_ids: ['role-alumni'],
-      } as Member);
+      });
       mockRbac.hasAlumniRole.mockResolvedValue(true);
     });
 

@@ -1680,7 +1680,7 @@ describe('ChatService', () => {
             ...pollMessage.payload,
             closes_at: '2020-01-01T00:00:00.000Z',
           },
-        } as never);
+        });
 
         await expect(vote({ option_id: 'opt-a' })).rejects.toThrow(
           BadRequestException,
@@ -1689,7 +1689,7 @@ describe('ChatService', () => {
       });
 
       it('rejects an option that is not on the card', async () => {
-        mockMessageRepo.findById.mockResolvedValue(pollMessage as never);
+        mockMessageRepo.findById.mockResolvedValue(pollMessage);
 
         await expect(vote({ option_id: 'opt-z' })).rejects.toThrow(
           /Invalid option/,
@@ -1698,7 +1698,7 @@ describe('ChatService', () => {
       });
 
       it('rejects several selections on a single-choice card', async () => {
-        mockMessageRepo.findById.mockResolvedValue(pollMessage as never);
+        mockMessageRepo.findById.mockResolvedValue(pollMessage);
 
         await expect(vote({ option_id: ['opt-a', 'opt-b'] })).rejects.toThrow(
           /exactly one option/,
@@ -1707,7 +1707,7 @@ describe('ChatService', () => {
       });
 
       it('still records a valid vote', async () => {
-        mockMessageRepo.findById.mockResolvedValue(pollMessage as never);
+        mockMessageRepo.findById.mockResolvedValue(pollMessage);
         mockActionRepo.create.mockResolvedValue({
           ...baseAction,
           action_type: 'vote',
@@ -1721,7 +1721,7 @@ describe('ChatService', () => {
 
       it('leaves non-vote actions on a poll card alone', async () => {
         // Reactions on a poll card are not votes and must not be rule-checked.
-        mockMessageRepo.findById.mockResolvedValue(pollMessage as never);
+        mockMessageRepo.findById.mockResolvedValue(pollMessage);
         mockActionRepo.create.mockResolvedValue(baseAction);
 
         await expect(

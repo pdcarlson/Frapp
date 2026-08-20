@@ -16,7 +16,7 @@
     "@repo/eslint-config": "*",
     "@repo/typescript-config": "*",
     "openapi-typescript": "^7.6.1",
-    "typescript": "5.9.2"
+    "typescript": "npm:@typescript/typescript6@6.0.2"
   },
   "dependencies": {
     "openapi-fetch": "^0.17.0"

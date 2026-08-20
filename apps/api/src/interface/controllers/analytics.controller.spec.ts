@@ -19,9 +19,7 @@ describe('AnalyticsController', () => {
       getDistinctId: jest.fn(),
       trackFromClient: jest.fn(),
     };
-    controller = new AnalyticsController(
-      analytics as unknown as AnalyticsService,
-    );
+    controller = new AnalyticsController(analytics);
   });
 
   describe('getIdentity', () => {
