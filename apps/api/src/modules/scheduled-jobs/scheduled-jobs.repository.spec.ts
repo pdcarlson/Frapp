@@ -271,9 +271,10 @@ describe('ScheduledJobsRepository', () => {
 
 /**
  * Tenant-scope half of this file. Sweeps (`findEventsPendingAutoAbsent`,
- * invoice/task due windows) are cross-chapter by design: the worker has no
- * caller chapter and pages every tenant. Those paths are characterised as
- * unscoped, not asserted with `expectTenantScoped`.
+ * `findOpenInvoicesDueBetween`, `findIncompleteTasksDueBetween`) are
+ * cross-chapter by design: the worker has no caller chapter and pages every
+ * tenant. Those paths are characterised as unscoped, not asserted with
+ * `expectTenantScoped`.
  *
  * `claimDispatch` and `releaseDispatch` are the tenant-bound writes: they
  * insert and delete `scheduled_notification_dispatches` with the chapter
@@ -288,6 +289,8 @@ const INVOICE_B = '0b000000-0000-4000-8000-000000000221';
 const DISPATCH_A = '0a000000-0000-4000-8000-000000000222';
 const DISPATCH_B = '0b000000-0000-4000-8000-000000000222';
 const DISPATCH_ENTITY = '0c000000-0000-4000-8000-000000000223';
+const TASK_A = '0a000000-0000-4000-8000-000000000224';
+const TASK_B = '0b000000-0000-4000-8000-000000000224';
 
 const tenantSeed = () => ({
   events: [
@@ -360,6 +363,36 @@ const tenantSeed = () => ({
       dispatched_at: '2026-08-31T12:00:00.000Z',
     }),
   ],
+  tasks: [
+    inA({
+      id: TASK_A,
+      title: 'Collect dues',
+      description: null,
+      assignee_id: USER_SHARED,
+      created_by: USER_SHARED,
+      due_date: '2026-09-15',
+      status: 'TODO',
+      point_reward: 5,
+      points_awarded: false,
+      completed_at: null,
+      confirmed_at: null,
+      created_at: '2026-01-01T00:00:00.000Z',
+    }),
+    inB({
+      id: TASK_B,
+      title: 'Collect dues',
+      description: null,
+      assignee_id: USER_SHARED,
+      created_by: USER_SHARED,
+      due_date: '2026-09-15',
+      status: 'TODO',
+      point_reward: 5,
+      points_awarded: false,
+      completed_at: null,
+      confirmed_at: null,
+      created_at: '2026-01-01T00:00:00.000Z',
+    }),
+  ],
 });
 
 describe('ScheduledJobsRepository — tenant scope', () => {
@@ -389,6 +422,17 @@ describe('ScheduledJobsRepository — tenant scope', () => {
     );
 
     expect(rows.map((r) => r.id).sort()).toEqual([INVOICE_A, INVOICE_B].sort());
+    const [op] = harness.ops;
+    expect(op.filters.some((f) => f.column === 'chapter_id')).toBe(false);
+  });
+
+  it('findIncompleteTasksDueBetween is a cross-chapter sweep (characterised)', async () => {
+    const rows = await repo.findIncompleteTasksDueBetween(
+      '2026-09-01',
+      '2026-09-30',
+    );
+
+    expect(rows.map((r) => r.id).sort()).toEqual([TASK_A, TASK_B].sort());
     const [op] = harness.ops;
     expect(op.filters.some((f) => f.column === 'chapter_id')).toBe(false);
   });
