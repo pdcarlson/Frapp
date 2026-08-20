@@ -1,20 +1,16 @@
+/** @vitest-environment jsdom */
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-const { mockPost, mockUseOrgConfig } = vi.hoisted(() => ({
+const { mockPost, mockUseCurrentChapter } = vi.hoisted(() => ({
   mockPost: vi.fn(),
-  mockUseOrgConfig: vi.fn(),
+  mockUseCurrentChapter: vi.fn(),
 }));
 
-// The provider only needs a POST-capable client and an active chapter id.
 vi.mock("@repo/hooks", () => ({
   useFrappClient: () => ({ POST: mockPost }),
   useActiveChapterId: () => "chap-1",
-}));
-
-// Opt-out state is read from the merged chapter config.
-vi.mock("@/lib/hooks/use-org-config", () => ({
-  useOrgConfig: () => mockUseOrgConfig(),
+  useCurrentChapter: () => mockUseCurrentChapter(),
 }));
 
 const { AnalyticsProvider, useAnalytics } = await import("./analytics-provider");
@@ -29,7 +25,9 @@ function Emitter() {
 }
 
 function renderWithOptOut(optOut: boolean | undefined) {
-  mockUseOrgConfig.mockReturnValue({ data: { analytics_opt_out: optOut } });
+  mockUseCurrentChapter.mockReturnValue({
+    data: { analytics_opt_out: optOut },
+  });
   render(
     <AnalyticsProvider>
       <Emitter />
@@ -37,11 +35,11 @@ function renderWithOptOut(optOut: boolean | undefined) {
   );
 }
 
-describe("AnalyticsProvider client-side opt-out", () => {
+describe("mobile AnalyticsProvider client-side opt-out", () => {
   beforeEach(() => {
     mockPost.mockReset();
     mockPost.mockResolvedValue({ data: {}, error: undefined });
-    mockUseOrgConfig.mockReset();
+    mockUseCurrentChapter.mockReset();
   });
 
   it("posts the event when the chapter has not opted out", () => {
@@ -65,7 +63,7 @@ describe("AnalyticsProvider client-side opt-out", () => {
     expect(mockPost).not.toHaveBeenCalled();
   });
 
-  it("fails open when the flag is missing from chapter config", () => {
+  it("fails open when the flag is missing from the chapter payload", () => {
     renderWithOptOut(undefined);
     fireEvent.click(screen.getByText("emit"));
     expect(mockPost).toHaveBeenCalledTimes(1);

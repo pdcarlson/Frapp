@@ -34,6 +34,7 @@
     "@repo/chapter-theme": "*",
     "@repo/chat-core": "*",
     "@repo/chat-integrations": "*",
+    "@repo/formatting": "*",
     "@repo/hooks": "*",
     "@repo/org-archetypes": "*",
     "@repo/theme": "*",

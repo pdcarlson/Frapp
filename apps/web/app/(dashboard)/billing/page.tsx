@@ -25,6 +25,7 @@ import {
 import { useChapterSubscription } from "@/lib/hooks/use-subscription-write-state";
 import { isStripeConfigured } from "@/lib/stripe";
 import { formatCurrency } from "@/lib/currency";
+import { formatLocaleDate as formatDate } from "@repo/formatting";
 
 // Mirrors what `BillingService.getChapterBillingStatus` actually returns. The
 // Stripe identifiers have no other source; `subscription_status` is kept as a
@@ -43,12 +44,6 @@ type InvoicePreview = {
   due_date: string;
   user_id: string;
 };
-
-function formatDate(value: string): string {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "—";
-  return parsed.toLocaleDateString();
-}
 
 export default function BillingPage() {
   const { isOffline } = useNetwork();

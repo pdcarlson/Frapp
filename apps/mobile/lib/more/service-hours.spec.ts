@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { formatMinutesRounded } from "@repo/formatting";
 import {
-  formatDuration,
   parseDurationInput,
   selectServiceEntryRows,
   summarizeServiceEntries,
@@ -18,16 +18,16 @@ function entry(overrides: Record<string, unknown> = {}) {
   };
 }
 
-describe("formatDuration", () => {
+describe("formatMinutesRounded", () => {
   it("renders hours and minutes the way a member writes them", () => {
-    expect(formatDuration(150)).toBe("2h 30m");
-    expect(formatDuration(120)).toBe("2h");
-    expect(formatDuration(45)).toBe("45m");
-    expect(formatDuration(0)).toBe("0m");
+    expect(formatMinutesRounded(150)).toBe("2h 30m");
+    expect(formatMinutesRounded(120)).toBe("2h");
+    expect(formatMinutesRounded(45)).toBe("45m");
+    expect(formatMinutesRounded(0)).toBe("0m");
   });
 
   it("never renders a negative duration", () => {
-    expect(formatDuration(-30)).toBe("0m");
+    expect(formatMinutesRounded(-30)).toBe("0m");
   });
 });
 

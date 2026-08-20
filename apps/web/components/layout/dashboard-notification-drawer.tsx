@@ -15,6 +15,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { formatLocaleDateTime as formatTime } from "@repo/formatting";
 import { asArray } from "@/lib/utils";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
@@ -44,13 +45,6 @@ type Notification = {
   read_at: string | null;
   created_at: string;
 };
-
-function formatTime(value: string | null | undefined): string {
-  if (!value) return "—";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "—";
-  return parsed.toLocaleString();
-}
 
 /**
  * Map a notification target payload to an in-app dashboard path.

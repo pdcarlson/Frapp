@@ -52,6 +52,7 @@ import {
   acceptAttribute,
   inspectUploadFile,
 } from "@repo/validation";
+import { formatMinutesExact as formatDuration } from "@repo/formatting";
 
 type ServiceStatus = "PENDING" | "APPROVED" | "REJECTED";
 
@@ -74,13 +75,6 @@ type MemberSummary = {
   user_id?: string;
   display_name?: string | null;
 };
-
-function formatDuration(minutes: number): string {
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  const rem = minutes % 60;
-  return rem ? `${hours}h ${rem}m` : `${hours}h`;
-}
 
 function statusBadgeVariant(
   status: ServiceStatus,

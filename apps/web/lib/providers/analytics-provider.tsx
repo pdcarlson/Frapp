@@ -2,7 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useMemo } from "react";
 import { useFrappClient, useActiveChapterId } from "@repo/hooks";
-import type { AnalyticsProperties } from "@repo/validation";
+import { isAnalyticsOptedOut, type AnalyticsProperties } from "@repo/validation";
 import { useOrgConfig } from "@/lib/hooks/use-org-config";
 
 /**
@@ -15,6 +15,12 @@ import { useOrgConfig } from "@/lib/hooks/use-org-config";
  * never reaches the browser bundle — keeping the dataset un-rainbow-tableable
  * per `spec/behavior/data-retention.md` (#analytics-events-pseudonymous).
  *
+ * Client-side opt-out is the fourth shared gate (`isAnalyticsOptedOut` in
+ * `@repo/validation`), next to `can`, `isModuleEnabled`, and
+ * `subscriptionWriteState`. Web reads the flag from `useOrgConfig()`
+ * (`GET /v1/chapters/{id}/config`); mobile reads the same scalar from
+ * `useCurrentChapter()`.
+ *
  * `track` is fire-and-forget: a failed event must never disrupt the UI.
  */
 type TrackFn = (name: string, properties?: AnalyticsProperties) => void;
@@ -24,11 +30,12 @@ const AnalyticsContext = createContext<TrackFn | null>(null);
 export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
-  // First gate, enforced at the SDK boundary: when the active chapter has opted
-  // out, emit zero events for its members. The API repeats this check as
-  // defense-in-depth (data-retention.md #analytics-events-pseudonymous), so the
-  // ~5min config staleTime window before this client refetches is acceptable.
-  const optedOut = useOrgConfig().data?.analytics_opt_out === true;
+  // First gate, enforced at the SDK boundary via the shared predicate: when
+  // the active chapter has opted out, emit zero events for its members. The
+  // API repeats this check as defense-in-depth (data-retention.md
+  // #analytics-events-pseudonymous), so the ~5min config staleTime window
+  // before this client refetches is acceptable.
+  const optedOut = isAnalyticsOptedOut(useOrgConfig().data?.analytics_opt_out);
 
   const track = useCallback<TrackFn>(
     (name, properties) => {

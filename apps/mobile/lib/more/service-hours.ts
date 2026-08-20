@@ -6,6 +6,7 @@
  * comes back here is already the member's own history — no client-side filter
  * makes that true, and none should pretend to.
  */
+import { formatMinutesRounded, parseBareDateUtcNoon } from "@repo/formatting";
 import { metaLine, num, records, str } from "./narrow";
 import { formatHours } from "./profile";
 
@@ -37,22 +38,14 @@ const STATUSES: ReadonlySet<string> = new Set([
 /** A single logged shift longer than a day is a typo, not a shift. */
 export const MAX_DURATION_MINUTES = 24 * 60;
 
-/** `150` → `"2h 30m"`, `45` → `"45m"`, `120` → `"2h"`. */
-export function formatDuration(minutes: number): string {
-  const whole = Math.max(0, Math.round(minutes));
-  const hours = Math.floor(whole / 60);
-  const rest = whole % 60;
-  if (hours === 0) return `${rest}m`;
-  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
-}
-
 /** `"2026-08-12"` → `"Aug 12"`. Falls back to the raw value if unparseable. */
 function formatDate(value: string): string {
   // Parsed as UTC noon, not midnight: a bare `YYYY-MM-DD` is UTC midnight, which
   // renders as the previous day for anyone west of Greenwich — and a service
-  // entry dated the 12th must not display as the 11th.
-  const date = new Date(`${value}T12:00:00Z`);
-  if (Number.isNaN(date.getTime())) return value;
+  // entry dated the 12th must not display as the 11th. Protected cluster —
+  // do not fold into formatLocaleDate.
+  const date = parseBareDateUtcNoon(value);
+  if (!date) return value;
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
@@ -68,7 +61,7 @@ function toRow(row: Record<string, unknown>): ServiceEntryRow | null {
     description: str(row, "description") ?? "Service entry",
     status: rawStatus as ServiceEntryStatus,
     durationMinutes,
-    meta: metaLine([formatDuration(durationMinutes), formatDate(date)]),
+    meta: metaLine([formatMinutesRounded(durationMinutes), formatDate(date)]),
     date,
   };
 }

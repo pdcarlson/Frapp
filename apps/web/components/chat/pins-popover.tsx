@@ -8,18 +8,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import type { ChatMessage } from "@repo/chat-core/types";
-
-function formatClock(value: string | null | undefined): string {
-  if (!value) return "";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "";
-  return parsed.toLocaleString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-    month: "short",
-    day: "numeric",
-  });
-}
+import { formatClock } from "@repo/formatting";
 
 /**
  * Popover that lists messages flagged `is_pinned`. The popover trigger lives

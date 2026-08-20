@@ -22,6 +22,7 @@ import {
   useGatedDialog,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
+import { formatLocaleDateTime as formatTimestamp } from "@repo/formatting";
 import { PointsAuditCard } from "@/components/points/points-audit-card";
 
 const windows = [
@@ -42,12 +43,6 @@ type PointTransactionRow = {
   description: string;
   created_at: string;
 };
-
-function formatTimestamp(value: string): string {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "—";
-  return parsed.toLocaleString();
-}
 
 export default function PointsPage() {
   const { isOffline } = useNetwork();

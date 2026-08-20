@@ -13,6 +13,7 @@
  * `user_id` is not the viewer's" — and s11 is a *member* surface, so it filters
  * to the viewer entirely rather than only gating the button.
  */
+import { parseBareDateUtcNoon } from "@repo/formatting";
 import { num, records, str } from "../more/narrow";
 
 export type InvoiceStatus = "DRAFT" | "OPEN" | "PAID" | "VOID";
@@ -134,8 +135,8 @@ function shortDate(date: Date): string {
  * it here dates a 9pm payment in New York to the following morning.
  */
 function formatCalendarDate(value: string): string {
-  const date = new Date(`${value}T12:00:00Z`);
-  if (Number.isNaN(date.getTime())) return value;
+  const date = parseBareDateUtcNoon(value);
+  if (!date) return value;
   return shortDate(date);
 }
 

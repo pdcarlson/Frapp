@@ -1,6 +1,14 @@
 import React, { createContext, useCallback, useContext, useMemo } from "react";
-import { useFrappClient, useActiveChapterId } from "@repo/hooks";
-import type { AnalyticsProperties } from "@repo/validation";
+import {
+  useFrappClient,
+  useActiveChapterId,
+  useCurrentChapter,
+} from "@repo/hooks";
+import {
+  isAnalyticsOptedOut,
+  type AnalyticsProperties,
+  type CurrentChapterPayload,
+} from "@repo/validation";
 
 /**
  * Pseudonymous analytics for the mobile app (issue #464) — the Expo mirror of
@@ -13,17 +21,16 @@ import type { AnalyticsProperties } from "@repo/validation";
  * never ships in the app bundle. See `spec/behavior/data-retention.md`
  * (#analytics-events-pseudonymous).
  *
+ * Client-side opt-out is the fourth shared gate (`isAnalyticsOptedOut` in
+ * `@repo/validation`), next to `can`, `isModuleEnabled`, and
+ * `subscriptionWriteState`. The flag is read from `useCurrentChapter()` —
+ * the same `GET /v1/chapters/current` payload mobile already uses for
+ * `enabled_modules` — not a mobile-only one-off.
+ *
  * `track` is fire-and-forget so a failed event never disrupts the UI.
  *
- * NOTE: the mobile client has no active-chapter context yet (it is still the
- * preview shell — real member flows land in #253, and `frapp-client.tsx`
- * hardcodes `getChapterId: () => null`). Until then mobile events carry no
- * `chapter_id`, so the server's per-chapter opt-out gate cannot apply to them.
- * Wiring the active chapter into analytics events is tracked alongside mobile
- * parity (#253) and the opt-out toggle (#466); the web provider already passes
- * it. Until that lands, `track` is **gated**: with no active chapter it is a
- * no-op, so mobile events can never escape a chapter's opt-out by omitting
- * `chapter_id`.
+ * Without an active chapter id the server cannot apply the per-chapter
+ * opt-out to a client event, so `track` is a no-op until one exists.
  */
 type TrackFn = (name: string, properties?: AnalyticsProperties) => void;
 
@@ -32,12 +39,15 @@ const AnalyticsContext = createContext<TrackFn | null>(null);
 export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
+  const chapterQuery = useCurrentChapter();
+  const optedOut = isAnalyticsOptedOut(
+    (chapterQuery.data as CurrentChapterPayload | undefined)?.analytics_opt_out,
+  );
 
   const track = useCallback<TrackFn>(
     (name, properties) => {
-      // Gate on chapter context: without it the server can't apply the
-      // per-chapter opt-out, so don't emit (see provider doc comment).
       if (!chapterId) return;
+      if (optedOut) return;
       void client
         .POST("/v1/analytics/events", {
           body: {
@@ -50,7 +60,7 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
           // Best-effort: analytics must never surface an error to the user.
         });
     },
-    [client, chapterId],
+    [client, chapterId, optedOut],
   );
 
   const value = useMemo(() => track, [track]);

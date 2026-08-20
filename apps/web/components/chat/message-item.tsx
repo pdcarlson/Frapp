@@ -14,19 +14,8 @@ import { Button } from "@/components/ui/button";
 import { ReactionChips, ReactionQuickPick } from "./reaction-bar";
 import { MessageRenderer } from "./renderers";
 import type { ChatMessage } from "@repo/chat-core/types";
+import { formatClock } from "@repo/formatting";
 import { initials } from "@/lib/utils";
-
-function formatClock(value: string | null | undefined): string {
-  if (!value) return "";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "";
-  return parsed.toLocaleString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-    month: "short",
-    day: "numeric",
-  });
-}
 
 export interface MessageItemProps {
   message: ChatMessage;

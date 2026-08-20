@@ -27,16 +27,10 @@ import {
 } from "@/components/ui/sheet";
 import { AttendancePanel } from "@/components/events/attendance-panel";
 import { normalizeRoleOptions } from "@/lib/roles";
+import { formatLocaleDateTime as formatDateTime } from "@repo/formatting";
 import { getErrorMessage } from "@/lib/utils";
 
 type EventRecord = Record<string, unknown>;
-
-function formatDateTime(value: unknown): string {
-  if (typeof value !== "string") return "—";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "—";
-  return parsed.toLocaleString();
-}
 
 type EventDetailSheetProps = {
   open: boolean;

@@ -1,3 +1,5 @@
+import { parseBareDateUtcNoon } from "@repo/formatting";
+
 /**
  * Draft state and validation for the s19 "New task" sheet.
  *
@@ -106,8 +108,8 @@ export function duePresets(now: Date): DuePreset[] {
  * west of Greenwich, the same fix `lib/more/service-hours.ts` documents.
  */
 export function formatDueFieldLabel(isoDate: string): string {
-  const date = new Date(`${isoDate}T12:00:00Z`);
-  if (Number.isNaN(date.getTime())) return isoDate;
+  const date = parseBareDateUtcNoon(isoDate);
+  if (!date) return isoDate;
   return date.toLocaleDateString(undefined, {
     weekday: "short",
     month: "short",

@@ -19,6 +19,8 @@
  * imported from the strip unchanged and re-exported for the board's callers.
  */
 
+import { parseInstantOrBareUtcNoon } from "@repo/formatting";
+
 export { isDueUrgent } from "@/components/chat/up-next-strip";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -46,9 +48,9 @@ export function dayDelta(from: Date, to: Date): number {
 export function parseTaskDate(value: string): Date | null {
   // A full timestamp passes through untouched: appending `T12:00:00Z` to one
   // yields `NaN`, and the chat `kind:"task"` payload can carry either shape.
-  const bare = /^\d{4}-\d{2}-\d{2}$/.test(value);
-  const date = new Date(bare ? `${value}T12:00:00Z` : value);
-  return Number.isNaN(date.getTime()) ? null : date;
+  // Protected cluster — UTC noon for bare dates, not formatLocaleDate's
+  // `new Date(value)` (UTC midnight).
+  return parseInstantOrBareUtcNoon(value);
 }
 
 /** Any parseable instant — `completed_at` is a full ISO timestamp, not a date. */

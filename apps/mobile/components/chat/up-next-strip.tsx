@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
+import { parseInstantOrBareUtcNoon } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -153,9 +154,10 @@ export function formatEventTime(startTime: string, now: Date): string {
  * card can carry one and forcing `T12:00:00Z` onto it would produce `NaN`.
  */
 function parseDueInstant(value: string): Date | null {
-  const bare = /^\d{4}-\d{2}-\d{2}$/.test(value);
-  const date = new Date(bare ? `${value}T12:00:00Z` : value);
-  return Number.isNaN(date.getTime()) ? null : date;
+  // Bare YYYY-MM-DD at UTC noon (protected cluster) so a west-of-Greenwich
+  // timezone does not shift the due date back a day. Full timestamps pass
+  // through — appending T12:00:00Z to one yields NaN.
+  return parseInstantOrBareUtcNoon(value);
 }
 
 export function formatDueDate(dueDate: string, now: Date): string {
