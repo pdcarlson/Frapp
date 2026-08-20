@@ -139,6 +139,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
 
   useEffect(() => {
     if (!roleOptions.some((role: RoleRow) => role.name === roleName)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- keep the picker on a role that still exists after the catalog loads
       setRoleName(roleOptions[0]?.name ?? "Member");
     }
   }, [roleName, roleOptions]);

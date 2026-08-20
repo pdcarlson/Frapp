@@ -154,8 +154,7 @@ export function Composer({
       }),
       // Tiptap registers this shortcut while constructing the editor. The
       // closure reads `sendRef.current` only on Enter, not during render.
-      // `react-hooks/refs` is still held off globally; when it is enabled,
-      // this call needs `eslint-disable-next-line react-hooks/refs`.
+      // eslint-disable-next-line react-hooks/refs -- Enter keymap; latest submit lives in a ref
       createSubmitKeymap(sendRef),
     ],
     content: buildDocFromPlainText(draft),

@@ -197,14 +197,17 @@ export default function MembersPage() {
   // Changing the filter set or search swaps the visible population, so reset to
   // the first page and drop any selection/bulk-role draft — otherwise the
   // bulk-action bar would keep counting members that are no longer shown.
+  /* eslint-disable react-hooks/set-state-in-effect -- reset paging/selection when the visible member set changes */
   useEffect(() => {
     setPage(1);
     setSelectedMemberIds([]);
     setBulkRoleId("");
   }, [trimmedQuery, roleFilter, cohortFilter, statusFilter]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Re-sorting keeps the same population; just return to the first page.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- return to page 1 when sort identity changes
     setPage(1);
   }, [sortKey, sortDir]);
 

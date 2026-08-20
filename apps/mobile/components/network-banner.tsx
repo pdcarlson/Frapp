@@ -89,6 +89,7 @@ export function NetworkBanner() {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- keep the node mounted so the 200ms slide-out can finish
     if (visible) setMounted(true);
     Animated.timing(slide, {
       toValue: visible ? 1 : 0,

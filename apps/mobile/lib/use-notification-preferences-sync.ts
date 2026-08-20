@@ -355,6 +355,7 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
       settingsQuery.data as unknown as ServerSettings | undefined,
     );
     if (!serverWindow) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- re-seed remembered quiet-hours from the server so a web edit reaches this device
     setRememberedWindow((current) =>
       sameQuietHoursWindow(current, serverWindow) ? current : serverWindow,
     );

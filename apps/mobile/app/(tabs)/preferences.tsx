@@ -124,6 +124,7 @@ function QuietHoursCard({
   // Re-sync when the effective window changes underneath us: a server hydrate, an
   // edit made on web, or the remembered window being restored on re-enable.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- re-sync the quiet-hours draft when the effective window changes underneath us
     setDraft(quietHoursWindow);
   }, [quietHoursWindow]);
 
