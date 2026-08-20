@@ -75,7 +75,7 @@ These are the real values you enter into Infisical. **Every cell tells you exact
 
 > `SUPABASE_JWT_SECRET` is **optional**. It lets the API verify access-token signatures locally so the rate limiter can key buckets per authenticated user (see `spec/architecture/README.md`, Security). When it is absent the limiter safely falls back to per-IP keying — set it in every environment to enable per-user limiting.
 
-> `EVENT_CHECK_IN_TOKEN_SECRET` is **optional** and signs the rotating event check-in codes (`spec/behavior/events.md` § Check-In). Unset, `POST /v1/events/:eventId/attendance/check-in-token` returns 503 and the mobile host screen (s22) says the feature is not configured; a supplied token is rejected rather than accepted. Plain self check-in and the check-in geofence are unaffected, so local dev, tests, and CI run without it. **Use a different value per environment** — sharing one would make a staging code redeemable in production.
+> `EVENT_CHECK_IN_TOKEN_SECRET` is **optional** and signs the rotating event check-in codes (`spec/behavior/events.md` § Check-In). Unset, `GET /v1/events/:eventId/attendance/check-in-token` returns 503 and the mobile host screen (s22) says the feature is not configured; a supplied token is rejected rather than accepted. The mint route is **GET**, not POST — minting writes nothing (the code is derived from the event id, the clock, and this secret), and GET keeps the host screen's polling on the read throttle bucket (`attendance.controller.ts`). Plain self check-in and the check-in geofence are unaffected, so local dev, tests, and CI run without it. **Use a different value per environment** — sharing one would make a staging code redeemable in production.
 
 ### Analytics (Pseudonymous — API-only)
 
@@ -128,6 +128,7 @@ Add these in **all three environments** in Infisical. The value is always the sa
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `${SUPABASE_ANON_KEY}` | apps/mobile |
 | `EXPO_PUBLIC_API_URL` | `${API_URL}` | apps/mobile |
 | `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `${STRIPE_PUBLISHABLE_KEY}` | apps/mobile |
+| `EXPO_PUBLIC_APP_URL` | `${APP_URL}` | apps/mobile |
 
 **You type the literal string `${SUPABASE_URL}` as the value.** Infisical recognizes this as a reference and resolves it at sync/inject time.
 
@@ -219,6 +220,8 @@ Reads the `EXPO_PUBLIC_*` references:
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `lib/supabase.ts` — Supabase client init | ✅ |
 | `EXPO_PUBLIC_API_URL` | API client init + `eas.json` | ✅ |
 | `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `lib/payments/stripe.ts` — the s11 dues payment sheet | ❌ — optional, and the mobile twin of `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` above (same `pk_…` value, same publishable-by-design reasoning; the secret key stays API-only). When unset, `isStripeAvailable()` is false and the Pay control renders **disabled with its reason stated** rather than hidden — balance and history still load. Expo Go cannot run Stripe's native module at all, so a Go session behaves the same way whether or not the key is set. |
+| `EXPO_PUBLIC_APP_URL` | `lib/onboarding/chapter-wizard/invite-link.ts` `webAppOrigin()` | ❌ — optional Infisical `${APP_URL}` twin of `NEXT_PUBLIC_APP_URL`. Unset, the first-officer wizard shares `https://app.frapp.live/join?token=…`. Device builds also need this name in the EAS dashboard (`development` / `preview` / `production`); **there is no Infisical→EAS sync** (the six live syncs are Render + Vercel only — [`SECRETS_MANAGEMENT.md` §5](./SECRETS_MANAGEMENT.md#5-configure-secret-syncs)). |
+| `EXPO_PUBLIC_LANDING_URL` | `lib/more/legal.ts` — Terms / Privacy / FERPA | ❌ — optional, mobile twin of `NEXT_PUBLIC_LANDING_URL` (direct-set; there is no canonical `LANDING_URL`). Unset, `legal.ts` falls back to `https://frapp.live` via `??` (an **empty** string does not fall back — leave it unset rather than blank). Device builds: also set in the EAS dashboard. |
 | `EXPO_PUBLIC_ASK_ENABLED` | `lib/ask/flag.ts` — the s17 Ask sheet | ❌ — optional, **default off**, and **not a secret**: it is a build-time on/off switch, not a credential, and it has no canonical variable behind it (set it directly per build, not as an Infisical `${…}` reference). Only the exact strings `"1"` and `"true"` switch Ask on; unset, empty, `"0"`, `"yes"` and `"TRUE"` all leave it off, because the corpus behind Ask is synthetic and a loose truthiness check would put invented figures in front of a real member. With it off the ✦ pill still opens the sheet and the sheet states why it cannot answer. `EXPO_PUBLIC_` is inlined at build time, so this is fixed for a given build — it is **not** a per-chapter or per-member switch and must never be described to a member as one. |
 
 Both Supabase values are read at module scope and are **optional at boot**: when
@@ -228,7 +231,9 @@ is unavailable in that state and the sign-in screen says so.
 
 `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` is optional for the same class of reason:
 CI, a local `expo start`, and every Expo Go session run without it, and none of
-them can take a payment anyway. `EXPO_PUBLIC_ASK_ENABLED` is optional in a
+them can take a payment anyway. `EXPO_PUBLIC_APP_URL` and `EXPO_PUBLIC_LANDING_URL`
+are optional in the same way — unset, invite links and legal pages fall back to
+the production origins documented in the table. `EXPO_PUBLIC_ASK_ENABLED` is optional in a
 stronger sense — nothing sets it anywhere today, which is what keeps the mocked
 Ask corpus off every shipped build (`spec/ui/mobile/screens.md` s17).
 
@@ -238,7 +243,7 @@ Ask corpus off every shipped build (`spec/ui/mobile/screens.md` s17).
 `NEXT_PUBLIC_`/`EXPO_PUBLIC_` prefix means the value is inlined into a bundle any user can read — so
 the prefix is the decision, and it is irreversible once shipped.
 
-The prefixed set is deliberately small. It is **exactly these eleven variables** — enumerated by name
+The prefixed set is deliberately small. It is **exactly these thirteen variables** — enumerated by name
 rather than summarised, so it can be diffed against a bundle without interpretation:
 
 | | |
@@ -247,12 +252,12 @@ rather than summarised, so it can be diffed against a bundle without interpretat
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` · `EXPO_PUBLIC_SUPABASE_ANON_KEY` | anon key — public by Supabase's design, gated by RLS and the API's own guards |
 | `NEXT_PUBLIC_API_URL` · `EXPO_PUBLIC_API_URL` | API base URL |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` · `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Stripe **publishable** key — public by Stripe's design; the secret key stays API-only |
-| `NEXT_PUBLIC_APP_URL` | landing → app URL |
-| `NEXT_PUBLIC_LANDING_URL` | app → landing URL. **One of two entries with no canonical variable behind it** — there is no `LANDING_URL` in the grid and it is absent from the references table, so it is optional and set directly where set at all. `chapter-wizard.tsx` defaults it to `https://frapp.live`, and because that default is `??` (nullish), an **empty** value does not trigger it — leave it unset rather than blank |
+| `NEXT_PUBLIC_APP_URL` · `EXPO_PUBLIC_APP_URL` | landing / mobile-wizard → app URL. The Expo twin is Infisical `${APP_URL}` like the Next one; unset, `invite-link.ts` falls back to `https://app.frapp.live` |
+| `NEXT_PUBLIC_LANDING_URL` · `EXPO_PUBLIC_LANDING_URL` | app → landing URL (web chapter-wizard legal links; mobile `legal.ts`). **Two of three entries with no canonical variable behind them** — there is no `LANDING_URL` in the grid and they are absent from the references table, so they are optional and set directly where set at all. Both defaults are `https://frapp.live` via `??` (nullish), so an **empty** value does not trigger the fallback — leave them unset rather than blank |
 | `EXPO_PUBLIC_ASK_ENABLED` | s17 Ask on/off for a build. **The other entry with no canonical variable behind it** — a feature switch, not a value, so it is set directly where set at all (nothing sets it today) and carries nothing worth reading out of a bundle |
 
-Eleven variables over **five** canonical values plus two direct-set entries; each
-`NEXT_PUBLIC_`/`EXPO_PUBLIC_` pair is an Infisical reference to the same canonical value. No secret
+Thirteen variables over **five** canonical values plus three direct-set entries; each
+`NEXT_PUBLIC_`/`EXPO_PUBLIC_` pair that shares a canonical is an Infisical reference to the same value. No secret
 belongs in this set; `ANALYTICS_HMAC_SALT` is the worked example of why, above.
 
 `SUPABASE_AUTH_BYPASS` is the one **unprefixed** entry in the `apps/web` table: it is read in
@@ -266,7 +271,12 @@ values listed here at the time. **`EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` was added
 #937): it is a publishable key by Stripe's own design, the same value the web bundle already carries,
 so it changes the count but not the finding. **`EXPO_PUBLIC_ASK_ENABLED` was added later still** (C7
 of #937): it is a boolean feature switch with no credential behind it, so it likewise changes the
-count and not the finding. **The name check is the load-bearing one** — the audit built with placeholder
+count and not the finding. **`EXPO_PUBLIC_APP_URL` was documented 2026-08-20** after #1102
+(`invite-link.ts`); it is the same public origin `NEXT_PUBLIC_APP_URL` already carries, so it
+changes the count but not the finding. **`EXPO_PUBLIC_LANDING_URL` was already consumed**
+(`legal.ts`, related #275) and is listed here as of the same date **without re-running the
+2026-08-15 bundle audit** — it is the same public landing origin `NEXT_PUBLIC_LANDING_URL`
+already carries. **The name check is the load-bearing one** — the audit built with placeholder
 env values, so it establishes which variables reach the browser, not which values do; a clean
 gitleaks pass over a placeholder build is not by itself evidence that no real credential ships. Full
 method, caveats, and re-run instructions:
