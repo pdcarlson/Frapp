@@ -1,0 +1,38 @@
+# Agent docs & skills overhaul
+
+**Wave 0 Phase 2 — mostly DONE (Aug 19-20, PR #1082, merged).** AGENTS.md cut 250→~184 lines. ADR-18 logged. Spec-vs-code precedence now says one thing everywhere (spec = intended, code = current, disagreement = tracked bug). positioning.md fixed — stale "Modern Ivy" section deleted, points to brand-identity.md; haptics restored to spec/ui/mobile/README.md, swipe-to-reply/archive deliberately not restored (conflicts with a live screen). Routine boilerplate consolidated into docs/internal/ci-cd/ROUTINES.md. Two new skills created: signet-cutover, realtime-resilience. check-our-docs (as /check-our-docs) and file-follow-up documented in the skills table. 21 dead settings.json entries removed. Package inventory fixed to 4 apps/13 packages. Chunk-roadmap language removed.
+
+**One decision still open, correctly left to Paul (not auto-decided):** spec/behavior/meetings.md and spec/behavior/ai.md's corpus reference to it. Two options on the table — commit to roadmap, or quarantine. Recommendation: quarantine — meetings.md is recording-first, but the separate AI-recap research found typed-minutes-first is the better approach for this context, so committing to roadmap now just means rewriting it later anyway for a feature that's explicitly way down the line. Revisit properly when that feature gets scheduled.
+
+Debt spotted but not fixed in this PR (tracked, not urgent): spec/product/modules.md and some schema docs still default the old royal-blue accent; spec/ui/resilience.md still says Geist Sans under web performance budgets (correct for the frozen web surface, just worth knowing); GITHUB_PM.md duplicates some filing detail that now lives in file-follow-up; ROUTINES.md step 7's pause/re-paste language is real human process, not a stale reference, left as-is on purpose.
+
+Phase 3 (supervised code foundation work) is next, prompt already on canvas.
+
+---
+
+**Research findings (Aug 19):** Anthropic's own current guidance for the Fable 5/Opus 5 generation backs the founder's instinct almost exactly. Anthropic reports it cut 80%+ of Claude Code's system prompt for this model generation "with no measurable loss" — the shift is explicitly "Then: give Claude rules / Now: let Claude use judgement." Official advice: keep CLAUDE.md/AGENTS.md lightweight, spend most of the tokens on non-obvious gotchas, avoid stating the obvious, use progressive disclosure, describe outcomes not steps for Fable 5 specifically ("hand it the result you want and let it plan the path, skip the verification reminders"). One caveat: Opus 5 (the cheaper daily-use model) still needs more explicit constraints than Fable 5 — don't strip guardrails uniformly, replace step-by-step procedure with outcome+guardrail phrasing, not with nothing.
+
+The incident-becomes-a-permanent-rule problem has a standard fix already half-adopted here: ADRs. Best practice is immutable, append-only ADRs (never edit, only supersede) — log every one-off incident once there, and only promote a rule into AGENTS.md if it's genuinely recurring, still-true, and something the agent wouldn't derive on its own. This is exactly the standard solution to the TECH-DEBT.md-style problem (a rule written for a mistake no agent was making by default).
+
+Spec-vs-code precedence: the standard resolution isn't declaring one universal winner, it's splitting the axes — spec = source of truth for intended behavior, code = source of truth for current behavior, and disagreement between them is a tracked defect, not agent discretion. Still need to decide the one operational rule: which artifact gets fixed first when they conflict.
+
+Skill de-duplication: Claude Code's CLAUDE.md imports (@path syntax) exist but still load fully at launch, so splitting doesn't cut token cost. There's no skill-to-skill import — the supported fix for the 5x-duplicated routine-ownership boilerplate is one shared reference file (e.g. tracker-ownership.md) that each routine skill points to, one level deep. Anything that must fire every time with zero exceptions belongs in a hook, not repeated prose. Claude Code's own guidance says build a skill exactly when "a section of the rulebook grows into a procedure rather than a fact" — directly describing the two missing high-value skills (Signet cutover, realtime-resilience) the audit flagged.
+
+Doc-gate fix: replace "docs must touch every PR" with a path-scoped trigger (only require doc edits when specific source paths change) plus an explicit "no doc change needed" allowance, and a quarterly staleness sweep instead of continuous busywork. Contract tests (spec claims checked against real code/schema) are the durable fix for a spec citing a nonexistent product, like ai.md's meetings.md reference.
+
+Writing for an agent reader (not a human): terser, imperative, self-contained rules win — but the right filter on "why" context isn't "less rationale," it's "rationale only where it prevents misapplying a non-obvious rule" (the React-pin gotcha is the model to hold everything else to). Every rule must be self-contained since subagents and fresh sessions share no memory — this is exactly what the audit's incident-narration lines violate, since they reference specific past PRs a fresh agent can't see.
+
+---
+
+Corrected understanding after the Aug 19 audit (several original premises were wrong):
+
+- No real CLAUDE.md exists — the rulebook is AGENTS.md (242 lines, 46 commits, edited as recently as Aug 16). It's genuinely tight and mostly load-bearing, with one bloated section (issue-filing process = 26% of the file) plus ~35 lines of one-off incident narration ("post-mortems that go to live forever") that should collapse into short rules.
+- spec/ui/brand-identity.md is NOT stale — confirmed dark-first, matches shipped code exactly, already got rewritten during the cutover. The actually-stale brand doc is spec/product/positioning.md (old light-first "Modern Ivy" section: royal blue, Geist, slate bg) — same fix needed, wrong file flagged earlier.
+- spec/behavior/ai.md is healthy and active (mock Ask screen + 2,081-line eval harness exist, edited yesterday). spec/behavior/meetings.md is the one that's genuinely dead — zero code, zero links — and it's cited as ai.md's first indexed AI corpus item, which is active harm feeding directly into our AI-recap research.
+- TECH-DEBT.md was tried and deleted same day (Aug 13) — a considered decision, now enforced by a CI check banning its return. Keep the decision as-is.
+- 11 skills, 1 command (641-line /next), 2 hooks already exist and are mostly active/well-used — not scrappy from neglect, scrappy from an every-incident-becomes-a-permanent-rule pattern with no removal step.
+- Frapp/Signet: 1,693 vs 516 occurrences sounds bad but almost all of it (UI strings, doc prose, ~900 code identifiers) is cheap, compiles-clean rename. The two genuinely expensive/risky ones are the mobile bundle ID (live.frapp.mobile — changing it after real installs means a new app, not an update, and strands existing users) and the domain (frapp.live + 8 subdomains, touches auth/webhooks/CORS). Right now, pre-beta-launch, is the cheapest this will ever be to change either.
+
+Two decisions still needed before drafting the redesign prompt:
+1. Spec-first or code-first precedence — now informed by research: split the axes (spec=intended, code=current, disagreement=tracked defect), then decide which artifact gets fixed first on conflict. RESOLVED, see Phase 2 status above.
+2. Whether to revisit the Signet name — if yes, now (before real mobile installs exist) is structurally the cheapest window; after beta the bundle ID becomes effectively permanent. Parked per Paul, not a current priority.
