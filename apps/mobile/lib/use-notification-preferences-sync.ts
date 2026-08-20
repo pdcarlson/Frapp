@@ -296,7 +296,7 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
   // have never seen a real window, and only then are the 22:00/08:00 defaults right.
   const [rememberedWindow, setRememberedWindow] =
     useState<QuietHoursWindow | null>(null);
-  const fallbackWindow = useMemo(defaultQuietHoursWindow, []);
+  const fallbackWindow = useMemo(() => defaultQuietHoursWindow(), []);
   const quietHoursWindow = rememberedWindow ?? fallbackWindow;
 
   useEffect(() => {

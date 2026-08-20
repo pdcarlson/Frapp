@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { attachRealtimeChannel } from "@/lib/realtime/supabase-realtime";
 import {
@@ -69,18 +69,20 @@ export function useRealtimeTable({
   // Keep the latest invalidate value in a ref so the effect callback always
   // reads the current keys without needing a stable array reference.
   //
-  // The ref is reassigned on every render, so the subscription NEVER needs to
-  // re-run when only the keys change — and it must not. Broadcast is
-  // fire-and-forget with no replay: a detach/re-attach cycle drops any ping
-  // landing inside it, permanently, and the REST poll cannot cover the gap
-  // because it only arms after a channel has been non-live for >10s, which a
-  // clean resubscribe never triggers. `attendance-panel.tsx` puts `chapterId`
-  // in its invalidate array, so keying the effect on the array's JSON would
-  // re-mint the `attendance:<eventId>` channel on every chapter switch — losing
-  // whichever check-in landed in that window and under-counting the roster
-  // until something unrelated invalidated it.
+  // Written in `useLayoutEffect`, not during render (`react-hooks/refs`).
+  // The subscription NEVER needs to re-run when only the keys change — and it
+  // must not. Broadcast is fire-and-forget with no replay: a detach/re-attach
+  // cycle drops any ping landing inside it, permanently, and the REST poll
+  // cannot cover the gap because it only arms after a channel has been non-live
+  // for >10s, which a clean resubscribe never triggers. `attendance-panel.tsx`
+  // puts `chapterId` in its invalidate array, so keying the effect on the
+  // array's JSON would re-mint the `attendance:<eventId>` channel on every
+  // chapter switch — losing whichever check-in landed in that window and
+  // under-counting the roster until something unrelated invalidated it.
   const invalidateRef = useRef(invalidate);
-  invalidateRef.current = invalidate;
+  useLayoutEffect(() => {
+    invalidateRef.current = invalidate;
+  }, [invalidate]);
 
   useEffect(() => {
     if (!enabled || !scopeId) return undefined;
