@@ -62,8 +62,22 @@ The drawn s16 also carries an inline `CHAPTER · ADMIN` group, gated on `chapter
 ## Deep links
 
 - Scheme: `frapp://` (`scheme` in `apps/mobile/app.json`). It stays `frapp` until the deferred repo rename; new docs still say Signet in prose.
+- **`frapp://join?token=…` fills s02.** The same `token` query web uses (`/join?token=`) is accepted on the app scheme and as a pasted URL in the field.
 - **`frapp://event-details` is a contract.** Exported `.ics` files carry it as their deep-link URL (`apps/mobile/app/(tabs)/event-details.tsx`), and those files live on in members' device calendars indefinitely. The route filename and the URL MUST never change.
 - **Magic-link auth callback:** sign-in email links redirect to `Linking.createURL("/")` (`emailRedirectTo` in `apps/mobile/lib/auth-session.tsx`), which expo-linking resolves **at runtime to whichever scheme owns the running app** — `frapp://` in a build that owns the scheme, but `exp://<host>:8081/--/` under Expo Go. Both forms must be allowlisted in Supabase Auth's redirect URLs for magic-link sign-in to complete, and the Expo Go form embeds a per-machine host, so it cannot be allowlisted once and reused across developers. Tracked as issue #765 — note that allowlisting only `frapp://` does not unblock Expo Go.
+
+## Pre-chapter routing (s02 / s03)
+
+`apps/mobile/lib/auth-gate.ts` is still the single decision both layouts read. It now also consumes `GET /v1/chapters`:
+
+| Authenticated state | Destination |
+| --- | --- |
+| Chapters list still loading | `hold` |
+| Zero memberships | `join` (s02) |
+| Active membership has `has_completed_onboarding === false` | `welcome` (s03) |
+| Otherwise (or the chapters read failed) | `tabs` |
+
+A missing `active_chapter_id` claim is still not a destination — see `lib/auth-gate.ts`. `(tabs)/_layout.tsx` is frozen and still only redirects to sign-in; walking a member *out* of the tabs onto s02/s03 is `AppRuntime` (`lib/onboarding/use-onboarding-redirect.ts`) so that file does not have to thaw.
 
 ## Typed routes
 

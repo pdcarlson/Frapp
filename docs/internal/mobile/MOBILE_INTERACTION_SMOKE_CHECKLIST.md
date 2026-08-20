@@ -16,11 +16,14 @@ and every row below is expected to fail.
 | Screen | Control | Expected outcome |
 |---|---|---|
 | Sign in (`/(auth)/sign-in`) | Password / Magic Link mode chips | Toggles selected mode styling; password field shows in Password mode only |
-| Sign in (`/(auth)/sign-in`) | Sign in (Password mode) | Authenticates against Supabase + routes to `/(tabs)` |
+| Sign in (`/(auth)/sign-in`) | Sign in (Password mode) | Authenticates against Supabase; the auth gate then routes to join (zero memberships), welcome (`has_completed_onboarding === false`), or `/(tabs)` |
 | Sign in (`/(auth)/sign-in`) | Sign in, wrong password | Shows the Supabase error inline; stays on the screen |
-| Sign in (`/(auth)/sign-in`) | Email me a link (Magic Link mode) | Confirms "Link sent to …"; tapping the emailed link on the device signs in and routes to `/(tabs)` |
+| Sign in (`/(auth)/sign-in`) | Email me a link (Magic Link mode) | Confirms "Link sent to …"; tapping the emailed link on this device signs in and the auth gate picks join / welcome / tabs |
 | Sign in (`/(auth)/sign-in`) | Tap an already-used or expired magic link | Opens the app and shows the reason inline — never a silent return to a blank sign-in form |
 | Profile (`/(tabs)/profile`) | Sign out | Clears the session + routes to sign-in; relaunching the app does not restore it |
+| Join (`/(auth)/join`) | Join chapter with a valid invite | Redeems `POST /v1/invites/redeem`, selects the chapter, lands on welcome (s03) |
+| Join (`/(auth)/join`) | Expired / already-used invite | Shows the 410 sentence; stays on the screen |
+| Welcome (`/(auth)/welcome`) | Go to chat / Skip | PATCHes `has_completed_onboarding: true` and replaces into `/(tabs)` |
 
 Magic-link rows additionally need `frapp://` allowlisted in Supabase Auth →
 URL Configuration (#765), or the link opens the web app instead.
@@ -100,7 +103,7 @@ What *can* be checked today:
 | Study hours | End a session while paused | The paused notification is cleared rather than left inviting the member back to a session that no longer exists |
 
 Once #938 lands and a dev build exists, add rows for: the s03 primer card
-(built, currently hosted nowhere — see `spec/ui/mobile/screens.md` s03), the OS
+(hosted on `(auth)/welcome.tsx`), the OS
 prompt firing **only** after the primer's "Turn on", token register on sign-in /
 deregister on sign-out, a tap deep-linking from a cold start, and a foregrounded
 notification actually presenting.
@@ -114,7 +117,9 @@ Run these assertions during manual walkthrough:
 3. Disabled actions include explicit reason copy.
 4. Route guards enforce auth boundaries:
    - unauthenticated users cannot access tab routes,
-   - authenticated users are redirected away from auth routes.
+   - authenticated users with a completed membership are redirected away from sign-in / join / welcome,
+   - authenticated users with zero memberships stay on join,
+   - authenticated users whose active membership has `has_completed_onboarding === false` stay on welcome.
 
 ## 7) PR evidence requirements
 
