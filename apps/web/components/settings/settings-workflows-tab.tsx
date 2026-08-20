@@ -62,6 +62,7 @@ export function SettingsWorkflowsTab({
   // The local draft already mirrors what was saved, so leaving it is correct.
   useEffect(() => {
     if (workflows.some((wf) => wf.label === undefined)) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- re-seed workflow drafts after a save refetch; skip the partial optimistic payload
     setDraft(workflows);
   }, [workflows]);
 

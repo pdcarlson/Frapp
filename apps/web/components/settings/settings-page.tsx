@@ -167,6 +167,7 @@ function SettingsPageContent() {
   );
   useEffect(() => {
     if (tabParam && SETTINGS_TAB_VALUES.includes(tabParam)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- follow `?tab=` deep links without wiping a tab the member already picked
       setActiveTab(tabParam);
     }
   }, [tabParam]);
@@ -179,6 +180,7 @@ function SettingsPageContent() {
   useEffect(() => {
     const parsed = CurrentChapterPayloadSchema.safeParse(chapterQuery.data);
     if (!parsed.success) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- seed the accent draft from the chapter query
     setAccentDraft(parsed.data.accent_color ?? "");
   }, [chapterQuery.data]);
 

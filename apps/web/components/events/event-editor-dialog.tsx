@@ -108,6 +108,7 @@ export function EventEditorDialog({
     return [...roleOptions, ...extras];
   }, [roleOptions, requiredRoleIds]);
 
+  /* eslint-disable react-hooks/set-state-in-effect -- hydrate or reset the form when the dialog opens on a different event */
   useEffect(() => {
     if (!open) return;
     if (mode === "edit" && event) {
@@ -145,6 +146,7 @@ export function EventEditorDialog({
     setNotes("");
     setRequiredRoleIds([]);
   }, [event, mode, open]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const submitLabel = useMemo(() => {
     if (isSubmitting) {

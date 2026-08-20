@@ -65,6 +65,7 @@ export function SettingsDuesTab({ dues, canManage, onSave, isSaving }: Props) {
 
   // Reconcile the local draft when the server config refetches after a save.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- re-seed the dues draft when the server config refetches after a save
     setDraft(dues);
   }, [dues]);
 
