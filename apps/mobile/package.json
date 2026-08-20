@@ -21,6 +21,7 @@
     "@repo/api-sdk": "*",
     "@repo/chat-core": "*",
     "@repo/hooks": "*",
+    "@repo/org-archetypes": "*",
     "@repo/theme": "^0.0.0",
     "@repo/validation": "*",
     "@stripe/stripe-react-native": "0.74.0",
