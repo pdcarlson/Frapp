@@ -346,6 +346,25 @@ So the dedup *step* needs no redesign. A historical `"agent-suggestion"` search 
 comment-stripping defect showing up in the index, **not** evidence of a broken matcher — do not
 re-derive that conclusion.
 
+**But confirm the hit before acting on it.** The matcher is semantic, so how cleanly a fingerprint
+resolves depends on how distinctive its slug is. A distinctive one returns exactly its issue
+(`fp=drop-theme-brand-aliases` → #917, alone). A **generic** one also pulls in topical near-matches:
+`fp=docs/backfill-missing-dedup-markers` returns **4** issues — #697 (the real holder, ranked first)
+plus #1086, #857 and #800, none of which contain that string. They simply happen to be *about*
+dedup markers.
+
+That matters because the dedup rule is *"if found → skip"*, and skipping on a topical near-match
+files nothing where something new belonged — a **false skip**, which is silent and worse than a
+duplicate. So the rule is:
+
+> **A hit counts only if the returned body actually contains the literal `fp=` string.** Check the
+> top result's body for it; if it isn't there, keep reading down the results, and treat "no body
+> contains it" as *not found*.
+
+This check is only possible because markers are now **visible lines** — the same change that fixed
+the read also made the lookup self-verifying. Prefer distinctive slugs when minting new
+fingerprints; two or three specific words beat a generic phrase.
+
 **It is index-backed, so it lags writes.** A just-created or just-edited issue can be missing from
 `search_issues` for a short window. Never treat an empty result on a fresh issue as "no marker";
 allow a retry before concluding a write failed.

@@ -194,7 +194,12 @@ Every issue this routine **creates**:
 the `fp=` string; if found → **skip** (or refresh the open one). Legacy `cursor-suggestion` and
 comment-form `agent-suggestion` markers use the same `fp=` format and count as matches — but a
 comment-form marker is invisible to the search index as well as to the read, so **absence of a hit
-is weak evidence**; also search the finding's key terms before concluding an issue is net-new. **Also search the finding's key terms
+is weak evidence**; also search the finding's key terms before concluding an issue is net-new.
+**And confirm a hit before skipping on it:** the matcher is semantic, so a generic-worded `fp=`
+pulls in topical near-matches that do not carry the string (verified — `fp=docs/backfill-missing-dedup-markers`
+returns 4 issues, only one of which holds it). A hit counts only if the returned body actually
+contains the literal `fp=` string, which is checkable now that markers are visible lines. Skipping
+on a near-match is a **false skip** — silent, and worse than a duplicate. **Also search the finding's key terms
 against `[human]` titles** — if an open `fp=human/` blocker already tracks the same action
 (dashboard toggles and advisor findings are the usual overlap), skip: filing a promotable twin
 would route `/next` into a wall the held issue already documents. Embed the marker:
