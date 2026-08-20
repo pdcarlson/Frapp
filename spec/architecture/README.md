@@ -121,7 +121,7 @@ Frapp/
 | `@repo/theme`             | Tailwind config presets, global CSS. Legacy bone/bronze tokens until web/landing reskin; Signet tokens are specified in `spec/ui/design-system/`. |
 | `@repo/typescript-config` | Shared tsconfig presets.                                                  |
 | `@repo/ui`                | Shared UI components (buttons, cards, inputs). Used by web + landing.     |
-| `@repo/validation`        | Shared Zod schemas for form/request validation (used by API + clients).   |
+| `@repo/validation`        | Shared Zod schemas plus client gates (`can`, `isModuleEnabled`, `subscriptionWriteState`) used by API + clients. |
 
 ---
 

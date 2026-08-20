@@ -8,7 +8,7 @@ import { useSubscriptionWriteState } from "@/lib/hooks/use-subscription-write-st
 import type {
   SubscriptionWriteClass,
   SubscriptionWriteState,
-} from "@/lib/subscription";
+} from "@repo/validation";
 import { cn } from "@/lib/utils";
 
 /**
