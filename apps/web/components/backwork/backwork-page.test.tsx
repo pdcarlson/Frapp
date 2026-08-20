@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
@@ -318,10 +318,14 @@ describe("BackworkPage upload allowlist", () => {
       "fetch",
       vi.fn().mockResolvedValue({ ok: true } as Response),
     );
+    vi.spyOn(globalThis.crypto.subtle, "digest").mockResolvedValue(
+      new Uint8Array(32).buffer,
+    );
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it("lists .gif on the file input (regression: previously omitted while Documents and the API allowed it)", async () => {
@@ -338,21 +342,26 @@ describe("BackworkPage upload allowlist", () => {
     render(<BackworkPage />);
     await userEvent.click(uploadTrigger());
 
-    const file = new File(["GIF89a"], "notes.gif", { type: "image/gif" });
-    await userEvent.upload(screen.getByLabelText(/^file$/i), file);
-
     const dialog = screen.getByRole("dialog");
-    await userEvent.click(
-      within(dialog).getByRole("button", { name: /^upload$/i }),
-    );
+    const file = new File(["GIF89a"], "notes.gif", { type: "image/gif" });
+    // fireEvent.change, not userEvent.upload: user-event filters against
+    // `accept`, and a long comma-joined list has been flaky about matching
+    // `.gif` even when the attribute contains it.
+    fireEvent.change(within(dialog).getByLabelText(/^file$/i), {
+      target: { files: [file] },
+    });
 
+    const submit = within(dialog).getByRole("button", { name: /^upload$/i });
+    await waitFor(() => expect(submit).toBeEnabled());
+    await userEvent.click(submit);
+
+    expect(mockToast).not.toHaveBeenCalledWith(
+      expect.objectContaining({ title: "File type not allowed" }),
+    );
     await waitFor(() => expect(mockRequestUpload).toHaveBeenCalledTimes(1));
     expect(mockRequestUpload).toHaveBeenCalledWith({
       filename: "notes.gif",
       content_type: "image/gif",
     });
-    expect(mockToast).not.toHaveBeenCalledWith(
-      expect.objectContaining({ title: "File type not allowed" }),
-    );
   });
 });
