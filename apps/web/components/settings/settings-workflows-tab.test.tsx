@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { SettingsWorkflowsTab } from "./settings-workflows-tab";
-import type { OrgWorkflow } from "@/lib/hooks/use-org-config";
+import type { OrgWorkflow } from "@repo/hooks";
 
 const WORKFLOWS: OrgWorkflow[] = [
   {

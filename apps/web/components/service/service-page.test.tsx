@@ -47,6 +47,9 @@ vi.mock("@repo/hooks", () => ({
   useDeleteServiceEntry: () => ({ mutateAsync: vi.fn() }),
   useRequestServiceProofUploadUrl: () => ({ mutateAsync: vi.fn() }),
   useGetServiceProofUrl: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  // Chapter policy only decides whether the proof input is `required`; it has
+  // no bearing on the gate, so the neutral (unloaded) branch is enough here.
+  useOrgConfig: () => ({ data: undefined }),
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
@@ -59,12 +62,6 @@ vi.mock("@/components/shared/can", () => ({
 }));
 
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
-
-// Chapter policy only decides whether the proof input is `required`; it has no
-// bearing on the gate, so the neutral (unloaded) branch is enough here.
-vi.mock("@/lib/hooks/use-org-config", () => ({
-  useOrgConfig: () => ({ data: undefined }),
-}));
 
 const { ServiceHoursPage } = await import("./service-page");
 

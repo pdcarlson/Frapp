@@ -7,7 +7,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useFrappClient, useActiveChapterId } from "@repo/hooks";
+import { useFrappClient, useActiveChapterId } from "./use-frapp-client";
 import type { components } from "@repo/api-sdk";
 import { isModuleEnabled } from "@repo/validation";
 import type { ChapterDuesConfig, PatchChapterConfig } from "@repo/validation";

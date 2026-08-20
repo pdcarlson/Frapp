@@ -38,7 +38,7 @@ import {
   useCreateCustomField,
   useUpdateCustomField,
   useDeleteCustomField,
-} from "@/lib/hooks/use-custom-fields";
+} from "@repo/hooks";
 
 type Props = {
   /** Whether the caller holds `chapter-config:manage`. */

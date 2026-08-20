@@ -280,25 +280,28 @@ upgrade should be close to a no-op. Original PRs: #943 (`eslint`), #944 (`@eslin
 
 ### eslint-plugin-react-hooks 7 compiler rules
 
-`eslint-plugin-react-hooks` 7.x `recommended` enables React Compiler rules on top of the two
-classic Rules of Hooks. We do not run `babel-plugin-react-compiler`. Shared presets
+`eslint-plugin-react-hooks` 7.x enables React Compiler rules on top of the two classic
+Rules of Hooks. We do not run `babel-plugin-react-compiler`. Shared presets
 ([`packages/eslint-config/react-hooks.js`](../../../packages/eslint-config/react-hooks.js))
-**opt in** to a named allowlist at upstream severity; anything else in `recommended`
-(or `recommended-latest` extras such as `void-use-memo`) stays `"off"` so a later
-plugin bump cannot re-open `--max-warnings 0`.
+**opt in** to a named allowlist at upstream severity; any rule the plugin ships that is
+missing from that allowlist is forced `"off"`, so a later plugin bump cannot re-open
+`--max-warnings 0`. The allowlist is the gate — not the upstream config it derives
+severities from, which is `recommended-latest` (as of 7.1.1 a strict superset of
+`recommended`: the same 16 rules at identical severities, plus `void-use-memo`).
 
-**Enabled at upstream severity** (re-measured 2026-08-20: 0 remaining findings on
-`apps/web`, `apps/mobile`, `apps/landing`, `packages/hooks` after the area
-cleanups — chat #1122, auth #1123, realtime #1124, forms follow-up): every rule in v7
-`recommended`, including `set-state-in-effect`, `refs`,
-`preserve-manual-memoization`, and `use-memo`. Intentional effect-synced
-drafts (dialog/form reset, invite-token seed, network-banner slide-out) use
+**Enabled at upstream severity** (re-measured 2026-08-20 on `117e0c5`: 0 findings on
+`apps/web`, `apps/mobile`, `apps/landing`, `packages/hooks` and every other preset
+consumer, after the area cleanups — chat #1122, auth #1123, realtime #1124, forms
+follow-up): **every rule v7 ships** — all 16 in `recommended`, including
+`set-state-in-effect`, `refs`, `preserve-manual-memoization` and `use-memo`, plus the one
+`recommended-latest` extra, `void-use-memo` (#1134). No v7 rule is held off. Intentional
+effect-synced drafts (dialog/form reset, invite-token seed, network-banner slide-out) use
 scoped `eslint-disable-next-line` / tight block disables with a reason, never
 a rule-level `"off"`.
 
-#1108 is the bump that introduced the original hold. Adopting a *new*
-compiler rule that appears in a later plugin bump is still a dedicated
-cleanup (fix or scoped disable each finding, then add the rule to the
+#1108 is the bump that introduced the original hold; #1134 closed the last gap in that
+rollout. Adopting a *new* compiler rule that appears in a later plugin bump is still a
+dedicated cleanup (fix or scoped disable each finding, then add the rule to the
 allowlist), not a Dependabot follow-through.
 
 ### TypeScript 7 is native `tsc` plus a TypeScript 6 compiler API

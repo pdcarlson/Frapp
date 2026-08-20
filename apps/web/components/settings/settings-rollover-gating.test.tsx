@@ -29,9 +29,6 @@ vi.mock("@repo/hooks", () => ({
   useSemesterRollover: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateChapter: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useCreatePortal: () => ({ mutateAsync: vi.fn(), isPending: false }),
-}));
-
-vi.mock("@/lib/hooks/use-org-config", () => ({
   useOrgConfig: () => ({
     data: { org_archetype: "ifc" },
     isPending: false,

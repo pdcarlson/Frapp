@@ -6,15 +6,13 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
+const useOrgConfig = vi.fn();
+
 // Search is a separate surface (#264 is about the Navigation group), so keep it
 // quiet and let the navigation filter be the only thing under test.
 vi.mock("@repo/hooks", () => ({
   SEARCH_MIN_QUERY_LENGTH: 2,
   useSearch: () => ({ data: undefined, isFetching: false }),
-}));
-
-const useOrgConfig = vi.fn();
-vi.mock("@/lib/hooks/use-org-config", () => ({
   useOrgConfig: () => useOrgConfig(),
 }));
 
