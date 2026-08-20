@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
 const {
@@ -8,12 +8,14 @@ const {
   mockRequestUpload,
   mockConfirmUpload,
   mockChapterId,
+  mockToast,
   resourcesQuery,
 } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
   mockRequestUpload: vi.fn().mockResolvedValue({}),
   mockConfirmUpload: vi.fn().mockResolvedValue({}),
   mockChapterId: { value: "chap-1" as string | null },
+  mockToast: vi.fn(),
   resourcesQuery: {
     data: [] as unknown[],
     isPending: false,
@@ -68,7 +70,7 @@ vi.mock("@/components/shared/can", () => ({
   Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: mockToast }) }));
 
 const { BackworkPage } = await import("./backwork-page");
 
@@ -299,5 +301,58 @@ describe("BackworkPage subscription gating", () => {
 
     expect(uploadTrigger()).toBeEnabled();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+});
+
+describe("BackworkPage upload allowlist", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resolvedResourcesQuery();
+    chapter.active();
+    mockRequestUpload.mockResolvedValue({
+      upload_url: "https://storage.example/put",
+      storage_path: "chapters/chap-1/backwork/res-1/notes.gif",
+    });
+    mockConfirmUpload.mockResolvedValue({});
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true } as Response),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("lists .gif on the file input (regression: previously omitted while Documents and the API allowed it)", async () => {
+    render(<BackworkPage />);
+    await userEvent.click(uploadTrigger());
+
+    const input = screen.getByLabelText(/^file$/i);
+    const accept = input.getAttribute("accept") ?? "";
+    expect(accept.split(",")).toContain(".gif");
+    expect(accept.split(",")).toContain(".doc");
+  });
+
+  it("requests an upload URL for a GIF instead of rejecting it client-side", async () => {
+    render(<BackworkPage />);
+    await userEvent.click(uploadTrigger());
+
+    const file = new File(["GIF89a"], "notes.gif", { type: "image/gif" });
+    await userEvent.upload(screen.getByLabelText(/^file$/i), file);
+
+    const dialog = screen.getByRole("dialog");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: /^upload$/i }),
+    );
+
+    await waitFor(() => expect(mockRequestUpload).toHaveBeenCalledTimes(1));
+    expect(mockRequestUpload).toHaveBeenCalledWith({
+      filename: "notes.gif",
+      content_type: "image/gif",
+    });
+    expect(mockToast).not.toHaveBeenCalledWith(
+      expect.objectContaining({ title: "File type not allowed" }),
+    );
   });
 });

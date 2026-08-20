@@ -21,7 +21,7 @@ import {
 import {
   POINTS_ADJUSTMENT_MAX,
   POINTS_REASON_MAX_LENGTH,
-} from '../../domain/constants/field-limits';
+} from '@repo/validation';
 
 export class AdjustPointsDto {
   // UUID-validated for the reason UpdateMemberRolesDto.custom_role_ids is: the

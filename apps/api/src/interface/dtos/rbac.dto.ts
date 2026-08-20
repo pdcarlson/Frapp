@@ -10,7 +10,7 @@ import {
   Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ROLE_NAME_MAX_LENGTH } from '../../domain/constants/field-limits';
+import { ROLE_NAME_MAX_LENGTH } from '@repo/validation';
 
 export class CreateRoleDto {
   @ApiProperty({ maxLength: ROLE_NAME_MAX_LENGTH })

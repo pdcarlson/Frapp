@@ -9,7 +9,11 @@ GitHub Issues with the `triage` label, per `AGENTS.md` ("Never track work in a s
 deleted when the project wraps, so nothing durable may live only here.
 
 - [ ] 1. Date-formatting functions → `@repo/formatting`
-- [ ] 2. MIME/content-type allowlists + `field-limits.ts` → `@repo/validation`
+- [x] 2. MIME/content-type allowlists + `field-limits.ts` → `@repo/validation`
+  Shared kinds `image` / `proof` / `document` + field caps in `@repo/validation`.
+  GIF drift fixed (Backwork now uses the shared `document` kind). Legacy Office
+  kept on the server and added to clients. Client `file.size` check added.
+  Tests: see PR.
 - [x] 3. Delete the dead unused shared UI workspace and its dependency entries — directory gone; live primitives are `apps/web/components/ui/`; landing is inline Tailwind. Tests: docs-sync + structure + doc-paths pass; `npm run check-types` 19/19; `npm run build -w apps/web` and `apps/landing` succeed; live-file search for the deleted workspace token is empty
 - [x] 4. Chat shim imports → `@repo/chat-core`; delete the 6 shim files
   Done. 23 importers rewritten to `@repo/chat-core/<subpath>`; 6 shims deleted.

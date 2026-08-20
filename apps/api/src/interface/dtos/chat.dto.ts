@@ -12,7 +12,7 @@ import {
   MinLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { CHAT_MESSAGE_CONTENT_MAX_LENGTH } from '../../domain/constants/field-limits';
+import { CHAT_MESSAGE_CONTENT_MAX_LENGTH } from '@repo/validation';
 import { CHAT_MESSAGE_KINDS } from '../../domain/entities/chat.entity';
 
 const CHANNEL_TYPES = ['PUBLIC', 'PRIVATE', 'ROLE_GATED'] as const;

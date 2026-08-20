@@ -21,6 +21,11 @@ import {
 } from "@/components/ui/popover";
 import { useRequestChatUploadUrl, useUploadSignedUrl } from "@repo/hooks";
 import { useToast } from "@/hooks/use-toast";
+import {
+  MAX_UPLOAD_LABEL,
+  acceptAttribute,
+  inspectUploadFile,
+} from "@repo/validation";
 import { EmojiPicker } from "./emoji-picker";
 import { SlashPalette } from "./slash-palette";
 import {
@@ -236,10 +241,25 @@ export function Composer({
       const file = event.target.files?.[0];
       event.target.value = "";
       if (!file || !editor) return;
+      const inspected = inspectUploadFile("document", file);
+      if (!inspected.ok) {
+        toast({
+          title:
+            inspected.reason === "size"
+              ? "File too large"
+              : "File type not allowed",
+          description:
+            inspected.reason === "size"
+              ? `Attachments can be up to ${MAX_UPLOAD_LABEL}.`
+              : "Chat accepts PDFs, Office files, text, CSV, and common images (no SVG).",
+          variant: "destructive",
+        });
+        return;
+      }
       try {
         const response = (await requestUploadUrl.mutateAsync({
           id: channelId,
-          body: { filename: file.name, content_type: file.type },
+          body: { filename: file.name, content_type: inspected.contentType },
         })) as unknown as {
           signedUrl: string;
           storagePath: string;
@@ -356,6 +376,7 @@ export function Composer({
             <input
               ref={fileInput}
               type="file"
+              accept={acceptAttribute("document")}
               className="sr-only"
               onChange={(event) => void handleAttach(event)}
               aria-hidden="true"

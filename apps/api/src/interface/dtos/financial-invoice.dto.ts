@@ -14,7 +14,7 @@ import {
   INVOICE_AMOUNT_MAX_CENTS,
   INVOICE_DESCRIPTION_MAX_LENGTH,
   INVOICE_TITLE_MAX_LENGTH,
-} from '../../domain/constants/field-limits';
+} from '@repo/validation';
 
 export class CreateFinancialInvoiceDto {
   @ApiProperty({ description: 'Member user ID to invoice' })

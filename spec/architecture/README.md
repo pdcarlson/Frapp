@@ -119,7 +119,7 @@ Frapp/
 | `@repo/org-archetypes`    | Greek-org directory / archetype data for onboarding autofill.             |
 | `@repo/theme`             | Tailwind config presets, global CSS. Legacy bone/bronze tokens until web/landing reskin; Signet tokens are specified in `spec/ui/design-system/`. |
 | `@repo/typescript-config` | Shared tsconfig presets.                                                  |
-| `@repo/validation`        | Shared Zod schemas plus client gates (`can`, `isModuleEnabled`, `subscriptionWriteState`) used by API + clients. |
+| `@repo/validation`        | Shared Zod schemas, upload MIME/size allowlists (`image` / `proof` / `document`), field-length caps, plus client gates (`can`, `isModuleEnabled`, `subscriptionWriteState`) used by API + clients. |
 
 ---
 
@@ -310,7 +310,7 @@ The `InviteService.redeem` flow performs deterministic validation checks (invite
 | `reports` | `20260805133000_reports_bucket.sql` |
 | `branding`, `profiles`, `documents`, `backwork`, `chat` | `20260808204500_declare_dashboard_created_buckets.sql` |
 
-Each declaration pins `public = false`, an `allowed_mime_types` list, and `file_size_limit` (26214400 = 25MB, matching `supabase/config.toml`). The MIME list mirrors that bucket's API-side allowlist and is **load-bearing, not documentation**: a signed upload URL cannot pin a content type — the uploader sets its own header on the PUT — so the API's check gates only URL *issuance*, and these bucket columns are the only thing enforced on the upload itself. Without them a member with upload permission can store `text/html` under a valid key and be served attacker-controlled markup from the storage origin. Add the bucket declaration in the same change set as any new bucket; never create one from the dashboard alone.
+Each declaration pins `public = false`, an `allowed_mime_types` list, and `file_size_limit` (26214400 = 25MB = `MAX_UPLOAD_BYTES` in `@repo/validation`, matching `supabase/config.toml`). Application-layer MIME and extension checks use the same module (`packages/validation/src/upload-allowlists.ts`, kinds `image` / `proof` / `document`) — do not keep a second copy in a service or page. The bucket MIME list is **load-bearing, not documentation**: a signed upload URL cannot pin a content type — the uploader sets its own header on the PUT — so the API's check gates only URL *issuance*, and these bucket columns are the only thing enforced on the upload itself. Without them a member with upload permission can store `text/html` under a valid key and be served attacker-controlled markup from the storage origin. Add the bucket declaration in the same change set as any new bucket; never create one from the dashboard alone. Shipped migration DDL is immutable; a genuine bucket-policy change is a new migration with a comment pointing at the shared kind.
 
 **Upload flow:** API generates a signed upload URL; client uploads directly to Supabase Storage. API generates a signed download URL; client fetches directly.
 

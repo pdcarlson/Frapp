@@ -12,7 +12,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ROLE_KEY_MAX_LENGTH,
   ROLE_NAME_MAX_LENGTH,
-} from '../../domain/constants/field-limits';
+} from '@repo/validation';
 
 /**
  * A custom role persisted to `chapter_custom_roles` (Settings → Roles → Custom).
