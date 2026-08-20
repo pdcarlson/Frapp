@@ -89,7 +89,9 @@ If the issue or marker is missing, bootstrap: window = PRs updated in the last 8
 > Because this routine **rebuilds the whole tracking-issue body from live issue state every run**,
 > it is on the safe side of that rule: it authors the replacement text rather than round-tripping
 > the old one. Keep it that way — never patch the existing body, and never source the state marker
-> from a read.
+> from a read. **Start each run with the marker-count guard** in
+> [`GITHUB_PM.md`](../../../docs/internal/ci-cd/GITHUB_PM.md#marker-count-guard-so-the-next-regression-surfaces-in-one-run):
+> two calls that fail closed if the read or index path has regressed again.
 >
 > **#814's state marker: the visible fence is authoritative.** #814 carries the state twice — an
 > HTML comment *and* a visible code fence — with a parenthetical declaring the **fence**
