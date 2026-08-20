@@ -9,7 +9,7 @@ import {
   useRejectTask,
 } from "@repo/hooks";
 import type { TaskStatus } from "@repo/hooks";
-import type { ChatMessage } from "@/lib/chat/types";
+import type { ChatMessage } from "@repo/chat-core/types";
 import type { TaskPayload } from "@repo/chat-integrations";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

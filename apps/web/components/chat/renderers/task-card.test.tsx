@@ -2,7 +2,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ReactNode } from "react";
 import { TaskCard } from "./task-card";
-import type { ChatMessage } from "@/lib/chat/types";
+import type { ChatMessage } from "@repo/chat-core/types";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
 // ── Mocks ────────────────────────────────────────────────────────────────
