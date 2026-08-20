@@ -76,6 +76,7 @@ export function PointsAdjustmentDialog({
       .filter((option): option is MemberOption => option !== null);
   }, [membersQuery.data]);
 
+  /* eslint-disable react-hooks/set-state-in-effect -- reset the adjustment draft each time the dialog opens */
   useEffect(() => {
     if (!open) return;
     setTargetUserId((previous) =>
@@ -87,6 +88,7 @@ export function PointsAdjustmentDialog({
     setCategory("MANUAL");
     setReason("");
   }, [open, memberOptions]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const submitLabel = adjustPointsMutation.isPending
     ? "Submitting..."

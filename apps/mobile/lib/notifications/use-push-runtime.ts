@@ -152,7 +152,10 @@ export function usePushRuntime(): void {
   // clears it, without which the same tap re-navigates on every remount.
   useEffect(() => {
     const response = takeLastNotificationResponse();
-    if (response) handleResponse(response);
+    if (response) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- cold-start notification tap; takeLastNotificationResponse is a one-shot external event
+      handleResponse(response);
+    }
   }, [handleResponse]);
 
   // Taps while the app is already running.
@@ -168,6 +171,7 @@ export function usePushRuntime(): void {
     if (status === "unauthenticated") {
       // They signed out between the tap and now; the destination is no longer
       // theirs to open.
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- drop a held tap after sign-out so it cannot navigate a later session
       setPendingTap(null);
       return;
     }

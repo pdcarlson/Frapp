@@ -172,6 +172,7 @@ export function ServiceHoursPage() {
   // closes the dialog when the subscription is revoked mid-flight, and that
   // path never runs through `setOpen`.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- drop a leftover proof file when the log dialog closes (including gated auto-close)
     if (!logDialog.open) setProofFile(null);
   }, [logDialog.open]);
 

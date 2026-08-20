@@ -61,6 +61,7 @@ export default function JoinChapter() {
     const next = fromParams ?? fromLink ?? consumeRememberedInviteToken();
     if (next) {
       rememberInviteToken(next);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- seed an empty field from the invite URL; keep text the member already typed
       setToken((current) => (current.length > 0 ? current : next));
     }
   }, [deepLinkUrl, params.invite, params.token]);
