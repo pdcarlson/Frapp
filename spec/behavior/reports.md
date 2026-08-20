@@ -94,8 +94,11 @@ PDF reports use a clean, branded template with:
 - Tabular data with alternating row shading for readability, paginated across
   landscape US Letter pages.
 
-A logo that is missing, or not a readable PNG/JPEG, is skipped with a warning
-rather than failing the export.
+A logo that is missing, or that the PDF renderer cannot embed, is skipped with a
+warning rather than failing the export. That skip is a renderer limit (PNG/JPEG
+embed only), not the chapter-logo upload allowlist — logos use the shared
+`image` kind in `@repo/validation` (`packages/validation/src/upload-allowlists.ts`),
+which is wider; see [`branding.md`](branding.md).
 
 ### Text degradation
 
