@@ -143,6 +143,7 @@ describe('ScheduledJobsService', () => {
 
       expect(result).toEqual({ events: 1 });
       expect(releaseDispatch).toHaveBeenCalledWith(
+        'chap-1',
         'EVENT',
         'evt-bad',
         'AUTO_ABSENT',
@@ -286,6 +287,7 @@ describe('ScheduledJobsService', () => {
 
       expect(result).toEqual({ sent: 0 });
       expect(releaseDispatch).toHaveBeenCalledWith(
+        'chap-1',
         'INVOICE',
         'inv-1',
         'DUE_SOON',

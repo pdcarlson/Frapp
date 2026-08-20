@@ -250,9 +250,16 @@ describe('ScheduledJobsRepository', () => {
     it('deletes exactly the claimed row', async () => {
       const { repo, supabase } = await buildRepo([{ data: null, error: null }]);
 
-      await repo.releaseDispatch('EVENT', 'evt-1', 'AUTO_ABSENT', '2026-08-05');
+      await repo.releaseDispatch(
+        'chap-1',
+        'EVENT',
+        'evt-1',
+        'AUTO_ABSENT',
+        '2026-08-05',
+      );
 
       expect(supabase.deleteFilters).toEqual({
+        chapter_id: 'chap-1',
         entity_type: 'EVENT',
         entity_id: 'evt-1',
         threshold: 'AUTO_ABSENT',
@@ -268,12 +275,10 @@ describe('ScheduledJobsRepository', () => {
  * caller chapter and pages every tenant. Those paths are characterised as
  * unscoped, not asserted with `expectTenantScoped`.
  *
- * `claimDispatch` is the tenant-bound write: it inserts
- * `scheduled_notification_dispatches` with the chapter taken from the sweep
- * row, not from ambient context.
- *
- * `releaseDispatch` still has no `chapter_id` filter — characterised, not
- * hardened (#1088–#1092 did not ask to change it).
+ * `claimDispatch` and `releaseDispatch` are the tenant-bound writes: they
+ * insert and delete `scheduled_notification_dispatches` with the chapter
+ * taken from the sweep row, not from ambient context. A colliding twin in
+ * another chapter is neither claimed nor released.
  */
 
 const EVENT_A = '0a000000-0000-4000-8000-000000000220';
@@ -410,5 +415,21 @@ describe('ScheduledJobsRepository — tenant scope', () => {
         .rows('scheduled_notification_dispatches')
         .find((r) => r.id === DISPATCH_A)?.chapter_id,
     ).toBe(CHAPTER_A);
+  });
+
+  it('releaseDispatch leaves another chapter dispatch in place', async () => {
+    await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.releaseDispatch(
+        CHAPTER_B,
+        'INVOICE',
+        DISPATCH_ENTITY,
+        'DUE_SOON',
+        '2026-09-01',
+      ),
+    );
+
+    const remaining = harness.rows('scheduled_notification_dispatches');
+    expect(remaining.map((r) => r.id).sort()).toEqual([DISPATCH_A]);
+    expect(remaining[0]?.chapter_id).toBe(CHAPTER_A);
   });
 });
