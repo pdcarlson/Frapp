@@ -8,7 +8,10 @@ import {
 } from '@nestjs/common';
 import { PostgrestError } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
+import type {
+  FrappSupabaseClient,
+  TablesUpdate,
+} from '../../infrastructure/supabase/database.types';
 import type {
   ChapterCustomField,
   CustomFieldVisibility,
@@ -195,7 +198,7 @@ export class CustomFieldService {
 
     // `key` and `type` are immutable — only presentation attrs and options are
     // patchable.
-    const patch: Record<string, unknown> = {};
+    const patch: TablesUpdate<'chapter_custom_fields'> = {};
     if (dto.label !== undefined) patch.label = dto.label;
     if (dto.required !== undefined) patch.required = dto.required;
     if (dto.visibility !== undefined) patch.visibility = dto.visibility;

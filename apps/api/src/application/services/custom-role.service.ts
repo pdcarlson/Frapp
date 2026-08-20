@@ -9,7 +9,10 @@ import {
 } from '@nestjs/common';
 import { PostgrestError } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
+import type {
+  FrappSupabaseClient,
+  TablesUpdate,
+} from '../../infrastructure/supabase/database.types';
 import type { ChapterCustomRole } from '../../domain/entities/chapter-custom-role.entity';
 import { WILDCARD } from '../../domain/constants/permissions';
 import type {
@@ -131,7 +134,7 @@ export class CustomRoleService {
     this.assertNoWildcard(dto.capabilities);
     const existing = await this.findOne(id, chapterId);
 
-    const patch: Record<string, unknown> = {};
+    const patch: TablesUpdate<'chapter_custom_roles'> = {};
     if (dto.label !== undefined) patch.label = dto.label;
     if (dto.rank !== undefined) patch.rank = dto.rank;
     if (dto.capabilities !== undefined) patch.capabilities = dto.capabilities;

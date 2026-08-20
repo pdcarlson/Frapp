@@ -136,8 +136,14 @@ npx supabase db reset
   type-checked. The file is hand-maintained and composed from the domain
   entities; **do not** overwrite it with `supabase gen types` output. See
   [`.claude/skills/api-development/SKILL.md`](../../.claude/skills/api-development/SKILL.md)
-  → "Keeping `database.types.ts` in sync" for the two constraints that make
-  the typing actually bind.
+  → "Keeping `database.types.ts` in sync" for the constraints that make
+  the typing actually bind (`Row`/`Insert`/`Update` are mapped types so
+  GenericSchema stays bound; write methods take `TablesInsert<'table'>` /
+  `TablesUpdate<'table'>` instead of `as never`). The client is
+  `createClient<Database>(...)` in `supabase.provider.ts` (and the live
+  PostgREST test helper). Do not add a generic base repository to share
+  that pattern — keep each repository's query logic and only parameterize
+  the write methods.
 - Any relevant behavior under `spec/behavior/`
 
 ## 5. RLS and security

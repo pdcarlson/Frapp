@@ -6,10 +6,8 @@ import type { FrappSupabaseClient } from '../../infrastructure/supabase/database
  * A chapter's service-hours policy, as read and written by the config
  * endpoint.
  *
- * A `type` rather than an `interface` on purpose: PostgREST's insert/upsert
- * payloads are constrained to `Record<string, unknown>`, and only type aliases
- * get an implicit index signature — an interface would not be assignable to an
- * upsert. Same reasoning as `DuesConfig`.
+ * API-facing subset of `chapter_service_config` (no timestamps). Writes use
+ * `TablesInsert<'chapter_service_config'>`, same pattern as `DuesConfig`.
  */
 export type ServiceConfig = {
   minutes_per_point: number;
