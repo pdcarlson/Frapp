@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useMemo } from "react";
+import React, { createContext, useCallback, useMemo } from "react";
 import { useFrappClient, useActiveChapterId } from "@repo/hooks";
 import { isAnalyticsOptedOut, type AnalyticsProperties } from "@repo/validation";
 import { useOrgConfig } from "@/lib/hooks/use-org-config";
@@ -22,10 +22,15 @@ import { useOrgConfig } from "@/lib/hooks/use-org-config";
  * `useCurrentChapter()`.
  *
  * `track` is fire-and-forget: a failed event must never disrupt the UI.
+ *
+ * There is no `useAnalytics` convenience hook — it had zero production
+ * callers. Opt-out is enforced inside `track` itself, so a future emitter
+ * that reads this context inherits the gate without a wrapper.
  */
 type TrackFn = (name: string, properties?: AnalyticsProperties) => void;
 
-const AnalyticsContext = createContext<TrackFn | null>(null);
+/** @internal Context value is `track`. Not a product API. */
+export const AnalyticsContext = createContext<TrackFn | null>(null);
 
 export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
   const client = useFrappClient();
@@ -62,15 +67,4 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
       {children}
     </AnalyticsContext.Provider>
   );
-}
-
-/**
- * Returns a `track(name, properties)` function. Event names must be behavioral
- * (kebab-case, e.g. "opened-channel"); content/PII properties are rejected by
- * the server. Safe to call outside the provider (no-op) so leaf components
- * don't need to guard.
- */
-export function useAnalytics(): TrackFn {
-  const track = useContext(AnalyticsContext);
-  return track ?? (() => {});
 }
