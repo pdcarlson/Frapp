@@ -159,6 +159,27 @@ describe('BackworkService', () => {
         }),
       ).rejects.toThrow(BadRequestException);
     });
+
+    it('accepts image/gif (same document kind as chapter files and chat)', async () => {
+      mockStorageProvider.getSignedUploadUrl.mockResolvedValue(
+        'https://storage.supabase.co/upload/signed',
+      );
+
+      const result = await service.requestUploadUrl({
+        chapterId: 'ch-1',
+        filename: 'notes.gif',
+        contentType: 'image/gif',
+      });
+
+      expect(result.signedUrl).toBe(
+        'https://storage.supabase.co/upload/signed',
+      );
+      expect(mockStorageProvider.getSignedUploadUrl).toHaveBeenCalledWith(
+        'backwork',
+        expect.stringContaining('notes.gif'),
+        'image/gif',
+      );
+    });
   });
 
   describe('confirmUpload', () => {

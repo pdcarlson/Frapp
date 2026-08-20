@@ -42,6 +42,11 @@ import {
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
+import {
+  MAX_UPLOAD_LABEL,
+  acceptAttribute,
+  inspectUploadFile,
+} from "@repo/validation";
 
 type ChapterDocument = {
   id: string;
@@ -54,41 +59,14 @@ type ChapterDocument = {
   created_at: string;
 };
 
-// The signed-URL flow blocks SVG + executables. Keep the allowlist in sync
-// with apps/api/src/application/services/chapter-document.service.ts so the
-// client shows actionable errors instead of surprising 400s.
-const ALLOWED_EXTENSIONS = new Set([
-  "pdf",
-  "docx",
-  "xlsx",
-  "pptx",
-  "txt",
-  "csv",
-  "jpg",
-  "jpeg",
-  "png",
-  "webp",
-  "gif",
-]);
-
-const CONTENT_TYPE_BY_EXTENSION: Record<string, string> = {
-  pdf: "application/pdf",
-  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  txt: "text/plain",
-  csv: "text/csv",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  png: "image/png",
-  webp: "image/webp",
-  gif: "image/gif",
-};
-
-function extensionOf(name: string): string {
-  const dot = name.lastIndexOf(".");
-  if (dot < 0 || dot === name.length - 1) return "";
-  return name.slice(dot + 1).toLowerCase();
+// The signed-URL flow blocks SVG + executables. Kind `document` in
+// `@repo/validation` is shared with Backwork and chat so the three cannot
+// drift (the Backwork page previously omitted gif from a private copy).
+function uploadRejectionDescription(reason: "type" | "size"): string {
+  if (reason === "size") {
+    return `Chapter documents accept files up to ${MAX_UPLOAD_LABEL}.`;
+  }
+  return "Chapter documents accept PDFs, Office files, text, CSV, and common images (no SVG).";
 }
 
 // Deliberately ungated: the signed link comes from `GET /v1/documents/:id`, and
@@ -200,17 +178,19 @@ export function DocumentsPage() {
       });
       return;
     }
-    const ext = extensionOf(file.name);
-    if (!ALLOWED_EXTENSIONS.has(ext)) {
+    const inspected = inspectUploadFile("document", file);
+    if (!inspected.ok) {
       toast({
-        title: "File type not allowed",
-        description:
-          "Chapter documents accept PDFs, Office files, text, CSV, and common images (no SVG).",
+        title:
+          inspected.reason === "size"
+            ? "File too large"
+            : "File type not allowed",
+        description: uploadRejectionDescription(inspected.reason),
         variant: "destructive",
       });
       return;
     }
-    const contentType = CONTENT_TYPE_BY_EXTENSION[ext] ?? file.type;
+    const contentType = inspected.contentType;
     setUploading(true);
     try {
       const signed = await requestUpload.mutateAsync({
@@ -331,7 +311,7 @@ export function DocumentsPage() {
               <DialogHeader>
                 <DialogTitle>Upload a chapter document</DialogTitle>
                 <DialogDescription>
-                  Max 25 MB. PDFs, Word/Excel/PowerPoint, text/CSV, and images
+                  Max {MAX_UPLOAD_LABEL}. PDFs, Word/Excel/PowerPoint, text/CSV, and images
                   are allowed — no SVGs or executables.
                 </DialogDescription>
               </DialogHeader>
@@ -387,7 +367,7 @@ export function DocumentsPage() {
                   <Input
                     id="doc-file"
                     type="file"
-                    accept=".pdf,.docx,.xlsx,.pptx,.txt,.csv,.jpg,.jpeg,.png,.webp,.gif"
+                    accept={acceptAttribute("document")}
                     onChange={(event) =>
                       setUploadDraft((prev) => ({
                         ...prev,

@@ -24,16 +24,18 @@
 -- Without them a member with upload permission can store text/html under an
 -- otherwise valid key and be served attacker-controlled markup from the
 -- storage origin -- the same reasoning already written into the `service`
--- bucket migration. Each list below is copied from that bucket's own API-side
--- allowlist so bucket and application agree:
+-- bucket migration. Each list below mirrors the matching kind in `@repo/validation`
+-- (`packages/validation/src/upload-allowlists.ts`) so bucket and application
+-- agree. Do not re-list MIME types in application services:
 --
---   branding   ALLOWED_LOGO_CONTENT_TYPES  chapter.service.ts
---   profiles   ALLOWED_CONTENT_TYPES       user.service.ts
---   documents  ALLOWED_CONTENT_TYPES       chapter-document.service.ts
---   backwork   ALLOWED_CONTENT_TYPES       backwork.service.ts
---   chat       ALLOWED_CONTENT_TYPES       chat.service.ts
+--   branding   kind "image"     @repo/validation
+--   profiles   kind "image"     @repo/validation
+--   documents  kind "document"  @repo/validation
+--   backwork   kind "document"  @repo/validation
+--   chat       kind "document"  @repo/validation
 --
--- 26214400 = 25MB, matching supabase/config.toml and the two existing buckets.
+-- 26214400 = 25MB = MAX_UPLOAD_BYTES in @repo/validation, matching
+-- supabase/config.toml and the two existing buckets.
 --
 -- Guarded on storage.buckets existing: the PGlite harness
 -- (scripts/check-pglite-migrations.mjs) replays every migration into bare

@@ -6,6 +6,10 @@ import {
   BadRequestException,
   GoneException,
 } from '@nestjs/common';
+import {
+  isAllowedUploadExtension,
+  isAllowedUploadMime,
+} from '@repo/validation';
 import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
 import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
 import {
@@ -17,15 +21,6 @@ import {
   PROFILES_BUCKET,
   profileFolderPrefix,
 } from '../../domain/constants/storage';
-
-const ALLOWED_CONTENT_TYPES = new Set([
-  'image/jpeg',
-  'image/png',
-  'image/gif',
-  'image/webp',
-]);
-
-const ALLOWED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp']);
 
 @Injectable()
 export class UserService {
@@ -64,11 +59,11 @@ export class UserService {
       ? filename.slice(filename.lastIndexOf('.')).toLowerCase()
       : '';
 
-    if (!ALLOWED_EXTENSIONS.has(ext)) {
+    if (!isAllowedUploadExtension('image', ext)) {
       throw new BadRequestException('File extension is not allowed');
     }
 
-    if (!ALLOWED_CONTENT_TYPES.has(contentType)) {
+    if (!isAllowedUploadMime('image', contentType)) {
       throw new BadRequestException(
         `Content type "${contentType}" is not allowed`,
       );

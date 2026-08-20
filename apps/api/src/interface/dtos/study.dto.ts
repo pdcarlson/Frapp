@@ -12,7 +12,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { POINTS_ADJUSTMENT_MAX } from '../../domain/constants/field-limits';
+import { POINTS_ADJUSTMENT_MAX } from '@repo/validation';
 
 export class GeofenceCoordinateDto {
   @ApiProperty()
