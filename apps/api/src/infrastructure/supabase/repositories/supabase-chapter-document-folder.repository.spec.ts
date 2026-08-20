@@ -13,7 +13,9 @@ import {
  *
  * Folder names are chapter-chosen and collide constantly, which makes
  * `findByName` the method worth pinning: without its chapter predicate it
- * resolves whichever chapter's "Bylaws" folder PostgREST returns first.
+ * resolves whichever chapter's "Bylaws" folder PostgREST returns first. The
+ * argument order is `(chapterId, name)` — chapter-first, same as
+ * `professorRepo.findByName`.
  */
 
 const FOLDER_A = '0a000000-0000-4000-8000-0000000000b0';
@@ -55,7 +57,7 @@ describe('SupabaseChapterDocumentFolderRepository — tenant scope', () => {
 
   it('findByName does not resolve the same folder name in another chapter', async () => {
     const folder = await harness.expectTenantScoped(CHAPTER_B, () =>
-      repo.findByName('Bylaws', CHAPTER_B),
+      repo.findByName(CHAPTER_B, 'Bylaws'),
     );
 
     expect(folder?.id).toBe(FOLDER_B);

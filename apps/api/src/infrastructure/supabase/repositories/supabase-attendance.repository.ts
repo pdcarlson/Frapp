@@ -15,16 +15,6 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
     private readonly supabase: FrappSupabaseClient,
   ) {}
 
-  async findById(id: string): Promise<EventAttendance | null> {
-    const { data, error } = await this.supabase
-      .from('event_attendance')
-      .select('*')
-      .eq('id', id)
-      .maybeSingle();
-    if (error) throw error;
-    return data;
-  }
-
   async findByEvent(eventId: string): Promise<EventAttendance[]> {
     const { data, error } = await this.supabase
       .from('event_attendance')
@@ -46,19 +36,6 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
       .maybeSingle();
     if (error) throw error;
     return data;
-  }
-
-  async create(
-    data: TablesInsert<'event_attendance'>,
-  ): Promise<EventAttendance> {
-    const { data: created, error } = await this.supabase
-      .from('event_attendance')
-      .insert(data)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return created;
   }
 
   async createMany(
@@ -109,13 +86,5 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
     if (error) throw error;
     const rows = data ?? [];
     return rows.length > 0 ? rows[0] : null;
-  }
-
-  async delete(id: string): Promise<void> {
-    const { error } = await this.supabase
-      .from('event_attendance')
-      .delete()
-      .eq('id', id);
-    if (error) throw error;
   }
 }

@@ -1,4 +1,18 @@
 import { z } from "zod";
+import {
+  CHAT_MESSAGE_CONTENT_MAX_LENGTH,
+  INVOICE_AMOUNT_MAX_CENTS,
+  INVOICE_DESCRIPTION_MAX_LENGTH,
+  INVOICE_TITLE_MAX_LENGTH,
+  POINTS_ADJUSTMENT_MAX,
+  POINTS_REASON_MAX_LENGTH,
+  ROLE_KEY_MAX_LENGTH,
+  ROLE_NAME_MAX_LENGTH,
+} from "./field-limits";
+import {
+  isAllowedUploadExtension,
+  isAllowedUploadMime,
+} from "./upload-allowlists";
 
 // ── Legal / compliance ───────────────────────────────────────────────────────
 /**
@@ -181,10 +195,30 @@ export const DOCUMENT_VARIANTS = [
   "Answer Key",
 ] as const;
 
-export const RequestUploadUrlSchema = z.object({
-  filename: z.string().min(1).max(255),
-  content_type: z.string().min(1),
-});
+export const RequestUploadUrlSchema = z
+  .object({
+    filename: z.string().min(1).max(255),
+    content_type: z.string().min(1),
+  })
+  .superRefine((value, ctx) => {
+    // Widest member-upload kind (`document`). Image- and proof-only routes
+    // still narrow at the service. This is the shared schema that used to
+    // accept any non-empty content_type string.
+    if (!isAllowedUploadExtension("document", value.filename)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "file extension is not allowed",
+        path: ["filename"],
+      });
+    }
+    if (!isAllowedUploadMime("document", value.content_type)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "content type is not allowed",
+        path: ["content_type"],
+      });
+    }
+  });
 
 export const ConfirmUploadSchema = z.object({
   storage_path: z.string().min(1),
@@ -431,7 +465,7 @@ export const SendChatMessageSchema = z.object({
    */
   client_message_id: z.string().uuid(),
   channel_id: z.string().uuid(),
-  content: z.string().min(1).max(10_000),
+  content: z.string().min(1).max(CHAT_MESSAGE_CONTENT_MAX_LENGTH),
   kind: z.enum(CHAT_MESSAGE_KINDS).default("text"),
   payload: z.record(z.string(), z.unknown()).optional(),
   reply_to_id: z.string().uuid().optional(),
@@ -900,3 +934,36 @@ export type {
   SubscriptionWriteClass,
   SubscriptionWriteState,
 } from "./subscription";
+
+// ── Field limits (moved from apps/api domain constants) ─────────────────────
+export {
+  ROLE_NAME_MAX_LENGTH,
+  ROLE_KEY_MAX_LENGTH,
+  POINTS_ADJUSTMENT_MAX,
+  POINTS_REASON_MAX_LENGTH,
+  INVOICE_AMOUNT_MAX_CENTS,
+  INVOICE_TITLE_MAX_LENGTH,
+  INVOICE_DESCRIPTION_MAX_LENGTH,
+  CHAT_MESSAGE_CONTENT_MAX_LENGTH,
+};
+
+// ── Upload MIME / extension allowlists + 25 MB size cap ─────────────────────
+export {
+  MAX_UPLOAD_BYTES,
+  MAX_UPLOAD_LABEL,
+  DOCUMENT_UPLOAD_SURFACES,
+  uploadMimeTypes,
+  uploadMimeList,
+  uploadExtensions,
+  uploadExtensionsDotted,
+  contentTypeByExtension,
+  acceptAttribute,
+  fileExtension,
+  normalizeExtension,
+  isAllowedUploadExtension,
+  isAllowedUploadMime,
+  isWithinUploadSizeLimit,
+  mimeForUploadFile,
+  inspectUploadFile,
+} from "./upload-allowlists";
+export type { UploadKind, InspectedUpload } from "./upload-allowlists";

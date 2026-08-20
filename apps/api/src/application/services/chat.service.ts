@@ -8,6 +8,13 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import {
+  allowsInThreadReplies,
+  isAllowedUploadExtension,
+  isAllowedUploadMime,
+  resolveMentions,
+  validateCardPollVote,
+} from '@repo/validation';
+import {
   CHAT_CHANNEL_REPOSITORY,
   CHAT_CATEGORY_REPOSITORY,
   CHAT_MESSAGE_REPOSITORY,
@@ -46,11 +53,6 @@ import type {
   ChannelType,
   ChannelUnreadCount,
 } from '../../domain/entities/chat.entity';
-import {
-  allowsInThreadReplies,
-  resolveMentions,
-  validateCardPollVote,
-} from '@repo/validation';
 import { NotificationService } from './notification.service';
 import { ChannelAccessService } from './channel-access.service';
 import { ActivationService } from './activation.service';
@@ -64,39 +66,6 @@ const CHAT_BUCKET = 'chat';
 // chapter create a channel nobody but the President can open.
 const ROLE_GATED_REQUIRES_PERMISSIONS_MESSAGE =
   'A ROLE_GATED channel must specify at least one entry in required_permissions';
-
-const ALLOWED_CONTENT_TYPES = new Set([
-  'image/jpeg',
-  'image/png',
-  'image/gif',
-  'image/webp',
-  'application/pdf',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  'application/msword',
-  'application/vnd.ms-excel',
-  'application/vnd.ms-powerpoint',
-  'text/plain',
-  'text/csv',
-]);
-
-const ALLOWED_EXTENSIONS = new Set([
-  '.jpg',
-  '.jpeg',
-  '.png',
-  '.gif',
-  '.webp',
-  '.pdf',
-  '.docx',
-  '.xlsx',
-  '.pptx',
-  '.doc',
-  '.xls',
-  '.ppt',
-  '.txt',
-  '.csv',
-]);
 
 export interface CreateChannelInput {
   chapter_id: string;
@@ -152,7 +121,7 @@ const SERVER_ONLY_KINDS: ReadonlySet<ChatMessageKind> = new Set([
 /** Vote action UPSERTS rather than duplicates (ADR-07). */
 const VOTE_ACTION_TYPE = 'vote';
 
-/** The poll-card payload written by the composer (`apps/web/lib/chat/dispatch.ts`). */
+/** The poll-card payload written by the composer (`@repo/chat-core/dispatch`). */
 type PollCardPayload = {
   options?: { id?: unknown }[];
   closes_at?: string | null;
@@ -1043,11 +1012,11 @@ export class ChatService {
       ? filename.slice(filename.lastIndexOf('.')).toLowerCase()
       : '';
 
-    if (!ALLOWED_EXTENSIONS.has(ext)) {
+    if (!isAllowedUploadExtension('document', ext)) {
       throw new BadRequestException('File extension is not allowed');
     }
 
-    if (!ALLOWED_CONTENT_TYPES.has(contentType)) {
+    if (!isAllowedUploadMime('document', contentType)) {
       throw new BadRequestException(
         `Content type "${contentType}" is not allowed`,
       );

@@ -226,7 +226,7 @@ A high-severity security vulnerability related to unrestricted file uploads was 
 ### Details
 Previously, the `requestLogoUploadUrl` method in `ChapterService` generated signed upload URLs without validating the provided `contentType` or file extension. This allowed an attacker to upload arbitrary files (e.g., `.html`, `.php`, `.exe`) to the branding storage bucket, posing a significant risk of Cross-Site Scripting (XSS) or other attacks if these assets were later served.
 
-To fix this, strict whitelists were implemented using JavaScript `Set`s for `ALLOWED_LOGO_CONTENT_TYPES` (e.g., `image/jpeg`, `image/png`) and `ALLOWED_LOGO_EXTENSIONS`. Both the `contentType` header and the extracted file extension are now validated against these whitelists. If either validation fails, a `BadRequestException` is thrown, preventing the generation of the signed URL for malicious files.
+To fix this, the logo path began validating both the `contentType` header and the extracted file extension against an image allowlist (`image/jpeg`, `image/png`, and the rest of the `image` kind now in `@repo/validation`). If either check fails, a `BadRequestException` is thrown, preventing the generation of the signed URL for malicious files.
 
 ### Prevention
 Always enforce strict content-type and extension allowlists when generating signed storage URLs for user-uploaded content.

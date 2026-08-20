@@ -191,3 +191,20 @@ describe("DocumentsPage subscription gating", () => {
     expect(dialog.getByRole("button", { name: /^upload$/i })).toBeDisabled();
   });
 });
+
+describe("DocumentsPage upload allowlist", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("lists .gif and legacy Office extensions on the file input", async () => {
+    chapter.active();
+    render(<DocumentsPage />);
+    await userEvent.click(uploadTrigger());
+
+    const input = within(screen.getByRole("dialog")).getByLabelText(/^file$/i);
+    const accept = input.getAttribute("accept") ?? "";
+    expect(accept.split(",")).toContain(".gif");
+    expect(accept.split(",")).toContain(".doc");
+    expect(accept.split(",")).toContain(".xls");
+    expect(accept.split(",")).toContain(".ppt");
+  });
+});

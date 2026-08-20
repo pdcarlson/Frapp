@@ -68,6 +68,10 @@ src/
 
 > **Note:** Controllers only handle HTTP concerns (routing, status codes, DTOs). They never talk to Supabase directly — they call application services instead.
 
+### Repository lookup argument order
+
+Lookups that take a chapter and a second `string` (name, code, hash) are **chapter-first**: `findByName(chapterId, name)`, `findByCode(chapterId, code)`, `findByFileHash(chapterId, fileHash)`. Both parameters are `string`, so a transposition is not a type error — it binds the name to `chapter_id`, matches nothing, and returns a silent miss (or a false "name is free" on a uniqueness check). Normalize new methods to this order; do not add a chapter-last overload.
+
 ## 2. Guards and interceptors
 
 Every protected endpoint runs through a consistent guard chain:
@@ -163,7 +167,7 @@ We use a global `AllExceptionsFilter` to normalize error responses:
 Clients must not use `instanceof Error` to read this body. `openapi-fetch` throws the parsed JSON, which is a plain object, so `instanceof Error` always misses and the UI shows a generic fallback. Two helpers own that read:
 
 - Web toasts: `getErrorMessage` in `apps/web/lib/utils.ts` — string `message`, otherwise the caller-supplied fallback.
-- Status / structured code / array `message`: `statusOf`, `serverMessageOf`, and `codeOf` from `@repo/api-sdk` (hand-written `src/api-error.ts`; survives OpenAPI codegen, which overwrites only `src/types.ts`).
+- Status / structured code / array `message`: `statusOf`, `serverMessageOf`, and `codeOf` from `@repo/api-sdk` (hand-written `src/api-error.ts`; survives OpenAPI codegen, which overwrites only `src/types.ts`). Covered by `packages/api-sdk/src/api-error.spec.ts` (`npm run test -w @repo/api-sdk`); the suite uses the hoisted workspace vitest rather than a new lockfile dependency.
 
 When adding new modules:
 

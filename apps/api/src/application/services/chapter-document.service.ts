@@ -7,6 +7,10 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import {
+  isAllowedUploadExtension,
+  isAllowedUploadMime,
+} from '@repo/validation';
+import {
   CHAPTER_DOCUMENT_REPOSITORY,
   type ChapterDocumentFilter,
 } from '../../domain/repositories/chapter-document.repository.interface';
@@ -22,39 +26,6 @@ import {
   type IStorageProvider,
 } from '../../domain/adapters/storage.interface';
 import { assertSafeStoragePath } from '../../domain/utils/storage-path';
-
-const ALLOWED_CONTENT_TYPES = new Set([
-  'image/jpeg',
-  'image/png',
-  'image/gif',
-  'image/webp',
-  'application/pdf',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  'application/msword',
-  'application/vnd.ms-excel',
-  'application/vnd.ms-powerpoint',
-  'text/plain',
-  'text/csv',
-]);
-
-const ALLOWED_EXTENSIONS = new Set([
-  '.jpg',
-  '.jpeg',
-  '.png',
-  '.gif',
-  '.webp',
-  '.pdf',
-  '.docx',
-  '.xlsx',
-  '.pptx',
-  '.doc',
-  '.xls',
-  '.ppt',
-  '.txt',
-  '.csv',
-]);
 
 const DOCUMENTS_BUCKET = 'documents';
 
@@ -89,11 +60,11 @@ export class ChapterDocumentService {
       ? input.filename.slice(input.filename.lastIndexOf('.')).toLowerCase()
       : '';
 
-    if (!ALLOWED_EXTENSIONS.has(ext)) {
+    if (!isAllowedUploadExtension('document', ext)) {
       throw new BadRequestException('File extension is not allowed');
     }
 
-    if (!ALLOWED_CONTENT_TYPES.has(input.contentType)) {
+    if (!isAllowedUploadMime('document', input.contentType)) {
       throw new BadRequestException(
         `Content type "${input.contentType}" is not allowed`,
       );
@@ -202,7 +173,7 @@ export class ChapterDocumentService {
       throw new BadRequestException('Folder name must not be empty');
     }
 
-    const existing = await this.folderRepo.findByName(folderName, chapterId);
+    const existing = await this.folderRepo.findByName(chapterId, folderName);
     if (existing) {
       throw new ConflictException(
         `A folder named "${folderName}" already exists`,
@@ -249,7 +220,7 @@ export class ChapterDocumentService {
     const isRename = rename !== undefined && rename !== folder.name;
 
     if (isRename) {
-      const conflict = await this.folderRepo.findByName(rename, chapterId);
+      const conflict = await this.folderRepo.findByName(chapterId, rename);
       if (conflict) {
         throw new ConflictException(
           `A folder named "${rename}" already exists`,
@@ -300,7 +271,7 @@ export class ChapterDocumentService {
     name: string,
     chapterId: string,
   ): Promise<ChapterDocumentFolder> {
-    const existing = await this.folderRepo.findByName(name, chapterId);
+    const existing = await this.folderRepo.findByName(chapterId, name);
     if (existing) return existing;
 
     try {
@@ -315,7 +286,7 @@ export class ChapterDocumentService {
       // which is all this method promised — failing the *upload* over it would
       // be gratuitous.
       if (isUniqueViolation(error)) {
-        const raced = await this.folderRepo.findByName(name, chapterId);
+        const raced = await this.folderRepo.findByName(chapterId, name);
         if (raced) return raced;
       }
       throw error;

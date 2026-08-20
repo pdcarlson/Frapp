@@ -12,15 +12,11 @@ import {
 /**
  * Tenant scope for `study_sessions` (backs `use-study`).
  *
- * Worth being exact about this one. `study_sessions` carries `chapter_id`, but
- * `findById` and `update` filter on `id` alone — unlike `event_attendance` or
- * `poll_votes`, that is not a structural limitation, the column is right there.
- * It is safe today only because no route accepts a session id: `StudyService`
- * reaches every row through `findActiveByUserAndChapter(userId, chapterId)`, and
- * `findById` has no callers at all.
- *
- * So the scoped lookups are asserted, and the id-only pair is characterised
- * rather than left to look intentional.
+ * `study_sessions` carries `chapter_id`. `update` binds it next to `id`
+ * (defence-in-depth: every live caller already resolved the chapter via
+ * `findActiveByUserAndChapter`). Orphan `findById` was deleted — it had no
+ * production caller, and adding a chapter-scoped version would have been new
+ * dead surface (#1088 / #1090).
  */
 
 const SESSION_A = '0a000000-0000-4000-8000-000000000110';
@@ -107,21 +103,25 @@ describe('SupabaseStudySessionRepository — tenant scope', () => {
     expect(created.chapter_id).toBe(CHAPTER_B);
   });
 
-  describe('deliberately unscoped surfaces', () => {
-    it('findById and update filter on id alone', async () => {
-      // Characterisation. No route accepts a *session* id — the study session
-      // routes take `@CurrentUser` and `@CurrentChapterId`, and the one id a
-      // client does supply (`geofence_id` on start) is resolved through
-      // `geofenceRepo.findById(geofenceId, chapterId)`. So the row reaching
-      // `update` always came from a chapter-scoped lookup. If a route ever
-      // starts accepting a session id, this repository has no filter of its own
-      // to fall back on.
-      const foreign = await repo.findById(SESSION_A);
-      expect(foreign?.chapter_id).toBe(CHAPTER_A);
+  it('update refuses a session id that belongs to another chapter', async () => {
+    await expect(
+      harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.update(SESSION_A, CHAPTER_B, { status: 'COMPLETED' }),
+      ),
+    ).rejects.toMatchObject({ code: 'PGRST116' });
 
-      await repo.update(SESSION_A, { status: 'COMPLETED' });
-      const [, updateOp] = harness.ops;
-      expect(updateOp.filters.map((f) => f.column)).toEqual(['id']);
-    });
+    expect(
+      harness.rows('study_sessions').find((s) => s.id === SESSION_A)?.status,
+    ).toBe('ACTIVE');
+  });
+
+  it('update writes only the caller chapter session', async () => {
+    await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.update(SESSION_B, CHAPTER_B, { status: 'COMPLETED' }),
+    );
+
+    const rows = harness.rows('study_sessions');
+    expect(rows.find((s) => s.id === SESSION_B)?.status).toBe('COMPLETED');
+    expect(rows.find((s) => s.id === SESSION_A)?.status).toBe('ACTIVE');
   });
 });

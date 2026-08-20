@@ -15,7 +15,9 @@
 -- PUT), while storage-api enforces these bucket columns on the upload
 -- request itself. Without them a member could store text/html under a valid
 -- proof key and reviewers would be served attacker-controlled HTML from the
--- storage origin. 26214400 = 25MB, matching the local config.toml cap and
+-- storage origin. MIME types must stay in lockstep with kind "proof" in
+-- `@repo/validation` (`packages/validation/src/upload-allowlists.ts`).
+-- 26214400 = 25MB = MAX_UPLOAD_BYTES, matching the local config.toml cap and
 -- the chat attachment limit.
 --
 -- Guarded on storage.buckets existing: the PGlite harness

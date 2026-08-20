@@ -14,9 +14,11 @@
 -- allowed_mime_types is pinned to application/pdf because this bucket is
 -- written *only* by the server-side renderer — unlike the upload buckets, no
 -- signed upload URL is ever minted for it, so nothing user-controlled should
--- ever be storable here. file_size_limit 26214400 = 25MB matches the repo-wide
--- storage cap in config.toml; a report that large means a pathological export,
--- not a legitimate one.
+-- ever be storable here. file_size_limit 26214400 = 25MB matches
+-- MAX_UPLOAD_BYTES in `@repo/validation` and the repo-wide storage cap in
+-- config.toml; a report that large means a pathological export, not a
+-- legitimate one. This bucket is not a member-upload surface — it is not
+-- one of the `image` / `proof` / `document` kinds.
 --
 -- Guarded on storage.buckets existing: the PGlite harness
 -- (scripts/check-pglite-migrations.mjs) replays every migration into bare

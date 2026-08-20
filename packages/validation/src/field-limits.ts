@@ -1,12 +1,16 @@
 /**
- * Shared bounds for client-supplied field values (#849).
+ * Shared bounds for client-supplied field values (#849, Wave 1 item 2).
  *
- * These live here, beside `list-query-limits.ts`, rather than as literals in
- * each DTO for two reasons: sibling DTOs writing the same column should not be
- * able to drift apart, and a bound repeated in both `@ApiProperty` and its
- * validator can otherwise be raised in one place only — leaving the generated
- * `openapi.json` advertising a limit the API no longer enforces, with CI green
- * because the contract still matches the decorators it was generated from.
+ * These live in `@repo/validation` rather than as literals in each DTO (or a
+ * second copy on mobile) for two reasons: sibling writers of the same column
+ * should not be able to drift apart, and a bound repeated in both
+ * `@ApiProperty` and its validator can otherwise be raised in one place only —
+ * leaving the generated `openapi.json` advertising a limit the API no longer
+ * enforces, with CI green because the contract still matches the decorators it
+ * was generated from.
+ *
+ * Previously `apps/api/src/domain/constants/field-limits.ts`. The API DTOs,
+ * Zod schemas in this package, and mobile task limits all import from here.
  */
 
 /**

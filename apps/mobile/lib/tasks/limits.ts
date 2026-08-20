@@ -6,11 +6,10 @@
  * authority — see the header of `create-task.ts`.
  */
 
+import { POINTS_ADJUSTMENT_MAX } from "@repo/validation";
+
 /** `@MaxLength(255)` on `CreateTaskDto.title`. */
 export const TITLE_MAX_LENGTH = 255;
 
-/**
- * `@Max(POINTS_ADJUSTMENT_MAX)` on `CreateTaskDto.point_reward` —
- * `apps/api/src/domain/constants/field-limits.ts:55`.
- */
-export const POINTS_MAX = 100_000;
+/** Same ceiling as `POINTS_ADJUSTMENT_MAX` on `CreateTaskDto.point_reward`. */
+export const POINTS_MAX = POINTS_ADJUSTMENT_MAX;
