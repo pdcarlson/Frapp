@@ -62,6 +62,9 @@ vi.mock("react-native", () => ({
   FlatList: "FlatList",
   ActivityIndicator: "ActivityIndicator",
   KeyboardAvoidingView: "KeyboardAvoidingView",
+  Share: {
+    share: vi.fn().mockResolvedValue({ action: "sharedAction" }),
+  },
 }));
 
 // expo-router ships untranspiled source, so importing any screen or any
@@ -145,6 +148,10 @@ vi.mock("@gorhom/bottom-sheet", () => ({
   // never invokes `renderItem` — a spec needing a row should render that row's
   // component directly.
   BottomSheetFlatList: "BottomSheetFlatList",
+}));
+
+vi.mock("expo-web-browser", () => ({
+  openBrowserAsync: vi.fn().mockResolvedValue({ type: "dismiss" }),
 }));
 
 vi.mock("expo-font", () => ({

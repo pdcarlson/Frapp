@@ -30,8 +30,15 @@ export const unstable_settings = {
  * `PRE_CHAPTER_ROUTES` is the exemption list — screens an authenticated member
  * is allowed to sit on. Everything else in the group still bounces to `(tabs)`
  * once they have a session, so sign-in cannot be reopened over a live one.
+ * `/create-chapter` is on the list so the first-officer wizard can own its
+ * lifecycle after submit creates a membership (#1084).
  */
-const PRE_CHAPTER_ROUTES = ["/chapter-picker", "/join", "/welcome"];
+const PRE_CHAPTER_ROUTES = [
+  "/chapter-picker",
+  "/create-chapter",
+  "/join",
+  "/welcome",
+];
 
 export default function AuthLayout() {
   const { status, chapterId, isChapterResolving } = useAuthSession();

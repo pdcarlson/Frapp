@@ -21,6 +21,10 @@ and every row below is expected to fail.
 | Sign in (`/(auth)/sign-in`) | Email me a link (Magic Link mode) | Confirms "Link sent to …"; tapping the emailed link on the device signs in and routes to `/(tabs)` |
 | Sign in (`/(auth)/sign-in`) | Tap an already-used or expired magic link | Opens the app and shows the reason inline — never a silent return to a blank sign-in form |
 | Profile (`/(tabs)/profile`) | Sign out | Clears the session + routes to sign-in; relaunching the app does not restore it |
+| Join (`/(auth)/join`) | Create a chapter | Opens `(auth)/create-chapter` |
+| Chapter picker (empty) | Create a chapter | Opens `(auth)/create-chapter` |
+| Create chapter (`/(auth)/create-chapter`) | Directory row / Manual entry → archetype → identity + legal → Create chapter | `POST /v1/chapters/onboard`; invite step stays on this route |
+| Create chapter (`/(auth)/create-chapter`) | Generate invite / Share / Skip for now | Optional `POST /v1/invites`; Finish replaces into `/(tabs)` |
 
 Magic-link rows additionally need `frapp://` allowlisted in Supabase Auth →
 URL Configuration (#765), or the link opens the web app instead.
