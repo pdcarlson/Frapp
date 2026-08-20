@@ -1,46 +1,13 @@
 # Cursor /goal + CI/CD implementation plan
 
-**Wave 0 Phase 1 — DONE (Aug 19), run in Cursor as regular Agent mode, not Claude Code.** Landed across two PRs (#1080, #1081 — #1080 got squash-merged mid-flight, splitting the work; both merged clean, verified byte-identical). All 5 phase items landed: docs-spec-sync waiver (`no-doc-change-needed` label), web-tests + changes promoted to required, all 4 quality gates (dependency-cruiser hard/baselined, oasdiff advisory folded into the existing required contract-check job rather than a new one, nestjs-typed response-schema as warn, jscpd advisory at 4.5% threshold vs 4.37% measured), and coverage tooling fixed (coverageProvider: v8 sidesteps the minimatch/test-exclude collision entirely).
+**Batch 2 — DONE (Aug 20, PR #1105, merged).** MIME/content-type allowlists and `field-limits.ts` consolidated into `@repo/validation`, exactly as scoped below. Fixed the live bug this item existed for: `.gif` now works consistently on Documents, Backwork, and chat. Also same-day: **#1106** closed the five tenant-scope follow-ups from #1087 (#1088-#1092), and **#1104** finished the #1099 shim-cleanup follow-ups + added the missing `@repo/api-sdk` test harness — this closes out the "~7 follow-up items sitting only in PR bodies" gap noted just below. Full detail and next prompts in the new "PR review Aug 20" blob.
 
-Quality signal worth noting: the agent caught and fixed several of its own bugs before asking for review — dependency-cruiser was silently enforcing zero of three rule families (node_modules was in both doNotFollow and exclude, which aren't interchangeable), a Node-version incompatibility that only surfaced in CI not locally, and coverage artifacts silently breaking lint locally. Each rule family was verified by introducing a deliberate violation and confirming it fails. This is exactly the discipline the docs-rewrite phase (Phase 2) is trying to encode as a habit, not a one-off.
+**Small debt spotted in that batch, not yet fixed** (prompt in the PR-review blob): dedup `POINTS_REASON_MAX_LENGTH`, harden `releaseDispatch` with a `chapter_id` filter, thaw `apps/mobile/package.json` to declare `@repo/org-archetypes` for real. Plus one real product decision pending (not an agent call): `spec/behavior/branding.md` vs code on chapter-logo MIME/size.
 
-**Needs Paul's hands, not yet done:**
-1. Create the `no-doc-change-needed` label in the repo.
-2. Run `npm run configure:branch-protection` (dry-run first) — applies web-tests, changes, chapter-directory-seed, and dependency-cruiser as required checks on main (16 contexts).
-3. Item 2 (review policy) — still an open decision, deliberately not implemented.
-4. **The public-repo mismatch, flagged in both PRs**: repo is actually public but multiple docs and some waived controls (secret push protection, environment reviewer rules) assume it went private. Real gap, not cosmetic.
-5. Minor flagged follow-ups for later: nothing yet enforces the "every required check's needs: parent must itself be required" invariant as a test; `vitest` doesn't resolve under dependency-cruiser in apps/web (rule works in apps/api, looks like an exports-map quirk).
-
-Phase 2 (docs/agentic framework rewrite) and Phase 3 (supervised code foundation) are next, prompts already on canvas.
+**Next up per REFACTOR-PLAN.md's own sequencing, revised:**
+- Small debt cleanup above (no open questions except the branding.md call, which is explicitly out of scope for that prompt).
+- **Batch 3 — items 1a (date formatting) and 7 (analytics provider), run in parallel, NOT with item 8.** Still blocked on two decisions — see the PR-review blob for the exact questions. Do not let an agent decide these silently.
+- **Then item 8 alone** — most entangled item on the list. Reduced scope recommended: only the 3 portable hooks.
+- **Batch 4 — item 5 (query-key factory migration), supervised, split 5a/5b/5c.** Still blocked on the `supabase-notification.repository.ts` tenant-scoping decision noted below.
 
 ---
-
-Goal: figure out how to execute the combined docs+code refactor using Cursor's cloud agents alongside Claude Code, and update CI/CD to support it. **Cursor is a one-project tool, not a daily driver** — no permanent .cursor/ folder, no lasting footprint. Lucky break: AGENTS.md is already what Cursor reads automatically, so we don't need any Cursor-specific config files at all — put anything Cursor needs to know in AGENTS.md (which helps Claude Code too) or directly in each goal's prompt text, ephemeral.
-
-**Real audit findings (Aug 19) — three hard blockers before any Cursor goal touches this repo:**
-
-1. **docs-spec-sync will hard-block almost every Cursor PR.** It's a required check with zero exemptions besides dependabot — any PR touching non-doc files without touching docs/spec fails, permanently, no admin override. Every planned Cursor goal (date-fn merge, MIME consolidation, query-key migration, etc.) is a pure-code change. Must fix this gate first (e.g. a label-based or explicit "no doc change needed" exemption, per the earlier docs research) or literally nothing Cursor produces can merge.
-
-2. **Zero review applies to Cursor's pushes.** The only review gate on `main` is a Claude-Code-specific local pre-push hook (Cursor won't run it), and `main` requires no human approval either. Right now a Cursor PR would get no review at all, human or AI, unless done by hand. Decision needed: either manually review every Cursor-originated PR before merge (no code change, just a personal rule), or temporarily require human approval on main during this project.
-
-3. **The 33 Supabase repositories have zero tests — pull that consolidation out of the Cursor-goal bucket entirely.** Confirmed by the audit as the single highest-risk item: TypeScript can't catch a wrong `.eq()` column or a dropped tenant filter, and only 7 of 33 repos have any indirect coverage via one cross-tenant e2e spec. Do this piece in supervised Claude Code, or add real tests first — not as an autonomous fire-and-forget goal.
-
-Also: promote `web-tests` to a required check before any goal touches `packages/hooks` (currently a red hook-test suite still merges); tell any agent explicitly never to regenerate Playwright visual snapshots locally (baselines are pinned to CI's Chromium, a local regen silently corrupts the fixture); coverage is currently unmeasurable repo-wide (broken tooling, two separate causes) — not a blocker, but can't sanity-check a big refactor's impact until fixed.
-
-**Good news:** everything else is unusually solid. Clean checkout runs all 3,796 tests with zero credentials needed — genuinely ready for a cloud agent on the mechanical axis. No merge queue exists (pr-base-sync.yml is a hand-rolled agent-wake substitute, capped at 20 PRs), but that's a lower-priority gap given the planned cap of 3-5 concurrent goals.
-
----
-
-**Correction on terminology:** Cursor's cloud/PR-opening feature is actually called "Cloud Agents" (formerly Background Agents); "/goal" is a separate CLI durability primitive ("continues across idle/headless runs"). They're complementary, not the same thing — worth confirming hands-on whether durable-goal behavior actually applies inside the cloud-agent PR flow before relying on it.
-
-**Research verdict:** split by task shape, inverted from the usual split since here the judgment work is docs and the mechanical work is code:
-- Claude Code (local, supervised): all doc/AGENTS.md judgment work, deciding which incidents graduate to ADRs vs rules, authoring the 2 new skills, and all shared-foundation/gate-defining changes (Wave 0) — now also including the Supabase repository work per the audit above.
-- Cursor cloud agents (isolated, fire-and-forget): the disjoint mechanical consolidation jobs — date-fn merge, MIME allowlist merge, dead package deletion, shim-import rewrite, query-key call-site migration, route-DTO backfill in batches — each fenced to its own files with an explicit test-pass stop condition in the prompt.
-
-**Sequencing:** Wave 0 (you, serialized) fixes the docs-spec-sync gate, decides the review policy, wires the 4 new CI gates, and builds the shared factories first. Wave 1 (parallel Cursor goals from merged main, cap 3-5) does the disjoint mechanical jobs. Wave 2 (batched Cursor goals) does the DTO backfill ~10 routes at a time.
-
-**Gate rollout reality check:** dependency-cruiser and the SDK-drift check both have real baseline mechanisms and can be hard gates immediately. The ESLint response-schema rule has no native baseline — set to "warn" first, backfill via Wave 2, then flip to "error." jscpd has no clone-level baseline — use a repo-wide duplication-percentage threshold that only ratchets down, kept advisory at first.
-
-**Cost control:** Cursor has no per-run or per-goal cost/time cap, only a monthly spend limit plus manual cancellation — real runaway-bill reports exist ($28→$500 in 3 days). Set a conservative monthly spend limit (~$50-75) before starting.
-
-**Also needed:** merge queue must trigger on `merge_group` (not just pull_request) or required checks never fire; job names must be unique and match exactly across workflows or checks silently block merges.
