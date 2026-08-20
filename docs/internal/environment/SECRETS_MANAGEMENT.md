@@ -105,6 +105,13 @@ In **all three environments**, add these references (they're the same in every e
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `${SUPABASE_ANON_KEY}`             |
 | `EXPO_PUBLIC_API_URL`           | `${API_URL}`                       |
 | `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `${STRIPE_PUBLISHABLE_KEY}`   |
+| `EXPO_PUBLIC_APP_URL`           | `${APP_URL}`                       |
+
+`EXPO_PUBLIC_LANDING_URL` and `EXPO_PUBLIC_ASK_ENABLED` are **not** Infisical references — they are
+direct-set client flags/URLs (see [`ENV_REFERENCE.md`](./ENV_REFERENCE.md) § apps/mobile). There is
+**no Infisical → EAS sync**; any `EXPO_PUBLIC_*` a device build needs must also be set in the EAS
+dashboard (`development` / `preview` / `production`) or a non-secret `eas.json` `build.<profile>.env`
+entry. The six live syncs are Render + Vercel only (next section).
 
 ### 5. Configure Secret Syncs
 
