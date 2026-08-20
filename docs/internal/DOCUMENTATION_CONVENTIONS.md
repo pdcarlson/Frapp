@@ -91,7 +91,15 @@ cross-item collision map that keeps two parallel agents off the same file) and `
 (one checkbox per item). They exist so each isolated agent gets exact scope instead of re-deriving it,
 and they are **deleted when the project wraps**.
 
-The same rules as `.buildpad/` apply, with one difference that matters:
+**Why this is not a hole in Hard rules 3 and 4.** Rule 3 bans one-off narrative markdown *in `docs/`
+and `spec/`* — including migration plans — and rule 4 says work status lives in GitHub Issues. Both
+still hold: these two files are at repo root, not under `docs/` or `spec/`, they are excluded from the
+placement map rather than added to it, and they carry no work status. Item-level status, priority and
+ownership stay in GitHub Issues; `REFACTOR-PROGRESS.md` records only whether a given agent run
+finished its own scope, which is execution state a deleted file may lose harmlessly. An agent that
+finds real work does not write it here — it files a `triage` issue.
+
+The same rules as `.buildpad/` otherwise apply, with one difference that matters:
 
 1. **`spec/` still wins.** A plan file records what the code looks like today and what an agent should
    do next. It is not a behavior contract.
@@ -101,6 +109,9 @@ The same rules as `.buildpad/` apply, with one difference that matters:
    exempting a root path would weaken a gate required under `enforce_admins: true`.
 3. **A conclusion worth keeping gets promoted** into its canonical `spec/` or `docs/` home from the map
    above before the files are deleted.
+4. **Delete this section and the placement-map row in the same PR that deletes the files.** Both are
+   cited above as backticked `.md` paths inside `docs/`, which `check-doc-paths.mjs` walks — leaving
+   the section behind turns the citation gate red on a doc nobody touched.
 
 ## See also
 

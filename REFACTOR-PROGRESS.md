@@ -3,6 +3,11 @@
 Scaffold only. One line per [`REFACTOR-PLAN.md`](REFACTOR-PLAN.md) item. Each Wave 1 goal checks off
 its own line with a one-line note and its test result.
 
+**Execution state only — not a tracker.** Real work items, deferred findings, and blockers go to
+GitHub Issues with the `triage` label, per `AGENTS.md` ("Never track work in a scratch file") and
+[`.claude/skills/file-follow-up/SKILL.md`](.claude/skills/file-follow-up/SKILL.md). This file is
+deleted when the project wraps, so nothing durable may live only here.
+
 - [ ] 1. Date-formatting functions → `@repo/formatting`
 - [ ] 2. MIME/content-type allowlists + `field-limits.ts` → `@repo/validation`
 - [ ] 3. Delete the dead `@repo/ui` package and its dependency entries
