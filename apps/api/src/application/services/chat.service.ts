@@ -152,7 +152,7 @@ const SERVER_ONLY_KINDS: ReadonlySet<ChatMessageKind> = new Set([
 /** Vote action UPSERTS rather than duplicates (ADR-07). */
 const VOTE_ACTION_TYPE = 'vote';
 
-/** The poll-card payload written by the composer (`apps/web/lib/chat/dispatch.ts`). */
+/** The poll-card payload written by the composer (`@repo/chat-core/dispatch`). */
 type PollCardPayload = {
   options?: { id?: unknown }[];
   closes_at?: string | null;

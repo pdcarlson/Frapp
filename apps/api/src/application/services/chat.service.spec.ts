@@ -1652,7 +1652,7 @@ describe('ChatService', () => {
     };
 
     describe('poll-card vote validation (#871)', () => {
-      // The card payload the composer writes (apps/web/lib/chat/dispatch.ts):
+      // The card payload the composer writes (@repo/chat-core/dispatch):
       // options carry ids, and the deadline is `closes_at`.
       const pollMessage = {
         ...baseMessage,
