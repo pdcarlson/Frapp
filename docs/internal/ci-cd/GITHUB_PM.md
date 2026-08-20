@@ -292,6 +292,14 @@ The tag sanitizer is **allowlist-based, not blanket** — `<br>` survives while 
 does not, which is why the defect reads as intermittent and has now gone two full rounds
 (2026-08-09→-08-12, then a regression caught 2026-08-20) before being pinned each time.
 
+**It is not limited to issue bodies.** The same sanitizer runs on **issue comments**
+(`issue_read get_comments`) and on **PR bodies** (`pull_request_read get`) — verified 2026-08-20 by
+reading PR #1136's own description back, which returned `fp=<area>/<slug> file=<path>` as
+`fp=/ file=` while `WebFetch` of the rendered page showed the placeholders intact. Two practical
+consequences: a PR body you compose with tags or placeholders in it **is stored correctly** and only
+*reads* back mangled, so don't "fix" it on the strength of an MCP read; and when quoting an issue's
+text back to a human, quote from `WebFetch`, not from the MCP.
+
 ### The operative rule
 
 **Never source a body rewrite from any MCP read.** In practice:
