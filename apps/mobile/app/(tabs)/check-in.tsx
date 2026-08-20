@@ -18,7 +18,7 @@ import {
   parseCheckInCode,
 } from "@/lib/events/check-in-code";
 import { createScanLatch } from "@/lib/events/scan-latch";
-import { serverMessageOf, statusOf } from "@/lib/api-error";
+import { serverMessageOf, statusOf } from "@repo/api-sdk";
 import { requireForegroundFix } from "@/lib/location";
 import { selectEventDetail } from "@/lib/events/select";
 import { useConnection } from "@/lib/connection/use-connection";

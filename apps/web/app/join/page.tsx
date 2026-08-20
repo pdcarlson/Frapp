@@ -13,16 +13,7 @@ import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { useToast } from "@/hooks/use-toast";
 import { getSessionUser } from "@/lib/auth/session";
 import { useSelectChapter } from "@/lib/auth/select-chapter";
-
-function getErrorMessage(error: unknown) {
-  if (error && typeof error === "object" && "message" in error) {
-    const message = (error as { message?: string }).message;
-    if (typeof message === "string" && message.length > 0) {
-      return message;
-    }
-  }
-  return "Something went wrong. Please try again.";
-}
+import { getErrorMessage } from "@/lib/utils";
 
 function JoinPageContent() {
   const router = useRouter();
@@ -90,7 +81,7 @@ function JoinPageContent() {
     } catch (error) {
       toast({
         title: "Unable to redeem invite",
-        description: getErrorMessage(error),
+        description: getErrorMessage(error, "Something went wrong. Please try again."),
         variant: "destructive",
       });
     }

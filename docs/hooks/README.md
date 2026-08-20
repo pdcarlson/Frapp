@@ -140,13 +140,11 @@ From `packages/hooks` run:
 
 From the repo root, `npm run test -w packages/hooks` runs the whole suite — this
 is the command CI uses. The `web-tests` job in
-[`ci.yml`](../../.github/workflows/ci.yml) runs it (alongside `packages/ui`),
+[`ci.yml`](../../.github/workflows/ci.yml) runs it (alongside `packages/chat-core`),
 reached via that job's `packages/**` path filter.
 
-`web-tests` **reports but does not block.** It is deliberately not a required
-status check (ADR-15 — see
-[`spec/architecture/README.md`](../../spec/architecture/README.md)), so a red run
-here will not stop a merge; read it rather than relying on it as a gate. The
+`web-tests` **is a required status check** (ADR-15 2026-08-19 amendment — see
+[`spec/architecture/README.md`](../../spec/architecture/README.md)). The
 required-check list lives in
 [`scripts/configure-branch-protection.mjs`](../../scripts/configure-branch-protection.mjs).
 

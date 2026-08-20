@@ -51,7 +51,7 @@ const CI_CHECKS = [
   // secret-scan — required only once the chapter-directory-seed job exists on the
   // target branch and has run green.
   "chapter-directory-seed",
-  // Web + shared-package unit tests (apps/web, packages/hooks, packages/ui,
+  // Web + shared-package unit tests (apps/web, packages/hooks,
   // packages/chat-core). It is the ONLY suite covering packages/hooks, which the
   // consolidation work ahead edits directly, so leaving it advisory means a broken
   // shared hook merges green.

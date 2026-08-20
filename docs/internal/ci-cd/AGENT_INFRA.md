@@ -48,7 +48,7 @@ it. Design + policy: [`GITHUB_PM.md`](GITHUB_PM.md).
 
 | Item                | Location / notes                                                                                                                                      |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CI                  | `.github/workflows/ci.yml` — parallel jobs (`lint-and-typecheck` includes `nest build` for `apps/api` + landing and `@repo/validation` unit tests; `api-tests` runs `apps/api` Jest unit + E2E suites (`test` then `test:e2e`); `web-tests` runs `apps/web` Vitest plus the `packages/hooks`, `packages/ui`, and `packages/chat-core` suites; `api-docker-build` runs `apps/api/Dockerfile`) |
+| CI                  | `.github/workflows/ci.yml` — parallel jobs (`lint-and-typecheck` includes `nest build` for `apps/api` + landing and `@repo/validation` unit tests; `api-tests` runs `apps/api` Jest unit + E2E suites (`test` then `test:e2e`); `web-tests` runs `apps/web` Vitest plus the `packages/hooks` and `packages/chat-core` suites; `api-docker-build` runs `apps/api/Dockerfile`) |
 | API deploy          | `.github/workflows/deploy-api.yml` — after CI (`workflow_run`)                                                                                        |
 | Deploy outcome      | `.github/workflows/deploy-api.yml` → terminal `deploy-outcome` job — the only job in that workflow with a write scope (job-scoped `issues: write`; the workflow-level grant stays `contents: read`). Writes a step summary + annotation saying whether the run **deployed** or **declined to deploy**, and upserts one `routine-state` alert issue on failure, closing it on the next successful deploy. Logic in `scripts/ci/deploy-alert.mjs` (tests: `scripts/ci/__tests__/deploy-alert.test.mjs`). **Not** a required check. See "Deploy visibility" below. |
 | Deploy verification | `.github/workflows/verify-deployments.yml` — post-push Render + Vercel state polling                                                                  |
@@ -263,7 +263,7 @@ under Dependabot; the reasoning for each is in
 blocker is `eslint-plugin-react`: 7.37.5 is its newest published release and its peer range still
 ends at `^9.7`. ESLint 10 removed the deprecated `context` methods the plugin calls, so it throws
 `contextOrFilename.getFilename is not a function` out of its React-version detection path and takes
-`@repo/ui`'s lint down with it.
+React workspace lint (`apps/web`, `apps/landing`) down with it.
 
 The two packages move as a set — `@eslint/js@10` peer-requires `eslint@^10`, so bumping either alone
 fails `npm ci` with `ERESOLVE`. That is why both carry the ignore rather than just one.

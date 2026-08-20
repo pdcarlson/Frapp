@@ -56,7 +56,7 @@ Every PR must pass these checks before merging. Branch protection enforces this 
 | `clean-checkout-typecheck` | Bare `npm ci` + typecheck + lint with no prebuilt packages (guards `turbo.json` `^build`)    |
 | `dependency-audit`   | npm audit gate: high/critical advisories not allowlisted in `scripts/npm-audit-allowlist.json` fail (ROLLOUT†) |
 | `chapter-directory-seed` | `supabase/seed/chapter_directory.csv`: canonical `#RRGGBB` colors, real archetypes, no duplicate natural keys (ROLLOUT†) |
-| `web-tests`          | `apps/web` unit tests plus the shared packages only this suite covers — `packages/hooks`, `packages/ui`, `packages/chat-core` (ROLLOUT†) |
+| `web-tests`          | `apps/web` unit tests plus the shared packages only this suite covers — `packages/hooks`, `packages/chat-core` (ROLLOUT†) |
 | `changes`            | Computes the path filter that decides whether `web-tests` runs. Required only because `web-tests` needs it — a required check with a non-required parent can be skipped *and* still count as passing (ROLLOUT†) |
 | `dependency-cruiser` | Architectural boundaries: API layer direction, no package→app imports, no cross-app imports, no cycles. Existing violations are grandfathered in `.dependency-cruiser-known-violations.json` (ROLLOUT†) |
 | `duplicate-detection` | jscpd against a repo-wide duplication threshold — **advisory, not merge-blocking** (no clone-level baseline exists; see [`docs/internal/ci-cd/QUALITY_GATES.md`](docs/internal/ci-cd/QUALITY_GATES.md)) |

@@ -11,7 +11,7 @@
  * cases a member can actually act on get their own copy.
  */
 
-import { codeOf, serverMessageOf, statusOf } from "../api-error";
+import { codeOf, serverMessageOf, statusOf } from "@repo/api-sdk";
 
 export { serverMessageOf, statusOf };
 

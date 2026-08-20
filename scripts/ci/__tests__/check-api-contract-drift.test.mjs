@@ -66,7 +66,7 @@ test("unrelated changes do not trigger a regen", () => {
   assert.equal(isApiRelated("docs/guides/testing.md"), false);
   assert.equal(isApiRelated("spec/architecture/README.md"), false);
   assert.equal(isApiRelated(".buildpad/notes/x.md"), false);
-  assert.equal(isApiRelated("packages/ui/src/button.tsx"), false);
+  assert.equal(isApiRelated("packages/theme/src/globals.css"), false);
   assert.equal(isApiRelated("packages/hooks/src/use-user.ts"), false);
 });
 
