@@ -194,12 +194,9 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
 
   // The manager pings status listeners on typing-membership changes too, so one
   // subscription drives both the connection pill and the typing line.
-  const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  const [typingUsersState, setTypingUsers] = useState<string[]>([]);
   useEffect(() => {
-    if (!channelId) {
-      setTypingUsers([]);
-      return;
-    }
+    if (!channelId) return;
     // `getTypingUsers` builds a fresh array every call, so assigning it
     // unconditionally never hits React's `Object.is` bail-out — and the manager
     // pings status listeners on its 1.5s typing-expiry sweep. Left as-is, the
@@ -217,14 +214,12 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     refresh();
     return chatRealtime.subscribeStatus(refresh);
   }, [channelId]);
+  const typingUsers = channelId ? typingUsersState : [];
 
   // Draft: load once per channel, debounce writes.
-  const [draft, setDraftState] = useState("");
+  const [draftState, setDraftState] = useState("");
   useEffect(() => {
-    if (!channelId) {
-      setDraftState("");
-      return;
-    }
+    if (!channelId) return;
     let cancelled = false;
     void chatDraftStore.load(channelId).then((body) => {
       if (!cancelled) setDraftState(body);
@@ -233,6 +228,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       cancelled = true;
     };
   }, [channelId]);
+  const draft = channelId ? draftState : "";
 
   /** Set while a send is in flight; see the re-entry guard in `send`. */
   const sendingRef = useRef(false);

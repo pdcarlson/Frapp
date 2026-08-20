@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { CalendarDays, Check, MapPin } from "lucide-react";
 import { useAttendance, useCheckIn, useMyPermissions } from "@repo/hooks";
 import type { ChatMessage } from "@repo/chat-core/types";
@@ -14,6 +13,7 @@ import {
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
+import { useNow } from "@/lib/use-now";
 
 interface EventCardProps {
   message: ChatMessage;
@@ -139,26 +139,7 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
   const { data: attendance } = useAttendance(
     canViewAttendance ? eventId : "",
   );
-
-  // `Date.now()` is otherwise frozen at first render, so the Check-in button
-  // wouldn't appear/hide as the event's window opens or closes while the card
-  // stays mounted. Tick a re-render — but only while the window is still
-  // reachable (skip long-past events), and stop once it has fully closed. The
-  // server enforces the real window regardless; this is UX only.
-  const endTimeStr = payload?.end_time;
-  const [, tick] = useState(0);
-  useEffect(() => {
-    if (!endTimeStr) return;
-    const endMs = new Date(endTimeStr).getTime();
-    if (!Number.isFinite(endMs) || Date.now() > endMs + CHECK_IN_GRACE_MS) {
-      return;
-    }
-    const id = setInterval(() => {
-      tick((t) => t + 1);
-      if (Date.now() > endMs + CHECK_IN_GRACE_MS) clearInterval(id);
-    }, 30_000);
-    return () => clearInterval(id);
-  }, [endTimeStr]);
+  const now = useNow();
 
   if (!payload) {
     return (
@@ -169,7 +150,6 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
   }
 
   const checkedIn = countCheckedIn(attendance);
-  const now = Date.now();
   const start = new Date(payload.start_time).getTime();
   const end = new Date(payload.end_time).getTime();
   const windowOpen =

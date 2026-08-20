@@ -285,25 +285,28 @@ classic Rules of Hooks. We do not run `babel-plugin-react-compiler`. Shared pres
 `"off"` so a later plugin bump cannot re-open `--max-warnings 0`.
 
 **Enabled at upstream severity** (re-measured 2026-08-20: 0 findings on `apps/web`,
-`apps/mobile`, `apps/landing`, `packages/hooks`): `rules-of-hooks`, `exhaustive-deps`,
-`config`, `error-boundaries`, `gating`, `globals`, `immutability`, `incompatible-library`,
-`set-state-in-render`, `unsupported-syntax`.
+`apps/mobile`, `apps/landing`, `packages/hooks` after the chat-area cleanup):
+`rules-of-hooks`, `exhaustive-deps`, `config`, `error-boundaries`, `gating`,
+`globals`, `immutability`, `incompatible-library`, `purity`,
+`set-state-in-render`, `static-components`, `unsupported-syntax`.
 
-**Still held `"off"`** until area cleanups land (63 findings: 37 web, 26 mobile):
+**Still held `"off"`** until remaining area cleanups land:
 
-| Rule | Severity when on | Findings |
+| Rule | Severity when on | Remaining findings |
 | --- | --- | --- |
-| `react-hooks/set-state-in-effect` | error | 42 |
-| `react-hooks/refs` | error | 14 |
-| `react-hooks/purity` | error | 3 |
+| `react-hooks/set-state-in-effect` | error | 36 (42 − 6 chat) |
+| `react-hooks/refs` | error | 11 (14 − 3 chat) |
 | `react-hooks/preserve-manual-memoization` | error | 2 |
-| `react-hooks/static-components` | error | 1 |
 | `react-hooks/use-memo` | error | 1 |
 
-Findings concentrate in auth, chat, realtime/connection, notifications, and form/dialog
-reset effects — not React Native animation (none remaining). Adopting a held-off rule is a
-dedicated cleanup (fix or scoped disable each finding, then add the rule to the allowlist),
-not a Dependabot follow-through. #1108 is the bump that introduced the hold.
+Chat-area findings (web shell/composer/renderers + mobile chat runtime/channel)
+were resolved by deriving state instead of effect-syncing it, a render-safe
+clock for event/poll windows, and moving latest-callback refs out of render.
+Findings concentrate in auth, realtime/connection, notifications, and
+form/dialog reset effects — not React Native animation (none remaining).
+Adopting a held-off rule is a dedicated cleanup (fix or scoped disable each
+finding, then add the rule to the allowlist), not a Dependabot follow-through.
+#1108 is the bump that introduced the hold.
 
 ### TypeScript 7 is native `tsc` plus a TypeScript 6 compiler API
 

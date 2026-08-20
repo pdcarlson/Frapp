@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ChangeEvent,
@@ -71,17 +72,17 @@ interface ComposerProps {
 /**
  * Submit on Enter; let Shift+Enter fall through to StarterKit's default
  * hard-break. Bound as a Tiptap extension so we get full ProseMirror context
- * (composition state, etc.) instead of a flaky DOM keydown. The closure
- * delegates to a ref that holds the latest submit handler, so the keymap
- * always honors the current `disabled` state without re-binding the extension.
+ * (composition state, etc.) instead of a flaky DOM keydown. The extension
+ * reads a ref that holds the latest submit handler, so the keymap always
+ * honors the current `disabled` state without re-binding the extension.
  */
-function createSubmitKeymap(onSubmit: () => void) {
+function createSubmitKeymap(sendRef: { current: () => void }) {
   return Extension.create({
     name: "submit-on-enter",
     addKeyboardShortcuts() {
       return {
         Enter: () => {
-          onSubmit();
+          sendRef.current();
           return true;
         },
       };
@@ -151,7 +152,10 @@ export function Composer({
           ? `Message ${channelName}`
           : `Message #${channelName}`,
       }),
-      createSubmitKeymap(() => sendRef.current()),
+      // Tiptap registers this shortcut while constructing the editor. The
+      // closure reads `sendRef.current` only on Enter, not during render.
+      // eslint-disable-next-line react-hooks/refs -- Enter keymap; latest submit lives in a ref
+      createSubmitKeymap(sendRef),
     ],
     content: buildDocFromPlainText(draft),
     editorProps: {
@@ -226,7 +230,9 @@ export function Composer({
     // Only clear when a send was actually issued.
     editor.commands.clearContent(true);
   }, [disabled, editor, onSend, onSlashDispatch, toast]);
-  sendRef.current = submit;
+  useLayoutEffect(() => {
+    sendRef.current = submit;
+  }, [submit]);
 
   const insertEmoji = useCallback(
     (emoji: string) => {
@@ -406,6 +412,9 @@ export function Composer({
       <SlashPalette
         open={palette.open}
         initialQuery={palette.query}
+        onQueryChange={(query) =>
+          setPalette((prev) => ({ ...prev, query }))
+        }
         isModuleEnabled={isModuleEnabled}
         status={slashCommandsStatus}
         onRetry={onRetrySlashCommands}
