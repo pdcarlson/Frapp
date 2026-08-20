@@ -58,6 +58,28 @@ Don't try to reach full behavioral coverage on all 33 in one pass — that's a m
 
 ## Wave 1 — Mechanical fan-out (Cursor cloud agents, parallel, cap 3-5, only after Wave 0 fully merges)
 
+**Planning pass DONE (PR #1095, merged, nothing consolidated yet).** REFACTOR-PLAN.md exists with real file:line detail. Original audit counts drifted on 4 of 9 items:
+- **Item 1 (date formatting): not 27, actually 48** across 9 behavioral clusters, only 18 under canonical names. Not all fungible — some differ by design (mobile stopwatch doesn't pad minutes, web's does, both have tests asserting this). Safe scope is **14 definitions (1a)**; 3 clusters are correctness decisions, not consolidation (1b), needs a human call.
+- **Item 3 (@repo/ui deletion): bigger** — both apps/web and apps/landing depend on it, plus 4 configs, a CI step, and 11 doc/spec/skill references (2 skills actively tell agents to import from it).
+- **Item 6 (getErrorMessage): 9 implementations, not 8.**
+- **Item 8 (stranded hooks): 3 portable, not 5** — `use-chapter-theme` and `use-subscription-write-state` aren't pure-portable (DOM write, localStorage-backed store).
+- **Item 5 (query keys): bigger than it reads.** Zero production adoption of the new factory today. 4 of the 18 unscoped call sites sit on repositories in the deferred-9 (no tenant-scope test yet) from PR #1087 — worst is `supabase-notification.repository.ts`, whose own coverage-ledger entry says correct scoping is still undecided. Neither existing factory (`taskKeys`, `notificationKeys`) is actually a clean model — both still accept `chapterId: string | null`, and `useTasks` mounts on `.lists()`, the exact pattern the new factory forbids. **Keep item 5 supervised and split, not a fire-and-forget goal.**
+
+**Not cleanly disjoint** — 9 parallel goals would collide on ~20 files. Item 8 collides with 6 of the other 8 items; `apps/web/components/service/service-page.tsx` alone sits in 3 items.
+
+**Recommended sequencing (batch = parallel cap, verified disjoint on source, ordered by review cost):**
+- Batch 1: items **3, 4, 9, 6** — prompts drafted below, ready to send.
+- Batch 2: item **2** (MIME consolidation — real bug fix, 3 layers including SQL) + the `apps/api` subscription.ts grace-period bug (see debt below, same review sitting).
+- Batch 3: item **1a** (safe 14-definition date-fn consolidation) with item **7** (AnalyticsProvider merge).
+- Batch 4: item **8** alone (hooks migration) — blocked on an open product question, see below.
+- Item **5** (query keys): stays supervised, not a parallel goal, split per the findings above.
+
+**Open decision needed before batch 4 (item 8):** mobile currently reads `enabled_modules` off `GET /v1/chapters/current`; "wire mobile's module-gating to the shared one" really means deciding whether mobile should switch to calling `GET /v1/chapters/{id}/config` instead. This is a real endpoint decision, not something to let an agent decide silently — needs Paul's call.
+
+**New debt found this pass (not filed yet — no tracker writes in scope for a planning-only pass; Claude Code is filing these going forward per current process):**
+- `apps/api/src/domain/utils/subscription.ts` (server-side, distinct from item 9's client-side `subscription.ts`) is an orphan only imported by its own spec. Its `canPerformWriteAction` blocks all `past_due` writes with zero grace period, directly contradicting the live guard's 3-day grace that the web gate already mirrors. Worth fixing alongside item 2 in batch 2, not just noting.
+- The tenant-scope coverage ledger (from PR #1087) can't see 2 repositories because it only walks one directory — likely under-reporting true coverage state.
+
 Uses a scratch REFACTOR-PLAN.md at repo root (not under .cursor/) holding the full ranked consolidation queue with file:line detail. Each goal prompt follows this skeleton:
 
 "Read @REFACTOR-PLAN.md, section '[item name]' ONLY. Scope fence: only modify [target package] and the listed importing files. Create REFACTOR-PROGRESS.md listing every target file as an unchecked item; check each off with a one-line note + test result as you finish it; if unsure what remains, re-read this file and continue from the first unchecked item. After each file: run typecheck + scoped test, don't advance until it passes, revert and mark BLOCKED after 3 failed attempts. Definition of done: single shared implementation exists, old duplicates deleted, a repo-wide search for the old pattern returns zero matches outside the new home (paste the command output into the PR), typecheck passes with old exports removed, tests passed before and after, git diff reviewed. Open a draft PR if anything remains — never claim done without the zero-match proof."
