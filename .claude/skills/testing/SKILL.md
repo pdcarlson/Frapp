@@ -30,7 +30,7 @@ description: >
 | Shared validation tests (Vitest) | `npm run test -w @repo/validation` |
 | Shared hooks tests (Vitest / jsdom) | `npm run test -w packages/hooks` |
 | Shared UI tests (Vitest) | `npm run test -w packages/ui` |
-| Single test file | `npm run test -w apps/api -- --testPathPattern=<pattern>` |
+| Single test file | `npm run test -w apps/api -- --testPathPatterns=<pattern>` |
 | PGlite migration validator | `npm run check:pglite-migrations` |
 | Contract check | `npm run check:api-contract` |
 | Migration check | `npm run check:migration-safety` |
@@ -123,11 +123,12 @@ secrets needed. Details and gotchas (env defaults, UUID-valid fixtures) are in
 ### Running a subset
 
 ```bash
-# Single file (via npm workspace flag)
-npm run test -w apps/api -- --testPathPattern="event.service"
+# Single file (via npm workspace flag). Jest 30 uses the plural
+# `--testPathPatterns`; the singular `--testPathPattern` flag is gone.
+npm run test -w apps/api -- --testPathPatterns="event.service"
 
 # Pattern match
-npm run test -w apps/api -- --testPathPattern="billing"
+npm run test -w apps/api -- --testPathPatterns="billing"
 ```
 
 ---

@@ -3,7 +3,10 @@ import { buildChapterConfigFromArchetype } from '@repo/org-archetypes';
 import { derivePalette } from '@repo/chapter-theme';
 import { LEGAL_POLICY_VERSION } from '@repo/validation';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+} from '../../infrastructure/supabase/database.types';
 import { ChapterService } from './chapter.service';
 import { ActivationService } from './activation.service';
 import type { Chapter } from '../../domain/entities/chapter.entity';
@@ -184,12 +187,15 @@ export class ChapterOnboardingService {
       ? `Welcome to ${identity}. Invite your chapter to get the conversation started.`
       : 'Welcome to your chapter. Invite your chapter to get the conversation started.';
 
-    const { error } = await this.supabase.from('chat_messages').insert({
+    const welcomeMessage: TablesInsert<'chat_messages'> = {
       channel_id: channel.id,
       sender_id: SYSTEM_SENDER_ID,
       content: welcome,
       kind: 'system_audit',
-    });
+    };
+    const { error } = await this.supabase
+      .from('chat_messages')
+      .insert(welcomeMessage);
     if (error) {
       this.logger.warn('Welcome system_audit message insert failed', error);
     }
@@ -206,20 +212,20 @@ export class ChapterOnboardingService {
     effectiveArchetype: string,
   ) {
     const foundedAt = branding.founded_at;
+    const request: TablesInsert<'chapter_directory_requests'> = {
+      chapter_id: chapterId,
+      requested_by: userId,
+      org_letters: (branding.greek_letters as string | undefined) ?? null,
+      org_name: dto.name,
+      chapter_designation: (branding.designation as string | undefined) ?? null,
+      university: dto.university,
+      university_short: (branding.school_short as string | undefined) ?? null,
+      founded_year: typeof foundedAt === 'number' ? foundedAt : null,
+      archetype: effectiveArchetype,
+    };
     const { error } = await this.supabase
       .from('chapter_directory_requests')
-      .insert({
-        chapter_id: chapterId,
-        requested_by: userId,
-        org_letters: (branding.greek_letters as string | undefined) ?? null,
-        org_name: dto.name,
-        chapter_designation:
-          (branding.designation as string | undefined) ?? null,
-        university: dto.university,
-        university_short: (branding.school_short as string | undefined) ?? null,
-        founded_year: typeof foundedAt === 'number' ? foundedAt : null,
-        archetype: effectiveArchetype,
-      });
+      .insert(request);
     if (error) {
       this.logger.warn('chapter_directory_requests insert failed', error);
     }

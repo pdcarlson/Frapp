@@ -9,7 +9,11 @@
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
+import type {
+  Database,
+  FrappSupabaseClient,
+} from '../../src/infrastructure/supabase/database.types';
 
 /**
  * Set by {@link probeStack} in `globalSetup`, read by {@link describeIntegration}
@@ -124,7 +128,7 @@ export async function probeStack(): Promise<boolean> {
  * needs testing. RLS policy coverage is a separate concern, tracked on the
  * PGlite harness in #423.
  */
-export function createServiceRoleClient(): SupabaseClient {
+export function createServiceRoleClient(): FrappSupabaseClient {
   const creds = readCredentials();
   if (!creds) {
     throw new Error(
@@ -132,7 +136,7 @@ export function createServiceRoleClient(): SupabaseClient {
         'was called in a run that should have been skipped.',
     );
   }
-  return createClient(creds.url, creds.serviceRoleKey, {
+  return createClient<Database>(creds.url, creds.serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }

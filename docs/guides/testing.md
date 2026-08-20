@@ -39,6 +39,13 @@ All three CI suites run in the **`api-tests`** job (`.github/workflows/ci.yml`) 
 separate status. The E2E specs override the Supabase client with mocks (see §6) and the evals are
 pure fixtures, so the job is deterministic and needs no live database or secrets.
 
+To run a subset of unit tests, pass Jest 30's `--testPathPatterns` (the singular
+`--testPathPattern` flag was removed):
+
+```bash
+npm run test -w apps/api -- --testPathPatterns="event.service"
+```
+
 Each suite needs its own config because their file patterns don't overlap: unit jest is
 `rootDir: "src"` matching `*.spec.ts`, E2E matches `*.e2e-spec.ts` under `test/`, and the evals match
 `*.eval-spec.ts` under `test/ai-evals/`. A file in the wrong place runs in no suite at all.

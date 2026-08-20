@@ -56,10 +56,25 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
+/**
+ * Flatten an interface into an anonymous mapped type so it satisfies
+ * postgrest-js's `Record<string, unknown>` constraint (interfaces have no
+ * implicit index signature; a mapped type does). Same trick as `Row`.
+ *
+ * Insert/Update used to be a bare `Record<string, unknown>`, which is why
+ * every `.insert()` / `.update()` needed `as never` — `Partial<Entity>` is an
+ * interface and is not assignable to that index signature. Mapping the
+ * entity's keys keeps GenericSchema bound *and* lets `TablesInsert<'tasks'>`
+ * type-check at the write boundary.
+ */
+type TableRow<Row> = { [K in keyof Row]: Row[K] };
+type TableInsert<Row> = { [K in keyof Row]?: Row[K] };
+type TableUpdate<Row> = { [K in keyof Row]?: Row[K] };
+
 type TableDefinition<Row> = {
-  Row: { [K in keyof Row]: Row[K] };
-  Insert: Record<string, unknown>;
-  Update: Record<string, unknown>;
+  Row: TableRow<Row>;
+  Insert: TableInsert<Row>;
+  Update: TableUpdate<Row>;
   Relationships: {
     foreignKeyName: string;
     columns: string[];
@@ -264,3 +279,9 @@ export interface Database {
 }
 
 export type FrappSupabaseClient = SupabaseClient<Database>;
+
+export type TablesInsert<T extends keyof Database['public']['Tables']> =
+  Database['public']['Tables'][T]['Insert'];
+
+export type TablesUpdate<T extends keyof Database['public']['Tables']> =
+  Database['public']['Tables'][T]['Update'];

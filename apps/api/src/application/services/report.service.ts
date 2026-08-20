@@ -1,5 +1,4 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { SEMESTER_ARCHIVE_REPOSITORY } from '../../domain/repositories/semester-archive.repository.interface';
 import type { ISemesterArchiveRepository } from '../../domain/repositories/semester-archive.repository.interface';
@@ -8,6 +7,7 @@ import {
   type PointsWindow,
 } from '../../domain/utils/points-window';
 import { chunkIds } from '../../domain/utils/chunk-ids';
+import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 
 export interface AttendanceReportRow {
   member_name: string;
@@ -272,7 +272,7 @@ async function fetchAllPages<T>(
 @Injectable()
 export class ReportService {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
     @Inject(SEMESTER_ARCHIVE_REPOSITORY)
     private readonly semesterArchiveRepo: ISemesterArchiveRepository,
   ) {}
@@ -396,7 +396,7 @@ export class ReportService {
             p_since: since ? since.toISOString() : null,
           })
           .order('member_name', { ascending: true })
-          .range(from, to) as PromiseLike<QueryResult<PointsReportRpcRow>>,
+          .range(from, to),
     );
 
     return {
@@ -562,7 +562,7 @@ export class ReportService {
         return query
           .order('date', { ascending: false })
           .order('id', { ascending: true })
-          .range(from, to) as PromiseLike<QueryResult<ServiceEntryRow>>;
+          .range(from, to);
       },
     );
     if (!entries.length) return { rows: [], truncated, limit: REPORT_MAX_ROWS };

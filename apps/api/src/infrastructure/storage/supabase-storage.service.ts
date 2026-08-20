@@ -6,6 +6,7 @@ import type {
   StorageObject,
 } from '../../domain/adapters/storage.interface';
 import { assertSafeStoragePath } from '../../domain/utils/storage-path';
+import type { FrappSupabaseClient } from '../supabase/database.types';
 
 /**
  * Reject object paths that can escape their bucket.
@@ -70,7 +71,7 @@ function parseTimestamp(value: string | null | undefined): Date | null {
 @Injectable()
 export class SupabaseStorageService implements IStorageProvider {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async getSignedUploadUrl(

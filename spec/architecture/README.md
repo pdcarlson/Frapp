@@ -262,6 +262,7 @@ All Supabase repository implementations follow these conventions:
 - **Read-list queries** check the `error` field before returning data and default to an empty array only when no error is present.
 - **All read methods** destructure `{ data, error }` and throw if `error` is truthy, ensuring infrastructure failures (connectivity issues, permission errors) are never silently swallowed.
 - **Write methods** (`create`, `update`, `delete`) already follow this pattern — they check `error` and throw.
+- **Write payloads are `TablesInsert<'table'>` / `TablesUpdate<'table'>`**, not `as never`. `Insert`/`Update` in `database.types.ts` are mapped types of the domain entity (same index-signature trick as `Row`), so PostgREST accepts the payload without a cast and still rejects mistyped columns. Domain repository interfaces stay `Partial<Entity>` so the domain layer does not import `Database`. There is no generic base repository — each class keeps its own queries; only the write-method parameter type changes. `apps/api/src/infrastructure/supabase/repositories/no-as-never.spec.ts` fails if an `as never` cast returns, the repository count drifts, or a file injects a bare `SupabaseClient`. Direct service-layer writes (chapter config, custom fields/roles, chapter-create channel seed, onboarding, chat-bridge, scheduled-jobs) use the same table types; inject `FrappSupabaseClient` everywhere the `SUPABASE_CLIENT` token is taken, never the bare `SupabaseClient`.
 
 ### Invite redemption atomicity
 

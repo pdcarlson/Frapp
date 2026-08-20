@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type { IBackworkProfessorRepository } from '../../../domain/repositories/backwork.repository.interface';
 import { BackworkProfessor } from '../../../domain/entities/backwork.entity';
 
@@ -35,10 +35,12 @@ export class SupabaseBackworkProfessorRepository implements IBackworkProfessorRe
     return data;
   }
 
-  async create(data: Partial<BackworkProfessor>): Promise<BackworkProfessor> {
+  async create(
+    data: TablesInsert<'backwork_professors'>,
+  ): Promise<BackworkProfessor> {
     const { data: created, error } = await this.supabase
       .from('backwork_professors')
-      .insert(data as never)
+      .insert(data)
       .select()
       .single();
     if (error) throw error;

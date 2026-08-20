@@ -25,6 +25,14 @@ before adding a family of your own:
   also matching every detail. The explicit `"list"` / `"detail"` segment is what
   lets a mutation invalidate precisely.
 
+**New families use `createChapterQueryKeys` in `chapter-query-keys.ts`.** It is
+the same shape as `taskKeys`, with `chapterId: string` as a mandatory first
+argument — omitting it, or passing `null`, is a type error. Existing call sites
+still use ad-hoc literals (some still `string | null`); those migrate in a
+later pass. Do not add `string | null` to the factory to make a disabled query
+type-check — leave the query `enabled: false` instead of building an unscoped
+key.
+
 ## Optimistic mutations
 
 `useUpdateNotificationPreference` (`use-notifications.ts`) and the three task

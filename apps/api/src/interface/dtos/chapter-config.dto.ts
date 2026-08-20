@@ -12,6 +12,7 @@ import {
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import type { DuesCadence } from '../../domain/entities/chapter-dues-config.entity';
 
 /** Matches the `accent_color` column's own validation in `chapter.dto.ts`. */
 const HEX_COLOR_PATTERN = /^#[0-9A-Fa-f]{6}$/;
@@ -114,7 +115,7 @@ export class DuesConfigDto {
   @ApiPropertyOptional({ enum: ['monthly', 'per_semester', 'per_quarter'] })
   @IsOptional()
   @IsEnum(['monthly', 'per_semester', 'per_quarter'])
-  cadence?: string;
+  cadence?: DuesCadence;
 
   @ApiPropertyOptional({ description: 'Active member dues in cents' })
   @IsOptional()
