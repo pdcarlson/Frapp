@@ -1,5 +1,6 @@
 import { useConnectionRuntime } from "@/lib/connection/use-connection";
 import { usePushRuntime } from "@/lib/notifications/use-push-runtime";
+import { useOnboardingRedirect } from "@/lib/onboarding/use-onboarding-redirect";
 
 /**
  * The app-wide runtimes that have no screen to live on.
@@ -21,9 +22,14 @@ import { usePushRuntime } from "@/lib/notifications/use-push-runtime";
  * Chat is the deliberate exception: `lib/chat/use-chat-runtime.ts` stays a
  * per-screen hook because configuring the realtime manager is a chat concern
  * with per-screen refcounting, not an app-wide one.
+ *
+ * **Onboarding** is the third runtime for the same freeze: `(tabs)/_layout.tsx`
+ * cannot learn about join/welcome without becoming an integrator PR, so walking
+ * a member out of the tabs onto s02/s03 lives here.
  */
 export function AppRuntime(): null {
   useConnectionRuntime();
   usePushRuntime();
+  useOnboardingRedirect();
   return null;
 }

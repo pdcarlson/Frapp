@@ -116,6 +116,12 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
   },
 }));
 
+vi.mock("expo-linking", () => ({
+  useURL: vi.fn(() => null),
+  createURL: vi.fn((path: string) => `frapp://${path}`),
+  parse: vi.fn(),
+}));
+
 vi.mock("expo-network", () => ({
   getNetworkStateAsync: vi
     .fn()

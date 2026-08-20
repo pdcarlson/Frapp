@@ -33,19 +33,53 @@
  * deliberate destination (reached from the More hub) rather than a forced one.
  * Once #805 lands, promoting it back to automatic is a small, safe change —
  * tracked as a follow-up.
+ *
+ * ## First-run (s03) and join (s02)
+ *
+ * `has_completed_onboarding` on the member row is what sends a new member to
+ * s03 rather than the tabs. That flag is not on the JWT — it comes from
+ * `GET /v1/chapters`. A missing claim must still not be fatal, but an
+ * *authenticated* session with zero memberships is join, and a membership whose
+ * onboarding flag is false is welcome. See `lib/onboarding/membership.ts`.
  */
-export type AuthGateDestination = "hold" | "sign-in" | "tabs";
+import { needsFirstRun } from "./onboarding/membership";
+
+export type AuthGateDestination =
+  | "hold"
+  | "sign-in"
+  | "join"
+  | "welcome"
+  | "tabs";
+
+export type AuthGateMembership = {
+  chapter_id: string;
+  has_completed_onboarding: boolean;
+};
 
 export type AuthGateInput = {
   status: "hydrating" | "authenticated" | "unauthenticated";
   chapterId: string | null;
   isChapterResolving: boolean;
+  /**
+   * Optional because `(tabs)/_layout.tsx` is frozen and still calls this with
+   * only the session. Missing values behave as `idle` / `[]` — fail *open* to
+   * tabs — so that layout never blanks. `AppRuntime` is what walks a member
+   * *out* of the tabs onto join/welcome once `GET /v1/chapters` is in.
+   *
+   * `pending` is only for the first authenticated chapters read. A failed read
+   * fails open to tabs so an outage of `/v1/chapters` cannot trap every member
+   * on join.
+   */
+  membershipsStatus?: "idle" | "pending" | "success" | "error";
+  memberships?: AuthGateMembership[];
 };
 
 export function resolveAuthGate({
   status,
   chapterId,
   isChapterResolving,
+  membershipsStatus = "idle",
+  memberships = [],
 }: AuthGateInput): AuthGateDestination {
   if (status === "hydrating") {
     return "hold";
@@ -55,23 +89,31 @@ export function resolveAuthGate({
     return "sign-in";
   }
 
-  // A known chapter wins over an in-flight read, and the order matters. The
-  // claim is re-read on every token change — the hourly auto-refresh, every
+  // A known chapter wins over an in-flight *claim* read, and the order matters.
+  // The claim is re-read on every token change — the hourly auto-refresh, every
   // foreground, and every chapter switch — and `hold` renders nothing, so
   // holding whenever a read is in flight would unmount the entire tab navigator
   // roughly once an hour, dumping the member back on the Chat tab and losing
   // composer text and scroll position. Resolving only ever *confirms* or
   // *changes* a chapter we already have; it is not a reason to blank the app.
-  if (chapterId) {
-    return "tabs";
-  }
-
-  // Hold only on the very first read, so the app does not paint a frame of the
-  // wrong thing before the claim lands.
-  if (isChapterResolving) {
+  if (!chapterId && isChapterResolving) {
     return "hold";
   }
 
-  // Resolved, and there is no claim. Proceed anyway — see the note above.
+  if (membershipsStatus === "pending") {
+    return "hold";
+  }
+
+  if (membershipsStatus === "success") {
+    if (memberships.length === 0) {
+      return "join";
+    }
+    if (needsFirstRun(memberships, chapterId)) {
+      return "welcome";
+    }
+  }
+
+  // Resolved, and either there is a membership that has finished onboarding,
+  // the chapters read failed (fail open), or it has not been asked yet.
   return "tabs";
 }

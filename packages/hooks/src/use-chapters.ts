@@ -27,7 +27,7 @@ function chapterQueryKey(...parts: Array<string | null | undefined>) {
   return ["chapters", ...parts];
 }
 
-export function useListChapters() {
+export function useListChapters(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   return useQuery({
     queryKey: chapterQueryKey("accessible"),
@@ -37,6 +37,7 @@ export function useListChapters() {
       return (data ?? []) as ChapterMembershipSummary[];
     },
     staleTime: 60_000,
+    enabled: options?.enabled ?? true,
   });
 }
 
