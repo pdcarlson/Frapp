@@ -153,6 +153,10 @@ export class RbacService {
       throw new BadRequestException('Target member is not in this chapter');
     }
 
+    if (currentMember.chapter_id !== chapterId) {
+      throw new BadRequestException('Current member is not in this chapter');
+    }
+
     const roles = await this.roleRepo.findByChapter(chapterId);
     const presidentRole = roles.find(
       (r) => r.is_system && r.permissions.includes(SystemPermissions.WILDCARD),

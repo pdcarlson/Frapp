@@ -61,13 +61,10 @@ describe('AttendanceService', () => {
 
   beforeEach(async () => {
     mockAttendanceRepo = {
-      findById: jest.fn(),
       findByEvent: jest.fn(),
       findByEventAndUser: jest.fn(),
-      create: jest.fn(),
       createMany: jest.fn(),
       update: jest.fn(),
-      delete: jest.fn(),
       checkInAtomic: jest.fn(),
     };
 
@@ -242,7 +239,6 @@ describe('AttendanceService', () => {
         10,
         'Chapter Meeting',
       );
-      expect(mockAttendanceRepo.create).not.toHaveBeenCalled();
       expect(result).toEqual(baseAttendance);
 
       jest.useRealTimers();
@@ -328,8 +324,7 @@ describe('AttendanceService', () => {
       await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
         'db transaction failed',
       );
-      expect(mockAttendanceRepo.create).not.toHaveBeenCalled();
-      expect(mockAttendanceRepo.delete).not.toHaveBeenCalled();
+      expect(mockAttendanceRepo.checkInAtomic).toHaveBeenCalled();
       jest.useRealTimers();
     });
 

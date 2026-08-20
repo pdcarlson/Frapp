@@ -173,7 +173,7 @@ export class ChapterDocumentService {
       throw new BadRequestException('Folder name must not be empty');
     }
 
-    const existing = await this.folderRepo.findByName(folderName, chapterId);
+    const existing = await this.folderRepo.findByName(chapterId, folderName);
     if (existing) {
       throw new ConflictException(
         `A folder named "${folderName}" already exists`,
@@ -220,7 +220,7 @@ export class ChapterDocumentService {
     const isRename = rename !== undefined && rename !== folder.name;
 
     if (isRename) {
-      const conflict = await this.folderRepo.findByName(rename, chapterId);
+      const conflict = await this.folderRepo.findByName(chapterId, rename);
       if (conflict) {
         throw new ConflictException(
           `A folder named "${rename}" already exists`,
@@ -271,7 +271,7 @@ export class ChapterDocumentService {
     name: string,
     chapterId: string,
   ): Promise<ChapterDocumentFolder> {
-    const existing = await this.folderRepo.findByName(name, chapterId);
+    const existing = await this.folderRepo.findByName(chapterId, name);
     if (existing) return existing;
 
     try {
@@ -286,7 +286,7 @@ export class ChapterDocumentService {
       // which is all this method promised — failing the *upload* over it would
       // be gratuitous.
       if (isUniqueViolation(error)) {
-        const raced = await this.folderRepo.findByName(name, chapterId);
+        const raced = await this.folderRepo.findByName(chapterId, name);
         if (raced) return raced;
       }
       throw error;

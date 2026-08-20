@@ -25,16 +25,6 @@ export class SupabaseChapterRepository implements IChapterRepository {
     return data;
   }
 
-  async findByStripeCustomerId(customerId: string): Promise<Chapter | null> {
-    const { data, error } = await this.supabase
-      .from('chapters')
-      .select('*')
-      .eq('stripe_customer_id', customerId)
-      .maybeSingle();
-    if (error) throw error;
-    return data;
-  }
-
   async findBySubscriptionId(subscriptionId: string): Promise<Chapter | null> {
     const { data, error } = await this.supabase
       .from('chapters')

@@ -171,6 +171,7 @@ export class StudyService {
     geofence: StudyGeofence,
     now: Date,
     isAlumni: boolean,
+    chapterId: string,
   ): Promise<StudySession | null> {
     if (!session.paused_at) return null;
 
@@ -188,7 +189,7 @@ export class StudyService {
       isAlumni,
     );
 
-    return this.sessionRepo.update(session.id, {
+    return this.sessionRepo.update(session.id, chapterId, {
       status: 'PAUSED_EXPIRED',
       end_time: pausedAt.toISOString(),
       last_heartbeat_at: watermark,
@@ -305,6 +306,7 @@ export class StudyService {
             priorGeofence,
             new Date(),
             false,
+            chapterId,
           )
         : null;
 
@@ -365,6 +367,7 @@ export class StudyService {
       geofence,
       now,
       false,
+      chapterId,
     );
     if (expired) return expired;
 
@@ -375,28 +378,28 @@ export class StudyService {
 
     if (session.paused_at) {
       if (!inside) {
-        return this.sessionRepo.update(session.id, {
+        return this.sessionRepo.update(session.id, chapterId, {
           status: 'LOCATION_INVALID',
           end_time: now.toISOString(),
         });
       }
       // Inside grace and back in the zone. Paused time does not accrue, so
       // restart the watermark — carrying the pre-pause remainder with it.
-      return this.sessionRepo.update(session.id, {
+      return this.sessionRepo.update(session.id, chapterId, {
         paused_at: null,
         last_heartbeat_at: this.resumeWatermark(session, now),
       });
     }
 
     if (this.isStale(session, now)) {
-      return this.sessionRepo.update(session.id, {
+      return this.sessionRepo.update(session.id, chapterId, {
         status: 'EXPIRED',
         end_time: now.toISOString(),
       });
     }
 
     if (!inside) {
-      return this.sessionRepo.update(session.id, {
+      return this.sessionRepo.update(session.id, chapterId, {
         status: 'LOCATION_INVALID',
         end_time: now.toISOString(),
       });
@@ -404,7 +407,7 @@ export class StudyService {
 
     const { totalMinutes, watermark } = this.accrue(session, now);
 
-    return this.sessionRepo.update(session.id, {
+    return this.sessionRepo.update(session.id, chapterId, {
       last_heartbeat_at: watermark,
       total_foreground_minutes: totalMinutes,
     });
@@ -445,6 +448,7 @@ export class StudyService {
       geofence,
       now,
       isAlumni,
+      chapterId,
     );
     if (expired) return expired;
 
@@ -459,7 +463,7 @@ export class StudyService {
     // foreground time and `stopSession` would skip its own stale check
     // (paused_at governs there), so nothing downstream would catch it.
     if (this.isStale(session, now)) {
-      return this.sessionRepo.update(session.id, {
+      return this.sessionRepo.update(session.id, chapterId, {
         status: 'EXPIRED',
         end_time: now.toISOString(),
       });
@@ -467,7 +471,7 @@ export class StudyService {
 
     const { totalMinutes, watermark } = this.accrue(session, now);
 
-    return this.sessionRepo.update(session.id, {
+    return this.sessionRepo.update(session.id, chapterId, {
       paused_at: now.toISOString(),
       last_heartbeat_at: watermark,
       total_foreground_minutes: totalMinutes,
@@ -513,19 +517,20 @@ export class StudyService {
       geofence,
       now,
       isAlumni,
+      chapterId,
     );
     if (expired) return expired;
 
     if (!session.paused_at) return session;
 
     if (!pointInPolygon(lat, lng, geofence.coordinates)) {
-      return this.sessionRepo.update(session.id, {
+      return this.sessionRepo.update(session.id, chapterId, {
         status: 'LOCATION_INVALID',
         end_time: now.toISOString(),
       });
     }
 
-    return this.sessionRepo.update(session.id, {
+    return this.sessionRepo.update(session.id, chapterId, {
       paused_at: null,
       last_heartbeat_at: this.resumeWatermark(session, now),
     });
@@ -563,6 +568,7 @@ export class StudyService {
       geofence,
       now,
       isAlumni,
+      chapterId,
     );
     if (expired) return expired;
 
@@ -574,7 +580,7 @@ export class StudyService {
     const creditUpTo = session.paused_at ? new Date(session.paused_at) : now;
 
     if (!session.paused_at && this.isStale(session, now)) {
-      return this.sessionRepo.update(session.id, {
+      return this.sessionRepo.update(session.id, chapterId, {
         status: 'EXPIRED',
         end_time: now.toISOString(),
       });
@@ -588,7 +594,7 @@ export class StudyService {
       isAlumni,
     );
 
-    return this.sessionRepo.update(session.id, {
+    return this.sessionRepo.update(session.id, chapterId, {
       status: 'COMPLETED',
       end_time: now.toISOString(),
       last_heartbeat_at: watermark,
@@ -621,6 +627,7 @@ export class StudyService {
           geofence,
           new Date(),
           await this.rbac.isAlumni(chapterId, userId),
+          chapterId,
         );
       }
     }

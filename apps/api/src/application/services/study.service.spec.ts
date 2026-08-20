@@ -81,7 +81,6 @@ describe('StudyService', () => {
     };
 
     mockSessionRepo = {
-      findById: jest.fn(),
       findActiveByUserAndChapter: jest.fn(),
       findByUserAndChapter: jest.fn(),
       create: jest.fn(),
@@ -159,6 +158,7 @@ describe('StudyService', () => {
       // Session is closed out...
       expect(mockSessionRepo.update).toHaveBeenCalledWith(
         longSession.id,
+        'ch-1',
         expect.objectContaining({ status: 'COMPLETED', points_awarded: false }),
       );
       expect(result.status).toBe('COMPLETED');
@@ -383,6 +383,7 @@ describe('StudyService', () => {
 
       expect(mockSessionRepo.update).toHaveBeenCalledWith(
         'sess-1',
+        'ch-1',
         expect.objectContaining({
           last_heartbeat_at: '2026-02-26T10:10:00.000Z',
           total_foreground_minutes: 10,
@@ -406,6 +407,7 @@ describe('StudyService', () => {
 
       expect(mockSessionRepo.update).toHaveBeenCalledWith(
         'sess-1',
+        'ch-1',
         expect.objectContaining({
           status: 'EXPIRED',
           end_time: '2026-02-26T10:20:00.000Z',
@@ -429,6 +431,7 @@ describe('StudyService', () => {
 
       expect(mockSessionRepo.update).toHaveBeenCalledWith(
         'sess-1',
+        'ch-1',
         expect.objectContaining({
           status: 'LOCATION_INVALID',
         }),
@@ -628,6 +631,7 @@ describe('StudyService', () => {
 
       expect(mockSessionRepo.update).toHaveBeenCalledWith(
         paused.id,
+        'ch-1',
         expect.objectContaining({ status: 'PAUSED_EXPIRED' }),
       );
 
@@ -679,7 +683,7 @@ describe('StudyService', () => {
 
         await service.pauseSession('user-1', 'ch-1');
 
-        expect(mockSessionRepo.update).toHaveBeenCalledWith('sess-1', {
+        expect(mockSessionRepo.update).toHaveBeenCalledWith('sess-1', 'ch-1', {
           paused_at: '2026-02-26T10:12:30.000Z',
           // 7m30s elapsed since the 10:05 watermark -> 7 whole minutes banked
           // on top of the existing 5...
@@ -752,11 +756,13 @@ describe('StudyService', () => {
         expect(result.status).toBe('EXPIRED');
         expect(mockSessionRepo.update).toHaveBeenCalledWith(
           'sess-1',
+          'ch-1',
           expect.objectContaining({ status: 'EXPIRED' }),
         );
         // Critically, the 60-minute gap was never credited.
         expect(mockSessionRepo.update).not.toHaveBeenCalledWith(
           'sess-1',
+          'ch-1',
           expect.objectContaining({ total_foreground_minutes: 65 }),
         );
         expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
@@ -782,7 +788,7 @@ describe('StudyService', () => {
 
         // Paused time never accrues: the watermark restarts at the resume
         // instant and the 12 banked minutes are left untouched.
-        expect(mockSessionRepo.update).toHaveBeenCalledWith('sess-1', {
+        expect(mockSessionRepo.update).toHaveBeenCalledWith('sess-1', 'ch-1', {
           paused_at: null,
           last_heartbeat_at: '2026-02-26T10:15:00.000Z',
         });
@@ -811,6 +817,7 @@ describe('StudyService', () => {
         expect(result.status).toBe('PAUSED_EXPIRED');
         expect(mockSessionRepo.update).toHaveBeenCalledWith(
           'sess-1',
+          'ch-1',
           expect.objectContaining({
             status: 'PAUSED_EXPIRED',
             // The session ends at the pause, not at the late return.
@@ -844,6 +851,7 @@ describe('StudyService', () => {
         expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
         expect(mockSessionRepo.update).toHaveBeenCalledWith(
           'sess-1',
+          'ch-1',
           expect.objectContaining({
             status: 'PAUSED_EXPIRED',
             points_awarded: false,
@@ -893,7 +901,7 @@ describe('StudyService', () => {
 
         await service.resumeSession('user-1', 'ch-1', 5, 5);
 
-        expect(mockSessionRepo.update).toHaveBeenCalledWith('sess-1', {
+        expect(mockSessionRepo.update).toHaveBeenCalledWith('sess-1', 'ch-1', {
           paused_at: null,
           // 10:15:00 minus the 30s owed — not 10:15:00 flat.
           last_heartbeat_at: '2026-02-26T10:14:30.000Z',
@@ -943,6 +951,7 @@ describe('StudyService', () => {
         expect(result.status).not.toBe('EXPIRED');
         expect(mockSessionRepo.update).toHaveBeenCalledWith(
           'sess-1',
+          'ch-1',
           expect.objectContaining({ paused_at: null }),
         );
       });
@@ -988,7 +997,7 @@ describe('StudyService', () => {
 
         // The 3 paused minutes are not credited — a client that never called
         // /resume still cannot bank background time.
-        expect(mockSessionRepo.update).toHaveBeenCalledWith('sess-1', {
+        expect(mockSessionRepo.update).toHaveBeenCalledWith('sess-1', 'ch-1', {
           paused_at: null,
           last_heartbeat_at: '2026-02-26T10:15:00.000Z',
         });
@@ -1016,6 +1025,7 @@ describe('StudyService', () => {
         expect(result.status).toBe('LOCATION_INVALID');
         expect(mockSessionRepo.update).toHaveBeenCalledWith(
           'sess-1',
+          'ch-1',
           expect.objectContaining({ status: 'LOCATION_INVALID' }),
         );
       });
@@ -1061,6 +1071,7 @@ describe('StudyService', () => {
 
         expect(mockSessionRepo.update).toHaveBeenCalledWith(
           'sess-1',
+          'ch-1',
           expect.objectContaining({
             status: 'COMPLETED',
             paused_at: null,
@@ -1121,6 +1132,7 @@ describe('StudyService', () => {
 
         expect(mockSessionRepo.update).toHaveBeenCalledWith(
           'sess-1',
+          'ch-1',
           expect.objectContaining({ status: 'PAUSED_EXPIRED' }),
         );
         expect(result.id).toBe('sess-2');
@@ -1183,7 +1195,7 @@ describe('StudyService', () => {
 
       await service.heartbeat('user-1', 'ch-1', 5, 5);
 
-      expect(mockSessionRepo.update).toHaveBeenCalledWith('sess-1', {
+      expect(mockSessionRepo.update).toHaveBeenCalledWith('sess-1', 'ch-1', {
         total_foreground_minutes: 12,
         // Not 10:12:30 — the leftover 30s stays owed to the member.
         last_heartbeat_at: '2026-02-26T10:12:00.000Z',
@@ -1198,7 +1210,7 @@ describe('StudyService', () => {
 
       await service.heartbeat('user-1', 'ch-1', 5, 5);
 
-      expect(mockSessionRepo.update).toHaveBeenCalledWith('sess-1', {
+      expect(mockSessionRepo.update).toHaveBeenCalledWith('sess-1', 'ch-1', {
         total_foreground_minutes: 5,
         last_heartbeat_at: '2026-02-26T10:05:00.000Z',
       });

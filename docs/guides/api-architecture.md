@@ -68,6 +68,10 @@ src/
 
 > **Note:** Controllers only handle HTTP concerns (routing, status codes, DTOs). They never talk to Supabase directly — they call application services instead.
 
+### Repository lookup argument order
+
+Lookups that take a chapter and a second `string` (name, code, hash) are **chapter-first**: `findByName(chapterId, name)`, `findByCode(chapterId, code)`, `findByFileHash(chapterId, fileHash)`. Both parameters are `string`, so a transposition is not a type error — it binds the name to `chapter_id`, matches nothing, and returns a silent miss (or a false "name is free" on a uniqueness check). Normalize new methods to this order; do not add a chapter-last overload.
+
 ## 2. Guards and interceptors
 
 Every protected endpoint runs through a consistent guard chain:
