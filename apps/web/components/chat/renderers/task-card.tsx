@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Can } from "@/components/shared/can";
 import { can } from "@repo/validation";
+import { parseBareDateLocalMidnight } from "@repo/formatting";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -127,12 +128,13 @@ function actionStatusOf(live: LiveTask): TaskStatus | undefined {
 function formatDate(value: string): string {
   // due_date is a date-only `YYYY-MM-DD`; parse at local midnight so the
   // rendered day matches the server-formatted `content` string instead of
-  // shifting back a day in negative-UTC-offset timezones.
-  const parsed = /^\d{4}-\d{2}-\d{2}$/.test(value)
-    ? new Date(`${value}T00:00:00`)
-    : new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString();
+  // shifting back a day in negative-UTC-offset timezones. Protected cluster —
+  // do not fold into formatLocaleDate (`new Date(value)` is UTC midnight).
+  const local = parseBareDateLocalMidnight(value);
+  if (local) return local.toLocaleDateString();
+  const instant = new Date(value);
+  if (Number.isNaN(instant.getTime())) return value;
+  return instant.toLocaleDateString();
 }
 
 const STATUS_BADGE: Record<TaskStatus, "default" | "outline" | "destructive"> = {

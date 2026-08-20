@@ -4,24 +4,6 @@
  * owns that distinction).
  */
 
-/**
- * Seconds as a stopwatch: `1:24:36` past the hour, `4:12` below it.
- *
- * Canvas draws only the over-an-hour case. Padding a short session to `0:04:12`
- * would put a zero on screen that means nothing to the member, so the hour
- * segment is dropped rather than zero-filled — the ordinary stopwatch reading.
- */
-export function formatTimer(totalSeconds: number): string {
-  const whole = Math.max(0, Math.floor(totalSeconds));
-  const hours = Math.floor(whole / 3600);
-  const minutes = Math.floor((whole % 3600) / 60);
-  const seconds = whole % 60;
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return hours > 0
-    ? `${hours}:${pad(minutes)}:${pad(seconds)}`
-    : `${minutes}:${pad(seconds)}`;
-}
-
 /** Minutes as the drawn `2.1 hrs`. Singular below 1.05 so `1.0 hrs` never ships. */
 export function formatHoursLabel(minutes: number): string {
   const hours = Math.max(0, minutes) / 60;

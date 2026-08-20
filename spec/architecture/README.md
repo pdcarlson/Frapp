@@ -32,7 +32,7 @@ Frapp/
     web/            # Next.js admin dashboard (app.frapp.live)
     mobile/         # Expo mobile app (iOS + Android)
     landing/        # Next.js marketing site (frapp.live)
-  packages/         # 12 shared workspaces
+  packages/         # 13 shared workspaces
     api-sdk/        # Generated API client + TypeScript types
     brand-assets/   # Canonical SVG marks (favicon + lockup)
     chapter-theme/  # Chapter accent palette derivation (legacy web token map until Signet reskin)
@@ -40,6 +40,7 @@ Frapp/
     chat-integrations/ # Chat slash-command / integration helpers
     color/          # Shared WCAG contrast math
     eslint-config/  # Shared ESLint configuration
+    formatting/     # Shared date/time/duration display helpers (web + mobile)
     hooks/          # Shared React hooks (use-members, use-frapp-client, etc.)
     org-archetypes/ # Greek-org directory / archetype data
     theme/          # Tailwind config + global styles (legacy bone/bronze until web/landing reskin)
@@ -115,11 +116,12 @@ Frapp/
 | `@repo/chat-integrations` | Chat slash-command / integration helpers. `/points` reason length is `POINTS_REASON_MAX_LENGTH` from `@repo/validation`, not a local copy. |
 | `@repo/color`             | Shared WCAG contrast math. DOM-free so theme packages and the API share one implementation. |
 | `@repo/eslint-config`     | Shared ESLint rules.                                                      |
+| `@repo/formatting`        | Shared date/time/duration display helpers. Generic locale formatters (`formatClock`, `formatLocaleDateTime`, `formatLocaleDate`) plus three **protected clusters** that must stay distinct: stopwatch padding (`formatPaddedStopwatch` / `formatTimer`), bare-date timezone parsing (`parseBareDateLocalMidnight` / `parseBareDateUtcNoon`), and minute-duration rounding (`formatMinutesExact` / `formatMinutesRounded`). Used by web + mobile. |
 | `@repo/hooks`             | Shared React hooks wrapping api-sdk with TanStack Query.                  |
 | `@repo/org-archetypes`    | Greek-org directory / archetype data for onboarding autofill. Consumed by the API (chapter config seed), web Settings + first-officer wizard, and `apps/mobile` (`package.json` declares the workspace dependency; the wizard reads `ARCHETYPES` directly). |
 | `@repo/theme`             | Tailwind config presets, global CSS. Legacy bone/bronze tokens until web/landing reskin; Signet tokens are specified in `spec/ui/design-system/`. |
 | `@repo/typescript-config` | Shared tsconfig presets.                                                  |
-| `@repo/validation`        | Shared Zod 4 schemas, upload MIME/size allowlists (`image` / `proof` / `document`), field-length caps, plus client gates (`can`, `isModuleEnabled`, `subscriptionWriteState`) used by API + clients. `z.record` requires a key schema and a value schema. |
+| `@repo/validation`        | Shared Zod 4 schemas, upload MIME/size allowlists (`image` / `proof` / `document`), field-length caps, plus client gates (`can`, `isModuleEnabled`, `subscriptionWriteState`, `isAnalyticsOptedOut`) used by API + clients. `z.record` requires a key schema and a value schema. |
 
 ---
 

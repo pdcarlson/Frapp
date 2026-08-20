@@ -25,6 +25,7 @@ import {
   LoadingState,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
+import { formatLocaleDateTime as formatTimestamp } from "@repo/formatting";
 
 type Category = "ATTENDANCE" | "ACADEMIC" | "SERVICE" | "FINE" | "MANUAL" | "STUDY";
 
@@ -45,13 +46,6 @@ type MemberSummary = {
 
 function asArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
-}
-
-function formatTimestamp(value: string | undefined): string {
-  if (!value) return "—";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "—";
-  return parsed.toLocaleString();
 }
 
 export function PointsAuditCard() {

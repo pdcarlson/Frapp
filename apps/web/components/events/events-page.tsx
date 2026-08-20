@@ -29,18 +29,12 @@ import { EventEditorDialog } from "@/components/events/event-editor-dialog";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
+import { formatLocaleDateTime as formatDate } from "@repo/formatting";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 
 type EventRow = Record<string, unknown>;
 
 const EVENTS_TIME_FILTER_TICK_MS = 60_000;
-
-function formatDate(value: unknown): string {
-  if (typeof value !== "string") return "—";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "—";
-  return parsed.toLocaleString();
-}
 
 export function EventsPage() {
   const { isOffline } = useNetwork();

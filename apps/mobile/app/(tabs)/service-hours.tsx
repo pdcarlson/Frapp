@@ -7,6 +7,7 @@ import {
 } from "@gorhom/bottom-sheet";
 import { useCreateServiceEntry, useServiceEntries } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
+import { formatMinutesRounded } from "@repo/formatting";
 import { ScreenShell } from "@/components/screen-shell";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import {
@@ -16,7 +17,6 @@ import {
 } from "@/components/state-block";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
-  formatDuration,
   parseDurationInput,
   selectServiceEntryRows,
   summarizeServiceEntries,
@@ -245,7 +245,7 @@ export default function ServiceHoursScreen() {
                 ? "Enter a duration like 2:30 or 2.5, up to 24 hours."
                 : // Echoed back because a bare number reads as hours: "45"
                   // means 45 hours, and the history has no way to correct it.
-                  `Logging ${formatDuration(durationMinutes)}, dated today.`}
+                  `Logging ${formatMinutesRounded(durationMinutes)}, dated today.`}
           </Text>
 
           {submitFailed ? (

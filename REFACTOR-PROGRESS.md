@@ -8,7 +8,7 @@ GitHub Issues with the `triage` label, per `AGENTS.md` ("Never track work in a s
 [`.claude/skills/file-follow-up/SKILL.md`](.claude/skills/file-follow-up/SKILL.md). This file is
 deleted when the project wraps, so nothing durable may live only here.
 
-- [ ] 1. Date-formatting functions → `@repo/formatting`
+- [x] 1a. Date-formatting C1–C3 → `@repo/formatting`; protected clusters stay distinct (stopwatch / bare-date / minute rounding). Tests: `npm run test -w @repo/formatting`.
 - [x] 2. MIME/content-type allowlists + `field-limits.ts` → `@repo/validation`
   Shared kinds `image` / `proof` / `document` + field caps in `@repo/validation`.
   GIF drift fixed (Backwork now uses the shared `document` kind). Legacy Office
@@ -23,6 +23,12 @@ deleted when the project wraps, so nothing durable may live only here.
 - [ ] 5. Query-key call sites → `createChapterQueryKeys`
 - [x] 6. `getErrorMessage` → `apps/web/lib/utils.ts`; mobile `api-error.ts` → `@repo/api-sdk` — one helper, 8 dupes deleted, 4 mobile importers rewired. Before: web 54/474, mobile 50/587. After: web 55/477 (3 new `utils.test.ts` cases), mobile 50/587. `check-types` pass. `check:dep-cruiser` pass. PR #1098.
 - [ ] 7. `AnalyticsProvider` (web/mobile) → `@repo/hooks`
+  Shared `isAnalyticsOptedOut` gate landed in `@repo/validation` (fourth
+  client gate, same package/shape as `can` / `isModuleEnabled` /
+  `subscriptionWriteState`) and is wired into both providers. Mobile reads
+  `analytics_opt_out` from `useCurrentChapter()`. Provider move into
+  `@repo/hooks` is still deferred. Tests: `@repo/validation` analytics-opt-out
+  spec; web + mobile AnalyticsProvider suites.
 - [ ] 8. 5 stranded web hooks → `@repo/hooks`; wire mobile's module-gating
 - [x] 9. `apps/web/lib/subscription.ts` → `@repo/validation`
   - [x] File move: `apps/web/lib/subscription.ts` → `packages/validation/src/subscription.ts` (barrel re-export from `src/index.ts`) — named exports match `can` / `isModuleEnabled`. `npm run test -w @repo/validation -- src/subscription.spec.ts`: 9 passed.

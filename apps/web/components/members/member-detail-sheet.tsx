@@ -11,6 +11,7 @@ import {
 } from "@repo/hooks";
 import { useCustomRoles } from "@/lib/hooks/use-custom-roles";
 import { can } from "@repo/validation";
+import { formatLocaleDate as formatDate } from "@repo/formatting";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,13 +36,6 @@ type CustomFieldValue = {
   visibility: string;
   value: string | null;
 };
-
-function formatDate(value: unknown): string {
-  if (typeof value !== "string") return "—";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "—";
-  return parsed.toLocaleDateString();
-}
 
 function formatCustomValue(field: CustomFieldValue): string {
   if (field.value === null || field.value === "") return "—";

@@ -2,7 +2,7 @@ import { withSentryConfig } from "@sentry/nextjs";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  transpilePackages: ["@repo/theme"],
+  transpilePackages: ["@repo/theme", "@repo/formatting"],
   experimental: {
     // Next 16 defaults this to true and then looks for `typescript/bin/tsc`.
     // The `typescript` package here is `@typescript/typescript6` (compiler API

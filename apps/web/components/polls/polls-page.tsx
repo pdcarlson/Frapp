@@ -37,6 +37,7 @@ import {
   type SubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
+import { formatLocaleDateTime as formatDate } from "@repo/formatting";
 import { asArray, getErrorMessage } from "@/lib/utils";
 
 type PollResult = {
@@ -68,13 +69,6 @@ type ChannelRow = {
 };
 
 const ANY_CHANNEL = "__any_channel__";
-
-function formatDate(value: string | null | undefined): string {
-  if (!value) return "—";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "—";
-  return parsed.toLocaleString();
-}
 
 function Poll({
   poll,

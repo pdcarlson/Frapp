@@ -13,6 +13,7 @@ import {
   useUpdateTaskStatus,
 } from "@repo/hooks";
 import type { TaskStatus } from "@repo/hooks";
+import { formatLocaleDate as formatDate } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -134,13 +135,6 @@ function actionStatus(task: Task): TaskStatus | undefined {
     return task.status === "OVERDUE" ? undefined : task.status;
   }
   return task.stored_status === "OVERDUE" ? "TODO" : task.stored_status;
-}
-
-function formatDate(value: string | null | undefined): string {
-  if (!value) return "—";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "—";
-  return parsed.toLocaleDateString();
 }
 
 export function TasksBoard() {
