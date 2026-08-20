@@ -82,6 +82,10 @@ export const CurrentChapterPayloadSchema = z
     accent_color: z.string().nullable().optional(),
     subscription_status: subscriptionStatusEnum,
     branding: ChapterBrandingSchema,
+    // Same scalar the config PATCH writes; `GET /v1/chapters/current` returns
+    // the chapter row (`select('*')`), so mobile reads the opt-out here the
+    // way it already reads `enabled_modules` for `isModuleEnabled`.
+    analytics_opt_out: z.boolean().optional(),
   })
   .passthrough();
 
@@ -928,6 +932,9 @@ export {
   isWithinSubscriptionGrace,
   subscriptionWriteState,
 } from "./subscription";
+// Client-side analytics opt-out. Fourth shared client gate alongside `can`,
+// `isModuleEnabled`, and `subscriptionWriteState`.
+export { isAnalyticsOptedOut } from "./analytics-opt-out";
 export type {
   SubscriptionBlockCode,
   SubscriptionStatus,

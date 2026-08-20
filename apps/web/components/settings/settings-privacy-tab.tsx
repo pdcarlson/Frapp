@@ -25,8 +25,9 @@ type Props = {
  * Today this is the analytics opt-out. The switch is framed positively
  * ("Chapter analytics" on/off) to avoid a double-negative, while the persisted
  * column stays `analytics_opt_out` — so checked = analytics enabled =
- * `!analytics_opt_out`. When opted out, the web client emits zero events for
- * this chapter's members and the API repeats the check as defense-in-depth
+ * `!analytics_opt_out`. When opted out, web and mobile emit zero events for
+ * this chapter's members (`isAnalyticsOptedOut` in `@repo/validation`) and
+ * the API repeats the check as defense-in-depth
  * (`spec/behavior/data-retention.md` #analytics-events-pseudonymous). The write
  * goes through the config PATCH mutation, so it is audit-logged like every
  * other settings change.
