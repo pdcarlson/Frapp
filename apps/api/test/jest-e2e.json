@@ -10,6 +10,7 @@
   "moduleNameMapper": {
     "^@repo/org-archetypes$": "<rootDir>/../../../packages/org-archetypes/src/index.ts",
     "^@repo/chapter-theme$": "<rootDir>/../../../packages/chapter-theme/src/index.ts",
+    "^expo-server-sdk$": "<rootDir>/helpers/expo-server-sdk.stub.ts",
     "^(\\.{1,2}/.*)\\.js$": "$1"
   }
 }
