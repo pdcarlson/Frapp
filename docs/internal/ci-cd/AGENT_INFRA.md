@@ -453,9 +453,18 @@ one — a PR that used to carry zero checks now carries one red X — but a dete
 can still override it. Making `PR base guard / base-branch` required on `main` is a
 branch-protection change and is tracked separately; it is not what closes this gap.
 
+**Not the same check as `branch-policy`, and do not merge them.** `ci.yml`'s `branch-policy`
+job guards the *head* of a `production` PR (`base_ref == 'production'` → head must be
+`main`); `pr-base-guard` guards the *base* of every PR. `branch-policy` also lives inside
+`ci.yml`, so it inherits the `[main, production]` filter and structurally cannot see the
+feature-base PRs this guard exists for — which is why it shows as `skipped` on a normal
+`main` PR. They compose; deleting either as a "duplicate" reopens a gap.
+
 Verifying the guard: it is pure shell over one payload field, so it is exercised by the
 four incident bases directly — `main` and `production` exit 0; `cursor/...`, `main-ish`,
-`release/1.0`, and an empty ref all exit 1 (fails closed on anything unrecognised).
+`release/1.0`, and an empty ref all exit 1 (fails closed on anything unrecognised). It
+also passed on its own PR (#1132, check run `base-branch`), which is the end-to-end proof
+that a no-`branches` workflow does fire.
 
 #962 is adjacent and **not** this bug:
 GitHub honours `Fixes #N` only on merge into the **default** branch, so a stacked PR can
