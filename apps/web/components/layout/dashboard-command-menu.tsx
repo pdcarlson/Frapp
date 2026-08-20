@@ -17,7 +17,7 @@ import {
   Star,
   Users,
 } from "lucide-react";
-import { SEARCH_MIN_QUERY_LENGTH, useSearch } from "@repo/hooks";
+import { SEARCH_MIN_QUERY_LENGTH, useOrgConfig, useSearch } from "@repo/hooks";
 import {
   CommandDialog,
   CommandEmpty,
@@ -28,7 +28,6 @@ import {
   CommandShortcut,
 } from "@/components/ui/command";
 import { DASHBOARD_NAV_BY_HREF } from "@/components/layout/nav-config";
-import { useOrgConfig } from "@/lib/hooks/use-org-config";
 import { asArray } from "@/lib/utils";
 
 type DashboardCommandMenuProps = {

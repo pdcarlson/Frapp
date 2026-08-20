@@ -9,7 +9,8 @@ const mockCreate = vi.fn();
 const mockUpdate = vi.fn();
 const mockDelete = vi.fn();
 
-vi.mock("@/lib/hooks/use-custom-roles", () => ({
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/hooks")>()),
   useCustomRoles: () => mockUseCustomRoles(),
   useCreateCustomRole: () => ({ mutateAsync: mockCreate, isPending: false }),
   useUpdateCustomRole: () => ({ mutateAsync: mockUpdate, isPending: false }),

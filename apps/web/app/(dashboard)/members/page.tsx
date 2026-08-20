@@ -8,6 +8,7 @@ import {
   useMembers,
   useRoles,
   useUpdateMemberRoles,
+  useOrgConfig,
 } from "@repo/hooks";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -23,7 +24,6 @@ import { useToast } from "@/hooks/use-toast";
 import { InviteMemberDialog } from "@/components/members/invite-member-dialog";
 import { MemberDetailSheet } from "@/components/members/member-detail-sheet";
 import { useNetwork } from "@/lib/providers/network-provider";
-import { useOrgConfig } from "@/lib/hooks/use-org-config";
 import { vocab } from "@/lib/vocabulary";
 import { asArray, initials } from "@/lib/utils";
 import { stateMicrocopy } from "@/lib/state-microcopy";

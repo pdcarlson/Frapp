@@ -1,9 +1,8 @@
 "use client";
 
 import React, { createContext, useCallback, useMemo } from "react";
-import { useFrappClient, useActiveChapterId } from "@repo/hooks";
+import { useFrappClient, useActiveChapterId, useOrgConfig } from "@repo/hooks";
 import { isAnalyticsOptedOut, type AnalyticsProperties } from "@repo/validation";
-import { useOrgConfig } from "@/lib/hooks/use-org-config";
 
 /**
  * Pseudonymous analytics for the web app (issue #464).

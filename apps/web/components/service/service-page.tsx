@@ -7,6 +7,7 @@ import {
   useDeleteServiceEntry,
   useGetServiceProofUrl,
   useMembers,
+  useOrgConfig,
   useRequestServiceProofUploadUrl,
   useReviewServiceEntry,
   useServiceEntries,
@@ -45,7 +46,6 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
-import { useOrgConfig } from "@/lib/hooks/use-org-config";
 import { asArray, getErrorMessage } from "@/lib/utils";
 import {
   MAX_UPLOAD_LABEL,

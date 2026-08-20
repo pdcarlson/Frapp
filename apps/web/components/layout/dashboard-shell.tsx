@@ -16,6 +16,7 @@ import {
   useCurrentChapter,
   useMyPermissions,
   useNotifications,
+  useOrgConfig,
 } from "@repo/hooks";
 import { resolveChapterAccentColor } from "@repo/theme/accent";
 import {
@@ -40,7 +41,6 @@ import {
   type NavItem,
 } from "@/components/layout/nav-config";
 import { ProtectedNavItem } from "@/components/layout/protected-nav-item";
-import { useOrgConfig } from "@/lib/hooks/use-org-config";
 import { ChapterWizardGate } from "@/components/onboarding/chapter-wizard";
 import { OnboardingTutorial } from "@/components/onboarding/onboarding-tutorial";
 import { signOutCurrentSession } from "@/lib/auth/session";

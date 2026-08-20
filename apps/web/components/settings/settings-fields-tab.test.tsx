@@ -9,7 +9,8 @@ const mockCreate = vi.fn();
 const mockUpdate = vi.fn();
 const mockDelete = vi.fn();
 
-vi.mock("@/lib/hooks/use-custom-fields", () => ({
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/hooks")>()),
   useCustomFields: () => mockUseCustomFields(),
   useCreateCustomField: () => ({ mutateAsync: mockCreate, isPending: false }),
   useUpdateCustomField: () => ({ mutateAsync: mockUpdate, isPending: false }),

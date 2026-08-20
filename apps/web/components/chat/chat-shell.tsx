@@ -20,10 +20,10 @@ import {
   useCategories,
   useChapterRoster,
   useMemberDisplayNames,
+  useOrgConfig,
 } from "@repo/hooks";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
-import { useOrgConfig } from "@/lib/hooks/use-org-config";
 import { asArray } from "@/lib/utils";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
 import type { ResolveMember } from "@repo/chat-core/dispatch";

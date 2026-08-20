@@ -65,7 +65,7 @@ one should follow this shape:
 
 Two existing optimistic mutations do **not** follow the surgical-revert rule and
 should not be copied as templates: `useUpdateUserSettings` (`use-notifications.ts`)
-and `usePatchOrgConfig` (`apps/web/lib/hooks/use-org-config.ts`) both restore a
+and `usePatchOrgConfig` (`use-org-config.ts`) both restore a
 whole snapshot. Each writes a single object edited from one form, so the race is
 narrower there — but it is the same race, and neither is the shape to imitate.
 

@@ -8,13 +8,10 @@ const { mockPost, mockUseOrgConfig } = vi.hoisted(() => ({
 }));
 
 // The provider only needs a POST-capable client and an active chapter id.
+// Opt-out state is read from the merged chapter config.
 vi.mock("@repo/hooks", () => ({
   useFrappClient: () => ({ POST: mockPost }),
   useActiveChapterId: () => "chap-1",
-}));
-
-// Opt-out state is read from the merged chapter config.
-vi.mock("@/lib/hooks/use-org-config", () => ({
   useOrgConfig: () => mockUseOrgConfig(),
 }));
 

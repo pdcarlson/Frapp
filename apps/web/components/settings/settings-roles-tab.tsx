@@ -28,7 +28,7 @@ import {
   useCreateCustomRole,
   useUpdateCustomRole,
   useDeleteCustomRole,
-} from "@/lib/hooks/use-custom-roles";
+} from "@repo/hooks";
 
 type PermissionCatalogEntry = { key: string; permission: string };
 
