@@ -280,6 +280,9 @@ const EVENT_A = '0a000000-0000-4000-8000-000000000220';
 const EVENT_B = '0b000000-0000-4000-8000-000000000220';
 const INVOICE_A = '0a000000-0000-4000-8000-000000000221';
 const INVOICE_B = '0b000000-0000-4000-8000-000000000221';
+const DISPATCH_A = '0a000000-0000-4000-8000-000000000222';
+const DISPATCH_B = '0b000000-0000-4000-8000-000000000222';
+const DISPATCH_ENTITY = '0c000000-0000-4000-8000-000000000223';
 
 const tenantSeed = () => ({
   events: [
@@ -334,7 +337,24 @@ const tenantSeed = () => ({
       created_at: '2026-01-01T00:00:00.000Z',
     }),
   ],
-  scheduled_notification_dispatches: [] as Record<string, unknown>[],
+  scheduled_notification_dispatches: [
+    inA({
+      id: DISPATCH_A,
+      entity_type: 'INVOICE',
+      entity_id: DISPATCH_ENTITY,
+      threshold: 'DUE_SOON',
+      due_date: '2026-09-01',
+      dispatched_at: '2026-08-31T12:00:00.000Z',
+    }),
+    inB({
+      id: DISPATCH_B,
+      entity_type: 'INVOICE',
+      entity_id: DISPATCH_ENTITY,
+      threshold: 'DUE_SOON',
+      due_date: '2026-09-01',
+      dispatched_at: '2026-08-31T12:00:00.000Z',
+    }),
+  ],
 });
 
 describe('ScheduledJobsRepository — tenant scope', () => {
@@ -380,9 +400,15 @@ describe('ScheduledJobsRepository — tenant scope', () => {
     );
 
     expect(claimed).toBe(true);
-    const rows = harness.rows('scheduled_notification_dispatches');
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.chapter_id).toBe(CHAPTER_B);
-    expect(rows.find((r) => r.chapter_id === CHAPTER_A)).toBeUndefined();
+    const inserted = harness
+      .rows('scheduled_notification_dispatches')
+      .filter((r) => r.entity_type === 'EVENT');
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]?.chapter_id).toBe(CHAPTER_B);
+    expect(
+      harness
+        .rows('scheduled_notification_dispatches')
+        .find((r) => r.id === DISPATCH_A)?.chapter_id,
+    ).toBe(CHAPTER_A);
   });
 });
