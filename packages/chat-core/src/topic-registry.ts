@@ -2,10 +2,11 @@
  * Topic-registry helpers shared by every Supabase Realtime attach path.
  *
  * Moved here from `apps/web/lib/realtime/topic-registry.ts` with the chat
- * extraction (#937 S3); that path is now a re-export shim, so the non-chat
- * web realtime (`lib/realtime/supabase-realtime.ts`, everything on
- * `useRealtimeTable`) and the chat manager in this package share this one
- * implementation — the #817 invariant, now enforced by imports instead of a
+ * extraction (#937 S3). That web re-export shim was deleted in #1099; web
+ * now imports this module directly (`@repo/chat-core/topic-registry`) —
+ * `apps/web/lib/realtime/supabase-realtime.ts` and everything on
+ * `useRealtimeTable`, plus the chat manager in this package, share this one
+ * implementation. The #817 invariant is enforced by imports instead of a
  * lockstep comment.
  *
  * Why freeing a topic matters: `RealtimeClient.channel(topic)` hands back the
