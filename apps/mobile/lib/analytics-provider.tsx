@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useMemo } from "react";
+import React, { createContext, useCallback, useMemo } from "react";
 import {
   useFrappClient,
   useActiveChapterId,
@@ -31,10 +31,15 @@ import {
  *
  * Without an active chapter id the server cannot apply the per-chapter
  * opt-out to a client event, so `track` is a no-op until one exists.
+ *
+ * There is no `useAnalytics` convenience hook — it had zero production
+ * callers. Opt-out is enforced inside `track` itself, so a future emitter
+ * that reads this context inherits the gate without a wrapper.
  */
 type TrackFn = (name: string, properties?: AnalyticsProperties) => void;
 
-const AnalyticsContext = createContext<TrackFn | null>(null);
+/** @internal Context value is `track`. Not a product API. */
+export const AnalyticsContext = createContext<TrackFn | null>(null);
 
 export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
   const client = useFrappClient();
@@ -70,14 +75,4 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
       {children}
     </AnalyticsContext.Provider>
   );
-}
-
-/**
- * Returns a `track(name, properties)` function. Event names must be behavioral
- * (kebab-case, e.g. "opened-channel"); content/PII properties are rejected by
- * the server. Safe to call outside the provider (no-op).
- */
-export function useAnalytics(): TrackFn {
-  const track = useContext(AnalyticsContext);
-  return track ?? (() => {});
 }

@@ -768,10 +768,11 @@ items 2, 3, 4, 9.
 
 ## Item 7 — `AnalyticsProvider` (web/mobile) → `@repo/hooks`
 
-**Scope verdict: the duplicate and the stale comment are both real, but the item is smaller and less
-urgent than it looks — `useAnalytics` has ZERO production call sites.** Both providers are mounted and
-neither is ever consumed (the only references are the two definitions and one test). Consolidating an
-unused abstraction is defensible cleanup, but it should not outrank items with live consumers.
+**Scope verdict: the duplicate providers are real, but the item is smaller than it looks.** The
+`useAnalytics` convenience hook had zero production call sites and has been deleted; `track` remains
+the context value on each mounted `AnalyticsProvider`, with opt-out still enforced inside `track`.
+Consolidating the unused wrapper into `@repo/hooks` is defensible cleanup, but it should not outrank
+items with live consumers.
 
 ### The two copies
 
@@ -781,9 +782,9 @@ unused abstraction is defensible cleanup, but it should not outrank items with l
 **Identical:** the `TrackFn` signature (web `:20`, mobile `:28`), the context +
 `useMemo`/`useCallback` structure (web `:22-57`, mobile `:30-62`), the
 `client.POST("/v1/analytics/events", …)` call (web `:36-43`, mobile `:41-48`), the fire-and-forget
-`.catch(() => {})` (web `:44-46`, mobile `:49-51`), the no-op `useAnalytics` outside a provider (web
-`:66-68`, mobile `:70-72`). Both import `useFrappClient`/`useActiveChapterId` from `@repo/hooks` and
-`AnalyticsProperties` from `@repo/validation`.
+`.catch(() => {})` (web `:44-46`, mobile `:49-51`). Both import `useFrappClient`/`useActiveChapterId`
+from `@repo/hooks` and `AnalyticsProperties` from `@repo/validation`. `useAnalytics` was deleted
+(zero production callers).
 
 **Genuinely different — this is the design decision:**
 
@@ -1097,6 +1098,6 @@ the item named. No issue numbers yet — this planning pass had no tracker write
 | 5 | `scheduled-jobs.repository.ts` and `chat-notification-preference.repository.ts` sit outside the coverage ledger's directory scan and can never fail it | Widen the scan — file it |
 | 6 | `payIntentErrorCopy` duplicated: `apps/web/components/billing/pay-invoice-dialog.tsx:41` and `apps/mobile/lib/dues/pay-errors.ts:23` | File it |
 | 6 | `packages/api-sdk` has no test harness or CI step, so a hand-written module there is untested | File it; do not fix in batch 1 |
-| 7 | `useAnalytics` has zero production call sites in either app | Question whether item 7 is worth doing now |
+| 7 | `useAnalytics` had zero production call sites in either app | Deleted (hygiene); providers + `track` remain |
 | 7 | `apps/mobile/lib/analytics-provider.tsx:18-26` comment is factually stale | Delete in item 7 |
 | 9 | `apps/api/src/domain/utils/subscription.ts` is an orphan (only its own spec imports it) whose `canPerformWriteAction` contradicts the live guard's 3-day grace window | Flag in the PR and file it; do not merge or delete in item 9 |

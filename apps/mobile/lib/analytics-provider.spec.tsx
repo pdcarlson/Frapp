@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { useContext } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
@@ -13,10 +14,12 @@ vi.mock("@repo/hooks", () => ({
   useCurrentChapter: () => mockUseCurrentChapter(),
 }));
 
-const { AnalyticsProvider, useAnalytics } = await import("./analytics-provider");
+const { AnalyticsProvider, AnalyticsContext } = await import(
+  "./analytics-provider"
+);
 
 function Emitter() {
-  const track = useAnalytics();
+  const track = useContext(AnalyticsContext) ?? (() => {});
   return (
     <button type="button" onClick={() => track("opened-channel")}>
       emit

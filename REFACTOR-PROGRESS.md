@@ -26,9 +26,10 @@ deleted when the project wraps, so nothing durable may live only here.
   Shared `isAnalyticsOptedOut` gate landed in `@repo/validation` (fourth
   client gate, same package/shape as `can` / `isModuleEnabled` /
   `subscriptionWriteState`) and is wired into both providers. Mobile reads
-  `analytics_opt_out` from `useCurrentChapter()`. Provider move into
-  `@repo/hooks` is still deferred. Tests: `@repo/validation` analytics-opt-out
-  spec; web + mobile AnalyticsProvider suites.
+  `analytics_opt_out` from `useCurrentChapter()`. `useAnalytics` deleted
+  (zero production callers); `track` stays on each provider's context.
+  Provider move into `@repo/hooks` is still deferred. Tests: `@repo/validation`
+  analytics-opt-out spec; web + mobile AnalyticsProvider suites.
 - [ ] 8. 5 stranded web hooks → `@repo/hooks`; wire mobile's module-gating
 - [x] 9. `apps/web/lib/subscription.ts` → `@repo/validation`
   - [x] File move: `apps/web/lib/subscription.ts` → `packages/validation/src/subscription.ts` (barrel re-export from `src/index.ts`) — named exports match `can` / `isModuleEnabled`. `npm run test -w @repo/validation -- src/subscription.spec.ts`: 9 passed.
