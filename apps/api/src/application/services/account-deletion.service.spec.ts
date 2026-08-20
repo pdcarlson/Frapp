@@ -11,8 +11,6 @@ import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 import type { IStorageProvider } from '../../domain/adapters/storage.interface';
 import { AUTH_ADMIN_PROVIDER } from '../../domain/adapters/auth-admin.interface';
 import type { IAuthAdminProvider } from '../../domain/adapters/auth-admin.interface';
-import type { User } from '../../domain/entities/user.entity';
-import type { Member } from '../../domain/entities/member.entity';
 
 const liveUser = {
   id: 'user-1',
@@ -28,7 +26,7 @@ const liveUser = {
   deleted_at: null,
   created_at: '2026-01-01',
   updated_at: '2026-01-01',
-} as User;
+};
 
 const tombstone = {
   ...liveUser,
@@ -41,14 +39,13 @@ const tombstone = {
   current_company: null,
   active_chapter_id: null,
   deleted_at: '2026-08-03T00:00:00Z',
-} as User;
+};
 
-const membership = (chapterId: string) =>
-  ({
-    id: `m-${chapterId}`,
-    user_id: 'user-1',
-    chapter_id: chapterId,
-  }) as Member;
+const membership = (chapterId: string) => ({
+  id: `m-${chapterId}`,
+  user_id: 'user-1',
+  chapter_id: chapterId,
+});
 
 describe('AccountDeletionService', () => {
   let service: AccountDeletionService;

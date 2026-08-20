@@ -396,9 +396,7 @@ describe('NotificationService', () => {
       });
 
       it('does not drop the member from a chapter-wide notify', async () => {
-        mockMemberRepo.findByChapter.mockResolvedValue([
-          { user_id: 'u-1' },
-        ] as never);
+        mockMemberRepo.findByChapter.mockResolvedValue([{ user_id: 'u-1' }]);
         mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue(
           basePreference,
         );

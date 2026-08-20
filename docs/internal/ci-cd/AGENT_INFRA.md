@@ -327,20 +327,40 @@ still nests its own `typescript@5.9.3`; ESLint, ts-jest, and Next's API mode loa
 alias. TypeScript 7 also stopped inferring `rootDir` from the common source directory — emitting
 packages set `"rootDir": "src"` in their own `tsconfig.json` (not in
 `@repo/typescript-config/base.json`: TypeScript resolves `rootDir` relative to the file that
-declares it, so a shared `./src` would point at `packages/typescript-config/src`). `apps/api`
-sets it on `tsconfig.build.json` only, so ESLint's project service still sees `test/`. `baseUrl`
-is a hard error, so it is gone from `apps/api` and `apps/web`. `apps/api` also sets
-`"strict": false` explicitly: TypeScript 6/7 default `strict` to true, and this app had only
-opted into `strictNullChecks` / `noImplicitAny` / `strictBindCallApply` — Nest DTO class fields
-would otherwise be hundreds of `TS2564`s. TypeScript 6 also treats many mock `as never` /
+declares it, so a shared `./src` would point at `packages/typescript-config/src`). The emitting
+set is `@repo/validation`, `@repo/hooks`, `@repo/color`, `@repo/chapter-theme`,
+`@repo/org-archetypes`, `@repo/chat-integrations` (each `"build": "tsc"`), and `@repo/api-sdk`
+(`outDir` is set even though `check-types` passes `--noEmit` and there is no `build` script —
+do not add a build as a side effect of this pin). Non-emitting packages (`@repo/theme`,
+`@repo/chat-core`) and the Next / Expo apps stay `noEmit`. `apps/api` sets `"rootDir": "./src"`
+on `tsconfig.build.json` only, so `nest build` emits the API entry at dist/main.js. Do not set
+`rootDir` on `apps/api/tsconfig.json`: `"."` would let a stray `tsc -p tsconfig.json` emit
+dist/src/main.js instead of failing TS5011, and `"./src"` would hide `test/` from ESLint's
+project service.
+`baseUrl` is a hard error under native tsc, and it is gone from every in-repo tsconfig
+(`apps/api`, `apps/web` `paths` without `baseUrl`, `apps/mobile` `paths` without `baseUrl`).
+Expo's `tsconfig.base` also does not set it. `apps/api` also sets `"strict": false` explicitly:
+TypeScript 6/7 default `strict` to true, and this app had only opted into `strictNullChecks` /
+`noImplicitAny` / `strictBindCallApply` — Nest DTO class fields would otherwise be hundreds of
+`TS2564`s. Do not flip it to `true` as cleanup. TypeScript 6 also treats many mock `as never` /
 `as Member` assertions as unnecessary, which `@typescript-eslint/no-unnecessary-type-assertion`
-now flags as errors.
+now flags as errors. Remaining `as never` / `as unknown as` in specs are load-bearing (smuggled
+DTO keys, incomplete Express/Sentry/Stripe mocks) — do not strip them as a TS-version leftover.
 
 Next.js 16 defaults `experimental.useTypeScriptCli` to `true`, then looks for
 `typescript/bin/tsc`. That file does not exist on `@typescript/typescript6` (it ships `tsc6`).
 `apps/web` and `apps/landing` therefore set `useTypeScriptCli: false` so `next typegen` /
 `next build` use the TypeScript 6 compiler API instead. Do not flip it back while `typescript`
 is the 6.x alias — Next will try to `npm install typescript` (which resolves to 7) and fail.
+
+Every ts-jest project overlays `"rootDir": "."` and `"ignoreDeprecations": "6.0"`: the unit
+suite in `apps/api/package.json`, plus `apps/api/test/jest-e2e.json`,
+`apps/api/test/integration/jest-integration.json`, and
+`apps/api/test/ai-evals/jest-ai-evals.json` (those three also keep the CommonJS `module` /
+`moduleResolution` / `resolvePackageJsonExports` overlay that needs `ignoreDeprecations` for
+`TS5107`; see [`docs/guides/testing.md`](../../guides/testing.md) §6). The unit overlay does
+not set `moduleResolution: "node"`; it still carries `ignoreDeprecations` so the four configs
+share the same two keys if a later overlay adds a 6.0-deprecated option.
 
 **Do not flatten this back to `typescript@7`.** That is what Dependabot's first 5.9.2 → 7.0.2
 bump did (#1031), and it failed `packages-build` / `clean-checkout-typecheck` / `api-docker-build`
