@@ -59,6 +59,7 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
     chapterIdRef.current = chapterId;
   }, [chapterId]);
 
+  /* eslint-disable react-hooks/refs -- getChapterId is invoked per request by SDK middleware, not while constructing the client; capturing chapterId would stale in-flight calls */
   const client = useMemo(
     () =>
       createFrappClient({
@@ -69,6 +70,7 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
       }),
     [],
   );
+  /* eslint-enable react-hooks/refs */
 
   return (
     <QueryClientProvider client={queryClient}>

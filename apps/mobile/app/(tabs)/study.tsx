@@ -208,6 +208,7 @@ export default function StudyScreen() {
   /** Adopt the live session — on cold start, and after any invalidation. */
   useEffect(() => {
     if (!serverActive) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- adopt the server session without clobbering a newer local row of the same id
     setSession((current) =>
       current && current.id === serverActive.id ? current : serverActive,
     );
@@ -215,6 +216,7 @@ export default function StudyScreen() {
 
   /** Default to the only zone; otherwise wait for a choice. */
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- pick the sole zone, or drop a selection that no longer exists
     setSelectedZoneId((current) => {
       if (current && zones.some((zone) => zone.id === current)) return current;
       return zones.length === 1 ? (zones[0]?.id ?? null) : null;

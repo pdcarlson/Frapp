@@ -159,6 +159,7 @@ export function useGatedDialog(gate: SubscriptionGate): GatedDialog {
   useEffect(() => {
     if (!open || !blocked) return;
     revokedRef.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- close the dialog when a definite entitlement block lands mid-open
     setOpenState(false);
   }, [open, blocked]);
 

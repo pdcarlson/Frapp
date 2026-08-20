@@ -220,11 +220,13 @@ export function MemberDetailSheet({
     return [];
   }, [memberRoleIds, rolesQuery.data]);
 
+  /* eslint-disable react-hooks/set-state-in-effect -- hydrate role drafts from the opened member; edits must not leak across sheets */
   useEffect(() => {
     if (!open) return;
     setSelectedRoleIds(memberRoleIds);
     setSelectedCustomRoleIds(memberCustomRoleIds);
   }, [open, memberRoleIds, memberCustomRoleIds]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const displayName =
     typeof resolvedMember?.display_name === "string" && resolvedMember.display_name.length > 0

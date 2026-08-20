@@ -125,6 +125,7 @@ export function ChapterWizardGate() {
   const hasNoChapters = chaptersQuery.isSuccess && memberships.length === 0;
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- latch the wizard open; auto-close on membership flip would unmount an in-progress create
     if (hasNoChapters) setOpen(true);
   }, [hasNoChapters]);
 

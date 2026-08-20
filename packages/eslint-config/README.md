@@ -9,9 +9,10 @@ Shared ESLint flat configs used across the monorepo.
 - `@repo/eslint-config/react-internal` — React library config for shared packages.
 
 React workspaces share [`react-hooks.js`](./react-hooks.js): `eslint-plugin-react-hooks` v7
-`recommended` also turns on React Compiler rules. The shared config **allowlists** core Rules
-of Hooks plus the compiler rules that currently lint clean; the rest stay `"off"` until a
-dedicated cleanup. Why: [`docs/internal/ci-cd/AGENT_INFRA.md`](../../docs/internal/ci-cd/AGENT_INFRA.md).
+`recommended` also turns on React Compiler rules. The shared config **allowlists** every
+rule in that preset at upstream severity. A later plugin bump that adds a new
+`recommended` rule stays `"off"` until a dedicated cleanup. Why:
+[`docs/internal/ci-cd/AGENT_INFRA.md`](../../docs/internal/ci-cd/AGENT_INFRA.md).
 
 ## Usage examples
 
