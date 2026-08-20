@@ -289,10 +289,10 @@ jobs:
       # without adding a branch-protection entry.
       #
       # `if: !cancelled()` because these are independent suites, not follow-on
-      # phases: without it a red apps/web test skips both and hides two more
+      # phases: without it a red apps/web test skips them and hides more
       # failures until the next push. Not `always()` — this workflow sets
       # `cancel-in-progress`, and `always()` keeps running after a cancellation,
-      # so every superseded run would still pay for both suites.
+      # so every superseded run would still pay for those suites.
       #
       # This job IS a required check as of the ADR-15 amendment — it is the only
       # suite covering packages/hooks. The path gate above is compatible with
@@ -306,6 +306,10 @@ jobs:
       - name: Run chat-core package tests
         if: ${{ !cancelled() }}
         run: npm run test -w packages/chat-core
+
+      - name: Run chat-integrations package tests
+        if: ${{ !cancelled() }}
+        run: npm run test -w packages/chat-integrations
 
   # ── API Docker image (same path as Render native Dockerfile builds) ─────
   api-docker-build:
