@@ -22,12 +22,9 @@ function JoinPageContent() {
   const redeemInviteMutation = useRedeemInvite();
   const selectChapter = useSelectChapter();
   const initialToken = useMemo(() => searchParams.get("token") ?? "", [searchParams]);
-  const [token, setToken] = useState(initialToken);
+  const [editedToken, setEditedToken] = useState<string | null>(null);
+  const token = editedToken ?? initialToken;
   const [sessionChecked, setSessionChecked] = useState(false);
-
-  useEffect(() => {
-    setToken(initialToken);
-  }, [initialToken]);
 
   useEffect(() => {
     let isMounted = true;
@@ -160,7 +157,7 @@ function JoinPageContent() {
                 <Input
                   id="invite-token"
                   value={token}
-                  onChange={(event) => setToken(event.target.value)}
+                  onChange={(event) => setEditedToken(event.target.value)}
                   placeholder="Paste your invite token"
                   required
                 />

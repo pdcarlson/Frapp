@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { Moon, Monitor, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { useIsClient } from "@/lib/use-is-client";
 
 const THEME_LABEL = {
   light: "Light",
@@ -14,11 +14,7 @@ const THEME_LABEL = {
 
 export function ThemeToggle() {
   const { theme = "system", setTheme } = useTheme();
-  const [isMounted, setIsMounted] = useState(false);
-
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
+  const isMounted = useIsClient();
 
   const resolvedTheme = isMounted ? theme : "system";
 
