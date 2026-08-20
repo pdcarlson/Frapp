@@ -276,10 +276,10 @@ jobs:
       - name: Run web unit tests
         run: npm run test -w apps/web
 
-      # The shared packages consumed by apps/web. They live here rather than in
-      # their own job because the `changes` filter above already covers
-      # `packages/**`, so they run on the right paths without adding a
-      # branch-protection entry. Both suites were previously unrun anywhere.
+      # The shared packages consumed by apps/web that nothing else covers. They
+      # live here rather than in their own job because the `changes` filter
+      # above already covers `packages/**`, so they run on the right paths
+      # without adding a branch-protection entry.
       #
       # `if: !cancelled()` because these are independent suites, not follow-on
       # phases: without it a red apps/web test skips both and hides two more
@@ -295,10 +295,6 @@ jobs:
       - name: Run shared hooks package tests
         if: ${{ !cancelled() }}
         run: npm run test -w packages/hooks
-
-      - name: Run shared UI package tests
-        if: ${{ !cancelled() }}
-        run: npm run test -w packages/ui
 
       - name: Run chat-core package tests
         if: ${{ !cancelled() }}
