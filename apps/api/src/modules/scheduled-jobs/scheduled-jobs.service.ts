@@ -214,6 +214,7 @@ export class ScheduledJobsService {
           // Release so the next tick retries rather than leaving the event
           // permanently unprocessed.
           await this.repository.releaseDispatch(
+            event.chapter_id,
             'EVENT',
             event.id,
             'AUTO_ABSENT',
@@ -502,6 +503,7 @@ export class ScheduledJobsService {
 
     if (delivered === 0) {
       await this.repository.releaseDispatch(
+        params.chapterId,
         params.entityType,
         params.entityId,
         params.threshold,
