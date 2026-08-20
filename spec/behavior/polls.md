@@ -10,6 +10,7 @@
 - **Default role mapping:** `polls:view_all` is **not** on the Member role; it is on Treasurer, Vice President, Secretary (and President via `*`). Vice President and Secretary also carry `members:view` in the default seed so the guard chain succeeds.
 - **Backfill migrations:** `20260417140000_backfill_polls_view_all_system_roles.sql` (VP/Secretary inserts include both permissions) and `20260417150000_backfill_members_view_vp_secretary.sql` (idempotent repair for environments that ran an older revision without `members:view` on those roles). The exact migration filenames may move to a dedicated migrations changelog in a later cleanup pass.
 - Chapters may grant `polls:view_all` through custom roles if needed.
+- **Dashboard `/polls` list:** `usePolls` does not fire without `polls:view_all` (`enabled: !!chapterId && polls:view_all`). A member without that permission must see the denied copy (`<Can>` plus the same copy on the disabled-query branch), never a spinner. TanStack Query v5 leaves a disabled query `isPending` forever; the page gates the spinner on `isLoading` and treats a pending-but-idle query as denied.
 - Query parameters for `GET /v1/polls`: optional `channel_id`; optional `active` as a boolean string (`true`, `false`, `1`, or `0`); optional `limit` (default 50, clamped 1–200).
 - A poll has a question, 2-10 options, and an optional expiration time.
 - Members in the channel can vote. One vote per member per poll (single-choice by default; multi-choice is a poll option).

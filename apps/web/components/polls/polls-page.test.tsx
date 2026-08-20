@@ -1,16 +1,24 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ReactNode } from "react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
-const { mockCurrentChapter, mockVote, mockUnvote, mockRefetch } = vi.hoisted(
-  () => ({
+const { mockCurrentChapter, mockVote, mockUnvote, mockRefetch, pollsQuery } =
+  vi.hoisted(() => ({
     mockCurrentChapter: vi.fn(),
     mockVote: vi.fn().mockResolvedValue({}),
     mockUnvote: vi.fn().mockResolvedValue({}),
     mockRefetch: vi.fn(),
-  }),
-);
+    pollsQuery: {
+      data: [] as unknown[],
+      isPending: false,
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      refetch: () => undefined as unknown,
+    },
+  }));
 
 // Only the chapter payload is stubbed — `useSubscriptionWriteState` and
 // `subscriptionWriteState` run for real, so this covers the whole path from the
@@ -56,13 +64,7 @@ vi.mock("@repo/hooks", () => ({
     isPending: false,
     isError: false,
   }),
-  usePolls: () => ({
-    data: [VOTED_POLL, UNVOTED_POLL],
-    isPending: false,
-    isError: false,
-    isFetching: false,
-    refetch: mockRefetch,
-  }),
+  usePolls: () => pollsQuery,
   useVoteOnPoll: () => ({ mutateAsync: mockVote, isPending: false }),
   useRemoveVote: () => ({ mutateAsync: mockUnvote, isPending: false }),
 }));
@@ -72,8 +74,16 @@ vi.mock("@/lib/stores/chapter-store", () => ({
     selector({ activeChapterId: "chap-1" }),
 }));
 
+const { mockCanGrant } = vi.hoisted(() => ({ mockCanGrant: { value: true } }));
+
 vi.mock("@/components/shared/can", () => ({
-  Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  Can: ({
+    children,
+    deniedFallback,
+  }: {
+    children: ReactNode;
+    deniedFallback?: ReactNode;
+  }) => <>{mockCanGrant.value ? children : deniedFallback}</>,
 }));
 
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
@@ -87,8 +97,77 @@ const saveVote = () => screen.getAllByRole("button", { name: /save vote/i })[0]!
 const withdrawVote = () =>
   screen.getAllByRole("button", { name: /withdraw vote/i })[0]!;
 
+function resolvedPollsQuery() {
+  pollsQuery.data = [VOTED_POLL, UNVOTED_POLL];
+  pollsQuery.isPending = false;
+  pollsQuery.isLoading = false;
+  pollsQuery.isFetching = false;
+  pollsQuery.isError = false;
+  pollsQuery.refetch = mockRefetch;
+}
+
+describe("PollsPage disabled-query handling", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCanGrant.value = true;
+    resolvedPollsQuery();
+    chapter.active();
+  });
+
+  it("does not spin when the polls query is disabled (pending but not fetching)", () => {
+    // `usePolls` sets `enabled: !!chapterId && polls:view_all`. TanStack v5
+    // leaves that query `isPending` forever; `isLoading` is the in-flight flag.
+    pollsQuery.data = undefined as unknown as unknown[];
+    pollsQuery.isPending = true;
+    pollsQuery.isLoading = false;
+    pollsQuery.isFetching = false;
+
+    render(<PollsPage />);
+
+    expect(
+      screen.queryByText("Loading chapter polls..."),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/poll list requires polls:view_all/i),
+    ).toBeInTheDocument();
+  });
+
+  it("still spins while a permitted fetch is actually in flight", () => {
+    pollsQuery.data = undefined as unknown as unknown[];
+    pollsQuery.isPending = true;
+    pollsQuery.isLoading = true;
+    pollsQuery.isFetching = true;
+
+    render(<PollsPage />);
+
+    expect(screen.getByText("Loading chapter polls...")).toBeInTheDocument();
+  });
+
+  it("shows the Can denied copy, not a spinner, when the caller lacks polls:view_all", () => {
+    mockCanGrant.value = false;
+    pollsQuery.data = undefined as unknown as unknown[];
+    pollsQuery.isPending = true;
+    pollsQuery.isLoading = false;
+    pollsQuery.isFetching = false;
+
+    render(<PollsPage />);
+
+    expect(
+      screen.queryByText("Loading chapter polls..."),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/polls:view_all/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/ask your chapter president/i),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("PollsPage subscription gating", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCanGrant.value = true;
+    resolvedPollsQuery();
+  });
 
   it("leaves voting alone on an active chapter", () => {
     chapter.active();
