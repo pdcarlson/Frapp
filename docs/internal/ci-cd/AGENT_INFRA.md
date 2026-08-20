@@ -316,9 +316,10 @@ set is `@repo/validation`, `@repo/hooks`, `@repo/color`, `@repo/chapter-theme`,
 (`outDir` is set even though `check-types` passes `--noEmit` and there is no `build` script —
 do not add a build as a side effect of this pin). Non-emitting packages (`@repo/theme`,
 `@repo/chat-core`) and the Next / Expo apps stay `noEmit`. `apps/api` sets `"rootDir": "./src"`
-on `tsconfig.build.json` only, so `nest build` emits `dist/main.js`. Do not set `rootDir` on
-`apps/api/tsconfig.json`: `"."` would let a stray `tsc -p tsconfig.json` emit `dist/src/main.js`
-instead of failing TS5011, and `"./src"` would hide `test/` from ESLint's project service.
+on `tsconfig.build.json` only, so `nest build` emits the API entry at dist/main.js. Do not set
+`rootDir` on `apps/api/tsconfig.json`: `"."` would let a stray `tsc -p tsconfig.json` emit
+dist/src/main.js instead of failing TS5011, and `"./src"` would hide `test/` from ESLint's
+project service.
 `baseUrl` is a hard error under native tsc, and it is gone from every in-repo tsconfig
 (`apps/api`, `apps/web` `paths` without `baseUrl`, `apps/mobile` `paths` without `baseUrl`).
 Expo's `tsconfig.base` also does not set it. `apps/api` also sets `"strict": false` explicitly:

@@ -15,7 +15,7 @@
     "outDir": "./dist",
     // Do not set `rootDir` here. This program includes `src/` and `test/`
     // (ESLint's project service). An explicit `"."` would let a stray
-    // `tsc -p tsconfig.json` emit `dist/src/main.js` instead of failing
+    // `tsc -p tsconfig.json` emit dist/src/main.js instead of failing
     // TS5011; `"./src"` would exclude `test/` from the ESLint project.
     // Emit uses `tsconfig.build.json`, which sets `"rootDir": "./src"`.
     "incremental": true,
