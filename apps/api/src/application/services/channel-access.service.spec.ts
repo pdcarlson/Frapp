@@ -7,7 +7,6 @@ import type { IChatChannelRepository } from '../../domain/repositories/chat.repo
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import type { ChatChannel } from '../../domain/entities/chat.entity';
-import type { Member } from '../../domain/entities/member.entity';
 
 describe('ChannelAccessService', () => {
   let service: ChannelAccessService;
@@ -53,7 +52,7 @@ describe('ChannelAccessService', () => {
 
   // Carries real role_ids: the alumni lookup is fed from this row, and a test
   // that leaves them undefined cannot tell a correct call from a garbage one.
-  const member = { id: 'm-1', role_ids: ['role-alumni'] } as Member;
+  const member = { id: 'm-1', role_ids: ['role-alumni'] };
 
   beforeEach(async () => {
     mockChannelRepo = {
