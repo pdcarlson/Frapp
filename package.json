@@ -45,7 +45,7 @@
     "jscpd": "^5.0.16",
     "prettier": "^3.9.6",
     "turbo": "^2.10.10",
-    "typescript": "5.9.2"
+    "typescript": "7.0.2"
   },
   "overrides": {
     "react": "19.2.3",
