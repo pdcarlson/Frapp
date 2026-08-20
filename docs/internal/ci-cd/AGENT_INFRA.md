@@ -328,7 +328,7 @@ alias. TypeScript 7 also stopped inferring `rootDir` from the common source dire
 packages set `"rootDir": "src"` in their own `tsconfig.json` (not in
 `@repo/typescript-config/base.json`: TypeScript resolves `rootDir` relative to the file that
 declares it, so a shared `./src` would point at `packages/typescript-config/src`). The emitting
-set is `@repo/validation`, `@repo/hooks`, `@repo/color`, `@repo/chapter-theme`,
+set is `@repo/validation`, `@repo/hooks`, `@repo/color`, `@repo/formatting`, `@repo/chapter-theme`,
 `@repo/org-archetypes`, `@repo/chat-integrations` (each `"build": "tsc"`), and `@repo/api-sdk`
 (`outDir` is set even though `check-types` passes `--noEmit` and there is no `build` script —
 do not add a build as a side effect of this pin). Non-emitting packages (`@repo/theme`,

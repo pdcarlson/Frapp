@@ -74,7 +74,7 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 | Check name           | What it validates                                                                               |
 | -------------------- | ----------------------------------------------------------------------------------------------- |
 | `packages-build`     | Shared packages compile                                                                         |
-| `lint-and-typecheck` | ESLint + TypeScript (all workspaces); `npm run build -w apps/api` (`nest build`, Render parity); landing plus `@repo/validation`, `@repo/color`, `@repo/chapter-theme`, and `@repo/api-sdk` unit tests |
+| `lint-and-typecheck` | ESLint + TypeScript (all workspaces); `npm run build -w apps/api` (`nest build`, Render parity); landing plus `@repo/validation`, `@repo/color`, `@repo/formatting`, `@repo/chapter-theme`, and `@repo/api-sdk` unit tests |
 | `api-docker-build`   | `docker build -f apps/api/Dockerfile .` (API image compile path)                                |
 | `api-tests`          | API Jest unit tests                                                                             |
 | `api-contract-check` | openapi.json + api-sdk freshness                                                                |
@@ -85,7 +85,7 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 | `clean-checkout-typecheck` | Bare `npm ci` + typecheck + lint with no prebuilt packages (guards `turbo.json` `^build`) |
 | `dependency-audit`   | npm audit gate: any high/critical advisory not allowlisted in `scripts/npm-audit-allowlist.json` fails (issue #618) |
 | `chapter-directory-seed` | `supabase/seed/chapter_directory.csv`: canonical `#RRGGBB` colors, real archetypes, no duplicate natural keys (issue #840) |
-| `web-tests`          | `apps/web` + the shared packages only this suite covers (`packages/hooks`, `packages/chat-core`) |
+| `web-tests`          | `apps/web` + the shared packages only this suite covers (`packages/hooks`, `packages/chat-core`, `packages/chat-integrations`) |
 | `changes`            | Path filter deciding whether `web-tests` runs; required only because `web-tests` needs it |
 | `dependency-cruiser` | Architectural boundaries (API layer direction, package/app separation, cycles) against a committed baseline — [`QUALITY_GATES.md`](../ci-cd/QUALITY_GATES.md) |
 
