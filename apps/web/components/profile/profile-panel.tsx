@@ -66,6 +66,7 @@ export function ProfilePanel() {
 
   useEffect(() => {
     if (userQuery.data) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- seed the profile draft from the query; local edits stay until the next server payload
       setProfileDraft(userQuery.data as CurrentUser);
     }
   }, [userQuery.data]);
@@ -82,6 +83,7 @@ export function ProfilePanel() {
     // resyncs normally once it succeeds.
     if (updateSettings.isPending || updateSettings.isError) return;
     if (settingsQuery.data) {
+      /* eslint-disable react-hooks/set-state-in-effect -- re-seed settings draft from the query except while a save is in flight or failed */
       setSettingsDraft(settingsQuery.data as UserSettings);
       // The draft is being replaced wholesale — a refetch on window focus can do
       // this while an error is showing — so the message must go with the value
@@ -89,6 +91,7 @@ export function ProfilePanel() {
       // while still flagged invalid.
       setTimeZoneError(null);
     }
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [settingsQuery.data, updateSettings.isPending, updateSettings.isError]);
 
   if (userQuery.isPending) {

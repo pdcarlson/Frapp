@@ -90,18 +90,25 @@ export function SettingsOrgTab({
 
   // Re-sync drafts whenever the server config changes (e.g. after an archetype
   // switch resets vocabulary, or another officer edits the chapter).
-  useEffect(() => setProfileDraft(profile), [profile]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- re-seed profile draft from the chapter config query
+    setProfileDraft(profile);
+  }, [profile]);
+  /* eslint-disable react-hooks/set-state-in-effect -- re-seed branding fields from the chapter config query */
   useEffect(() => {
     setGreekLetters(branding.greek_letters ?? "");
     setDesignation(branding.designation ?? "");
     setSchoolShort(branding.school_short ?? "");
     setFoundedYear(branding.founded_at != null ? String(branding.founded_at) : "");
   }, [branding]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+  /* eslint-disable react-hooks/set-state-in-effect -- re-seed vocabulary drafts from the chapter config query */
   useEffect(() => {
     setRecruitment(vocabulary.recruitment ?? "");
     setPledge(vocabulary.pledge ?? "");
     setCohort(vocabulary.class ?? "");
   }, [vocabulary]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const foundedTrimmed = foundedYear.trim();
   const foundedNum = foundedTrimmed
