@@ -27,15 +27,9 @@ import {
 } from "@/components/ui/sheet";
 import { AttendancePanel } from "@/components/events/attendance-panel";
 import { normalizeRoleOptions } from "@/lib/roles";
+import { getErrorMessage } from "@/lib/utils";
 
 type EventRecord = Record<string, unknown>;
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return "Something went wrong. Please retry.";
-}
 
 function formatDateTime(value: unknown): string {
   if (typeof value !== "string") return "—";
@@ -119,7 +113,7 @@ export function EventDetailSheet({
     } catch (error) {
       toast({
         title: "Could not delete event",
-        description: getErrorMessage(error),
+        description: getErrorMessage(error, "Something went wrong. Please retry."),
         variant: "destructive",
       });
       return;

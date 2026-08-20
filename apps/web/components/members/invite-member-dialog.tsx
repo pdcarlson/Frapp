@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { dashboardFilterSelectClassName } from "@/components/shared/table-controls";
+import { getErrorMessage } from "@/lib/utils";
 
 type RoleRow = {
   id: string;
@@ -47,13 +48,6 @@ function formatDate(value: string): string {
     return "—";
   }
   return parsed.toLocaleString();
-}
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return "Something went wrong. Please retry.";
 }
 
 function normalizeInvites(input: unknown): InviteRow[] {
@@ -199,7 +193,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
     } catch (error) {
       toast({
         title: "Could not generate invite",
-        description: getErrorMessage(error),
+        description: getErrorMessage(error, "Something went wrong. Please retry."),
         variant: "destructive",
       });
     }
@@ -232,7 +226,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
     } catch (error) {
       toast({
         title: "Could not revoke invite",
-        description: getErrorMessage(error),
+        description: getErrorMessage(error, "Something went wrong. Please retry."),
         variant: "destructive",
       });
     }

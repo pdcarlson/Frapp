@@ -10,18 +10,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getErrorMessage } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { resolveRedirectPath } from "@/lib/auth/redirect";
-
-function getErrorMessage(error: unknown): string {
-  if (error && typeof error === "object" && "message" in error) {
-    const message = (error as { message?: string }).message;
-    if (typeof message === "string" && message.length > 0) {
-      return message;
-    }
-  }
-  return "Something went wrong. Please try again.";
-}
 
 function SignInPageContent() {
   const router = useRouter();
@@ -53,7 +44,7 @@ function SignInPageContent() {
     } catch (error) {
       toast({
         title: "Unable to sign in",
-        description: getErrorMessage(error),
+        description: getErrorMessage(error, "Something went wrong. Please try again."),
         variant: "destructive",
       });
     } finally {
@@ -89,7 +80,7 @@ function SignInPageContent() {
     } catch (error) {
       toast({
         title: "Unable to send magic link",
-        description: getErrorMessage(error),
+        description: getErrorMessage(error, "Something went wrong. Please try again."),
         variant: "destructive",
       });
     } finally {
