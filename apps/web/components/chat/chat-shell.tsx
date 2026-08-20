@@ -26,14 +26,14 @@ import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useOrgConfig } from "@/lib/hooks/use-org-config";
 import { asArray } from "@/lib/utils";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
-import type { ResolveMember } from "@/lib/chat/dispatch";
+import type { ResolveMember } from "@repo/chat-core/dispatch";
 import { ChannelList, type ChatChannel } from "./channel-list";
 import { MessageTimeline } from "./message-timeline";
 import { Composer } from "./composer";
 import { ThreadPanel } from "./thread-panel";
 import { PinsPopover } from "./pins-popover";
 import { ReconnectPill } from "./reconnect-pill";
-import type { ChatMessage } from "@/lib/chat/types";
+import type { ChatMessage } from "@repo/chat-core/types";
 import type { SlashCommand } from "@repo/chat-integrations";
 
 interface DirectoryMember {

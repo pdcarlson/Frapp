@@ -1,6 +1,6 @@
 "use client";
 
-import type { ChatMessage } from "@/lib/chat/types";
+import type { ChatMessage } from "@repo/chat-core/types";
 
 interface TextRendererProps {
   message: ChatMessage;
