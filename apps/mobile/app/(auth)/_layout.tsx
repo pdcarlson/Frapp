@@ -25,12 +25,19 @@ export const unstable_settings = {
  * deliberate destination from More — it is exempt when the gate says `tabs` so
  * a finished member can still switch chapters.
  *
- * `/create-chapter` is exempt so the first-officer wizard can own its lifecycle
- * after submit creates a membership (#1084 / #1102). Join and welcome are *not*
- * on this list: once onboarding is marked complete, staying on s03 would
- * strand them (the #957 finding).
+ * `create-chapter` (#1102 / #1084) is the first-officer wizard. Listing it
+ * here is the exemption the wizard needs so a successful onboard does not yank
+ * the officer off the last step. Join and welcome are *not* on this list:
+ * once onboarding is marked complete, staying on s03 would strand them (the
+ * #957 finding). They are allowed only while the gate destination is join /
+ * welcome respectively.
+ *
+ * `#1102` named this list `PRE_CHAPTER_ROUTES`; this PR named it
+ * `DELIBERATE_AUTH_ROUTES`. Both spellings are kept and must stay in lockstep
+ * so `/create-chapter` cannot drop off one of them.
  */
 const DELIBERATE_AUTH_ROUTES = ["/chapter-picker", "/create-chapter"];
+const PRE_CHAPTER_ROUTES = DELIBERATE_AUTH_ROUTES;
 
 export default function AuthLayout() {
   const pathname = usePathname();
@@ -59,8 +66,9 @@ export default function AuthLayout() {
   }
 
   // `tabs` — bounce out of this group unless the member opened a deliberate
-  // post-auth screen.
-  if (DELIBERATE_AUTH_ROUTES.includes(pathname)) {
+  // post-auth screen. Join and welcome are *not* exempt here: once onboarding
+  // is marked complete, staying on s03 would strand them (the #957 finding).
+  if (PRE_CHAPTER_ROUTES.includes(pathname)) {
     return <Stack screenOptions={{ headerShown: false }} />;
   }
 
