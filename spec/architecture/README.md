@@ -109,7 +109,7 @@ Frapp/
 | `@repo/hooks`             | Shared React hooks wrapping api-sdk with TanStack Query.                  |
 | `@repo/ui`                | Shared UI components (buttons, cards, inputs). Used by web + landing.     |
 | `@repo/theme`             | Tailwind config presets, global CSS, light/dark mode color tokens.        |
-| `@repo/validation`        | Shared Zod schemas for form/request validation (used by API + clients).   |
+| `@repo/validation`        | Shared Zod 4 schemas for form/request validation (used by API + clients). `z.record` requires a key schema and a value schema. |
 | `@repo/eslint-config`     | Shared ESLint rules.                                                      |
 | `@repo/typescript-config` | Shared tsconfig presets.                                                  |
 
