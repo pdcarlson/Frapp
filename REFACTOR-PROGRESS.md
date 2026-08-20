@@ -109,4 +109,8 @@ Remaining `@/lib/chat/` imports are glue only (`use-chat-channel`, `chat-provide
 - [x] Six shim files gone (`test ! -e`)
 - [x] After typecheck + tests with shims removed — tsc no new errors; `vitest run components/chat lib/chat lib/realtime` 9 files / 116 tests; full `apps/web` vitest **54 files / 474 tests**; `@repo/chat-core` 5 files / 30 tests; `npm run lint -w apps/web` clean; `npm run check-types -w @repo/chat-core` clean. Logs: `/opt/cursor/artifacts/after_shim_delete_web_chat_tests.log`, `/opt/cursor/artifacts/after_shim_delete_web_full_tests.log`, `/opt/cursor/artifacts/after_shim_delete_chat_core_tests.log`, `/opt/cursor/artifacts/zero_match_grep_proof.log`
 
+CI follow-up (not an importer): `doc-paths` failed on two citations of deleted shims.
+Retargeted `.claude/skills/realtime-resilience/SKILL.md` and
+`docs/internal/security/SECURITY_FIXES.md` to the chat-core paths.
+
 **BLOCKED files:** none.
