@@ -1,4 +1,3 @@
-import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
@@ -43,8 +42,7 @@ function toAuthErrorMessage(error: unknown): string {
 export default function SignIn() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const router = useRouter();
-  const { callbackError, isConfigured, sendMagicLink, signInWithPassword } =
+  const { callbackError, isConfigured, sendMagicLink, signInWithPassword, status } =
     useAuthSession();
 
   const [email, setEmail] = useState("");
@@ -53,6 +51,13 @@ export default function SignIn() {
   const [submitting, setSubmitting] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [magicLinkSentTo, setMagicLinkSentTo] = useState<string | null>(null);
+
+  if (status === "authenticated") {
+    // The auth gate owns the next hop (join / welcome / tabs). Rendering the
+    // form for one more frame is the flash this used to paper over by jumping
+    // straight to `(tabs)` — which skipped s03.
+    return null;
+  }
 
   function isValidEmailAddress(value: string): boolean {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -77,10 +82,9 @@ export default function SignIn() {
     try {
       if (method === "password") {
         await signInWithPassword({ email: normalizedEmail, password });
-        // The session lands via onAuthStateChange; (auth)/_layout also redirects
-        // on `authenticated`, but navigating here avoids a visible flash of the
-        // sign-in form while that propagates.
-        router.replace("/(tabs)");
+        // Do not send them to `(tabs)` from here. The auth gate decides join /
+        // welcome / tabs from `has_completed_onboarding` and the chapters list;
+        // skipping it is how s03 stayed unreachable after #957.
         return;
       }
 

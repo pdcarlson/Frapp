@@ -1,6 +1,5 @@
 import { Redirect, Stack, usePathname } from "expo-router";
-import { resolveAuthGate } from "@/lib/auth-gate";
-import { useAuthSession } from "@/lib/auth-session";
+import { useAuthGateDestination } from "@/lib/onboarding/use-auth-gate";
 
 /**
  * Pin the group's anchor to sign-in.
@@ -21,33 +20,57 @@ export const unstable_settings = {
  * The `(auth)` group is the pre-chapter-context stack, not merely the
  * signed-out one.
  *
- * It used to redirect every authenticated member straight to `(tabs)`, which
- * was correct while `sign-in` was the only screen here. It stopped being
- * correct once the group gained post-auth screens: the chapter picker (#764) is
- * by definition reached while signed in, so an unconditional redirect makes it
- * unreachable.
+ * Join (s02) and first-run (s03) are *routed to* from `resolveAuthGate` once
+ * `GET /v1/chapters` is in, not merely reachable. The chapter picker stays a
+ * deliberate destination from More — it is exempt when the gate says `tabs` so
+ * a finished member can still switch chapters.
  *
- * `PRE_CHAPTER_ROUTES` is the exemption list — screens an authenticated member
- * is allowed to sit on. Everything else in the group still bounces to `(tabs)`
- * once they have a session, so sign-in cannot be reopened over a live one.
+ * `create-chapter` (#1102 / #1084) is the first-officer wizard. Listing it
+ * here is the exemption the wizard needs so a successful onboard does not yank
+ * the officer off the last step. Join and welcome are *not* on this list:
+ * once onboarding is marked complete, staying on s03 would strand them (the
+ * #957 finding). They are allowed only while the gate destination is join /
+ * welcome respectively.
+ *
+ * `#1102` named this list `PRE_CHAPTER_ROUTES`; this PR named it
+ * `DELIBERATE_AUTH_ROUTES`. Both spellings are kept and must stay in lockstep
+ * so `/create-chapter` cannot drop off one of them.
  */
-const PRE_CHAPTER_ROUTES = ["/chapter-picker", "/join", "/welcome"];
+const DELIBERATE_AUTH_ROUTES = ["/chapter-picker", "/create-chapter"];
+const PRE_CHAPTER_ROUTES = DELIBERATE_AUTH_ROUTES;
 
 export default function AuthLayout() {
-  const { status, chapterId, isChapterResolving } = useAuthSession();
   const pathname = usePathname();
-  const destination = resolveAuthGate({ status, chapterId, isChapterResolving });
+  const destination = useAuthGateDestination();
 
   if (destination === "hold") {
     return null;
   }
 
-  // `tabs` is the only destination outside this group, so it is the only one
-  // that redirects — and not when the member deliberately opened one of the
-  // post-auth screens that lives here.
-  if (destination === "tabs" && !PRE_CHAPTER_ROUTES.includes(pathname)) {
-    return <Redirect href="/(tabs)" />;
+  if (destination === "sign-in") {
+    return <Stack screenOptions={{ headerShown: false }} />;
   }
 
-  return <Stack screenOptions={{ headerShown: false }} />;
+  if (destination === "join") {
+    if (pathname === "/join" || DELIBERATE_AUTH_ROUTES.includes(pathname)) {
+      return <Stack screenOptions={{ headerShown: false }} />;
+    }
+    return <Redirect href="/join" />;
+  }
+
+  if (destination === "welcome") {
+    if (pathname === "/welcome") {
+      return <Stack screenOptions={{ headerShown: false }} />;
+    }
+    return <Redirect href="/welcome" />;
+  }
+
+  // `tabs` — bounce out of this group unless the member opened a deliberate
+  // post-auth screen. Join and welcome are *not* exempt here: once onboarding
+  // is marked complete, staying on s03 would strand them (the #957 finding).
+  if (PRE_CHAPTER_ROUTES.includes(pathname)) {
+    return <Stack screenOptions={{ headerShown: false }} />;
+  }
+
+  return <Redirect href="/(tabs)" />;
 }

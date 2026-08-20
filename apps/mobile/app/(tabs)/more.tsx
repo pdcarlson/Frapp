@@ -4,6 +4,7 @@ import { StyleSheet, Text } from "react-native";
 import {
   useEvents,
   useInvoices,
+  useListChapters,
   useMyPermissions,
   useNotifications,
   useStudySessions,
@@ -33,9 +34,12 @@ import { StatusChip } from "@/components/status-chip";
  * its only entry point.
  *
  * **Chapter** is an extra row, and it is the only entry to the chapter picker
- * (#764). The picker is deliberately not forced on members whose token lacks an
- * `active_chapter_id` claim — see `lib/auth-gate.ts` for why that would be an
- * outage rather than a feature while #805 is open — so it needs a door.
+ * (#764). When `GET /v1/chapters` is empty the same slot becomes **Create a
+ * chapter** (#1084) so a first officer who landed in the tabs (the pre-#958
+ * gate) still has a door. The picker is deliberately not forced on members
+ * whose token lacks an `active_chapter_id` claim — see `lib/auth-gate.ts` for
+ * why that would be an outage rather than a feature while #805 is open — so it
+ * needs a door.
  *
  * ## The admin section, and why it may look empty in production
  *
@@ -68,6 +72,11 @@ export default function MoreScreen() {
   const styles = createStyles(tokens);
 
   const { data: permData } = useMyPermissions();
+  const chaptersQuery = useListChapters();
+  const hasNoChapters =
+    chaptersQuery.isSuccess &&
+    Array.isArray(chaptersQuery.data) &&
+    chaptersQuery.data.length === 0;
   const permissions = useMemo(() => {
     const raw = (permData as { permissions?: unknown } | undefined)?.permissions;
     return Array.isArray(raw) ? (raw as string[]) : [];
@@ -206,12 +215,21 @@ export default function MoreScreen() {
         description="Notifications, quiet hours, and your account."
         accessibilityHint="Manage quiet hours and category notification controls."
       />
-      <NavTile
-        href="/(auth)/chapter-picker"
-        title="Chapter"
-        description="Switch between the chapters you belong to."
-        accessibilityHint="Choose which chapter to open."
-      />
+      {hasNoChapters ? (
+        <NavTile
+          href="/(auth)/create-chapter"
+          title="Create a chapter"
+          description="Set up your chapter if you're the first officer."
+          accessibilityHint="Open the chapter creation wizard."
+        />
+      ) : (
+        <NavTile
+          href="/(auth)/chapter-picker"
+          title="Chapter"
+          description="Switch between the chapters you belong to."
+          accessibilityHint="Choose which chapter to open."
+        />
+      )}
 
       {showAdmin ? (
         <>
