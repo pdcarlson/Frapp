@@ -48,7 +48,7 @@ it. Design + policy: [`GITHUB_PM.md`](GITHUB_PM.md).
 
 | Item                | Location / notes                                                                                                                                      |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CI                  | `.github/workflows/ci.yml` — parallel jobs (`lint-and-typecheck` includes `nest build` for `apps/api` + landing and `@repo/validation` unit tests; `api-tests` runs `apps/api` Jest unit + E2E suites (`test` then `test:e2e`); `web-tests` runs `apps/web` Vitest plus the `packages/hooks` and `packages/chat-core` suites; `api-docker-build` runs `apps/api/Dockerfile`) |
+| CI                  | `.github/workflows/ci.yml` — parallel jobs (`lint-and-typecheck` includes `nest build` for `apps/api` + landing, `@repo/validation`, `@repo/color`, `@repo/chapter-theme`, and `@repo/api-sdk` unit tests; `api-tests` runs `apps/api` Jest unit + E2E suites (`test` then `test:e2e`); `web-tests` runs `apps/web` Vitest plus the `packages/hooks` and `packages/chat-core` suites; `api-docker-build` runs `apps/api/Dockerfile`) |
 | API deploy          | `.github/workflows/deploy-api.yml` — after CI (`workflow_run`)                                                                                        |
 | Deploy outcome      | `.github/workflows/deploy-api.yml` → terminal `deploy-outcome` job — the only job in that workflow with a write scope (job-scoped `issues: write`; the workflow-level grant stays `contents: read`). Writes a step summary + annotation saying whether the run **deployed** or **declined to deploy**, and upserts one `routine-state` alert issue on failure, closing it on the next successful deploy. Logic in `scripts/ci/deploy-alert.mjs` (tests: `scripts/ci/__tests__/deploy-alert.test.mjs`). **Not** a required check. See "Deploy visibility" below. |
 | Deploy verification | `.github/workflows/verify-deployments.yml` — post-push Render + Vercel state polling                                                                  |
@@ -275,6 +275,62 @@ v10 incompatibility we trip. That workaround was rejected for now because it run
 outside its declared peer range and hardcodes a React version that has to be hand-synced with the
 real pin. When `eslint-plugin-react` declares v10 support, drop these two ignore entries and the
 upgrade should be close to a no-op. Original PRs: #943 (`eslint`), #944 (`@eslint/js`).
+
+### TypeScript 7 is native `tsc` plus a TypeScript 6 compiler API
+
+TypeScript 7.0 is a native Go compiler. The npm `typescript@7` package ships `tsc` and a
+version stub — `require('typescript').createProgram` is `undefined`. Tools that import the
+JavaScript compiler API therefore cannot use it as the `typescript` package:
+
+| Tool | Constraint |
+| --- | --- |
+| Nest CLI (`nest build`) | Needs `createProgram`; errors telling you to install TypeScript 6 until 7.1 |
+| `typescript-eslint` 8.67 | Peer `typescript: >=4.8.4 <6.1.0` |
+| `ts-jest` 29 | Peer `typescript: >=4.3 <7` |
+| `openapi-typescript` 7.13 | Peer `typescript: ^5.x` — **invalid** against the 6.x alias; regen still uses the compiler API. Do not flatten to 5.x to silence `npm ls`. Revisit when upstream ships a 6.x peer ([openapi-ts#2774](https://github.com/openapi-ts/openapi-typescript/pull/2774)). |
+
+Microsoft's layout, which this repo follows, is two aliases in the root manifest (and the
+same `typescript` alias in every workspace that lists it):
+
+```json
+{
+  "devDependencies": {
+    "@typescript/native": "npm:typescript@7.0.2",
+    "typescript": "npm:@typescript/typescript6@6.0.2"
+  }
+}
+```
+
+`npx tsc` is TypeScript 7.0.2. The `typescript` package is the 6.0.2 wrapper
+(`@typescript/typescript6`); it re-exports `@typescript/old` (`npm:typescript@^6`), which is
+what `require('typescript').version` and `npx tsc6 --version` report (currently 6.0.3). Root
+`overrides` pin `@typescript/old` to `npm:typescript@6.0.3` so a `^6` float cannot land 6.1
+while the wrapper still looks like 6.0.2 (`typescript-eslint`'s peer is `<6.1.0`). `@nestjs/cli`
+still nests its own `typescript@5.9.3`; ESLint, ts-jest, and Next's API mode load the project
+alias. TypeScript 7 also stopped inferring `rootDir` from the common source directory — emitting
+packages set `"rootDir": "src"` in their own `tsconfig.json` (not in
+`@repo/typescript-config/base.json`: TypeScript resolves `rootDir` relative to the file that
+declares it, so a shared `./src` would point at `packages/typescript-config/src`). `apps/api`
+sets it on `tsconfig.build.json` only, so ESLint's project service still sees `test/`. `baseUrl`
+is a hard error, so it is gone from `apps/api` and `apps/web`. `apps/api` also sets
+`"strict": false` explicitly: TypeScript 6/7 default `strict` to true, and this app had only
+opted into `strictNullChecks` / `noImplicitAny` / `strictBindCallApply` — Nest DTO class fields
+would otherwise be hundreds of `TS2564`s. TypeScript 6 also treats many mock `as never` /
+`as Member` assertions as unnecessary, which `@typescript-eslint/no-unnecessary-type-assertion`
+now flags as errors.
+
+Next.js 16 defaults `experimental.useTypeScriptCli` to `true`, then looks for
+`typescript/bin/tsc`. That file does not exist on `@typescript/typescript6` (it ships `tsc6`).
+`apps/web` and `apps/landing` therefore set `useTypeScriptCli: false` so `next typegen` /
+`next build` use the TypeScript 6 compiler API instead. Do not flip it back while `typescript`
+is the 6.x alias — Next will try to `npm install typescript` (which resolves to 7) and fail.
+
+**Do not flatten this back to `typescript@7`.** That is what Dependabot's first 5.9.2 → 7.0.2
+bump did (#1031), and it failed `packages-build` / `clean-checkout-typecheck` / `api-docker-build`
+on `packages/validation` (`TS5011` missing `rootDir`) before Nest, ESLint, and Jest could even
+run. Re-evaluate when TypeScript 7.1 ships a stable programmatic API *and* those three peers
+widen; until then the aliases move independently — native 7.x patches on `@typescript/native`,
+6.0.x patches on the `typescript` alias (stay below 6.1 for `typescript-eslint`).
 
 ### Alerts and security updates are a repo Settings toggle
 

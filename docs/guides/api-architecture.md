@@ -163,7 +163,7 @@ We use a global `AllExceptionsFilter` to normalize error responses:
 Clients must not use `instanceof Error` to read this body. `openapi-fetch` throws the parsed JSON, which is a plain object, so `instanceof Error` always misses and the UI shows a generic fallback. Two helpers own that read:
 
 - Web toasts: `getErrorMessage` in `apps/web/lib/utils.ts` — string `message`, otherwise the caller-supplied fallback.
-- Status / structured code / array `message`: `statusOf`, `serverMessageOf`, and `codeOf` from `@repo/api-sdk` (hand-written `src/api-error.ts`; survives OpenAPI codegen, which overwrites only `src/types.ts`).
+- Status / structured code / array `message`: `statusOf`, `serverMessageOf`, and `codeOf` from `@repo/api-sdk` (hand-written `src/api-error.ts`; survives OpenAPI codegen, which overwrites only `src/types.ts`). Covered by `packages/api-sdk/src/api-error.spec.ts` (`npm run test -w @repo/api-sdk`); the suite uses the hoisted workspace vitest rather than a new lockfile dependency.
 
 When adding new modules:
 

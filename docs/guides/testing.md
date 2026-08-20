@@ -248,7 +248,7 @@ E2E config file: `apps/api/test/jest-e2e.json`:
   "testRegex": ".e2e-spec.ts$",
   "setupFiles": ["<rootDir>/setup-e2e.ts"],
   "transform": {
-    "^.+\\.(t|j)s$": ["ts-jest", { "tsconfig": { "module": "commonjs", "moduleResolution": "node", "resolvePackageJsonExports": false } }]
+    "^.+\\.(t|j)s$": ["ts-jest", { "tsconfig": { "module": "commonjs", "moduleResolution": "node", "resolvePackageJsonExports": false, "rootDir": ".", "ignoreDeprecations": "6.0" } }]
   },
   "moduleNameMapper": {
     "^@repo/org-archetypes$": "<rootDir>/../../../packages/org-archetypes/src/index.ts",
@@ -264,12 +264,20 @@ pulls in the `@repo/org-archetypes` and `@repo/chapter-theme` workspace packages
 `"type": "module"`. Their `require` export condition points at ESM `dist/index.js`, which the
 CommonJS Jest runtime can't load (`Unexpected token 'export'`). The mapper resolves them to their
 TypeScript source and the `module: commonjs` ts-jest override compiles every transformed file —
-including those package sources — to CommonJS. All three `tsconfig` keys are load-bearing: ts-jest
+including those package sources — to CommonJS. The `tsconfig` overlay keys are load-bearing: ts-jest
 shallow-merges over `apps/api/tsconfig.json` (which sets `module`/`moduleResolution: nodenext` and
 `resolvePackageJsonExports: true`), so `moduleResolution: node` and `resolvePackageJsonExports: false`
-must be set together with `module: commonjs` or TypeScript errors with `TS5098`. The unit suite
-(`package.json` `jest` config) doesn't need this because the specs that touch these two packages
-`jest.mock()` them directly (they're pure helper functions) rather than transforming their ESM `dist`.
+must be set together with `module: commonjs` or TypeScript errors with `TS5098`. TypeScript 6 treats
+`moduleResolution: "node"` (node10) as deprecated and errors with `TS5107` unless the overlay also
+sets `"ignoreDeprecations": "6.0"` — that is the only way to keep the CommonJS overlay that the
+suite needs. TypeScript 6/7 also require an explicit `rootDir` (they no longer infer it from the
+files in the program); without `"rootDir": "."` on the overlay, compiling a single spec fails with
+`TS5011`. The unit suite (`package.json` `jest` config) doesn't need the CommonJS overlay because
+the specs that touch these two packages `jest.mock()` them directly (they're pure helper functions)
+rather than transforming their ESM `dist`, but it does set `"rootDir": "."` for the same `TS5011`
+reason. The same CommonJS overlay (`module` / `moduleResolution` / `resolvePackageJsonExports` /
+`rootDir` / `ignoreDeprecations`) also lives on `test/integration/jest-integration.json` and
+`test/ai-evals/jest-ai-evals.json` — keep the three in lockstep when those keys change.
 
 `expo-server-sdk` 6+ is the same shape of problem from a published package rather than a workspace:
 it is `"type": "module"` (7.x also declares `engines.node >= 22.12.0` for stable `require(esm)`).

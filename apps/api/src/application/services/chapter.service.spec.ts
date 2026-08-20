@@ -630,8 +630,8 @@ describe('ChapterService', () => {
         greek_letters: 'ΦΓΔ',
         colors: { dark: '#4B2E2E', accent: '#8B0000' },
       },
-    } as never);
-    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as never);
+    });
+    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
 
     await service.update('ch-1', { accent_color: '#1E293B' });
 
@@ -645,7 +645,7 @@ describe('ChapterService', () => {
   });
 
   it('does not touch branding when the update carries no accent', async () => {
-    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as never);
+    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
 
     await service.update('ch-1', { name: 'Renamed' });
 
@@ -668,8 +668,8 @@ describe('ChapterService', () => {
     // save anything in Settings (the form resends the stored value). Legibility
     // is enforced at render time by `resolveChapterAccentColor`, which
     // substitutes an accessible fallback per surface.
-    mockChapterRepo.findById.mockResolvedValue({ id: 'ch-1' } as never);
-    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as never);
+    mockChapterRepo.findById.mockResolvedValue({ id: 'ch-1' });
+    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
 
     // #C9A56F is 2.16:1 on bone and is the most common accent in the seed.
     await service.update('ch-1', { accent_color: '#C9A56F' });
@@ -822,7 +822,7 @@ describe('ChapterService', () => {
     it('persists the selection for a member', async () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue({
         id: 'member-1',
-      } as Member);
+      });
 
       await service.setActiveChapter('user-1', 'ch-1');
 
