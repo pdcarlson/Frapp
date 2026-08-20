@@ -57,16 +57,16 @@ Signet must not read as another generic Google/Material utility, and must not be
 
 | Layer | Location | Ownership |
 | --- | --- | --- |
-| Shared primitives | `packages/ui` | Cross-app foundational controls only |
+| Web primitives (shadcn/Radix) | `apps/web/components/ui/` | Dashboard foundational controls (Button, Card, Dialog, …) |
 | Theme/tokens | `packages/theme` | Semantic tokens + motion/elevation defaults |
 | Dashboard composites | `apps/web/components/*` | Workflow-specific and shadcn/radix compositions |
-| Landing sections | `apps/landing/app/*` | Marketing-specific content modules |
+| Landing sections | `apps/landing/app/*` | Marketing-specific content modules (inline Tailwind; no shared component package) |
 | Mobile composites | `apps/mobile/components/*` | React Native/Expo-specific UX patterns |
 
 Rules:
 
 1. If a component is workflow-specific, keep it app-local.
-2. If a component is style-agnostic and reusable across web/landing, promote it to `packages/ui`.
+2. If a component is a reusable dashboard primitive, keep it in `apps/web/components/ui/` (shadcn/Radix). Landing uses inline Tailwind; mobile uses React Native composites. Do not recreate a shared web-component workspace for that.
 3. Never duplicate token values in app-local files when semantic tokens exist.
 4. If no existing token role fits, extend or amend the token definitions (`packages/theme/src/tokens.ts`) and adopt the new role consistently — never one-off the value at the call site.
 

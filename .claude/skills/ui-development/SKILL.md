@@ -2,11 +2,11 @@
 name: ui-development
 description: >
   Build or modify UI in the mobile app (apps/mobile), web dashboard (apps/web), landing site
-  (apps/landing), or the shared component/theme/hooks/validation packages. Use when writing or
+  (apps/landing), or the shared theme/hooks/validation packages. Use when writing or
   editing frontend code — React Native screens and typed StyleSheet token factories, React
   components, ShadCN/Radix composites, Tailwind styling, theme tokens, TanStack Query data hooks,
   or Zod form validation — anywhere under apps/mobile, apps/web, apps/landing, or
-  packages/{ui,theme,hooks,validation}.
+  packages/{theme,hooks,validation}.
 ---
 
 # UI Development
@@ -23,12 +23,11 @@ description: >
 
 | Layer | Location | Purpose |
 |-------|----------|---------|
-| `@repo/ui` | `packages/ui/src/` | Shared primitive components (Button, Card, Code) |
 | `@repo/theme` | `packages/theme/src/` | Tailwind config preset + CSS variables + global styles |
-| ShadCN components | `apps/web/components/ui/` | Radix-based composites (Dialog, Select, Toast, etc.) |
+| ShadCN components | `apps/web/components/ui/` | Dashboard primitives and Radix composites (Button, Card, Dialog, Select, Toast, etc.) |
 | App components | `apps/web/components/` | Feature-level components |
 | Pages | `apps/web/app/` | Next.js App Router pages and layouts |
-| Landing | `apps/landing/app/` | Marketing site (separate Next.js app) |
+| Landing | `apps/landing/app/` | Marketing site (separate Next.js app; inline Tailwind, no shared component package) |
 | Mobile screens | `apps/mobile/app/` | Expo Router screens (React Native — no Tailwind classes) |
 | Mobile components | `apps/mobile/components/` | React Native composites |
 
@@ -36,20 +35,17 @@ description: >
 
 ## Component patterns
 
-### `@repo/ui` primitives
+### ShadCN / Radix components (`apps/web`)
 
-Located in `packages/ui/src/`. Each component is a separate file with barrel export via `package.json` `"exports"`:
+Located in `apps/web/components/ui/`. There is no shared web-component workspace — dashboard
+primitives live here, landing uses inline Tailwind, and mobile uses React Native composites.
 
 ```typescript
-import { Button } from "@repo/ui/button";
-import { Card, CardHeader, CardTitle, CardContent } from "@repo/ui/card";
+import { Button } from "@/components/ui/button";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 ```
 
-These use `joinClassNames` from `@repo/ui/utils` for class merging.
-
-### ShadCN / Radix components
-
-Located in `apps/web/components/ui/`. These follow ShadCN conventions:
+These follow ShadCN conventions:
 - Class Variance Authority (CVA) for variant-based styling
 - `cn()` utility from `@/lib/utils` (clsx + tailwind-merge)
 - Radix UI primitives for accessible behavior
@@ -133,7 +129,6 @@ const config: Config = {
   content: [
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
-    "../../packages/ui/src/**/*.{js,ts,jsx,tsx,mdx}",
   ],
 };
 ```

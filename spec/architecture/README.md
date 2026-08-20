@@ -32,7 +32,7 @@ Frapp/
     web/            # Next.js admin dashboard (app.frapp.live)
     mobile/         # Expo mobile app (iOS + Android)
     landing/        # Next.js marketing site (frapp.live)
-  packages/         # 13 shared workspaces
+  packages/         # 12 shared workspaces
     api-sdk/        # Generated API client + TypeScript types
     brand-assets/   # Canonical SVG marks (favicon + lockup)
     chapter-theme/  # Chapter accent palette derivation (legacy web token map until Signet reskin)
@@ -44,7 +44,6 @@ Frapp/
     org-archetypes/ # Greek-org directory / archetype data
     theme/          # Tailwind config + global styles (legacy bone/bronze until web/landing reskin)
     typescript-config/ # Shared tsconfig
-    ui/             # Shared React components (button, card, etc.)
     validation/     # Shared Zod schemas (used by API + web + mobile)
   spec/             # Product spec, behavior spec, architecture, environments
   supabase/         # Supabase project config, migrations, seed files
@@ -120,7 +119,6 @@ Frapp/
 | `@repo/org-archetypes`    | Greek-org directory / archetype data for onboarding autofill.             |
 | `@repo/theme`             | Tailwind config presets, global CSS. Legacy bone/bronze tokens until web/landing reskin; Signet tokens are specified in `spec/ui/design-system/`. |
 | `@repo/typescript-config` | Shared tsconfig presets.                                                  |
-| `@repo/ui`                | Shared UI components (buttons, cards, inputs). Used by web + landing.     |
 | `@repo/validation`        | Shared Zod schemas plus client gates (`can`, `isModuleEnabled`, `subscriptionWriteState`) used by API + clients. |
 
 ---
@@ -698,6 +696,8 @@ The chosen path is Path D + Path C from #401. Path A (per-session Supabase branc
   **The general invariant, which nothing currently enforces: every `needs:` parent of a required check must itself be a required check.** `web-tests` is the first job in this repo to have needed it.
 
   `web-visual-regression` stays advisory (visual flake should not block merge) and `pglite-migrations` stays advisory. **Applying this needs a manual `npm run configure:branch-protection` run** — and note that run will *also* newly apply `chapter-directory-seed`, which has been listed in the script since #840 but was never pushed to the live config. Both were verified green on `main` first.
+
+- **Amendment (2026-08-20) — `web-tests` no longer covers a deleted unused UI workspace.** A later consolidation deleted the unused shared UI workspace under `packages/` (zero importers; dashboard primitives live in `apps/web/components/ui/`; landing uses inline Tailwind). `web-tests` still uniquely covers `packages/hooks` and `packages/chat-core` plus `apps/web`. The 2026-08-19 required-check rationale is unchanged for those remaining suites. The 2026-08-19 text naming the deleted workspace is historical.
 
 ### ADR-16: Project management — retire the in-repo backlog, adopt Linear as canonical (2026-06-01)
 
