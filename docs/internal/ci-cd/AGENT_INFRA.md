@@ -58,6 +58,7 @@ it. Design + policy: [`GITHUB_PM.md`](GITHUB_PM.md).
 | Docs                | `.github/workflows/docs.yml` — PR docs/spec sync (`check-docs-impact.mjs`)                                                                            |
 | CI wake             | `.github/workflows/ci-wake.yml` — `workflow_run` on CI / Docs spec sync / Links completion (PR runs only): classifies infra-vs-code failure, auto-requeues infra failures (≤3 total attempts), upserts one PR wake comment. Logic in `scripts/ci/ci-wake.mjs` (tests: `scripts/ci/__tests__/ci-wake.test.mjs`). **Not** a required check. See "PR babysitting" below. |
 | PR base sync        | `.github/workflows/pr-base-sync.yml` — `push` to `main`: sweeps open PRs targeting it (cap 20, logged); behind + clean PRs are auto-updated via the update-branch API **only when the `PR_BASE_SYNC_TOKEN` PAT secret exists** (default-token pushes trigger no CI), otherwise — and always for conflicts — upserts one `<!-- frapp-base-sync -->` wake comment telling the watching agent to merge `main` itself. Logic in `scripts/ci/pr-base-sync.mjs` (tests: `scripts/ci/__tests__/pr-base-sync.test.mjs`). **Not** a required check. See "Base-branch sync" below. |
+| PR CI branch filter | `ci.yml` / `docs.yml` / `links.yml` set `on.pull_request.branches: [main, production]`. GitHub matches that list against the PR **base**. A PR whose base is a feature branch skips every required check. See "CI branch filters" under PR babysitting. |
 | Branch protection   | `npm run configure:branch-protection` (prefers `GITHUB_PAT`); see `CONTRIBUTING.md`                                                                   |
 | AI code review      | **Local pre-push gate**, not CI — `.claude/hooks/pre-push-review-gate.sh` blocks pushing a HEAD until that HEAD has been reviewed (keyed on a `.cache/diff-review/<SHA>` marker, not on attempt count) — `/diff-review` (always agent-invocable; writes the marker) or `/code-review` (richer, but model-invocable only when the turn's prompt carries `/code-review` whitespace-delimited on both sides, which backticks and trailing punctuation defeat; does not write the marker) (ADR-14 2026-06-04 amendment; the `claude-review.yml` CI workflow was removed). See `AI_CODE_REVIEW_RUNBOOK.md` |
 | Dependency updates  | `.github/dependabot.yml` — one root `npm` entry (the workspaces share the root lockfile), **weekly** on Monday 09:00 UTC. Minor+patch collapse into a single grouped PR; majors stay individual. The React/React Native/Expo families are ignored — they move only via a planned SDK upgrade. **Not** a required check (it opens PRs, it doesn't gate them). See "Dependency updates (Dependabot)" below. |
@@ -402,6 +403,34 @@ cause on record: during the 2026-08-06 GitHub Actions outage, PR #659's `secret-
 runner setup ("Failed to resolve action download info. Error: Service Unavailable" — the job's only
 step was "Set up job"), six sibling jobs were cancelled without ever getting a runner, and the
 watching session was never woken — the PR sat silent for ~2h until a human noticed.
+
+### CI branch filters: never target a feature branch
+
+`on.pull_request.branches` on `ci.yml`, `docs.yml`, and `links.yml` is `[main, production]`.
+GitHub matches that list against the PR **base**, not the head. A PR whose base is another
+feature branch therefore never runs CI, docs-spec-sync, or Links. GitHub still allows a
+squash-merge; the UI shows MERGED; the commits exist only on the base feature branch.
+`origin/main` is unchanged. `pr-base-sync.yml` only sweeps PRs targeting `main`, and
+`ci-wake.yml` never fires because CI never ran — the babysit loop is blind.
+
+Incidents: #1120 and #1123–#1125 were squash-merged into stacked feature branches. GitHub
+marked each MERGED; none reached `main`; CI never ran. Recovery is cherry-pick onto current
+`origin/main` and a new PR whose base **is** `main` (the #1122 / #1127 / #1128 pattern).
+
+**Playbook** (GitHub MCP down, opening area PRs, or any PR-opening path):
+
+1. **Never open a PR whose base is not `main` or `production`.** Feature work → `main`.
+   Promotion → `production` from `main` only. There is no sanctioned third base.
+2. **Never squash-merge into a feature branch** to "land" a stacked slice. GitHub's MERGED
+   badge is not evidence the work is on `main`.
+3. **If it already happened:** cherry-pick the slice onto current `origin/main` and open a
+   new PR targeting `main`. Do not restack onto another feature branch. Confirm the new PR
+   actually runs CI (required checks present, not all skipped or missing).
+
+#962 is adjacent and **not** this bug:
+GitHub honours `Fixes #N` only on merge into the **default** branch, so a stacked PR can
+ship via its parent and still leave issues open. This section is the worse case — the work
+never reaches `main` and CI never ran.
 
 ### Wake coverage
 

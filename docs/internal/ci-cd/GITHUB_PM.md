@@ -38,7 +38,13 @@ GitHub Issues (canonical: planning, status, Triage intake)
   instead — `/next` and the routines skip them entirely.
 - **Work is closed by the PR that does it** (`Fixes #N` in the PR **body** — native GitHub
   close-on-merge, one line per issue the PR closes; GitHub ignores closing keywords in the PR
-  *title*, so the body is load-bearing). Agents may also close an issue directly when it's done,
+  *title*, so the body is load-bearing). GitHub also honours `Fixes` **only on merge into the
+  default branch** (#962) — that is issue-close
+  semantics when the code still reaches `main` via a parent. Squash-merging a PR whose base is
+  a feature branch is a **different, worse bug**: CI never runs (`pull_request.branches` is
+  `[main, production]`) and the work never reaches `main` even though GitHub shows MERGED.
+  Playbook: [`AGENT_INFRA.md`](AGENT_INFRA.md#ci-branch-filters-never-target-a-feature-branch)
+  (incidents #1120, #1123–#1125). Agents may also close an issue directly when it's done,
   obsolete, or a duplicate — see the state table below.
 - **Epics are parent issues with native sub-issues** (`sub_issue_write` /
   `issue_read get_sub_issues`). Linear Projects are retired; `project:<slug>` labels may be used
