@@ -4,8 +4,8 @@ Behavior and boundaries for per-chapter branding. Visual design tokens (palette,
 
 ## Logo
 
-- Chapters can upload a logo image (PNG, JPG, WebP; max 2 MB).
-- The logo is displayed in: the app header/sidebar, the member directory, exported PDF reports, and the onboarding tutorial welcome screen. On mobile it appears in the Home and Chat headers.
+- Chapters can upload a logo image. Types, extensions, and size follow the shared `image` kind in `@repo/validation` (`packages/validation/src/upload-allowlists.ts`: `isAllowedUploadMime`, `isAllowedUploadExtension`, `MAX_UPLOAD_BYTES`) — the same allowlist and 25 MB cap as avatars and every other image-upload surface. This spec does not copy those lists; the kind is the source of truth. The private `branding` bucket enforces the same MIME list and `file_size_limit` on the PUT itself.
+- The logo is displayed in: the app header/sidebar, the member directory, exported PDF reports, and the onboarding tutorial welcome screen. On mobile it appears in the Home and Chat headers. PDF export is a renderer limit, not an upload restriction: the PDF library can embed only a subset of the `image` kind, and an unreadable logo is skipped with a warning rather than failing the export — see [`reports.md`](reports.md) § PDF Formatting.
 - Logo is stored in Supabase Storage under `chapters/{chapter_id}/branding/logo.{ext}`.
 - The `branding` bucket is **private**, so `logo_path` is not addressable by a client on its own. `GET /v1/chapters/current` returns a signed **`logo_url`** alongside it; that is the only supported way for a client to render the logo. When signing fails the field is `null` — the logo is decoration, and an unreachable asset must not fail the chapter read.
 - If no logo is uploaded, the chapter name is displayed as text.

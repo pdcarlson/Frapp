@@ -4,7 +4,7 @@ Behavior rules for the customization-heavy settings tabs (Theme, Roles, Fields, 
 
 ## Theme Tab
 
-- A chapter sets two colors: **dark** (sidebar / headers) and **accent** (chat self-bubble, mentions, CTAs). Accent-color rules and brand boundaries are canon in [`../branding.md`](../branding.md).
+- A chapter sets two colors: **dark** (sidebar / headers) and **accent** (chat self-bubble, mentions, CTAs). Accent-color rules, brand boundaries, and logo upload (the shared `image` kind in `@repo/validation`, not a Theme-tab-specific allowlist) are canon in [`../branding.md`](../branding.md).
 - Saving recomputes the chapter's `theme_palette` **server-side** and the client refetches and re-applies CSS variables immediately — no full reload.
 - **WCAG enforcement:** a token that fails AA 4.5:1 against the background surfaces an inline warning. The save still succeeds, falling back to the safe tokens. Contrast derivation is archetype-agnostic.
 

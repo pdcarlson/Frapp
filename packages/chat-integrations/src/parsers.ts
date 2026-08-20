@@ -8,6 +8,8 @@
  * rule (no NaN propagation) holds.
  */
 
+import { POINTS_REASON_MAX_LENGTH } from "@repo/validation";
+
 /** Result of a successful parse for `/poll`. */
 export interface PollArgs {
   question: string;
@@ -161,7 +163,6 @@ export function parseAnnounceArgs(args: string): ParseResult<AnnounceArgs> {
   return { ok: true, value: { message } };
 }
 
-const POINTS_MAX_REASON_LENGTH = 500;
 const POINTS_USAGE =
   "Usage: /points grant|deduct @member <amount> for <reason>";
 
@@ -211,10 +212,10 @@ export function parsePointsArgs(args: string): ParseResult<PointsArgs> {
   if (reason.length === 0) {
     return { ok: false, error: "A reason is required for point adjustments" };
   }
-  if (reason.length > POINTS_MAX_REASON_LENGTH) {
+  if (reason.length > POINTS_REASON_MAX_LENGTH) {
     return {
       ok: false,
-      error: `Reason is too long (max ${POINTS_MAX_REASON_LENGTH} chars)`,
+      error: `Reason is too long (max ${POINTS_REASON_MAX_LENGTH} chars)`,
     };
   }
 

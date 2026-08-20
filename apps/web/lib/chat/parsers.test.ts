@@ -1,3 +1,4 @@
+import { POINTS_REASON_MAX_LENGTH } from "@repo/validation";
 import { describe, it, expect } from "vitest";
 import {
   parsePollArgs,
@@ -174,8 +175,20 @@ describe("parsePointsArgs", () => {
   });
 
   it("rejects an overlong reason", () => {
-    const r = parsePointsArgs(`grant @alice 5 for ${"x".repeat(501)}`);
+    const r = parsePointsArgs(
+      `grant @alice 5 for ${"x".repeat(POINTS_REASON_MAX_LENGTH + 1)}`,
+    );
     expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error).toContain(String(POINTS_REASON_MAX_LENGTH));
+  });
+
+  it("keeps the parser cap on POINTS_REASON_MAX_LENGTH from @repo/validation", () => {
+    expect(POINTS_REASON_MAX_LENGTH).toBe(500);
+    const atCap = parsePointsArgs(
+      `grant @alice 5 for ${"x".repeat(POINTS_REASON_MAX_LENGTH)}`,
+    );
+    expect(atCap.ok).toBe(true);
   });
 
   it("returns an error on an unterminated quote", () => {
