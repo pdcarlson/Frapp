@@ -11,15 +11,20 @@ apps/
   mobile/     — Expo mobile app (iOS + Android)
   landing/    — Next.js marketing site (frapp.live)
   (Developer docs: repo-root `docs/guides/` — no Next.js docs app.)
-packages/
-  api-sdk/    — Generated TypeScript API client
-  brand-assets/ — Canonical Frapp SVG marks (favicon + lockup); sync via `npm run sync:brand-assets`
-  hooks/      — Shared React hooks
-  ui/         — Shared UI components
-  theme/      — Tailwind config + global styles
-  validation/ — Shared Zod schemas
+packages/    — 13 shared workspaces
+  api-sdk/            — Generated TypeScript API client
+  brand-assets/       — Canonical SVG marks (favicon + lockup); sync via `npm run sync:brand-assets`
+  chapter-theme/      — Chapter accent palette derivation (legacy web token map until Signet reskin)
+  chat-core/          — Platform-neutral chat hot path (cache, send, realtime) behind injected adapters
+  chat-integrations/  — Chat slash-command / integration helpers
+  color/              — Shared WCAG contrast math
   eslint-config/      — Shared ESLint configuration
+  hooks/              — Shared React hooks
+  org-archetypes/     — Greek-org directory / archetype data
+  theme/              — Tailwind config + global styles (legacy bone/bronze until web/landing reskin)
   typescript-config/  — Shared tsconfig
+  ui/                 — Shared UI components
+  validation/         — Shared Zod schemas
 spec/         — Product spec, behavior spec, architecture, environments
 supabase/     — Supabase project config + migrations
 ```
@@ -49,7 +54,7 @@ All product decisions, behavior rules, and architecture are documented in the `s
 - **[spec/architecture/README.md](spec/architecture/README.md)** — Stack, data model, auth, storage, API contracts.
 - **[spec/environments/README.md](spec/environments/README.md)** — Local, staging, production setup; CI/CD.
 
-The spec is the single source of truth. Implementation follows the spec.
+**`spec/` is the source of truth for intended behavior. Code is the source of truth for current behavior.** Disagreement between them is a tracked bug to file, not something an agent silently resolves by picking whichever loaded first. See [`AGENTS.md`](AGENTS.md) § Spec vs code.
 
 **Documentation map (guides + runbooks + how they relate to spec):** [docs/README.md](docs/README.md).
 

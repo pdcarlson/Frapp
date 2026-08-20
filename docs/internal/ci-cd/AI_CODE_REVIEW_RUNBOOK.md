@@ -105,7 +105,7 @@ with `FRAPP_SKIP_REVIEW_GATE=1` on the push, or write the marker by hand.
 `/diff-review` reproduces the bundled workflow (scope → parallel finder subagents per angle → one
 independent verifier subagent per candidate → a single `ReportFindings` call) and additionally encodes
 Frapp's own invariants as review angles: `chapter_id` scoping and chapter-scoped role lookups,
-permission decorators, the PGlite migration gate, the doc-sync mandate, the tracker rule (GitHub Issues, not Linear), and
+permission decorators, the PGlite migration gate, the doc-sync mandate, the tracker rule (GitHub Issues), and
 verification honesty. The per-candidate verifier pass is what makes an agent-run review trustworthy
 rather than the agent agreeing with its own work — do not weaken it.
 

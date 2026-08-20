@@ -1,10 +1,13 @@
 # Specification index
 
-**`spec/`** is the normative source for product behavior, architecture, environments, and UI
-expectations. It is purely topical and canonical — work tracking and delivery sequencing live in
-**GitHub Issues** (see [`docs/internal/ci-cd/GITHUB_PM.md`](../docs/internal/ci-cd/GITHUB_PM.md)),
-not here. Developer workflows and runbooks live under **`docs/`** — start at
-[`docs/README.md`](../docs/README.md) and [`docs/guides/README.md`](../docs/guides/README.md).
+**`spec/`** is the source of truth for **intended** product behavior, architecture, environments,
+and UI expectations. **Code** is the source of truth for **current** behavior. Disagreement is a
+tracked bug to file, not something to silently resolve by picking whichever loaded first — see
+[`AGENTS.md`](../AGENTS.md) § Spec vs code. This tree is purely topical and canonical — work
+tracking and delivery sequencing live in **GitHub Issues** (see
+[`docs/internal/ci-cd/GITHUB_PM.md`](../docs/internal/ci-cd/GITHUB_PM.md)), not here. Developer
+workflows and runbooks live under **`docs/`** — start at [`docs/README.md`](../docs/README.md) and
+[`docs/guides/README.md`](../docs/guides/README.md).
 
 ## Core
 

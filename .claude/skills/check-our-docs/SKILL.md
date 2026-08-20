@@ -20,8 +20,9 @@ description: >
 
 [`AGENTS.md`](../../../AGENTS.md) already states the doctrine:
 
-> **Code is ground truth for behavior; docs are ground truth for intent.** […] Fix the doc in the
-> same PR when it's in scope; file it when it isn't.
+> **`spec/` is the source of truth for intended behavior. Code is the source of truth for current
+> behavior.** Disagreement is a tracked bug — file it; fix the stale side in the same PR when it's
+> in scope.
 
 The repo has the rule and no mechanism for it. This skill is the mechanism.
 
@@ -107,9 +108,9 @@ that gate wanted in the first place.
    with a note explaining that "provider state in a second file has no mechanism to stay true."
    Copy that move.
 3. **Delete the claim** if nothing needs to assert it.
-4. **File an issue** only when the fix is genuinely out of scope — a `triage`-labeled issue with
-   `area:docs`, per [`GITHUB_PM.md`](../../../docs/internal/ci-cd/GITHUB_PM.md). Say what you
-   verified and how, so the next session doesn't redo it.
+4. **File an issue** only when the fix is genuinely out of scope — per
+   [`file-follow-up`](../file-follow-up/SKILL.md), with `area:docs`. Say what you verified and how,
+   so the next session doesn't redo it.
 
 **Placement is not your choice** — [`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md)
 holds the map, and `scripts/check-docs-structure.mjs` enforces part of it. Never satisfy a gate by
