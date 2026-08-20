@@ -58,13 +58,25 @@ import type { FrappSupabaseClient } from '../../src/infrastructure/supabase/data
  * must not claim around:
  *
  * - **The `select()` projection is ignored.** Column lists and embed hints are
- *   recorded, never parsed, so dropping `!inner` from
+ *   parsed for nothing, so dropping `!inner` from
  *   `'*, chat_channels!inner(chapter_id)'` — which turns a filtering join into a
  *   non-filtering one against real PostgREST — is invisible here.
  * - **Joins are not resolved.** An embed is whatever the seed row carries.
  *
  * Both belong to the live-PostgREST integration suite (`test/integration/`),
  * which exists for exactly this class of defect.
+ *
+ * Two smaller divergences, unreachable from any repository today but worth
+ * knowing before relying on them: `order()` places NULLs last in both
+ * directions, where Postgres defaults to NULLS LAST ascending and NULLS FIRST
+ * descending; and an `insert([])` records an operation with an empty payload, so
+ * it satisfies the "something was queried" check without writing anything.
+ *
+ * For a table listed in `untenantedTables`, `parentTenant` restores the
+ * foreign-*write* check only. There is no read-side net for a row that carries
+ * no chapter anywhere — an unscoped read of `poll_votes` returns both chapters
+ * and nothing here can tell. That boundary is the caller's
+ * (`ChannelAccessService`), and the specs say so.
  */
 
 /** Rows keyed by table name. */
