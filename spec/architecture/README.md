@@ -119,7 +119,7 @@ Frapp/
 | `@repo/org-archetypes`    | Greek-org directory / archetype data for onboarding autofill.             |
 | `@repo/theme`             | Tailwind config presets, global CSS. Legacy bone/bronze tokens until web/landing reskin; Signet tokens are specified in `spec/ui/design-system/`. |
 | `@repo/typescript-config` | Shared tsconfig presets.                                                  |
-| `@repo/validation`        | Shared Zod schemas, upload MIME/size allowlists (`image` / `proof` / `document`), field-length caps, plus client gates (`can`, `isModuleEnabled`, `subscriptionWriteState`) used by API + clients. |
+| `@repo/validation`        | Shared Zod 4 schemas, upload MIME/size allowlists (`image` / `proof` / `document`), field-length caps, plus client gates (`can`, `isModuleEnabled`, `subscriptionWriteState`) used by API + clients. `z.record` requires a key schema and a value schema. |
 
 ---
 

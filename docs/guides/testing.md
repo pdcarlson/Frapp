@@ -202,7 +202,7 @@ guarantee stays with `test/cross-tenant-isolation.e2e-spec.ts`.
 
 ## 5. CI parity (lint job)
 
-The **`lint-and-typecheck`** job in the **GitHub Actions** workflow `.github/workflows/ci.yml` runs ESLint, TypeScript, the `apps/landing` and `@repo/validation` unit suites, and **`npm run check:brand-assets`**.
+The **`lint-and-typecheck`** job in the **GitHub Actions** workflow `.github/workflows/ci.yml` runs ESLint, TypeScript, the `apps/landing` and `@repo/validation` unit suites, and **`npm run check:brand-assets`**. The validation suite includes a Zod 4 runtime smoke (`packages/validation/src/index.spec.ts`) for record maps plus the string-check, coerce, passthrough, and strict APIs the package still uses. The `z.record(key, value)` TypeScript arity is enforced by `tsc` on `packages/validation/src/index.ts`, not by that spec (specs are excluded from the package `tsc`).
 
 The docs/spec sync gate runs **elsewhere** — the `docs-spec-sync` job in `.github/workflows/docs.yml` is its only home, so a non-doc change that skipped its `docs/` or `spec/` update fails *there*, not here. `lint-and-typecheck` used to run a second copy; it was removed so the gate has one home and one exemption list. Contract, exemptions, and the `no-doc-change-needed` waiver: [`docs/internal/ci-cd/DOCS_CI.md`](../internal/ci-cd/DOCS_CI.md).
 
@@ -246,12 +246,15 @@ E2E config file: `apps/api/test/jest-e2e.json`:
   "rootDir": ".",
   "testEnvironment": "node",
   "testRegex": ".e2e-spec.ts$",
+  "setupFiles": ["<rootDir>/setup-e2e.ts"],
   "transform": {
     "^.+\\.(t|j)s$": ["ts-jest", { "tsconfig": { "module": "commonjs", "moduleResolution": "node", "resolvePackageJsonExports": false } }]
   },
   "moduleNameMapper": {
     "^@repo/org-archetypes$": "<rootDir>/../../../packages/org-archetypes/src/index.ts",
-    "^@repo/chapter-theme$": "<rootDir>/../../../packages/chapter-theme/src/index.ts"
+    "^@repo/chapter-theme$": "<rootDir>/../../../packages/chapter-theme/src/index.ts",
+    "^expo-server-sdk$": "<rootDir>/helpers/expo-server-sdk.stub.ts",
+    "^(\\.{1,2}/.*)\\.js$": "$1"
   }
 }
 ```
@@ -267,6 +270,16 @@ shallow-merges over `apps/api/tsconfig.json` (which sets `module`/`moduleResolut
 must be set together with `module: commonjs` or TypeScript errors with `TS5098`. The unit suite
 (`package.json` `jest` config) doesn't need this because the specs that touch these two packages
 `jest.mock()` them directly (they're pure helper functions) rather than transforming their ESM `dist`.
+
+`expo-server-sdk` 6+ is the same shape of problem from a published package rather than a workspace:
+it is `"type": "module"` (7.x also declares `engines.node >= 22.12.0` for stable `require(esm)`).
+Jest still treats `node_modules` as a script, so `import Expo from 'expo-server-sdk'` in
+`ExpoPushProvider` throws `SyntaxError: Cannot use import statement outside a module` before any
+spec runs. Transforming the real package is a worse fix — it then `import`s ESM `undici` and a
+JSON module via `with { type: 'json' }`. The mapper points at
+`test/helpers/expo-server-sdk.stub.ts` instead. Production Nest still `require()`s the real SDK
+(Node 20.19+ and 22.12+ both load it); the unit suite already `jest.mock`s it. E2E never sends
+push, so the stub only has to construct when `AppModule` boots.
 
 E2E specs build the Nest app from `AppModule` but **mock external dependencies** rather than hitting a
 live backend: the Supabase client is overridden via the `SUPABASE_CLIENT` provider token (see

@@ -392,8 +392,9 @@ export const UpdateCustomFieldSchema = z.object({
 
 export const PatchChapterConfigSchema = z.object({
   org_archetype: z.string().optional(),
-  enabled_modules: z.record(z.boolean()).optional(),
-  vocabulary: z.record(z.string()).optional(),
+  // Zod 4: `z.record` takes (key, value). The one-arg form was Zod 3.
+  enabled_modules: z.record(z.string(), z.boolean()).optional(),
+  vocabulary: z.record(z.string(), z.string()).optional(),
   branding: ChapterBrandingSchema,
   beta_config: z
     .object({
@@ -466,14 +467,14 @@ export const SendChatMessageSchema = z.object({
   channel_id: z.string().uuid(),
   content: z.string().min(1).max(CHAT_MESSAGE_CONTENT_MAX_LENGTH),
   kind: z.enum(CHAT_MESSAGE_KINDS).default("text"),
-  payload: z.record(z.unknown()).optional(),
+  payload: z.record(z.string(), z.unknown()).optional(),
   reply_to_id: z.string().uuid().optional(),
 });
 
 export const ChatMessageActionSchema = z.object({
   message_id: z.string().uuid(),
   action_type: z.string().min(1).max(50),
-  payload: z.record(z.unknown()).optional(),
+  payload: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const BackfillMessagesQuerySchema = z.object({
