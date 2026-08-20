@@ -509,6 +509,36 @@ describe('RbacService', () => {
       expect(mockMemberRepo.transferPresidencyAtomic).not.toHaveBeenCalled();
     });
 
+    it('throws BadRequest when the current member is in a different chapter', async () => {
+      const currentMember = makeMember({
+        id: 'member-1',
+        user_id: 'user-1',
+        chapter_id: 'ch-2',
+        role_ids: [presidentRole.id],
+      });
+      const targetMember = makeMember({
+        id: 'member-2',
+        user_id: 'user-2',
+      });
+      mockMemberRepo.findById.mockImplementation((id) =>
+        Promise.resolve(
+          id === 'member-1'
+            ? currentMember
+            : id === 'member-2'
+              ? targetMember
+              : null,
+        ),
+      );
+
+      await expect(
+        service.transferPresidency('ch-1', 'member-1', 'member-2'),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.transferPresidency('ch-1', 'member-1', 'member-2'),
+      ).rejects.toThrow('Current member is not in this chapter');
+      expect(mockMemberRepo.transferPresidencyAtomic).not.toHaveBeenCalled();
+    });
+
     it('throws NotFound when the chapter has no President role', async () => {
       const currentMember = makeMember({
         id: 'member-1',

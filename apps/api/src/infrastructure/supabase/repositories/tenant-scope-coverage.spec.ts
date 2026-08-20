@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -10,12 +10,38 @@ import { join } from 'node:path';
  * now fails here, and deferring one is a line in `TENANT_SCOPE_BACKLOG` with a
  * reason — a decision somebody made, not a gap that accumulated.
  *
+ * Discovery is a recursive walk of `apps/api/src` for `*.repository.ts`, not
+ * this directory and not a `supabase-` filename prefix. Module-local
+ * repositories (`modules/scheduled-jobs`, `modules/chat-push-worker`) are in
+ * the denominator. The sibling `*.repository.spec.ts` is the spec, wherever
+ * the implementation lives.
+ *
  * This is not a quality gate on the specs themselves; a spec that exists but
  * asserts nothing satisfies it. What stops that is `tenant-scope.harness.spec.ts`,
  * which proves the harness those specs use can still fail.
  */
 
-const REPOSITORY_DIR = __dirname;
+const SRC_ROOT = join(__dirname, '../../..');
+
+interface RepositoryFile {
+  fileName: string;
+  fullPath: string;
+}
+
+function collectRepositories(dir: string): RepositoryFile[] {
+  const out: RepositoryFile[] = [];
+  for (const name of readdirSync(dir)) {
+    if (name === 'node_modules' || name === 'dist') continue;
+    const fullPath = join(dir, name);
+    const st = statSync(fullPath);
+    if (st.isDirectory()) {
+      out.push(...collectRepositories(fullPath));
+    } else if (st.isFile() && name.endsWith('.repository.ts')) {
+      out.push({ fileName: name, fullPath });
+    }
+  }
+  return out.sort((a, b) => a.fileName.localeCompare(b.fileName));
+}
 
 /**
  * Repositories deliberately not covered in this pass, each with the reason.
@@ -24,6 +50,9 @@ const REPOSITORY_DIR = __dirname;
  *
  * Moving a line out of this list means writing the spec; deleting a line
  * without writing one puts the repository back in the failing set.
+ *
+ * Keys are basenames — unique across `apps/api/src` today. The uniqueness
+ * assertion below fails if a second `foo.repository.ts` appears.
  */
 const TENANT_SCOPE_BACKLOG: Record<string, string> = {
   'supabase-user.repository.ts':
@@ -46,33 +75,41 @@ const TENANT_SCOPE_BACKLOG: Record<string, string> = {
     'chapter-scoped and upsert-only; low blast radius, and no hook call site in the query-key migration. Backlog.',
 };
 
-describe('Supabase repository tenant-scope coverage', () => {
-  const repositories = readdirSync(REPOSITORY_DIR).filter(
-    (name) => name.startsWith('supabase-') && name.endsWith('.repository.ts'),
-  );
+const specPathFor = (fullPath: string) => fullPath.replace(/\.ts$/, '.spec.ts');
 
-  const specFor = (repository: string) =>
-    repository.replace(/\.ts$/, '.spec.ts');
+describe('API repository tenant-scope coverage', () => {
+  const repositories = collectRepositories(SRC_ROOT);
+
+  it('repository basenames are unique so the backlog can key on the file name', () => {
+    const counts = new Map<string, number>();
+    for (const { fileName } of repositories) {
+      counts.set(fileName, (counts.get(fileName) ?? 0) + 1);
+    }
+    const duplicates = [...counts.entries()]
+      .filter(([, n]) => n > 1)
+      .map(([name]) => name);
+    expect(duplicates).toEqual([]);
+  });
 
   it('every repository either has a tenant-scope spec or a recorded reason', () => {
-    const present = new Set(readdirSync(REPOSITORY_DIR));
-
-    const uncovered = repositories.filter(
-      (repository) =>
-        !present.has(specFor(repository)) &&
-        !(repository in TENANT_SCOPE_BACKLOG),
-    );
+    const uncovered = repositories
+      .filter(
+        ({ fileName, fullPath }) =>
+          !existsSync(specPathFor(fullPath)) &&
+          !(fileName in TENANT_SCOPE_BACKLOG),
+      )
+      .map(({ fileName }) => fileName);
 
     expect(uncovered).toEqual([]);
   });
 
   it('the backlog names only repositories that still exist and lack a spec', () => {
-    const present = new Set(readdirSync(REPOSITORY_DIR));
+    const byName = new Map(repositories.map((r) => [r.fileName, r]));
 
-    const stale = Object.keys(TENANT_SCOPE_BACKLOG).filter(
-      (repository) =>
-        !repositories.includes(repository) || present.has(specFor(repository)),
-    );
+    const stale = Object.keys(TENANT_SCOPE_BACKLOG).filter((fileName) => {
+      const hit = byName.get(fileName);
+      return !hit || existsSync(specPathFor(hit.fullPath));
+    });
 
     expect(stale).toEqual([]);
   });
@@ -82,14 +119,12 @@ describe('Supabase repository tenant-scope coverage', () => {
     // `createTenantHarness` — the colliding-twin check above all — so it can
     // pass while proving nothing.
     const withoutHarness = repositories
-      .filter((repository) => !(repository in TENANT_SCOPE_BACKLOG))
-      .filter((repository) => {
-        const text = readFileSync(
-          join(REPOSITORY_DIR, specFor(repository)),
-          'utf8',
-        );
+      .filter(({ fileName }) => !(fileName in TENANT_SCOPE_BACKLOG))
+      .filter(({ fullPath }) => {
+        const text = readFileSync(specPathFor(fullPath), 'utf8');
         return !text.includes('createTenantHarness');
-      });
+      })
+      .map(({ fileName }) => fileName);
 
     expect(withoutHarness).toEqual([]);
   });
@@ -99,10 +134,12 @@ describe('Supabase repository tenant-scope coverage', () => {
       repositories.length - Object.keys(TENANT_SCOPE_BACKLOG).length;
 
     // Pinned so shrinking coverage is a deliberate edit rather than a silent
-    // regression. Raise it as backlog entries are cleared.
+    // regression. Raise it as backlog entries are cleared. Denominator is
+    // every `*.repository.ts` under `apps/api/src` (33 supabase-* plus the
+    // two module-local workers).
     expect({ covered, total: repositories.length }).toEqual({
-      covered: 24,
-      total: 33,
+      covered: 26,
+      total: 35,
     });
   });
 });

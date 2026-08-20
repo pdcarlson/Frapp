@@ -1,6 +1,15 @@
 import { Test } from '@nestjs/testing';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { ScheduledJobsRepository } from './scheduled-jobs.repository';
+import {
+  CHAPTER_A,
+  CHAPTER_B,
+  USER_SHARED,
+  createTenantHarness,
+  inA,
+  inB,
+  type TenantHarness,
+} from '../../../test/helpers/tenant-scope.harness';
 
 /** Mirrors `SWEEP_PAGE_SIZE` in the repository under test. */
 const PAGE_SIZE = 500;
@@ -250,5 +259,130 @@ describe('ScheduledJobsRepository', () => {
         due_date: '2026-08-05',
       });
     });
+  });
+});
+
+/**
+ * Tenant-scope half of this file. Sweeps (`findEventsPendingAutoAbsent`,
+ * invoice/task due windows) are cross-chapter by design: the worker has no
+ * caller chapter and pages every tenant. Those paths are characterised as
+ * unscoped, not asserted with `expectTenantScoped`.
+ *
+ * `claimDispatch` is the tenant-bound write: it inserts
+ * `scheduled_notification_dispatches` with the chapter taken from the sweep
+ * row, not from ambient context.
+ *
+ * `releaseDispatch` still has no `chapter_id` filter — characterised, not
+ * hardened (#1088–#1092 did not ask to change it).
+ */
+
+const EVENT_A = '0a000000-0000-4000-8000-000000000220';
+const EVENT_B = '0b000000-0000-4000-8000-000000000220';
+const INVOICE_A = '0a000000-0000-4000-8000-000000000221';
+const INVOICE_B = '0b000000-0000-4000-8000-000000000221';
+
+const tenantSeed = () => ({
+  events: [
+    inA({
+      id: EVENT_A,
+      name: 'Chapter meeting',
+      description: null,
+      location: 'House',
+      start_time: '2026-09-01T18:00:00.000Z',
+      end_time: '2026-09-01T19:00:00.000Z',
+      point_value: 10,
+      is_mandatory: true,
+      required_role_ids: [],
+      created_at: '2026-01-01T00:00:00.000Z',
+    }),
+    inB({
+      id: EVENT_B,
+      name: 'Chapter meeting',
+      description: null,
+      location: 'House',
+      start_time: '2026-09-01T18:00:00.000Z',
+      end_time: '2026-09-01T19:00:00.000Z',
+      point_value: 10,
+      is_mandatory: true,
+      required_role_ids: [],
+      created_at: '2026-01-01T00:00:00.000Z',
+    }),
+  ],
+  financial_invoices: [
+    inA({
+      id: INVOICE_A,
+      user_id: USER_SHARED,
+      title: 'Dues',
+      description: null,
+      amount: 25000,
+      status: 'OPEN',
+      due_date: '2026-09-15',
+      paid_at: null,
+      stripe_payment_intent_id: null,
+      created_at: '2026-01-01T00:00:00.000Z',
+    }),
+    inB({
+      id: INVOICE_B,
+      user_id: USER_SHARED,
+      title: 'Dues',
+      description: null,
+      amount: 25000,
+      status: 'OPEN',
+      due_date: '2026-09-15',
+      paid_at: null,
+      stripe_payment_intent_id: null,
+      created_at: '2026-01-01T00:00:00.000Z',
+    }),
+  ],
+  scheduled_notification_dispatches: [] as Record<string, unknown>[],
+});
+
+describe('ScheduledJobsRepository — tenant scope', () => {
+  let harness: TenantHarness;
+  let repo: ScheduledJobsRepository;
+
+  beforeEach(() => {
+    harness = createTenantHarness({ tables: tenantSeed() });
+    repo = new ScheduledJobsRepository(harness.client);
+  });
+
+  it('findEventsPendingAutoAbsent is a cross-chapter sweep (characterised)', async () => {
+    const rows = await repo.findEventsPendingAutoAbsent(
+      new Date('2026-09-01T00:00:00.000Z'),
+      new Date('2026-09-02T00:00:00.000Z'),
+    );
+
+    expect(rows.map((r) => r.id).sort()).toEqual([EVENT_A, EVENT_B].sort());
+    const [op] = harness.ops;
+    expect(op.filters.some((f) => f.column === 'chapter_id')).toBe(false);
+  });
+
+  it('findOpenInvoicesDueBetween is a cross-chapter sweep (characterised)', async () => {
+    const rows = await repo.findOpenInvoicesDueBetween(
+      '2026-09-01',
+      '2026-09-30',
+    );
+
+    expect(rows.map((r) => r.id).sort()).toEqual([INVOICE_A, INVOICE_B].sort());
+    const [op] = harness.ops;
+    expect(op.filters.some((f) => f.column === 'chapter_id')).toBe(false);
+  });
+
+  it('claimDispatch writes the dispatch row under the given chapter', async () => {
+    const claimed = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.claimDispatch(
+        CHAPTER_B,
+        'EVENT',
+        EVENT_B,
+        'AUTO_ABSENT',
+        '2026-09-01',
+      ),
+    );
+
+    expect(claimed).toBe(true);
+    const rows = harness.rows('scheduled_notification_dispatches');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.chapter_id).toBe(CHAPTER_B);
+    expect(rows.find((r) => r.chapter_id === CHAPTER_A)).toBeUndefined();
   });
 });

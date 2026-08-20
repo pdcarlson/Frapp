@@ -14,9 +14,14 @@ export interface IChapterDocumentFolderRepository {
     id: string,
     chapterId: string,
   ): Promise<ChapterDocumentFolder | null>;
+  /**
+   * Chapter-first, matching `IBackworkProfessorRepository.findByName` and the
+   * other chapter-scoped lookups. Both args are `string`; transposing them is
+   * a silent miss, not a type error.
+   */
   findByName(
-    name: string,
     chapterId: string,
+    name: string,
   ): Promise<ChapterDocumentFolder | null>;
   create(data: {
     chapter_id: string;
