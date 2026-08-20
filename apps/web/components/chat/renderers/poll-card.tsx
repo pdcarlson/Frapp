@@ -8,6 +8,7 @@ import {
   type PollOption,
   type PollPayload,
 } from "@repo/chat-integrations";
+import { useNow } from "@/lib/use-now";
 
 interface PollCardProps {
   message: ChatMessage;
@@ -87,6 +88,7 @@ export function PollCard({
   onVote,
 }: PollCardProps) {
   const payload = readPayload(message);
+  const now = useNow();
 
   const { byOption, total, myVote: viewerVote } = useMemo(() => {
     if (!payload) return { byOption: {}, total: 0, myVote: null };
@@ -103,7 +105,7 @@ export function PollCard({
 
   const closesAt = payload.closes_at ? new Date(payload.closes_at) : null;
   const isClosed = closesAt
-    ? !Number.isNaN(closesAt.getTime()) && closesAt.getTime() < Date.now()
+    ? !Number.isNaN(closesAt.getTime()) && closesAt.getTime() < now
     : false;
   const canVote = isConfirmed && !isClosed && viewerId !== null;
 

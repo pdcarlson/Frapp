@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   Command,
   CommandEmpty,
@@ -21,6 +21,8 @@ import { filterSlashCommands, type SlashCommand } from "@repo/chat-integrations"
 export interface SlashPaletteProps {
   open: boolean;
   initialQuery?: string;
+  /** Parent-owned query updates (composer prefix or in-palette typing). */
+  onQueryChange?: (query: string) => void;
   isModuleEnabled: (moduleKey: string) => boolean;
   /**
    * Reflects the chapter-config query state so the palette can fail closed
@@ -44,25 +46,21 @@ export interface SlashPaletteProps {
  * issue #310. The dialog opens to an explicit Loading or Error state instead
  * of a filtered list that defaults to "no modules enabled".
  *
- * The input is controlled and re-syncs with `initialQuery` whenever the palette
- * is opened (e.g. the composer pushed a fresh partial command into it) so the
- * displayed filter never drifts from the composer's slash text.
+ * The input is parent-controlled (`initialQuery` + `onQueryChange`) so the
+ * displayed filter stays in lockstep with the composer's slash text without
+ * an effect-synced copy.
  */
 export function SlashPalette({
   open,
   initialQuery = "",
+  onQueryChange,
   isModuleEnabled,
   status = "ready",
   onRetry,
   onSelect,
   onOpenChange,
 }: SlashPaletteProps) {
-  const [query, setQuery] = useState(initialQuery);
-
-  useEffect(() => {
-    // Re-seed on open and whenever the composer-driven prefix changes.
-    if (open) setQuery(initialQuery);
-  }, [open, initialQuery]);
+  const query = initialQuery;
 
   const commands = useMemo(
     () => (status === "ready" ? filterSlashCommands(query, isModuleEnabled) : []),
@@ -94,7 +92,7 @@ export function SlashPalette({
             <CommandInput
               placeholder="Type a command…"
               value={query}
-              onValueChange={setQuery}
+              onValueChange={(value) => onQueryChange?.(value)}
             />
             <CommandList>
               <CommandEmpty>No matching command.</CommandEmpty>

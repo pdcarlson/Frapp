@@ -177,12 +177,9 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   }, [channelId]);
 
   // Draft persistence — load once per channel, debounce writes.
-  const [draft, setDraftState] = useState("");
+  const [draftState, setDraftState] = useState("");
   useEffect(() => {
-    if (!channelId) {
-      setDraftState("");
-      return;
-    }
+    if (!channelId) return;
     let cancelled = false;
     loadDraft(channelId)
       .then((body) => {
@@ -197,6 +194,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       cancelled = true;
     };
   }, [channelId]);
+  const draft = channelId ? draftState : "";
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelDraftTimer = useCallback(() => {
     if (draftTimer.current) {
