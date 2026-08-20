@@ -7,8 +7,8 @@ import pluginReactHooks from "eslint-plugin-react-hooks";
  * until they are added here — a bump must not re-open `--max-warnings 0`.
  *
  * Still held off (findings remain on web/mobile): `set-state-in-effect`,
- * `refs`, `purity`, `preserve-manual-memoization`, `static-components`,
- * `use-memo`. Details: `docs/internal/ci-cd/AGENT_INFRA.md`.
+ * `refs`, `preserve-manual-memoization`, `use-memo`. Details:
+ * `docs/internal/ci-cd/AGENT_INFRA.md`.
  */
 const ENABLED_REACT_HOOKS_RULES = new Set([
   "react-hooks/rules-of-hooks",
@@ -20,7 +20,9 @@ const ENABLED_REACT_HOOKS_RULES = new Set([
   "react-hooks/globals",
   "react-hooks/immutability",
   "react-hooks/incompatible-library",
+  "react-hooks/purity",
   "react-hooks/set-state-in-render",
+  "react-hooks/static-components",
   "react-hooks/unsupported-syntax",
 ]);
 

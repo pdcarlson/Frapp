@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Hash, Lock, MessagesSquare, ShieldAlert } from "lucide-react";
 import {
   Card,
@@ -33,7 +33,6 @@ import { Composer } from "./composer";
 import { ThreadPanel } from "./thread-panel";
 import { PinsPopover } from "./pins-popover";
 import { ReconnectPill } from "./reconnect-pill";
-import type { ChatMessage } from "@repo/chat-core/types";
 import type { SlashCommand } from "@repo/chat-integrations";
 
 interface DirectoryMember {
@@ -74,13 +73,21 @@ function matchMember(
   return null;
 }
 
-function channelHeaderIcon(channel: ChatChannel | null) {
-  if (!channel) return Hash;
-  if (channel.name === "chapter-audit") return ShieldAlert;
+function ChannelHeaderIcon({
+  channel,
+  className,
+}: {
+  channel: ChatChannel | null;
+  className?: string;
+}) {
+  if (!channel) return <Hash className={className} />;
+  if (channel.name === "chapter-audit")
+    return <ShieldAlert className={className} />;
   if (channel.type === "DM" || channel.type === "GROUP_DM")
-    return MessagesSquare;
-  if (channel.type === "PRIVATE" || channel.type === "ROLE_GATED") return Lock;
-  return Hash;
+    return <MessagesSquare className={className} />;
+  if (channel.type === "PRIVATE" || channel.type === "ROLE_GATED")
+    return <Lock className={className} />;
+  return <Hash className={className} />;
 }
 
 /**
@@ -104,19 +111,19 @@ export function ChatShell() {
     [channelsQuery.data],
   );
 
-  const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
-  useEffect(() => {
-    if (activeChannelId && channels.some((ch) => ch.id === activeChannelId)) {
-      return;
+  const [selectedChannelId, setSelectedChannelId] = useState<string | null>(
+    null,
+  );
+  const activeChannelId = useMemo(() => {
+    if (
+      selectedChannelId &&
+      channels.some((ch) => ch.id === selectedChannelId)
+    ) {
+      return selectedChannelId;
     }
-    if (channels.length > 0) {
-      const first =
-        channels.find((ch) => ch.name === "general") ?? channels[0]!;
-      setActiveChannelId(first.id);
-    } else {
-      setActiveChannelId(null);
-    }
-  }, [activeChannelId, channels]);
+    if (channels.length === 0) return null;
+    return channels.find((ch) => ch.name === "general")?.id ?? channels[0]!.id;
+  }, [selectedChannelId, channels]);
 
   const activeChannel = useMemo(
     () => channels.find((ch) => ch.id === activeChannelId) ?? null,
@@ -180,17 +187,11 @@ export function ChatShell() {
     [orgConfig],
   );
 
-  const [threadParent, setThreadParent] = useState<ChatMessage | null>(null);
-  // Keep the open thread in sync with the cache (e.g. message edits/deletes).
-  useEffect(() => {
-    if (!threadParent) return;
-    const next = channel.messages.find((m) => m.id === threadParent.id);
-    if (!next) {
-      setThreadParent(null);
-    } else if (next !== threadParent) {
-      setThreadParent(next);
-    }
-  }, [channel.messages, threadParent]);
+  const [threadParentId, setThreadParentId] = useState<string | null>(null);
+  const threadParent = useMemo(() => {
+    if (!threadParentId) return null;
+    return channel.messages.find((m) => m.id === threadParentId) ?? null;
+  }, [channel.messages, threadParentId]);
 
   if (!activeChapterId) {
     return (
@@ -226,8 +227,6 @@ export function ChatShell() {
     );
   }
 
-  const HeaderIcon = channelHeaderIcon(activeChannel);
-
   return (
     <div className="grid gap-4 md:grid-cols-[260px_1fr_300px]">
       <Card className="md:sticky md:top-20 md:self-start">
@@ -244,8 +243,8 @@ export function ChatShell() {
             channels={channels}
             activeChannelId={activeChannelId}
             onPick={(ch) => {
-              setActiveChannelId(ch.id);
-              setThreadParent(null);
+              setSelectedChannelId(ch.id);
+              setThreadParentId(null);
             }}
           />
         </CardContent>
@@ -258,7 +257,10 @@ export function ChatShell() {
               <CardTitle className="flex items-center gap-2 text-base">
                 {activeChannel ? (
                   <>
-                    <HeaderIcon className="h-4 w-4" />
+                    <ChannelHeaderIcon
+                      channel={activeChannel}
+                      className="h-4 w-4"
+                    />
                     <span className="truncate">{activeChannelName}</span>
                   </>
                 ) : (
@@ -293,7 +295,7 @@ export function ChatShell() {
             loadError={channel.loadError}
             onReact={channel.react}
             onUnreact={channel.unreact}
-            onOpenThread={(message) => setThreadParent(message)}
+            onOpenThread={(message) => setThreadParentId(message.id)}
             onRetry={channel.retry}
             onDiscard={channel.discard}
             onAct={(messageId, actionType, payload) =>
@@ -336,7 +338,7 @@ export function ChatShell() {
             parent={threadParent}
             allMessages={channel.messages}
             viewerId={userId}
-            onClose={() => setThreadParent(null)}
+            onClose={() => setThreadParentId(null)}
             onReact={channel.react}
             onUnreact={channel.unreact}
           />
