@@ -8,7 +8,7 @@ import {
   type SubscriptionStatus,
   type SubscriptionWriteClass,
   type SubscriptionWriteState,
-} from "@/lib/subscription";
+} from "@repo/validation";
 
 export type ChapterSubscription = {
   /**

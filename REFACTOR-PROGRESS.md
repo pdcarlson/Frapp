@@ -16,4 +16,9 @@ deleted when the project wraps, so nothing durable may live only here.
 - [ ] 6. `getErrorMessage` → `apps/web/lib/utils.ts`; mobile `api-error.ts` → `@repo/api-sdk`
 - [ ] 7. `AnalyticsProvider` (web/mobile) → `@repo/hooks`
 - [ ] 8. 5 stranded web hooks → `@repo/hooks`; wire mobile's module-gating
-- [ ] 9. `apps/web/lib/subscription.ts` → `@repo/validation`
+- [x] 9. `apps/web/lib/subscription.ts` → `@repo/validation`
+  - [x] File move: `apps/web/lib/subscription.ts` → `packages/validation/src/subscription.ts` (barrel re-export from `src/index.ts`) — named exports match `can` / `isModuleEnabled`. `npm run test -w @repo/validation -- src/subscription.spec.ts`: 9 passed.
+  - [x] Importer: `apps/web/lib/hooks/use-subscription-write-state.ts` — `@/lib/subscription` → `@repo/validation`. `npm run check-types`: 20/20 packages.
+  - [x] Importer: `apps/web/components/shared/subscription-gate.tsx` — types now from `@repo/validation`. `npm run test -w apps/web -- subscription-gate`: 20 passed.
+  - [x] Importer: `apps/web/components/shared/subscription-gate.test.tsx` — `SubscriptionWriteClass` now from `@repo/validation`. Same suite: 20 passed.
+  - [x] Importer: `apps/web/lib/subscription.test.ts` (moves with the file → `packages/validation/src/subscription.spec.ts`) — suite unchanged except a move comment. `npm run test -w @repo/validation -- src/subscription.spec.ts`: 9 passed. Full package: 95 passed / 7 files.
