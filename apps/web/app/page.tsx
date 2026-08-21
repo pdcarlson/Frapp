@@ -92,7 +92,7 @@ export default async function Home() {
               <li>4. Open the live members directory and inspect profile detail.</li>
               <li>5. Generate and redeem invites to validate real chapter membership.</li>
             </ol>
-            <div className="rounded-lg border border-border/70 bg-card p-4">
+            <div className="rounded-lg border border-border/70 bg-popover p-4">
               <p className="font-medium text-foreground">Already have an invite?</p>
               <p className="mt-1">
                 Use the shared chapter link or redeem your token after signing in.

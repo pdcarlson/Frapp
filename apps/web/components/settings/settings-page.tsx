@@ -417,7 +417,7 @@ function SettingsPageContent() {
         onValueChange={setActiveTab}
         className="flex flex-col gap-6 lg:flex-row lg:items-start"
       >
-        <TabsList className="flex h-auto w-full flex-row flex-wrap justify-start gap-1 bg-secondary/50 p-1 lg:w-56 lg:flex-col lg:flex-nowrap">
+        <TabsList className="flex h-auto w-full flex-row flex-wrap justify-start gap-1 bg-secondary p-1 lg:w-56 lg:flex-col lg:flex-nowrap">
           <TabsTrigger value="org" className={RAIL_TRIGGER_CLASS}>
             Organization
           </TabsTrigger>
@@ -717,7 +717,7 @@ function SettingsPageContent() {
                     </div>
                   </div>
                   {accent.fallbackApplied ? (
-                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                    <p className="text-xs text-warning">
                       The color you entered didn&apos;t meet contrast
                       requirements. Using the safe fallback{" "}
                       {accent.resolvedAccent}.

@@ -29,7 +29,14 @@ const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground",
+      // Active takes the accent tint, not a surface step: `--accent-subtle` is
+      // the selected-row recipe (components.md §5), and it separates by hue
+      // rather than by luminance — the ladder's own steps are ~1.1:1 apart, so
+      // a selected tab drawn one step up from its rail is nearly invisible.
+      // (It used to be `bg-background`, i.e. one step *down*, which inverted
+      // elevation outright. The rail is a filled segment here; the underline
+      // treatment §6 actually specifies lands with the primitives slice.)
+      "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-accent-subtle data-[state=active]:text-accent-text",
       className
     )}
     {...props}

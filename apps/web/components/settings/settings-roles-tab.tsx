@@ -63,7 +63,7 @@ export function SettingsRolesTab({ archetypeKey, canManage, catalog }: Props) {
 
   return (
     <Tabs defaultValue="pack" className="space-y-4">
-      <TabsList className="flex w-full flex-wrap justify-start gap-1 bg-secondary/50 p-1">
+      <TabsList className="flex w-full flex-wrap justify-start gap-1 bg-secondary p-1">
         <TabsTrigger value="pack" className={SUBTAB_TRIGGER}>
           Pack
         </TabsTrigger>
