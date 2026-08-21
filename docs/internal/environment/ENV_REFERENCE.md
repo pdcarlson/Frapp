@@ -89,6 +89,8 @@ Product analytics is pseudonymous by construction: the API keys every event by `
 
 > All three are **optional**. With no `POSTHOG_API_KEY` the API uses a no-op provider (debug logging), and with no `ANALYTICS_HMAC_SALT` server analytics is disabled entirely — so local dev, tests, and CI run without any analytics secret.
 
+> **Which provider was selected is visible in the boot log.** `selectAnalyticsProvider()` logs its choice under the `AnalyticsProvider` context every time: the PostHog host when a key is set, a plain `log` line when neither the key nor the salt is set (the intended local/CI state), and a **warning** when `ANALYTICS_HMAC_SALT` is set but `POSTHOG_API_KEY` is not — the case where events are pseudonymized and then silently discarded. The API is the only analytics transport (clients post to `POST /v1/analytics/events` and carry no provider SDK), so this log line is the only place the distinction is observable; it was silent until 2026-08-21.
+
 > ⚠️ **`ANALYTICS_HMAC_SALT` is no longer analytics-only.** It is now the salt for every pseudonym the API produces: analytics keys, the `originHash` on security-event logs, and the user/chapter hashes on Sentry events (`spec/behavior/observability.md` § Error Tracking). Two consequences when it is unset in an environment that *does* have a `SENTRY_DSN`:
 >
 > - Sentry events arrive with identifiers **removed rather than hashed** — they are safe, but unattributable, so you cannot tell which tenant hit an error. The API logs a `Bootstrap` warning at startup in exactly this case.
@@ -155,7 +157,7 @@ Reads these directly (no prefix needed):
 | `SUPABASE_JWT_SECRET` | `custom-throttler.guard.ts` (per-user rate-limit keying; falls back to per-IP when unset) | ❌ |
 | `EVENT_CHECK_IN_TOKEN_SECRET` | `application/services/attendance.service.ts` (signs/verifies rotating event check-in codes; mint 503s and tokens are rejected when unset) | ❌ |
 | `ANALYTICS_HMAC_SALT` | `analytics.service.ts` (analytics keying) · `infrastructure/observability/pseudonyms.ts` (Sentry user/chapter hashes + security-event `originHash`); analytics disabled and pseudonyms omitted when unset | ❌ |
-| `POSTHOG_API_KEY` | `analytics.module.ts` (selects PostHog vs no-op provider) | ❌ |
+| `POSTHOG_API_KEY` | `analytics.module.ts` — `selectAnalyticsProvider()` (selects PostHog vs no-op provider; **the choice is logged at boot** under the `AnalyticsProvider` context, and a salt set with no key warns) | ❌ |
 | `POSTHOG_HOST` | `analytics.module.ts` (provider host override; default PostHog US) | ❌ |
 
 ### apps/web (Next.js — Vercel)
