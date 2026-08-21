@@ -74,7 +74,7 @@ The filesystem is cached but running processes are not, so work is split:
 | Phase | Script | Runs | Does |
 |-------|--------|------|------|
 | Setup (cached) | `scripts/cloud-sandbox-setup.sh` | once, as root, before the agent | writes the `/etc/frapp-cloud-sandbox` marker; `npm ci`; transient dockerd + `docker login` + `supabase start`/`stop` purely to **pull + cache images** |
-| Per-session | `scripts/cloud-sandbox-up.sh` | every session, in the background | start dockerd; `docker login`; `supabase start` (fast — images cached); `db push --local`; repair local Postgres default ACLs; write `apps/api/.env.local` |
+| Per-session | `scripts/cloud-sandbox-up.sh` | every session, in the background | start dockerd; `docker login`; `supabase start` (fast — images cached); `db push --local`; repair local Postgres default ACLs; write `apps/api/.env.local` + `apps/web/.env.local` |
 
 Both source `scripts/lib/cloud-sandbox-common.sh` (`cs_log`, `cs_ensure_docker_daemon`,
 `cs_docker_login_if_creds`, `cs_supabase`, `cs_retry`, `cs_classify_failure`,
@@ -111,7 +111,7 @@ incidental digits, and `ratelimit` is fail-fast. Likewise only the proxy's own
 CloudFront URLs that return a perfectly retryable `403 Forbidden` when the signature expires
 mid-pull on a large image.
 
-`db push --local`, writing `apps/api/.env.local`, and the ACL repair are deliberately **not**
+`db push --local`, writing the app `.env.local` files, and the ACL repair are deliberately **not**
 retried. They are deterministic and local, so a retry only triples the time to the same error
 and hides which step actually broke. One nuance when reading a failed repair: it is not
 *retried*, but it does have **two connection paths** — the host `psql` first, then `psql`
@@ -124,7 +124,7 @@ objects created by `postgres`, so without it the API's first query is `42501 per
 denied`. It also resets the schema's *default* privileges, so migrations added in a later
 session inherit working grants.
 
-It is sequenced **after `write_env_local`** for a different reason: the repair is fatal, and
+It is sequenced **after `write_env_files`** for a different reason: the repair is fatal, and
 nothing in the env file depends on the grants. Running it earlier meant a failed repair
 aborted before `.env.local` existed, leaving the API unable to boot at all — strictly worse
 than the `42501` being repaired, where the API boots and only queries fail.
@@ -187,7 +187,7 @@ and left the lock with no `.done`/`.failed` sentinel — so a resumed session ne
 forever on a sentinel that can't arrive. The session is **never blocked** on the ~60-90s
 bringup. Before using the DB or booting the API, wait for one of:
 
-- `.cloud-sandbox-up.done` — success (timestamp). Stack is up and `apps/api/.env.local`
+- `.cloud-sandbox-up.done` — success (timestamp). Stack is up and `apps/api/.env.local` + `apps/web/.env.local`
   is written.
 - `.cloud-sandbox-up.failed` — error (timestamp + reason). Inspect
   `/tmp/cloud-sandbox-up.log`.
@@ -211,6 +211,25 @@ npm run start:dev -w apps/api   # bypasses the infisical-wrapped dev:api script
 
 `/health` and `/docs` then respond on `:3001`.
 
+### What bringup provisions, per app
+
+Two files, both gitignored, both regenerated from the same `supabase status` read each session.
+Nothing else is written; anything not listed here has a working default or is not needed to build.
+
+| File | Serves | Contents |
+|---|---|---|
+| `apps/api/.env.local` | `npm run start:dev -w apps/api` | The full `supabase status -o env` dump remapped to `SUPABASE_URL` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY`, plus the three `STRIPE_*` vars (real test keys when the session has them, clearly-marked placeholders otherwise), `PORT=3001`, `NODE_ENV=development` |
+| `apps/web/.env.local` | `npm run build -w apps/web`, `npm run dev -w apps/web` | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_URL=http://127.0.0.1:3001` |
+
+`apps/landing` and `apps/mobile` get **nothing, deliberately**. Landing's only `NEXT_PUBLIC_*` var
+defaults to the production origin in `apps/landing/lib/auth-urls.ts`, and mobile has no build script
+and reads its Supabase vars with `?? ""`. Both are fine unconfigured.
+
+The web file carries the two Supabase vars and **only** those two. `NEXT_PUBLIC_*` is inlined into
+the client bundle by Next, so the service-role key — which is present in the same `supabase status`
+output — must never be prefixed along with them. The anchored `grep` in `write_env_files` is what
+enforces that, not the ordering of the lines.
+
 ### Running `npm run build` in the sandbox
 
 The sandbox exports `NODE_ENV=development`. That is correct for `dev`, but a bare `next build`
@@ -218,8 +237,12 @@ inherits it and produces a broken prerender (`Cannot read properties of null (re
 on an arbitrary route). The Next apps therefore build through
 [`scripts/next-build.mjs`](../../../scripts/next-build.mjs), which pins `NODE_ENV=production` — see
 [`ENV_REFERENCE.md` → Production builds](./ENV_REFERENCE.md#production-builds-npm-run-build-and-node_env)
-for the full mechanism. `apps/web` also needs `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-exported for its build to prerender.
+for the full mechanism.
+
+**No exports are needed.** `apps/web` reads `NEXT_PUBLIC_SUPABASE_URL` and
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` non-null-asserted, so without them the build dies prerendering
+`/chat` — bringup therefore writes them to `apps/web/.env.local` alongside the API file (#1156).
+If you hit that error, the file is missing rather than your change being wrong: re-run bringup.
 
 ## When bringup fails — STOP and report
 
@@ -250,7 +273,8 @@ every session), so skim the log even when bringup succeeds.
 | `503 Service Unavailable` / `502` / `504` / `connection reset` / `unexpected EOF` on a registry or CDN host, **and** the bringup still succeeded | Transient registry/CDN hiccup | **Nothing — this is handled.** `cs_retry` retries `supabase start` with backoff; the log keeps the failed attempts, which is why they appear even on a healthy run |
 | Same transient errors, but the sentinel says `'supabase start' failed (transient)` | Registry/CDN outage that outlasted every retry | Not an env-config problem. Start a fresh session to retry; if it persists, check the Supabase and AWS ECR Public status pages. Raise `FRAPP_SANDBOX_START_RETRIES` to widen the window |
 | `posthog … 403 Host not in allowlist` | The Supabase CLI's **telemetry** call being blocked — **harmless, and never the cause** | Nothing. `DO_NOT_TRACK=1` + `SUPABASE_TELEMETRY_DISABLED=1` are exported in the shared lib so it should not appear at all; if a CLI version emits it anyway, the failure classifier filters telemetry lines out before matching, so it cannot be mistaken for the allowlist row above |
-| API logs `Missing required environment variables` | `.env.local` not generated (bringup failed earlier) | Fix the upstream bringup failure; re-run after the env change lands in a **new** session |
+| API logs `Missing required environment variables` | `apps/api/.env.local` not generated (bringup failed earlier) | Fix the upstream bringup failure; re-run after the env change lands in a **new** session |
+| `npm run build -w apps/web` dies prerendering `/chat` with `@supabase/ssr: Your project's URL and API key are required to create a Supabase client!` | `apps/web/.env.local` missing — bringup failed, or the clone predates #1156 | Not your change. `rm -rf /tmp/cloud-sandbox-up.lock && bash scripts/cloud-sandbox-up.sh`, then rebuild |
 | `supabase start` slow / re-pulling every session | Setup script not set, so images aren't cached | Set the **Setup script** field to `bash scripts/cloud-sandbox-setup.sh \|\| true` |
 | `failed to start docker container "supabase_edge_runtime_*": error setting rlimit type 7: operation not permitted` | Sandbox denies the ulimit (`RLIMIT_NOFILE`) the Deno edge-runtime container sets, which aborts the whole `supabase start` | Already handled — bringup excludes edge-runtime (`supabase start -x edge-runtime`) since the API talks to Postgres directly and hot-path logic moved into NestJS (ADR-11/ADR-12). Set `FRAPP_SUPABASE_START_ARGS` to override if edge functions are genuinely needed |
 | Auto-bringup never starts (no `.done`/`.failed`, no log) | Marker absent and `FRAPP_CLOUD_SANDBOX` unset | Set `FRAPP_CLOUD_SANDBOX=1` (or confirm the setup script ran to write the marker) |
@@ -287,7 +311,8 @@ Or step through it: start the daemon (`sudo dockerd &>/tmp/dockerd.log &`, wait 
 `/var/run/docker.sock`), then use the pinned CLI —
 `.cache/supabase-cli/node_modules/.bin/supabase start`, then `… db push --local` — then **repair
 the default ACLs** (see below), and build `apps/api/.env.local` from `… status -o env` + the
-Stripe vars. (Source `scripts/lib/cloud-sandbox-common.sh` and call `cs_supabase` to get the
+Stripe vars plus `apps/web/.env.local` carrying the same URL and anon key under
+`NEXT_PUBLIC_` names (and `NEXT_PUBLIC_API_URL=http://127.0.0.1:3001`). (Source `scripts/lib/cloud-sandbox-common.sh` and call `cs_supabase` to get the
 install-on-first-use behaviour instead of managing that path by hand.) For migration
 validation without Docker at all, use the PGlite harness (`npm run check:pglite-migrations`).
 

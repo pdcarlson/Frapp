@@ -248,12 +248,16 @@ describe("nothing hand-writes hsl(var(--x)) around a complete-colour token", () 
    *
    * **Scoped to the stylesheet, not to the preset.** The set below is every
    * complete-colour token `globals.css` declares — *not* only the ones the
-   * preset reads. Two of this file's own tokens are consumed exclusively by
-   * hand, never through a Tailwind colour key: `--brand-lockup-bg` (an SVG
-   * `fill` in `apps/landing`, and one of the very sites the #1151 sweep fixed)
-   * and the `--hue-*` family. Keying on `references` would have left exactly
-   * those unguarded — the token's storage format is what makes the wrapper
-   * wrong, so storage is what the guard keys on.
+   * preset reads. Some of this file's own tokens are consumed exclusively by
+   * hand, never through a Tailwind colour key: `--brand-lockup-bg` is one (an
+   * SVG `fill` in `apps/landing`, and one of the very sites the #1151 sweep
+   * fixed). Keying on `references` would have left exactly those unguarded —
+   * the token's storage format is what makes the wrapper wrong, so storage is
+   * what the guard keys on.
+   *
+   * The `--hue-*` family used to be named here as the second example. #1155
+   * deleted those five: they were hand-consumable in principle and consumed by
+   * nothing in fact, which is a token to remove rather than a token to guard.
    */
   const REPO = fileURLToPath(new URL("../../..", import.meta.url));
   const WRAPPER = /hsl\(\s*var\(\s*(--[\w-]+)/g;
@@ -311,11 +315,20 @@ describe("nothing hand-writes hsl(var(--x)) around a complete-colour token", () 
   });
 
   it("covers the tokens no preset key reads", () => {
-    // The regression this guard was widened to catch. If either stops being a
-    // hand-consumed token the assertion should be updated deliberately, not
-    // quietly narrowed back to `references`.
+    // The regression this guard was widened to catch. `--brand-lockup-bg` is
+    // the witness: hand-consumed only (an SVG `fill` in `apps/landing`), so a
+    // set keyed on `references` would not contain it.
+    //
+    // It is the ONLY witness now that #1155 deleted the `--hue-*` family, which
+    // is why this is a named assertion rather than a token-agnostic one. A
+    // count or a size comparison looks more general and is not: today it would
+    // be this same token by another name, and it would additionally go red on a
+    // correct change — wiring `--brand-lockup-bg` into a preset colour key, or
+    // adding any bare-triple preset key — with a message about set sizes that
+    // says nothing about what actually broke. If this token stops being
+    // hand-consumed, retarget this deliberately rather than quietly narrowing
+    // back to `references`.
     expect(completeTokens.has("--brand-lockup-bg")).toBe(true);
-    expect(completeTokens.has("--hue-rose")).toBe(true);
   });
 
   it("still recognises the shape it is banning", () => {
