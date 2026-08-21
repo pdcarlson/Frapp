@@ -10,7 +10,7 @@ asserts one thing, and each fails with a different fix.
 |---|---|---|---|---|---|
 | Sync | [`check-docs-impact.mjs`](../../../scripts/check-docs-impact.mjs) | A PR touching non-doc files also touches `docs/` or `spec/` | PR diff | `docs-spec-sync` | **Yes** |
 | Structure | [`check-docs-structure.mjs`](../../../scripts/check-docs-structure.mjs) | Newly **added** paths sit in allowed locations | Added/renamed paths in the diff | `docs-spec-sync` | **Yes** (same job) |
-| Citations | [`check-doc-paths.mjs`](../../../scripts/check-doc-paths.mjs) | Backticked repo-path citations resolve to real files | Whole tree | `doc-paths` | **Yes** (promoted 2026-08-21) |
+| Citations | [`check-doc-paths.mjs`](../../../scripts/check-doc-paths.mjs) | Backticked repo-path citations resolve to real files | Whole tree | `doc-paths` | **Yes** — in `DOCS_CHECKS` |
 | Rosters | [`check-doc-tables.mjs`](../../../scripts/check-doc-tables.mjs) | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml` | Whole tree | `doc-tables` | Not yet — see rollout below |
 
 `docs-spec-sync` is a required check under `enforce_admins: true`, registered via the `DOCS_CHECKS`
@@ -147,10 +147,15 @@ accumulating stale excuses.
 Run locally: `npm run check:doc-paths`. Unit tests: `scripts/ci/__tests__/check-doc-paths.test.mjs`,
 covered by the `ci-scripts-tests` job.
 
-**Rollout — done.** `doc-paths` was promoted to a required check on **2026-08-21**. Because it is
-whole-tree, that means a PR renaming a source file can be blocked by a citation in a doc it never
-touched. That trade was accepted deliberately: the alternative is citations rotting silently, and
-the 40-entry allowlist is the evidence of how much rot accumulated while it only reported.
+**Rollout.** `doc-paths` was added to `DOCS_CHECKS` on **2026-08-21**, after a year of reporting
+only. Because it is whole-tree, that means a PR renaming a source file can be blocked by a
+citation in a doc it never touched. The trade was accepted deliberately: the alternative is
+citations rotting silently, and the size of `scripts/doc-paths-allowlist.json` is the evidence of
+how much rot accumulated while it only reported.
+
+Being in the array is *intent*, not live state — branch protection changes only when an admin runs
+`npm run configure:branch-protection`. Do that once this lands and `main` is green; read live state
+from the API per [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
 
 ### Rosters (`check-doc-tables.mjs`)
 

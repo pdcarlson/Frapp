@@ -188,14 +188,15 @@ per-check whether a gate is live today; read live state per
 
 ### Additional Docs Checks
 
-Both run in `.github/workflows/docs.yml`. Only `docs-spec-sync` is merge-blocking today — see
-[`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md) for why `doc-paths` reports first and how it
-gets promoted:
+All three run in `.github/workflows/docs.yml`. **Required?** below is the *intended* set — what
+`DOCS_CHECKS` lists — not live branch protection, which is whatever an admin last applied. See
+[`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md) for the rollout each one goes through:
 
 | Check            | Provider       | What it validates                               | Required?  |
 | ---------------- | -------------- | ----------------------------------------------- | ---------- |
 | `docs-spec-sync` | GitHub Actions | Docs/spec sync **and** structure on PRs (`check-docs-impact.mjs` + `check-docs-structure.mjs`) | Yes |
-| `doc-paths`      | GitHub Actions | Backticked repo-path citations in docs resolve (`check-doc-paths.mjs`, whole-tree) | Not yet — reports only; whole-tree scope makes it blocking beyond the PR's own diff, so promotion is a deliberate step ([`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md)) |
+| `doc-paths`      | GitHub Actions | Backticked repo-path citations in docs resolve (`check-doc-paths.mjs`, whole-tree) | Yes — listed in `DOCS_CHECKS`. Whole-tree, so it can block a PR over a citation in a doc that PR never touched; that trade was taken deliberately ([`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md)) |
+| `doc-tables`     | GitHub Actions | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml` (`check-doc-tables.mjs`, whole-tree) | Not yet — reports only, pending the same promotion step |
 
 **Code review is a local pre-push gate, not a CI check** (ADR-14 2026-06-04 amendment). The
 `.claude/hooks/pre-push-review-gate.sh` hook blocks the first `git push` of each branch HEAD and requires

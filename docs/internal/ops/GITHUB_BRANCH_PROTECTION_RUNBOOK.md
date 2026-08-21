@@ -96,7 +96,7 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 
 > **That exemption is about pixels, and it stops there.** Until #1152 the 375px floor gate ran inside `web-visual-regression` and inherited its advisory posture by sharing a directory, so a breached floor was a red mark a PR could merge past. It stores no baseline and compares no pixels — it reads one integer per route — so none of the flake reasoning applied to it. It now runs in its own **required** `web-responsive-floor` job, selected by the `@floor` Playwright tag (`--grep @floor` there, `--grep-invert @floor` in the snapshot job) so each suite runs exactly once. The snapshot job's advisory status is unchanged and deliberate.
 
-> **Script vs live drift — check before you assume.** The arrays in the script are the *intended* state; the live config is whatever the last manual run applied, and the two drift apart silently because only a human re-run closes the gap. It has happened twice: `main` sat at 12 contexts against 17 intended until **2026-08-21**, when a run brought both branches up to date (`main` 17, `production` 18 — the same set plus `branch-policy`). Read live state from the API rather than from this paragraph, which is a dated observation and not a source of truth:
+> **Script vs live drift — check before you assume.** The arrays in the script are the *intended* state; the live config is whatever the last manual run applied, and the two drift apart silently because only a human re-run closes the gap. It has happened before: `main` sat at 12 contexts against 17 intended until a run on **2026-08-21** closed the gap. Any count written here is a dated observation, not a source of truth — the arrays are the intent, and only a re-run makes it live. Read live state from the API:
 >
 > ```sh
 > gh api repos/pdcarlson/Frapp/branches/main/protection/required_status_checks --jq '.contexts'
@@ -211,9 +211,11 @@ If CI job names change (e.g., renaming a workflow job), update:
 2. This runbook — required checks tables
 3. `CONTRIBUTING.md` — required checks section
 4. `spec/environments/README.md` — CI job matrix
-5. Re-run `npm run configure:branch-protection` to apply the new names
+5. `docs/internal/ci-cd/DOCS_CI.md` — the docs-gate table and its **Required?** column
+6. Re-run `npm run configure:branch-protection` to apply the new names
 
-This list is the drift engine, not a safety net — four hand-kept copies of one array is why
-`@repo/theme` and `packages/chat-integrations` went missing from every table at once. Prefer
-deleting a copy and linking to the script over adding a sixth step, and state posture as *intended*
+This list is the drift engine, not a safety net — one source and four hand-kept copies is why
+`@repo/theme` and `packages/chat-integrations` went missing from every table at once. Steps 2–4 are
+now asserted by `npm run check:doc-tables`; step 5 is not, and is the copy to watch. Prefer
+deleting a copy and linking to the script over adding a seventh step, and state posture as *intended*
 (what the arrays say) rather than *live* (what an admin last applied), which no doc can keep true.
