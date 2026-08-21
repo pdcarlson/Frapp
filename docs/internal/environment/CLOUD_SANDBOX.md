@@ -52,10 +52,12 @@ egress** described in [Live staging egress](#live-staging-egress) below; omit th
 sandbox is still fully functional for local-stack work, it just cannot reach the deployed
 environment.
 
-**Every one of those four is a literal host on purpose.** Both wildcards a reader reaches
-for — `*.frapp.live` and `*.supabase.co` — silently include **production**, because prod
-and staging share an apex on both. See [Enumerate, do not
-wildcard](#enumerate-do-not-wildcard).
+**Three of those four are literal hosts on purpose.** Both wildcards a reader reaches for —
+`*.frapp.live` and `*.supabase.co` — silently include **production**, because prod and
+staging share an apex on both. The fourth line, `*.staging.frapp.live`, is a wildcard only
+because its parent is staging-only; it is kept on sufferance rather than as a pattern to
+copy, for the reason given under [Wildcard semantics](#wildcard-semantics--weaker-than-the-docs-imply).
+See [Enumerate, do not wildcard](#enumerate-do-not-wildcard).
 
 `supabase start` does **not** pull only from Docker Hub: the Postgres image (and several
 others) come from **AWS ECR Public** (`public.ecr.aws/supabase/*`), served via
@@ -445,8 +447,18 @@ configuration change apart. Staging is the blast radius we accept. **Enumerate.*
 **Do not probe by hand — it has already been done.** `scripts/cloud-sandbox-egress-probe.sh`
 runs as the **first** step of bringup and writes `.cloud-sandbox-capabilities.json` at the
 repo root (gitignored — it describes one environment's policy at one moment).
-`.claude/hooks/session-start.sh` summarises it into the session context, so in a normal
-sandbox session the answer is already in front of you.
+`.claude/hooks/session-start.sh` summarises it into the session context — but only in a
+cloud sandbox (the whole block is gated on the `/etc/frapp-cloud-sandbox` marker, so a
+laptop session never sees the line), and only on a fire that finds a manifest already on
+disk **and written by the bringup that is already running** — a resume, a `/clear`, a
+`/compact`, a second session in the same container. Freshness is decided by comparing the
+manifest against the bringup lock's mtime, so any fire that *starts* a bringup stays silent
+rather than reporting the previous run's answer: a stale `production correctly blocked`
+would mask a `SECURITY` warning the new probe is writing right then. **The first session in
+a fresh container therefore never carries the line**, and neither does a session that
+cleared a stale lock or hand-restarted bringup. There you get the bringup notice, which
+names the file, so read the file. **An absent `EGRESS:` line is never evidence the probe
+did not run.**
 
 It runs first, not last, for a reason worth knowing: **egress does not depend on the local
 stack.** Reaching deployed staging needs no Docker, no Postgres, no containers. With the
@@ -469,7 +481,7 @@ The manifest reports three outcomes, and the distinction is the point:
 | `status` | Means |
 | -------- | ----- |
 | `reachable` | the host answered — any HTTP code counts, including the 302 the web hosts return and the 404 the Supabase root returns |
-| `blocked` | the proxy refused CONNECT (`curl: (56) CONNECT tunnel failed, response 403`) — a real policy denial |
+| `blocked` | the connection was refused at the connect layer — `curl: (56) CONNECT tunnel failed, response 403` is the policy denial this normally means, but exit 35 (TLS) and 7 (refused) are grouped with it because the proxy's teardown varies. A staging host that is simply **down** therefore also reports `blocked`, and **nothing available in the sandbox separates the two**: the proxy's own `detail` reads `policy denial or upstream failure`. Say "not reachable" and name the host; do not assert the allowlist is wrong unless the line is genuinely absent from the environment |
 | `timeout` / `no_dns` / `unknown` | the probe **could not tell**. Not a pass and not a fail; `ok` is `null` and it never counts toward either total |
 
 That third row is why the manifest exists rather than a bare `curl`: a timeout looks
@@ -477,9 +489,13 @@ exactly like a block to a one-line probe, and acting on the wrong one wastes a s
 `curl -sS "$HTTPS_PROXY/__agentproxy/status"` remains the ground truth for *which* host the
 proxy refused, listed under `recentRelayFailures`.
 
-The probe also asserts **negatively** that both production apexes are unreachable. A prod
-host that answers is reported as a `SECURITY` warning, not as extra capability — that is
-the tripwire for an allowlist that has been widened back to a wildcard.
+The probe also asserts **negatively** that three named production hosts are unreachable —
+`api.frapp.live`, `app.frapp.live`, and the `frapp-prod` Supabase ref. A prod host that
+answers is reported as a `SECURITY` warning, not as extra capability — that is the tripwire
+for an allowlist that has been widened back to a wildcard. Note what it does *not* cover:
+the apexes themselves (`frapp.live`, `supabase.co`) are unprobed, as is `www.frapp.live`,
+and nothing tests the label-depth behaviour from [Wildcard semantics](#wildcard-semantics--weaker-than-the-docs-imply). The negative assertion catches
+a wildcard regression through the hosts it names, not every shape one could take.
 
 It runs per session, never in `cloud-sandbox-setup.sh`: that script's filesystem is cached
 for ~7 days, and a week-old cached answer about a policy that can change between sessions
