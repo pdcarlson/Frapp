@@ -3,14 +3,15 @@
 ## What runs
 
 On pull requests to `main` and `production`, `.github/workflows/docs.yml` (workflow display name
-**Docs spec sync**) runs **two jobs** covering **three** checks. They are separate on purpose: each
+**Docs spec sync**) runs **three jobs** covering **four** checks. They are separate on purpose: each
 asserts one thing, and each fails with a different fix.
 
 | Check | Script | Asserts | Scope | Job | Required? |
 |---|---|---|---|---|---|
 | Sync | [`check-docs-impact.mjs`](../../../scripts/check-docs-impact.mjs) | A PR touching non-doc files also touches `docs/` or `spec/` | PR diff | `docs-spec-sync` | **Yes** |
 | Structure | [`check-docs-structure.mjs`](../../../scripts/check-docs-structure.mjs) | Newly **added** paths sit in allowed locations | Added/renamed paths in the diff | `docs-spec-sync` | **Yes** (same job) |
-| Citations | [`check-doc-paths.mjs`](../../../scripts/check-doc-paths.mjs) | Backticked repo-path citations resolve to real files | Whole tree | `doc-paths` | Not yet — see rollout below |
+| Citations | [`check-doc-paths.mjs`](../../../scripts/check-doc-paths.mjs) | Backticked repo-path citations resolve to real files | Whole tree | `doc-paths` | **Yes** — in `DOCS_CHECKS` |
+| Rosters | [`check-doc-tables.mjs`](../../../scripts/check-doc-tables.mjs) | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml` | Whole tree | `doc-tables` | Not yet — see rollout below |
 
 `docs-spec-sync` is a required check under `enforce_admins: true`, registered via the `DOCS_CHECKS`
 array in [`scripts/configure-branch-protection.mjs`](../../../scripts/configure-branch-protection.mjs)
@@ -146,18 +147,50 @@ accumulating stale excuses.
 Run locally: `npm run check:doc-paths`. Unit tests: `scripts/ci/__tests__/check-doc-paths.test.mjs`,
 covered by the `ci-scripts-tests` job.
 
-**Rollout.** `doc-paths` reports on every PR but is **not** merge-blocking yet. Because it is
-whole-tree, making it required means a PR that renames a source file can be blocked by a citation in
-a doc it never touched — a real trade worth accepting deliberately rather than by default. To
-promote it, uncomment `"doc-paths"` in `DOCS_CHECKS` and re-run
-`npm run configure:branch-protection` once the job has run green on the target branch (the same
-rollout `secret-scan`, `clean-checkout-typecheck`, `dependency-audit` and `chapter-directory-seed`
-each went through).
+**Rollout.** `doc-paths` was added to `DOCS_CHECKS` on **2026-08-21**, after a year of reporting
+only. Because it is whole-tree, that means a PR renaming a source file can be blocked by a
+citation in a doc it never touched. The trade was accepted deliberately: the alternative is
+citations rotting silently, and the size of `scripts/doc-paths-allowlist.json` is the evidence of
+how much rot accumulated while it only reported.
+
+Being in the array is *intent*, not live state — branch protection changes only when an admin runs
+`npm run configure:branch-protection`. Do that once this lands and `main` is green; read live state
+from the API per [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
+
+### Rosters (`check-doc-tables.mjs`)
+
+Several docs restate one roster by hand. `GITHUB_BRANCH_PROTECTION_RUNBOOK.md` documents the
+fanout as procedure — *"if CI job names change, update: the script, this runbook, `CONTRIBUTING.md`,
+`spec/environments/README.md`"* — which is four hand-kept copies of one array, and they had all
+drifted at once: `@repo/theme` (#1153) and `@repo/formatting` were missing from every
+`lint-and-typecheck` suite list, and `packages/chat-integrations` (#1114) from two `web-tests`
+lists. This check asserts those copies against their source.
+
+- **Sources:** the `CI_CHECKS` / `DOCS_CHECKS` arrays in
+  [`configure-branch-protection.mjs`](../../../scripts/configure-branch-protection.mjs), and the
+  job ids and `npm run test -w <workspace>` steps in `.github/workflows/ci.yml`.
+- **Asserts** that every required check appears in each doc's roster, and that the workspaces a
+  doc names for `lint-and-typecheck` and `web-tests` are the ones those jobs actually run.
+- **Whole-tree, not diff-based** — a table goes stale when a *workflow* changes, the other side of
+  the reference, so a diff-scoped check would miss the case it exists to catch.
+- **Only `@repo/*` and `packages/*` are compared.** `ci.yml` runs `-w apps/landing` and
+  `-w apps/web`, which the docs render as prose ("landing plus …"); demanding a literal token
+  there would be a false positive, not a finding.
+
+It states *intended* required checks, never live branch protection — read live state from the API,
+per [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
+
+Run locally: `npm run check:doc-tables`. Unit tests:
+`scripts/ci/__tests__/check-doc-tables.test.mjs`, covered by `ci-scripts-tests`.
+
+**Rollout.** Reports on every PR, not merge-blocking yet. Promote by adding `"doc-tables"` to
+`DOCS_CHECKS` and re-running `npm run configure:branch-protection` once it has run green on the
+target branch.
 
 ### What none of these check
 
-Whether a doc's **claims** are still true. All three are structural — they check that files exist
-and that edits happened, not that a sentence is accurate. A doc can pass every gate here and still
+Whether a doc's **claims** are still true. All four are structural — they check that files exist,
+that edits happened, and that two lists match, not that a sentence is accurate. A doc can pass every gate here and still
 be confidently wrong, or be accurate and still mislead (two correct tables on one topic, far apart,
 with no cross-reference). That judgement half is the
 [`check-our-docs`](../../../.claude/skills/check-our-docs/SKILL.md) skill, invoked while coding —

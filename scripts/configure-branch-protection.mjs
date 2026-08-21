@@ -141,8 +141,11 @@ const DOCS_CHECKS = [
   // exists on the target branch and has run green. Deliberately NOT a step
   // inside docs-spec-sync: this check is whole-tree, so as a required check it
   // can block a PR over a citation in a doc that PR never touched. Keep it
-  // reporting-only until that trade is accepted knowingly.
-  // "doc-paths",
+  // reporting-only until that trade is accepted knowingly. Promoted 2026-08-21:
+  // the trade is accepted — a stale citation blocking an unrelated PR is the
+  // cheaper failure, since the alternative is citations rotting silently, which
+  // is what the 40-entry allowlist and the drift this gate found both attest to.
+  "doc-paths",
 ];
 
 const ALL_REQUIRED_CHECKS = [...CI_CHECKS, ...DOCS_CHECKS];

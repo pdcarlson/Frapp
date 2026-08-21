@@ -22,6 +22,7 @@
     "check:api-contract": "node scripts/check-api-contract-drift.mjs",
     "check:migration-safety": "node scripts/check-migration-safety.mjs",
     "check:doc-paths": "node scripts/check-doc-paths.mjs",
+    "check:doc-tables": "node scripts/check-doc-tables.mjs",
     "check:pglite-migrations": "node scripts/check-pglite-migrations.mjs",
     "check:secrets": "node scripts/scan-secrets.mjs",
     "check:npm-audit": "node scripts/check-npm-audit.mjs",

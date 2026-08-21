@@ -10,7 +10,7 @@ on:
     # stand, and the PR would still be blocked on a REQUIRED check. The waiver
     # has to be able to re-run the check it waives.
     #
-    # Affordable here precisely because this workflow is two small jobs. The
+    # Affordable here precisely because this workflow is three small jobs. The
     # same trigger on ci.yml would re-run the whole suite (Docker build
     # included) on every label mutation, which is why the duplicate copy of
     # this gate was removed from ci.yml rather than given the same trigger.
@@ -68,12 +68,11 @@ jobs:
   #    (a citation breaks when the file it names moves — a change on the *other*
   #    side of the reference — so diffing would miss the case it exists to
   #    catch). Whole-tree + required + no override means a PR renaming a source
-  #    file can be blocked by a citation in a doc it never touched. Landing it
-  #    as its own non-required job follows the rollout every other gate here
-  #    used (secret-scan, clean-checkout-typecheck, dependency-audit,
-  #    chapter-directory-seed): report first, become required via
-  #    `npm run configure:branch-protection` once it has run green on the
-  #    target branch.
+  #    file can be blocked by a citation in a doc it never touched. It reported
+  #    only until 2026-08-21, following the rollout every other gate here used
+  #    (secret-scan, clean-checkout-typecheck, dependency-audit,
+  #    chapter-directory-seed), and is now listed in DOCS_CHECKS. Keeping it a
+  #    separate job still matters: see reason 2.
   # 2. A failure should say *citations*, not *docs sync*. Two different fixes.
   doc-paths:
     runs-on: ubuntu-latest
@@ -85,3 +84,23 @@ jobs:
       # so a lockfile-only PR simply passes.
       - name: Enforce doc path citations
         run: node scripts/check-doc-paths.mjs
+
+  # Roster drift — also a SEPARATE job, for the same two reasons as doc-paths.
+  #
+  # It compares the required-check rosters and per-job test-suite lists that
+  # CONTRIBUTING.md, spec/environments/README.md and the branch-protection
+  # runbook each restate by hand against their source: the CI_CHECKS /
+  # DOCS_CHECKS arrays and ci.yml. Whole-tree, not diff-scoped — a table goes
+  # stale when a *workflow* changes, which is the other side of the reference.
+  #
+  # A failure should say *tables*, not *docs sync* or *citations*: three
+  # different fixes. Non-required to start, promoted the usual way once it has
+  # run green on the target branch.
+  doc-tables:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enforce doc table rosters
+        run: node scripts/check-doc-tables.mjs
