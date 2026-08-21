@@ -64,7 +64,7 @@ Build `.env.local` per app using `npx supabase status -o env` and [`ENV_REFERENC
 
 The primary, automated environment. Full config (setup script, env vars, network policy),
 auto-bringup, and failure troubleshooting live in [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md).
-It generates `apps/api/.env.local` so the API boots without Infisical.
+It generates `apps/api/.env.local` and `apps/web/.env.local`, so the API boots and `npm run build -w apps/web` succeeds without Infisical.
 
 ## SWC builder for API dev server
 

@@ -37,6 +37,7 @@ description: >
 | Migration check | `npm run check:migration-safety` |
 | npm audit gate (high/critical) | `npm run check:npm-audit` (offline: `-- --soft-network`) |
 | Web dashboard screenshots (Playwright) | `npm run test:visual -w apps/web` |
+| 375px responsive floor (Playwright, required gate) | `npm run test:floor -w apps/web` |
 
 ---
 
@@ -264,7 +265,14 @@ Before pushing, verify these pass locally (mirrors the CI pipeline):
    intentional dashboard layout changes, refresh Linux baselines from
    `apps/web` with `CI=true npx playwright test --update-snapshots` so they
    match the job's single-worker Playwright run; see
-   [`apps/web/tests/visual/README.md`](../../../apps/web/tests/visual/README.md))
+   [`apps/web/tests/visual/README.md`](../../../apps/web/tests/visual/README.md)).
+   **Advisory** — a red run here does not block merge.
+13. `npm run test:floor -w apps/web` → `CI / web-responsive-floor` (every
+   dashboard route without horizontal scroll at 375px). Same directory and the
+   same Playwright config as the line above, opposite posture: this one is a
+   **required** check (#1152), because it stores no baseline and compares no
+   pixels. The two are split by the `@floor` tag, so `test:visual` no longer
+   runs it and each suite runs exactly once.
 
 ---
 

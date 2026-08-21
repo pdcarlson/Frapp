@@ -708,6 +708,98 @@ jobs:
       - name: Apply migrations to PGlite + assert schema landmarks
         run: npm run check:pglite-migrations
 
+  # ── 375px responsive floor (REQUIRED — unlike the snapshot job below) ────
+  #
+  # Same Playwright setup as `web-visual-regression`, minus the snapshot steps,
+  # and split out of it precisely so it can be required (#1152).
+  #
+  # The snapshot job is deliberately advisory: baselines drift with Chromium
+  # revisions and font rendering, and blocking merges on that trade is worse
+  # than not blocking. `responsive-floor.spec.ts` stores no baseline and
+  # compares no pixels — it reads one integer per route and compares it to 375 —
+  # so it has none of those failure modes and was exempt only by virtue of
+  # living in the same directory. `spec/ui/web-dashboard/README.md` states the
+  # floor as a MUST; this job is what makes that word mean something.
+  #
+  # Selection is by tag, not by path: `--grep @floor` here, `--grep-invert
+  # @floor` there. A new spec added to `apps/web/tests/visual/` therefore joins
+  # the advisory snapshot job by default instead of silently running in neither.
+  #
+  # No `continue-on-error`, per docs/internal/ci-cd/QUALITY_GATES.md: that key
+  # rewrites the step's conclusion to success, which would leave this job green
+  # on a breached floor — a required check that cannot fail is not a gate.
+  #
+  # The other way a tag-selected gate goes hollow is running zero tests and
+  # exiting 0, which would be worse: green, required, and asserting nothing.
+  # Playwright 1.62 exits **1** on "No tests found", so dropping or renaming the
+  # `@floor` tag turns this job red rather than silently emptying it. Verified
+  # against this pinned version, not assumed — re-check it on a major upgrade.
+  #
+  # Path-gated like the jobs around it. That does NOT conflict with being
+  # required: the gate is a JOB-level `if:`, and GitHub reports a job skipped by
+  # a conditional as Success. Both `needs:` parents are themselves required
+  # checks, which is the invariant scripts/configure-branch-protection.mjs
+  # spells out for `web-tests` — a required check whose parent is not required
+  # is a hole, because a job skipped for a FAILED parent also reports skipped.
+  web-responsive-floor:
+    needs: [packages-build, changes]
+    if: ${{ github.event_name == 'push' || needs.changes.outputs.web == 'true' }}
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Restore turbo build outputs
+        uses: actions/cache/restore@v4
+        with:
+          path: .turbo
+          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
+          restore-keys: |
+            turbo-pkgbuild-${{ runner.os }}-
+
+      - name: Build shared packages
+        run: npx turbo run build --filter='./packages/*'
+
+      - name: Resolve Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # Same cache key as web-visual-regression on purpose: the two jobs want
+      # the identical browser build, so whichever lands first warms it for the
+      # other rather than each paying a separate download.
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+
+      - name: Install Playwright OS deps
+        run: npx playwright install-deps chromium
+
+      - name: Install Playwright browser
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install chromium
+
+      - name: Assert every dashboard route holds the 375px floor
+        run: npm run test:floor -w apps/web
+
+      # No artifact upload counterpart to the snapshot job's. That one exists
+      # because a pixel diff cannot be read from its logs; this suite's failure
+      # message already names the offending route, the widest element inside
+      # `<main>`, its width against the budget, and its classes.
+
   # ── Web visual regression snapshots ─────────────────────────────────────
   web-visual-regression:
     needs: [packages-build, changes]

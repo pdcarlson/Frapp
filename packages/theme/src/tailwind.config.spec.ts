@@ -248,12 +248,16 @@ describe("nothing hand-writes hsl(var(--x)) around a complete-colour token", () 
    *
    * **Scoped to the stylesheet, not to the preset.** The set below is every
    * complete-colour token `globals.css` declares — *not* only the ones the
-   * preset reads. Two of this file's own tokens are consumed exclusively by
-   * hand, never through a Tailwind colour key: `--brand-lockup-bg` (an SVG
-   * `fill` in `apps/landing`, and one of the very sites the #1151 sweep fixed)
-   * and the `--hue-*` family. Keying on `references` would have left exactly
-   * those unguarded — the token's storage format is what makes the wrapper
-   * wrong, so storage is what the guard keys on.
+   * preset reads. Some of this file's own tokens are consumed exclusively by
+   * hand, never through a Tailwind colour key: `--brand-lockup-bg` is one (an
+   * SVG `fill` in `apps/landing`, and one of the very sites the #1151 sweep
+   * fixed). Keying on `references` would have left exactly those unguarded —
+   * the token's storage format is what makes the wrapper wrong, so storage is
+   * what the guard keys on.
+   *
+   * The `--hue-*` family used to be named here as the second example. #1155
+   * deleted those five: they were hand-consumable in principle and consumed by
+   * nothing in fact, which is a token to remove rather than a token to guard.
    */
   const REPO = fileURLToPath(new URL("../../..", import.meta.url));
   const WRAPPER = /hsl\(\s*var\(\s*(--[\w-]+)/g;
@@ -311,11 +315,18 @@ describe("nothing hand-writes hsl(var(--x)) around a complete-colour token", () 
   });
 
   it("covers the tokens no preset key reads", () => {
-    // The regression this guard was widened to catch. If either stops being a
-    // hand-consumed token the assertion should be updated deliberately, not
-    // quietly narrowed back to `references`.
+    // The regression this guard was widened to catch. `--brand-lockup-bg` is
+    // the named witness: hand-consumed only, so a set keyed on `references`
+    // would not contain it. If it ever stops being hand-consumed, retarget this
+    // deliberately rather than quietly narrowing back to `references`.
     expect(completeTokens.has("--brand-lockup-bg")).toBe(true);
-    expect(completeTokens.has("--hue-rose")).toBe(true);
+
+    // The same invariant stated without naming a token, so that deleting an
+    // unused one can never leave this test asserting nothing. It held with the
+    // `--hue-*` family present and still holds with those five gone (#1155):
+    // the scanned set must stay strictly wider than what the preset reads.
+    const presetTokens = new Set(references.map((reference) => reference.token));
+    expect(completeTokens.size).toBeGreaterThan(presetTokens.size);
   });
 
   it("still recognises the shape it is banning", () => {

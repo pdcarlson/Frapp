@@ -4,10 +4,31 @@ Playwright-driven screenshot tests for the dashboard routes in
 `apps/web/app/(dashboard)` — fifteen shots today, listed in
 `dashboard-routes.spec.ts`. Runs in CI as the `web-visual-regression` job.
 
+## Two suites in here, two CI jobs, two postures
+
+This directory holds a second suite that is not a screenshot test at all.
+`responsive-floor.spec.ts` asserts every route holds the 375px floor by reading
+one integer per route; it stores no baseline and compares no pixels. It lives
+here only because it wants the browser and dev server `playwright.config.ts`
+already provisions.
+
+They are split by the `@floor` Playwright tag, and the split is what lets them
+have opposite CI postures (#1152):
+
+| Suite | Script | CI job | Posture |
+| --- | --- | --- | --- |
+| `dashboard-routes.spec.ts` | `npm run test:visual -w apps/web` (`--grep-invert @floor`) | `web-visual-regression` | Advisory — baselines drift with Chromium |
+| `responsive-floor.spec.ts` | `npm run test:floor -w apps/web` (`--grep @floor`) | `web-responsive-floor` | **Required** — nothing to drift |
+
+Because selection is by tag rather than by path, a **new** spec added to this
+directory runs in the advisory snapshot job by default. Tag it `@floor` only if
+it belongs to the blocking gate — and only if it has no baseline to drift.
+
 ## Running locally
 
 ```bash
-npm run test:visual -w apps/web          # uses playwright.config.ts webServer
+npm run test:visual -w apps/web          # snapshots; uses playwright.config.ts webServer
+npm run test:floor -w apps/web           # the 375px floor gate
 npx playwright test --update-snapshots   # refresh baselines (review the diff!)
 ```
 

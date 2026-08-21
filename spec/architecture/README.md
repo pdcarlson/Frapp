@@ -1009,6 +1009,8 @@ Chapter theming runs deeper than an accent chip — it themes the entire experie
 
 Every derived token is WCAG-validated against **the one background it is drawn on**: sidebar tokens against the derived ink sidebar, light-mode tokens (`--ring`, `--mention-fg`, `--reaction-active`) against bone. If a token fails AA 4.5:1 there, it falls back to bronze **for that token specifically** — never the whole palette. Validation shares its contrast math with `packages/theme/src/accent.ts` through `@repo/color`.
 
+The five sidebar companions `derivePalette` does *not* write — `--side-bg-hi`, `--side-divider`, `--side-fg`, `--side-fg-hi`, `--side-muted` — keep the neutral-ink `:root` defaults on a branded sidebar, which is the open defect in #1150. It is not separable from the sidebar's text ladder: `mixHex(dark, ink, 0.3)` puts a branded `--side-bg` at a median 2.7x (up to 6.6x) the stock sidebar's luminance, so the stock text tokens are already spending their headroom — `--side-muted` measures 2.43:1 at worst across the seed today, below AA-large for 9 of 50 chapters. Branding the raised surface on top of that consumes what is left, so the elevation tokens and the text ladder have to be derived together or not at all. Tracked in #1150 with #1164; the coherent version is the #920 reskin's.
+
 This is **not** validation against both light and dark, which this section claimed until #1143. `--ring` in particular is checked against bone only, yet `useChapterTheme` writes it as an inline style on `:root`, which outranks the `.dark` rule — so a chapter accent legible on bone can paint a sub-3:1 focus ring on the dark surface. Tracked in #1149.
 
 ### Computation and caching

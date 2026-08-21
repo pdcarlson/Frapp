@@ -17,6 +17,9 @@
  * Chapter theming overlays on top of these defaults: `derivePalette()`
  * rewrites `--side-bg`, `--side-accent`, `--ring` and five companion tokens per
  * chapter at the `:root` level, from `apps/web/lib/hooks/use-chapter-theme.ts`.
+ * The other five `--side-*` values below are NOT rewritten, so a branded
+ * chapter keeps neutral ink for its hover, active and divider states — #1150,
+ * still open, and not separable from this file's sidebar text ladder.
  *
  * ONE VALUE FORMAT LIVES HERE. Every color token is a **complete color** —
  * `hsl(30 8% 10%)`, `#C49A3A`, `rgba(255,255,255,.08)` — read through the
@@ -115,13 +118,6 @@
     --side-muted: hsl(30 6% 52%);
     --side-divider: hsl(30 8% 18%);
     --side-accent: hsl(38 60% 70%);         /* warm bone-bronze on dark */
-
-    /* ── Category hues (saturated but earthy) ────────────── */
-    --hue-rose: hsl(350 55% 50%);
-    --hue-violet: hsl(280 35% 48%);
-    --hue-amber: hsl(34 75% 48%);
-    --hue-teal: hsl(185 40% 38%);
-    --hue-lime: hsl(90 35% 38%);
 
     /* ── Radius scale (tight, ledger-like) ───────────────── */
     /* xs 3 / sm 5 / md 7 / lg 9 / xl 12 per redesign brief.    */
