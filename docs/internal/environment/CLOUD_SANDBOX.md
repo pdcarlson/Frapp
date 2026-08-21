@@ -431,9 +431,14 @@ lists recent rejections under `recentRelayFailures` with the host that was refus
   committed file has never carried a deny rule; see
   [`../ci-cd/AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md)). Local Supabase covers DB + migrations
   without them.
-- **Push fanout (APNS/FCM)** still has no path from a sandbox: Apple's and Google's
-  endpoints are not on the allowlist and are not proposed for it. Keep the "Runtime checks
-  BLOCKED" protocol in [`../ci-cd/AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md) for it.
+- **Push fanout**, but read the halves separately — they differ, and the obvious summary
+  is wrong. **APNS is unreachable**: `api.push.apple.com` and `api.sandbox.push.apple.com`
+  both fail the policy check, and no Apple host is proposed for the allowlist. **FCM's HTTP
+  endpoint is already reachable** — `fcm.googleapis.com` resolves through the *default*
+  Trusted entry `*.googleapis.com`, with no Frapp-specific line involved. That is transport
+  only: an actual fanout test still needs service-account credentials and a real device
+  token to deliver to, so end-to-end push remains a "Runtime checks BLOCKED" case under
+  [`../ci-cd/AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md). Probe before assuming either way.
 - **Live Realtime/Presence and RLS-as-GoTrue** are out of scope *only when the staging
   egress above is not configured*. With it plus a staging smoke credential they are
   reachable against hosted `frapp-staging` — that is the point of

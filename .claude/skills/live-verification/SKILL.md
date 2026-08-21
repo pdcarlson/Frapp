@@ -109,12 +109,24 @@ local `webServer` entirely. No code change needed:
 PLAYWRIGHT_BASE_URL=https://app.staging.frapp.live npm run test:visual -w apps/web
 ```
 
-Treat the result with care. Committed screenshot baselines were captured against the local
-dev server, so pixel diffs against deployed staging are expected and are **not** by
-themselves a regression — different fonts, real data, real latency. Use this mode to answer
-"does the deployed page work / render / not throw", and keep
-`npm run test:visual -w apps/web` on its local baseline as the actual gate. Never refresh a
-baseline from a staging run.
+**A green run here can mean nothing was tested.** With an external `PLAYWRIGHT_BASE_URL`
+the config skips `webServer`, so `SUPABASE_AUTH_BYPASS` is never applied. Unauthenticated,
+every protected route redirects to `/sign-in` — and as
+`apps/web/tests/visual/responsive-floor.spec.ts` puts it, that page's "centred card holds
+375px unconditionally — and all fifteen tests go green having never rendered the dashboard
+shell at all." The floor suite asserts `toHaveURL` to catch exactly this; the snapshot suite
+(`test:visual`) does not. So before believing any staging run:
+
+- Confirm you are **authenticated** (§3), or restrict the run to genuinely public routes.
+- Confirm the **route under test actually rendered** — assert the URL, or eyeball a
+  screenshot. "Exit code 0" is not evidence here.
+
+Then treat the pixels with care too: committed baselines were captured against the local dev
+server (`tests/visual/**-snapshots/*-linux.png`), so diffs against deployed staging are
+expected and are **not** by themselves a regression — different fonts, real data, real
+latency. Use this mode to answer "does the deployed page work / render / not throw", keep
+`npm run test:visual -w apps/web` on its local baseline as the actual gate, and never
+refresh a baseline from a staging run.
 
 ## 5. Writes and cleanup
 
