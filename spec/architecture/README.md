@@ -862,6 +862,31 @@ an agent cannot observe permission prompts. Decision record, probe table, and mi
 - Policy doc: [`GITHUB_PM.md`](../../docs/internal/ci-cd/GITHUB_PM.md) (replaces `LINEAR_PM.md`);
   runbook: [`ROUTINES.md`](../../docs/internal/ci-cd/ROUTINES.md).
 
+#### ADR-16 amendment 6 — a fourth Routine, and the first that fixes instead of files (2026-08-21)
+
+**Context:** amendment 5 carried over *three* Routines, all of which file GitHub issues and none of
+which edit docs. Documentation drift was left to [`check-our-docs`](../../.claude/skills/check-our-docs/SKILL.md),
+a mid-task habit with the coverage of whatever a session happened to read, so the low-traffic
+runbooks a cold session most needs were never swept. Routing that debt to the tracker instead did
+not work: well over half of all `area:docs` issues ever filed were still open, roughly a third of
+the open ones were five-minute fixes on the day they were filed, and several had never been
+touched since.
+
+**Decision:** add a fourth Routine, **Docs Upkeep** (`.claude/skills/docs-upkeep/`), weekly on
+Wednesday. It sweeps a calendar-derived rotating fifth of `docs/` and `spec/`, verifies the claims
+a machine can settle, and **fixes them in a docs-only PR**. It is explicitly forbidden from opening
+`area:docs` issues — anything not fixable in a docs edit goes in its run report to the owner.
+
+**What this changes and what it does not.** It widens the *scope* of the self-maintenance docs-only
+PR from a routine's own skill files to `docs/`, `spec/` and the root guides. It does **not** relax
+the product-code ban, the never-self-merge rule, the one-PR-per-run cap, or the pre-push review
+gate. It inverts [`check-our-docs`](../../.claude/skills/check-our-docs/SKILL.md) §"Inside a
+scheduled routine" and [`audit`](../../.claude/skills/audit/SKILL.md)'s read-only posture **for
+this routine only**; the other three still file rather than fix. ADRs stay append-only — the
+routine may not rewrite one to match today's code.
+
+- Runbook: [`ROUTINES.md`](../../docs/internal/ci-cd/ROUTINES.md).
+
 ### ADR-17: Secret scanning — gitleaks pre-commit + CI gate (2026-06-03)
 
 **Decision:** Implement the ADR-13 secret-scanning mitigation with [`gitleaks`](https://github.com/gitleaks/gitleaks) at three layers that share **one pinned binary and one `/.gitleaks.toml`** (`[extend] useDefault = true` + a tight allowlist), all routed through `scripts/scan-secrets.mjs`: (1) a **pre-commit hook** (`.githooks/pre-commit`, wired via `core.hooksPath` by the root `prepare` script `scripts/setup-git-hooks.mjs` — zero new npm deps) scanning staged changes; (2) **`npm run ci:local-gate`**, which now range-scans the branch's commits; and (3) a **`secret-scan` CI job** in `ci.yml` — fast and standalone (no `npm ci`; fetches the pinned binary via the checksum-verified `scripts/install-gitleaks.sh`), scanning only the PR/push commit range and registered as a **required check** in `scripts/configure-branch-protection.mjs`. The adoption-time claim that a full-history audit found no existing leaks, so no baseline ships, **no longer holds**: the 2026-08-15 audit (#851) found five historical findings — all triaged as false positives, none rotatable — so **a `/.gitleaks-baseline.json` now ships** with those five accepted fingerprints, generated `--redact` (no secret values). Without it the audit command exits non-zero on every run. Do not delete it as a stray artifact; regenerate it only alongside a new audit-record entry, and only from a clone with the full ref set. Runbook: [`docs/internal/ci-cd/SECRET_SCANNING.md`](../../docs/internal/ci-cd/SECRET_SCANNING.md).

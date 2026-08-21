@@ -138,6 +138,7 @@ All skills live under [`.claude/skills/`](.claude/skills/) and are invocable by 
 | [`/issue-curator`](.claude/skills/issue-curator/SKILL.md) | Scheduled backlog-curator routine ([`ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md)). |
 | [`/issue-triage`](.claude/skills/issue-triage/SKILL.md) | Scheduled triage routine ([`ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md)). |
 | [`/pr-followups`](.claude/skills/pr-followups/SKILL.md) | Weekly PR follow-ups harvester ([`ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md)). |
+| [`/docs-upkeep`](.claude/skills/docs-upkeep/SKILL.md) | Weekly docs sweep — verifies a rotating slice and **fixes** it ([`ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md)). |
 | [`/diff-review`](.claude/skills/diff-review/SKILL.md) | Pre-push review gate. Mechanics: [`AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md). |
 | [`/handoff`](.claude/skills/handoff/SKILL.md) | Copy-pasteable prompt handing work to a fresh session. Offer it proactively. |
 | [`/needs-me`](.claude/skills/needs-me/SKILL.md) | Owner-facing: sweep what's waiting on Paul, pick one, walk it to done. Reads only. |

@@ -11,7 +11,7 @@ decision record, viability probes, and the FRA-→#N migration mapping live in
 > priority labels. The Linear workspace stays readable until the owner deletes it; no repo
 > contract reads or writes it. (Caveat until the owner finishes the wind-down: the legacy
 > scheduled Routines and the still-connected Linear GitHub integration can touch it — see
-> [`ROUTINES.md`](ROUTINES.md#how-to-create-them-ui) step 7 and #680's checklist.)
+> [`ROUTINES.md`](ROUTINES.md#how-to-create-them-ui) step 8 and #680's checklist.)
 >
 > **Why the migration:** Linear's MCP write tools (`save_issue` etc.) required a manual permission
 > approval in every Claude Code cloud session, and three config-level fixes (#667, #669, #676)
@@ -27,6 +27,8 @@ decision record, viability probes, and the FRA-→#N migration mapping live in
 GitHub Issues (canonical: planning, status, Triage intake)
    ▲ Claude Code (web) via the GitHub MCP — the path /next uses
    ▲ Claude Code Routines (scheduled: curator + triage + PR follow-ups) via the same GitHub MCP
+     (a fourth, Docs Upkeep, writes docs rather than issues — it files nothing here except a
+      proven human-only blocker)
    ▲ PRs close work natively (Fixes #N on merge)
 ```
 
@@ -60,7 +62,7 @@ GitHub Issues (canonical: planning, status, Triage intake)
 | Actor | Reaches GitHub Issues via | Notes |
 | --- | --- | --- |
 | **Claude Code** (web, interactive) | **GitHub MCP** (`mcp__github__issue_write` / `issue_read` / `list_issues` / `search_issues` / `add_issue_comment` / `sub_issue_write`) | The only sanctioned path. Shell access to `api.github.com` is session-dependent — observed proxy-blocked (403 "GitHub access is not enabled for this session") and working, both on 2026-08-08 — so never rely on `gh`/REST from a sandbox. No fallback tracker. |
-| **Claude Code Routines** (scheduled) | The **same GitHub MCP** — routine sessions run in the same web environment | If the MCP is unavailable at fire time, the routine stops and reports. See [`ROUTINES.md`](ROUTINES.md). |
+| **Claude Code Routines** (scheduled) | The **same GitHub MCP** — routine sessions run in the same web environment | If the MCP is unavailable at fire time, the routine stops and reports (Docs Upkeep excepted — it writes a PR, not issues). See [`ROUTINES.md`](ROUTINES.md). |
 | **CI / scripts** | `GITHUB_TOKEN` / `GITHUB_PAT` inside GitHub Actions only | The PAT works in Actions and on laptops, **not** in cloud sandboxes. PAT policy: [`AGENT_INFRA.md`](AGENT_INFRA.md). |
 
 ---
@@ -257,7 +259,7 @@ is the consumer of that output — it sweeps the Human Action List, open `fp=hum
 `fp=pr-followup/` issues, the `triage` inbox, and open PRs, ranks the candidates by what clearing
 each one releases, and walks **exactly one** to done, closing it on proof.
 
-It is a reader, not a fourth routine: it files nothing (the one exception being a newly proven
+It is a reader, not a routine: it files nothing (the one exception being a newly proven
 blocker, per the hard rule above), asks before closing anything outside the `suggestion` label's
 [ownership boundary](#ownership-boundary-organize-broadly-destroy-narrowly), and never rewrites
 the Human Action List — that body is rebuilt from live issue state by the PR Follow-ups routine on
