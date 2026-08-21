@@ -456,7 +456,7 @@ export function RolesAndPermissionsPage() {
             {activeRole ? (
               <CardFooter className="flex justify-end gap-2">
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   onClick={() => selectRole(activeRole)}
                   disabled={updateRole.isPending}
                 >

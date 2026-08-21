@@ -314,7 +314,7 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
           </Select>
           <Can permission="events:update">
             <Button
-              variant="outline"
+              variant="secondary"
               size="sm"
               {...gate.controlProps(autoAbsent.isPending)}
               onClick={runAutoAbsent}

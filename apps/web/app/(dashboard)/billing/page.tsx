@@ -220,7 +220,7 @@ export default function BillingPage() {
             </div>
             <Button
               size="sm"
-              variant="outline"
+              variant="secondary"
               onClick={() => {
                 statusQuery.refetch();
                 invoicesQuery.refetch();
@@ -275,14 +275,14 @@ export default function BillingPage() {
               <div className="flex gap-2">
                 <Button
                   size="sm"
-                  variant="outline"
+                  variant="secondary"
                   onClick={() => handleBulkInvoiceAction("Send reminder")}
                 >
                   Send reminder
                 </Button>
                 <Button
                   size="sm"
-                  variant="outline"
+                  variant="secondary"
                   onClick={() => handleBulkInvoiceAction("Export CSV")}
                 >
                   Export CSV

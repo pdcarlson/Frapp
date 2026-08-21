@@ -103,7 +103,7 @@ function DownloadButton({ id }: { id: string }) {
 
   return (
     <Button
-      variant="outline"
+      variant="secondary"
       size="sm"
       onClick={handleDownload}
       disabled={isFetching}
@@ -381,7 +381,7 @@ export function DocumentsPage() {
                 {/* Cancel only closes the dialog — gating the way out of a
                     surface the gate just blocked would be a trap. */}
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   onClick={() => uploadDialog.setOpen(false)}
                   disabled={uploading}
                 >

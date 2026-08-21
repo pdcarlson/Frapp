@@ -274,21 +274,21 @@ export function EventsPage() {
             <div className="flex flex-wrap gap-2">
               <Button
                 size="sm"
-                variant="outline"
+                variant="secondary"
                 onClick={() => handleBulkAction("Mark attendance complete")}
               >
                 Mark attendance complete
               </Button>
               <Button
                 size="sm"
-                variant="outline"
+                variant="secondary"
                 onClick={() => handleBulkAction("Notify assignees")}
               >
                 Notify assignees
               </Button>
               <Button
                 size="sm"
-                variant="outline"
+                variant="secondary"
                 onClick={() => handleBulkAction("Archive selected")}
               >
                 Archive selected
@@ -391,7 +391,7 @@ export function EventsPage() {
                       <TableCell className="text-right">
                         <Button
                           size="sm"
-                          variant="outline"
+                          variant="secondary"
                           onClick={() => {
                             setActiveEvent(event);
                             setDetailSheetOpen(true);

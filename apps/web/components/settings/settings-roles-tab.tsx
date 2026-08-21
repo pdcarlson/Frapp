@@ -41,7 +41,11 @@ type Props = {
   catalog: PermissionCatalogEntry[];
 };
 
-const SUBTAB_TRIGGER = "data-[state=active]:bg-background";
+// The sub-tabs used to carry `data-[state=active]:bg-background` — a
+// workaround for the filled-pill TabsList that the #920 primitives slice
+// deleted. The §6 underline row needs no override, so the constant is gone
+// rather than emptied: it would otherwise have painted a solid slab behind the
+// active sub-tab, on top of its underline.
 
 /**
  * Settings → Roles. Four sub-views:
@@ -63,17 +67,17 @@ export function SettingsRolesTab({ archetypeKey, canManage, catalog }: Props) {
 
   return (
     <Tabs defaultValue="pack" className="space-y-4">
-      <TabsList className="flex w-full flex-wrap justify-start gap-1 bg-secondary p-1">
-        <TabsTrigger value="pack" className={SUBTAB_TRIGGER}>
+      <TabsList className="flex w-full flex-wrap justify-start gap-4">
+        <TabsTrigger value="pack">
           Pack
         </TabsTrigger>
-        <TabsTrigger value="matrix" className={SUBTAB_TRIGGER}>
+        <TabsTrigger value="matrix">
           Matrix
         </TabsTrigger>
-        <TabsTrigger value="custom" className={SUBTAB_TRIGGER}>
+        <TabsTrigger value="custom">
           Custom
         </TabsTrigger>
-        <TabsTrigger value="live" className={SUBTAB_TRIGGER}>
+        <TabsTrigger value="live">
           Live roles
         </TabsTrigger>
       </TabsList>

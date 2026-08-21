@@ -425,7 +425,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
               </nav>
               <div className="flex shrink-0 items-center gap-2">
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   size="icon"
                   className="lg:hidden"
                   aria-label="Open navigation menu"
@@ -435,7 +435,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
                   <MenuGlyph className={topbarIconClassName} />
                 </Button>
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   size="icon"
                   className="sm:hidden"
                   aria-label="Search commands and resources (Command K)"
@@ -445,7 +445,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
                   <SearchGlyph className={topbarIconClassName} />
                 </Button>
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   size="sm"
                   className="hidden sm:inline-flex"
                   aria-label="Search commands and resources (Command K)"
@@ -455,7 +455,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
                   Search (⌘K)
                 </Button>
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   size="icon"
                   aria-label={
                     unreadNotifications > 0

@@ -36,7 +36,7 @@ export default function NoAccessPage() {
             </li>
           </ul>
           <div className="flex flex-wrap gap-2 pt-2">
-            <Button asChild variant="outline">
+            <Button asChild variant="secondary">
               <Link href="/join">Open invite link</Link>
             </Button>
             <Button asChild>

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { deriveSignetPalette, signetAccentSemanticVars } from "@repo/chapter-theme";
 import { describe, expect, it } from "vitest";
 
-import { getSignetCssVars } from "./signet";
+import { getSignetCssVars, signetDarkTokens } from "./signet";
 import config from "./tailwind.config";
 
 /**
@@ -62,7 +62,56 @@ function declaredIn(source: string): Map<string, string> {
 
 const root = declaredIn(css);
 
-const COMPLETE_COLOR = /^(#[0-9a-f]{3,8}|(hsla?|rgba?)\([^)]*\))$/i;
+/*
+ * A value the preset can hand Tailwind as a bare `var(--token)` and have the
+ * browser paint. `color-mix()` is in the set because the derived accent steps
+ * (`--primary-pressed`, `--accent-subtle-hover`) are mixes of the accent slot
+ * rather than fixed values — that is what keeps them tracking a chapter's
+ * override instead of needing a second thing to re-derive.
+ *
+ * A regex alone is the wrong shape for `color-mix()`: its arguments nest
+ * parens, and a pattern loose enough to cross them (`.+\)`) also accepts a
+ * dropped closing paren or a single colour argument — both invalid CSS that
+ * would paint nothing, which is precisely what this guard exists to catch.
+ * Parens are therefore balanced by counting and the argument count checked.
+ */
+const SIMPLE_COLOR = /^(#[0-9a-f]{3,8}|(hsla?|rgba?)\([^)]*\))$/i;
+
+function isBalanced(value: string): boolean {
+  let depth = 0;
+  for (const char of value) {
+    if (char === "(") depth += 1;
+    else if (char === ")") {
+      depth -= 1;
+      if (depth < 0) return false;
+    }
+  }
+  return depth === 0;
+}
+
+function isCompleteColor(value: string): boolean {
+  if (SIMPLE_COLOR.test(value)) return true;
+  const mix = /^color-mix\(in ([\w-]+(?: [\w-]+)?),(.+)\)$/i.exec(value);
+  if (!mix || !isBalanced(value)) return false;
+  // Split the argument list on top-level commas only — `var(--a, fallback)`
+  // and a nested mix both carry commas that are not argument separators.
+  let depth = 0;
+  const parts: string[] = [];
+  let current = "";
+  for (const char of mix[2]!) {
+    if (char === "(") depth += 1;
+    if (char === ")") depth -= 1;
+    if (char === "," && depth === 0) {
+      parts.push(current);
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  parts.push(current);
+  // `color-mix()` takes exactly two colours, each optionally with a percentage.
+  return parts.length === 2 && parts.every((part) => part.trim().length > 0);
+}
 
 /** Every custom property a config's color keys read through `colorVar`. */
 function tokensReadBy(colors: unknown): string[] {
@@ -148,18 +197,77 @@ describe("every token the presets read is defined as a complete color", () => {
       `a Tailwind color key reads ${token} but signet.css never defines it — ` +
         "on the Signet surface the class compiles to nothing (#1145)",
     ).toBeDefined();
-    expect(value).toMatch(COMPLETE_COLOR);
+    expect(isCompleteColor(value!), `${token} is "${value}"`).toBe(true);
   });
 
   it("defines every radius token the preset reads", () => {
-    for (const value of Object.values(
+    // Both halves: the shared preset's scale keys, and the Signet-only ones
+    // the `apps/web` config adds on top. The 20 step lives in the app config
+    // because the legacy stylesheet has no `--radius-2xl`, so scanning only
+    // the shared preset would leave exactly the newest key unguarded.
+    const shared = Object.values(
       config.theme!.extend!.borderRadius as Record<string, string>,
-    )) {
-      const token = String(value).match(/var\((--[\w-]+)\)/)?.[1];
+    ).map((value) => String(value).match(/var\((--[\w-]+)\)/)?.[1]);
+    const webOnly = [
+      ...readFileSync(WEB_TAILWIND, "utf8").matchAll(/var\((--radius-[\w-]+)\)/g),
+    ].map((m) => m[1]!);
+
+    expect(webOnly.length).toBeGreaterThan(0);
+    for (const token of [...shared, ...webOnly]) {
       expect(token).toBeDefined();
       expect(root.has(token!), `signet.css must define ${token}`).toBe(true);
     }
   });
+
+  it("matches the radius map in signet.ts (and through it, foundations §8)", () => {
+    // The 20 ceiling is shared by sheets, dialogs and the AI answer card, so a
+    // drift here is a drift on three surfaces at once.
+    const { radius } = signetDarkTokens;
+    expect(root.get("--radius-md")).toBe(`${radius.control}px`);
+    expect(root.get("--radius-lg")).toBe(`${radius.card}px`);
+    expect(root.get("--radius-xl")).toBe(`${radius.cardLarge}px`);
+    expect(root.get("--radius-2xl")).toBe(`${radius.sheet}px`);
+    expect(root.get("--radius-xs")).toBe(`${radius.chip}px`);
+    expect(root.get("--radius-sm")).toBe(`${radius.chipLarge}px`);
+  });
+});
+
+describe("the complete-colour guard rejects invalid color-mix values", () => {
+  // The guard is only worth having if it fails on the shapes a typo actually
+  // produces. A regex loose enough to cross nested parens accepted all three of
+  // these, which would have let a token that paints nothing reach the browser.
+  it.each([
+    "color-mix(in srgb, red)",
+    "color-mix(in srgb, var(--a) 22%, var(--b)",
+    "color-mix(in srgb, var(--a), var(--b), var(--c))",
+    "not-a-color",
+  ])("rejects %s", (value) => {
+    expect(isCompleteColor(value)).toBe(false);
+  });
+
+  it.each([
+    "#0E0D0B",
+    "rgba(255,255,255,0.08)",
+    "color-mix(in srgb, rgb(0 0 0) 8%, var(--primary-hover))",
+    "color-mix(in srgb, var(--accent-border) 22%, var(--accent-subtle))",
+  ])("accepts %s", (value) => {
+    expect(isCompleteColor(value)).toBe(true);
+  });
+});
+
+describe("the derived accent steps track the slot rather than restating it", () => {
+  // components.md §3 names two states the engine emits no role for. They are
+  // mixes of the live slot on purpose: the failure this guards against is
+  // someone "simplifying" them to fixed hexes, which would silently pin every
+  // chapter's hover and pressed states to the house gold.
+  it.each(["--primary-pressed", "--accent-subtle-hover"])(
+    "%s is a color-mix of tokens, not a fixed value",
+    (token) => {
+      const value = root.get(token);
+      expect(value).toMatch(/^color-mix\(/);
+      expect(value).toMatch(/var\(--/);
+    },
+  );
 });
 
 describe("each surface imports exactly its own system", () => {

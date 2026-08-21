@@ -130,7 +130,7 @@ export function PollCard({
             <li key={option.id}>
               <Button
                 type="button"
-                variant={isMyVote ? "default" : "outline"}
+                variant={isMyVote ? "default" : "secondary"}
                 size="sm"
                 className="w-full justify-between gap-2 text-left text-xs"
                 onClick={() => cast(option)}

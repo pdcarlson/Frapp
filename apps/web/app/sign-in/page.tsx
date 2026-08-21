@@ -135,7 +135,7 @@ function SignInPageContent() {
               After signing up, the app will guide you through chapter creation,
               billing activation, and live member administration.
             </p>
-            <Button asChild variant="outline" className="w-full justify-between">
+            <Button asChild variant="secondary" className="w-full justify-between">
               <Link href={`/sign-up?redirectTo=${encodeURIComponent(redirectTo)}`}>
                 Create an account
                 <ArrowRight className="h-4 w-4" />
@@ -189,7 +189,7 @@ function SignInPageContent() {
                 </Button>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="secondary"
                   onClick={handleMagicLink}
                   disabled={isMagicLinkPending}
                 >

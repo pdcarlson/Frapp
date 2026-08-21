@@ -222,7 +222,7 @@ export function SubscriptionCheckoutCard() {
               never actually paid can clear the stale return marker instead.
             */}
             <Button
-              variant="outline"
+              variant="secondary"
               onClick={() => {
                 setAttempt(0);
                 void queryClient.invalidateQueries({ queryKey: ["chapters"] });

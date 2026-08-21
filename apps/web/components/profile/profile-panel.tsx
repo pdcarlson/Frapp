@@ -421,7 +421,7 @@ export function ProfilePanel() {
         </CardHeader>
         <CardContent>
           <Button
-            variant="outline"
+            variant="secondary"
             disabled={updateOnboarding.isPending}
             onClick={async () => {
               try {
@@ -460,7 +460,7 @@ export function ProfilePanel() {
         </CardHeader>
         <CardContent>
           <Button
-            variant="outline"
+            variant="secondary"
             onClick={handleSignOut}
             disabled={isSigningOut}
           >

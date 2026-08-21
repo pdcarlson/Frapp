@@ -30,7 +30,7 @@ export function PinsPopover({
     <Popover>
       <PopoverTrigger asChild>
         <Button
-          variant="outline"
+          variant="secondary"
           size="sm"
           aria-label={`${pins.length} pinned messages`}
         >

@@ -6,7 +6,20 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { X } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { FOCUS_RING } from "@/components/ui/focus"
 
+/*
+ * Toasts, composed from the §2 undrawn-primitive tokens: elevated fill,
+ * hairline, radius 12.
+ *
+ * The destructive variant was the one real defect here. It shipped the stock
+ * light-surface treatment — a solid `--destructive` panel with
+ * `--destructive-foreground` text — plus four raw Tailwind reds
+ * (`text-red-300`, `hover:text-red-50`, `ring-red-400`, `ring-offset-red-600`)
+ * that belong to no token system at all. foundations.md §5 is explicit that on
+ * dark surfaces semantic colour is a ~13% tint with the hue as text, so that is
+ * what it takes now, and the raw reds are gone.
+ */
 const ToastProvider = ToastPrimitives.Provider
 
 const ToastViewport = React.forwardRef<
@@ -29,9 +42,13 @@ const toastVariants = cva(
   {
     variants: {
       variant: {
-        default: "border bg-background text-foreground",
+        default: "border-border bg-popover text-popover-foreground",
+        // The §5 tint recipe, not a solid fill: "on dark surfaces, prefer the
+        // tint recipe (13% alpha fill + hue text) over solid fills"
+        // (foundations.md §5). A solid `#f85149` panel with near-black text is
+        // the light-surface treatment and reads as an alert box, not a toast.
         destructive:
-          "destructive group border-destructive bg-destructive text-destructive-foreground",
+          "destructive group border-destructive/45 bg-destructive/[.13] text-destructive-text",
       },
     },
     defaultVariants: {
@@ -62,7 +79,12 @@ const ToastAction = React.forwardRef<
   <ToastPrimitives.Action
     ref={ref}
     className={cn(
-      "inline-flex h-8 shrink-0 items-center justify-center rounded-md border bg-transparent px-3 text-sm font-medium transition-colors hover:bg-secondary focus:outline-none focus:ring-1 focus:ring-ring disabled:pointer-events-none disabled:opacity-50 group-[.destructive]:border-border/40 group-[.destructive]:hover:border-destructive/30 group-[.destructive]:hover:bg-destructive group-[.destructive]:hover:text-destructive-foreground group-[.destructive]:focus:ring-destructive",
+      "inline-flex h-11 shrink-0 items-center justify-center rounded-md border border-input bg-card px-3 text-sm font-semibold text-foreground transition-colors hover:bg-accent disabled:pointer-events-none disabled:border-border disabled:bg-card disabled:text-disabled",
+      // `enabled:`-scoped: `group-[.destructive]:*` compiles to a descendant
+      // selector carrying two ancestor classes, so it strictly outranks
+      // `disabled:*` and would keep a disabled action painted as if live.
+      "enabled:group-[.destructive]:border-destructive/45 enabled:group-[.destructive]:bg-transparent enabled:group-[.destructive]:text-destructive-text enabled:group-[.destructive]:hover:bg-destructive/20",
+      FOCUS_RING,
       className
     )}
     {...props}
@@ -77,7 +99,9 @@ const ToastClose = React.forwardRef<
   <ToastPrimitives.Close
     ref={ref}
     className={cn(
-      "absolute right-1 top-1 rounded-md p-1 text-foreground/50 opacity-0 transition-opacity hover:text-foreground focus:opacity-100 focus:outline-none focus:ring-1 group-hover:opacity-100 group-[.destructive]:text-red-300 group-[.destructive]:hover:text-red-50 group-[.destructive]:focus:ring-red-400 group-[.destructive]:focus:ring-offset-red-600",
+      "absolute right-1 top-1 rounded-xs border border-transparent p-1 text-muted opacity-0 transition-opacity hover:text-foreground focus:opacity-100 group-hover:opacity-100",
+      "group-[.destructive]:text-destructive-text group-[.destructive]:hover:text-destructive-text",
+      FOCUS_RING,
       className
     )}
     toast-close=""
@@ -94,7 +118,11 @@ const ToastTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <ToastPrimitives.Title
     ref={ref}
-    className={cn("text-sm font-semibold [&+div]:text-xs", className)}
+    // The scaffold shrank an adjacent description to `text-xs` (12px) from
+    // here. 12 is off foundations §7's scale and the hierarchy does not need
+    // it: title and description are both the `label` size and separate on
+    // weight and colour instead.
+    className={cn("text-sm font-semibold", className)}
     {...props}
   />
 ))
@@ -106,7 +134,10 @@ const ToastDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <ToastPrimitives.Description
     ref={ref}
-    className={cn("text-sm opacity-90", className)}
+    className={cn(
+      "text-sm text-muted-foreground group-[.destructive]:text-destructive-text",
+      className
+    )}
     {...props}
   />
 ))

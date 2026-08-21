@@ -497,7 +497,7 @@ export function ServiceHoursPage() {
                 {/* Cancel only closes the dialog — gating the way out of a
                     surface the gate just blocked would be a trap. */}
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   onClick={() => logDialog.setOpen(false)}
                   disabled={submitting}
                 >
@@ -590,7 +590,7 @@ export function ServiceHoursPage() {
                         </Button>
                         <Button
                           size="sm"
-                          variant="outline"
+                          variant="secondary"
                           onClick={() => void reject(entry)}
                           {...gate.controlProps(reviewEntry.isPending)}
                         >

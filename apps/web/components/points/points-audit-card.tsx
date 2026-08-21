@@ -110,7 +110,7 @@ export function PointsAuditCard() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button
-              variant={flaggedOnly ? "default" : "outline"}
+              variant={flaggedOnly ? "default" : "secondary"}
               size="sm"
               onClick={() => setFlaggedOnly((prev) => !prev)}
               aria-pressed={flaggedOnly}
@@ -120,7 +120,7 @@ export function PointsAuditCard() {
               {flaggedOnly ? "Showing flagged only" : "Show flagged only"}
             </Button>
             <Button
-              variant="outline"
+              variant="secondary"
               size="sm"
               onClick={() => void transactionsQuery.refetch()}
               disabled={transactionsQuery.isFetching}

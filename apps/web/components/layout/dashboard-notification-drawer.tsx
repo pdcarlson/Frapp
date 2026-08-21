@@ -151,7 +151,7 @@ export function DashboardNotificationDrawer({
               Mark all read
             </Button>
             <Button
-              variant="outline"
+              variant="secondary"
               size="sm"
               onClick={() => void notificationsQuery.refetch()}
               disabled={notificationsQuery.isFetching}

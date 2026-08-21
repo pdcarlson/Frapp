@@ -50,13 +50,13 @@ export default async function Home() {
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
-            <Button asChild size="lg">
+            <Button asChild>
               <Link href="/sign-in">
                 Sign in
                 <ArrowRight className="h-4 w-4" />
               </Link>
             </Button>
-            <Button asChild size="lg" variant="outline">
+            <Button asChild variant="secondary">
               <Link href="/sign-up">Create account</Link>
             </Button>
           </div>

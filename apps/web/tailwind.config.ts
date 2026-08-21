@@ -29,7 +29,9 @@ const config: Config = {
       colors: {
         "surface-1": colorVar("--surface-1"),
         "primary-hover": colorVar("--primary-hover"),
+        "primary-pressed": colorVar("--primary-pressed"),
         "accent-subtle": colorVar("--accent-subtle"),
+        "accent-subtle-hover": colorVar("--accent-subtle-hover"),
         "accent-border": colorVar("--accent-border"),
         "accent-text": colorVar("--accent-text"),
         disabled: colorVar("--disabled"),
@@ -41,6 +43,8 @@ const config: Config = {
           DEFAULT: colorVar("--info"),
           foreground: colorVar("--info-foreground"),
         },
+        // The AA-lifted danger tone for text/icons on a danger tint (§5).
+        "destructive-text": colorVar("--destructive-text"),
         mention: {
           DEFAULT: colorVar("--mention"),
           foreground: colorVar("--mention-foreground"),
@@ -53,6 +57,16 @@ const config: Config = {
           "ask-text": colorVar("--gold-ask-text"),
         },
       },
+      borderRadius: {
+        /*
+         * The 20 step — sheets and the AI answer card (foundations.md §8), the
+         * ceiling of the map. It lives here rather than in the shared preset
+         * for the same reason the colors above do: the legacy stylesheet the
+         * frozen landing surface ships defines no `--radius-2xl`, and a preset
+         * key reading an undefined token is #1145's silent failure.
+         */
+        "2xl": "var(--radius-2xl)",
+      },
       fontFamily: {
         sans: [
           "var(--font-figtree)",
@@ -60,28 +74,6 @@ const config: Config = {
           "-apple-system",
           "sans-serif",
         ],
-      },
-      keyframes: {
-        "accordion-down": {
-          from: {
-            height: "0",
-          },
-          to: {
-            height: "var(--radix-accordion-content-height)",
-          },
-        },
-        "accordion-up": {
-          from: {
-            height: "var(--radix-accordion-content-height)",
-          },
-          to: {
-            height: "0",
-          },
-        },
-      },
-      animation: {
-        "accordion-down": "accordion-down 0.2s ease-out",
-        "accordion-up": "accordion-up 0.2s ease-out",
       },
     },
   },
