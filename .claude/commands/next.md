@@ -456,7 +456,9 @@ follow-up issue's lifecycle.
 Update the related real spec/docs **in this same PR** — doc-sync requires it, and the §1.2 drift items
 are the minimum list. Put files in their canonical home per
 [`DOCUMENTATION_CONVENTIONS.md`](../../docs/internal/DOCUMENTATION_CONVENTIONS.md); **never drop a
-stray file to satisfy the gate.**
+stray file, or append an unrelated note, to satisfy the gate.** If the unit genuinely changed nothing
+a doc describes, label the PR `no-doc-change-needed` — that is the expected path, not a failure
+([`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md#the-no-doc-change-needed-waiver)).
 
 Push and open the PR with **`Fixes #N`** in the PR **body** — the literal magic word, not a prose
 mention, and the body specifically: **GitHub ignores closing keywords in the PR title** — **one

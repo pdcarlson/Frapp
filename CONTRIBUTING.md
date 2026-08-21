@@ -45,7 +45,7 @@ Every PR must pass these checks before merging. Branch protection enforces this 
 | Check                | What it validates                                                                                  |
 | -------------------- | -------------------------------------------------------------------------------------------------- |
 | `packages-build`     | Shared packages compile                                                                            |
-| `lint-and-typecheck` | ESLint + TypeScript across all workspaces, **`nest build` for `apps/api`** (matches Render compile), landing + `@repo/validation` unit tests |
+| `lint-and-typecheck` | ESLint + TypeScript across all workspaces, **`nest build` for `apps/api`** (matches Render compile), landing plus `@repo/validation`, `@repo/color`, `@repo/formatting`, `@repo/chapter-theme`, `@repo/theme`, and `@repo/api-sdk` unit tests |
 | `api-docker-build`   | `docker build -f apps/api/Dockerfile .` (API image compile path)                                   |
 | `api-tests`          | API Jest unit tests                                                                                |
 | `api-contract-check` | `openapi.json` + `packages/api-sdk/src/types.ts` freshness                                                      |
@@ -54,20 +54,20 @@ Every PR must pass these checks before merging. Branch protection enforces this 
 | `ci-scripts-tests`   | `node --test` unit tests for the deploy-gate/CI scripts under `scripts/ci/`                        |
 | `secret-scan`        | gitleaks over the PR/push commit range (ADR-13 push-protection replacement)                        |
 | `clean-checkout-typecheck` | Bare `npm ci` + typecheck + lint with no prebuilt packages (guards `turbo.json` `^build`)    |
-| `dependency-audit`   | npm audit gate: high/critical advisories not allowlisted in `scripts/npm-audit-allowlist.json` fail (ROLLOUT†) |
-| `chapter-directory-seed` | `supabase/seed/chapter_directory.csv`: canonical `#RRGGBB` colors, real archetypes, no duplicate natural keys (ROLLOUT†) |
-| `web-tests`          | `apps/web` unit tests plus the shared packages only this suite covers — `packages/hooks`, `packages/chat-core` (ROLLOUT†) |
-| `changes`            | Computes the path filter that decides whether `web-tests` and `web-responsive-floor` run. Required only because they need it — a required check with a non-required parent can be skipped *and* still count as passing (ROLLOUT†) |
-| `web-responsive-floor` | Every dashboard route renders without horizontal scroll at 375px, the floor `spec/ui/web-dashboard/README.md` states as a MUST. Playwright, but no baseline and no pixel diff — which is why it is required while the snapshot job it was split out of stays advisory (ROLLOUT†) |
-| `dependency-cruiser` | Architectural boundaries: API layer direction, no package→app imports, no cross-app imports, no cycles. Existing violations are grandfathered in `.dependency-cruiser-known-violations.json` (ROLLOUT†) |
+| `dependency-audit`   | npm audit gate: high/critical advisories not allowlisted in `scripts/npm-audit-allowlist.json` fail |
+| `chapter-directory-seed` | `supabase/seed/chapter_directory.csv`: canonical `#RRGGBB` colors, real archetypes, no duplicate natural keys |
+| `web-tests`          | `apps/web` unit tests plus the shared packages only this suite covers — `packages/hooks`, `packages/chat-core`, `packages/chat-integrations` |
+| `changes`            | Computes the path filter that decides whether `web-tests` and `web-responsive-floor` run. Required only because they need it — a required check with a non-required parent can be skipped *and* still count as passing |
+| `web-responsive-floor` | Every dashboard route renders without horizontal scroll at 375px, the floor `spec/ui/web-dashboard/README.md` states as a MUST. Playwright, but no baseline and no pixel diff — which is why it is required while the snapshot job it was split out of stays advisory |
+| `dependency-cruiser` | Architectural boundaries: API layer direction, no package→app imports, no cross-app imports, no cycles. Existing violations are grandfathered in `.dependency-cruiser-known-violations.json` |
 | `duplicate-detection` | jscpd against a repo-wide duplication threshold — **advisory, not merge-blocking** (no clone-level baseline exists; see [`docs/internal/ci-cd/QUALITY_GATES.md`](docs/internal/ci-cd/QUALITY_GATES.md)) |
 | `docs-spec-sync`     | Docs/spec sync **and** structure on PRs (`scripts/check-docs-impact.mjs` + `scripts/check-docs-structure.mjs`; no docs app build). A change with genuinely no docs impact can be waived with the `no-doc-change-needed` label |
 | `doc-paths`          | Backticked repo-path citations in docs resolve to real files (`scripts/check-doc-paths.mjs`, whole-tree) — **reports only, not yet required** (ROLLOUT‡) |
 | `branch-policy`      | `production`-targeting PRs must come from `main` (required on `production` only)                   |
 
-† `dependency-audit` becomes a *required* check via the standard rollout step: after the job first runs green on the target branch, an admin re-runs `npm run configure:branch-protection` (see [`docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md)). Until then the job runs and reports on every PR but is not yet merge-blocking.
+**Intended vs live.** Every check above is listed in `CI_CHECKS` / `DOCS_CHECKS` in [`scripts/configure-branch-protection.mjs`](scripts/configure-branch-protection.mjs) — the **intended** required set — except three: `duplicate-detection` (advisory), `doc-paths` (still commented out, see ‡), and `branch-policy` (appended for `production` only, not in either array). Live branch protection is whatever an admin last applied by running `npm run configure:branch-protection`, and it can lag the script, so this table does not claim per-check whether a gate is live today. Read live state per [`docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md) rather than trusting a doc for it. New gates land report-only and are promoted by adding them to the array and re-running that command.
 
-‡ `doc-paths` is deliberately **not** required yet. It scans the whole tree rather than the PR diff (a citation breaks when the file it names moves — a change on the other side of the reference), so as a required check it could block a PR over a citation in a doc that PR never touched. Promote it the same way as `dependency-audit`: uncomment `"doc-paths"` in `DOCS_CHECKS` and re-run `npm run configure:branch-protection`. See [`docs/internal/ci-cd/DOCS_CI.md`](docs/internal/ci-cd/DOCS_CI.md).
+‡ `doc-paths` is deliberately **not** required yet. It scans the whole tree rather than the PR diff (a citation breaks when the file it names moves — a change on the other side of the reference), so as a required check it could block a PR over a citation in a doc that PR never touched. Promote it the same way as any other gate: uncomment `"doc-paths"` in `DOCS_CHECKS` and re-run `npm run configure:branch-protection`. See [`docs/internal/ci-cd/DOCS_CI.md`](docs/internal/ci-cd/DOCS_CI.md).
 
 ### Vercel deployment policy
 

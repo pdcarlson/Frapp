@@ -267,8 +267,9 @@ This is the routines' **only** permitted repo write.
 > `docs-spec-sync` is a **required** check under `enforce_admins: true`, and
 > `scripts/check-docs-impact.mjs` classifies a path as documentation only when it starts with
 > `docs/` or `spec/` (`const docsOrSpec = ["docs/", "spec/"]`). `.claude/` matches neither, so a PR
-> touching only a `SKILL.md` reads to the gate as "code changed, no docs updated" and fails it;
-> the sole exemption is Dependabot. Every `.claude/skills/` change merged to date has carried a
+> touching only a `SKILL.md` reads to the gate as "code changed, no docs updated" and fails it.
+> Dependabot is the only *authorship*-keyed exemption; the `no-doc-change-needed` label applies here
+> too, though for self-maintenance the pairing below is usually the better answer. Every `.claude/skills/` change merged to date has carried a
 > `docs/` file alongside it (#1075 is the pattern: skill + `GITHUB_PM.md` + `AGENTS.md`). Since this
 > file is both inside the allowed path set and under `docs/`, updating it alongside the skill
 > satisfies the gate — and usually should anyway, because a rule worth changing in a skill is

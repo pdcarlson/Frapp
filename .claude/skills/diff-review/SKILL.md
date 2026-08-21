@@ -94,8 +94,15 @@ failure mode, not a hypothetical.
   PGlite (`npm run check:pglite-migrations`). Flag anything that breaks the PGlite path — a
   `create extension` is the known trap. Flag destructive DDL without a stated backfill or rollback.
 - **Doc-sync mandate.** Every non-doc change needs a matching update under `docs/` or `spec/`, in
-  that content's canonical home per `docs/internal/DOCUMENTATION_CONVENTIONS.md`. A new stray file
-  added just to satisfy the gate is itself a finding.
+  that content's canonical home per `docs/internal/DOCUMENTATION_CONVENTIONS.md`. Two shapes of
+  gate-satisfying filler are themselves findings, and the second is the common one:
+  - A new **stray file** added just to satisfy the gate.
+  - A new **stray section or bullet appended to an existing doc** whose subject does not match the
+    doc it landed in — a "Maintenance Log", a "Notes" list, a changelog entry in a reference doc.
+    Test it by asking what the doc is *for*: would a reader who came for that topic want this
+    paragraph? If not, the honest move is the `no-doc-change-needed` label
+    ([`DOCS_CI.md`](../../../docs/internal/ci-cd/DOCS_CI.md#the-no-doc-change-needed-waiver)), not
+    a green check bought with an unowned claim.
 - **Tracker rule.** Issues are opened on GitHub with the `triage` label. Shared boundary:
   [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
   Flag any code, script, or workflow that writes to a retired tracker.
