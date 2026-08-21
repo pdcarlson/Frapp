@@ -36,7 +36,6 @@ description: >
 | Contract check | `npm run check:api-contract` |
 | Migration check | `npm run check:migration-safety` |
 | npm audit gate (high/critical) | `npm run check:npm-audit` (offline: `-- --soft-network`) |
-| Web dashboard screenshots (Playwright) | `npm run test:visual -w apps/web` |
 | 375px responsive floor (Playwright, blocking gate once rolled out) | `npm run test:floor -w apps/web` |
 
 ---
@@ -261,18 +260,19 @@ Before pushing, verify these pass locally (mirrors the CI pipeline):
    `-- --soft-network` to warn instead of fail when offline. Most likely to
    fire on dependency/lockfile PRs, or when a new advisory was published
    upstream since the last CI run)
-12. `npm run test:visual -w apps/web` → `CI / web-visual-regression` (after
-   intentional dashboard layout changes, refresh Linux baselines from
-   `apps/web` with `CI=true npx playwright test --update-snapshots` so they
-   match the job's single-worker Playwright run; see
-   [`apps/web/tests/visual/README.md`](../../../apps/web/tests/visual/README.md)).
-   **Advisory** — a red run here does not block merge.
-13. `npm run test:floor -w apps/web` → `CI / web-responsive-floor` (every
-   dashboard route without horizontal scroll at 375px). Same directory and the
-   same Playwright config as the line above, opposite posture: this one is a
-   **required** check (#1152), because it stores no baseline and compares no
-   pixels. The two are split by the `@floor` tag, so `test:visual` no longer
-   runs it and each suite runs exactly once.
+12. `npm run test:floor -w apps/web` → `CI / web-responsive-floor` (every
+   dashboard route without horizontal scroll at 375px). A **required** check
+   (#1152): it stores no baseline and compares no pixels, so there is nothing to
+   drift and nothing to regenerate. It runs the whole
+   `apps/web/tests/visual/` directory, so a new spec added there joins this gate
+   by default — see
+   [`apps/web/tests/visual/README.md`](../../../apps/web/tests/visual/README.md).
+
+   There is no `test:visual` / `web-visual-regression` step any more. That
+   advisory snapshot job, its spec and its sixteen baselines were deleted:
+   baselines pinned to CI's Chromium build drifted with every bump, so the red X
+   was usually answered by regenerating the fixture. **Never re-add a
+   `--update-snapshots` step to a checklist** — there are no baselines to update.
 
 ---
 

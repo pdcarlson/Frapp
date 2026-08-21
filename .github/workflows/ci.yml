@@ -12,9 +12,9 @@ concurrency:
 
 # ---------------------------------------------------------------------------
 # Domain-specific parallel jobs. `packages-build` runs first (shared
-# dependency). web-tests, web-responsive-floor, web-visual-regression, and
-# pglite-migrations are path-gated on PRs via the `changes` job and run
-# unconditionally on push; everything else always runs.
+# dependency). web-tests, web-responsive-floor, and pglite-migrations are
+# path-gated on PRs via the `changes` job and run unconditionally on push;
+# everything else always runs.
 #
 # Path-gated does NOT mean advisory. web-tests and web-responsive-floor are both
 # REQUIRED checks — a job skipped by a job-level `if:` reports Success, which
@@ -537,8 +537,7 @@ jobs:
   #
   # The job is simply allowed to FAIL when the threshold is breached. That is
   # what "advisory" means here: `duplicate-detection` is deliberately absent
-  # from CI_CHECKS, so a red X reports loudly and blocks nothing, exactly like
-  # `web-visual-regression`.
+  # from CI_CHECKS, so a red X reports loudly and blocks nothing.
   #
   # It must NOT be `continue-on-error`. That key rewrites the step's conclusion
   # to success, so the job goes green and a breached threshold is invisible —
@@ -776,32 +775,38 @@ jobs:
       - name: Apply migrations to PGlite + assert schema landmarks
         run: npm run check:pglite-migrations
 
-  # ── 375px responsive floor (REQUIRED — unlike the snapshot job below) ────
+  # ── 375px responsive floor (REQUIRED) ───────────────────────────────────
   #
-  # Same Playwright setup as `web-visual-regression`, minus the snapshot steps,
-  # and split out of it precisely so it can be required (#1152).
+  # The only Playwright job in this workflow. It was split out of the advisory
+  # `web-visual-regression` snapshot job in #1152 precisely so it could be
+  # required, and that snapshot job has since been deleted outright — baselines
+  # pinned to CI's Chromium build drifted with every bump, and an advisory gate
+  # nobody could act on was costing more than it caught.
   #
-  # The snapshot job is deliberately advisory: baselines drift with Chromium
-  # revisions and font rendering, and blocking merges on that trade is worse
-  # than not blocking. `responsive-floor.spec.ts` stores no baseline and
-  # compares no pixels — it reads one integer per route and compares it to 375 —
-  # so it has none of those failure modes and was exempt only by virtue of
-  # living in the same directory. `spec/ui/web-dashboard/README.md` states the
-  # floor as a MUST; this job is what makes that word mean something.
+  # This suite has none of those failure modes: it stores no baseline and
+  # compares no pixels, reading one integer per route and comparing it to 375.
+  # `spec/ui/web-dashboard/README.md` states the floor as a MUST; this job is
+  # what makes that word mean something.
   #
-  # Selection is by tag, not by path: `--grep @floor` here, `--grep-invert
-  # @floor` there. A new spec added to `apps/web/tests/visual/` therefore joins
-  # the advisory snapshot job by default instead of silently running in neither.
+  # Selection is by directory, not by tag. With the snapshot suite gone,
+  # `test:floor` runs everything under `apps/web/tests/visual/`, so a NEW spec
+  # added there joins this required job by default rather than falling through
+  # into no job at all. Do not reintroduce a `--grep` filter without a second
+  # job to catch what it excludes.
   #
   # No `continue-on-error`, per docs/internal/ci-cd/QUALITY_GATES.md: that key
   # rewrites the step's conclusion to success, which would leave this job green
   # on a breached floor — a required check that cannot fail is not a gate.
   #
-  # The other way a tag-selected gate goes hollow is running zero tests and
-  # exiting 0, which would be worse: green, required, and asserting nothing.
-  # Playwright 1.62 exits **1** on "No tests found", so dropping or renaming the
-  # `@floor` tag turns this job red rather than silently emptying it. Verified
-  # against this pinned version, not assumed — re-check it on a major upgrade.
+  # The other way a gate goes hollow is running zero tests and exiting 0, which
+  # would be worse: green, required, and asserting nothing. Playwright exits **1**
+  # when a run collects no tests — verified by running it against the 1.62.1 that
+  # `npm ci` resolves, not assumed; `apps/web/package.json` asks for `^1.62.1`, so
+  # re-check on any upgrade that moves the lockfile. Note the narrowing that came
+  # with directory selection: `--grep @floor` exited 1 whenever the FLOOR SUITE
+  # went missing, while directory selection keys on the collected-test count, so a
+  # SECOND spec added here would mask the floor spec's removal. See
+  # apps/web/playwright.config.ts.
   #
   # Path-gated like the jobs around it. That does NOT conflict with being
   # required: the gate is a JOB-level `if:`, and GitHub reports a job skipped by
@@ -843,13 +848,12 @@ jobs:
         id: pw
         run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
 
-      # Same cache key as web-visual-regression on purpose — the two jobs want
-      # the identical browser build, so they share one cache ENTRY rather than
-      # two. They do not warm each other within a run: both `needs:
-      # [packages-build, changes]` and start together, and actions/cache saves
-      # in a post-job step. On a cold key (any Playwright bump) both download,
-      # and one logs a harmless "Unable to reserve cache" — that annotation on
-      # this job is not a floor failure.
+      # Keyed on the resolved Playwright version, so a version bump is a cold
+      # key and this job downloads Chromium once before repopulating the cache.
+      # This used to share the entry with `web-visual-regression`, which ran
+      # concurrently; with that job deleted there is no second writer, so the
+      # harmless "Unable to reserve cache" annotation that race produced should
+      # no longer appear here.
       - name: Cache Playwright browsers
         id: pw-cache
         uses: actions/cache@v4
@@ -867,84 +871,10 @@ jobs:
       - name: Assert every dashboard route holds the 375px floor
         run: npm run test:floor -w apps/web
 
-      # No artifact upload counterpart to the snapshot job's. That one exists
+      # No artifact upload, deliberately. The retired snapshot job needed one
       # because a pixel diff cannot be read from its logs; this suite's failure
       # message already names the offending route, the widest element inside
       # `<main>`, its width against the budget, and its classes.
-
-  # ── Web visual regression snapshots ─────────────────────────────────────
-  web-visual-regression:
-    needs: [packages-build, changes]
-    if: ${{ github.event_name == 'push' || needs.changes.outputs.web == 'true' }}
-    permissions:
-      contents: read
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Restore turbo build outputs
-        uses: actions/cache/restore@v4
-        with:
-          path: .turbo
-          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
-          restore-keys: |
-            turbo-pkgbuild-${{ runner.os }}-
-
-      - name: Build shared packages
-        run: npx turbo run build --filter='./packages/*'
-
-      - name: Resolve Playwright version
-        id: pw
-        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Playwright browsers
-        id: pw-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
-
-      - name: Install Playwright OS deps
-        run: npx playwright install-deps chromium
-
-      - name: Install Playwright browser
-        if: steps.pw-cache.outputs.cache-hit != 'true'
-        run: npx playwright install chromium
-
-      - name: Run dashboard visual regression suite
-        run: npm run test:visual -w apps/web
-
-      # A pixel-diff check that publishes no pixels cannot be debugged from its
-      # logs: the failure prints image dimensions and a diff ratio, while the
-      # actual render and the diff are written to `test-results/` and discarded
-      # with the runner. Refreshing a baseline also requires CI's own render —
-      # Playwright pins a Chromium build, so a snapshot regenerated on any other
-      # machine drifts past `maxDiffPixelRatio` and is a wrong fixture even if it
-      # happens to pass. Uploading on failure is what makes both possible (#936).
-      - name: Upload visual regression results
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-visual-results
-          # `test-results/` carries the per-route `-actual`/`-expected`/`-diff`
-          # PNGs; `playwright-report/` is the HTML reporter's output, without
-          # which the download cannot be opened with `npx playwright
-          # show-report` and is just a pile of loose images.
-          path: |
-            apps/web/test-results/
-            apps/web/playwright-report/
-          if-no-files-found: ignore
-          retention-days: 14
 
   # ── Branch policy enforcement (PRs to production only) ─────────────────
   branch-policy:

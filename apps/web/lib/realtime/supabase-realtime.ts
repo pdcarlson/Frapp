@@ -14,7 +14,7 @@ import { isTopicOccupied, releaseTopic } from "@repo/chat-core/topic-registry";
  * live views would otherwise stack three connections).
  *
  * The client is created lazily on the first hook invocation so server-side
- * rendering never constructs it. We tolerate the Playwright visual-regression
+ * rendering never constructs it. We tolerate the Playwright floor-suite
  * environment where Supabase env vars are stand-ins by simply letting the
  * websocket fail to connect — the `isConnected` gate on subscribing hooks
  * prevents errors from cascading into the UI.

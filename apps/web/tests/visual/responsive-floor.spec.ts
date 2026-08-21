@@ -7,7 +7,7 @@ import { DASHBOARD_ROUTES } from "./routes";
  *
  * `spec/ui/web-dashboard/README.md`: "375px is the floor. Every dashboard route
  * MUST render without horizontal scroll down to 375px." Nothing enforced it.
- * `dashboard-routes.spec.ts` pins every shot to 1440×960 and
+ * The retired snapshot suite pinned every shot to 1440×960 and
  * `playwright.config.ts` sets no viewport, so the entire class of defect was
  * invisible to CI — seven routes had breached the floor by the time #1142 was
  * filed, and the shell had regressed without anyone noticing.
@@ -16,21 +16,17 @@ import { DASHBOARD_ROUTES } from "./routes";
  * cannot go stale, cannot drift with a Chromium revision, and needs no
  * regeneration ritual when a page legitimately changes. It asserts one number.
  *
- * **It blocks.** It still lives in this directory, because it needs the same
- * browser and dev server `playwright.config.ts` provisions for the snapshot
- * suite — but it runs in its own required CI job, `web-responsive-floor`, not
- * in `web-visual-regression` (#1152). The `@floor` tag below is what separates
- * them: the floor job runs `--grep @floor` and the visual job runs
- * `--grep-invert @floor`, so each suite runs exactly once and a NEW spec added
- * to this directory joins the visual job by default rather than falling through
- * a path list into neither.
+ * **It blocks**, in its own required CI job `web-responsive-floor`. That job was
+ * split out of the advisory `web-visual-regression` in #1152 so it could be
+ * required, and the snapshot suite it was split from has since been deleted:
+ * baselines pinned to CI's Chromium build drifted with every bump, and an
+ * advisory pixel gate nobody could act on cost more than it caught. This suite
+ * survived that deletion because its failure mode is nothing like theirs — it
+ * reads one integer and compares it to 375.
  *
- * That split exists because the two suites fail for unrelated reasons. The
- * visual job is deliberately advisory — snapshots drift with Chromium revisions
- * and font rendering, and blocking merges on that is worse than not blocking.
- * This test stores no baseline and compares no pixels, so it has none of those
- * failure modes and inherited the exemption purely by directory. It reads one
- * integer and compares it to 375.
+ * With the snapshot suite gone, `test:floor` runs this whole directory rather
+ * than a `--grep` slice of it, so a NEW spec added here joins the required job
+ * by default instead of falling through into no job at all.
  *
  * On failure it names the widest element inside `<main>` and its classes,
  * because "scrollWidth is 426" on its own sends the next person back to the
@@ -38,8 +34,8 @@ import { DASHBOARD_ROUTES } from "./routes";
  *
  * **What this harness does and does not exercise.** It runs with no session and
  * no active chapter, so several routes render an empty or loading state rather
- * than their populated content — the same limitation the screenshot baselines
- * carry, documented per route in `README.md`. That is not a hole for the defect
+ * than their populated content — the same limitation the retired screenshot
+ * baselines carried, documented in `README.md`. That is not a hole for the defect
  * this gate was built for: the shell is identical on every route, and it was the
  * shell (one missing `min-w-0`) that caused six of the seven breaches in #1142.
  * `/points`, the one route whose fix is inside `<main>`, does render its real
@@ -51,7 +47,7 @@ import { DASHBOARD_ROUTES } from "./routes";
 
 const FLOOR = 375;
 
-test.describe("dashboard routes hold the 375px floor", { tag: "@floor" }, () => {
+test.describe("dashboard routes hold the 375px floor", () => {
   test.beforeEach(async ({ page }) => {
     await page.setViewportSize({ width: FLOOR, height: 800 });
   });

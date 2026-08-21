@@ -35,13 +35,14 @@ carries a **Scope fence** (hard: files outside it are off-limits even when they 
    [`.claude/skills/file-follow-up/SKILL.md`](.claude/skills/file-follow-up/SKILL.md), and you record
    the issue number in your PR body. `AGENTS.md` is explicit that work is never tracked in a scratch
    file; `REFACTOR-PROGRESS.md` holds per-goal execution state only.
-8. **Do not regenerate Playwright visual snapshots as a way to make a test pass.** If
-   `web-visual-regression` fails, treat it as a real signal and report it. The documented refresh
-   procedure ([`docs/internal/environment/LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md)
-   § visual regression, and [`.claude/skills/testing/SKILL.md`](.claude/skills/testing/SKILL.md))
-   requires matching CI's Chromium revision, not just `CI=true`; getting that wrong silently corrupts
-   the committed baseline. None of these items should move a pixel except item 6, which changes error
-   copy — if that trips a baseline, stop and report rather than refreshing.
+8. **Do not weaken the 375px floor gate to make a test pass.** `web-visual-regression` and its
+   committed baselines are gone, so there is no snapshot to regenerate — but
+   `web-responsive-floor` remains and is a **required** check
+   ([`docs/internal/environment/LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md) § web browser
+   suite, and [`.claude/skills/testing/SKILL.md`](.claude/skills/testing/SKILL.md)). If it goes red,
+   treat it as a real signal and fix the layout; never narrow the suite, tag around it, or add a
+   `--grep` filter to get past it. None of these items should move layout except item 6, which
+   changes error copy.
 
 ## Summary
 
