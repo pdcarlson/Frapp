@@ -8,7 +8,8 @@ const motionEasing = frappTokens.motion.easing;
  * Reads a color token straight out of its custom property, whatever format the
  * property holds.
  *
- * Most tokens in `globals.css` are bare HSL triples that the keys below wrap in
+ * Every key below reads its token through here. Tokens in `globals.css` used to
+ * be bare HSL triples that the keys wrapped in
  * `hsl(...)`. That wrapper is why per-chapter theming silently did nothing on
  * every surface the preset owns (#1143): `derivePalette()` persists **hex**, so
  * an injected `--side-accent: #C49A3A` became `hsl(#C49A3A)` — invalid, dropped
@@ -17,12 +18,13 @@ const motionEasing = frappTokens.motion.easing;
  * bug: they only resolved once a chapter overrode them, and rendered nothing on
  * the stock triples. Whichever way you looked, half the sites were broken.
  *
- * The tokens this reader serves are therefore defined as complete color values,
+ * Every token this reader serves is therefore defined as a complete color value,
  * so hex from the accent engine, `hsl()` from the defaults, and the `rgba()`
  * hairlines the Signet set uses (`getSignetCssVars()`, which cannot be expressed
- * as a triple at all) are all equally valid. That is the direction the web Signet
- * reskin (#920) has to take the rest of the preset; these keys go first because
- * they are the ones chapter branding actually writes.
+ * as a triple at all) are all equally valid. The `--ring` / `--side-*` keys went
+ * first, in #1143, because they are the ones chapter branding actually writes;
+ * the #920 groundwork moved the rest, so there is now exactly one convention and
+ * no pairing rule to get wrong.
  *
  * `color-mix` only appears when a class asks for one — `bg-side-bg-hi/70` — so
  * the common case still compiles to a plain `var()`. Tailwind hands this
@@ -40,12 +42,22 @@ const motionEasing = frappTokens.motion.easing;
  * is not a valid product and the browser drops the whole declaration.
  *
  * **Browser floor.** `color-mix` needs Chrome 111 / Safari 16.2 / Firefox 113,
- * where `hsl(var(--x) / a)` needed only Safari 12.1. That floor applies solely
- * to the fourteen `side-*` classes that carry an opacity modifier — sidebar
- * hover fills and focus rings — which degrade to no fill on an older engine.
+ * where `hsl(var(--x) / a)` needed only Safari 12.1. It applies to every
+ * utility that carries an **opacity modifier** (`bg-primary/10`,
+ * `border-destructive/30`, `ring-side-accent/70`); an un-modified utility
+ * compiles to a plain `var()` and has no floor at all. Those degrade to no
+ * fill on an older engine.
+ *
+ * The floor was scoped to the fourteen `side-*` classes while they were the
+ * only keys here. Converting the rest of the preset (#920 groundwork) widened
+ * it to every token: measured against the real `apps/web` and `apps/landing`
+ * class corpus, compiled `color-mix` declarations went from **7** to **57**.
+ *
  * It is the same trade Tailwind v4 makes for every colour, and it is the price
  * of a token that can hold hex, `hsl()` or `rgba()`; there is no pre-`color-mix`
- * way to apply alpha to a custom property of unknown format.
+ * way to apply alpha to a custom property of unknown format. Signet's `rgba()`
+ * hairlines make that format-agnostic reader mandatory, so the floor is not
+ * separable from the cutover.
  */
 const colorVar = (token: string): string =>
   // Tailwind resolves a function color value at runtime and documents the form,
@@ -132,38 +144,38 @@ const config: Partial<Config> = {
         },
 
         /* ── Semantic tokens (mapped to CSS variables for ShadCN compatibility) ── */
-        background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
+        background: colorVar("--background"),
+        foreground: colorVar("--foreground"),
         card: {
-          DEFAULT: "hsl(var(--card))",
-          foreground: "hsl(var(--card-foreground))",
+          DEFAULT: colorVar("--card"),
+          foreground: colorVar("--card-foreground"),
         },
         popover: {
-          DEFAULT: "hsl(var(--popover))",
-          foreground: "hsl(var(--popover-foreground))",
+          DEFAULT: colorVar("--popover"),
+          foreground: colorVar("--popover-foreground"),
         },
         primary: {
-          DEFAULT: "hsl(var(--primary))",
-          foreground: "hsl(var(--primary-foreground))",
-          50: "hsl(var(--primary-50))",
-          100: "hsl(var(--primary-100))",
-          200: "hsl(var(--primary-200))",
-          300: "hsl(var(--primary-300))",
-          400: "hsl(var(--primary-400))",
-          500: "hsl(var(--primary-500))",
-          600: "hsl(var(--primary-600))",
-          700: "hsl(var(--primary-700))",
-          800: "hsl(var(--primary-800))",
-          900: "hsl(var(--primary-900))",
-          950: "hsl(var(--primary-950))",
+          DEFAULT: colorVar("--primary"),
+          foreground: colorVar("--primary-foreground"),
+          50: colorVar("--primary-50"),
+          100: colorVar("--primary-100"),
+          200: colorVar("--primary-200"),
+          300: colorVar("--primary-300"),
+          400: colorVar("--primary-400"),
+          500: colorVar("--primary-500"),
+          600: colorVar("--primary-600"),
+          700: colorVar("--primary-700"),
+          800: colorVar("--primary-800"),
+          900: colorVar("--primary-900"),
+          950: colorVar("--primary-950"),
         },
         success: {
-          DEFAULT: "hsl(var(--success))",
-          foreground: "hsl(var(--success-foreground))",
+          DEFAULT: colorVar("--success"),
+          foreground: colorVar("--success-foreground"),
         },
         muted: {
-          DEFAULT: "hsl(var(--muted))",
-          foreground: "hsl(var(--muted-foreground))",
+          DEFAULT: colorVar("--muted"),
+          foreground: colorVar("--muted-foreground"),
         },
         /*
          * Present because the ShadCN scaffold's `secondary` variants use it and
@@ -171,19 +183,19 @@ const config: Partial<Config> = {
          * compiled to nothing (#1145).
          */
         secondary: {
-          DEFAULT: "hsl(var(--secondary))",
-          foreground: "hsl(var(--secondary-foreground))",
+          DEFAULT: colorVar("--secondary"),
+          foreground: colorVar("--secondary-foreground"),
         },
         accent: {
-          DEFAULT: "hsl(var(--accent))",
-          foreground: "hsl(var(--accent-foreground))",
+          DEFAULT: colorVar("--accent"),
+          foreground: colorVar("--accent-foreground"),
         },
         destructive: {
-          DEFAULT: "hsl(var(--destructive))",
-          foreground: "hsl(var(--destructive-foreground))",
+          DEFAULT: colorVar("--destructive"),
+          foreground: colorVar("--destructive-foreground"),
         },
-        border: "hsl(var(--border))",
-        input: "hsl(var(--input))",
+        border: colorVar("--border"),
+        input: colorVar("--input"),
         /* Also written per chapter by `derivePalette()`. */
         ring: colorVar("--ring"),
       },

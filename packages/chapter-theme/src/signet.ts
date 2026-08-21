@@ -255,24 +255,27 @@ export function deriveSignetPalette(
  * ## Why this is not what gets stored
  *
  * `chapters.theme_palette` is applied by iterating every key and calling
- * `root.style.setProperty` (`apps/web/lib/hooks/use-chapter-theme.ts`). Web's
- * legacy stylesheet still defines `--primary` as an **HSL triple**
- * (`30 45% 32%`) and the Tailwind preset reads it as `hsl(var(--primary))`.
- * Writing a hex under that name would produce `hsl(#C49A3A)` — invalid, and
- * every primary-colored surface on the dashboard would lose its color at once.
+ * `root.style.setProperty` (`apps/web/lib/hooks/use-chapter-theme.ts`). The
+ * shape written under a name has to match how the stylesheet stores it: web's
+ * legacy stylesheet once defined `--primary` as an **HSL triple**
+ * (`30 45% 32%`) that the Tailwind preset wrapped in `hsl(...)`, so a hex
+ * written under that name produced the invalid `hsl(#C49A3A)` and every
+ * primary-colored surface on the dashboard lost its color at once.
  *
- * `--ring` used to be in that same group and no longer is: #1143 moved it, and
- * the whole `--side-*` family, to complete colour values read as bare
- * `var(--token)`. So web is **half**-migrated, and "has the preset moved?" is
- * now a per-token question — `spec/ui/design-system/accent-engine.md` §6 holds
- * the table, and writing the wrong shape fails in whichever direction you get
- * it wrong.
+ * That hazard is gone. #1143 moved `--ring` and the whole `--side-*` family to
+ * complete colour values read as bare `var(--token)`, and the #920 groundwork
+ * moved the rest, so `packages/theme/src/globals.css` now has exactly one
+ * format — every token is a complete colour
+ * (`spec/ui/design-system/accent-engine.md` §6).
  *
- * So the persisted map stays namespaced, where nothing in the legacy stylesheet
- * can collide with it, and this mapping is opt-in: a surface calls it once it
- * has moved its own preset — all of it — to bare `var(--token)`. That is the
- * web reskin (#920); mobile has no stylesheet at all and can consume either
- * shape.
+ * The persisted map stays namespaced anyway, because a namespaced field is
+ * additive and cannot collide with anything a surface has not opted into. This
+ * mapping is that opt-in: a surface calls it once its own preset reads bare
+ * `var(--token)` throughout. Web now satisfies that precondition but does not
+ * yet call this — wiring it is the reskin's own step (#920), and it has to
+ * settle who writes `--primary` / `--ring` first, since legacy `derivePalette`
+ * still writes `--ring` on the same element. Mobile has no stylesheet at all
+ * and can consume either shape.
  */
 export function signetAccentSemanticVars(
   palette: SignetPalette,

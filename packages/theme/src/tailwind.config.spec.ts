@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { derivePalette } from "@repo/chapter-theme";
@@ -225,31 +226,113 @@ describe("the tokens chapter branding rewrites accept the accent engine's hex", 
   });
 });
 
-describe("hand-written hsl(var(--x)) agrees with the token's stored format", () => {
-  // The preset is not the only reader. `globals.css` wraps tokens itself in its
-  // own base and components layers (`* { border-color: hsl(var(--border)) }`),
-  // and those sites hard-code the bare-triple assumption exactly as the preset
-  // used to. While one convention covered everything this could not go wrong;
-  // now that two coexist, a token converted for the preset would leave these
-  // emitting `hsl(hsl(30 10% 12%))` — invalid, and dropped.
-  const wrapped = [...css.matchAll(/hsl\(var\((--[\w-]+)\)/g)].map((m) => m[1]!);
-  const completeTokens = new Set(
-    references.filter((r) => r.style === "complete").map((r) => r.token),
-  );
+describe("nothing hand-writes hsl(var(--x)) around a complete-colour token", () => {
+  /**
+   * The preset is not the only reader (#1151).
+   *
+   * `globals.css` used to wrap tokens itself in its own base and components
+   * layers (`* { border-color: hsl(var(--border)) }`), and so did app code —
+   * three class names in `apps/web`'s dashboard shell and two SVG `fill`s in
+   * `apps/landing`'s lockup. Every one of them hard-coded the bare-triple
+   * assumption the preset used to share.
+   *
+   * Now that every colour token is stored as a **complete colour**, that
+   * wrapper is always wrong: it emits `hsl(hsl(30 10% 12%))`, which the browser
+   * drops, and the element silently keeps its default. There is no longer a
+   * "correct" hand-written wrapper to allow, so this guard bans the shape
+   * outright rather than checking it agrees with a per-token format.
+   *
+   * It scans the apps as well as this stylesheet, because #1151's point is that
+   * a token converted here breaks call sites the preset knows nothing about,
+   * and only a repo-wide scan can see them.
+   *
+   * **Scoped to the stylesheet, not to the preset.** The set below is every
+   * complete-colour token `globals.css` declares — *not* only the ones the
+   * preset reads. Two of this file's own tokens are consumed exclusively by
+   * hand, never through a Tailwind colour key: `--brand-lockup-bg` (an SVG
+   * `fill` in `apps/landing`, and one of the very sites the #1151 sweep fixed)
+   * and the `--hue-*` family. Keying on `references` would have left exactly
+   * those unguarded — the token's storage format is what makes the wrapper
+   * wrong, so storage is what the guard keys on.
+   */
+  const REPO = fileURLToPath(new URL("../../..", import.meta.url));
+  const WRAPPER = /hsl\(\s*var\(\s*(--[\w-]+)/g;
+  const SCANNED = /\.(tsx?|css)$/;
+  const SKIP = new Set(["node_modules", ".next", ".expo", "dist", "build", ".turbo"]);
 
-  it("finds the hand-written wrappers it is checking", () => {
-    expect(new Set(wrapped).size).toBeGreaterThan(0);
+  /**
+   * Walks by hand rather than with `readdirSync(dir, { recursive: true })`:
+   * that option needs Node >= 20.1, and `package.json` declares `>=18`. On an
+   * older runtime the option is ignored rather than rejected, so the scan would
+   * quietly flatten to one directory level.
+   */
+  function walk(dir: string): string[] {
+    const out: string[] = [];
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        if (!SKIP.has(entry.name)) out.push(...walk(join(dir, entry.name)));
+      } else if (entry.isFile() && SCANNED.test(entry.name)) {
+        out.push(join(dir, entry.name));
+      }
+    }
+    return out;
+  }
+
+  const appSources = ["web", "landing", "mobile"].flatMap((app) => {
+    const dir = join(REPO, "apps", app);
+    return existsSync(dir) ? walk(dir) : [];
   });
 
-  it.each([...new Set(wrapped)])("%s is stored as a triple", (token) => {
+  const sources = [
+    { file: GLOBALS, text: css },
+    ...appSources.map((file) => ({ file, text: readFileSync(file, "utf8") })),
+  ];
+
+  /** Every token this stylesheet stores as a complete colour, in either block. */
+  const completeTokens = new Set(
+    [...root, ...dark]
+      .filter(([, value]) => COMPLETE_COLOR.test(value))
+      .map(([token]) => token),
+  );
+
+  const offenders = sources.flatMap(({ file, text }) =>
+    [...text.matchAll(WRAPPER)]
+      .map((m) => m[1]!)
+      .filter((token) => completeTokens.has(token))
+      .map((token) => `${relative(REPO, file)} wraps ${token}`),
+  );
+
+  it("scans a real corpus, so an empty result means something", () => {
+    // A walker that silently found no files would make the assertion below
+    // vacuously true — the exact failure mode the `references.length` guard
+    // above exists to catch, one directory further out.
+    expect(appSources.length).toBeGreaterThan(100);
+    expect(completeTokens.size).toBeGreaterThan(20);
+  });
+
+  it("covers the tokens no preset key reads", () => {
+    // The regression this guard was widened to catch. If either stops being a
+    // hand-consumed token the assertion should be updated deliberately, not
+    // quietly narrowed back to `references`.
+    expect(completeTokens.has("--brand-lockup-bg")).toBe(true);
+    expect(completeTokens.has("--hue-rose")).toBe(true);
+  });
+
+  it("still recognises the shape it is banning", () => {
+    // Pins the regex itself. If it stops matching, the suite would report a
+    // clean repo forever.
+    const probe = [...'color: hsl(var(--border));'.matchAll(WRAPPER)].map((m) => m[1]);
+    expect(probe).toEqual(["--border"]);
+  });
+
+  it("finds no hand-written wrapper around any complete-colour token", () => {
     expect(
-      completeTokens.has(token),
-      `globals.css writes hsl(var(${token})) by hand, but the preset reads ` +
-        `${token} as a complete colour — one of the two is now wrong, and the ` +
-        "hand-written one renders nothing.",
-    ).toBe(false);
-    const value = root.get(token);
-    if (value !== undefined) expect(value).toMatch(HSL_TRIPLE);
+      offenders,
+      "every colour token in globals.css is stored as a complete colour, so " +
+        "hsl(var(--x)) around one emits hsl(hsl(...)) and renders nothing (#1151). " +
+        "Use var(--x) directly — in Tailwind, the arbitrary value needs the type " +
+        "hint: text-[color:var(--x)].",
+    ).toEqual([]);
   });
 });
 
