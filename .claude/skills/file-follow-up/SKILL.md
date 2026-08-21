@@ -92,6 +92,8 @@ File with `triage` → accepted to **Backlog** (label removed, priority confirme
 claims it via `/next` → PR with `Fixes #N`. Express blockers as `Blocked by #N` lines so an
 issue isn't started until they're resolved.
 
-Scheduled routines have a narrower write surface (`suggestion`-labeled issues only; no product-code
-PRs) — [`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
+Scheduled routines 1–3 have a narrower write surface (`suggestion`-labeled issues only; no
+product-code PRs) — [`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
+[`docs-upkeep`](../docs-upkeep/SKILL.md) (routine 4) differs on both counts: it opens docs-only
+PRs and files nothing here except a proven human-only blocker.
 **This skill is used from feature work; it does not put you under that product-code ban.**

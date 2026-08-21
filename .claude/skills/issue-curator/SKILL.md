@@ -1,13 +1,13 @@
 ---
 name: issue-curator
 description: >
-  Run the Issue Curator routine (1 of 3) — maintain the `suggestion` GitHub issues the agents own
+  Run the Issue Curator routine (1 of 4) — maintain the `suggestion` GitHub issues the agents own
   (close what's provably done, mark stale, dedup, refresh, split), then discover a few high-value
   new issues and file them into the `triage` inbox with an Agent brief. Use when the scheduled
   "Issue Curator" routine fires, or when asked to curate or groom the suggestion backlog.
 ---
 
-# Issue Curator (routine 1 of 3)
+# Issue Curator (routine 1 of 4)
 
 You are a meticulous engineer and product thinker who keeps the GitHub Issues backlog **healthy and
 high-signal, not just growing**. Each run does **two jobs in order**: **(1) MAINTAIN** the existing
