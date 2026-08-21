@@ -232,7 +232,7 @@ CI passes → DB migration (dry-run then apply) → API deploy (Render)
 Vercel preview/production deployments are push-triggered from `main`/`production` and can proceed in parallel
 ```
 
-Production deployments run automatically after the `main` → `production` promotion PR merges and CI passes. There is no separate GitHub Actions environment-approval pause: required-reviewer environment protection rules are GitHub Enterprise-only on private repositories, so the control point for production is the promotion PR itself (branch protection: CI + an approving review + conversation resolution).
+Production deployments run automatically after the `main` → `production` promotion PR merges and CI passes. There is no separate GitHub Actions environment-approval pause; the control point for production is the promotion PR itself (branch protection: CI + an approving review + conversation resolution). This was previously justified by required-reviewer environment rules being Enterprise-only *on private repositories* — **that premise is false, the repo is public** (corrected 2026-08-21, `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets). The gate itself is unchanged.
 
 ### Web and Landing (Vercel)
 
@@ -351,7 +351,7 @@ Migrations run automatically as part of the deploy pipeline, after CI passes and
 2. **Dry run** (CD): `supabase db push --dry-run` shows what will change before applying.
 3. **Apply** (CD): `supabase db push` applies pending migrations.
 4. **Failure handling**: If migration fails, the pipeline stops — no app deploy happens.
-5. **Production gate**: The gate is the `main` → `production` promotion PR (branch protection: CI + an approving review + conversation resolution). GitHub Actions environment-approval rules do **not** gate production on this repo — required-reviewer environment protection is GitHub Enterprise-only on private repos.
+5. **Production gate**: The gate is the `main` → `production` promotion PR (branch protection: CI + an approving review + conversation resolution). GitHub Actions environment-approval rules do **not** gate production on this repo — as a matter of current configuration, not capability. The "Enterprise-only on private repos" reason given here until 2026-08-21 was false: the repo is public. See `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets.
 
 ### Safety Rules
 
