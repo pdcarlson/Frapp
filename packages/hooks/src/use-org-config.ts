@@ -12,11 +12,6 @@ import type { components } from "@repo/api-sdk";
 import { isModuleEnabled } from "@repo/validation";
 import type { ChapterDuesConfig, PatchChapterConfig } from "@repo/validation";
 
-/**
- * Merged chapter config returned by `GET /chapters/:id/config` (archetype
- * defaults overlaid with per-chapter overrides). Known fields are typed; the
- * index signature keeps it forward-compatible with fields added server-side.
- */
 /** A workflow row in the merged config: catalog presentation + chapter state. */
 export interface OrgWorkflow {
   key: string;
@@ -32,6 +27,11 @@ export interface OrgWorkflow {
  */
 export type OrgDues = ChapterDuesConfig;
 
+/**
+ * Merged chapter config returned by `GET /chapters/:id/config` (archetype
+ * defaults overlaid with per-chapter overrides). Known fields are typed; the
+ * index signature keeps it forward-compatible with fields added server-side.
+ */
 export interface OrgConfig {
   org_archetype?: string;
   enabled_modules?: Record<string, boolean>;
