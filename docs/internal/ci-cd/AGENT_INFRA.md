@@ -478,7 +478,7 @@ never reaches `main` and CI never ran.
 
 | Signal | Fires on | Misses |
 | ------ | -------- | ------ |
-| PR-activity webhook (`subscribe_pr_activity`) | CI **failure**, **successful check-suite rollups** (docs-verified — see below), comments, reviews | cancelled, timed-out, merge-conflict — all silent |
+| PR-activity webhook (`subscribe_pr_activity`) | CI **failure**, **successful check-suite rollups** (observed 2026-08-21 — see below), comments, reviews | cancelled, timed-out, merge-conflict — all silent |
 | `CI wake` watchdog comment (`ci-wake.yml`) | exactly two things, and it is worth being precise because most of this list is *silent* on attempts 1-2: (a) a **deliberate** cancellation — a run cancelled after some job had started, or with the jobs/runs API down so it cannot be told from an infra one; (b) an **infra failure the auto-requeue did not absorb**, i.e. the re-queue call failed or the 3-attempt cap is spent. `timed_out`, `startup_failure`, `stale`, and a cancel where no job ever started all classify as infra-failure and are requeued first, so they say nothing until that runs out | outages that kill the watchdog run itself; merge-conflict; review-state changes. **Deliberately silent:** success and real failures (the webhook carries both), any infra failure that WAS requeued (the fresh attempt's own completion is the wake), `skipped`/`neutral`/`action_required`, and superseded runs |
 | `PR base sync` wake comment (`pr-base-sync.yml`) | `main` moving while this PR is conflicted with it, or behind it and un-updateable for a reason specific to this PR (a fork head, a one-off API error) — the comment says which and what to do | base moves while the sweep run itself dies; PRs past the sweep's 20-PR cap this round (logged; the sweep processes least-recently-updated first, so deferred PRs rotate to the front of a later sweep); unknown mergeability (skipped fail-safe, deliberately silent) |
 | `PR base sync` alert issue | a missing or rejected app token — the one cause that is repo-wide rather than per-PR | anything per-PR (those comment); a sweep where nothing was behind, which proves nothing either way and deliberately leaves an open alert open |
@@ -489,15 +489,27 @@ comment covers the terminal states the webhook has no event for once a re-queue 
 option, and the base-sync comment is the fast path for base moves and merge conflicts. **Arm those
 three; they never prompt.**
 
-> **The success half of that webhook row is a docs-verified claim about the Claude Code harness's
-> `subscribe_pr_activity` contract (2026-08-21), not a fact about this repo.** Nothing under
-> `scripts/`, `.github/` or `.claude/` implements it and no test here can assert it, and the previous
-> revision of this very table asserted the opposite ("never fires on success") — so treat it as
-> unconfirmed until someone watches it. It is load-bearing: it is the sole justification for
-> `shouldComment: false` on the `success` verdict in `scripts/ci/ci-wake.mjs`, and if it is wrong then
-> a green run wakes nobody and this watchdog no longer covers the gap. **Confirm it on the first PR
-> merged after this change — a CI run ending `success` must wake the subscribed session with no
-> `CI wake` comment on the thread — and restore `shouldComment: true` for `success` if it does not.**
+> **The success half of that webhook row was OBSERVED on 2026-08-21, on PR
+> [#1171](https://github.com/pdcarlson/Frapp/pull/1171) itself.** It began as a docs-verified claim
+> about the Claude Code harness's `subscribe_pr_activity` contract, and it is load-bearing — the sole
+> justification for `shouldComment: false` on the `success` verdict in `scripts/ci/ci-wake.mjs` — so
+> it was written down with a confirmation trigger rather than asserted. The trigger fired on the
+> first push:
+>
+> - The session watching #1171 received **four** `check_suite.completed` envelopes for head
+>   `29b5a45`, each carrying `"conclusion":"success"` — one per workflow suite. Green CI does wake a
+>   subscribed session.
+> - Those arrived as their own events, distinct from the `issue_comment.created` envelopes carrying
+>   the three `CI wake` comments on the same head, so the success delivery does **not** depend on
+>   this watchdog's comments. That independence is the part that matters, because it is what survives
+>   this change removing them.
+>
+> **Still unconfirmed, and only confirmable after merge:** the other half of the trigger — that a
+> green run wakes the session with *no* `CI wake` comment on the thread. `ci-wake.yml` runs the
+> **default branch's** copy, so #1171's own pushes were still handled by the old always-comment
+> build; the three comments it left on that PR are the last of them, and are worth reading as the
+> exhibit for why this change exists. Confirm the silent half on the first push after this merges,
+> and restore `shouldComment: true` for `success` if a green run turns out to wake nobody.
 
 The webhook's success coverage is the reason the watchdog stopped commenting on green runs. Before
 that, every push put three fresh comments on the PR (CI, Docs spec sync, Links) restating what the
