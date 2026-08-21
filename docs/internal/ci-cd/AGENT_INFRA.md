@@ -97,7 +97,9 @@ Project ID is documented in [`SECRETS_MANAGEMENT.md`](../environment/SECRETS_MAN
 | `staging`    | None              | Staging deploys (`main`)            |
 | `production` | Promotion-PR gate | Production deploys + migrations |
 
-> **Private-repo note:** GitHub *environment* required-reviewer protection rules are GitHub Enterprise-only on private repos, so they do **not** gate this (private, Pro) repo. The production gate is the `main` → `production` promotion PR (branch protection: CI + an approving review + conversation resolution); the `production` environment still exists for job scoping.
+> **Environment-protection note — premise corrected 2026-08-21.** This note used to read "GitHub *environment* required-reviewer protection rules are Enterprise-only on private repos, so they do **not** gate this (private, Pro) repo." **The repo is public**, verified 2026-08-21 by fetching the README over raw.githubusercontent.com with no credentials: HTTP 200, against a 404 control for a nonexistent repo. So the private-repo exemption that sentence rested on does not apply, and the conclusion no longer follows from its stated reason.
+>
+> Nothing was changed on the strength of that, and the gate is unchanged: production is gated by the `main` → `production` promotion PR (branch protection: CI + an approving review + conversation resolution), with the `production` environment existing for job scoping. Whether environment required reviewers are actually available on this plan, and whether to add them on top of the promotion-PR gate, is an **open question for the owner** — check the repo's environment settings rather than trusting either version of this note. Found while reviewing the base-sync App credential, which needed to know the repo's visibility for a different reason.
 
 Repository secrets for Infisical bootstrap: `INFISICAL_MACHINE_IDENTITY_ID`, `INFISICAL_CLIENT_SECRET`, `INFISICAL_PROJECT_ID`.
 
@@ -504,12 +506,24 @@ three; they never prompt.**
 >   this watchdog's comments. That independence is the part that matters, because it is what survives
 >   this change removing them.
 >
-> **Still unconfirmed, and only confirmable after merge:** the other half of the trigger — that a
-> green run wakes the session with *no* `CI wake` comment on the thread. `ci-wake.yml` runs the
-> **default branch's** copy, so #1171's own pushes were still handled by the old always-comment
-> build; the three comments it left on that PR are the last of them, and are worth reading as the
-> exhibit for why this change exists. Confirm the silent half on the first push after this merges,
-> and restore `shouldComment: true` for `success` if a green run turns out to wake nobody.
+> **The silent half was confirmed on the first push after the merge**, PR
+> [#1172](https://github.com/pdcarlson/Frapp/pull/1172), 2026-08-21. Three `CI wake` runs fired for
+> that push — one per watched workflow — and all three completed `success` while the PR ended with
+> **zero comments**. The watchdog did not fail to run; it ran and chose silence, in its own words
+> ([run 1934](https://github.com/pdcarlson/Frapp/actions/runs/32506252734)):
+>
+> ```
+> [ci-wake] CI #32505950228 attempt 1: success → success (All jobs green.)
+> [ci-wake] no wake needed on #1172
+> ```
+>
+> Same repo, hours apart, the comparison is clean: on #1171 the old build put a comment on the
+> thread within ~10s of each of those same suites reporting green, three per push. The three
+> comments still on #1171 are the last ones this watchdog will ever post for a green run.
+>
+> Rollback, should the webhook's success coverage ever regress: restore `shouldComment: true` for
+> the `success` verdict in `classifyRun`. Keep the clear-stale path either way — it is what stops a
+> red wake outliving the failure it described.
 
 The webhook's success coverage is the reason the watchdog stopped commenting on green runs. Before
 that, every push put three fresh comments on the PR (CI, Docs spec sync, Links) restating what the
@@ -694,17 +708,22 @@ replacing the mint step.
 #### Why the App is safe on a public repo
 
 Reviewed 2026-08-21, because this repo is public and the App holds `contents: write`. No finding;
-the App is a net improvement on the PAT it replaced (a one-hour token, revoked at job end, scoped
-to one repository, versus a 90-day credential bound to a person's account). What makes it safe:
+the App is a net improvement on the PAT route it replaced — a one-hour token, revoked at job end and
+scoped to one repository, against a credential bound to a person's account at the 90-day expiry
+[#689](https://github.com/pdcarlson/Frapp/issues/689) specified. (That PAT was never created, so
+this compares against a design, not against something that ran.) What makes it safe:
 
 - **`pr-base-sync.yml` triggers only on `push` to `main`**, so it runs only on commits that already
   reached the default branch. A fork PR cannot trigger it, and untrusted code never executes in a
   job holding the App credentials.
 - **No `pull_request_target` exists anywhere in `.github/`** — the trigger that would hand full
   secrets to a job running untrusted PR code.
-- **No script-injection surface.** The workflow interpolates only secrets into `${{ }}`, its `run:`
-  is a fixed command, and neither `pr-base-sync.mjs` nor `ci-wake.mjs` shells out at all (no
-  `exec`, `spawn`, or `child_process` — everything is `fetch`).
+- **No script-injection surface.** The workflow has exactly four `${{ }}` interpolations: three
+  secrets and `steps.app-token.outputs.token`. None is event data, `run:` is a fixed command with
+  no interpolation at all, and no workflow in this repo puts `github.event.*` inside a `run:`.
+  Neither `pr-base-sync.mjs` nor `ci-wake.mjs` shells out (no `exec`, `spawn`, or `child_process`,
+  transitively through their only imports); all network I/O is `fetch`, and the sole other host
+  call is `readFileSync` on `GITHUB_EVENT_PATH`.
 - **The token reaches exactly one API call in the whole repo**: `PUT /repos/{repo}/pulls/{n}/
   update-branch` (`updatePrBranch` in `scripts/ci/pr-base-sync.mjs`). Every other write in these
   watchdogs — wake comments, the alert issue — goes through the job's own `GITHUB_TOKEN`, not the
@@ -712,17 +731,36 @@ to one repository, versus a 90-day credential bound to a person's account). What
   writes to `main`**, and that is a property of the code, checkable by grepping for `updateToken`,
   rather than a property of live settings. Fork heads are skipped explicitly, and the token is
   scoped to this repository, so it could not push to a fork either way.
-- Branch protection is a second layer rather than the argument: `scripts/configure-branch-protection.mjs`
-  declares `enforce_admins: true` with no bypass-actor list. Note that this is the **declared**
-  config — `docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md` records live protection having
-  drifted from that script before (2026-08-19, a missing required context), so do not cite it as
-  live fact without reading the API. The bullet above does not depend on it.
+- Branch protection is a second layer, deliberately **not** the argument, because none of it is
+  verifiable from a session. `scripts/configure-branch-protection.mjs` declares `enforce_admins:
+  true` and `restrictions: null`, but: (a) that script only ever `PUT`s, never reads, so it is
+  *intent*, and `docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md` records live `main` having
+  drifted from it as recently as 2026-08-19; (b) `restrictions: null` means the push-restriction
+  allowlist is **disabled**, which is not the same as "nothing can bypass"; and (c) `bypass_actors`
+  live in repository **rulesets**, a layer nothing in this repo configures or inspects — a ruleset
+  naming this App would defeat the claim and nothing here rules that out. Treat "the App cannot
+  reach `main`" as resting on the bullet above, which is a property of the code.
 
-The residual risk is the private key, protected by GitHub not passing repository secrets to
-fork-triggered `pull_request` runs. **Three changes would break that, and none should ever be
-made:** adding a `pull_request_target` workflow that checks out PR-head code; interpolating
-untrusted event data (a PR title, branch name, or comment body) into a `run:` block in any workflow
-that holds secrets; or widening the App beyond `pdcarlson/Frapp` or beyond its two permissions.
+The residual risk is the private key. One protection is GitHub not passing repository secrets to
+fork-triggered `pull_request` runs; the other, weaker one is that adding a workflow that simply
+echoes the key requires write access — which, per the paragraph below, requires no approval. **Four
+changes would break the first, and none should ever be made:**
+
+1. Adding a `pull_request_target` workflow that checks out PR-head code.
+2. Adding a `workflow_run` workflow that carries the App key. `workflow_run` also runs base-repo
+   code with secrets off a fork-PR-derived event; today `ci-wake.yml` uses it with no fork guard,
+   which is safe only because it carries `GITHUB_TOKEN` and never the key (`deploy-api.yml` does
+   guard, on `head_repository.full_name`).
+3. Interpolating untrusted event data (a PR title, branch name, or comment body) into a `run:`
+   block in any workflow that holds secrets.
+4. Widening the App beyond `pdcarlson/Frapp` or beyond its two permissions.
+
+One exposure this review does not eliminate: `pr-base-sync.yml` pins `actions/checkout@v4` and
+`actions/create-github-app-token@v3` by **mutable major tag**, and the second is the action that
+receives the private key. A compromised tag executes in exactly the job that holds it. Both are
+`actions/*` and mutable tags are the convention across all eleven workflows here, so this is not a
+deviation — but it is the shortest path to the key, and SHA-pinning at least the token minter is
+the cheapest hardening available if that trade is ever revisited.
 
 One pre-existing property this rests on: `main` requires **zero** approving reviews (only
 `production` requires one — the PR review policy near the top of this file, and
