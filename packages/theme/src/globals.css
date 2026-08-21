@@ -15,8 +15,29 @@
  * light/dark mode of the rest of the app.
  *
  * Chapter theming overlays on top of these defaults: `derivePalette()`
- * (Chunk 2) will rewrite `--primary*`, `--side-accent`, and a handful of
- * companion tokens per chapter at the `:root` level.
+ * rewrites `--side-bg`, `--side-accent`, `--ring` and five companion tokens per
+ * chapter at the `:root` level, from `apps/web/lib/hooks/use-chapter-theme.ts`.
+ *
+ * TWO VALUE FORMATS LIVE HERE, and which one a token uses is not a free choice
+ * — it has to match how `tailwind.config.ts` reads it:
+ *
+ *   - **Bare HSL triple** (`30 8% 10%`) — the legacy ShadCN convention. The
+ *     preset wraps these in `hsl(...)`, so the triple is the only valid form
+ *     and `var(--token)` on its own is NOT usable in app code.
+ *   - **Complete color** (`hsl(30 8% 10%)`, `#C49A3A`, `rgba(255,255,255,.08)`)
+ *     — read through the preset's `colorVar()` helper, and usable raw as
+ *     `var(--token)` anywhere.
+ *
+ * The `--side-*` family and `--ring` are the second kind, because those are the
+ * tokens chapter branding rewrites and the accent engine persists **hex**: under
+ * the first convention an injected `#C49A3A` became `hsl(#C49A3A)` and every
+ * surface silently kept its default (#1143). The rest of the file is still the
+ * first kind; the web Signet reskin (#920) moves it, since Signet's `--border`
+ * is `rgba(255,255,255,.08)` and cannot be a triple at all.
+ *
+ * `packages/theme/src/tailwind.config.spec.ts` asserts the two sides agree, so
+ * a token added in the wrong format fails the build rather than rendering
+ * nothing.
  */
 
 @layer base {
@@ -54,6 +75,22 @@
     --muted: 36 14% 94%;
     --muted-foreground: 30 6% 42%;
 
+    /* ── Secondary (filled neutral chip / low-emphasis button) ──
+     * The ShadCN scaffold ships `secondary` variants on `button` and `badge`
+     * and reaches for `bg-secondary` in `toast` and `sheet`. This file was
+     * rewritten for bone/bronze and dropped the pair, so every one of those
+     * rendered with no background at all — a `secondary` badge was
+     * indistinguishable from bare text (#1145). Twenty-odd live call sites
+     * depend on the variant, so the token is defined rather than the variant
+     * deleted.
+     *
+     * The surface is the muted bone step; the text is full-strength ink rather
+     * than `--muted-foreground`, because these carry short status words
+     * ("Optional", "Overdue") that have to stay readable at badge size.
+     */
+    --secondary: 36 14% 94%;
+    --secondary-foreground: 30 10% 12%;
+
     /* ── Accent (soft bronze tint) ───────────────────────── */
     --accent: 36 40% 94%;
     --accent-foreground: 30 10% 12%;
@@ -65,16 +102,16 @@
     /* ── Borders & inputs ────────────────────────────────── */
     --border: 30 10% 89%;
     --input: 30 10% 89%;
-    --ring: 30 45% 32%;
+    --ring: hsl(30 45% 32%);
 
     /* ── Sidebar (always dark ink) ───────────────────────── */
-    --side-bg: 30 8% 10%;
-    --side-bg-hi: 30 8% 16%;
-    --side-fg: 36 10% 72%;
-    --side-fg-hi: 40 25% 96%;
-    --side-muted: 30 6% 52%;
-    --side-divider: 30 8% 18%;
-    --side-accent: 38 60% 70%;         /* warm bone-bronze on dark */
+    --side-bg: hsl(30 8% 10%);
+    --side-bg-hi: hsl(30 8% 16%);
+    --side-fg: hsl(36 10% 72%);
+    --side-fg-hi: hsl(40 25% 96%);
+    --side-muted: hsl(30 6% 52%);
+    --side-divider: hsl(30 8% 18%);
+    --side-accent: hsl(38 60% 70%);         /* warm bone-bronze on dark */
 
     /* ── Category hues (saturated but earthy) ────────────── */
     --hue-rose: 350 55% 50%;
@@ -129,6 +166,13 @@
     --muted: 30 7% 11%;
     --muted-foreground: 36 8% 68%;
 
+    /* ── Secondary ───────────────────────────────────────── */
+    /* Lifted clear of both `--background` (9%) and `--card` (13%) so a filled
+     * chip still reads as filled on either surface; dark `--muted` sits at 11%
+     * and would disappear against the card. */
+    --secondary: 30 7% 18%;
+    --secondary-foreground: 40 20% 94%;
+
     /* ── Accent ──────────────────────────────────────────── */
     --accent: 30 7% 11%;
     --accent-foreground: 40 20% 94%;
@@ -140,16 +184,16 @@
     /* ── Borders & inputs ────────────────────────────────── */
     --border: 30 6% 20%;
     --input: 30 6% 20%;
-    --ring: 34 55% 68%;
+    --ring: hsl(34 55% 68%);
 
     /* ── Sidebar (deeper ink) ────────────────────────────── */
-    --side-bg: 30 8% 5%;
-    --side-bg-hi: 30 8% 10%;
-    --side-fg: 36 10% 70%;
-    --side-fg-hi: 40 20% 96%;
-    --side-muted: 30 6% 48%;
-    --side-divider: 30 8% 10%;
-    --side-accent: 34 55% 68%;
+    --side-bg: hsl(30 8% 5%);
+    --side-bg-hi: hsl(30 8% 10%);
+    --side-fg: hsl(36 10% 70%);
+    --side-fg-hi: hsl(40 20% 96%);
+    --side-muted: hsl(30 6% 48%);
+    --side-divider: hsl(30 8% 10%);
+    --side-accent: hsl(34 55% 68%);
 
     /* ── Shadows (heavier on dark) ───────────────────────── */
     --shadow-sm: 0 1px 3px hsl(0 0% 0% / 0.35);
