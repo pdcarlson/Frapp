@@ -102,11 +102,13 @@ test("outage-shaped failure classifies as infra and re-runs", () => {
   assert.equal(result.shouldComment, true);
 });
 
-test("real test failure classifies as code and never re-runs", () => {
+test("real test failure classifies as code, never re-runs, and stays silent", () => {
   const result = classifyRun({ run: makeRun(), jobs: [codeFailureJob] });
   assert.equal(result.verdict, "code-failure");
   assert.equal(result.shouldRerun, false);
-  assert.equal(result.shouldComment, true);
+  // `failure` is the one conclusion the PR-activity webhook has always
+  // delivered, so a wake comment here only ever restated it.
+  assert.equal(result.shouldComment, false);
 });
 
 test("mixed real + setup failures count as code failure", () => {
@@ -122,7 +124,8 @@ test("jobs API error on a failure fails closed: no infra verdict, no re-run", ()
   const result = classifyRun({ run: makeRun(), jobs: null });
   assert.equal(result.verdict, "unclassified-failure");
   assert.equal(result.shouldRerun, false);
-  assert.equal(result.shouldComment, true);
+  // Still a `failure` conclusion, so still the webhook's to deliver.
+  assert.equal(result.shouldComment, false);
 });
 
 test("a newer run silences everything, even failures", () => {
@@ -187,11 +190,13 @@ test("attempt cap stops re-runs but still comments", () => {
   assert.equal(result.shouldComment, true);
 });
 
-test("success comments and never re-runs", () => {
+test("success stays silent and never re-runs", () => {
   const result = classifyRun({ run: makeRun({ conclusion: "success" }) });
   assert.equal(result.verdict, "success");
   assert.equal(result.shouldRerun, false);
-  assert.equal(result.shouldComment, true);
+  // The webhook delivers successful check-suite rollups. Silence here is not
+  // inaction: processCompletedRun still clears the stale wake (see below).
+  assert.equal(result.shouldComment, false);
 });
 
 test("skipped and action_required stay fully silent", () => {
@@ -209,12 +214,15 @@ test("wake comment carries the per-workflow marker, conclusion, and rerun status
     run: makeRun(),
     verdict: "infra-failure",
     reason: "setup died",
-    rerunResult: { requeued: true, mode: "rerun-failed-jobs" },
+    // A REQUEUED infra failure never reaches this builder — processCompletedRun
+    // suppresses the comment entirely, because the fresh attempt's own
+    // completion is the wake. The reachable shape is a re-queue that failed.
+    rerunResult: { requeued: false, error: "HTTP 503" },
   });
   assert.ok(body.startsWith(wakeMarkerFor("CI")));
   assert.ok(!body.includes(wakeMarkerFor("Links")));
   assert.match(body, /attempt 1: \*\*failure\*\* \(infra-failure\)/);
-  assert.match(body, /Auto-requeued as attempt 2/);
+  assert.match(body, /Re-queue attempt failed \(HTTP 503\)/);
 });
 
 test("capped infra comment says not to blind-retry", () => {
@@ -357,7 +365,7 @@ test("upsert collects stale ids across pages before deleting (no shift-skip)", a
 
 // ── processCompletedRun (end to end with mocked API) ────────────────────────
 
-test("outage flow: classify infra, requeue, post wake comment", async () => {
+test("outage flow: classify infra, requeue, clear the stale wake, stay silent", async () => {
   const { fetchImpl, calls } = makeFetchMock([
     {
       method: "GET",
@@ -372,7 +380,6 @@ test("outage flow: classify infra, requeue, post wake comment", async () => {
     { method: "POST", path: "/rerun-failed-jobs", status: 201, body: {} },
     { method: "GET", path: "/pulls?head=", body: [{ number: 659 }] },
     { method: "GET", path: "/issues/659/comments", body: [] },
-    { method: "POST", path: "/issues/659/comments", status: 201, body: {} },
   ]);
   const result = await processCompletedRun({
     token: "t",
@@ -383,8 +390,46 @@ test("outage flow: classify infra, requeue, post wake comment", async () => {
   });
   assert.equal(result.verdict, "infra-failure");
   assert.deepEqual(result.rerunResult, { requeued: true, mode: "rerun-failed-jobs" });
-  assert.equal(result.commented, true);
+  // The re-run's own completion re-enters this function; a wake posted now
+  // would carry a verdict that is obsolete before anyone reads it.
+  assert.equal(result.commented, false);
+  assert.ok(
+    !calls.some((c) => c.method === "POST" && c.url.includes("/issues/659/comments")),
+    "no wake comment while a fresh attempt is already queued",
+  );
   assert.equal(result.prNumber, 659);
+});
+
+test("infra failure that could NOT be requeued still comments", async () => {
+  const { fetchImpl } = makeFetchMock([
+    {
+      method: "GET",
+      path: "/actions/workflows/241114608/runs",
+      body: { workflow_runs: [{ id: 31119232391, created_at: "2026-08-06T16:16:24Z" }] },
+    },
+    {
+      method: "GET",
+      path: "/actions/runs/31119232391/jobs",
+      body: { jobs: [outageSecretScanJob, outageCancelledJob] },
+    },
+    { method: "POST", path: "/rerun-failed-jobs", status: 500, body: {} },
+    { method: "POST", path: "/rerun", status: 500, body: {} },
+    { method: "GET", path: "/pulls?head=", body: [{ number: 659 }] },
+    { method: "GET", path: "/issues/659/comments", body: [] },
+    { method: "POST", path: "/issues/659/comments", status: 201, body: {} },
+  ]);
+  const result = await processCompletedRun({
+    token: "t",
+    repo: "pdcarlson/Frapp",
+    run: makeRun(),
+    fetchImpl,
+    logger: quiet,
+  });
+  assert.equal(result.verdict, "infra-failure");
+  assert.equal(result.rerunResult.requeued, false);
+  // Nothing else is going to say this: the webhook fired on the failure, but
+  // only this watchdog knows the automatic retry is not coming.
+  assert.equal(result.commented, true);
 });
 
 test("superseded runs short-circuit: no jobs fetch, no writes", async () => {
@@ -412,13 +457,12 @@ test("superseded runs short-circuit: no jobs fetch, no writes", async () => {
   assert.equal(calls.length, 1, "exactly one API call: the freshness check");
 });
 
-test("runs-API error on a code failure still comments but never requeues", async () => {
+test("runs-API error on a code failure stays silent and never requeues", async () => {
   const { fetchImpl, calls } = makeFetchMock([
     { method: "GET", path: "/actions/workflows/241114608/runs", status: 503, body: {} },
     { method: "GET", path: "/actions/runs/31119232391/jobs", status: 502, body: {} },
     { method: "GET", path: "/pulls?head=", body: [{ number: 659 }] },
     { method: "GET", path: "/issues/659/comments", body: [] },
-    { method: "POST", path: "/issues/659/comments", status: 201, body: {} },
   ]);
   const result = await processCompletedRun({
     token: "t",
@@ -428,7 +472,7 @@ test("runs-API error on a code failure still comments but never requeues", async
     logger: quiet,
   });
   assert.equal(result.verdict, "unclassified-failure");
-  assert.equal(result.commented, true);
+  assert.equal(result.commented, false);
   assert.ok(!calls.some((c) => c.url.includes("/rerun")), "no requeue on unknowns");
 });
 
@@ -445,7 +489,7 @@ test("push-event runs are ignored before any API call", async () => {
   assert.equal(calls.length, 0);
 });
 
-test("success flow comments without fetching jobs or re-running", async () => {
+test("success flow posts nothing and fetches no jobs", async () => {
   const { fetchImpl, calls } = makeFetchMock([
     {
       method: "GET",
@@ -454,7 +498,6 @@ test("success flow comments without fetching jobs or re-running", async () => {
     },
     { method: "GET", path: "/pulls?head=", body: [{ number: 659 }] },
     { method: "GET", path: "/issues/659/comments", body: [] },
-    { method: "POST", path: "/issues/659/comments", status: 201, body: {} },
   ]);
   const result = await processCompletedRun({
     token: "t",
@@ -464,7 +507,98 @@ test("success flow comments without fetching jobs or re-running", async () => {
     logger: quiet,
   });
   assert.equal(result.verdict, "success");
-  assert.equal(result.commented, true);
+  assert.equal(result.commented, false);
+  assert.ok(
+    !calls.some((c) => c.method === "POST"),
+    "a green run adds nothing to the thread",
+  );
   assert.ok(!calls.some((c) => c.url.includes("/jobs")));
   assert.ok(!calls.some((c) => c.url.includes("/rerun")));
+});
+
+test("going green DELETES the previous red wake instead of leaving it stale", async () => {
+  const { fetchImpl, calls } = makeFetchMock([
+    {
+      method: "GET",
+      path: "/actions/workflows/241114608/runs",
+      body: { workflow_runs: [{ id: 31119232391, created_at: "2026-08-06T16:16:24Z" }] },
+    },
+    { method: "GET", path: "/pulls?head=", body: [{ number: 659 }] },
+    {
+      method: "GET",
+      path: "/issues/659/comments",
+      body: [
+        { id: 555, body: `${wakeMarkerFor("CI")}\n**CI wake** — cancelled` },
+        { id: 556, body: "a human comment" },
+      ],
+    },
+    { method: "DELETE", path: "/issues/comments/555", status: 204, body: {} },
+  ]);
+  const result = await processCompletedRun({
+    token: "t",
+    repo: "pdcarlson/Frapp",
+    run: makeRun({ conclusion: "success" }),
+    fetchImpl,
+    logger: quiet,
+  });
+  assert.equal(result.verdict, "success");
+  assert.equal(result.cleared, 1);
+  assert.ok(
+    calls.some((c) => c.method === "DELETE" && c.url.includes("/issues/comments/555")),
+    "the stale wake is removed",
+  );
+  assert.ok(
+    !calls.some((c) => c.url.includes("/issues/comments/556")),
+    "a human comment is never touched",
+  );
+});
+
+test("a clear that could not delete reports what it actually removed", async () => {
+  const { fetchImpl } = makeFetchMock([
+    {
+      method: "GET",
+      path: "/actions/workflows/241114608/runs",
+      body: { workflow_runs: [{ id: 31119232391, created_at: "2026-08-06T16:16:24Z" }] },
+    },
+    { method: "GET", path: "/pulls?head=", body: [{ number: 659 }] },
+    {
+      method: "GET",
+      path: "/issues/659/comments",
+      body: [{ id: 555, body: `${wakeMarkerFor("CI")}\n**CI wake** — cancelled` }],
+    },
+    { method: "DELETE", path: "/issues/comments/555", status: 502, body: {} },
+  ]);
+  const result = await processCompletedRun({
+    token: "t",
+    repo: "pdcarlson/Frapp",
+    run: makeRun({ conclusion: "success" }),
+    fetchImpl,
+    logger: quiet,
+  });
+  // Nothing replaces a failed delete now, so counting the attempt as a clear
+  // would report a clean thread while a red wake sits on a green PR.
+  assert.equal(result.cleared, 0, "an attempted delete is not a delete");
+});
+
+test("an ignored conclusion clears nothing — it carries no verdict", async () => {
+  const { fetchImpl, calls } = makeFetchMock([
+    {
+      method: "GET",
+      path: "/actions/workflows/241114608/runs",
+      body: { workflow_runs: [{ id: 31119232391, created_at: "2026-08-06T16:16:24Z" }] },
+    },
+  ]);
+  const result = await processCompletedRun({
+    token: "t",
+    repo: "pdcarlson/Frapp",
+    run: makeRun({ conclusion: "skipped" }),
+    fetchImpl,
+    logger: quiet,
+  });
+  assert.equal(result.verdict, "ignored");
+  assert.equal(result.commented, false);
+  assert.ok(
+    !calls.some((c) => c.url.includes("/comments")),
+    "a skipped run must not erase a live wake it knows nothing about",
+  );
 });

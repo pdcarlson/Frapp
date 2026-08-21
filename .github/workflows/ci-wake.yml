@@ -2,11 +2,13 @@ name: CI wake
 
 # Wake path for the PR-babysitting loop (docs/internal/ci-cd/AGENT_INFRA.md
 # § PR babysitting). `workflow_run: completed` fires for EVERY terminal
-# conclusion — success, failure, cancelled, timed_out — which is exactly the
-# coverage the PR-activity webhook lacks (it fires only on CI failure and
-# comments). scripts/ci/ci-wake.mjs classifies the outcome, auto-requeues
-# GitHub-infra failures (attempt-capped), and upserts one wake comment on the
-# open PR so watching agent sessions get a webhook event for silent states.
+# conclusion — success, failure, cancelled, timed_out — which is broader than
+# the PR-activity webhook, which carries CI failures, successful check-suite
+# rollups, comments and reviews but has no event for a cancelled or timed-out
+# run. scripts/ci/ci-wake.mjs classifies the outcome, auto-requeues GitHub-infra
+# failures (attempt-capped), and comments on the open PR ONLY for the states the
+# webhook misses and a re-queue has not already absorbed — every other verdict
+# clears the workflow's stale wake instead, so a healthy PR carries none.
 #
 # This runs the DEFAULT branch's copy of this file and of ci-wake.mjs
 # (workflow_run semantics), so changes take effect only after merging to main.
