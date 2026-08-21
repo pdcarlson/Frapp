@@ -85,14 +85,14 @@ function subscriptionStatusPresentation(
       return {
         label: "Subscription active",
         className:
-          "border-success/45 bg-success/15 text-[hsl(var(--success-foreground))]",
+          "border-success/45 bg-success/15 text-[color:var(--success-foreground)]",
         Icon: ShieldCheck,
       };
     case "past_due":
       return {
         label: "Payment past due",
         className:
-          "border-destructive/45 bg-destructive/15 text-[hsl(var(--destructive-foreground))]",
+          "border-destructive/45 bg-destructive/15 text-[color:var(--destructive-foreground)]",
         Icon: AlertCircle,
       };
     case "canceled":
@@ -106,7 +106,7 @@ function subscriptionStatusPresentation(
       return {
         label: "Subscription incomplete",
         className:
-          "border-primary/45 bg-primary/15 text-[hsl(var(--primary-foreground))]",
+          "border-primary/45 bg-primary/15 text-[color:var(--primary-foreground)]",
         Icon: Clock,
       };
   }

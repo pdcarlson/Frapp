@@ -18,62 +18,65 @@
  * rewrites `--side-bg`, `--side-accent`, `--ring` and five companion tokens per
  * chapter at the `:root` level, from `apps/web/lib/hooks/use-chapter-theme.ts`.
  *
- * TWO VALUE FORMATS LIVE HERE, and which one a token uses is not a free choice
- * — it has to match how `tailwind.config.ts` reads it:
+ * ONE VALUE FORMAT LIVES HERE. Every color token is a **complete color** —
+ * `hsl(30 8% 10%)`, `#C49A3A`, `rgba(255,255,255,.08)` — read through the
+ * preset's `colorVar()` helper and usable raw as `var(--token)` anywhere,
+ * including a Tailwind arbitrary value (`text-[color:var(--foreground)]`, with
+ * the type hint; `hsl(var(--token))` is a defect, see below).
  *
- *   - **Bare HSL triple** (`30 8% 10%`) — the legacy ShadCN convention. The
- *     preset wraps these in `hsl(...)`, so the triple is the only valid form
- *     and `var(--token)` on its own is NOT usable in app code.
- *   - **Complete color** (`hsl(30 8% 10%)`, `#C49A3A`, `rgba(255,255,255,.08)`)
- *     — read through the preset's `colorVar()` helper, and usable raw as
- *     `var(--token)` anywhere.
+ * It was two formats until the #920 groundwork. The legacy ShadCN convention
+ * stored a **bare HSL triple** (`30 8% 10%`) that the preset wrapped in
+ * `hsl(...)`, and the `--side-*` family plus `--ring` moved off it first
+ * (#1143): chapter branding persists **hex**, so an injected `#C49A3A` became
+ * the invalid `hsl(#C49A3A)` and every surface silently kept its default. The
+ * rest of the file followed, because Signet's `--border` is
+ * `rgba(255,255,255,.08)` and cannot be expressed as a triple at all — the
+ * conversion had to land before any Signet value could.
  *
- * The `--side-*` family and `--ring` are the second kind, because those are the
- * tokens chapter branding rewrites and the accent engine persists **hex**: under
- * the first convention an injected `#C49A3A` became `hsl(#C49A3A)` and every
- * surface silently kept its default (#1143). The rest of the file is still the
- * first kind; the web Signet reskin (#920) moves it, since Signet's `--border`
- * is `rgba(255,255,255,.08)` and cannot be a triple at all.
+ * The move changed formats, never values, so the frozen pre-Signet
+ * `apps/landing` (which imports this file wholesale) renders identically.
  *
- * `packages/theme/src/tailwind.config.spec.ts` asserts the two sides agree, so
- * a token added in the wrong format fails the build rather than rendering
- * nothing.
+ * `packages/theme/src/tailwind.config.spec.ts` holds both halves: every token
+ * the preset reads is defined as a complete color, and nothing — here or in
+ * any app — hand-writes `hsl(var(--token))` around one (#1151). A token added
+ * in the wrong format, or a wrapper reintroduced anywhere, fails the build
+ * rather than rendering nothing.
  */
 
 @layer base {
   :root {
     /* ── Surface (bone / warm stone) ─────────────────────── */
-    --background: 40 20% 97%;          /* bone */
-    --foreground: 30 10% 12%;          /* ink */
-    --card: 0 0% 100%;
-    --card-foreground: 30 10% 12%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 30 10% 12%;
+    --background: hsl(40 20% 97%);          /* bone */
+    --foreground: hsl(30 10% 12%);          /* ink */
+    --card: hsl(0 0% 100%);
+    --card-foreground: hsl(30 10% 12%);
+    --popover: hsl(0 0% 100%);
+    --popover-foreground: hsl(30 10% 12%);
 
     /* ── Primary (bronze — replaces royal blue) ──────────── */
-    --primary: 30 45% 32%;             /* deep bronze */
-    --primary-foreground: 40 30% 97%;
+    --primary: hsl(30 45% 32%);             /* deep bronze */
+    --primary-foreground: hsl(40 30% 97%);
 
     /* ── Primary scale (bronze gradient) ─────────────────── */
-    --primary-50: 36 40% 96%;
-    --primary-100: 36 40% 92%;
-    --primary-200: 34 38% 84%;
-    --primary-300: 32 38% 72%;
-    --primary-400: 30 42% 56%;
-    --primary-500: 30 45% 42%;
-    --primary-600: 30 45% 32%;
-    --primary-700: 30 50% 26%;
-    --primary-800: 28 50% 20%;
-    --primary-900: 26 48% 16%;
-    --primary-950: 24 46% 10%;
+    --primary-50: hsl(36 40% 96%);
+    --primary-100: hsl(36 40% 92%);
+    --primary-200: hsl(34 38% 84%);
+    --primary-300: hsl(32 38% 72%);
+    --primary-400: hsl(30 42% 56%);
+    --primary-500: hsl(30 45% 42%);
+    --primary-600: hsl(30 45% 32%);
+    --primary-700: hsl(30 50% 26%);
+    --primary-800: hsl(28 50% 20%);
+    --primary-900: hsl(26 48% 16%);
+    --primary-950: hsl(24 46% 10%);
 
     /* ── Success (moss — replaces emerald) ───────────────── */
-    --success: 145 35% 32%;
-    --success-foreground: 40 20% 97%;
+    --success: hsl(145 35% 32%);
+    --success-foreground: hsl(40 20% 97%);
 
     /* ── Muted ───────────────────────────────────────────── */
-    --muted: 36 14% 94%;
-    --muted-foreground: 30 6% 42%;
+    --muted: hsl(36 14% 94%);
+    --muted-foreground: hsl(30 6% 42%);
 
     /* ── Secondary (filled neutral chip / low-emphasis button) ──
      * The ShadCN scaffold ships `secondary` variants on `button` and `badge`
@@ -88,20 +91,20 @@
      * than `--muted-foreground`, because these carry short status words
      * ("Optional", "Overdue") that have to stay readable at badge size.
      */
-    --secondary: 36 14% 94%;
-    --secondary-foreground: 30 10% 12%;
+    --secondary: hsl(36 14% 94%);
+    --secondary-foreground: hsl(30 10% 12%);
 
     /* ── Accent (soft bronze tint) ───────────────────────── */
-    --accent: 36 40% 94%;
-    --accent-foreground: 30 10% 12%;
+    --accent: hsl(36 40% 94%);
+    --accent-foreground: hsl(30 10% 12%);
 
     /* ── Destructive (brick) ─────────────────────────────── */
-    --destructive: 8 72% 48%;
-    --destructive-foreground: 40 20% 97%;
+    --destructive: hsl(8 72% 48%);
+    --destructive-foreground: hsl(40 20% 97%);
 
     /* ── Borders & inputs ────────────────────────────────── */
-    --border: 30 10% 89%;
-    --input: 30 10% 89%;
+    --border: hsl(30 10% 89%);
+    --input: hsl(30 10% 89%);
     --ring: hsl(30 45% 32%);
 
     /* ── Sidebar (always dark ink) ───────────────────────── */
@@ -114,11 +117,11 @@
     --side-accent: hsl(38 60% 70%);         /* warm bone-bronze on dark */
 
     /* ── Category hues (saturated but earthy) ────────────── */
-    --hue-rose: 350 55% 50%;
-    --hue-violet: 280 35% 48%;
-    --hue-amber: 34 75% 48%;
-    --hue-teal: 185 40% 38%;
-    --hue-lime: 90 35% 38%;
+    --hue-rose: hsl(350 55% 50%);
+    --hue-violet: hsl(280 35% 48%);
+    --hue-amber: hsl(34 75% 48%);
+    --hue-teal: hsl(185 40% 38%);
+    --hue-lime: hsl(90 35% 38%);
 
     /* ── Radius scale (tight, ledger-like) ───────────────── */
     /* xs 3 / sm 5 / md 7 / lg 9 / xl 12 per redesign brief.    */
@@ -138,7 +141,7 @@
     --shadow-lg: 0 20px 40px -12px hsl(30 10% 12% / 0.18);
 
     /* ── Frapp app mark backdrop (light) ─────────────────── */
-    --brand-lockup-bg: 30 8% 10%;
+    --brand-lockup-bg: hsl(30 8% 10%);
 
     /* ── Font family stacks ──────────────────────────────── */
     --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
@@ -147,43 +150,43 @@
 
   .dark {
     /* ── Surface ─────────────────────────────────────────── */
-    --background: 30 8% 9%;
-    --foreground: 40 20% 94%;
-    --card: 30 7% 13%;
-    --card-foreground: 40 20% 94%;
-    --popover: 30 7% 13%;
-    --popover-foreground: 40 20% 94%;
+    --background: hsl(30 8% 9%);
+    --foreground: hsl(40 20% 94%);
+    --card: hsl(30 7% 13%);
+    --card-foreground: hsl(40 20% 94%);
+    --popover: hsl(30 7% 13%);
+    --popover-foreground: hsl(40 20% 94%);
 
     /* ── Primary (bone-bronze, legible on dark) ──────────── */
-    --primary: 34 55% 68%;
-    --primary-foreground: 30 20% 10%;
+    --primary: hsl(34 55% 68%);
+    --primary-foreground: hsl(30 20% 10%);
 
     /* ── Success (warm green) ────────────────────────────── */
-    --success: 140 40% 58%;
-    --success-foreground: 30 20% 10%;
+    --success: hsl(140 40% 58%);
+    --success-foreground: hsl(30 20% 10%);
 
     /* ── Muted ───────────────────────────────────────────── */
-    --muted: 30 7% 11%;
-    --muted-foreground: 36 8% 68%;
+    --muted: hsl(30 7% 11%);
+    --muted-foreground: hsl(36 8% 68%);
 
     /* ── Secondary ───────────────────────────────────────── */
     /* Lifted clear of both `--background` (9%) and `--card` (13%) so a filled
      * chip still reads as filled on either surface; dark `--muted` sits at 11%
      * and would disappear against the card. */
-    --secondary: 30 7% 18%;
-    --secondary-foreground: 40 20% 94%;
+    --secondary: hsl(30 7% 18%);
+    --secondary-foreground: hsl(40 20% 94%);
 
     /* ── Accent ──────────────────────────────────────────── */
-    --accent: 30 7% 11%;
-    --accent-foreground: 40 20% 94%;
+    --accent: hsl(30 7% 11%);
+    --accent-foreground: hsl(40 20% 94%);
 
     /* ── Destructive ─────────────────────────────────────── */
-    --destructive: 8 70% 60%;
-    --destructive-foreground: 40 20% 97%;
+    --destructive: hsl(8 70% 60%);
+    --destructive-foreground: hsl(40 20% 97%);
 
     /* ── Borders & inputs ────────────────────────────────── */
-    --border: 30 6% 20%;
-    --input: 30 6% 20%;
+    --border: hsl(30 6% 20%);
+    --input: hsl(30 6% 20%);
     --ring: hsl(34 55% 68%);
 
     /* ── Sidebar (deeper ink) ────────────────────────────── */
@@ -200,15 +203,15 @@
     --shadow: 0 4px 12px -2px hsl(0 0% 0% / 0.45);
     --shadow-lg: 0 20px 40px -12px hsl(0 0% 0% / 0.6);
 
-    --brand-lockup-bg: 30 8% 5%;
+    --brand-lockup-bg: hsl(30 8% 5%);
   }
 
   * {
-    border-color: hsl(var(--border));
+    border-color: var(--border);
   }
   body {
-    background-color: hsl(var(--background));
-    color: hsl(var(--foreground));
+    background-color: var(--background);
+    color: var(--foreground);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
@@ -227,7 +230,7 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.12em;
-    color: hsl(var(--muted-foreground));
+    color: var(--muted-foreground);
   }
 
   /*
@@ -241,12 +244,12 @@
     gap: 12px;
     padding-bottom: 8px;
     margin-bottom: 16px;
-    border-bottom: 1px solid hsl(var(--border));
+    border-bottom: 1px solid var(--border);
   }
   .ledger-line__dot {
     width: 6px;
     height: 6px;
     border-radius: 9999px;
-    background: hsl(var(--primary));
+    background: var(--primary);
   }
 }

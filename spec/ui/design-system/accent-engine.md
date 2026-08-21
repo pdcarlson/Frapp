@@ -100,28 +100,38 @@ This spec documents the target engine. The code that exists today serves the leg
 Token names are flat and string-valued so the additive field cannot disturb legacy readers: `apps/web/lib/hooks/use-chapter-theme.ts` iterates every key of `theme_palette` and sets it as a custom property, and nothing in the legacy stylesheet references `--signet-*`.
 
 **Why the persisted map keeps the `--signet-` prefix.** `apps/web/lib/hooks/use-chapter-theme.ts`
-applies the column by iterating every key onto `:root`. Most of the legacy stylesheet still defines
-its tokens as **HSL triples** (`--primary: 30 45% 32%`) which the Tailwind preset reads as
-`hsl(var(--primary))`, so a hex stored under those names resolves to `hsl(#C49A3A)` and every surface
-using them loses its colour at once. The namespace is what makes the field additive.
-`signetAccentSemanticVars` exists for a surface that has already moved its own preset to bare
-`var(--token)` — the web reskin — and for native, which has no stylesheet to collide with.
+applies the column by iterating every key onto `:root`. The prefix was originally what kept a hex
+away from a legacy **HSL triple** (`--primary: 30 45% 32%`) that the preset wrapped as
+`hsl(var(--primary))` — a hex stored under such a name resolved to `hsl(#C49A3A)` and every surface
+using it lost its colour at once. That format hazard is now gone (see the next paragraph), but the
+namespace stays, because a namespaced field is **additive**: it cannot collide with a token a
+surface has not deliberately opted into. `signetAccentSemanticVars` is that opt-in — a surface calls
+it once its own preset reads bare `var(--token)` throughout, which is the web reskin, and native has
+no stylesheet to collide with at all.
 
-**The web preset is now half-migrated, so "the legacy stylesheet" is no longer one rule.** This is
-the canonical statement of which half is which; treat it as a precondition before wiring
-`signetAccentSemanticVars` into web.
+**The web preset is fully migrated: one format, no pairing rule.** Every colour token in
+`packages/theme/src/globals.css` is stored as a **complete colour** (`hsl(30 45% 32%)`, `#C49A3A`,
+`rgba(255,255,255,.08)`) and read through `colorVar()` as a bare `var(--token)`. There is no second
+convention left to pair against, so the precondition for wiring `signetAccentSemanticVars` into web
+is satisfied.
 
-| Format in `packages/theme/src/globals.css` | Read by the preset as | Tokens |
-| --- | --- | --- |
-| Complete colour (`hsl(30 45% 32%)`, `#C49A3A`, `rgba(255,255,255,.08)`) | bare `var(--token)`, via `colorVar()` | `--ring`, `--side-bg`, `--side-bg-hi`, `--side-fg`, `--side-fg-hi`, `--side-muted`, `--side-divider`, `--side-accent` |
-| Bare HSL triple (`30 45% 32%`) | `hsl(var(--token))` | everything else, including `--primary*`, `--background`, `--card`, `--border`, `--muted`, `--accent`, `--secondary`, `--destructive`, `--success` |
+The `--ring` / `--side-*` family moved first, in #1143: those are the tokens `derivePalette` rewrites,
+and it persists hex, so under the old bare-triple convention an injected `#C49A3A` became
+`hsl(#C49A3A)` and the chapter's branding silently did not paint. The rest of the file followed in
+the #920 reskin's groundwork, which is what removed the mixed-format hazard entirely — Signet's
+`--border` is `rgba(255,255,255,.08)` and cannot be expressed as a triple at all, so the conversion
+had to happen before any Signet value could land.
 
-The first group moved in #1143, because those are the tokens `derivePalette` rewrites and it persists
-hex — under the old convention an injected `#C49A3A` became `hsl(#C49A3A)` and the chapter's branding
-silently did not paint. Writing a **triple** into one of those now fails the same way, in the other
-direction, so the format is not a free choice on either side.
-`packages/theme/src/tailwind.config.spec.ts` enforces the pairing for every token in both groups; the
-reskin (#920) moves the second group and deletes this table.
+Two guards in `packages/theme/src/tailwind.config.spec.ts` hold the invariant:
+
+- every token the preset reads is defined, and defined as a complete colour;
+- **nothing hand-writes `hsl(var(--token))` around a preset colour token** — not this stylesheet,
+  not `apps/web`, `apps/landing` or `apps/mobile` (#1151). The wrapper now always emits
+  `hsl(hsl(...))`, which the browser drops. In a Tailwind arbitrary value the correct form carries
+  the type hint: `text-[color:var(--x)]`.
+
+Because the conversion changed only the *format* of these tokens and never a value, `apps/landing`
+— frozen pre-Signet, and explicitly out of scope for #920 — renders identically across it.
 
 ### Not yet implemented
 
