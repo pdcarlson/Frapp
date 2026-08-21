@@ -90,8 +90,10 @@ explicit prioritization" rule. Remove `triage` and add exactly one `P1`–`P4` i
 - **Priority is a label:** **`P1`** (urgent — drop everything) · **`P2`** (high) · **`P3`**
   (medium) · **`P4`** (low). Exactly one per triaged issue; absent = unprioritized (ranked last,
   not startable out of Triage). Mapped 1:1 from Linear's Urgent/High/Medium/Low at migration.
-- **`area:<x>`** groups by surface (`api`/`web`/`db`/`ci`/`security`/`ux`/`product`/`research`/
-  `docs`/`deps`).
+- **`area:<x>`** groups by surface. The canonical roster is the one in
+  [`ROUTINES.md` → Tracker access](ROUTINES.md#tracker-access-shared-by-all-routines), which routine
+  self-maintenance keeps current. This file links to it rather than holding a second copy — the two
+  lists had already drifted apart (#1077), which is what a duplicated enum does.
 - **`suggestion`** is the routine-ownership marker (which issues the backlog routines own) — the
   hard boundary for destructive routine writes.
 - **`stale`** marks an aging suggestion that can't be *proven* resolved — kept, left open.
@@ -109,8 +111,8 @@ explicit prioritization" rule. Remove `triage` and add exactly one `P1`–`P4` i
   `release:*` still drives version bumps ([`AGENT_INFRA.md`](AGENT_INFRA.md)). Don't extend the
   legacy set to new issues.
 - Labels **auto-create on first use** (verified 2026-08-08: applying a nonexistent label via
-  `issue_write` creates it), so there is no provisioning step — but stick to the taxonomy above;
-  a typo'd label is a real label.
+  `issue_write` creates it), so there is no provisioning step — but stick to the rosters above and
+  the linked `area:*` list; a typo'd label is a real label.
 
 **Blocked-by has no native relation.** Express dependencies as a **`Blocked by #N`** line in the
 issue body's meta block. `/next` §1.1 verifies blockers against the repo, not the tracker, before

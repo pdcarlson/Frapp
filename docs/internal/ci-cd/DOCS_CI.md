@@ -28,16 +28,40 @@ Pure helpers (`classifyChanges`, `NON_CODE_PREFIXES`) are exported for
 ### Exemptions
 
 `docs-spec-sync` is **required** under `enforce_admins: true`, so a category of PR that can never
-satisfy it is not merely red — it is permanently unmergeable, with no override. Both exemptions exist
-for that reason, and each is deliberately narrow.
+satisfy it is not merely red — it is permanently unmergeable, with no override. All three exemptions
+exist for that reason.
+
+The label is the one you are most likely to need, and reaching for it is **not** a failure of
+discipline — see below.
 
 | Exempt | Where | Why |
 |---|---|---|
 | Dependabot PRs | Workflow condition on the *step*, in [`docs.yml`](../../../.github/workflows/docs.yml) | A bump touches `package.json` / `package-lock.json` and nothing else. Skipping the **step**, never the job, keeps the required check reporting — a skipped job never reports, leaving the PR blocked on a check that never arrives. |
 | `.buildpad/**` | `NON_CODE_PREFIXES` in [`check-docs-impact.mjs`](../../../scripts/check-docs-impact.mjs) | The canvas export is neither code nor documentation, so it has no docs impact to sync. Every periodic sync would otherwise land as "N non-doc files changed, no docs updated". |
-| PRs labelled `no-doc-change-needed` | `EXEMPT_LABEL` in [`check-docs-impact.mjs`](../../../scripts/check-docs-impact.mjs) | A change with genuinely no docs impact — a pure-code consolidation that moves an implementation without changing behaviour any doc describes — cannot satisfy the gate, and the gate is required, so it would be unmergeable rather than merely red. |
+| PRs labelled `no-doc-change-needed` | `EXEMPT_LABEL` in [`check-docs-impact.mjs`](../../../scripts/check-docs-impact.mjs) | A change with genuinely no docs impact — a pure-code consolidation, a lint fix, a formatting-only sweep — cannot satisfy the gate, and the gate is required, so it would be unmergeable rather than merely red. **This is the expected answer for a mechanical PR, not a last resort.** |
 
 #### The `no-doc-change-needed` waiver
+
+**Reach for this whenever your change genuinely has no docs impact.** The gate cannot tell a
+relevant doc edit from an irrelevant one — it only checks that *some* path under `docs/` or `spec/`
+moved (`const DOCS_OR_SPEC = ["docs/", "spec/"]`). So when a PR has nothing real to sync, there are
+exactly two ways through, and they are not equally good:
+
+- **Label it.** One reviewable act, visible in the timeline, annotated in the run summary.
+- **Append something to a doc so the check goes green.** This passes, and it is worse than the
+  failure it avoids. It puts a sentence nobody owns into a doc's canonical home, where the next
+  reader has no way to tell it from a maintained claim, and it grows a corpus that already has no
+  mechanism for retiring anything.
+
+That second path is not hypothetical, and until this change **this file** carried the proof: a
+`## Maintenance Log` sat at the bottom of it, holding three bullets about React Query hook tests
+and `package-lock` peer metadata — notes that were perfectly true and had nothing to do with the
+docs gate this document describes. It has been deleted.
+[`diff-review`](../../../.claude/skills/diff-review/SKILL.md) now names that shape as a review
+finding.
+
+So: **if the honest answer is "this PR changes nothing a doc describes", the honest action is the
+label.** A waived run is a better artifact than a green one bought with filler.
 
 Applying it needs **write access**, so it is not a self-serve bypass for an outside contributor, and it
 lands in the PR timeline as a named, reviewable act rather than a silent skip. The gate still **runs**
@@ -85,8 +109,9 @@ edits code *and* `.buildpad/` still owes a `docs/` or `spec/` edit, and the fail
 the real code changes. What the directory is, and why it is not a doc home:
 [`DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md#buildpad-is-background-not-documentation).
 
-`.claude/` is **not** exempt — a `SKILL.md`-only PR still fails the gate and must be paired with a
-`docs/` file. [#810](https://github.com/pdcarlson/Frapp/issues/810) tracks teaching the gate about it;
+`.claude/` is **not** exempt — a `SKILL.md`-only PR still fails the gate. Pair it with the `docs/`
+file that states the same rule (usually the right move anyway), or label it `no-doc-change-needed`
+when there genuinely is none. [#810](https://github.com/pdcarlson/Frapp/issues/810) tracks teaching the gate about it;
 [`ROUTINES.md`](ROUTINES.md#maintenance) records the workaround until then.
 
 **Structure** only ever looks at paths a PR *adds* or renames — existing files are never flagged —
@@ -143,9 +168,14 @@ before you act on what a doc told you.
 - Cheap to implement and explain; hard to game with accidental omissions of entire prefixes.
 - Forces an explicit doc/spec touch for almost every non-doc change, which was an early goal when doc discipline was weak.
 
+That last point is also the gate's failure mode, and it is worth stating plainly: a check that
+demands a doc edit from *every* PR will get one from every PR, including the PRs with nothing to
+say. Breadth buys coverage and pays for it in filler. The label is what keeps the bill down, which
+is why it is documented above as the expected path rather than an escape hatch.
+
 ## Trade-offs
 
-- **Noise:** Mechanical edits (e.g. `AGENTS.md` at repo root) still need a `docs/` or `spec/` touch unless the PR is docs-only in a sense the script does not recognize (root-level `.md` files are _not_ exempt).
+- **Noise:** Mechanical edits (e.g. `AGENTS.md` at repo root) still need a `docs/` or `spec/` touch unless the PR is docs-only in a sense the script does not recognize (root-level `.md` files are _not_ exempt). When there is no real doc to sync, label the PR `no-doc-change-needed` rather than inventing one.
 - **Ambiguity:** Contributors should default to [`docs/guides/`](../../guides/README.md) and `spec/` for product-code PRs; there is no `apps/docs` workspace. Where to put updates: [`DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md).
 
 ## Optional future tightening (not implemented)
@@ -156,8 +186,3 @@ If the team wants less noise or stricter mapping:
 - **Changelog:** allow a single audited file to count as the doc touch (still easy to make meaningless updates).
 
 Any change to the script should update this file, `AGENTS.md`, and the PR template so agents and humans share one story.
-
-## Maintenance Log
-* Added unit tests for React Query Backwork hooks (`packages/hooks/src/use-backwork.spec.tsx`).
-* Backwork hooks tests: microtask flush before asserting `enabled: false` (empty id) does not call `GET`; shared `queryKey` constants for invalidation expectations.
-* Root `package-lock.json`: npm v10+ `peer: true` metadata on peer dependency entries (no dependency version changes).

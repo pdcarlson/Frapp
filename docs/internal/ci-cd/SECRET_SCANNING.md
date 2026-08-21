@@ -188,10 +188,11 @@ Method notes:
 
 ## Required check / branch protection
 
-The `secret-scan` job is registered in `scripts/configure-branch-protection.mjs` (`CI_CHECKS`). Like the
-ADR-14 review gate, it only becomes merge-blocking once the job exists on the target branch and has run
-green — apply it with `GITHUB_PAT=… npm run configure:branch-protection` (a one-time admin step). Until
-then the check still runs and surfaces failures, just non-blocking.
+The `secret-scan` job is registered in `scripts/configure-branch-protection.mjs` (`CI_CHECKS`), which is
+the intended required set. Whether it is live on a given branch depends on when an admin last ran
+`GITHUB_PAT=… npm run configure:branch-protection`; read live state per
+[`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md#required-status-checks)
+rather than from this page.
 
 ## Bumping the pinned version
 

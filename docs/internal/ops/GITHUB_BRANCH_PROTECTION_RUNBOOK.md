@@ -74,7 +74,7 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 | Check name           | What it validates                                                                               |
 | -------------------- | ----------------------------------------------------------------------------------------------- |
 | `packages-build`     | Shared packages compile                                                                         |
-| `lint-and-typecheck` | ESLint + TypeScript (all workspaces); `npm run build -w apps/api` (`nest build`, Render parity); landing plus `@repo/validation`, `@repo/color`, `@repo/formatting`, `@repo/chapter-theme`, and `@repo/api-sdk` unit tests |
+| `lint-and-typecheck` | ESLint + TypeScript (all workspaces); `npm run build -w apps/api` (`nest build`, Render parity); landing plus `@repo/validation`, `@repo/color`, `@repo/formatting`, `@repo/chapter-theme`, `@repo/theme`, and `@repo/api-sdk` unit tests |
 | `api-docker-build`   | `docker build -f apps/api/Dockerfile .` (API image compile path)                                |
 | `api-tests`          | API Jest unit tests                                                                             |
 | `api-contract-check` | openapi.json + api-sdk freshness                                                                |
@@ -204,3 +204,8 @@ If CI job names change (e.g., renaming a workflow job), update:
 3. `CONTRIBUTING.md` — required checks section
 4. `spec/environments/README.md` — CI job matrix
 5. Re-run `npm run configure:branch-protection` to apply the new names
+
+This list is the drift engine, not a safety net — four hand-kept copies of one array is why
+`@repo/theme` and `packages/chat-integrations` went missing from every table at once. Prefer
+deleting a copy and linking to the script over adding a sixth step, and state posture as *intended*
+(what the arrays say) rather than *live* (what an admin last applied), which no doc can keep true.
