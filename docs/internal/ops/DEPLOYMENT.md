@@ -501,7 +501,7 @@ All deployments are gated behind CI success. The flow is:
 3. **PR merged** → Push event triggers deploy pipeline (`workflow_run` waits for CI).
 4. **Deploy pipeline**: DB migration (dry-run → apply) → API deploy (Render) → Frontends auto-deploy (Vercel).
 
-Production deploys run automatically after the `main` → `production` promotion PR merges and CI passes — there is no separate GitHub Actions environment-approval pause, because required-reviewer environment protection rules are GitHub Enterprise-only on private repositories. The control point for production is the promotion PR itself (branch protection: CI + an approving review + conversation resolution).
+Production deploys run automatically after the `main` → `production` promotion PR merges and CI passes — there is no separate GitHub Actions environment-approval pause. The control point for production is the promotion PR itself (branch protection: CI + an approving review + conversation resolution). This used to be explained as required-reviewer environment rules being Enterprise-only *on private repositories*; **that reason is wrong — this repo is public** (corrected 2026-08-21, see `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets). The gate is unchanged; whether to add environment reviewers on top is an open question, not a correction.
 
 ### Required Status Checks
 
