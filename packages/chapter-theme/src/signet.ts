@@ -24,7 +24,11 @@
 
 import { contrastRatio, normalizeHex, parseHex } from "@repo/color";
 
+import type { SignetPalette } from "./accent-vars.js";
 import { generateRadixColors } from "./vendor/generate-radix-colors.js";
+
+// Re-exported from its original home so consumers need not know it moved.
+export type { SignetPalette };
 
 /**
  * Fixed for every chapter — only `accent` varies. `gray` and `background` are
@@ -60,24 +64,6 @@ const ROLE_STEPS = {
 
 type SignetRole = keyof typeof ROLE_STEPS;
 
-/** Every token `deriveSignetPalette` guarantees, as CSS custom properties. */
-export interface SignetPalette {
-  "--signet-accent-primary": string;
-  "--signet-accent-hover": string;
-  "--signet-accent-ring": string;
-  "--signet-accent-subtle-bg": string;
-  "--signet-accent-border": string;
-  "--signet-accent-text": string;
-  /** The generator's contrast color — text and icons on `accent-primary`. */
-  "--signet-accent-on-primary": string;
-  /** Translucent counterparts; alpha steps map 1:1 to their solid steps (§2). */
-  "--signet-accent-primary-alpha": string;
-  "--signet-accent-hover-alpha": string;
-  "--signet-accent-ring-alpha": string;
-  "--signet-accent-subtle-bg-alpha": string;
-  "--signet-accent-border-alpha": string;
-  "--signet-accent-text-alpha": string;
-}
 
 export interface SignetContrastCheck {
   /** The role whose contrast was measured. */

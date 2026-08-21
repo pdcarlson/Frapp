@@ -9,16 +9,35 @@
  * here and `signet.ts` re-exports it for the server callers that want both.
  *
  * It is also the one file in this package a bundler resolves directly, which is
- * why it has no relative *value* imports: the rest of the package carries the
+ * why it has **no relative imports at all**: the rest of the package carries the
  * `.js` specifiers NodeNext requires of the API build, and those do not resolve
  * against `.ts` sources in a bundler.
+ *
+ * That is why `SignetPalette` lives here rather than beside the generator that
+ * produces it. The type is the contract *between* the two — the engine fills it
+ * in, this function re-keys it — so a leaf module owning it leaves one edge
+ * (`signet.ts` → here) instead of a cycle. `signet.ts` re-exports it, so no
+ * consumer has to know where it sits.
  */
 
-import type { SignetPalette } from "./signet.js";
-
-// Re-exported so a bundler consumer gets the input type from the same subpath
-// it gets the function from. Type-only, so it costs the bundle nothing.
-export type { SignetPalette };
+/** Every token `deriveSignetPalette` guarantees, as CSS custom properties. */
+export interface SignetPalette {
+  "--signet-accent-primary": string;
+  "--signet-accent-hover": string;
+  "--signet-accent-ring": string;
+  "--signet-accent-subtle-bg": string;
+  "--signet-accent-border": string;
+  "--signet-accent-text": string;
+  /** The generator's contrast color — text and icons on `accent-primary`. */
+  "--signet-accent-on-primary": string;
+  /** Translucent counterparts; alpha steps map 1:1 to their solid steps (§2). */
+  "--signet-accent-primary-alpha": string;
+  "--signet-accent-hover-alpha": string;
+  "--signet-accent-ring-alpha": string;
+  "--signet-accent-subtle-bg-alpha": string;
+  "--signet-accent-border-alpha": string;
+  "--signet-accent-text-alpha": string;
+}
 
 /**
  * The `--signet-accent-*` roles under the semantic names
