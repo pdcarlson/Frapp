@@ -1,0 +1,162 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Signet design tokens — the dark-first warm charcoal system.
+ *
+ * This stylesheet is the Signet counterpart of `globals.css`, which keeps the
+ * legacy bone/bronze values for the still-frozen `apps/landing`. A surface
+ * imports exactly one of the two — `apps/web` imports this file, `apps/landing`
+ * imports the legacy one — because the two systems must not mix on one surface
+ * (`spec/ui/design-system/foundations.md` §1). `signet.css.spec.ts` pins that
+ * wiring in both directions.
+ *
+ * Values are the fixed foundations from `spec/ui/design-system/foundations.md`
+ * (source-of-truth constants: `signet.ts`, asserted equal by the spec) plus the
+ * ShadCN-compat pairs the shared Tailwind preset reads. Signet defines a single
+ * appearance: there is deliberately NO `.dark` block and no light palette —
+ * dark is the only mode (`brand-identity.md` §1), which is also why the web
+ * reskin deleted `next-themes`.
+ *
+ * ONE VALUE FORMAT LIVES HERE, same rule as the legacy file: every color token
+ * is a complete color (`#0E0D0B`, `rgba(255,255,255,0.08)`), read through the
+ * preset's `colorVar()` as a bare `var(--token)`. `hsl(var(--token))` around
+ * one is a defect (#1151) and fails `tailwind.config.spec.ts`.
+ *
+ * The accent slot (`--primary` … `--accent-text`) holds the HOUSE DEFAULT —
+ * the `#F2B72E` seed run through `deriveSignetPalette`, exactly as a chapter
+ * with no accent of its own resolves (`accent-engine.md` §3). A chapter that
+ * chose a seed overrides these at runtime: `use-chapter-theme.ts` maps the
+ * persisted `--signet-accent-*` tokens onto these names via
+ * `signetAccentSemanticVars`. The raw seed never paints UI.
+ */
+
+@layer base {
+  :root {
+    /* ── Surface ladder (fixed for every chapter; foundations §2) ── */
+    --background: #0E0D0B;
+    --surface-1: #171512;
+    --card: #1E1B17;
+    --card-foreground: #EDEAE3;
+    --popover: #26221C;
+    --popover-foreground: #EDEAE3;
+
+    /* ── Borders & hairlines (foundations §3) ─────────────────────
+     * Low-opacity white only, so a hairline tracks whatever surface
+     * it sits on. Fixed-hex border colors are banned. */
+    --border: rgba(255,255,255,0.08);
+    --input: rgba(255,255,255,0.14);
+
+    /* ── Text ladder (foundations §4) ─────────────────────────────
+     * NOTE the ShadCN-era name collision, resolved in foundations'
+     * favor: `--muted` is muted TEXT (#78716A), not a fill. Subtle
+     * fills use `--secondary` / the surface ladder instead; the web
+     * reskin retargeted every `bg-muted` call site accordingly. */
+    --foreground: #EDEAE3;
+    --muted-foreground: #A9A399;
+    --muted: #78716A;
+    --disabled: #57534C;
+
+    /* ── Semantic status (foundations §5; status-only, never decorative) ──
+     * Foregrounds are for text ON a solid semantic fill; measured against
+     * WCAG AA — near-black wins on every one of these hues (white loses on
+     * success 2.54:1 and destructive 3.35:1). On dark surfaces, prefer the
+     * tint recipe (13% alpha fill + hue text) over solid fills. */
+    --success: #3FB950;
+    --success-foreground: #0E0D0B;
+    --warning: #E5A000;
+    --warning-foreground: #0E0D0B;
+    --destructive: #F85149;
+    --destructive-foreground: #0E0D0B;
+    --info: #2F81F7;
+    --info-foreground: #0E0D0B;
+    /* "You were addressed" — @-mention or DM. Fixed and semantic: never the
+     * chapter accent, never any other status. White foreground is locked by
+     * foundations §5. */
+    --mention: #E5484D;
+    --mention-foreground: #FFFFFF;
+
+    /* ── Neutral interactive fills (ShadCN compat) ────────────────
+     * `secondary` is the Secondary-button recipe (components.md §3):
+     * card fill with the stronger input hairline. `accent` is the
+     * neutral hover/highlight fill for menus and undrawn primitives
+     * (components.md §2): one ladder step up. Chapter-accent tints
+     * are a different thing — `--accent-subtle` below. */
+    --secondary: #1E1B17;
+    --secondary-foreground: #EDEAE3;
+    --accent: #26221C;
+    --accent-foreground: #EDEAE3;
+
+    /* ── Accent slot — house default (accent-engine.md §2/§3) ─────
+     * deriveSignetPalette("#F2B72E") output, pinned by signet.css.spec.ts.
+     * Overridden per chapter at runtime; never edit by hand. */
+    --primary: #F2B72E;
+    --primary-hover: #E7AC1A;
+    --primary-foreground: #2B2009;
+    --ring: #86692B;
+    --accent-subtle: #2C210B;
+    --accent-border: #6A5220;
+    --accent-text: #FFC64A;
+
+    /* ── House gold (brand-identity.md; never retints per chapter) ── */
+    --gold-house: #EFB63B;
+    --gold-on-house: #2C2000;
+    --gold-ask-fill: #251E0E;
+    --gold-ask-border: #6B5619;
+    --gold-ask-text: #F4CB63;
+
+    /* ── Radius (foundations §8 map onto the preset's scale keys) ──
+     * xs = chip/badge 8 · sm = nav item/large chip 10 · md/DEFAULT =
+     * controls 12 · lg = card 14 · xl = large card 16. Sheets and
+     * dialogs take 20 (the sheet step) when the primitives slice
+     * lands; until then nothing reads a 20 token. */
+    --radius-xs: 8px;
+    --radius-sm: 10px;
+    --radius: 12px;
+    --radius-md: 12px;
+    --radius-lg: 14px;
+    --radius-xl: 16px;
+
+    /* ── Shadows are banned on Signet surfaces (foundations §10) ──
+     * Elevation is a lighter surface step. The tokens exist because
+     * the shared preset reads them; `none` neutralizes every legacy
+     * `shadow-*` utility that has not been deleted yet. */
+    --shadow-xs: none;
+    --shadow-sm: none;
+    --shadow: none;
+    --shadow-lg: none;
+
+    /* ── Font stacks ──────────────────────────────────────────────
+     * Sans is Figtree, loaded by the app's Next font loader as
+     * `--font-figtree` (architecture: mono is a system stack, never
+     * a bundled webfont — spec/architecture/README.md §15). */
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+      "Liberation Mono", "Courier New", monospace;
+  }
+
+  * {
+    border-color: var(--border);
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer components {
+  /*
+   * Eyebrow micro-label — small uppercase tag above titles. Carried over from
+   * the legacy stylesheet because the chat renderers still compose with it;
+   * the chat slice of #920 decides whether it survives as a Signet pattern.
+   */
+  .eyebrow {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--muted-foreground);
+  }
+}

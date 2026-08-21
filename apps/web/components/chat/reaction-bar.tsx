@@ -65,8 +65,8 @@ export function ReactionChips({
             }
             className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-xs transition ${
               mine
-                ? "border-[color:var(--reaction-active,theme(colors.primary.DEFAULT))] bg-[color:var(--reaction-active,theme(colors.primary.DEFAULT))]/15 text-foreground"
-                : "border-border bg-background hover:bg-muted"
+                ? "border-accent-border bg-accent-subtle text-accent-text"
+                : "border-border bg-background hover:bg-accent"
             }`}
           >
             <span>{group.emoji}</span>

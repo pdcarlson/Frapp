@@ -3,23 +3,18 @@
 @tailwind utilities;
 
 /*
- * Frapp design tokens — bone / bronze / ink palette.
+ * Frapp design tokens — bone / bronze / ink palette. LEGACY: serves only the
+ * still-frozen `apps/landing` since the #920 reskin moved `apps/web` onto
+ * `signet.css` (the dark-first Signet system). A surface imports exactly one
+ * of the two stylesheets; `signet.css.spec.ts` pins the wiring.
  *
  * The shadcn-style variable names (`--background`, `--primary`, etc.) are
- * preserved so the Tailwind preset and every existing surface keeps
- * resolving. The values map to the legacy warm-stone / ink / bronze system
- * (kept for web/landing until their Signet reskin; the retired prototype's
- * styles.css that defined it lives in git history). Sidebar-specific tokens
- * (`--side-*`) live alongside the shadcn names because the chat-first
- * shell needs an "always dark ink" sidebar regardless of the active
- * light/dark mode of the rest of the app.
- *
- * Chapter theming overlays on top of these defaults: `derivePalette()`
- * rewrites `--side-bg`, `--side-accent`, `--ring` and five companion tokens per
- * chapter at the `:root` level, from `apps/web/lib/hooks/use-chapter-theme.ts`.
- * The other five `--side-*` values below are NOT rewritten, so a branded
- * chapter keeps neutral ink for its hover, active and divider states — #1150,
- * still open, and not separable from this file's sidebar text ladder.
+ * preserved so the Tailwind preset and the landing surface keep resolving.
+ * The values map to the legacy warm-stone / ink / bronze system (the retired
+ * prototype's styles.css that defined it lives in git history). The `--side-*`
+ * sidebar family that used to live here died with the legacy web shell — the
+ * Signet sidebar runs the neutral ladder plus engine accent roles, and landing
+ * never used a `side-*` class.
  *
  * ONE VALUE FORMAT LIVES HERE. Every color token is a **complete color** —
  * `hsl(30 8% 10%)`, `#C49A3A`, `rgba(255,255,255,.08)` — read through the
@@ -60,18 +55,9 @@
     --primary: hsl(30 45% 32%);             /* deep bronze */
     --primary-foreground: hsl(40 30% 97%);
 
-    /* ── Primary scale (bronze gradient) ─────────────────── */
-    --primary-50: hsl(36 40% 96%);
-    --primary-100: hsl(36 40% 92%);
-    --primary-200: hsl(34 38% 84%);
-    --primary-300: hsl(32 38% 72%);
-    --primary-400: hsl(30 42% 56%);
-    --primary-500: hsl(30 45% 42%);
-    --primary-600: hsl(30 45% 32%);
-    --primary-700: hsl(30 50% 26%);
-    --primary-800: hsl(28 50% 20%);
-    --primary-900: hsl(26 48% 16%);
-    --primary-950: hsl(24 46% 10%);
+    /* The bronze `--primary-50…950` ramp is gone: the preset dropped its
+     * scale keys when the #920 shell cutover retargeted the last five
+     * `bg-primary-50` call sites, and landing never used a step. */
 
     /* ── Success (moss — replaces emerald) ───────────────── */
     --success: hsl(145 35% 32%);
@@ -109,15 +95,6 @@
     --border: hsl(30 10% 89%);
     --input: hsl(30 10% 89%);
     --ring: hsl(30 45% 32%);
-
-    /* ── Sidebar (always dark ink) ───────────────────────── */
-    --side-bg: hsl(30 8% 10%);
-    --side-bg-hi: hsl(30 8% 16%);
-    --side-fg: hsl(36 10% 72%);
-    --side-fg-hi: hsl(40 25% 96%);
-    --side-muted: hsl(30 6% 52%);
-    --side-divider: hsl(30 8% 18%);
-    --side-accent: hsl(38 60% 70%);         /* warm bone-bronze on dark */
 
     /* ── Radius scale (tight, ledger-like) ───────────────── */
     /* xs 3 / sm 5 / md 7 / lg 9 / xl 12 per redesign brief.    */
@@ -184,15 +161,6 @@
     --border: hsl(30 6% 20%);
     --input: hsl(30 6% 20%);
     --ring: hsl(34 55% 68%);
-
-    /* ── Sidebar (deeper ink) ────────────────────────────── */
-    --side-bg: hsl(30 8% 5%);
-    --side-bg-hi: hsl(30 8% 10%);
-    --side-fg: hsl(36 10% 70%);
-    --side-fg-hi: hsl(40 20% 96%);
-    --side-muted: hsl(30 6% 48%);
-    --side-divider: hsl(30 8% 10%);
-    --side-accent: hsl(34 55% 68%);
 
     /* ── Shadows (heavier on dark) ───────────────────────── */
     --shadow-sm: 0 1px 3px hsl(0 0% 0% / 0.35);

@@ -8,16 +8,21 @@ export function OfflineBanner() {
 
   if (isOnline) return null;
 
+  // The Signet semantic tint recipe (foundations.md §5): ~13% of the hue as
+  // fill with the hue as text. Degraded is warning, offline is destructive —
+  // both state a fact about the connection, which is what semantic colour is
+  // for. This banner is rendered by the root layout, so it sits on the dark
+  // surface on every route including pre-auth.
   const config = {
     DEGRADED: {
       icon: Zap,
       message: "Slow connection. Some features may be delayed.",
-      className: "bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800",
+      className: "border-warning/45 bg-warning/[.13] text-warning",
     },
     OFFLINE: {
       icon: WifiOff,
       message: "You're offline. Showing cached data. Changes will sync when you reconnect.",
-      className: "bg-red-50 text-red-800 border-red-200 dark:bg-red-950/50 dark:text-red-300 dark:border-red-800",
+      className: "border-destructive/45 bg-destructive/[.13] text-destructive",
     },
   } as const;
 

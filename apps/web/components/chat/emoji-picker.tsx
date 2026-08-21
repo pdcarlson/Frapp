@@ -71,7 +71,7 @@ function EmojiButton({ emoji, ...rest }: EmojiPickerListEmojiProps) {
       {...rest}
       type="button"
       aria-label={emoji.label}
-      className="flex h-8 w-8 items-center justify-center rounded text-base hover:bg-muted data-[active]:bg-muted"
+      className="flex h-8 w-8 items-center justify-center rounded text-base hover:bg-accent data-[active]:bg-secondary"
     >
       {emoji.emoji}
     </button>

@@ -214,7 +214,7 @@ function ModuleRow({
       </div>
 
       {open && hasSubFeatures ? (
-        <div className="border-t border-border bg-muted/30 px-4 py-3 pl-11">
+        <div className="border-t border-border bg-secondary/30 px-4 py-3 pl-11">
           <ul className="space-y-1.5">
             {m.subFeatures.map((sub) => (
               <li

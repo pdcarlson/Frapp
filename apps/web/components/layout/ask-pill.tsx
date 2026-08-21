@@ -29,14 +29,12 @@ import { cn } from "@/lib/utils";
  * the dialog says Ask cannot answer yet and points at the two surfaces that
  * can. It promises no date, because nothing here knows one.
  *
- * **Deliberately styled in the surface's own legacy tokens, not Signet gold.**
- * Mobile's pill (`apps/mobile/components/chat/ask-pill.tsx`) is house gold
- * because mobile is a Signet surface and "the Ask/AI surface speaks in Signet's
- * voice, not the tenant's". `apps/web` still ships the legacy bone/bronze
- * system and `spec/ui/web-dashboard/README.md` keeps it visually frozen until
- * its reskin, so painting gold here would mix two token systems on one surface
- * — the thing the cutover rules exist to prevent. The gold treatment lands with
- * the web reskin (#920), and this component is where it goes.
+ * **House gold, never the chapter accent.** Like mobile's pill
+ * (`apps/mobile/components/chat/ask-pill.tsx`), the entry paints in the fixed
+ * `gold-ask-*` family because "the Ask/AI surface speaks in Signet's voice,
+ * not the tenant's" (`spec/ui/design-system/components.md` §11) — it never
+ * retints with the chapter accent. The 38px height and 11px radius are the
+ * app-bar chip geometry from components.md §7, hence the arbitrary values.
  *
  * No feature flag ships with this. Mobile gates on `EXPO_PUBLIC_ASK_ENABLED`
  * because it has a real (if synthetic) corpus to switch on or off; web has no
@@ -55,18 +53,20 @@ export function AskPill({ className }: { className?: string }) {
 
   return (
     <>
-      <Button
+      <button
         type="button"
-        variant="outline"
-        size="sm"
         aria-label="Ask a question about your chapter"
         title="Ask"
         onClick={() => setOpen(true)}
-        className={cn("gap-1.5", className)}
+        className={cn(
+          "inline-flex h-[38px] items-center gap-1.5 rounded-[11px] border border-gold-ask-border bg-gold-ask-fill px-[13px] text-sm font-bold text-gold-ask-text transition hover:bg-gold-ask-border/30",
+          "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25",
+          className,
+        )}
       >
         <span aria-hidden="true">✦</span>
         <span>Ask</span>
-      </Button>
+      </button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>

@@ -38,17 +38,19 @@ Canonical docs (link, don't restate values):
 
 | | **Signet (current)** | **Legacy Frapp (frozen)** |
 | --- | --- | --- |
-| Surfaces | `apps/mobile` now; web dashboard and landing **when they reskin** | `apps/web` and `apps/landing` until their Signet pass |
+| Surfaces | `apps/mobile`; the `apps/web` dashboard shell + base tokens since the #920 shell slice (screens true up per-family in later slices) | `apps/landing` until its Signet pass; `apps/web` screens whose #920 family slice has not landed still carry legacy classes on the Signet base |
 | Direction | Dark-first, warm, consumer (Notion dark / Cash App) | Light-first bone / bronze / ink |
-| Typeface | **Figtree**. Geist is rejected. | Geist Sans in `@repo/theme` |
+| Typeface | **Figtree**. Geist is rejected. Web ships it vendored at `packages/theme/fonts/FigtreeVF.woff2` (`next/font/local`, `--font-figtree`). | Geist Sans in `@repo/theme` — now landing-only |
 | House accent | Gold/amber `#EFB63B` / seed `#F2B72E` — never brown-bronze, never royal blue | Bronze `primary`, royal blue leftovers in old specs |
-| Token home | `spec/ui/design-system/foundations.md` | `packages/theme` (`@repo/theme`, `globals.css`) |
-| Spec status | Live | Frozen READMEs: [`web-dashboard`](../../../spec/ui/web-dashboard/README.md), [`landing`](../../../spec/ui/landing/README.md) |
+| Token home | `spec/ui/design-system/foundations.md`; web implementation: `packages/theme/src/signet.css` + `packages/theme/src/signet.ts` | `packages/theme/src/globals.css` (legacy `@repo/theme` exports, imported by landing) |
+| Spec status | Live — [`web-dashboard`](../../../spec/ui/web-dashboard/README.md) is **Active (Signet)** again | Frozen README: [`landing`](../../../spec/ui/landing/README.md) |
 
-**The two systems MUST NOT mix on one surface.** Do not import Signet tokens onto a frozen
-web/landing screen, and do not copy bone/bronze/Geist/`#2563EB` onto a Signet screen. Frozen
-READMEs mean: do not implement visual changes from those docs, and do not file spec-vs-implementation
-drift against them.
+**The two systems MUST NOT mix on one surface.** Do not import Signet tokens onto the frozen
+landing surface, and do not copy bone/bronze/Geist/`#2563EB` onto a Signet screen. The frozen
+landing README means: do not implement visual changes from that doc, and do not file
+spec-vs-implementation drift against it. Not-yet-resliced `apps/web` screens are a documented
+migration window, not a license to mix — they render on the Signet base tokens and are trued up
+by their own #920 family slice.
 
 New Signet work MUST NOT copy visual patterns from frozen surfaces. Assets still shipping the
 legacy "F" mark / bone lockup are expected until the Signet asset pass — do not restyle them

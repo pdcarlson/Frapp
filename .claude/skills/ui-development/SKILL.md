@@ -69,28 +69,43 @@ fail-fast entitlement gating, accessibility gates, motion) lives in
 [`spec/ui/design-system/README.md`](../../../spec/ui/design-system/README.md); the tables below
 summarize the tokens as implemented in `@repo/theme`.
 
-**Palette status (read this before styling anything):** the repo's canonical design system is now
-**Signet** — dark-first, warm neutrals, gold accent seed, Figtree — specified under
-[`spec/ui/design-system/`](../../../spec/ui/design-system/README.md). **The web dashboard and
-landing site have NOT been reskinned yet**: they still ship the legacy chat-first
-**bone / bronze / ink** palette (see `packages/theme/src/globals.css` and `tailwind.config.ts`),
-light-first with Geist Sans, and their specs are frozen at that state
-([`spec/ui/README.md`](../../../spec/ui/README.md)). Web/landing work continues on the legacy
-tokens below — do not restyle those shipping surfaces toward Signet ad hoc. The legacy `navy` /
-`royal-blue` / `emerald` **keys are preserved so existing utility classes keep compiling, but their
-values map to ink / bronze / bone-era colors**.
+**Palette status (read this before styling anything):** the repo's canonical design system is
+**Signet** — dark-only, warm neutrals, gold accent seed, Figtree — specified under
+[`spec/ui/design-system/`](../../../spec/ui/design-system/README.md). **The web dashboard is now
+Signet**: since the #920 shell slice, `apps/web/app/globals.css` imports
+`packages/theme/src/signet.css` (dark-only, Figtree via `--font-figtree`), the shell is repainted,
+and per-screen-family truing-up lands in later #920 slices — until a family's slice lands, its
+screens render legacy classes on the Signet base tokens. **The landing site has NOT been
+reskinned**: it still ships the legacy chat-first **bone / bronze / ink** palette
+(`packages/theme/src/globals.css`), light-first with Geist Sans, its spec frozen at that state
+([`spec/ui/README.md`](../../../spec/ui/README.md)) — do not restyle it toward Signet ad hoc. The
+legacy `navy` / `royal-blue` / `emerald` **preset keys survive for landing and for
+not-yet-resliced web screens** (existing utility classes keep compiling, but their values map to
+ink / bronze / bone-era colors; the rename is tracked in #917).
 
 **`packages/theme` is the shared token package for every surface, not a web-only one.** It already
 serves `apps/web` and `apps/landing` (Tailwind preset + CSS variables) and `apps/mobile` (typed
-tokens via `@repo/theme/tokens`), and Signet tokens land there too — as an **additive entrypoint**,
-leaving the existing legacy exports that web/landing consume untouched. Two things are defects:
+tokens via `@repo/theme/tokens`), and the Signet tokens live there too (`src/signet.css`,
+`src/signet.ts`) — as an **additive entrypoint**, leaving the legacy exports that landing (and
+not-yet-resliced web classes) still consume untouched. Two things are defects:
 Signet values replacing or bleeding into those legacy exports, and Signet tokens duplicated into
 app-local files instead of extending the package. Component ownership and token-extension rules: §3
 of [`spec/ui/design-system/README.md`](../../../spec/ui/design-system/README.md).
 
-### Theme tokens (the legacy web exports of `@repo/theme`)
+### Signet tokens (web work reads these)
 
-The shipping web theme uses HSL CSS variables for semantic colors:
+Web dashboard work uses the token names defined in `packages/theme/src/signet.css` — read that
+file rather than any table here. It holds the fixed foundations (surface ladder `--background` /
+`--surface-1` / `--card`, text ladder, hairline borders) plus the ShadCN-compat pairs the shared
+preset reads, and the house-default accent slot (`--primary` … `--accent-text`) that the chapter
+accent engine overrides at runtime. The Signet-only Tailwind keys (`surface-1`, `accent-subtle` /
+`accent-border` / `accent-text`, `gold.*`, `fontFamily.sans` → `var(--font-figtree)`) live
+app-locally in `apps/web/tailwind.config.ts` until landing reskins;
+`packages/theme/src/signet.css.spec.ts` asserts every key reads a defined token.
+
+### Legacy theme tokens (landing-only)
+
+The frozen landing theme (`packages/theme/src/globals.css`) uses HSL CSS variables for semantic colors:
 
 | Token | Usage |
 |-------|-------|
@@ -102,7 +117,7 @@ The shipping web theme uses HSL CSS variables for semantic colors:
 | `border` | Borders |
 | `ring` | Focus rings |
 
-### Brand color keys (legacy names, remapped values)
+### Brand color keys (legacy names, remapped values — landing + not-yet-resliced web screens)
 
 | Key | Maps to | Usage |
 |------|-----------|-------|
@@ -133,9 +148,17 @@ const config: Config = {
 };
 ```
 
-Global CSS imports the theme's base styles:
+`apps/web` additionally layers the Signet-only color keys and the Figtree `fontFamily.sans`
+override on top (and keeps `darkMode: "class"` with nothing setting the class, so residual
+`dark:` variants stay inert) — read the real `apps/web/tailwind.config.ts`.
+
+Each surface's global CSS imports exactly one of the two theme stylesheets — never both:
 ```css
-/* apps/web/app/globals.css */
+/* apps/web/app/globals.css — Signet (dark-only) */
+@import "../../../packages/theme/src/signet.css";
+```
+```css
+/* apps/landing/app/globals.css — legacy, frozen */
 @import "../../../packages/theme/src/globals.css";
 ```
 
@@ -143,7 +166,7 @@ Global CSS imports the theme's base styles:
 
 ## Mobile app (`apps/mobile`)
 
-`apps/mobile` is the active Signet surface. Start at
+`apps/mobile` is the mobile Signet surface. Start at
 [`spec/ui/mobile/README.md`](../../../spec/ui/mobile/README.md) — it and its siblings
 (`screens.md`, `navigation.md`, `patterns.md`) own the screen inventory, IA, and interaction
 patterns; tokens, components, icons, and copy come from
@@ -214,15 +237,15 @@ Pattern:
 ### Provider chain (web app)
 
 ```text
-ThemeProvider (next-themes — class-based dark mode)
-  └─ QueryProvider (TanStack Query)
-       └─ FrappProvider (API client with Supabase auth token + chapter ID)
+QueryProvider (TanStack Query)
+  └─ FrappProvider (API client with Supabase auth token + chapter ID)
+       └─ SentryIdentityProvider (Sentry user identity — renders no UI)
             └─ AnalyticsProvider (product analytics)
                  └─ NetworkProvider (online/offline state)
                       └─ App content
 ```
 
-The chain is assembled in `AppProviders` (`apps/web/app/providers.tsx`) and wired into the root layout (`apps/web/app/layout.tsx`); the individual providers live in `apps/web/lib/providers/` (ThemeProvider in `apps/web/components/theme/theme-provider.tsx`). New pages get all providers automatically — do not re-wrap.
+The chain is assembled in `AppProviders` (`apps/web/app/providers.tsx`) and wired into the root layout (`apps/web/app/layout.tsx`); the individual providers live in `apps/web/lib/providers/`. There is no theme provider — the web dashboard is dark-only Signet, and `next-themes` left with the #920 shell slice. New pages get all providers automatically — do not re-wrap.
 
 ### Validation (`@repo/validation`)
 
@@ -257,7 +280,12 @@ Mobile is verified on a device, not in a browser — see the run-path constraint
 
 ### Dark mode
 
-The theme supports dark mode via the `.dark` class, managed by `next-themes` (`ThemeProvider` in the provider chain, `attribute="class"`, system default). Use `useTheme()` from `next-themes` to toggle — don't manipulate the `<html>` class directly. CSS variables automatically switch.
+Signet web is **dark-only**: there is no `next-themes`, no theme provider, and nothing toggles a
+`.dark` class — the single `:root` block in `packages/theme/src/signet.css` is the theme, so there
+is no mode switch to test. `apps/web` keeps `darkMode: "class"` deliberately with nothing setting
+the class, which keeps residual `dark:` variants inert until each family slice deletes them — do
+not set the class or reintroduce a toggle. Landing is unaffected: it stays light-first on the
+legacy `packages/theme/src/globals.css` (its `.dark` block is never toggled).
 
 ### Responsive design
 

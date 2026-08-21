@@ -3,23 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import {
-  AlertCircle,
-  Ban,
-  Bell,
-  ChevronRight,
-  Clock,
-  Menu,
-  Search,
-  ShieldCheck,
-} from "lucide-react";
+import { AlertCircle, Ban, ChevronRight, Clock, ShieldCheck } from "lucide-react";
 import {
   useCurrentChapter,
   useMyPermissions,
   useNotifications,
   useOrgConfig,
 } from "@repo/hooks";
-import { resolveChapterAccentColor } from "@repo/theme/accent";
 import {
   CurrentChapterPayloadSchema,
   type CurrentChapterPayload,
@@ -47,6 +37,12 @@ import {
   isNavItemVisible,
   ProtectedNavItem,
 } from "@/components/layout/protected-nav-item";
+import {
+  MenuGlyph,
+  NotificationsGlyph,
+  SearchGlyph,
+} from "@/components/layout/nav-glyphs";
+import { useChapterTheme } from "@/lib/hooks/use-chapter-theme";
 import { ChapterWizardGate } from "@/components/onboarding/chapter-wizard";
 import { OnboardingTutorial } from "@/components/onboarding/onboarding-tutorial";
 import { useChapterStore } from "@/lib/stores/chapter-store";
@@ -68,10 +64,19 @@ const BETA_CONFIG: { enabled: boolean; style: BetaBadgeStyle } = {
   style: "sidebar_pill",
 };
 
+/*
+ * The one focus recipe (foundations.md §10): a 3px spread of the accent ring
+ * color at ~25% opacity. `--ring` is engine output (step 8), which clears the
+ * 3:1 non-text floor on every shell surface for every seeded chapter — the
+ * dark-mode ring failures #1149 measured cannot recur, because nothing
+ * bone-validated writes `--ring` any more.
+ */
 const sidebarFocusRingClassName =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-side-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-side-bg";
-const navIconClassName = "h-4 w-4";
+  "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25";
+/* Sidebar glyphs are 17px per the sidebar-item spec (components.md §7). */
+const navIconClassName = "h-[17px] w-[17px]";
 const statusIconClassName = "h-3.5 w-3.5";
+const topbarIconClassName = "h-5 w-5";
 
 function subscriptionStatusPresentation(
   status: CurrentChapterPayload["subscription_status"],
@@ -80,33 +85,34 @@ function subscriptionStatusPresentation(
   className: string;
   Icon: React.ComponentType<{ className?: string }>;
 } {
+  // Signet semantic chips (foundations.md §5): a ~13% tint of the hue as fill
+  // with the hue itself as text — never a solid fill, never decorative. The
+  // hues are status statements: active=success, past_due=destructive (money is
+  // late), incomplete=warning (pending — the legacy chip borrowed the accent
+  // for this, which made a status read as branding), canceled=neutral.
   switch (status) {
     case "active":
       return {
         label: "Subscription active",
-        className:
-          "border-success/45 bg-success/15 text-[color:var(--success-foreground)]",
+        className: "border-success/45 bg-success/[.13] text-success",
         Icon: ShieldCheck,
       };
     case "past_due":
       return {
         label: "Payment past due",
-        className:
-          "border-destructive/45 bg-destructive/15 text-[color:var(--destructive-foreground)]",
+        className: "border-destructive/45 bg-destructive/[.13] text-destructive",
         Icon: AlertCircle,
       };
     case "canceled":
       return {
         label: "Subscription canceled",
-        className:
-          "border-side-muted/40 bg-side-bg-hi/60 text-side-muted",
+        className: "border-border bg-secondary text-muted-foreground",
         Icon: Ban,
       };
     case "incomplete":
       return {
         label: "Subscription incomplete",
-        className:
-          "border-primary/45 bg-primary/15 text-[color:var(--primary-foreground)]",
+        className: "border-warning/45 bg-warning/[.13] text-warning",
         Icon: Clock,
       };
   }
@@ -119,12 +125,11 @@ function DashboardChapterPanel({ variant }: { variant: "sidebar" | "sheet" }) {
     enabled: !!activeChapterId,
   });
 
-  const labelMuted =
-    variant === "sidebar" ? "text-side-muted" : "text-muted-foreground";
+  const labelMuted = "text-muted";
   const shellClass =
     variant === "sidebar"
-      ? "rounded-md border border-side-divider bg-side-bg-hi/60 p-3"
-      : "mt-8 rounded-md border border-side-divider bg-side-bg-hi/60 p-3";
+      ? "rounded-lg border border-border bg-card p-3"
+      : "mt-8 rounded-lg border border-border bg-card p-3";
 
   if (!activeChapterId) {
     return null;
@@ -136,7 +141,7 @@ function DashboardChapterPanel({ variant }: { variant: "sidebar" | "sheet" }) {
         <p className={cn("text-[10px] uppercase tracking-[0.16em]", labelMuted)}>
           Subscription
         </p>
-        <div className="mt-2 h-3 w-3/4 animate-pulse rounded-xs bg-side-bg" />
+        <div className="mt-2 h-3 w-3/4 animate-pulse rounded-xs bg-popover" />
       </div>
     );
   }
@@ -147,7 +152,7 @@ function DashboardChapterPanel({ variant }: { variant: "sidebar" | "sheet" }) {
         <p className={cn("text-[10px] uppercase tracking-[0.16em]", labelMuted)}>
           Subscription
         </p>
-        <p className="mt-1.5 text-[11px] text-side-muted">
+        <p className="mt-1.5 text-[11px] text-muted-foreground">
           Could not load chapter details.
         </p>
       </div>
@@ -161,17 +166,20 @@ function DashboardChapterPanel({ variant }: { variant: "sidebar" | "sheet" }) {
         <p className={cn("text-[10px] uppercase tracking-[0.16em]", labelMuted)}>
           Subscription
         </p>
-        <p className="mt-1.5 text-[11px] text-side-muted">
+        <p className="mt-1.5 text-[11px] text-muted-foreground">
           Could not load chapter details.
         </p>
       </div>
     );
   }
 
+  /*
+   * The "Accent adjusted for contrast safety" notice is gone with the legacy
+   * accent resolver (#1157): the Signet engine never substitutes a fallback —
+   * every role it emits is AA-guaranteed at generation time for any seed, so
+   * there is no adjustment to disclose.
+   */
   const payload = parsed.data;
-  const chapterAccent = resolveChapterAccentColor(
-    payload.accent_color ?? undefined,
-  );
   const sub = subscriptionStatusPresentation(payload.subscription_status);
   const SubIcon = sub.Icon;
 
@@ -179,18 +187,13 @@ function DashboardChapterPanel({ variant }: { variant: "sidebar" | "sheet" }) {
     <div className={shellClass}>
       <div
         className={cn(
-          "inline-flex items-center gap-1.5 rounded-xs border px-2 py-0.5 text-[11px]",
+          "inline-flex items-center gap-1.5 rounded-xs border px-2 py-0.5 text-[11px] font-semibold",
           sub.className,
         )}
       >
         <SubIcon className={statusIconClassName} />
         <span>{sub.label}</span>
       </div>
-      {chapterAccent.fallbackApplied ? (
-        <p className="mt-1.5 text-[10px] text-side-muted">
-          Accent adjusted for contrast safety.
-        </p>
-      ) : null}
     </div>
   );
 }
@@ -207,6 +210,10 @@ function findNavItemByPath(pathname: string): NavItem | undefined {
 
 export function DashboardShell({ children }: DashboardShellProps) {
   const pathname = usePathname();
+  // Chapter accent, shell-wide: maps the persisted engine roles onto the
+  // semantic tokens signet.css defines. Mounted here (not in ChatProvider)
+  // so the sidebar's active-item tint doesn't depend on which route is open.
+  useChapterTheme();
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [notificationDrawerOpen, setNotificationDrawerOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -254,7 +261,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
       return (
         <div key={section.id} className="space-y-1">
           {section.anchor ? null : (
-            <p className="px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-side-muted">
+            <p className="px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
               {section.label}
             </p>
           )}
@@ -311,11 +318,11 @@ export function DashboardShell({ children }: DashboardShellProps) {
         */}
         <SheetContent
           side="left"
-          className="flex flex-col border-side-divider bg-side-bg px-4 py-6 text-side-fg"
+          className="flex flex-col border-border bg-surface-1 px-4 py-6 text-foreground"
         >
           <SheetHeader>
-            <SheetTitle className="text-side-fg-hi">Navigation</SheetTitle>
-            <SheetDescription className="text-side-muted">
+            <SheetTitle className="text-foreground">Navigation</SheetTitle>
+            <SheetDescription className="text-muted-foreground">
               Open dashboard routes and chapter tools.
             </SheetDescription>
           </SheetHeader>
@@ -326,7 +333,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
           <nav className="mt-6 flex-1 space-y-4 overflow-y-auto">
             {renderSections(() => setMobileNavOpen(false))}
           </nav>
-          <div className="mt-4 shrink-0 space-y-3 border-t border-side-divider pt-4">
+          <div className="mt-4 shrink-0 space-y-3 border-t border-border pt-4">
             <AccountMenu
               variant="sheet"
               onNavigate={() => setMobileNavOpen(false)}
@@ -342,7 +349,15 @@ export function DashboardShell({ children }: DashboardShellProps) {
         Skip to main content
       </a>
       <div className="mx-auto flex w-full max-w-[1400px]">
-        <aside className="hidden min-h-screen w-72 flex-col border-r border-side-divider bg-side-bg px-3 py-5 text-side-fg lg:flex">
+        {/*
+          The sidebar is the raised nav surface (`--surface-1`, foundations §2)
+          with the fixed Signet text ladder — never a chapter-branded fill. The
+          legacy `derivePalette` sidebar put stock text on a per-chapter
+          surface, which #1150 measured unfixable piecemeal across the 50
+          seeded chapters; here the chapter shows itself only through engine
+          accent roles whose contrast is guaranteed together at generation.
+        */}
+        <aside className="hidden min-h-screen w-72 flex-col border-r border-border bg-surface-1 px-3 py-5 text-foreground lg:flex">
           <div className="space-y-2 px-1">
             <ChapterLockup />
             <ChapterSwitcher />
@@ -353,12 +368,12 @@ export function DashboardShell({ children }: DashboardShellProps) {
           >
             {renderSections()}
           </nav>
-          <div className="mt-6 space-y-3 border-t border-side-divider pt-4">
+          <div className="mt-6 space-y-3 border-t border-border pt-4">
             <AccountMenu variant="sidebar" />
             <DashboardChapterPanel variant="sidebar" />
             {BETA_CONFIG.enabled && BETA_CONFIG.style === "sidebar_pill" ? (
               <div className="flex items-center justify-between px-1">
-                <span className="text-[10px] uppercase tracking-[0.16em] text-side-muted">
+                <span className="text-[10px] uppercase tracking-[0.16em] text-muted">
                   Status
                 </span>
                 <BetaBadge style="sidebar_pill" />
@@ -417,7 +432,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
                   title="Open navigation menu"
                   onClick={() => setMobileNavOpen(true)}
                 >
-                  <Menu className="h-4 w-4" />
+                  <MenuGlyph className={topbarIconClassName} />
                 </Button>
                 <Button
                   variant="outline"
@@ -427,7 +442,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
                   title="Search commands and resources"
                   onClick={() => setCommandMenuOpen(true)}
                 >
-                  <Search className="h-4 w-4" />
+                  <SearchGlyph className={topbarIconClassName} />
                 </Button>
                 <Button
                   variant="outline"
@@ -451,11 +466,17 @@ export function DashboardShell({ children }: DashboardShellProps) {
                   onClick={() => setNotificationDrawerOpen(true)}
                   className="relative"
                 >
-                  <Bell className="h-4 w-4" />
+                  <NotificationsGlyph className={topbarIconClassName} />
+                  {/*
+                    Accent, not red: the Canvas reference badges the
+                    notification count in the chapter accent (s09) — the
+                    mention/DM red is reserved for direct address only
+                    (foundations §5).
+                  */}
                   {unreadNotifications > 0 ? (
                     <span
                       aria-hidden="true"
-                      className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-white"
+                      className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground"
                     >
                       {unreadNotifications > 99 ? "99+" : unreadNotifications}
                     </span>

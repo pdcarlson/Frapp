@@ -432,7 +432,7 @@ export function MembersDirectory() {
       </Card>
 
       {selectedCount > 0 ? (
-        <Card className="border-primary/30 bg-primary-50/70 dark:bg-primary/10">
+        <Card className="border-accent-border bg-accent-subtle">
           <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm font-medium">
               {selectedCount} member{selectedCount > 1 ? "s" : ""} selected
@@ -588,7 +588,7 @@ export function MembersDirectory() {
                       key={id}
                       type="button"
                       onClick={() => openMember(id)}
-                      className="flex flex-col items-center gap-2 rounded-lg border border-border p-4 text-center transition hover:bg-muted/40"
+                      className="flex flex-col items-center gap-2 rounded-lg border border-border p-4 text-center transition hover:bg-accent/40"
                     >
                       <Avatar className="h-14 w-14">
                         {member.avatar_url ? (

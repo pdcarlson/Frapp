@@ -201,10 +201,13 @@ describe("the tokens chapter branding rewrites accept the accent engine's hex", 
     // If the intersection empties out — the engine renames its tokens, the
     // preset drops the keys — every assertion below passes by describing
     // nothing. That is the one way this guard can fail silently.
+    //
+    // The overlap shrank to `--ring` when the #920 shell cutover deleted the
+    // preset's `side-*` keys (zero class consumers remained). It empties
+    // entirely when `derivePalette` itself is removed at the end of the #920
+    // series — delete this whole describe with it.
     expect(chapterTokens.length).toBeGreaterThan(0);
-    expect(readByPreset).toEqual(
-      expect.arrayContaining(["--side-bg", "--side-accent", "--ring"]),
-    );
+    expect(readByPreset).toEqual(expect.arrayContaining(["--ring"]));
   });
 
   it.each(readByPreset)("%s is read in a hex-compatible form", (token) => {
@@ -220,9 +223,9 @@ describe("the tokens chapter branding rewrites accept the accent engine's hex", 
   });
 
   it("still renders a chapter's hex through the preset", () => {
-    const accent = config.theme!.extend!.colors as Record<string, unknown>;
-    const side = accent["side"] as Record<string, (arg?: unknown) => string>;
-    expect(side["accent"]!()).toBe("var(--side-accent)");
+    const colors = config.theme!.extend!.colors as Record<string, unknown>;
+    const ring = colors["ring"] as (arg?: unknown) => string;
+    expect(ring()).toBe("var(--ring)");
   });
 });
 
@@ -350,31 +353,35 @@ describe("nothing hand-writes hsl(var(--x)) around a complete-colour token", () 
 });
 
 describe("opacity modifiers survive the format-agnostic reader", () => {
-  // 14 live classes depend on this — `bg-side-bg-hi/70`, `ring-side-accent/70`,
-  // `border-side-accent/30` and friends. A bare `var()` cannot take a Tailwind
-  // opacity modifier, so dropping `color-mix` here would silently uncolor them.
-  const side = (config.theme!.extend!.colors as Record<string, unknown>)[
-    "side"
-  ] as Record<string, (arg?: unknown) => string>;
+  // Dozens of live classes depend on this — `bg-primary/15`,
+  // `border-destructive/45`, `bg-success/15` and friends. A bare `var()`
+  // cannot take a Tailwind opacity modifier, so dropping `color-mix` here
+  // would silently uncolor them. (The probes read `primary`; every colorVar
+  // key shares the one implementation.)
+  const colors = config.theme!.extend!.colors as Record<string, unknown>;
+  const primary = colors["primary"] as Record<
+    string,
+    (arg?: unknown) => string
+  >;
 
   it("emits a plain var() when no modifier is used", () => {
-    expect(side["bg-hi"]!({ opacityValue: "var(--tw-bg-opacity, 1)" })).toBe(
-      "var(--side-bg-hi)",
+    expect(primary["DEFAULT"]!({ opacityValue: "var(--tw-bg-opacity, 1)" })).toBe(
+      "var(--primary)",
     );
   });
 
   it("emits a color-mix when a modifier is used", () => {
-    expect(side["bg-hi"]!({ opacityValue: "0.7" })).toBe(
-      "color-mix(in srgb, var(--side-bg-hi) calc(0.7 * 100%), transparent)",
+    expect(primary["DEFAULT"]!({ opacityValue: "0.7" })).toBe(
+      "color-mix(in srgb, var(--primary) calc(0.7 * 100%), transparent)",
     );
   });
 
   it("uses a percentage modifier as-is", () => {
-    // `bg-side-bg-hi/[62%]`. Multiplying would give `calc(62% * 100%)`, which is
+    // `bg-primary/[62%]`. Multiplying would give `calc(62% * 100%)`, which is
     // not a valid product, so the browser drops the declaration entirely — the
     // silent no-colour failure this whole file exists to prevent.
-    expect(side["bg-hi"]!({ opacityValue: "62%" })).toBe(
-      "color-mix(in srgb, var(--side-bg-hi) 62%, transparent)",
+    expect(primary["DEFAULT"]!({ opacityValue: "62%" })).toBe(
+      "color-mix(in srgb, var(--primary) 62%, transparent)",
     );
   });
 
@@ -382,10 +389,10 @@ describe("opacity modifiers survive the format-agnostic reader", () => {
     // `gradientColorStops` synthesises the implicit transparent end-stop of
     // `from-*` / `via-*` by calling with the NUMBER 0. A truthiness check would
     // treat that as "no modifier" and emit an opaque stop, so
-    // `bg-gradient-to-t from-side-bg` would render a flat block instead of a
+    // `bg-gradient-to-t from-primary` would render a flat block instead of a
     // fade.
-    expect(side["bg"]!({ opacityValue: 0 })).toBe(
-      "color-mix(in srgb, var(--side-bg) calc(0 * 100%), transparent)",
+    expect(primary["DEFAULT"]!({ opacityValue: 0 })).toBe(
+      "color-mix(in srgb, var(--primary) calc(0 * 100%), transparent)",
     );
   });
 });
