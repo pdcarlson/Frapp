@@ -16,11 +16,21 @@ import { DASHBOARD_ROUTES } from "./routes";
  * cannot go stale, cannot drift with a Chromium revision, and needs no
  * regeneration ritual when a page legitimately changes. It asserts one number.
  *
- * **It reports, it does not block.** It lives here so the `web-visual-regression`
- * job runs it with the browser and dev server that job already sets up — and
- * that job is deliberately not a required check, so a failure here is a red mark
- * a PR can merge past. Making the floor blocking is a CI-topology change, not a
- * test change; tracked separately.
+ * **It blocks.** It still lives in this directory, because it needs the same
+ * browser and dev server `playwright.config.ts` provisions for the snapshot
+ * suite — but it runs in its own required CI job, `web-responsive-floor`, not
+ * in `web-visual-regression` (#1152). The `@floor` tag below is what separates
+ * them: the floor job runs `--grep @floor` and the visual job runs
+ * `--grep-invert @floor`, so each suite runs exactly once and a NEW spec added
+ * to this directory joins the visual job by default rather than falling through
+ * a path list into neither.
+ *
+ * That split exists because the two suites fail for unrelated reasons. The
+ * visual job is deliberately advisory — snapshots drift with Chromium revisions
+ * and font rendering, and blocking merges on that is worse than not blocking.
+ * This test stores no baseline and compares no pixels, so it has none of those
+ * failure modes and inherited the exemption purely by directory. It reads one
+ * integer and compares it to 375.
  *
  * On failure it names the widest element inside `<main>` and its classes,
  * because "scrollWidth is 426" on its own sends the next person back to the
@@ -41,7 +51,7 @@ import { DASHBOARD_ROUTES } from "./routes";
 
 const FLOOR = 375;
 
-test.describe("dashboard routes hold the 375px floor", () => {
+test.describe("dashboard routes hold the 375px floor", { tag: "@floor" }, () => {
   test.beforeEach(async ({ page }) => {
     await page.setViewportSize({ width: FLOOR, height: 800 });
   });

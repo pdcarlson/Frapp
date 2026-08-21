@@ -374,10 +374,16 @@ first, so the failure looks route-specific when it is not. The cloud sandbox exp
 unaffected — Next sets `NODE_ENV=development` itself, after the wrapper hands off.
 
 `apps/web` additionally needs `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` **at build
-time** — several dashboard routes construct a Supabase client while prerendering. Without them the
-build fails on `/chat` with `Your project's URL and API key are required to create a Supabase client!`.
-Vercel supplies these; locally, run the build under `npx infisical run` or export them from your local
-stack values.
+time**. Exactly one route reaches for a Supabase client while prerendering — `/chat`, via
+`lib/chat/chat-provider.tsx` → `lib/realtime/supabase-realtime.ts` — and the build exits there with
+`Your project's URL and API key are required to create a Supabase client!`. Both are read non-null-asserted
+in `lib/supabase/client.ts`, so TypeScript never flags the gap and it only appears at prerender.
+
+Vercel supplies these. Locally, run the build under `npx infisical run` or export your local stack's
+values. In a Claude Code cloud sandbox nothing is needed:
+[`scripts/cloud-sandbox-up.sh`](../../../scripts/cloud-sandbox-up.sh) writes them to
+`apps/web/.env.local` at session start (#1156), so a red `npm run build -w apps/web` there is a real
+failure rather than a missing-env one.
 
 ---
 
