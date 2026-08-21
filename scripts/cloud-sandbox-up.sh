@@ -43,6 +43,26 @@ fail() {
   exit 1
 }
 
+# Egress capability probe — deliberately FIRST, before any Docker or Supabase work.
+#
+# Two reasons it is here and not at the end, where it started:
+#
+#   1. It has nothing to do with the local stack. Reaching deployed staging does not
+#      require Docker, Postgres, or a single container. Running it last meant that any
+#      `fail()` above it — a denied ulimit, a stuck container, an image pull that ran out
+#      of retries — exited before the probe and left the session with NO manifest, even
+#      though its egress was completely intact. That is precisely backwards: a session
+#      whose local stack died is the one most likely to fall back on live staging.
+#   2. It finishes in about a second, so the answer is ready long before the ~60-90s
+#      bringup lands `.done`. Nothing waiting on `.done` can observe a missing manifest.
+#
+# Non-fatal by construction — the probe cannot return non-zero (see its header). Invoked
+# with `|| true` anyway so a future edit breaking that promise degrades to "no manifest"
+# instead of taking down bringup for every session, including the ones that never touch
+# staging.
+cs_log "Probing deployed-environment egress..."
+bash "$ROOT/scripts/cloud-sandbox-egress-probe.sh" >/dev/null || true
+
 # Write apps/api/.env.local and apps/web/.env.local from the live local Supabase status
 # (plus Stripe env vars for the API). Real Stripe test keys are used when present;
 # otherwise clearly-marked placeholders that satisfy the non-empty check in

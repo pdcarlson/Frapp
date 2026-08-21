@@ -44,13 +44,18 @@ public.ecr.aws
 staging.frapp.live
 *.staging.frapp.live
 api-staging.frapp.live
-*.supabase.co
+hnoyzpidbmizhbqaiity.supabase.co
 ```
 
 The first two are what makes `supabase start` work. The last four are the **live staging
 egress** described in [Live staging egress](#live-staging-egress) below; omit them and the
 sandbox is still fully functional for local-stack work, it just cannot reach the deployed
-environment. **Do not** collapse them to `*.frapp.live` — see the warning in that section.
+environment.
+
+**Every one of those four is a literal host on purpose.** Both wildcards a reader reaches
+for — `*.frapp.live` and `*.supabase.co` — silently include **production**, because prod
+and staging share an apex on both. See [Enumerate, do not
+wildcard](#enumerate-do-not-wildcard).
 
 `supabase start` does **not** pull only from Docker Hub: the Postgres image (and several
 others) come from **AWS ECR Public** (`public.ecr.aws/supabase/*`), served via
@@ -358,7 +363,7 @@ bringup script) after any local reset.
 
 ## Live staging egress
 
-The four `frapp.live` / `supabase.co` lines in the allowlist above let a sandbox session
+The four staging hosts in the allowlist above let a sandbox session
 reach the **deployed staging environment**, not just the local stack. This is what retires
 most of the "Runtime checks BLOCKED" protocol in
 [`../ci-cd/AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md) — see
@@ -370,28 +375,50 @@ for how an agent is expected to use it.
 | `staging.frapp.live` | the landing site (apex — see wildcard note) |
 | `*.staging.frapp.live` | `app.staging.frapp.live`, the web dashboard |
 | `api-staging.frapp.live` | the Render-hosted API. A **sibling** of `staging.frapp.live`, not a subdomain of it, so `*.staging.frapp.live` does **not** cover it |
-| `*.supabase.co` | the hosted `frapp-staging` project — Realtime, Presence, GoTrue |
+| `hnoyzpidbmizhbqaiity.supabase.co` | the hosted `frapp-staging` project — Realtime, Presence, GoTrue. The **staging project ref**, not a wildcard; if the project is ever rotated this line must be updated, and the bringup probe below is what will tell you |
 
-### Wildcard semantics
+### Wildcard semantics — weaker than the docs imply
 
-Per the [cloud environments docs](https://code.claude.com/docs/en/cloud-environments#access-levels),
-"a leading `*.` matches every subdomain". Two properties of that, confirmed by probing this
-sandbox against the default Trusted list:
+The [cloud environments docs](https://code.claude.com/docs/en/cloud-environments#access-levels)
+say "a leading `*.` matches every subdomain". Probing this sandbox shows that is not a safe
+thing to rely on for a **Custom** entry. Two observations, both from the live proxy:
 
-- **It matches multi-level subdomains.** `s3.us-east-1.amazonaws.com` resolves through
-  `*.amazonaws.com`, so `*.staging.frapp.live` genuinely covers `app.staging.frapp.live`.
-- **It does not match the apex.** `amazonaws.com` and `googleapis.com` are both blocked
-  while their subdomains are allowed. That is why `staging.frapp.live` needs its own line.
+- **A Custom `*.` matched exactly one label.** With `*.supabase.co` in the allowlist,
+  `<ref>.supabase.co` was allowed but `db.<ref>.supabase.co` was **rejected**
+  (`connect_rejected` in `$HTTPS_PROXY/__agentproxy/status`). The *default* list behaves
+  differently — `s3.us-east-1.amazonaws.com` resolves through its `*.amazonaws.com` at two
+  labels deep — so default-list and Custom entries do **not** match identically, and the
+  docs do not say so.
+- **It does not match the apex**, under either. `amazonaws.com`, `googleapis.com`, and
+  `supabase.co` are all blocked while their subdomains are allowed. That is why
+  `staging.frapp.live` needs its own line.
 
-### Do not use `*.frapp.live`
+**Operating rule: do not rely on `*.` spanning more than one label. Enumerate the host.**
+`*.staging.frapp.live` is kept only because `app.staging.frapp.live` is exactly one label
+deep; it is not evidence that deeper patterns work.
 
-It is the obvious shortcut and it is wrong. Production lives on the same apex —
-`frapp.live`, `www.frapp.live`, `app.frapp.live`, `api.frapp.live` (see
-[`../ops/DEPLOYMENT.md`](../ops/DEPLOYMENT.md) § DNS Records) — so one wildcard hands every
-unattended session egress to prod. The environment's variables are, by this doc's own rule
-above, visible to anyone who can edit the environment; egress plus a credential is enough
-to mutate real chapter data. Staging is the blast radius we accept. **Enumerate the staging
-hosts.**
+### Enumerate, do not wildcard
+
+Both tempting shortcuts are wrong for the **same** reason: prod and staging share an apex,
+on both domains.
+
+| Shortcut | Also grants | Prod host it exposes |
+| -------- | ----------- | -------------------- |
+| `*.frapp.live` | the production web + API | `app.frapp.live`, `api.frapp.live` |
+| `*.supabase.co` | the **production database project** | `unttyvyfezddlyafcydh.supabase.co` |
+
+The second is the easier one to get wrong, because nothing in the hostname says "prod" —
+`frapp-staging` is `hnoyzpidbmizhbqaiity` and `frapp-prod` is `unttyvyfezddlyafcydh`, two
+opaque refs on one apex (`mcp__Supabase__list_projects` maps them). A single `*.supabase.co`
+line therefore hands every unattended session a route to production data, which is exactly
+what enumerating the `frapp.live` hosts was meant to prevent. This was shipped once and
+caught by probing; the negative assertion in the bringup probe exists so it cannot happen
+quietly again.
+
+Reaching a prod host is not the same as reading prod data — that still needs prod
+credentials, which this environment does not hold. But the environment's variables are, by
+this doc's own rule above, visible to anyone who can edit it, so the two are one
+configuration change apart. Staging is the blast radius we accept. **Enumerate.**
 
 ### What this does not unlock
 
@@ -415,14 +442,48 @@ hosts.**
 
 ### Checking whether egress is live
 
+**Do not probe by hand — it has already been done.** `scripts/cloud-sandbox-egress-probe.sh`
+runs as the **first** step of bringup and writes `.cloud-sandbox-capabilities.json` at the
+repo root (gitignored — it describes one environment's policy at one moment).
+`.claude/hooks/session-start.sh` summarises it into the session context, so in a normal
+sandbox session the answer is already in front of you.
+
+It runs first, not last, for a reason worth knowing: **egress does not depend on the local
+stack.** Reaching deployed staging needs no Docker, no Postgres, no containers. With the
+probe at the end, any earlier `fail()` — a denied ulimit, an unhealthy container, an image
+pull out of retries — exited before it and left the session with no manifest despite
+perfectly good egress. That is backwards, because a session whose local stack just died is
+the one most likely to fall back on live staging. It also means the manifest is ready
+within about a second, long before the ~60–90s bringup lands `.done`.
+
 ```bash
-curl -sS -o /dev/null -w '%{http_code}\n' https://api-staging.frapp.live/health
+# Read the answer
+python3 -m json.tool .cloud-sandbox-capabilities.json
+
+# Re-probe after changing the allowlist (or on a laptop, where bringup never ran)
+bash scripts/cloud-sandbox-egress-probe.sh
 ```
 
-`200` means egress is configured. A **policy** denial fails as
-`curl: (56) CONNECT tunnel failed, response 403` — distinct from DNS failure, which is what
-you would see if the host genuinely did not exist. `curl -sS "$HTTPS_PROXY/__agentproxy/status"`
-lists recent rejections under `recentRelayFailures` with the host that was refused.
+The manifest reports three outcomes, and the distinction is the point:
+
+| `status` | Means |
+| -------- | ----- |
+| `reachable` | the host answered — any HTTP code counts, including the 302 the web hosts return and the 404 the Supabase root returns |
+| `blocked` | the proxy refused CONNECT (`curl: (56) CONNECT tunnel failed, response 403`) — a real policy denial |
+| `timeout` / `no_dns` / `unknown` | the probe **could not tell**. Not a pass and not a fail; `ok` is `null` and it never counts toward either total |
+
+That third row is why the manifest exists rather than a bare `curl`: a timeout looks
+exactly like a block to a one-line probe, and acting on the wrong one wastes a session.
+`curl -sS "$HTTPS_PROXY/__agentproxy/status"` remains the ground truth for *which* host the
+proxy refused, listed under `recentRelayFailures`.
+
+The probe also asserts **negatively** that both production apexes are unreachable. A prod
+host that answers is reported as a `SECURITY` warning, not as extra capability — that is
+the tripwire for an allowlist that has been widened back to a wildcard.
+
+It runs per session, never in `cloud-sandbox-setup.sh`: that script's filesystem is cached
+for ~7 days, and a week-old cached answer about a policy that can change between sessions
+is worse than no answer.
 
 ## Still out of scope
 

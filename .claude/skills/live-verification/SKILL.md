@@ -29,19 +29,31 @@ That is a real capability and a real blast radius. This skill is the posture for
 
 ## 1. Preflight — is egress actually on?
 
+**Read the manifest; do not hand-roll a probe.** Bringup already answered this and wrote
+it down:
+
 ```bash
-curl -sS -o /dev/null -w '%{http_code}\n' --max-time 10 https://api-staging.frapp.live/health
+python3 -m json.tool .cloud-sandbox-capabilities.json
 ```
 
-| Result | Meaning | Do |
-| ------ | ------- | -- |
-| `200` | Egress live | Proceed |
-| `curl: (56) CONNECT tunnel failed, response 403` | **Policy denial** — host not allowlisted | Stop. Report it as environment config (below) |
-| DNS failure | Not a policy result — host genuinely unresolvable | Investigate as a real outage, not a config gap |
+The SessionStart hook also summarises it into your context, so you may already have the
+answer without running anything. If the file is missing (laptop session, or bringup did not
+run), generate it: `bash scripts/cloud-sandbox-egress-probe.sh`.
 
-`curl -sS "$HTTPS_PROXY/__agentproxy/status"` lists refused hosts under
-`recentRelayFailures`. Distinguishing the 403 from a DNS failure matters: they have
-opposite fixes, and reporting the wrong one sends the owner to the wrong dashboard.
+| Manifest `status` | Meaning | Do |
+| ----------------- | ------- | -- |
+| `reachable` | the host answered (any HTTP code — `302` and `404` are normal here) | Proceed |
+| `blocked` | proxy refused CONNECT — host not allowlisted | Stop. Report as environment config (below) |
+| `timeout` / `no_dns` / `unknown` | the probe **could not tell** | Neither proceed nor report a block. Re-run the probe; if it stays inconclusive, say so in those words |
+
+That last row is the one that gets misread. An inconclusive probe is not a block, and
+reporting it as one sends the owner to edit an allowlist that was never the problem.
+
+Two things the manifest gives you that a bare `curl` does not: the `warnings` array already
+carries the correct remedy wording, and a `SECURITY` warning means a **production** host
+answered — treat that as a stop-everything finding, not as extra capability.
+`curl -sS "$HTTPS_PROXY/__agentproxy/status"` remains ground truth for which host the proxy
+refused, under `recentRelayFailures`.
 
 When egress is off, that is a **human-only blocker** — an allowlist is dashboard config, not
 something an agent can work around. Say exactly which line is missing, quoting
@@ -53,19 +65,27 @@ the local stack and report the check as done — that is the silent-coverage fai
 
 ## 2. Never point at production
 
-Production and staging share the `frapp.live` apex:
+Production and staging share an apex on **both** domains:
 
 | Staging — allowed | Production — **never** |
 | ----------------- | ---------------------- |
 | `staging.frapp.live` | `frapp.live` |
 | `app.staging.frapp.live` | `app.frapp.live` / `www.frapp.live` |
 | `api-staging.frapp.live` | `api.frapp.live` |
+| `hnoyzpidbmizhbqaiity.supabase.co` | `unttyvyfezddlyafcydh.supabase.co` |
 
 Before any command carrying a hostname, read the hostname. `api.frapp.live` and
-`api-staging.frapp.live` differ by nine characters and by every consequence. The allowlist
-is a backstop that should never be the thing that catches you — it enumerates staging hosts
-precisely so a typo fails closed rather than reaching prod, but a `POST` you meant for
-staging is your responsibility before it is the proxy's.
+`api-staging.frapp.live` differ by nine characters and by every consequence.
+
+The Supabase row is the dangerous one: **nothing in either ref says which is which.** Never
+type a `supabase.co` host from memory or from a doc — resolve it from the environment
+(`SUPABASE_URL` in `apps/*/.env.local`) or from `mcp__Supabase__list_projects`, where the
+project is *named*. If you cannot say out loud which project a ref belongs to, you do not
+yet know enough to send it a request.
+
+The allowlist is a backstop that should never be the thing that catches you — it enumerates
+staging hosts precisely so a typo fails closed rather than reaching prod, but a `POST` you
+meant for staging is your responsibility before it is the proxy's.
 
 If a task appears to *require* production, it does not. Stop and ask the owner.
 
