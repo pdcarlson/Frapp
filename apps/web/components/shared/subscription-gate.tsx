@@ -249,7 +249,7 @@ export function SubscriptionNotice({
       // under an open dialog — that close is otherwise silent.
       role="status"
       className={cn(
-        "mb-4 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground",
+        "mb-4 rounded-md border border-border bg-secondary/40 p-3 text-sm text-muted-foreground",
         className,
       )}
     >

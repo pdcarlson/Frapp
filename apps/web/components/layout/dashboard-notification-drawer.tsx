@@ -122,7 +122,10 @@ export function DashboardNotificationDrawer({
             <Bell className="h-4 w-4" />
             Notifications
             {unreadCount > 0 ? (
-              <Badge variant="destructive" className="ml-1">
+              <Badge
+                variant="outline"
+                className="ml-1 border-accent-border bg-accent-subtle text-accent-text"
+              >
                 {unreadCount}
               </Badge>
             ) : null}
@@ -168,7 +171,7 @@ export function DashboardNotificationDrawer({
               Loading notifications...
             </div>
           ) : notificationsQuery.isError ? (
-            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+            <div className="rounded-md border border-destructive/45 bg-destructive/[.13] p-3 text-sm text-destructive">
               Couldn&apos;t load notifications. Retry in a moment.
             </div>
           ) : notifications.length === 0 ? (
@@ -188,10 +191,10 @@ export function DashboardNotificationDrawer({
                         void handleMarkRead(notification);
                         onOpenChange(false);
                       }}
-                      className={`block rounded-md border p-3 transition hover:bg-muted ${
+                      className={`block rounded-md border p-3 transition hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25 ${
                         isRead
                           ? "border-border bg-card"
-                          : "border-primary/40 bg-primary/5"
+                          : "border-accent-border bg-accent-subtle"
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">

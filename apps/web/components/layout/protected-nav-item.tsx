@@ -92,6 +92,12 @@ export function ProtectedNavItem({
     return null;
   }
 
+  // Signet sidebar item (components.md §7): 40px tall, radius 10, tinted
+  // accent fill + accent text when active, quiet neutral otherwise. The active
+  // pair (`accent-subtle` + `accent-text`) comes from the chapter accent
+  // engine, which guarantees their AA contrast at generation time for every
+  // seed — this is what replaced the legacy branded `--side-*` sidebar and its
+  // stock-text-on-branded-surface failures (#1150/#1164).
   if (item.href) {
     return (
       <Link
@@ -100,14 +106,14 @@ export function ProtectedNavItem({
         aria-current={isActive ? "page" : undefined}
         title={item.description}
         className={cn(
-          "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition",
+          "flex h-10 w-full items-center gap-2.5 rounded-sm px-3 text-left text-[14.5px] transition",
           focusClassName,
           isActive
-            ? "border-l-2 border-side-accent bg-side-bg-hi text-side-fg-hi"
-            : "border-l-2 border-transparent text-side-fg hover:bg-side-bg-hi/70 hover:text-side-fg-hi",
+            ? "bg-accent-subtle font-semibold text-accent-text"
+            : "text-muted-foreground hover:bg-card hover:text-foreground",
         )}
       >
-        <item.icon className={iconClassName} />
+        <item.icon className={iconClassName} active={isActive} />
         <span>{item.label}</span>
       </Link>
     );
@@ -121,14 +127,14 @@ export function ProtectedNavItem({
       title={item.description ?? item.statusLabel ?? "Coming soon"}
       onClick={(e) => e.preventDefault()}
       className={cn(
-        "flex w-full cursor-not-allowed items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-side-muted opacity-60",
+        "flex h-10 w-full cursor-not-allowed items-center gap-2.5 rounded-sm px-3 text-left text-[14.5px] text-disabled",
         focusClassName,
       )}
     >
       <item.icon className={iconClassName} />
       <span>{item.label}</span>
       {item.statusLabel ? (
-        <span className="ml-auto rounded-xs border border-side-divider px-2 py-0.5 text-[10px] uppercase tracking-wide text-side-muted">
+        <span className="ml-auto rounded-xs border border-border px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted">
           {item.statusLabel}
         </span>
       ) : null}

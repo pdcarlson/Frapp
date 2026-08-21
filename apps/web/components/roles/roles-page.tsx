@@ -312,7 +312,7 @@ export function RolesAndPermissionsPage() {
                       >
                         <button
                           type="button"
-                          className="flex min-w-0 flex-1 items-center gap-3 rounded-md px-2 py-1 text-left hover:bg-muted"
+                          className="flex min-w-0 flex-1 items-center gap-3 rounded-md px-2 py-1 text-left hover:bg-accent"
                           aria-pressed={activeRoleId === role.id}
                           onClick={() => selectRole(role)}
                         >

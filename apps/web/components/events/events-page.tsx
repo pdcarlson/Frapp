@@ -266,7 +266,7 @@ export function EventsPage() {
       </Card>
 
       {selectedEventIds.length > 0 ? (
-        <Card className="border-primary/30 bg-primary-50/70 dark:bg-primary/10">
+        <Card className="border-accent-border bg-accent-subtle">
           <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm font-medium">
               {selectedEventIds.length} event{selectedEventIds.length > 1 ? "s" : ""} selected

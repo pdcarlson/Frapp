@@ -20,7 +20,7 @@ export function TextRenderer({ message, isSelf }: TextRendererProps) {
         message.is_deleted ? "italic text-muted-foreground" : ""
       } ${
         isSelf && !message.is_deleted
-          ? "rounded-md bg-[color:var(--chat-self-bubble,theme(colors.primary.50))] px-2 py-1"
+          ? "rounded-md bg-[color:var(--accent-subtle)] px-2 py-1"
           : ""
       }`}
     >

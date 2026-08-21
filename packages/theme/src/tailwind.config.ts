@@ -26,7 +26,7 @@ const motionEasing = frappTokens.motion.easing;
  * the #920 groundwork moved the rest, so there is now exactly one convention and
  * no pairing rule to get wrong.
  *
- * `color-mix` only appears when a class asks for one — `bg-side-bg-hi/70` — so
+ * `color-mix` only appears when a class asks for one — `bg-primary/15` — so
  * the common case still compiles to a plain `var()`. Tailwind hands this
  * function `var(--tw-bg-opacity, 1)` for an un-modified utility; that path is
  * deliberately collapsed to the bare variable, which drops support for the
@@ -48,10 +48,11 @@ const motionEasing = frappTokens.motion.easing;
  * compiles to a plain `var()` and has no floor at all. Those degrade to no
  * fill on an older engine.
  *
- * The floor was scoped to the fourteen `side-*` classes while they were the
- * only keys here. Converting the rest of the preset (#920 groundwork) widened
- * it to every token: measured against the real `apps/web` and `apps/landing`
- * class corpus, compiled `color-mix` declarations went from **7** to **57**.
+ * The floor was scoped to the fourteen `side-*` classes (a family since
+ * deleted with the #920 shell cutover) while they were the only keys here.
+ * Converting the rest of the preset (#920 groundwork) widened it to every
+ * token: measured against the real `apps/web` and `apps/landing` class
+ * corpus, compiled `color-mix` declarations went from **7** to **57**.
  *
  * It is the same trade Tailwind v4 makes for every colour, and it is the price
  * of a token that can hold hex, `hsl()` or `rgba()`; there is no pre-`color-mix`
@@ -59,7 +60,7 @@ const motionEasing = frappTokens.motion.easing;
  * hairlines make that format-agnostic reader mandatory, so the floor is not
  * separable from the cutover.
  */
-const colorVar = (token: string): string =>
+export const colorVar = (token: string): string =>
   // Tailwind resolves a function color value at runtime and documents the form,
   // but `Config` types every colour as a plain `string`, so there is no way to
   // express this without a cast. It is the type stub being narrower than the
@@ -128,20 +129,15 @@ const config: Partial<Config> = {
           600: "#3D6B4A",
         },
         /*
-         * Sidebar tokens (always dark ink) — driven by CSS variables, and
-         * rewritten per chapter by `derivePalette()`. Read through `colorVar`
-         * so the hex the accent engine persists actually resolves; see the
-         * note on that helper.
+         * The `side-*` sidebar family is gone. It existed for the legacy web
+         * dashboard's always-dark-ink sidebar; the #920 Signet shell replaced
+         * that sidebar with the fixed neutral ladder plus engine accent roles,
+         * `apps/landing` never used a `side-*` class, and a key with zero
+         * consumers is deleted, not kept "in case" (signet-cutover skill).
+         * `derivePalette` still persists `--side-bg`/`--side-accent` into
+         * stored `theme_palette` rows until the legacy engine is removed;
+         * nothing reads them through the preset any more.
          */
-        side: {
-          bg: colorVar("--side-bg"),
-          "bg-hi": colorVar("--side-bg-hi"),
-          fg: colorVar("--side-fg"),
-          "fg-hi": colorVar("--side-fg-hi"),
-          muted: colorVar("--side-muted"),
-          divider: colorVar("--side-divider"),
-          accent: colorVar("--side-accent"),
-        },
 
         /* ── Semantic tokens (mapped to CSS variables for ShadCN compatibility) ── */
         background: colorVar("--background"),
@@ -154,20 +150,16 @@ const config: Partial<Config> = {
           DEFAULT: colorVar("--popover"),
           foreground: colorVar("--popover-foreground"),
         },
+        /*
+         * The 50–950 ramp is gone: its only class consumers were five
+         * `bg-primary-50` call sites in `apps/web`, retargeted to the accent
+         * tint tokens by the #920 shell slice, and `apps/landing` never used
+         * any step. Under Signet the graded accent family comes from the
+         * chapter accent engine's role tokens, not a static ramp.
+         */
         primary: {
           DEFAULT: colorVar("--primary"),
           foreground: colorVar("--primary-foreground"),
-          50: colorVar("--primary-50"),
-          100: colorVar("--primary-100"),
-          200: colorVar("--primary-200"),
-          300: colorVar("--primary-300"),
-          400: colorVar("--primary-400"),
-          500: colorVar("--primary-500"),
-          600: colorVar("--primary-600"),
-          700: colorVar("--primary-700"),
-          800: colorVar("--primary-800"),
-          900: colorVar("--primary-900"),
-          950: colorVar("--primary-950"),
         },
         success: {
           DEFAULT: colorVar("--success"),

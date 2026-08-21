@@ -427,7 +427,7 @@ function AddFieldForm({ canManage }: { canManage: boolean }) {
                       disabled={!canManage}
                       onClick={() => removeChoice(choice)}
                       aria-label={`Remove option ${choice}`}
-                      className="rounded-sm hover:bg-muted"
+                      className="rounded-sm hover:bg-accent"
                     >
                       <X className="h-3 w-3" />
                     </button>

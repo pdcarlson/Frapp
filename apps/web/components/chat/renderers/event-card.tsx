@@ -185,9 +185,9 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
   };
 
   return (
-    <div className="mt-1 rounded-md border-l-4 border-[color:var(--side-accent,#7A5A2F)] bg-[color:var(--mention-bg,theme(colors.amber.50))] px-3 py-2">
+    <div className="mt-1 rounded-md border-l-4 border-[color:var(--accent-text)] bg-[color:var(--accent-subtle)] px-3 py-2">
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-[color:var(--side-accent,#7A5A2F)]">
+        <div className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-[color:var(--accent-text)]">
           <CalendarDays className="h-3 w-3" aria-hidden="true" /> Event
         </div>
         {payload.is_mandatory ? (

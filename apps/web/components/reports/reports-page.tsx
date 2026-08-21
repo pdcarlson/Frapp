@@ -673,7 +673,7 @@ export function ReportsPage() {
             ) : (
               <div className="overflow-x-auto rounded-md border border-border">
                 <table className="min-w-full divide-y divide-border text-xs">
-                  <thead className="bg-muted/40">
+                  <thead className="bg-secondary/40">
                     <tr>
                       {previewColumnKeys.map((key) => (
                         <th

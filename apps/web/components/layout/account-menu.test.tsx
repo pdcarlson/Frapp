@@ -14,11 +14,6 @@ vi.mock("next/link", () => ({
   }) => <a {...props}>{children}</a>,
 }));
 
-const setTheme = vi.fn();
-vi.mock("next-themes", () => ({
-  useTheme: () => ({ theme: "system", setTheme }),
-}));
-
 const useCurrentUser = vi.fn();
 vi.mock("@repo/hooks", () => ({ useCurrentUser: () => useCurrentUser() }));
 
@@ -38,14 +33,12 @@ describe("AccountMenu", () => {
         avatar_url: null,
       },
     });
-    setTheme.mockReset();
   });
 
-  it("carries the three affordances it replaced", async () => {
-    // Profile left the nav, and the header's theme toggle and Sign out button
-    // were deleted in the same change. If any one of them failed to land here
-    // it would simply be gone from the dashboard — this is the only place a
-    // member can reach them now.
+  it("carries the affordances it replaced", async () => {
+    // Profile left the nav and the header's Sign out button was deleted in the
+    // same change. If either one failed to land here it would simply be gone
+    // from the dashboard — this is the only place a member can reach them now.
     const user = userEvent.setup();
     render(<AccountMenu variant="sidebar" />);
 
@@ -55,12 +48,6 @@ describe("AccountMenu", () => {
       "href",
       "/profile",
     );
-    expect(
-      screen.getByRole("menuitemradio", { name: /light/i }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("menuitemradio", { name: /dark/i }),
-    ).toBeInTheDocument();
     expect(
       screen.getByRole("menuitem", { name: /sign out/i }),
     ).toBeInTheDocument();
@@ -96,13 +83,15 @@ describe("AccountMenu", () => {
     expect(onNavigate).toHaveBeenCalledTimes(1);
   });
 
-  it("switches theme from the menu", async () => {
+  it("renders no theme section — Signet is dark-only", async () => {
+    // The theme radio group was deleted with next-themes in the #920 shell
+    // slice. If it ever reappears, this menu is the place it would land.
     const user = userEvent.setup();
     render(<AccountMenu variant="sidebar" />);
 
     await user.click(screen.getByRole("button", { name: /account menu/i }));
-    await user.click(screen.getByRole("menuitemradio", { name: /dark/i }));
 
-    expect(setTheme).toHaveBeenCalledWith("dark");
+    expect(screen.queryByText(/theme/i)).not.toBeInTheDocument();
+    expect(screen.queryAllByRole("menuitemradio")).toHaveLength(0);
   });
 });

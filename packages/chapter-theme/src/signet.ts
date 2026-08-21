@@ -242,51 +242,9 @@ export function deriveSignetPalette(
 }
 
 /**
- * The `--signet-accent-*` roles under the semantic names
- * `spec/ui/design-system/foundations.md` §6 gives the accent slot.
- *
- * Two naming systems exist here on purpose. `deriveSignetPalette` emits
- * namespaced `--signet-accent-*` because that is what gets **persisted**, and
- * §6 names the slot by the semantic names components actually consume. This is
- * the bridge, and it is a pure function of an already-generated palette — it
- * never re-runs the generator, so the §8 contrast guarantees carry through
- * unchanged.
- *
- * ## Why this is not what gets stored
- *
- * `chapters.theme_palette` is applied by iterating every key and calling
- * `root.style.setProperty` (`apps/web/lib/hooks/use-chapter-theme.ts`). The
- * shape written under a name has to match how the stylesheet stores it: web's
- * legacy stylesheet once defined `--primary` as an **HSL triple**
- * (`30 45% 32%`) that the Tailwind preset wrapped in `hsl(...)`, so a hex
- * written under that name produced the invalid `hsl(#C49A3A)` and every
- * primary-colored surface on the dashboard lost its color at once.
- *
- * That hazard is gone. #1143 moved `--ring` and the whole `--side-*` family to
- * complete colour values read as bare `var(--token)`, and the #920 groundwork
- * moved the rest, so `packages/theme/src/globals.css` now has exactly one
- * format — every token is a complete colour
- * (`spec/ui/design-system/accent-engine.md` §6).
- *
- * The persisted map stays namespaced anyway, because a namespaced field is
- * additive and cannot collide with anything a surface has not opted into. This
- * mapping is that opt-in: a surface calls it once its own preset reads bare
- * `var(--token)` throughout. Web now satisfies that precondition but does not
- * yet call this — wiring it is the reskin's own step (#920), and it has to
- * settle who writes `--primary` / `--ring` first, since legacy `derivePalette`
- * still writes `--ring` on the same element. Mobile has no stylesheet at all
- * and can consume either shape.
+ * The role → semantic-name bridge lives in `./accent-vars.ts`, which has no
+ * runtime dependency on this file: browsers import it directly rather than
+ * pulling the generator and `colorjs.io` into a bundle to rename seven keys.
+ * Re-exported here so server callers keep one import.
  */
-export function signetAccentSemanticVars(
-  palette: SignetPalette,
-): Record<string, string> {
-  return {
-    "--primary": palette["--signet-accent-primary"],
-    "--primary-hover": palette["--signet-accent-hover"],
-    "--primary-foreground": palette["--signet-accent-on-primary"],
-    "--ring": palette["--signet-accent-ring"],
-    "--accent-subtle": palette["--signet-accent-subtle-bg"],
-    "--accent-border": palette["--signet-accent-border"],
-    "--accent-text": palette["--signet-accent-text"],
-  };
-}
+export { signetAccentSemanticVars } from "./accent-vars.js";

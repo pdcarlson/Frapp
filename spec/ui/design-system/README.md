@@ -1,10 +1,10 @@
-> **PLANNED (target state).** This document specifies the Signet design system the product is being built toward; much of it has no implementation yet. Sequencing is tracked in GitHub Issues — do not file spec-vs-implementation drift issues against it.
+> **TARGET STATE — partly shipped.** This document specifies the Signet design system the product is being built toward; the mobile app and the web dashboard shell implement it today, and the remaining web screen families land per the #920 slices. Sequencing is tracked in GitHub Issues — do not file spec-vs-implementation drift issues against it.
 
 # Signet design system
 
 > The rules shared by every Signet surface: direction, guardrails, component ownership, state completeness, entitlement gating, accessibility, motion, and the quality gate. Token values live in the sibling docs below; the committed HTML references are the visual truth.
 
-**Scope.** The *process* standards — component ownership (§3), state completeness (§4), entitlement gating (§5), accessibility (§6), motion discipline (§7), the quality gate (§8), and the behavioral bans in §2 — bind **every** UI surface, including the frozen [`../web-dashboard/README.md`](../web-dashboard/README.md) and [`../landing/README.md`](../landing/README.md). The *visual* specification — §1, the visual bans in §2, and the token docs below — is scoped to **Signet surfaces only**; the frozen surfaces keep shipping their legacy design system, and [`foundations.md`](foundations.md) §1 owns that split.
+**Scope.** The *process* standards — component ownership (§3), state completeness (§4), entitlement gating (§5), accessibility (§6), motion discipline (§7), the quality gate (§8), and the behavioral bans in §2 — bind **every** UI surface, including the frozen [`../landing/README.md`](../landing/README.md). The *visual* specification — §1, the visual bans in §2, and the token docs below — binds the **Signet surfaces**: mobile and the web dashboard ([`../web-dashboard/README.md`](../web-dashboard/README.md)). Landing is the one frozen carve-out — it keeps shipping its legacy design system, and [`foundations.md`](foundations.md) §1 owns that split.
 
 ---
 
@@ -39,7 +39,7 @@ Visual truth and precedence (references beat docs, Canvas beats the system panel
 
 ## 2. De-Google guardrails
 
-Signet must not read as another generic Google/Material utility, and must not behave like one. These bans are research-derived and **binding**; the Binds column states where, per the scope statement above. A visual ban is not a defect on a frozen surface — `apps/web` legitimately ships `shadow-*` utilities and fixed-HSL borders under its legacy tokens.
+Signet must not read as another generic Google/Material utility, and must not behave like one. These bans are research-derived and **binding**; the Binds column states where, per the scope statement above. A visual ban is not a defect on a frozen surface — `apps/landing` legitimately ships fixed-color borders and its light bone palette under the legacy tokens. `apps/web` is no longer that example: its shell is Signet, and residual violations on screens awaiting their per-family truing-up are tracked by the #920 slices, not filed as drift.
 
 | Ban | Instead | Binds |
 | --- | --- | --- |
@@ -68,7 +68,7 @@ Rules:
 1. If a component is workflow-specific, keep it app-local.
 2. If a component is a reusable dashboard primitive, keep it in `apps/web/components/ui/` (shadcn/Radix). Landing uses inline Tailwind; mobile uses React Native composites. Do not recreate a shared web-component workspace for that.
 3. Never duplicate token values in app-local files when semantic tokens exist.
-4. If no existing token role fits, extend or amend the token definitions and adopt the new role consistently — never one-off the value at the call site. Signet surfaces extend `packages/theme/src/signet.ts`; the frozen web/landing surfaces extend the legacy `packages/theme/src/tokens.ts`. The per-tenant accent family is not in either file — it comes from the engine ([`accent-engine.md`](accent-engine.md)).
+4. If no existing token role fits, extend or amend the token definitions and adopt the new role consistently — never one-off the value at the call site. Signet surfaces extend the Signet token definitions — `packages/theme/src/signet.ts`, its stylesheet `packages/theme/src/signet.css`, and, for web, `apps/web/tailwind.config.ts`; the frozen landing surface extends the legacy `packages/theme/src/tokens.ts`. The per-tenant accent family is not in either file — it comes from the engine ([`accent-engine.md`](accent-engine.md)).
 
 ---
 
@@ -224,7 +224,7 @@ Token source: `packages/theme/src/tokens.ts` (`motion.duration`, `motion.easing`
 
 A UI change is not ready unless it passes:
 
-1. Visual consistency with the token system the surface actually ships — [`foundations.md`](foundations.md) and [`accent-engine.md`](accent-engine.md) on Signet surfaces, the legacy `@repo/theme` tokens on the frozen ones
+1. Visual consistency with the token system the surface actually ships — [`foundations.md`](foundations.md) and [`accent-engine.md`](accent-engine.md) on Signet surfaces, the legacy `@repo/theme` tokens on the frozen landing surface
 2. Spacing consistency on the 4px grid
 3. Clear visual hierarchy — each screen has exactly one obvious typographic anchor, so hierarchy is checked per screen and not only per component
 4. Complete state handling (§4)

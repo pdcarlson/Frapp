@@ -22,6 +22,7 @@ import {
   type PatchChapterConfig,
 } from "@repo/validation";
 import { resolveChapterAccentColor } from "@repo/theme/accent";
+import { signetDarkTokens } from "@repo/theme/signet";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -248,7 +249,13 @@ function SettingsPageContent() {
   const workflows = config?.workflows ?? [];
   const dues = config?.dues ?? DEFAULT_DUES;
 
-  const accent = resolveChapterAccentColor(accentDraft || undefined);
+  // #1157: the preview swatch sits on a Signet card, so the WCAG check must
+  // run against that dark surface (with a dark-legible fallback), not the
+  // resolver's white default.
+  const accent = resolveChapterAccentColor(accentDraft || undefined, {
+    background: signetDarkTokens.color.surface.card,
+    fallbackAccent: signetDarkTokens.color.gold.house,
+  });
   const semesters = asArray<SemesterArchive>(semestersQuery.data);
   const permissionsCatalog = asArray<{ key: string; permission: string }>(
     catalogQuery.data,
@@ -410,7 +417,7 @@ function SettingsPageContent() {
         onValueChange={setActiveTab}
         className="flex flex-col gap-6 lg:flex-row lg:items-start"
       >
-        <TabsList className="flex h-auto w-full flex-row flex-wrap justify-start gap-1 bg-muted/50 p-1 lg:w-56 lg:flex-col lg:flex-nowrap">
+        <TabsList className="flex h-auto w-full flex-row flex-wrap justify-start gap-1 bg-secondary/50 p-1 lg:w-56 lg:flex-col lg:flex-nowrap">
           <TabsTrigger value="org" className={RAIL_TRIGGER_CLASS}>
             Organization
           </TabsTrigger>
@@ -703,7 +710,7 @@ function SettingsPageContent() {
                       className="max-w-xs font-mono"
                     />
                     <div
-                      className="flex h-12 w-36 items-center justify-center rounded-md text-sm font-semibold text-white shadow-sm"
+                      className="flex h-12 w-36 items-center justify-center rounded-md text-sm font-semibold text-white"
                       style={{ backgroundColor: accent.resolvedAccent }}
                     >
                       Preview

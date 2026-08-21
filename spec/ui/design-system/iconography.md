@@ -43,7 +43,7 @@ Use only these icon sizes in product UI:
 
 | Size | Context |
 |------|---------|
-| 16px | Dense table controls, inline metadata rows, web sidebar items |
+| 16px | Dense table controls, inline metadata rows |
 | 20px | Default action/icon buttons, list-row leading icons |
 | 24px | Mobile tab bar glyphs, high-emphasis hero/feature spots |
 
@@ -53,6 +53,9 @@ Use only these icon sizes in product UI:
 - Mobile tab glyphs are 24px (`TAB_GLYPH_SIZE` in
   `apps/mobile/components/tab-glyphs.tsx`), matching the Canvas lock. The
   pre-reskin bar drew them at 20px.
+- Web sidebar nav glyphs are 17px ([components.md](components.md) §7's
+  item-level spec), a documented exception to this scale; top-bar glyphs use
+  the standard 20px (see §6.2).
 
 ---
 
@@ -84,7 +87,11 @@ The shipping apps use off-the-shelf packs until each surface is reskinned to
 duotone. Interim rules:
 
 - **Web (Lucide)** — keep the default stroke weight; do not restyle individual
-  icons.
+  icons. **The dashboard shell has left this interim path**: its sidebar and
+  top-bar glyphs are now duotone SVG components in
+  `apps/web/components/layout/nav-glyphs.tsx`, transcribed from the reference
+  boards. Lucide remains the interim pack for in-screen icons until each
+  screen family's #920 slice lands.
 - **Mobile (Ionicons)** — outline variants for navigation and neutral states;
   fill variants only for explicit active/high-emphasis affordances. **The tab
   bar has left this interim path**: its four glyphs are now duotone
@@ -130,43 +137,56 @@ Points no longer exist as screens; Profile moved into the More hub.
 Screens that have not been reskinned yet still draw Ionicons per §5. Each
 cluster replaces its own as it rebuilds; there is no separate icon migration.
 
-### 6.2 Web Dashboard (Lucide)
+### 6.2 Web Dashboard shell (Signet duotone)
 
-This table reflects the shipping legacy web app until its reskin. Nav picks
-live in `apps/web/components/layout/nav-config.ts`; notifications in
-`apps/web/components/layout/dashboard-shell.tsx`; theme toggle in
-`apps/web/components/layout/theme-toggle.tsx`.
+Since the #920 shell slice the dashboard's shell chrome draws the duotone
+recipe (§1), not Lucide. The glyphs live in
+`apps/web/components/layout/nav-glyphs.tsx` — transcribed from the reference
+boards where the boards draw the shape, drawn fresh in the same recipe where
+they do not — and `apps/web/components/layout/nav-config.ts` consumes them.
+Sidebar items render them at 17px ([components.md](components.md) §7);
+top-bar controls at 20px (`apps/web/components/layout/dashboard-shell.tsx`).
+This table is the intent → glyph map; it MUST change in the same PR as
+`nav-glyphs.tsx`.
 
-| Semantic intent | Icon |
+| Semantic intent | Glyph |
 |---|---|
-| Chat | `MessagesSquare` |
-| Profile | `Sparkles` |
-| Members | `Users` |
-| Alumni | `GraduationCap` |
-| Roles | `ShieldCheck` |
-| Events | `Calendar` |
-| Points | `Star` |
-| Tasks | `ClipboardCheck` |
-| Service Hours | `FileText` |
-| Polls | `Vote` |
-| Backwork | `BookOpen` |
-| Documents | `FolderOpen` |
-| Study session | `Timer` |
-| Study Zones | `MapPin` |
-| Billing | `CircleDollarSign` |
-| Reports | `FileText` |
-| Settings | `Settings` |
-| Notifications | `Bell` |
-| Theme: system | `Monitor` |
-| Theme: light | `Sun` |
-| Theme: dark | `Moon` |
+| Chat | `ChatGlyph` |
+| Events | `EventsGlyph` |
+| Tasks | `TasksGlyph` |
+| Points | `PointsGlyph` |
+| Study hours | `StudyGlyph` |
+| Service hours | `ServiceGlyph` |
+| Polls | `PollsGlyph` |
+| Documents | `DocumentsGlyph` |
+| Backwork | `BackworkGlyph` |
+| Directory | `DirectoryGlyph` |
+| Billing | `BillingGlyph` |
+| Roles | `RolesGlyph` |
+| Study Zones | `StudyZonesGlyph` |
+| Reports | `ReportsGlyph` |
+| Settings | `SettingsGlyph` |
+| Search (top bar) | `SearchGlyph` |
+| Notifications (top bar) | `NotificationsGlyph` |
+| Mobile nav trigger (top bar) | `MenuGlyph` |
 
-Notes:
+Service hours and Reports are now distinct glyphs (heart vs. chart-in-frame) —
+the legacy nav's `FileText` double-duty is resolved. Utility glyphs inside the
+shell chrome (`ChevronRight` breadcrumb separator, `ChevronsUpDown`, `Check`,
+`Loader2`, `LogOut`, `User`, the notification drawer's internals) remain
+Lucide: control furniture, not nav intents.
 
-- `FileText` serves both Service Hours and Reports in the shipping nav; the
-  reskin SHOULD disambiguate.
+The theme rows left with the toggle: the surface is dark-only and ships no
+theme control.
+
+### 6.2.1 Web in-screen icons (Lucide, interim)
+
+Screens whose family slice has not landed still draw Lucide, replaced per
+family as each #920 slice rebuilds its screens — the same shape as mobile's
+§6.1.1. Two picks worth pinning meanwhile:
+
 - Event **content** surfaces (event cards, event detail) use `CalendarDays`
-  for date rows; the nav intent is `Calendar`.
+  for date rows; the nav intent is `EventsGlyph`.
 - **Reserved:** `LayoutDashboard` is held for the **Overview** intent and is
   deliberately unused today — the dashboard home screen was removed in the
   chat-first redesign and the index route redirects to `/chat`. If an Overview

@@ -48,7 +48,7 @@ const CHAT_LANDING_PATH = "/chat?channel=general";
 const LEGAL_BASE_URL =
   process.env.NEXT_PUBLIC_LANDING_URL ?? "https://frapp.live";
 const DEFAULT_DARK = "#1F1A15";
-const DEFAULT_ACCENT = "#7A5A2F";
+const DEFAULT_ACCENT = "#F2B72E";
 const HEX6 = /^#[0-9a-fA-F]{6}$/;
 const INVITE_ROLE = "Member";
 
@@ -560,10 +560,10 @@ function ArchetypeStep({
               aria-checked={isActive}
               onClick={() => onSelect(archetype.key)}
               className={cn(
-                "flex flex-col gap-1 rounded-lg border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                "flex flex-col gap-1 rounded-lg border p-3 text-left transition focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25",
                 isActive
-                  ? "border-primary bg-primary/5 shadow-sm"
-                  : "border-border hover:bg-muted/50",
+                  ? "border-primary bg-primary/5"
+                  : "border-border hover:bg-accent/50",
               )}
             >
               <span className="font-mono text-[0.65rem] uppercase tracking-widest text-muted-foreground">
