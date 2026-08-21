@@ -664,19 +664,71 @@ cleanup, and their leaving. The cost is one more action download on a workflow w
 otherwise claims a checkout-only surface — an accepted, deliberate widening, kept as small as it
 can be.
 
-Setup is human-only and is tracked in [#689](https://github.com/pdcarlson/Frapp/issues/689):
-create the App under the `pdcarlson` account with repository permissions **Contents: Read and
-write** and **Pull requests: Read and write** (nothing else), install it on `pdcarlson/Frapp`
-only, then store the client ID and a generated private key as the two secrets above. The mint step
-carries `continue-on-error: true` on purpose — with the secrets absent it fails, and a red workflow
-would be exactly the noise this sweep exists to remove; instead the token comes out empty and the
-alert issue explains why.
+Setup was human-only and is closed as [#689](https://github.com/pdcarlson/Frapp/issues/689): the
+App is created under the `pdcarlson` account with repository permissions **Contents: Read and
+write** and **Pull requests: Read and write** (nothing else), installed on `pdcarlson/Frapp` only,
+with its client ID and a generated private key stored as the two secrets above. To rotate the key:
+generate a new one on the App, update `PR_BASE_SYNC_APP_PRIVATE_KEY`, delete the old key — no PR,
+and nothing tied to a personal account changes. The mint step carries `continue-on-error: true` on
+purpose — with the secrets absent it fails, and a red workflow would be exactly the noise this sweep
+exists to remove; instead the token comes out empty and the alert issue explains why.
 
-Two claims here are docs-verified rather than observed in this repo (2026-08-21): that
-`GITHUB_TOKEN` pushes create no workflow runs (GitHub's documented recursion guard), and that an App
-installation token is not subject to it. The second is the load-bearing one, and its failure mode is loud and
-immediate — a behind PR would be updated and then sit with required checks at "Expected" — so
-**confirm both on the first sweep that updates a real PR** before trusting the mechanism.
+**Half-confirmed as of 2026-08-21.** The first sweep after #1171 merged
+([run 156](https://github.com/pdcarlson/Frapp/actions/runs/32504830354)) logged
+`PR_BASE_SYNC_TOKEN: ***`, `[pr-base-sync] base main @ 131175b — sweeping 0 open PR(s)
+(auto-update enabled)`, and `Token revoked` at cleanup — so the credential mints, the sweep enters
+auto-update mode, and the token's lifetime ends with the job. **That is all it proves.** `sweeping 0
+open PR(s)`: #1171 was the only open PR and it had just merged, so no `update-branch` call has ever
+run.
+
+Still unobserved, and load-bearing: that an App installation token's pushes **create workflow
+runs**, where `GITHUB_TOKEN`'s do not (GitHub's documented recursion guard — both halves are
+docs-verified, and `docs.github.com` is blocked by the cloud sandbox's egress proxy, so neither
+could be checked from a session). Confirm on the first sweep that finds a behind PR: the log must
+read `#N: behind by K — auto-updated via update-branch` **and a fresh CI run must appear on that
+PR**. An update with no CI strands required checks at "Expected" forever, which is strictly worse
+than not updating — that is why the pre-App code refused to try. If it happens, fall back to a
+fine-grained PAT (contents + pull-requests write) stored directly as `PR_BASE_SYNC_TOKEN`,
+replacing the mint step.
+
+#### Why the App is safe on a public repo
+
+Reviewed 2026-08-21, because this repo is public and the App holds `contents: write`. No finding;
+the App is a net improvement on the PAT it replaced (a one-hour token, revoked at job end, scoped
+to one repository, versus a 90-day credential bound to a person's account). What makes it safe:
+
+- **`pr-base-sync.yml` triggers only on `push` to `main`**, so it runs only on commits that already
+  reached the default branch. A fork PR cannot trigger it, and untrusted code never executes in a
+  job holding the App credentials.
+- **No `pull_request_target` exists anywhere in `.github/`** — the trigger that would hand full
+  secrets to a job running untrusted PR code.
+- **No script-injection surface.** The workflow interpolates only secrets into `${{ }}`, its `run:`
+  is a fixed command, and neither `pr-base-sync.mjs` nor `ci-wake.mjs` shells out at all (no
+  `exec`, `spawn`, or `child_process` — everything is `fetch`).
+- **The token reaches exactly one API call in the whole repo**: `PUT /repos/{repo}/pulls/{n}/
+  update-branch` (`updatePrBranch` in `scripts/ci/pr-base-sync.mjs`). Every other write in these
+  watchdogs — wake comments, the alert issue — goes through the job's own `GITHUB_TOKEN`, not the
+  App. So the credential's blast radius is "merge a PR's base into that PR's head"; **no code path
+  writes to `main`**, and that is a property of the code, checkable by grepping for `updateToken`,
+  rather than a property of live settings. Fork heads are skipped explicitly, and the token is
+  scoped to this repository, so it could not push to a fork either way.
+- Branch protection is a second layer rather than the argument: `scripts/configure-branch-protection.mjs`
+  declares `enforce_admins: true` with no bypass-actor list. Note that this is the **declared**
+  config — `docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md` records live protection having
+  drifted from that script before (2026-08-19, a missing required context), so do not cite it as
+  live fact without reading the API. The bullet above does not depend on it.
+
+The residual risk is the private key, protected by GitHub not passing repository secrets to
+fork-triggered `pull_request` runs. **Three changes would break that, and none should ever be
+made:** adding a `pull_request_target` workflow that checks out PR-head code; interpolating
+untrusted event data (a PR title, branch name, or comment body) into a `run:` block in any workflow
+that holds secrets; or widening the App beyond `pdcarlson/Frapp` or beyond its two permissions.
+
+One pre-existing property this rests on: `main` requires **zero** approving reviews (only
+`production` requires one — the PR review policy near the top of this file, and
+`docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`). So "only reviewed code runs with the App
+token" is really "only code merged by someone with write access" — fine for a single-maintainer
+repo, and the thing to revisit first if collaborators are ever added.
 
 ### Deploy visibility (`scripts/ci/deploy-alert.mjs`)
 
