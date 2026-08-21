@@ -8,9 +8,12 @@ agents satisfy the docs-sync CI gate. Enforced (in part) by [`scripts/check-docs
 
 1. **Never create a new top-level file** in `docs/` or `spec/`, and never invent a new top-level
    folder. Put the change in the **relevant existing** doc/spec (see the map below).
-2. **Satisfy the docs-sync gate by updating the relevant doc — never by dropping a stray file.**
-   `scripts/check-docs-impact.mjs` only checks that *some* doc/spec changed; it is on you to edit the
-   *right* one.
+2. **Satisfy the docs-sync gate by updating the relevant doc — never by dropping a stray file, and
+   never by appending a stray section to an unrelated one.** `scripts/check-docs-impact.mjs` only
+   checks that *some* doc/spec changed; it is on you to edit the *right* one. When the honest answer
+   is that nothing needs syncing, label the PR `no-doc-change-needed`
+   ([`ci-cd/DOCS_CI.md`](ci-cd/DOCS_CI.md#the-no-doc-change-needed-waiver)) — that is the expected
+   path for a mechanical change, and it beats parking an unowned paragraph in a canonical doc.
 3. **Do not generate one-off narrative markdown** (audits, PR-consolidation writeups, "NOTES",
    "STATUS", thread-resolution maps, migration plans). That kind of file is what this restructure
    removed. Durable facts go in the canonical doc; ephemeral work goes into **GitHub Issues** (file a `triage`-labeled issue).
@@ -53,8 +56,10 @@ them. Pick the **relevant** canonical home above:
   contributor note in `docs/guides/api-architecture.md` or `database.md` only if needed.
 - **UI:** the relevant file under `spec/ui/` (design-system rules live in `spec/ui/design-system/`).
 - **Infra / CI:** `spec/environments/README.md` and/or `docs/internal/ci-cd/`, or a focused ops runbook.
-- **Mechanical / non-user-visible:** a short note in the nearest existing related doc is enough — do
-  not create a new file for it.
+- **Mechanical / non-user-visible:** usually there is nothing to sync. Label the PR
+  `no-doc-change-needed` (hard rule 2) rather than writing a note. Only add prose if the change
+  really does alter something an existing doc asserts — and then it goes in *that* doc, not the
+  nearest one.
 
 Root-level files like `AGENTS.md` / `CONTRIBUTING.md` count as outside `docs/`/`spec/` and still need a
 `docs/` or `spec/` change in the same PR when edited. The one prefix the script ignores outright is

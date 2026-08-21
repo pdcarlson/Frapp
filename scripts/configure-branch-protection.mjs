@@ -52,9 +52,9 @@ const CI_CHECKS = [
   // target branch and has run green.
   "chapter-directory-seed",
   // Web + shared-package unit tests (apps/web, packages/hooks,
-  // packages/chat-core). It is the ONLY suite covering packages/hooks, which the
-  // consolidation work ahead edits directly, so leaving it advisory means a broken
-  // shared hook merges green.
+  // packages/chat-core, packages/chat-integrations). It is the ONLY suite covering
+  // packages/hooks, which the consolidation work ahead edits directly, so leaving it
+  // advisory means a broken shared hook merges green.
   //
   // Being path-gated does NOT stop it being required, which is the thing that looks
   // wrong here and isn't. The gate is a JOB-level `if:`, and GitHub reports a job
@@ -141,8 +141,11 @@ const DOCS_CHECKS = [
   // exists on the target branch and has run green. Deliberately NOT a step
   // inside docs-spec-sync: this check is whole-tree, so as a required check it
   // can block a PR over a citation in a doc that PR never touched. Keep it
-  // reporting-only until that trade is accepted knowingly.
-  // "doc-paths",
+  // reporting-only until that trade is accepted knowingly. Promoted 2026-08-21:
+  // the trade is accepted — a stale citation blocking an unrelated PR is the
+  // cheaper failure, since the alternative is citations rotting silently, which
+  // is what the 40-entry allowlist and the drift this gate found both attest to.
+  "doc-paths",
 ];
 
 const ALL_REQUIRED_CHECKS = [...CI_CHECKS, ...DOCS_CHECKS];

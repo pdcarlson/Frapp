@@ -156,38 +156,47 @@ CI runs as domain-specific parallel jobs on every PR to `main` or `production`. 
 | Job                  | What it validates                                                                                    | Blocker?   |
 | -------------------- | ---------------------------------------------------------------------------------------------------- | ---------- |
 | `packages-build`     | Shared packages compile                                                                              | Yes        |
-| `lint-and-typecheck` | ESLint + TypeScript across all workspaces; `npm run build -w apps/api` (`nest build`, Render parity); landing plus `@repo/validation`, `@repo/color`, `@repo/chapter-theme`, and `@repo/api-sdk` unit tests | Yes        |
+| `lint-and-typecheck` | ESLint + TypeScript across all workspaces; `npm run build -w apps/api` (`nest build`, Render parity); landing plus `@repo/validation`, `@repo/color`, `@repo/formatting`, `@repo/chapter-theme`, `@repo/theme`, and `@repo/api-sdk` unit tests | Yes        |
 | `api-docker-build`   | `docker build -f apps/api/Dockerfile .` (API image compile path)                                     | Yes        |
-| `api-tests`          | API Jest unit tests (377+ tests)                                                                     | Yes (hard) |
+| `api-tests`          | API Jest unit tests                                                                                  | Yes (hard) |
 | `api-contract-check` | `openapi.json` and `packages/api-sdk/src/types.ts` freshness                                                      | Yes        |
 | `migration-safety`   | Migration filename validation + promotion docs                                                       | Yes        |
 | `mobile-validate`    | Mobile app lint + typecheck + unit tests (Vitest)                                                    | Yes        |
 | `ci-scripts-tests`   | CI scripts unit/integration tests                                                                    | Yes        |
 | `secret-scan`        | gitleaks over the PR/push commit range (ADR-13 push-protection replacement)                          | Yes        |
 | `clean-checkout-typecheck` | Bare `npm ci` + typecheck + lint with no prebuilt packages (guards `turbo.json` `^build`)      | Yes        |
-| `dependency-audit`   | npm audit gate — non-allowlisted high/critical advisories fail (`scripts/check-npm-audit.mjs`, #618) | Yes (after one-time rollout: admin re-runs `npm run configure:branch-protection` once the job is green on the target branch) |
-| `chapter-directory-seed` | `supabase/seed/chapter_directory.csv` — canonical `#RRGGBB` colors, real archetypes, no duplicate natural keys (#840) | Yes (same one-time rollout) |
-| `web-tests`          | `apps/web` unit tests plus the shared packages nothing else covers — `packages/hooks`, `packages/chat-core` | Yes (same one-time rollout) |
-| `changes`            | Path filter deciding whether `web-tests` and `web-responsive-floor` run; asserts nothing itself      | Yes (same one-time rollout) |
-| `web-responsive-floor` | Every dashboard route holds the 375px floor — no horizontal scroll (`apps/web/tests/visual/responsive-floor.spec.ts`, #1152) | Yes (same one-time rollout) |
-| `dependency-cruiser` | Architectural boundaries — API layer direction, package/app separation, cycles — against a committed baseline | Yes (same one-time rollout) |
+| `dependency-audit`   | npm audit gate — non-allowlisted high/critical advisories fail (`scripts/check-npm-audit.mjs`, #618) | Yes |
+| `chapter-directory-seed` | `supabase/seed/chapter_directory.csv` — canonical `#RRGGBB` colors, real archetypes, no duplicate natural keys (#840) | Yes |
+| `web-tests`          | `apps/web` unit tests plus the shared packages nothing else covers — `packages/hooks`, `packages/chat-core`, `packages/chat-integrations` | Yes |
+| `changes`            | Path filter deciding whether `web-tests` and `web-responsive-floor` run; asserts nothing itself      | Yes |
+| `web-responsive-floor` | Every dashboard route holds the 375px floor — no horizontal scroll (`apps/web/tests/visual/responsive-floor.spec.ts`, #1152) | Yes |
+| `dependency-cruiser` | Architectural boundaries — API layer direction, package/app separation, cycles — against a committed baseline | Yes |
 | `duplicate-detection` | jscpd against a repo-wide duplication threshold                                                     | **No — advisory** |
-| `branch-policy`      | PRs to `production` must come from `main`                                                            | Yes        |
+| `branch-policy`      | PRs to `production` must come from `main`                                                            | Yes — `production` only |
 
 `web-tests` and `web-responsive-floor` are **path-gated and still required**, which is only a contradiction if you assume a skip blocks. It does not: GitHub reports a job skipped by a *job-level* conditional as *Success*, and `success` / `skipped` / `neutral` all satisfy a required check. `changes` is required for a different and less obvious reason — a required check whose `needs:` parent fails is skipped and *may not block merging*, so a non-required parent would leave both satisfiable without ever running. See the ADR-15 amendment in [`../architecture/README.md`](../architecture/README.md) and the comments in [`scripts/configure-branch-protection.mjs`](../../scripts/configure-branch-protection.mjs).
+
+The **Blocker?** column states the *intended* set — every `Yes` above is an entry in `CI_CHECKS` /
+`DOCS_CHECKS` in [`scripts/configure-branch-protection.mjs`](../../scripts/configure-branch-protection.mjs),
+with one exception: `branch-policy` is in neither array — `buildProtectionPayload` appends it for
+`production` only, so it never blocks a PR into `main`.
+Live branch protection is whatever an admin last applied and can lag the script, so no doc claims
+per-check whether a gate is live today; read live state per
+[`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
 
 `web-visual-regression` and `pglite-migrations` are also path-gated but remain **advisory** — snapshot flake should not block merge. That exemption is specifically about pixels: the 375px floor gate used to live in the same job and inherited it by directory, and #1152 split it into the required `web-responsive-floor` above, selected by the `@floor` Playwright tag. It stores no baseline and compares no pixels, so none of the flake reasoning ever applied to it. `duplicate-detection` is advisory for a different reason: jscpd has no clone-level baseline, so its only lever is a repo-wide percentage that cannot tell one bad copy-paste from ordinary drift. Postures and their rationale: [`docs/internal/ci-cd/QUALITY_GATES.md`](../../docs/internal/ci-cd/QUALITY_GATES.md).
 
 ### Additional Docs Checks
 
-Both run in `.github/workflows/docs.yml`. Only `docs-spec-sync` is merge-blocking today — see
-[`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md) for why `doc-paths` reports first and how it
-gets promoted:
+All three run in `.github/workflows/docs.yml`. **Required?** below is the *intended* set — what
+`DOCS_CHECKS` lists — not live branch protection, which is whatever an admin last applied. See
+[`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md) for the rollout each one goes through:
 
 | Check            | Provider       | What it validates                               | Required?  |
 | ---------------- | -------------- | ----------------------------------------------- | ---------- |
 | `docs-spec-sync` | GitHub Actions | Docs/spec sync **and** structure on PRs (`check-docs-impact.mjs` + `check-docs-structure.mjs`) | Yes |
-| `doc-paths`      | GitHub Actions | Backticked repo-path citations in docs resolve (`check-doc-paths.mjs`, whole-tree) | Not yet — reports only; whole-tree scope makes it blocking beyond the PR's own diff, so promotion is a deliberate step ([`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md)) |
+| `doc-paths`      | GitHub Actions | Backticked repo-path citations in docs resolve (`check-doc-paths.mjs`, whole-tree) | Yes — listed in `DOCS_CHECKS`. Whole-tree, so it can block a PR over a citation in a doc that PR never touched; that trade was taken deliberately ([`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md)) |
+| `doc-tables`     | GitHub Actions | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml` (`check-doc-tables.mjs`, whole-tree) | Not yet — reports only, pending the same promotion step |
 
 **Code review is a local pre-push gate, not a CI check** (ADR-14 2026-06-04 amendment). The
 `.claude/hooks/pre-push-review-gate.sh` hook blocks the first `git push` of each branch HEAD and requires
@@ -360,4 +369,4 @@ Frapp is primarily developed in Claude Code web sessions. Each runs in a fresh, 
 
 ## Claude Code Routines environment
 
-The scheduled backlog agents run as **Claude Code Routines**: each firing starts a fresh Claude Code web session in the same environment as interactive cloud sessions (repo cloned from `main`, the SessionStart hook and injected MCP servers included), so no separate sandbox config exists. The routines are configured in the Claude Code UI (config-as-code isn't supported), so the canonical prompts and every setting are version-controlled in [`docs/internal/ci-cd/ROUTINES.md`](../../docs/internal/ci-cd/ROUTINES.md). There are **three** routines — two staggered daily, one weekly — all writing to **GitHub Issues** via the **GitHub MCP** the environment pre-approves (keyless; Linear was retired 2026-08-08, see ADR-16 amendment 5) — they never write to Linear and never edit product code (a docs-only self-maintenance PR is the single exception, per `ROUTINES.md`): the **Issue Curator** ([`.claude/skills/issue-curator/SKILL.md`](../../.claude/skills/issue-curator/SKILL.md)) maintains + files `suggestion` issues into the `triage` inbox, **Issue Triage** ([`.claude/skills/issue-triage/SKILL.md`](../../.claude/skills/issue-triage/SKILL.md)) prioritizes/buckets/promotes ~1h later, and the weekly **PR Follow-ups** harvester ([`.claude/skills/pr-followups/SKILL.md`](../../.claude/skills/pr-followups/SKILL.md)) sweeps human-action/deferred items from PR threads into the inbox.
+The scheduled backlog agents run as **Claude Code Routines**: each firing starts a fresh Claude Code web session in the same environment as interactive cloud sessions (repo cloned from `main`, the SessionStart hook and injected MCP servers included), so no separate sandbox config exists. The routines are configured in the Claude Code UI (config-as-code isn't supported), so the canonical prompts and every setting are version-controlled in [`docs/internal/ci-cd/ROUTINES.md`](../../docs/internal/ci-cd/ROUTINES.md). There are **four** routines — two staggered daily, two weekly. Three write to **GitHub Issues** via the **GitHub MCP** the environment pre-approves (keyless; Linear was retired 2026-08-08, see ADR-16 amendment 5); the fourth writes docs. None write to Linear and none edit product code (a docs-only PR is the single exception, per `ROUTINES.md`): the **Issue Curator** ([`.claude/skills/issue-curator/SKILL.md`](../../.claude/skills/issue-curator/SKILL.md)) maintains + files `suggestion` issues into the `triage` inbox, **Issue Triage** ([`.claude/skills/issue-triage/SKILL.md`](../../.claude/skills/issue-triage/SKILL.md)) prioritizes/buckets/promotes ~1h later, and the weekly **PR Follow-ups** harvester ([`.claude/skills/pr-followups/SKILL.md`](../../.claude/skills/pr-followups/SKILL.md)) sweeps human-action/deferred items from PR threads into the inbox. Weekly on Wednesday, **Docs Upkeep** ([`.claude/skills/docs-upkeep/SKILL.md`](../../.claude/skills/docs-upkeep/SKILL.md)) sweeps a rotating fifth of the docs corpus and fixes stale claims in a docs-only PR — the one routine that repairs rather than files (ADR-16 amendment 6).

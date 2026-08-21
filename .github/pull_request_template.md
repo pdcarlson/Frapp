@@ -8,7 +8,9 @@
 
 ## Docs / Spec impact
 
-- **Docs impact**: (None / Updated / Follow-up) — prefer [`docs/`](docs/) (e.g. [`docs/guides/`](docs/guides/)) or internal runbooks.
+- **Docs impact**: (None / Updated / Follow-up) — prefer `docs/` (e.g. `docs/guides/`) or internal runbooks.
+  - Answering **None** is fine and common. Label the PR `no-doc-change-needed` and move on — do not
+    append a note to an unrelated doc to turn `docs-spec-sync` green.
 - **Spec impact**: (None / Updated / Follow-up)
 - **Links**:
   - Doc path(s) (`docs/…`, `spec/…`):
@@ -26,9 +28,11 @@
 ## Checklist
 
 - [ ] This PR keeps intended behavior (`spec/`) and current behavior (code) aligned — disagreement is a tracked bug, not silent discretion (see `AGENTS.md` § Spec vs code).
-- [ ] If this PR changes non-doc files, it also updates related files in `docs/` and/or `spec/` (satisfies `check-docs-impact.mjs`; `.buildpad/` canvas-sync paths are exempt, and a change with genuinely no docs impact can be labelled `no-doc-change-needed` — see `docs/internal/ci-cd/DOCS_CI.md`).
+- [ ] If this PR changes non-doc files, it also updates the **relevant** files in `docs/` and/or `spec/` — or, if it genuinely has no docs impact, it carries the `no-doc-change-needed` label (`.buildpad/` canvas-sync paths are exempt). An unrelated doc edited only to satisfy `check-docs-impact.mjs` is a review finding, not a pass — see `docs/internal/ci-cd/DOCS_CI.md`.
 - [ ] If I changed API/domain/workflows, I updated `docs/` and/or `spec/` in the same change set.
 - [ ] If I changed API source, I regenerated `openapi.json` and `packages/api-sdk/src/types.ts`.
+- [ ] If I moved or deleted a file docs cite, `npm run check:doc-paths` still passes (it is merge-blocking and whole-tree, so it can fail on a doc this PR never touched).
+- [ ] If I changed CI job names or the required-check arrays, `npm run check:doc-tables` still passes (the docs restating those rosters were updated too).
 - [ ] If targeting `production`, this PR source branch is `main`.
 - [ ] If I changed `supabase/migrations/**`, I also updated rollback docs.
 - [ ] No secrets committed (`.env*`, credentials, private keys).
