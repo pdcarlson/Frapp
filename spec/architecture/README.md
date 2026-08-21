@@ -1007,7 +1007,9 @@ Chapter theming runs deeper than an accent chip — it themes the entire experie
 
 ### WCAG validation and fallback
 
-Every derived token is WCAG-validated against **both** the bone (light) and ink (dark) backgrounds. If a token fails AA 4.5:1 against either, it falls back to bronze **for that token specifically** — never the whole palette. Validation reuses `packages/theme/src/accent.ts`.
+Every derived token is WCAG-validated against **the one background it is drawn on**: sidebar tokens against the derived ink sidebar, light-mode tokens (`--ring`, `--mention-fg`, `--reaction-active`) against bone. If a token fails AA 4.5:1 there, it falls back to bronze **for that token specifically** — never the whole palette. Validation shares its contrast math with `packages/theme/src/accent.ts` through `@repo/color`.
+
+This is **not** validation against both light and dark, which this section claimed until #1143. `--ring` in particular is checked against bone only, yet `useChapterTheme` writes it as an inline style on `:root`, which outranks the `.dark` rule — so a chapter accent legible on bone can paint a sub-3:1 focus ring on the dark surface. Tracked in #1149.
 
 ### Computation and caching
 

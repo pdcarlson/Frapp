@@ -82,6 +82,28 @@ function tokenTable(n: number): Map<string, string> {
 }
 
 /**
+ * Look up a pinned value, failing with the row that went missing.
+ *
+ * Worth the four lines: a bare `map.get(key)!` hands `undefined` to the
+ * comparison below, which dies with `Cannot read properties of undefined
+ * (reading 'toLowerCase')` naming neither the token nor the section. The row
+ * most likely to be edited is §5's `Mention/DM red`, which is prose rather than
+ * a token name — so this is the realistic failure, not a hypothetical one.
+ */
+function pin(table: Map<string, string>, key: string, section: number): string {
+  const value = table.get(key);
+  if (value === undefined) {
+    throw new Error(
+      `foundations.md §${section} no longer has a row for "${key}" ` +
+        `(rows present: ${[...table.keys()].join(", ")}). If it was renamed, ` +
+        "update this suite; if it was deleted, the token it pinned is now " +
+        "covered by nothing.",
+    );
+  }
+  return value;
+}
+
+/**
  * Colors compare on meaning, not on typing. The spec writes `#3fb950` and
  * `rgba(255,255,255,.08)`; `signet.ts` normalises hex to uppercase (its header
  * says so) and writes a leading zero. Neither difference is a drift.
@@ -95,6 +117,13 @@ function sameColor(a: string, b: string): boolean {
 /** Every number in a cell, in order — `16 / 25` → `[16, 25]`, `8–10` → `[8, 10]`. */
 function numbers(cell: string): number[] {
   return (cell.match(/\d+(?:\.\d+)?/g) ?? []).map(Number);
+}
+
+/** Every `--token` foundations.md names in its §2–§5 tables. */
+function documentedTokens(): string[] {
+  return [2, 3, 4, 5]
+    .flatMap((n) => [...tokenTable(n).keys()])
+    .filter((name) => name.startsWith("--"));
 }
 
 function expectColor(actual: string, specValue: string, label: string): void {
@@ -111,16 +140,16 @@ describe("Signet colors match foundations.md", () => {
 
   it("§2 surface ladder", () => {
     const t = tokenTable(2);
-    expectColor(color.surface.background, t.get("--background")!, "--background");
-    expectColor(color.surface.surface1, t.get("--surface-1")!, "--surface-1");
-    expectColor(color.surface.card, t.get("--card")!, "--card");
-    expectColor(color.surface.popover, t.get("--popover")!, "--popover");
+    expectColor(color.surface.background, pin(t, "--background", 2), "--background");
+    expectColor(color.surface.surface1, pin(t, "--surface-1", 2), "--surface-1");
+    expectColor(color.surface.card, pin(t, "--card", 2), "--card");
+    expectColor(color.surface.popover, pin(t, "--popover", 2), "--popover");
   });
 
   it("§3 hairlines are low-opacity white, not fixed hex", () => {
     const t = tokenTable(3);
-    expectColor(color.border.hairline, t.get("--border")!, "--border");
-    expectColor(color.border.input, t.get("--input")!, "--input");
+    expectColor(color.border.hairline, pin(t, "--border", 3), "--border");
+    expectColor(color.border.input, pin(t, "--input", 3), "--input");
 
     // The spec does not merely pin these two values, it bans the alternative:
     // "Borders MUST be low-opacity white. Fixed-hex border colors are banned."
@@ -133,33 +162,33 @@ describe("Signet colors match foundations.md", () => {
 
   it("§4 text ladder", () => {
     const t = tokenTable(4);
-    expectColor(color.text.foreground, t.get("--foreground")!, "--foreground");
+    expectColor(color.text.foreground, pin(t, "--foreground", 4), "--foreground");
     expectColor(
       color.text.mutedForeground,
-      t.get("--muted-foreground")!,
+      pin(t, "--muted-foreground", 4),
       "--muted-foreground",
     );
-    expectColor(color.text.muted, t.get("--muted")!, "--muted");
-    expectColor(color.text.disabled, t.get("--disabled")!, "--disabled");
+    expectColor(color.text.muted, pin(t, "--muted", 4), "--muted");
+    expectColor(color.text.disabled, pin(t, "--disabled", 4), "--disabled");
   });
 
   it("§5 semantic colors, including the fixed mention red", () => {
     const t = tokenTable(5);
-    expectColor(color.semantic.success, t.get("--success")!, "--success");
-    expectColor(color.semantic.warning, t.get("--warning")!, "--warning");
+    expectColor(color.semantic.success, pin(t, "--success", 5), "--success");
+    expectColor(color.semantic.warning, pin(t, "--warning", 5), "--warning");
     expectColor(
       color.semantic.destructive,
-      t.get("--destructive")!,
+      pin(t, "--destructive", 5),
       "--destructive",
     );
-    expectColor(color.semantic.info, t.get("--info")!, "--info");
+    expectColor(color.semantic.info, pin(t, "--info", 5), "--info");
 
     // Locked by the Canvas header rather than panel 4h, and load-bearing: it
     // states "you were addressed" identically in every chapter, so it must not
     // track the tenant accent.
     expectColor(
       color.semantic.mention,
-      t.get("Mention/DM red")!,
+      pin(t, "Mention/DM red", 5),
       "mention/DM red",
     );
     expect(color.semantic.mentionForeground.toLowerCase()).toBe("#ffffff");
@@ -214,8 +243,9 @@ describe("Signet scales match foundations.md", () => {
 
   it("§8 radius map", () => {
     const { radius } = signetDarkTokens;
+    const table = rows(8);
     const byRow = (needle: string): number[] => {
-      const row = rows(8).find((cells) =>
+      const row = table.find((cells) =>
         (cells[0] ?? "").toLowerCase().includes(needle),
       );
       if (!row) throw new Error(`foundations.md §8 has no "${needle}" row`);
@@ -271,41 +301,35 @@ describe("Signet scales match foundations.md", () => {
 describe("getSignetCssVars", () => {
   const vars = getSignetCssVars();
 
+  /**
+   * The tokens `getSignetCssVars()` emits that foundations.md's tables do NOT
+   * name as `--tokens`, so they cannot be derived from the spec parsed here.
+   * The gold family is owned by `brand-identity.md`; the mention pair appears in
+   * §5 as the prose row "Mention/DM red" rather than under a token name.
+   */
+  const UNDOCUMENTED_HERE = [
+    "--gold-ask-border",
+    "--gold-ask-fill",
+    "--gold-ask-text",
+    "--gold-house",
+    "--gold-on-house",
+    "--mention",
+    "--mention-foreground",
+  ];
+
   it("emits exactly the documented key set", () => {
-    // Names, not values — the values are covered above. Pinned explicitly
-    // because the gold family is owned by brand-identity.md rather than by the
-    // foundations tables, so it cannot be derived from the spec parsed here.
-    expect(Object.keys(vars).sort()).toEqual(
-      [
-        "--background",
-        "--border",
-        "--card",
-        "--destructive",
-        "--disabled",
-        "--foreground",
-        "--gold-ask-border",
-        "--gold-ask-fill",
-        "--gold-ask-text",
-        "--gold-house",
-        "--gold-on-house",
-        "--info",
-        "--input",
-        "--mention",
-        "--mention-foreground",
-        "--muted",
-        "--muted-foreground",
-        "--popover",
-        "--success",
-        "--surface-1",
-        "--warning",
-      ].sort(),
-    );
+    // Names, not values — the values are covered above. Composed from the spec
+    // rather than restated, so adding a token to a foundations table and to
+    // `signet.ts` — the two-edit workflow this file's header prescribes — does
+    // not also require editing a literal here, and a failure names the token
+    // instead of diffing two anonymous arrays.
+    const expected = [...documentedTokens(), ...UNDOCUMENTED_HERE];
+
+    expect(Object.keys(vars).sort()).toEqual(expected.sort());
   });
 
   it("emits every fixed token foundations.md names", () => {
-    const documented = [2, 3, 4, 5]
-      .flatMap((n) => [...tokenTable(n).keys()])
-      .filter((name) => name.startsWith("--"));
+    const documented = documentedTokens();
 
     expect(documented.length).toBeGreaterThan(0);
     for (const name of documented) {
@@ -318,11 +342,20 @@ describe("getSignetCssVars", () => {
     // §6: the accent slot is resolved per chapter from a seed by the accent
     // engine, so it cannot be a constant here. If one of these ever appears in
     // this map, a chapter's branding has been hard-coded to house gold.
-    const accentSlot = section(6)
-      .match(/`--[a-z-]+`/g)!
-      .map((name) => name.replace(/`/g, ""));
+    // `[a-z0-9-]+`, not `[a-z-]+`: §6 defers scale-step mapping to
+    // accent-engine.md, so the day this list gains `--primary-500` a
+    // digit-blind pattern would drop it and quietly stop checking the very
+    // token most likely to be hard-coded to house gold.
+    const listed = section(6).match(/`--[a-z0-9-]+`/g);
+    expect(
+      listed,
+      "foundations.md §6 no longer names the accent-slot tokens in backticks — " +
+        "this test cannot check what it cannot find",
+    ).not.toBeNull();
+    const accentSlot = listed!.map((name) => name.replace(/`/g, ""));
 
     expect(accentSlot).toContain("--primary");
+    expect(accentSlot).toContain("--ring");
     for (const name of accentSlot) {
       expect(vars, `${name} is per-tenant and must not be a fixed token`)
         .not.toHaveProperty(name);

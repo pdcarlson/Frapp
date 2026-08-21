@@ -69,17 +69,29 @@ below `sm`, and its button cluster is `flex-wrap` (#1142); separately,
 `<Badge variant="secondary">My balance</Badge>` finally paints a background
 instead of none (#1145).
 
-**Why the baseline still applies.** The `#1142` classes are all `max-sm:`-scoped
-and `flex-wrap` is inert when the content fits, so at the pinned 1440×960 width
-the class list resolves to exactly its previous value. Verified rather than
-argued: `<main>` was screenshotted on all fifteen routes before and after the
-change on one browser, and fourteen came back **byte-identical, 0 differing
-pixels**. `/points` differed by **1,893 px of 810,648 — ratio 0.00234**, an
-order of magnitude under the suite's `maxDiffPixelRatio: 0.01`, so the pinned
-shot still matches. The differing region is the bounding box `x 49–136,
-y 116–137`, which is precisely the `My balance` badge (measured at
-`x:49 y:116 w:88 h:22`) — the #1145 fix and nothing else. Dimensions are
-identical at 1112×729, so no layout moved.
+**Why the baseline still applies.** The `#1142` classes are `max-sm:`-scoped, so
+they contribute nothing at `sm` and above; the one unscoped class, `flex-wrap` on
+the button cluster, is inert while the content fits, which at 1440 it does.
+Verified rather than argued: `<main>` was screenshotted on all fifteen routes
+before and after the change on one browser, and fourteen came back
+**byte-identical, 0 differing pixels**. `/points` differed by **1,893 px of
+810,648 — ratio 0.00234**, against the suite's `maxDiffPixelRatio: 0.01`. The
+differing region is the bounding box `x 49–136, y 116–137`, which is precisely
+the `My balance` badge (measured at `x:49 y:116 w:88 h:22`) — the #1145 fix and
+nothing else. Dimensions are identical at 1112×729, so no layout moved. The
+other routes that use `<Badge variant="secondary">` are unaffected here because
+the sessionless harness renders their empty-state cards and never mounts those
+badges; `/points` is the only one that does.
+
+**What that measurement does and does not bound.** It bounds this change's own
+contribution — 0.00234 of the 0.01 budget — and nothing else. It does **not**
+bound the browser-revision term: the committed `points-main-content-linux.png`
+was attested at Chromium **1223** (below), CI now installs **1234**, and the
+comparison above ran on **1194**. That drift is unmeasured, and it is
+unfalsifiable from this sandbox — the `/backwork` note below records revision
+mismatch alone producing 8 spurious failures of 16 at ratios of 0.02–0.04. So:
+this change should not move `/points` past the threshold on its own, and if CI
+reports otherwise, suspect the revision before suspecting the diff.
 
 **Why this was a before/after comparison and not a run of the suite.** Same
 sandbox gap the `/backwork` note below records, one revision further on:

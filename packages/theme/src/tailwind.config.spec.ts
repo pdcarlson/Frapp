@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import { derivePalette } from "@repo/chapter-theme";
 import { describe, expect, it } from "vitest";
 
 import config from "./tailwind.config";
@@ -61,34 +62,49 @@ type Reference = { key: string; token: string; style: "triple" | "complete" };
  * so needs a complete color. Literal colors — the `navy` / `royal-blue` /
  * `emerald` brand scales — reference no property and are skipped.
  */
-function colorReferences(): Reference[] {
-  const found: Reference[] = [];
+function scanColors(): { references: Reference[]; unrecognised: string[] } {
+  const references: Reference[] = [];
+  const unrecognised: string[] = [];
 
   const visit = (node: unknown, key: string): void => {
     if (typeof node === "function") {
       // Called the way Tailwind calls it for an un-modified utility.
       const emitted = String((node as (arg?: unknown) => unknown)());
       const token = emitted.match(/^var\((--[\w-]+)\)$/)?.[1];
-      expect(token, `${key} is a function but did not emit a bare var()`).toBeDefined();
-      found.push({ key, token: token!, style: "complete" });
+      if (token) references.push({ key, token, style: "complete" });
+      else unrecognised.push(`${key} is a function but emitted "${emitted}", not a bare var()`);
       return;
     }
     if (typeof node === "string") {
       const wrapped = node.match(/^hsl\(var\((--[\w-]+)\)\)$/);
-      if (wrapped) found.push({ key, token: wrapped[1]!, style: "triple" });
-      else expect(node, `${key} references a var in an unrecognised form`).not.toMatch(/var\(/);
+      if (wrapped) references.push({ key, token: wrapped[1]!, style: "triple" });
+      else if (node.includes("var(")) {
+        unrecognised.push(`${key} reads a custom property in an unrecognised form: "${node}"`);
+      }
       return;
     }
-    for (const [child, value] of Object.entries(node as object)) {
+    if (typeof node !== "object" || node === null) {
+      unrecognised.push(`${key} is neither a colour, a group, nor a function: ${String(node)}`);
+      return;
+    }
+    for (const [child, value] of Object.entries(node)) {
       visit(value, `${key}.${child}`);
     }
   };
 
-  visit(config.theme!.extend!.colors, "colors");
-  return found;
+  visit(config.theme?.extend?.colors, "colors");
+  return { references, unrecognised };
 }
 
-const references = colorReferences();
+/**
+ * Scanned once, at module scope, because `it.each` needs the list at collection
+ * time — and therefore scanned WITHOUT asserting. An `expect()` that throws out
+ * here does not fail a test, it aborts the module: vitest reports the file as
+ * `(0 test)` and every assertion below, including the `references.length` guard
+ * that exists to catch exactly this, silently never registers. Anomalies are
+ * collected and asserted inside a real test instead.
+ */
+const { references, unrecognised } = scanColors();
 
 const HSL_TRIPLE = /^\d+(\.\d+)?\s+\d+(\.\d+)?%\s+\d+(\.\d+)?%$/;
 const COMPLETE_COLOR = /^(#[0-9a-f]{3,8}|(hsla?|rgba?)\([^)]*\))$/i;
@@ -100,6 +116,14 @@ describe("every token the preset reads is defined", () => {
     // Guards the walker itself: a parse that quietly found nothing would make
     // every assertion below vacuous.
     expect(references.length).toBeGreaterThan(20);
+  });
+
+  it("understands every colour value in the preset", () => {
+    // A value the walker cannot classify is not benign — it is a token this
+    // suite has stopped checking. Most likely arrival: someone writes a colour
+    // in Tailwind's canonical `hsl(var(--x) / <alpha-value>)` form, which is
+    // neither of the two shapes the preset uses.
+    expect(unrecognised).toEqual([]);
   });
 
   it.each(references)("$key reads $token, which :root defines", ({ token }) => {
@@ -152,22 +176,44 @@ describe("token format matches how the preset reads it", () => {
 
 describe("the tokens chapter branding rewrites accept the accent engine's hex", () => {
   /**
-   * `derivePalette()` in `@repo/chapter-theme` persists these to
-   * `chapters.theme_palette` as hex and `apps/web/lib/hooks/use-chapter-theme.ts`
-   * writes them onto `:root`. They are the intersection of that palette with
-   * the keys this preset owns — the exact set #1143 was about. Named here
-   * rather than imported so this package keeps no dependency on the engine.
+   * Asked of the engine rather than copied from it.
+   *
+   * A hand-written list is the wrong shape for this guard: the failure it
+   * exists to prevent is a token being ADDED on one side and not the other, and
+   * a literal cannot notice that. `derivePalette()` persists every key below to
+   * `chapters.theme_palette` as hex, and `use-chapter-theme.ts` writes them onto
+   * `:root` — so the moment one of them is also read by the preset, it must be
+   * read in a form that accepts hex. Deriving both halves means a new palette
+   * token, or a new preset key for an existing one, is covered on arrival.
+   *
+   * The devDependency is test-only and acyclic: `@repo/chapter-theme` does not
+   * import `@repo/theme`.
    */
-  const CHAPTER_WRITTEN = ["--side-bg", "--side-accent", "--ring"];
+  const chapterTokens = Object.keys(
+    derivePalette({ dark: "#8B0000", accent: "#C9A56F" }).palette,
+  );
+  const readByPreset = chapterTokens.filter((token) =>
+    references.some((r) => r.token === token),
+  );
 
-  it.each(CHAPTER_WRITTEN)("%s is read in a hex-compatible form", (token) => {
-    const reading = references.filter((r) => r.token === token);
-    expect(reading.length, `no preset key reads ${token}`).toBeGreaterThan(0);
-    for (const { key, style } of reading) {
+  it("still finds the overlap it is meant to police", () => {
+    // If the intersection empties out — the engine renames its tokens, the
+    // preset drops the keys — every assertion below passes by describing
+    // nothing. That is the one way this guard can fail silently.
+    expect(chapterTokens.length).toBeGreaterThan(0);
+    expect(readByPreset).toEqual(
+      expect.arrayContaining(["--side-bg", "--side-accent", "--ring"]),
+    );
+  });
+
+  it.each(readByPreset)("%s is read in a hex-compatible form", (token) => {
+    for (const { key, style } of references.filter((r) => r.token === token)) {
       expect(
         style,
-        `${key} reads ${token} as an HSL triple, so the hex the accent engine ` +
-          "stores would resolve to hsl(#RRGGBB) and be dropped by the browser",
+        `${key} reads ${token} as an HSL triple, but the accent engine persists ` +
+          `${token} as hex — it would resolve to hsl(#RRGGBB) and be dropped by ` +
+          "the browser (#1143). Either store it as a complete colour and read it " +
+          "through colorVar(), or stop writing it from derivePalette().",
       ).toBe("complete");
     }
   });
@@ -176,6 +222,34 @@ describe("the tokens chapter branding rewrites accept the accent engine's hex", 
     const accent = config.theme!.extend!.colors as Record<string, unknown>;
     const side = accent["side"] as Record<string, (arg?: unknown) => string>;
     expect(side["accent"]!()).toBe("var(--side-accent)");
+  });
+});
+
+describe("hand-written hsl(var(--x)) agrees with the token's stored format", () => {
+  // The preset is not the only reader. `globals.css` wraps tokens itself in its
+  // own base and components layers (`* { border-color: hsl(var(--border)) }`),
+  // and those sites hard-code the bare-triple assumption exactly as the preset
+  // used to. While one convention covered everything this could not go wrong;
+  // now that two coexist, a token converted for the preset would leave these
+  // emitting `hsl(hsl(30 10% 12%))` — invalid, and dropped.
+  const wrapped = [...css.matchAll(/hsl\(var\((--[\w-]+)\)/g)].map((m) => m[1]!);
+  const completeTokens = new Set(
+    references.filter((r) => r.style === "complete").map((r) => r.token),
+  );
+
+  it("finds the hand-written wrappers it is checking", () => {
+    expect(new Set(wrapped).size).toBeGreaterThan(0);
+  });
+
+  it.each([...new Set(wrapped)])("%s is stored as a triple", (token) => {
+    expect(
+      completeTokens.has(token),
+      `globals.css writes hsl(var(${token})) by hand, but the preset reads ` +
+        `${token} as a complete colour — one of the two is now wrong, and the ` +
+        "hand-written one renders nothing.",
+    ).toBe(false);
+    const value = root.get(token);
+    if (value !== undefined) expect(value).toMatch(HSL_TRIPLE);
   });
 });
 
@@ -196,6 +270,26 @@ describe("opacity modifiers survive the format-agnostic reader", () => {
   it("emits a color-mix when a modifier is used", () => {
     expect(side["bg-hi"]!({ opacityValue: "0.7" })).toBe(
       "color-mix(in srgb, var(--side-bg-hi) calc(0.7 * 100%), transparent)",
+    );
+  });
+
+  it("uses a percentage modifier as-is", () => {
+    // `bg-side-bg-hi/[62%]`. Multiplying would give `calc(62% * 100%)`, which is
+    // not a valid product, so the browser drops the declaration entirely — the
+    // silent no-colour failure this whole file exists to prevent.
+    expect(side["bg-hi"]!({ opacityValue: "62%" })).toBe(
+      "color-mix(in srgb, var(--side-bg-hi) 62%, transparent)",
+    );
+  });
+
+  it("honours the numeric 0 that gradient stops pass", () => {
+    // `gradientColorStops` synthesises the implicit transparent end-stop of
+    // `from-*` / `via-*` by calling with the NUMBER 0. A truthiness check would
+    // treat that as "no modifier" and emit an opaque stop, so
+    // `bg-gradient-to-t from-side-bg` would render a flat block instead of a
+    // fade.
+    expect(side["bg"]!({ opacityValue: 0 })).toBe(
+      "color-mix(in srgb, var(--side-bg) calc(0 * 100%), transparent)",
     );
   });
 });
