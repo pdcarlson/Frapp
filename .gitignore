@@ -13,6 +13,9 @@ node_modules
 # Cloud sandbox bringup sentinels (scripts/cloud-sandbox-up.sh)
 .cloud-sandbox-up.done
 .cloud-sandbox-up.failed
+# Egress capability manifest (scripts/cloud-sandbox-egress-probe.sh) — per-session state,
+# never committed: it describes one environment's network policy at one moment.
+.cloud-sandbox-capabilities.json
 
 # Testing
 coverage

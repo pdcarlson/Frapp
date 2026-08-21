@@ -35,14 +35,36 @@ Open the environment settings dialog and set:
 bash scripts/cloud-sandbox-setup.sh || true
 ```
 
-**2. Network access:** **Custom** with **`public.ecr.aws`** and **`*.cloudfront.net`**
-added to the allowlist (keep "include default list" on), or simply **Full**.
+**2. Network access:** **Custom**, "include default list" **on**, with these lines in
+**Allowed domains** (one per line):
+
+```
+public.ecr.aws
+*.cloudfront.net
+staging.frapp.live
+*.staging.frapp.live
+api-staging.frapp.live
+hnoyzpidbmizhbqaiity.supabase.co
+```
+
+The first two are what makes `supabase start` work. The last four are the **live staging
+egress** described in [Live staging egress](#live-staging-egress) below; omit them and the
+sandbox is still fully functional for local-stack work, it just cannot reach the deployed
+environment.
+
+**Every one of those four is a literal host on purpose.** Both wildcards a reader reaches
+for — `*.frapp.live` and `*.supabase.co` — silently include **production**, because prod
+and staging share an apex on both. See [Enumerate, do not
+wildcard](#enumerate-do-not-wildcard).
 
 `supabase start` does **not** pull only from Docker Hub: the Postgres image (and several
 others) come from **AWS ECR Public** (`public.ecr.aws/supabase/*`), served via
 **CloudFront** (`*.cloudfront.net`). Trusted alone covers npm, GitHub, and Docker Hub —
 enough for `npm ci` and `docker login`, but **not** ECR Public + CloudFront, so a
 Trusted-only policy fails image pulls with `403 Forbidden` / `Host not in allowlist`.
+
+**Full** also works for image pulls, and is the wrong choice here: it grants prod egress
+too, which the allowlist above deliberately withholds.
 
 **3. Environment variables** (`.env` style, one `KEY=value` per line, no quotes):
 
@@ -339,6 +361,130 @@ image's template, dropping both the grants and the altered default privileges, s
 otherwise-healthy session starts returning `42501` mid-run. Re-run the repair (or the whole
 bringup script) after any local reset.
 
+## Live staging egress
+
+The four staging hosts in the allowlist above let a sandbox session
+reach the **deployed staging environment**, not just the local stack. This is what retires
+most of the "Runtime checks BLOCKED" protocol in
+[`../ci-cd/AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md) — see
+[`.claude/skills/live-verification/SKILL.md`](../../../.claude/skills/live-verification/SKILL.md)
+for how an agent is expected to use it.
+
+| Line | Reaches |
+| ---- | ------- |
+| `staging.frapp.live` | the landing site (apex — see wildcard note) |
+| `*.staging.frapp.live` | `app.staging.frapp.live`, the web dashboard |
+| `api-staging.frapp.live` | the Render-hosted API. A **sibling** of `staging.frapp.live`, not a subdomain of it, so `*.staging.frapp.live` does **not** cover it |
+| `hnoyzpidbmizhbqaiity.supabase.co` | the hosted `frapp-staging` project — Realtime, Presence, GoTrue. The **staging project ref**, not a wildcard; if the project is ever rotated this line must be updated, and the bringup probe below is what will tell you |
+
+### Wildcard semantics — weaker than the docs imply
+
+The [cloud environments docs](https://code.claude.com/docs/en/cloud-environments#access-levels)
+say "a leading `*.` matches every subdomain". Probing this sandbox shows that is not a safe
+thing to rely on for a **Custom** entry. Two observations, both from the live proxy:
+
+- **A Custom `*.` matched exactly one label.** With `*.supabase.co` in the allowlist,
+  `<ref>.supabase.co` was allowed but `db.<ref>.supabase.co` was **rejected**
+  (`connect_rejected` in `$HTTPS_PROXY/__agentproxy/status`). The *default* list behaves
+  differently — `s3.us-east-1.amazonaws.com` resolves through its `*.amazonaws.com` at two
+  labels deep — so default-list and Custom entries do **not** match identically, and the
+  docs do not say so.
+- **It does not match the apex**, under either. `amazonaws.com`, `googleapis.com`, and
+  `supabase.co` are all blocked while their subdomains are allowed. That is why
+  `staging.frapp.live` needs its own line.
+
+**Operating rule: do not rely on `*.` spanning more than one label. Enumerate the host.**
+`*.staging.frapp.live` is kept only because `app.staging.frapp.live` is exactly one label
+deep; it is not evidence that deeper patterns work.
+
+### Enumerate, do not wildcard
+
+Both tempting shortcuts are wrong for the **same** reason: prod and staging share an apex,
+on both domains.
+
+| Shortcut | Also grants | Prod host it exposes |
+| -------- | ----------- | -------------------- |
+| `*.frapp.live` | the production web + API | `app.frapp.live`, `api.frapp.live` |
+| `*.supabase.co` | the **production database project** | `unttyvyfezddlyafcydh.supabase.co` |
+
+The second is the easier one to get wrong, because nothing in the hostname says "prod" —
+`frapp-staging` is `hnoyzpidbmizhbqaiity` and `frapp-prod` is `unttyvyfezddlyafcydh`, two
+opaque refs on one apex (`mcp__Supabase__list_projects` maps them). A single `*.supabase.co`
+line therefore hands every unattended session a route to production data, which is exactly
+what enumerating the `frapp.live` hosts was meant to prevent. This was shipped once and
+caught by probing; the negative assertion in the bringup probe exists so it cannot happen
+quietly again.
+
+Reaching a prod host is not the same as reading prod data — that still needs prod
+credentials, which this environment does not hold. But the environment's variables are, by
+this doc's own rule above, visible to anyone who can edit it, so the two are one
+configuration change apart. Staging is the blast radius we accept. **Enumerate.**
+
+### What this does not unlock
+
+- **Authentication.** Egress gets you an unauthenticated socket. Authenticated probes need
+  a staging user; `scripts/ci/staging-conformance.mjs` already defines the convention
+  (`STAGING_SMOKE_USER_EMAIL` / `STAGING_SMOKE_USER_PASSWORD`). Use a dedicated smoke
+  account, never a real member's.
+- **Provider APIs.** Render, Vercel, Infisical, Sentry, and PostHog stay blocked to direct
+  `fetch`. Agents reach them through **MCP**, which does not go through this allowlist at
+  all — so the MCP-based [`infrastructure-research`](../../../.claude/skills/infrastructure-research/SKILL.md)
+  workflow is unaffected either way. Only raw-`fetch` scripts like `staging-conformance.mjs`
+  notice the difference, and those run in CI, where the allowlist does not apply.
+- **Per-deployment Vercel URLs.** Only the aliased staging hostnames are allowlisted, not
+  the unique `*.vercel.app` URL each deployment also gets. When the alias lags behind the
+  latest `main` build — the known Vercel behaviour described in
+  [`../ops/DEPLOYMENT.md`](../ops/DEPLOYMENT.md) — you can reach what the alias currently
+  points at, not the newer deployment behind it. Check the alias state via the Vercel MCP
+  tools rather than assuming the hostname is current.
+- **Writes being safe.** Nothing about egress makes a `POST` reversible. The skill's
+  read-only default exists for that reason.
+
+### Checking whether egress is live
+
+**Do not probe by hand — it has already been done.** `scripts/cloud-sandbox-egress-probe.sh`
+runs as the **first** step of bringup and writes `.cloud-sandbox-capabilities.json` at the
+repo root (gitignored — it describes one environment's policy at one moment).
+`.claude/hooks/session-start.sh` summarises it into the session context, so in a normal
+sandbox session the answer is already in front of you.
+
+It runs first, not last, for a reason worth knowing: **egress does not depend on the local
+stack.** Reaching deployed staging needs no Docker, no Postgres, no containers. With the
+probe at the end, any earlier `fail()` — a denied ulimit, an unhealthy container, an image
+pull out of retries — exited before it and left the session with no manifest despite
+perfectly good egress. That is backwards, because a session whose local stack just died is
+the one most likely to fall back on live staging. It also means the manifest is ready
+within about a second, long before the ~60–90s bringup lands `.done`.
+
+```bash
+# Read the answer
+python3 -m json.tool .cloud-sandbox-capabilities.json
+
+# Re-probe after changing the allowlist (or on a laptop, where bringup never ran)
+bash scripts/cloud-sandbox-egress-probe.sh
+```
+
+The manifest reports three outcomes, and the distinction is the point:
+
+| `status` | Means |
+| -------- | ----- |
+| `reachable` | the host answered — any HTTP code counts, including the 302 the web hosts return and the 404 the Supabase root returns |
+| `blocked` | the proxy refused CONNECT (`curl: (56) CONNECT tunnel failed, response 403`) — a real policy denial |
+| `timeout` / `no_dns` / `unknown` | the probe **could not tell**. Not a pass and not a fail; `ok` is `null` and it never counts toward either total |
+
+That third row is why the manifest exists rather than a bare `curl`: a timeout looks
+exactly like a block to a one-line probe, and acting on the wrong one wastes a session.
+`curl -sS "$HTTPS_PROXY/__agentproxy/status"` remains the ground truth for *which* host the
+proxy refused, listed under `recentRelayFailures`.
+
+The probe also asserts **negatively** that both production apexes are unreachable. A prod
+host that answers is reported as a `SECURITY` warning, not as extra capability — that is
+the tripwire for an allowlist that has been widened back to a wildcard.
+
+It runs per session, never in `cloud-sandbox-setup.sh`: that script's filesystem is cached
+for ~7 days, and a week-old cached answer about a policy that can change between sessions
+is worse than no answer.
+
 ## Still out of scope
 
 - **Supabase MCP write tools** (`create_branch`, `apply_migration`) are not allowlisted in
@@ -346,6 +492,17 @@ bringup script) after any local reset.
   committed file has never carried a deny rule; see
   [`../ci-cd/AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md)). Local Supabase covers DB + migrations
   without them.
-- **Live Realtime/Presence, push fanout (APNS/FCM), RLS-as-GoTrue** against the hosted
-  stack still need real staging — keep the "Runtime checks BLOCKED" protocol in
-  [`../ci-cd/AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md).
+- **Push fanout**, but read the halves separately — they differ, and the obvious summary
+  is wrong. **APNS is unreachable**: `api.push.apple.com` and `api.sandbox.push.apple.com`
+  both fail the policy check, and no Apple host is proposed for the allowlist. **FCM's HTTP
+  endpoint is already reachable** — `fcm.googleapis.com` resolves through the *default*
+  Trusted entry `*.googleapis.com`, with no Frapp-specific line involved. That is transport
+  only: an actual fanout test still needs service-account credentials and a real device
+  token to deliver to, so end-to-end push remains a "Runtime checks BLOCKED" case under
+  [`../ci-cd/AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md). Probe before assuming either way.
+- **Live Realtime/Presence and RLS-as-GoTrue** are out of scope *only when the staging
+  egress above is not configured*. With it plus a staging smoke credential they are
+  reachable against hosted `frapp-staging` — that is the point of
+  [Live staging egress](#live-staging-egress). Confirm with the `curl` probe there before
+  claiming either way; do not infer it from this doc.
+- **Production**, deliberately and permanently. Not an unconfigured gap — an excluded one.
