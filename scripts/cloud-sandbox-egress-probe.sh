@@ -2,13 +2,16 @@
 # Cloud sandbox EGRESS PROBE — answers "what can this session actually reach?" once, at
 # bringup, so no session has to discover it by failing at it.
 #
-# Run automatically as the last step of scripts/cloud-sandbox-up.sh, and safe to run by
-# hand at any time:
+# Run automatically as the FIRST step of scripts/cloud-sandbox-up.sh — before any Docker or
+# Supabase work, see the comment at its call site for why — and safe to run by hand at any
+# time:
 #
 #     bash scripts/cloud-sandbox-egress-probe.sh
 #
 # Writes .cloud-sandbox-capabilities.json at the repo root (gitignored, like the bringup
-# sentinels) and prints a one-line summary on stdout for .claude/hooks/session-start.sh.
+# sentinels). It also prints the summary on stdout, which is for a human running it by hand:
+# bringup discards it (`>/dev/null`) and .claude/hooks/session-start.sh re-derives its own
+# summary from the JSON rather than reading this stdout. The manifest is the interface.
 #
 # NEVER FATAL, and never non-zero. Live egress is optional: a session doing purely local
 # work must not be blocked, or even slowed, because staging is down or unlisted. Same
