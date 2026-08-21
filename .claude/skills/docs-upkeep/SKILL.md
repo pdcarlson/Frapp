@@ -196,9 +196,15 @@ Otherwise, in order:
 3. **Push and open** against `main` with `mcp__github__create_pull_request`. If the GitHub MCP is
    unavailable, push the branch, report its name, and stop — `gh` and raw REST are not sanctioned
    paths (`AGENTS.md` § Work tracking), so there is no fallback that opens a PR.
-4. **Then stop.** `AGENTS.md` § Autonomous PR lifecycle tells an interactive session to babysit a PR
-   to merge; that does **not** apply here. Subscribing is optional, merging is forbidden, and a red
-   CI on a docs sweep is a finding for the run report, not a reason to keep pushing.
+4. **Fix your own CI, then stop.** `AGENTS.md` § Autonomous PR lifecycle tells an interactive
+   session to babysit a PR all the way to merge; that does **not** apply here — merging is
+   forbidden and subscribing is optional. But a failure *this sweep caused* is yours: deleting a
+   doc that held an allowlisted dead citation reds `doc-paths`, and renaming a heading reds
+   `link-check`. Those are docs problems in your own scope, and handing them back as a red PR
+   contradicts the point of repairing rather than filing. Fix and push.
+   Anything else — a failure in code you did not touch, a flake, an infra error — is a run-report
+   finding, not a reason to keep pushing. Never widen the PR to chase a red check outside the
+   allowlist.
 
 > **A PR touching only `.claude/` cannot merge.** `check-docs-impact.mjs` counts `docs/` and `spec/`
 > only, and `docs-spec-sync` is required under `enforce_admins: true`. So a run whose only changes
