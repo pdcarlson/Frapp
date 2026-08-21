@@ -351,9 +351,70 @@ jobs:
           context: .
           file: apps/api/Dockerfile
           push: false
-          load: false
+          # `load: true` (was false) so the next step has an image to run.
+          load: true
+          tags: frapp-api:ci
           cache-from: type=gha,scope=api
           cache-to: type=gha,mode=max,scope=api
+
+      # A successful build is NOT evidence the image can start, and the gap
+      # between the two is not hypothetical: in #1160 `colorjs.io` and later
+      # `zod` stopped hoisting to the root node_modules, the runner stage never
+      # copied the workspace trees holding them, and `verify-render-api` failed
+      # on 67 consecutive pushes to main -- while this job stayed green on every
+      # one of them. Render reports that as `update_failed`, a post-build state;
+      # the runtime logs show MODULE_NOT_FOUND on first require().
+      # Booting the container is the only gate that sees this class of failure.
+      - name: Boot the image and probe /health
+        run: |
+          set -euo pipefail
+
+          # /health answers 200 whether or not the database is reachable -- it
+          # reports `database: error` / `status: degraded` rather than throwing
+          # (apps/api/src/interface/controllers/health.controller.ts). So these
+          # obviously-fake values satisfy the boot-time env validation in
+          # apps/api/src/config/env.validation.ts without needing any secret,
+          # and a 200 proves the process booted and Nest is serving.
+          docker run -d --name frapp-api-ci -p 3001:3001 \
+            -e SUPABASE_URL=http://127.0.0.1:1 \
+            -e SUPABASE_SERVICE_ROLE_KEY=ci-not-a-real-key \
+            -e SUPABASE_ANON_KEY=ci-not-a-real-key \
+            -e STRIPE_SECRET_KEY=sk_test_ci_not_real \
+            -e STRIPE_WEBHOOK_SECRET=whsec_ci_not_real \
+            -e STRIPE_PRICE_ID=price_ci_not_real \
+            frapp-api:ci
+
+          # --max-time must clear the unreachable-database path, not the happy
+          # one. /health still answers 200 with no database, but only after the
+          # Supabase client gives up: measured at ~7s locally against a dead
+          # SUPABASE_URL. A short per-request timeout therefore fails on every
+          # attempt and turns this gate into a permanent red on all PRs.
+          # Bounded by a total deadline instead, so one slow request cannot
+          # multiply into a ten-minute hang.
+          deadline=$(( SECONDS + 180 ))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            # No --show-error: a connection-refused line per attempt would bury
+            # the real failure. `docker logs` below is the diagnostic that matters.
+            if curl --fail --silent --max-time 25 http://127.0.0.1:3001/health; then
+              echo
+              echo "::notice::API image booted and answered /health"
+              exit 0
+            fi
+            if [ -z "$(docker ps -q -f name=frapp-api-ci)" ]; then
+              echo "::error::Container exited before answering /health -- the image cannot start"
+              docker logs frapp-api-ci
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "::error::/health did not answer within 180s"
+          docker logs frapp-api-ci
+          exit 1
+
+      - name: Remove the probe container
+        if: always()
+        run: docker rm -f frapp-api-ci >/dev/null 2>&1 || true
 
   # ── API contract freshness check ────────────────────────────────────────
   api-contract-check:
