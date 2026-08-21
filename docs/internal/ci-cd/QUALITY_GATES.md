@@ -18,7 +18,7 @@ baseline story actually supports.
 | oasdiff breaking changes | `npm run check:api-breaking` | step in `api-contract-check` | **Advisory** | Every consumer is in this repo and ships with the change |
 | `nestjs-typed` response schema | `npm run lint -w apps/api` | step in `lint-and-typecheck` | **`warn`** | 142 findings and no ESLint baseline mechanism |
 | jscpd duplication | `npm run check:duplication` | `duplicate-detection` | **Advisory** | No clone-level baseline exists; a repo-wide % is too coarse to block on |
-| 375px responsive floor | `npm run test:floor -w apps/web` | `web-responsive-floor` | **Required** | No baseline at all — it reads one integer per route. Nothing to grandfather and nothing to drift |
+| 375px responsive floor | `npm run test:floor -w apps/web` | `web-responsive-floor` | **Required** (after the one-time rollout run) | No baseline at all — it reads one integer per route. Nothing to grandfather and nothing to drift |
 | Dashboard visual snapshots | `npm run test:visual -w apps/web` | `web-visual-regression` | **Advisory** | Baselines are pinned to CI's Chromium build and drift with it; only regenerable on a matching machine |
 
 The last two rows are the same suite directory and opposite postures, which is the point. Posture
@@ -27,6 +27,12 @@ one compares stored pixels and one compares a number. Until #1152 they shared a 
 gate inherited the snapshot gate's exemption and could not block. They are now split by the `@floor`
 Playwright tag — `--grep @floor` for the required job, `--grep-invert @floor` for the advisory one —
 so each suite runs exactly once and a new spec in that directory joins the advisory job by default.
+
+Two things keep the required half from passing vacuously, and both are load-bearing: Playwright exits
+**1** on "No tests found", so dropping the tag reddens the job rather than emptying it, and
+`forbidOnly` is set under `CI` so a committed `test.only` cannot narrow the gate to one route while
+still exiting 0. Neither is inferable from the job definition — check them before changing how the
+suite is selected.
 
 ---
 

@@ -12,16 +12,23 @@ concurrency:
 
 # ---------------------------------------------------------------------------
 # Domain-specific parallel jobs. `packages-build` runs first (shared
-# dependency). The required checks always run; web-tests,
-# web-visual-regression, and pglite-migrations are path-gated on PRs via the
-# `changes` job and run unconditionally on push.
+# dependency). web-tests, web-responsive-floor, web-visual-regression, and
+# pglite-migrations are path-gated on PRs via the `changes` job and run
+# unconditionally on push; everything else always runs.
+#
+# Path-gated does NOT mean advisory. web-tests and web-responsive-floor are both
+# REQUIRED checks — a job skipped by a job-level `if:` reports Success, which
+# satisfies one. That is also why `changes` is itself required: a required job
+# skipped because a `needs:` parent FAILED also reports skipped, so a
+# non-required parent would be a hole. See scripts/configure-branch-protection.mjs.
 #
 # `clean-checkout-typecheck` is the deliberate exception: it depends on nothing
 # and prebuilds nothing, so it alone exercises the bare `npm install` path.
 # ---------------------------------------------------------------------------
 
 jobs:
-  # Change detection: path-gates the non-required web/pglite jobs (Lever D).
+  # Change detection: path-gates the web/pglite jobs (Lever D). Itself required —
+  # see the header above and scripts/configure-branch-protection.mjs.
   # The filter runs only on pull_request; on push the gated jobs run
   # unconditionally (full validation on protected branches), so a shallow
   # checkout here can never fail the gate.
@@ -775,9 +782,13 @@ jobs:
         id: pw
         run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
 
-      # Same cache key as web-visual-regression on purpose: the two jobs want
-      # the identical browser build, so whichever lands first warms it for the
-      # other rather than each paying a separate download.
+      # Same cache key as web-visual-regression on purpose — the two jobs want
+      # the identical browser build, so they share one cache ENTRY rather than
+      # two. They do not warm each other within a run: both `needs:
+      # [packages-build, changes]` and start together, and actions/cache saves
+      # in a post-job step. On a cold key (any Playwright bump) both download,
+      # and one logs a harmless "Unable to reserve cache" — that annotation on
+      # this job is not a floor failure.
       - name: Cache Playwright browsers
         id: pw-cache
         uses: actions/cache@v4

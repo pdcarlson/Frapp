@@ -16,8 +16,11 @@ node_modules
 
 # Testing
 coverage
-apps/web/playwright-report/
-apps/web/test-results/
+# Unanchored, so a Playwright run started from the repo root (or any workspace)
+# is covered too — the `apps/web/`-anchored form left root-level artifacts
+# stageable, and `test-results/.last-run.json` duly got committed once.
+playwright-report/
+test-results/
 
 # Turbo
 .turbo

@@ -316,17 +316,19 @@ describe("nothing hand-writes hsl(var(--x)) around a complete-colour token", () 
 
   it("covers the tokens no preset key reads", () => {
     // The regression this guard was widened to catch. `--brand-lockup-bg` is
-    // the named witness: hand-consumed only, so a set keyed on `references`
-    // would not contain it. If it ever stops being hand-consumed, retarget this
-    // deliberately rather than quietly narrowing back to `references`.
+    // the witness: hand-consumed only (an SVG `fill` in `apps/landing`), so a
+    // set keyed on `references` would not contain it.
+    //
+    // It is the ONLY witness now that #1155 deleted the `--hue-*` family, which
+    // is why this is a named assertion rather than a token-agnostic one. A
+    // count or a size comparison looks more general and is not: today it would
+    // be this same token by another name, and it would additionally go red on a
+    // correct change — wiring `--brand-lockup-bg` into a preset colour key, or
+    // adding any bare-triple preset key — with a message about set sizes that
+    // says nothing about what actually broke. If this token stops being
+    // hand-consumed, retarget this deliberately rather than quietly narrowing
+    // back to `references`.
     expect(completeTokens.has("--brand-lockup-bg")).toBe(true);
-
-    // The same invariant stated without naming a token, so that deleting an
-    // unused one can never leave this test asserting nothing. It held with the
-    // `--hue-*` family present and still holds with those five gone (#1155):
-    // the scanned set must stay strictly wider than what the preset reads.
-    const presetTokens = new Set(references.map((reference) => reference.token));
-    expect(completeTokens.size).toBeGreaterThan(presetTokens.size);
   });
 
   it("still recognises the shape it is banning", () => {

@@ -37,7 +37,7 @@ description: >
 | Migration check | `npm run check:migration-safety` |
 | npm audit gate (high/critical) | `npm run check:npm-audit` (offline: `-- --soft-network`) |
 | Web dashboard screenshots (Playwright) | `npm run test:visual -w apps/web` |
-| 375px responsive floor (Playwright, required gate) | `npm run test:floor -w apps/web` |
+| 375px responsive floor (Playwright, blocking gate once rolled out) | `npm run test:floor -w apps/web` |
 
 ---
 

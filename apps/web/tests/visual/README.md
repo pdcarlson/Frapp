@@ -18,7 +18,7 @@ have opposite CI postures (#1152):
 | Suite | Script | CI job | Posture |
 | --- | --- | --- | --- |
 | `dashboard-routes.spec.ts` | `npm run test:visual -w apps/web` (`--grep-invert @floor`) | `web-visual-regression` | Advisory — baselines drift with Chromium |
-| `responsive-floor.spec.ts` | `npm run test:floor -w apps/web` (`--grep @floor`) | `web-responsive-floor` | **Required** — nothing to drift |
+| `responsive-floor.spec.ts` | `npm run test:floor -w apps/web` (`--grep @floor`) | `web-responsive-floor` | **Required** once the branch-protection rollout run lands — nothing to drift |
 
 Because selection is by tag rather than by path, a **new** spec added to this
 directory runs in the advisory snapshot job by default. Tag it `@floor` only if
