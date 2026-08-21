@@ -47,11 +47,21 @@ COPY packages/org-archetypes/package.json ./packages/org-archetypes/
 COPY packages/chapter-theme/package.json ./packages/chapter-theme/
 COPY packages/color/package.json ./packages/color/
 COPY packages/typescript-config/package.json ./packages/typescript-config/
-# mkdir guards the runner-stage COPY: when transitive versions hoist
-# entirely to the root, apps/api/node_modules is never created and the
-# COPY --from=prod-deps below would fail with "not found".
+# mkdir guards the runner-stage COPYs. Hoisting decides where every dependency
+# lands, and BOTH directions break a COPY that assumes the other:
+#   - hoisted to the root  -> apps/api/node_modules is never created
+#   - forced down by a version conflict -> packages/<name>/node_modules appears
+# The second direction is what broke staging for four days (#1160): `colorjs.io`
+# moved to packages/chapter-theme/node_modules and `zod` to
+# packages/validation/node_modules, neither of which the runner copied, so the
+# image built cleanly and then died on its first require(). Every tree the
+# runner stage copies is created here so no COPY can fail with "not found".
 RUN npm ci --omit=dev --workspace=apps/api --workspace=packages/validation --workspace=packages/org-archetypes --workspace=packages/chapter-theme --workspace=packages/color --workspace=packages/typescript-config --include-workspace-root \
-    && mkdir -p apps/api/node_modules
+    && mkdir -p apps/api/node_modules \
+       packages/validation/node_modules \
+       packages/org-archetypes/node_modules \
+       packages/chapter-theme/node_modules \
+       packages/color/node_modules
 
 # Stage 4: Minimal production image
 FROM node:20-alpine AS runner
@@ -65,12 +75,16 @@ COPY --from=builder --chown=frapp:frapp /app/apps/api/dist/ ./apps/api/dist/
 COPY --from=builder --chown=frapp:frapp /app/apps/api/package.json ./apps/api/
 COPY --from=builder --chown=frapp:frapp /app/packages/validation/dist/ ./packages/validation/dist/
 COPY --from=builder --chown=frapp:frapp /app/packages/validation/package.json ./packages/validation/
+COPY --from=prod-deps --chown=frapp:frapp /app/packages/validation/node_modules/ ./packages/validation/node_modules/
 COPY --from=builder --chown=frapp:frapp /app/packages/org-archetypes/dist/ ./packages/org-archetypes/dist/
 COPY --from=builder --chown=frapp:frapp /app/packages/org-archetypes/package.json ./packages/org-archetypes/
+COPY --from=prod-deps --chown=frapp:frapp /app/packages/org-archetypes/node_modules/ ./packages/org-archetypes/node_modules/
 COPY --from=builder --chown=frapp:frapp /app/packages/chapter-theme/dist/ ./packages/chapter-theme/dist/
 COPY --from=builder --chown=frapp:frapp /app/packages/chapter-theme/package.json ./packages/chapter-theme/
+COPY --from=prod-deps --chown=frapp:frapp /app/packages/chapter-theme/node_modules/ ./packages/chapter-theme/node_modules/
 COPY --from=builder --chown=frapp:frapp /app/packages/color/dist/ ./packages/color/dist/
 COPY --from=builder --chown=frapp:frapp /app/packages/color/package.json ./packages/color/
+COPY --from=prod-deps --chown=frapp:frapp /app/packages/color/node_modules/ ./packages/color/node_modules/
 
 USER frapp
 WORKDIR /app/apps/api

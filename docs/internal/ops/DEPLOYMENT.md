@@ -310,7 +310,23 @@ Create **two** Render Web Services: one for production, one for staging.
 
 ### 5.4 Health Check
 
-Render auto-detects the health check from the Dockerfile `HEALTHCHECK` directive. The API exposes `GET /health`.
+The API exposes `GET /health`, which answers `200` in both states — `status: ok` when the database
+round-trip succeeds, `status: degraded` when it does not
+([`health.controller.ts`](../../../apps/api/src/interface/controllers/health.controller.ts)). It
+never throws, so a `200` proves the process booted and Nest is serving, not that the database is
+reachable.
+
+> **This section previously claimed Render auto-detects the health check from the Dockerfile
+> `HEALTHCHECK` directive. That claim is unverified and the configuration contradicts it.** Render
+> exposes a per-service `healthCheckPath` setting, and on 2026-08-21 the live `frapp-api-staging`
+> service reported `healthCheckPath: ""` — empty — while [`render.yaml`](../../../render.yaml)
+> declares `healthCheckPath: /health` for both API services. So the blueprint is **not** applied to
+> that service, whatever Render does with the Dockerfile directive.
+>
+> What Render actually does with `HEALTHCHECK`, and whether an empty `healthCheckPath` disables
+> health-gated deploys, is **not established here** — `render.com` is unreachable from agent
+> sessions (egress-blocked), so it was not checked against Render's documentation. Confirm before
+> relying on either behaviour. Reconciling the drift is tracked on #1160.
 
 ### 5.5 In-process chat workers (Chunk 05)
 
@@ -496,6 +512,29 @@ See `CONTRIBUTING.md` for the full list of CI jobs required for merge.
 Render builds the API with `nest build` inside `apps/api/Dockerfile` (see the builder stage). That uses `tsconfig.build.json`, which can surface TypeScript errors that never ran in CI if the API workspace had no `check-types` task aligned with that config.
 
 CI now runs **`npm run build -w apps/api`** in `lint-and-typecheck` (same `nest build` as production) and **`docker build -f apps/api/Dockerfile .`** in a separate `api-docker-build` job so the image layer that compiles the API is exercised on every push and PR. **`api-docker-build`** is a required status check for merge (listed in `CONTRIBUTING.md` and applied by [`scripts/configure-branch-protection.mjs`](../../../scripts/configure-branch-protection.mjs); re-run `npm run configure:branch-protection` after changing CI job names).
+
+**A green build is not a startable image.** `api-docker-build` compiles the image; it long said
+nothing about whether the container can start. #1160 is what that gap costs: the runner stage
+copied `/app/node_modules/` and `/app/apps/api/node_modules/` but none of the `packages/*/node_modules/`
+trees, so the image was correct only while npm hoisted every workspace dependency to the root. When
+`colorjs.io` moved to `packages/chapter-theme/node_modules/` (2026-08-17) and then `zod` to
+`packages/validation/node_modules/` (2026-08-20), each vanished from the image. **`verify-render-api`
+then failed on 67 consecutive pushes to `main` while this job stayed green on every one of them**,
+with Render reporting `update_failed` — a post-build state, which is why the build logs looked clean.
+The 67 failures are counted from the Actions API; the `MODULE_NOT_FOUND` cause was read from Render's
+runtime logs on two sampled dates in that window (`colorjs.io` on 08-18, `zod` on 08-21) rather than
+on all 67.
+
+Two consequences worth carrying:
+
+- **The Dockerfile now copies each workspace package's `node_modules/`**, and `prod-deps` `mkdir -p`s
+  every tree the runner copies. The guard has to run in both directions: a dependency that hoists to
+  the root leaves `packages/<name>/node_modules` absent, and one forced down by a version conflict
+  leaves it present — either way an unguarded `COPY` fails or silently ships an incomplete image.
+- **`api-docker-build` now boots the image and probes `/health`** before passing. The build step sets
+  `load: true` so there is an image to run, and the probe supplies obviously-fake values for the six
+  variables [`env.validation.ts`](../../../apps/api/src/config/env.validation.ts) requires at boot —
+  no secret is needed, because `/health` answers `200` without a working database (§5.4).
 
 **Optional hardening (not implemented here):** poll the Render [Deploys API](https://render.com/docs/deploys) after CI for the commit SHA and fail if the deploy never leaves `build_in_progress` / reaches `build_failed` — closest to “exactly what Render does,” but slower and flakier than building the same Dockerfile in Actions.
 
