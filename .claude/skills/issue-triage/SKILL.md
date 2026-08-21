@@ -68,8 +68,8 @@ But **destructive** actions (close, mark duplicate, re-body) are limited to **`s
 issues:
 
 - **Organize (any `triage` item):** fill an *absent* priority label (never overwrite a human-set
-  one), add Blocked-by lines, attach to an epic where it clearly belongs, promote to Backlog
-  (remove `triage`).
+  one), record Blocked-by (as a comment — see Pass A step 4), attach to an epic where it clearly
+  belongs, promote to Backlog (remove `triage`).
 - **Destroy (`suggestion`-owned only):** close as junk/obsolete (`not_planned`), mark duplicate
   (`duplicate` + `duplicate_of`), edit the body (including adding an Agent brief). **Never** close
   or re-body a human/internal issue — a human-filed item that looks wrong stays in triage with a
@@ -99,7 +99,12 @@ each:
    deeper**: when unsure between two depths, pick the deeper one. **Deliver it as a comment**, not
    as a body edit — per the read-fidelity block above, adding a section to an existing body means
    round-tripping that body through a lossy read. `/next` reads the brief either way.
-4. **Blocked-by.** Add `Blocked by #N` body lines where a dependency is obvious.
+4. **Blocked-by.** Record `Blocked by #N` where a dependency is obvious. **Deliver it as a
+   comment**, not as a body edit, for exactly the reason step 3 does: adding a line to an existing
+   body means round-tripping that body through a lossy read, and most `triage` items were authored
+   by someone else. Writing the line into the body is correct only for a body you authored this
+   run. `/next` §1.1 verifies blockers against the repo rather than the tracker, so a commented
+   blocker is honored either way.
 5. **Epic attach.** Attach as a sub-issue (`sub_issue_write`) when it clearly belongs to an open
    `[Epic]`. If none fit, leave it standalone.
 6. **Promote or hold:**
