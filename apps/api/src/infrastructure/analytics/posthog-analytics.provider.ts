@@ -8,6 +8,19 @@ export interface PosthogProviderOptions {
   host?: string;
 }
 
+/** PostHog Cloud US — the default when `POSTHOG_HOST` is unset. */
+const DEFAULT_POSTHOG_HOST = 'https://us.i.posthog.com';
+
+/**
+ * Normalize a configured `POSTHOG_HOST` into the origin requests are sent to.
+ * Exported so `analytics.module.ts` can name the resolved host in its
+ * provider-selection log without duplicating the fallback rules.
+ */
+export function resolvePosthogHost(host?: string): string {
+  // `??` would keep an empty/whitespace POSTHOG_HOST; treat blank as unset.
+  return (host?.trim() || DEFAULT_POSTHOG_HOST).replace(/\/$/, '');
+}
+
 /**
  * PostHog transport over the public capture API using the global `fetch`
  * (Node 18+). Events are already pseudonymous (`distinctId` is the HMAC hash),
@@ -32,9 +45,7 @@ export class PosthogAnalyticsProvider implements IAnalyticsProvider {
 
   constructor(options: PosthogProviderOptions) {
     this.apiKey = options.apiKey;
-    // `??` would keep an empty/whitespace POSTHOG_HOST; treat blank as unset.
-    const host = options.host?.trim() || 'https://us.i.posthog.com';
-    this.host = host.replace(/\/$/, '');
+    this.host = resolvePosthogHost(options.host);
   }
 
   async capture(event: AnalyticsEvent): Promise<void> {
