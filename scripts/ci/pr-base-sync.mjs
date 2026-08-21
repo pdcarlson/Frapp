@@ -6,15 +6,24 @@
 // sweep closes both gaps the moment the base moves:
 //
 //   1. Behind + clean PRs are updated via the update-branch API — but ONLY when
-//      PR_BASE_SYNC_TOKEN (a fine-grained PAT) is configured. Pushes made with
-//      the default GITHUB_TOKEN do not create workflow runs (GitHub's recursion
-//      guard), so an update through it would leave required checks stuck at
-//      "Expected" with no CI ever running — strictly worse than not updating.
-//   2. When auto-update is unavailable (no PAT, fork head, API failure) or the
-//      PR has conflicts, one wake comment per PR tells the watching agent
-//      session what to do — merge origin/main itself, resolving conflicts if
-//      needed. Comments are webhook events (same wake path as ci-wake.mjs), and
-//      the agent's own push triggers CI normally.
+//      PR_BASE_SYNC_TOKEN holds a working GitHub App installation token. Pushes
+//      made with the default GITHUB_TOKEN do not create workflow runs (GitHub's
+//      recursion guard), so an update through it would leave required checks
+//      stuck at "Expected" with no CI ever running — strictly worse than not
+//      updating. An App token is not subject to that guard, and unlike a PAT it
+//      has no hand-renewed expiry and is not tied to one person's account.
+//   2. When the failure is PER-PR (conflicts, a fork head, a one-off update
+//      error) one wake comment on that PR tells the watching agent session what
+//      to do — merge origin/main itself, resolving conflicts if needed.
+//      Comments are webhook events (same wake path as ci-wake.mjs), and the
+//      agent's own push triggers CI normally.
+//   3. When the failure is REPO-WIDE — no app token, or a token the API rejects
+//      — every open PR would otherwise receive the same comment saying the same
+//      thing, up to MAX_PRS of them per merge to main. That is the noise this
+//      watchdog exists to prevent, so the token case raises ONE alert issue
+//      instead (the deploy-alert.mjs / staging-conformance.mjs pattern) and
+//      clears the stale per-PR comments. A later sweep that actually updates a
+//      branch closes it.
 //
 // Verdicts fail SAFE: a PR whose mergeability cannot be established (API error,
 // mergeable still null after bounded polling) is skipped — never blind-updated
@@ -28,7 +37,9 @@
 //
 // Env inputs:
 //   GITHUB_TOKEN        — required (pull-requests/issues: write); reads + comments
-//   PR_BASE_SYNC_TOKEN  — optional PAT (contents + pull-requests write); update-branch only
+//   PR_BASE_SYNC_TOKEN  — optional GitHub App installation token (contents +
+//                         pull-requests write), minted in the workflow by
+//                         actions/create-github-app-token; update-branch only
 //   GITHUB_REPOSITORY   — required, owner/repo
 //   GITHUB_REF_NAME     — required, the base branch that moved (main)
 //   GITHUB_SHA          — required, the new base tip
@@ -41,11 +52,99 @@ import {
   clearMarkedComments,
   upsertWakeComment,
 } from "./ci-wake.mjs";
+import {
+  raiseAlert as raiseAlertIssue,
+  resolveAlert as resolveAlertIssue,
+} from "./lib/alert-issue.mjs";
 
 // One live comment per PR. No workflow-name suffix (unlike ci-wake's per-workflow
 // markers): this sweep owns exactly one verdict per PR and each new base move
 // supersedes the last, so delete-then-create per sweep is the correct cadence.
 export const BASE_SYNC_MARKER = "<!-- frapp-base-sync -->";
+
+// ── Alert issue identity ────────────────────────────────────────────────────
+// Same contract as deploy-alert.mjs: the title is the primary key, looked up by
+// exact match, so it must stay stable across releases. `routine-state` marks it
+// as routine infrastructure — `/next` §0.2 treats that label as never-claimable,
+// which keeps agent sessions from picking the alert up as backlog work.
+//
+// P2, not P1: the sweep degrades rather than breaks. PRs still merge; they just
+// need a human or an agent to press Update branch, which is where this repo was
+// before the sweep existed.
+export const ALERT_ISSUE_TITLE =
+  "PR base sync cannot auto-update — the base-sync app token is missing or rejected";
+export const ALERT_ISSUE_LOOKUP_LABEL = "routine-state";
+export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P2"];
+
+const SETUP_STEPS = [
+  "The token is minted in `.github/workflows/pr-base-sync.yml` by",
+  "`actions/create-github-app-token`, from two repository secrets:",
+  "`PR_BASE_SYNC_APP_CLIENT_ID` and `PR_BASE_SYNC_APP_PRIVATE_KEY`.",
+  "Setup and rotation: `docs/internal/ci-cd/AGENT_INFRA.md` § Base-branch sync.",
+].join(" ");
+
+function alertBody(detail) {
+  return [
+    `\`main\` moved, at least one open PR was behind it, and the sweep could not`,
+    "update any branch automatically.",
+    "",
+    `- Cause: ${detail}`,
+    "",
+    SETUP_STEPS,
+    "",
+    "Until this is fixed the sweep still detects conflicts and still comments on",
+    "them; only the silent auto-update is off, so behind PRs need `Update branch`",
+    "pressed by hand (or an agent merging `main`).",
+    "",
+    "_Posted automatically by `scripts/ci/pr-base-sync.mjs`. This issue closes",
+    "itself the next time a sweep updates a branch successfully._",
+  ].join("\n");
+}
+
+/** One alert for the whole repo, however many PRs were affected this sweep. */
+export async function raiseTokenAlert({ token, repo, detail, fetchImpl }) {
+  return raiseAlertIssue({
+    token,
+    repo,
+    fetchImpl,
+    title: ALERT_ISSUE_TITLE,
+    labels: ALERT_ISSUE_LABELS,
+    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+    buildIssueBody: () => alertBody(detail),
+    buildCommentBody: ({ reopened }) =>
+      [
+        reopened
+          ? "**Base-branch auto-update is broken again** — reopening."
+          : "**Base-branch auto-update is still broken.**",
+        "",
+        `- Cause: ${detail}`,
+        "",
+        "_Posted automatically by `scripts/ci/pr-base-sync.mjs`._",
+      ].join("\n"),
+  });
+}
+
+/**
+ * Closed only on PROOF that auto-update works — a real update-branch success.
+ * A sweep with no behind PRs proves nothing (deploy-alert.mjs makes the same
+ * call: a no-op run never closes an open alert), so a quiet sweep leaves it up.
+ */
+export async function resolveTokenAlert({ token, repo, fetchImpl }) {
+  return resolveAlertIssue({
+    token,
+    repo,
+    fetchImpl,
+    title: ALERT_ISSUE_TITLE,
+    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+    buildRecoveryBody: () =>
+      [
+        "**Base-branch auto-update recovered.** A PR branch was updated via the",
+        "update-branch API on this sweep. Closing.",
+        "",
+        "_Closed automatically by `scripts/ci/pr-base-sync.mjs`._",
+      ].join("\n"),
+  });
+}
 
 // Sweep bound. Sequential per-PR processing keeps this well inside the job
 // timeout and gentle on the API; anything past the cap is LOGGED as deferred
@@ -117,9 +216,11 @@ export async function compareBehindBy({
 }
 
 /**
- * update-branch via the PAT. `expected_head_sha` makes the call a no-op 422 if
+ * update-branch via the app token. `expected_head_sha` makes the call a no-op 422 if
  * the head moved since we read it — a fresh push means fresh CI anyway, so
- * losing that race is fine. Returns { updated } or { updated: false, error }.
+ * losing that race is fine. Returns { updated } or { updated: false, status, error };
+ * `status` is what lets the caller tell a repo-wide auth rejection (401/403 —
+ * one alert issue) from a per-PR problem (a comment on that PR).
  */
 export async function updatePrBranch({
   updateToken,
@@ -138,6 +239,7 @@ export async function updatePrBranch({
   if (ok) return { updated: true };
   return {
     updated: false,
+    status,
     error: `HTTP ${status}${data?.message ? `: ${data.message}` : ""}`,
   };
 }
@@ -244,7 +346,9 @@ export async function processBaseMove({
   }
   logger.log?.(
     `[pr-base-sync] base ${baseRef} @ ${shortSha(baseSha)} — sweeping ${prs.length} open PR(s)` +
-      (updateToken ? " (auto-update enabled)" : " (no PR_BASE_SYNC_TOKEN — wake comments only)"),
+      (updateToken
+        ? " (auto-update enabled)"
+        : " (no app token — auto-update off; a behind PR raises the alert issue)"),
   );
 
   const results = [];
@@ -275,7 +379,45 @@ export async function processBaseMove({
     }
   }
 
+  await reconcileTokenAlert({ token, repo, results, fetchImpl, logger });
+
   return results;
+}
+
+/**
+ * One alert for the whole sweep, raised or closed on evidence only.
+ *
+ * Raise beats resolve when both appear in one sweep: a token that worked for
+ * one PR and was rejected for the next is still a broken token.
+ */
+async function reconcileTokenAlert({ token, repo, results, fetchImpl, logger }) {
+  const blocked = results.filter((result) => result.action === "blocked");
+  if (blocked.length > 0) {
+    const alert = await raiseTokenAlert({
+      token,
+      repo,
+      detail: blocked[0].detail,
+      fetchImpl,
+    });
+    logger.log?.(
+      `[pr-base-sync] ${blocked.length} behind PR(s) could not be auto-updated — ` +
+        `alert issue ${alert.action}` +
+        (alert.issueNumber ? ` (#${alert.issueNumber})` : ""),
+    );
+    return;
+  }
+
+  // Only a real update-branch success proves the token works. A sweep with no
+  // behind PRs proves nothing, and must not close a live alert.
+  if (!results.some((result) => result.action === "updated")) return;
+
+  const recovery = await resolveTokenAlert({ token, repo, fetchImpl });
+  if (recovery.action === "closed") {
+    logger.log?.(
+      `[pr-base-sync] auto-update proven working — closed alert issue(s) ` +
+        recovery.closed.map((n) => `#${n}`).join(", "),
+    );
+  }
 }
 
 async function processOnePr({
@@ -347,15 +489,33 @@ async function processOnePr({
     return { number, verdict: "current", action: "none" };
   }
 
-  // Behind and clean. A fork head cannot be updated through the API from
-  // here, and without the PAT an update would run no CI (see header) — both
-  // cases hand the merge to the watching agent instead.
+  // Behind and clean. A fork head cannot be updated through the API from here,
+  // and without a working app token an update would run no CI (see header).
+  //
+  // The token cases are REPO-WIDE: every behind PR this sweep touches would get
+  // the identical comment, so they return `action: "blocked"` and the sweep
+  // raises one alert issue instead. Anything genuinely per-PR still comments.
   const isFork = pr.head?.repo?.full_name !== repo;
+  const blocked = async (detail) => {
+    const cleared = await clearWakeComments({ token, repo, prNumber: number, fetchImpl });
+    logger.log?.(
+      `[pr-base-sync] #${number}: behind by ${behindBy}, not auto-updated (${detail}) — ` +
+        `no per-PR comment; the sweep raises one alert issue` +
+        (cleared ? `, cleared ${cleared} stale wake comment(s)` : ""),
+    );
+    return { number, verdict: "behind", action: "blocked", detail };
+  };
+
+  if (!isFork && !updateToken) {
+    return blocked(
+      "the workflow minted no app token — `PR_BASE_SYNC_APP_CLIENT_ID` / " +
+        "`PR_BASE_SYNC_APP_PRIVATE_KEY` are missing, or the mint step failed",
+    );
+  }
+
   let reason = null;
   if (isFork) {
     reason = "the head branch lives in a fork, which this sweep cannot push to";
-  } else if (!updateToken) {
-    reason = "no `PR_BASE_SYNC_TOKEN` secret is configured";
   } else {
     const result = await updatePrBranch({
       updateToken,
@@ -385,6 +545,12 @@ async function processOnePr({
         `[pr-base-sync] #${number}: update-branch reports a conflict (stale mergeable) — rerouting to the conflict wake`,
       );
       return postConflictComment();
+    }
+    // 401/403 is the token itself being rejected — expired, revoked, or the App
+    // uninstalled. That is repo-wide by definition: every remaining PR in this
+    // sweep would fail identically, so it takes the alert path, not N comments.
+    if (result.status === 401 || result.status === 403) {
+      return blocked(`the app token was rejected (${result.error})`);
     }
     reason = `the update-branch call failed (${result.error})`;
   }

@@ -56,8 +56,8 @@ it. Design + policy: [`GITHUB_PM.md`](GITHUB_PM.md).
 | Staging conformance | `.github/workflows/staging-conformance.yml` — **scheduled** (daily 07:00 UTC) + `workflow_dispatch`. Asserts live `frapp-staging` state rather than a push: project `ACTIVE_HEALTHY`, `custom_access_token_hook` enabled *and* pointed at the right function, every Infisical secret sync succeeded, and an end-to-end sign-in whose JWT carries `active_chapter_id`. **Migration parity is deliberately NOT checked here** — `check-migration-drift.yml` above owns it end to end; see "Scheduled conformance" below. Upserts its own `routine-state` alert issue on drift and closes it on recovery. Logic in `scripts/ci/staging-conformance.mjs` (tests: `scripts/ci/__tests__/staging-conformance.test.mjs`). **Not** a required check — it verifies an environment, not a diff. |
 | Release tags        | `.github/workflows/release.yml` — main → production merge                                                                                             |
 | Docs                | `.github/workflows/docs.yml` — PR docs/spec sync (`check-docs-impact.mjs`)                                                                            |
-| CI wake             | `.github/workflows/ci-wake.yml` — `workflow_run` on CI / Docs spec sync / Links completion (PR runs only): classifies infra-vs-code failure, auto-requeues infra failures (≤3 total attempts), upserts one PR wake comment. Logic in `scripts/ci/ci-wake.mjs` (tests: `scripts/ci/__tests__/ci-wake.test.mjs`). **Not** a required check. See "PR babysitting" below. |
-| PR base sync        | `.github/workflows/pr-base-sync.yml` — `push` to `main`: sweeps open PRs targeting it (cap 20, logged); behind + clean PRs are auto-updated via the update-branch API **only when the `PR_BASE_SYNC_TOKEN` PAT secret exists** (default-token pushes trigger no CI), otherwise — and always for conflicts — upserts one `<!-- frapp-base-sync -->` wake comment telling the watching agent to merge `main` itself. Logic in `scripts/ci/pr-base-sync.mjs` (tests: `scripts/ci/__tests__/pr-base-sync.test.mjs`). **Not** a required check. See "Base-branch sync" below. |
+| CI wake             | `.github/workflows/ci-wake.yml` — `workflow_run` on CI / Docs spec sync / Links completion (PR runs only): classifies infra-vs-code failure, auto-requeues infra failures (≤3 total attempts), and upserts one PR wake comment **only for an outcome the PR-activity webhook does not already carry** — a cancelled or timed-out run, or an infra failure the re-queue could not absorb. Success and real failures clear the stale wake and say nothing. Logic in `scripts/ci/ci-wake.mjs` (tests: `scripts/ci/__tests__/ci-wake.test.mjs`). **Not** a required check. See "PR babysitting" below. |
+| PR base sync        | `.github/workflows/pr-base-sync.yml` — `push` to `main`: sweeps open PRs targeting it (cap 20, logged); behind + clean PRs are auto-updated via the update-branch API **only when the base-sync GitHub App token mints** (default-token pushes trigger no CI). Conflicts and per-PR update failures upsert one `<!-- frapp-base-sync -->` wake comment telling the watching agent to merge `main` itself; a missing or rejected token is repo-wide, so it raises **one** `routine-state` alert issue instead of the same comment on every PR. Logic in `scripts/ci/pr-base-sync.mjs` (tests: `scripts/ci/__tests__/pr-base-sync.test.mjs`). **Not** a required check. See "Base-branch sync" below. |
 | PR base guard       | `.github/workflows/pr-base-guard.yml` — the **only** workflow with no `on.pull_request.branches` filter, so it runs on every PR whatever the base. Fails when the base is not `main` or `production`, which is the one check a stacked PR would otherwise never get. No checkout, no npm, no third-party action; reads `pull_request.base.ref` off the event payload. Fires on `edited` too, so retargeting a base cannot leave a stale green. **Not** yet a required check — see "CI branch filters" below. |
 | PR CI branch filter | `ci.yml` / `docs.yml` / `links.yml` set `on.pull_request.branches: [main, production]`. GitHub matches that list against the PR **base**. A PR whose base is a feature branch skips every required check. See "CI branch filters" under PR babysitting. |
 | Branch protection   | `npm run configure:branch-protection` (prefers `GITHUB_PAT`); see `CONTRIBUTING.md`                                                                   |
@@ -478,14 +478,26 @@ never reaches `main` and CI never ran.
 
 | Signal | Fires on | Misses |
 | ------ | -------- | ------ |
-| PR-activity webhook (`subscribe_pr_activity`) | CI **failure**, comments, reviews | success, cancelled, timed-out, merge-conflict — all silent |
-| `CI wake` watchdog comment (`ci-wake.yml`) | success / failure / cancelled / timed-out (and startup_failure/stale) of CI / Docs spec sync / Links on PR runs — comments are webhook events, so they wake subscribed sessions | outages that kill the watchdog run itself; merge-conflict; review-state changes; `skipped`/`neutral`/`action_required` conclusions and superseded runs (deliberately silent) |
-| `PR base sync` wake comment (`pr-base-sync.yml`) | `main` moving while this PR is conflicted with it, or behind it and not auto-updateable — the comment says which and what to do | base moves while the sweep run itself dies; PRs past the sweep's 20-PR cap this round (logged; the sweep processes least-recently-updated first, so deferred PRs rotate to the front of a later sweep); unknown mergeability (skipped fail-safe, deliberately silent) |
+| PR-activity webhook (`subscribe_pr_activity`) | CI **failure**, **successful check-suite rollups**, comments, reviews | cancelled, timed-out, merge-conflict — all silent |
+| `CI wake` watchdog comment (`ci-wake.yml`) | cancelled / timed-out (and startup_failure/stale) of CI / Docs spec sync / Links on PR runs, plus an infra failure the auto-requeue could not absorb — comments are webhook events, so they wake subscribed sessions | outages that kill the watchdog run itself; merge-conflict; review-state changes. **Deliberately silent:** success and real failures (the webhook carries both), an infra failure that WAS requeued (the fresh attempt's own completion is the wake), `skipped`/`neutral`/`action_required`, and superseded runs |
+| `PR base sync` wake comment (`pr-base-sync.yml`) | `main` moving while this PR is conflicted with it, or behind it and un-updateable for a reason specific to this PR (a fork head, a one-off API error) — the comment says which and what to do | base moves while the sweep run itself dies; PRs past the sweep's 20-PR cap this round (logged; the sweep processes least-recently-updated first, so deferred PRs rotate to the front of a later sweep); unknown mergeability (skipped fail-safe, deliberately silent) |
+| `PR base sync` alert issue | a missing or rejected app token — the one cause that is repo-wide rather than per-PR | anything per-PR (those comment); a sweep where nothing was behind, which proves nothing either way and deliberately leaves an open alert open |
 | Retired — do not call `send_later` | — | Entire layer. Unusable unattended on the cloud surface (prompts the owner every call). Do not re-add it to `permissions.allow`. |
 
-Layered conclusion: the watchdog comment is the fast path for CI outcomes, the base-sync comment is
-the fast path for base moves and merge conflicts, and the webhook is the fast path for failures and
-human comments. **Arm those three; they never prompt.** The self-wake would be the only *complete*
+Layered conclusion: the webhook is the fast path for CI outcomes and human comments, the watchdog
+comment covers the two conclusions the webhook has no event for, and the base-sync comment is the
+fast path for base moves and merge conflicts. **Arm those three; they never prompt.**
+
+The webhook's success coverage is the reason the watchdog stopped commenting on green runs. Before
+that, every push put three fresh comments on the PR (CI, Docs spec sync, Links) restating what the
+checks UI and the webhook had both already said, and the delete-then-create cadence re-notified on
+each one — so the wake that *was* worth reading arrived indistinguishable from two that were not.
+A watchdog whose output gets skimmed is not a watchdog. Silence is now the signal that nothing
+needs a human or an agent.
+
+One consequence to keep in mind when reading a thread: a wake comment that is *gone* does not mean
+nobody looked. Success and real failures both clear this workflow's wake, so an empty thread is the
+normal state of a healthy PR — check the checks UI, not the comment history, for what CI did. The self-wake would be the only *complete*
 net — it is the one layer that misses nothing — but it prompts the owner on every call, so on the
 cloud surface it is not usable unattended and is deliberately not armed (below). The coverage it
 would have added is a known, accepted gap, not an oversight.
@@ -518,7 +530,9 @@ that has already failed three times.
   repo-defined step (runner-phase steps only — the outage signature); a `cancelled` run counts
   only when **no job ever started a step** (never got a runner), so a deliberate human/agent
   cancellation of a running job is commented but never resurrected; `timed_out` /
-  `startup_failure` / `stale` count too. *Code failure*: any job failed in a real step.
+  `startup_failure` / `stale` count too. *Code failure*: any job failed in a real step —
+  classified, logged, and then deliberately **not** commented on, because `failure` is the one
+  conclusion the PR-activity webhook has always delivered.
   *Superseded*: a newer run of the same workflow exists for the branch (repush; `ci.yml`'s
   `cancel-in-progress` cancels the old run on every push) — stays fully silent, no re-run, no
   comment. Classification **fails closed**: if the jobs or runs API errors mid-classification,
@@ -532,13 +546,21 @@ that has already failed three times.
   retry to GitHub's 50-attempt ceiling. Prior art: vercel/next.js `retry_test.yml` uses exactly
   this trigger + `run_attempt` guard. These are docs-verified claims (2026-08-06), not yet
   observed in this repo — confirm on the first post-merge firing.
-- **Upserts one wake comment per workflow** on the open PR: deletes that workflow's previous
-  marker comments (`<!-- frapp-ci-wake:<workflow name> -->`) and posts a fresh one, so a green
-  `Links` wake can never erase a red `CI` wake. Open-state is checked via the pulls API (a
-  merged/closed PR gets no wake), and the head-owner comes from the run's head repo so fork PRs
-  resolve. Delete-then-create, never edit-in-place — comment edits deliver webhook
-  `action=edited`, which created-only listeners (the agent wake path) never see. At most one
-  live comment per watched workflow (≤3) keeps threads readable.
+- **Upserts one wake comment per workflow** on the open PR — but only when the verdict is one the
+  webhook misses (cancelled / timed-out / startup_failure / stale) *and* the auto-requeue did not
+  already absorb it. It deletes that workflow's previous marker comments
+  (`<!-- frapp-ci-wake:<workflow name> -->`) and posts a fresh one, so a green `Links` wake can
+  never erase a red `CI` wake. Open-state is checked via the pulls API (a merged/closed PR gets no
+  wake), and the head-owner comes from the run's head repo so fork PRs resolve. Delete-then-create,
+  never edit-in-place — comment edits deliver webhook `action=edited`, which created-only listeners
+  (the agent wake path) never see.
+- **Clears its own wake on every other informative verdict.** Success, a code failure, an
+  unclassified failure and a requeued infra failure all delete this workflow's marker comment
+  without posting anything. This half is load-bearing and easy to lose: while success always
+  commented, the fresh success comment is what *overwrote* the previous red one. Take the comment
+  away without taking the delete with it and a "cancelled" wake sits on a PR that has been green
+  for a week. `ignored` conclusions (`skipped` / `neutral` / `action_required`) and superseded runs
+  clear nothing — they carry no verdict, so erasing a live wake on their say-so would be a guess.
 - Runs with minimal action surface (checkout only, preinstalled runner Node, no `npm ci`) so the
   watchdog itself has the least possible exposure to the action-download infra failures it absorbs.
   It is best-effort by design. Nothing now covers the case where the watchdog run itself dies —
@@ -547,7 +569,7 @@ that has already failed three times.
   therefore load-bearing, not just tidy.
 - Scope note vs. ADR-14: the "no inline GitHub comments" trade-off recorded for AI *review*
   (see `AI_CODE_REVIEW_RUNBOOK.md`) is unchanged — the wake comment is machine signaling about CI
-  state, not review commentary, and there is exactly one live comment per PR.
+  state, not review commentary, and a healthy PR now carries none at all.
 
 Because `workflow_run` executes the **default branch's** copy of the workflow and script, changes
 to either take effect only after merging to `main` — they cannot be exercised from the PR that
@@ -567,26 +589,59 @@ busy twenty. Per PR, after bounded polling of GitHub's lazily-computed `mergeabl
   an agent — no API call can resolve them.
 - **Behind and clean** (measured with the compare API's `behind_by`, not `mergeable_state`, which
   reports `blocked` over `behind`) → auto-updated via `PUT …/update-branch` with
-  `expected_head_sha`, **only when the `PR_BASE_SYNC_TOKEN` secret is configured**. This must be a
-  fine-grained PAT (contents + pull-requests write): pushes made with the default `GITHUB_TOKEN`
-  do not create workflow runs (GitHub's recursion guard), so an update through it would strand
-  required checks at "Expected" with no CI ever running — strictly worse than not updating. With
-  no PAT, on a fork head, or when the update call fails, the wake comment asks the agent to merge
-  `main` itself — the agent's own push triggers CI normally. GitHub invalidates `mergeable`
-  lazily, so a sweep racing the base push can read a stale `true` for a freshly-conflicted PR;
-  when the update-branch call then fails with a conflict message, the sweep posts the **conflict**
-  wake (not the behind one), so the agent always gets resolution guidance when it will need it.
+  `expected_head_sha`, **only when the base-sync app token minted**. Pushes made with the default
+  `GITHUB_TOKEN` do not create workflow runs (GitHub's recursion guard), so an update through it
+  would strand required checks at "Expected" with no CI ever running — strictly worse than not
+  updating. On a fork head, or when the update call fails for a reason specific to that PR, the
+  wake comment asks the agent to merge `main` itself — the agent's own push triggers CI normally.
+  GitHub invalidates `mergeable` lazily, so a sweep racing the base push can read a stale `true`
+  for a freshly-conflicted PR; when the update-branch call then fails with a conflict message, the
+  sweep posts the **conflict** wake (not the behind one), so the agent always gets resolution
+  guidance when it will need it.
+- **Behind, and auto-update is off repo-wide** (no token minted, or the API rejects it with
+  401/403) → **no PR comment at all**. Every behind PR in the sweep would receive the same sentence
+  about the same repo-level cause, up to twenty of them per merge to `main`, which is precisely the
+  noise this watchdog exists to remove. Instead the sweep raises one `routine-state` alert issue
+  (`raiseTokenAlert`, the `deploy-alert.mjs` pattern) and clears the stale per-PR comments. It is
+  **P2, not P1**: PRs still merge, they just need `Update branch` pressed by hand — which is where
+  the repo was before this sweep existed. The alert closes only on **proof** that auto-update
+  works, meaning a real `update-branch` success on a later sweep; a sweep with nothing behind
+  proves nothing and deliberately leaves an open alert open (same rule as "a no-op run never
+  closes an open alert" under Deploy visibility).
 - **Already in sync** → any stale base-sync wake comment is deleted and the sweep stays silent.
   Unknown mergeability (API error, `mergeable` never resolves) is skipped fail-safe: never
   blind-updated, never falsely accused of conflicts; the next base move re-sweeps.
 
 Comment mechanics match `ci-wake.mjs` (shared helpers): delete-then-create so created-only webhook
 listeners fire on every base move, one live comment per PR. Like the CI wake watchdog it is
-best-effort, minimal-action-surface, and **not** a required check; a successful auto-update posts
-no comment at all — CI runs on the updated head and the CI wake announces its outcome. The
-GITHUB_TOKEN-pushes-trigger-no-CI constraint is GitHub's documented recursion guard
-(docs-verified knowledge, 2026-08-07; not yet observed in this repo — confirm on the first
-post-merge firing with the PAT configured).
+best-effort and **not** a required check; a successful auto-update posts no comment at all — CI
+runs on the updated head, and a failure there reaches the watching session through the webhook.
+
+#### The token
+
+`PR_BASE_SYNC_TOKEN` is a **GitHub App installation token**, minted per run by
+`actions/create-github-app-token@v3` in `pr-base-sync.yml` from two repository secrets:
+`PR_BASE_SYNC_APP_CLIENT_ID` and `PR_BASE_SYNC_APP_PRIVATE_KEY`. An App was chosen over the
+fine-grained PAT this originally specified for two reasons: an installation token has no expiry
+for a human to renew on a calendar reminder (it is minted fresh each run and expires in an hour),
+and it is not tied to one person's account, so it survives that person's PAT policy, their token
+cleanup, and their leaving. The cost is one more action download on a workflow whose header
+otherwise claims a checkout-only surface — an accepted, deliberate widening, kept as small as it
+can be.
+
+Setup is human-only and is tracked in [#689](https://github.com/pdcarlson/Frapp/issues/689):
+create the App under the `pdcarlson` account with repository permissions **Contents: Read and
+write** and **Pull requests: Read and write** (nothing else), install it on `pdcarlson/Frapp`
+only, then store the client ID and a generated private key as the two secrets above. The mint step
+carries `continue-on-error: true` on purpose — with the secrets absent it fails, and a red workflow
+would be exactly the noise this sweep exists to remove; instead the token comes out empty and the
+alert issue explains why.
+
+Two claims here are docs-verified rather than observed in this repo: that `GITHUB_TOKEN` pushes
+create no workflow runs (GitHub's documented recursion guard), and that an App installation token
+is not subject to it. The second is the load-bearing one, and its failure mode is loud and
+immediate — a behind PR would be updated and then sit with required checks at "Expected" — so
+**confirm both on the first sweep that updates a real PR** before trusting the mechanism.
 
 ### Deploy visibility (`scripts/ci/deploy-alert.mjs`)
 

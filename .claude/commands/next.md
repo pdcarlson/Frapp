@@ -494,8 +494,9 @@ Move **every member** to **In Review**: swap its `in-progress` label for **`in-r
 did the work. **Babysit the PR to merge-ready per [`AGENTS.md`](../../AGENTS.md) § Autonomous PR
 lifecycle**: rely on the wake layers that don't prompt (PR-activity webhook + `CI wake` and
 `PR base sync` comments) — **do not call `send_later`**. Triage each
-red check infra-vs-code before pushing a "fix" (the `CI wake` comment says which — re-run infra,
-patch code), address and resolve review threads. On merge, GitHub closes each `Fixes`-named issue as `completed`; for any member
+red check infra-vs-code before pushing a "fix" — an ordinary red CI arrives silently through the
+webhook and is yours to classify from the run itself; a `CI wake` comment appears only when the
+outcome was cancelled/timed-out or an infra retry gave up — address and resolve review threads. On merge, GitHub closes each `Fixes`-named issue as `completed`; for any member
 where it didn't fire, `issue_write` state closed + `completed` yourself. Remove a closed member's
 `in-review` label if GitHub left it (labels survive closing — harmless, but tidy). Solo project:
 the issue's state is the status — no manual board moves.

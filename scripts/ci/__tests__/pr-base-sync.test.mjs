@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  ALERT_ISSUE_TITLE,
   BASE_SYNC_MARKER,
   MAX_PRS,
   MERGEABLE_POLL_ATTEMPTS,
@@ -92,10 +93,10 @@ test("behind comment names the reason auto-update did not happen", () => {
     baseRef: BASE_REF,
     baseSha: BASE_SHA,
     pr: makePr(7),
-    reason: "no `PR_BASE_SYNC_TOKEN` secret is configured",
+    reason: "the head branch lives in a fork, which this sweep cannot push to",
   });
   assert.ok(body.startsWith(BASE_SYNC_MARKER));
-  assert.match(body, /PR_BASE_SYNC_TOKEN/);
+  assert.match(body, /lives in a fork/);
   assert.match(body, /not\*\* auto-updated/);
 });
 
@@ -199,16 +200,114 @@ test("behind + PAT: updates via update-branch with expected_head_sha, no comment
   );
 });
 
-test("behind without PAT: wake comment asks the agent to update", async () => {
+test("behind with no app token: ONE alert issue, and no comment on the PR", async () => {
   const pr = makePr(13);
   const { results, calls } = await sweep({
     routes: [listRoute([pr]), detailRoute(pr), compareRoute(pr.head.sha, 1), emptyCommentsRoute],
     updateToken: null,
   });
-  assert.deepEqual(results, [{ number: 13, verdict: "behind", action: "commented" }]);
+  assert.equal(results[0].number, 13);
+  assert.equal(results[0].verdict, "behind");
+  assert.equal(results[0].action, "blocked");
   assert.ok(!calls.some((c) => c.url.includes("/update-branch")));
-  const posted = calls.find((c) => c.method === "POST" && c.url.includes("/issues/13/comments"));
-  assert.match(JSON.parse(posted.body).body, /PR_BASE_SYNC_TOKEN/);
+  assert.ok(
+    !calls.some((c) => c.method === "POST" && c.url.includes("/issues/13/comments")),
+    "a repo-wide cause must not be restated on every PR",
+  );
+  const filed = calls.find(
+    (c) => c.method === "POST" && /\/issues$/.test(c.url.split("?")[0]),
+  );
+  assert.ok(filed, "the sweep files one alert issue instead");
+  assert.equal(JSON.parse(filed.body).title, ALERT_ISSUE_TITLE);
+  assert.match(JSON.parse(filed.body).body, /PR_BASE_SYNC_APP_CLIENT_ID/);
+});
+
+test("no app token: twenty behind PRs still file exactly one alert issue", async () => {
+  const prs = Array.from({ length: 20 }, (_, i) => makePr(100 + i));
+  const { calls } = await sweep({
+    routes: [
+      listRoute(prs),
+      ...prs.map(detailRoute),
+      ...prs.map((pr) => compareRoute(pr.head.sha, 1)),
+      emptyCommentsRoute,
+    ],
+    updateToken: null,
+  });
+  const filed = calls.filter(
+    (c) => c.method === "POST" && /\/issues$/.test(c.url.split("?")[0]),
+  );
+  assert.equal(filed.length, 1, "one alert for the sweep, not one per PR");
+  assert.equal(
+    calls.filter((c) => c.method === "POST" && c.url.includes("/comments")).length,
+    0,
+    "this is the twenty-identical-comments case the alert exists to replace",
+  );
+});
+
+test("a rejected app token takes the alert path, not twenty comments", async () => {
+  const pr = makePr(15);
+  const { results, calls } = await sweep({
+    routes: [
+      listRoute([pr]),
+      detailRoute(pr),
+      compareRoute(pr.head.sha, 1),
+      {
+        method: "PUT",
+        path: "/pulls/15/update-branch",
+        status: 403,
+        body: { message: "Resource not accessible by integration" },
+      },
+      emptyCommentsRoute,
+    ],
+    updateToken: "expired-app-token",
+  });
+  assert.equal(results[0].action, "blocked");
+  assert.match(results[0].detail, /rejected/);
+  assert.ok(
+    !calls.some((c) => c.method === "POST" && c.url.includes("/issues/15/comments")),
+  );
+  assert.ok(
+    calls.some((c) => c.method === "POST" && /\/issues$/.test(c.url.split("?")[0])),
+  );
+});
+
+test("a successful update closes an open alert; a quiet sweep does not", async () => {
+  const openAlert = [{ number: 900, state: "open", title: ALERT_ISSUE_TITLE }];
+  const alertLookupRoute = { method: "GET", path: "/issues?state=all", body: openAlert };
+
+  const pr = makePr(16);
+  const { calls } = await sweep({
+    routes: [
+      listRoute([pr]),
+      detailRoute(pr),
+      compareRoute(pr.head.sha, 1),
+      { method: "PUT", path: "/pulls/16/update-branch", status: 202, body: {} },
+      alertLookupRoute,
+      { method: "PATCH", path: "/issues/900", status: 200, body: {} },
+      emptyCommentsRoute,
+    ],
+    updateToken: "app-token",
+  });
+  const closed = calls.find((c) => c.method === "PATCH" && c.url.includes("/issues/900"));
+  assert.ok(closed, "proof that auto-update works closes the alert");
+  assert.equal(JSON.parse(closed.body).state, "closed");
+
+  // A sweep where nothing was behind proves nothing about the token.
+  const inSync = makePr(17);
+  const quietSweep = await sweep({
+    routes: [
+      listRoute([inSync]),
+      detailRoute(inSync),
+      compareRoute(inSync.head.sha, 0),
+      alertLookupRoute,
+      emptyCommentsRoute,
+    ],
+    updateToken: "app-token",
+  });
+  assert.ok(
+    !quietSweep.calls.some((c) => c.method === "PATCH" && c.url.includes("/issues/900")),
+    "a no-op sweep must never close a live alert",
+  );
 });
 
 test("behind + PAT but update-branch fails: falls back to the wake comment", async () => {

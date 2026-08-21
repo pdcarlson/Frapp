@@ -1,12 +1,18 @@
 #!/usr/bin/env node
 // Runs on `workflow_run: completed` for CI / Docs spec sync / Links (see
 // .github/workflows/ci-wake.yml). Closes the wake gap in the PR-babysitting
-// loop: the PR-activity webhook that wakes a watching agent session fires on
-// CI *failure*, comments, and reviews — never on success, cancelled, or
-// timed-out — so those outcomes previously left the PR silent forever (the
-// 2026-08-06 Actions outage on PR #659 red-failed secret-scan before
-// checkout, cancelled six sibling jobs, and nothing ever woke the watching
-// session).
+// loop: the PR-activity webhook that wakes a watching agent session delivers
+// CI failures, successful check-suite rollups, comments and reviews — but
+// nothing at all for a run that is CANCELLED or TIMED OUT, so those outcomes
+// previously left the PR silent forever (the 2026-08-06 Actions outage on PR
+// #659 red-failed secret-scan before checkout, cancelled six sibling jobs, and
+// nothing ever woke the watching session).
+//
+// The comment surface is deliberately narrow, and narrower than it once was:
+// this watchdog comments ONLY on outcomes the webhook does not already carry.
+// Success and real failures are the webhook's job — duplicating them put three
+// fresh comments (CI, Docs spec sync, Links) on every push and buried the
+// signal that was worth reading. See AGENT_INFRA.md § Wake coverage.
 //
 // Three responsibilities:
 //   1. Classify the completed run: code failure vs GitHub-infra failure
@@ -19,11 +25,14 @@
 //   2. Auto-requeue infra-shaped failures, capped at MAX_RUN_ATTEMPTS total
 //      attempts — re-runs re-fire `workflow_run: completed`, so an uncapped
 //      loop would retry until GitHub's 50-attempt ceiling.
-//   3. Upsert this workflow's single wake comment on the PR. The marker is
-//      per-workflow so a green Links wake can never erase a red CI wake.
-//      Delete-then-create, never edit-in-place: comment edits deliver
-//      webhook action=edited, which created-only listeners (the agent wake
-//      path) never see.
+//   3. Upsert this workflow's single wake comment on the PR — but only for a
+//      verdict the webhook misses and that a re-queue is not already handling.
+//      Every other informative verdict CLEARS this workflow's stale comment
+//      instead, so a thread never carries a red wake for a run that has since
+//      gone green. The marker is per-workflow so a green Links wake can never
+//      erase a red CI wake. Delete-then-create, never edit-in-place: comment
+//      edits deliver webhook action=edited, which created-only listeners (the
+//      agent wake path) never see.
 //
 // Env inputs:
 //   GITHUB_TOKEN       — required (actions: write + pull-requests/issues: write)
@@ -111,7 +120,11 @@ export function classifyRun({ run, jobs = [], hasNewerRun = false }) {
     return {
       verdict: "success",
       shouldRerun: false,
-      shouldComment: true,
+      // The PR-activity webhook delivers successful check-suite rollups, so a
+      // comment here is pure duplication. Staying silent still CLEARS this
+      // workflow's stale wake comment (see runWake) — going green is exactly
+      // when a red wake must stop being on the thread.
+      shouldComment: false,
       reason: "All jobs green.",
     };
   }
@@ -121,7 +134,8 @@ export function classifyRun({ run, jobs = [], hasNewerRun = false }) {
       return {
         verdict: "unclassified-failure",
         shouldRerun: false,
-        shouldComment: true,
+        // A failure the webhook already delivered; the wake adds nothing.
+        shouldComment: false,
         reason:
           "Jobs API unavailable — cannot distinguish infra from code. " +
           "Treating as a real failure (no auto-requeue); diagnose it.",
@@ -133,7 +147,9 @@ export function classifyRun({ run, jobs = [], hasNewerRun = false }) {
       return {
         verdict: "code-failure",
         shouldRerun: false,
-        shouldComment: true,
+        // Same as above: `failure` is the one conclusion the webhook has always
+        // delivered, so this comment only ever restated it.
+        shouldComment: false,
         reason:
           "At least one job failed in a repo-defined step — a re-run cannot fix this.",
       };
@@ -253,7 +269,7 @@ export function buildWakeComment({ run, verdict, reason, rerunResult }) {
     `- Run: ${run.html_url}`,
     `- Commit: ${run.head_sha}`,
     "",
-    "_Automated wake signal for watching agent sessions (`docs/internal/ci-cd/AGENT_INFRA.md` § PR babysitting): the PR-activity webhook never fires on success/cancelled/timed-out, so this comment is the wake. One live comment per watched workflow; superseded runs stay silent._",
+    "_Automated wake signal for watching agent sessions (`docs/internal/ci-cd/AGENT_INFRA.md` § PR babysitting): the PR-activity webhook carries CI failures and successes, but nothing for a cancelled or timed-out run — so this comment is the wake for those. One live comment per watched workflow, removed once the workflow reports again; success, real failures and superseded runs stay silent._",
   );
   return lines.join("\n");
 }
@@ -510,14 +526,49 @@ export async function processCompletedRun({
     );
   }
 
-  if (!classification.shouldComment) {
-    return { ...classification, rerunResult, commented: false };
+  // An auto-requeued run has a fresh attempt coming, and that attempt's own
+  // completion re-enters this function. Commenting now would post a wake whose
+  // verdict is obsolete before anyone reads it.
+  const shouldComment = classification.shouldComment && !rerunResult?.requeued;
+
+  // `ignored` conclusions (skipped / neutral / action_required) carry no
+  // information about the workflow's state, so they must not clear a live wake
+  // either — unlike success or a real failure, which supersede whatever the
+  // last wake said. Superseded runs returned above for the same reason.
+  const carriesVerdict = classification.verdict !== "ignored";
+  if (!shouldComment && !carriesVerdict) {
+    return { ...classification, shouldComment, rerunResult, commented: false };
   }
 
   const prNumber = await findOpenPrNumber({ token, repo, run, fetchImpl });
   if (!prNumber) {
     logger.log?.("[ci-wake] no open PR for this run; nothing to wake");
-    return { ...classification, rerunResult, commented: false };
+    return { ...classification, shouldComment, rerunResult, commented: false };
+  }
+
+  // Silent-but-informative: drop this workflow's stale wake rather than leaving
+  // a red comment on a PR that has since gone green. This is the half that the
+  // old always-comment-on-success behaviour got for free by overwriting.
+  if (!shouldComment) {
+    const cleared = await clearMarkedComments({
+      token,
+      repo,
+      prNumber,
+      marker: wakeMarkerFor(run.name),
+      fetchImpl,
+    });
+    logger.log?.(
+      `[ci-wake] no wake needed on #${prNumber}` +
+        (cleared ? `, cleared ${cleared} stale wake comment(s)` : ""),
+    );
+    return {
+      ...classification,
+      shouldComment,
+      rerunResult,
+      commented: false,
+      cleared,
+      prNumber,
+    };
   }
 
   const body = buildWakeComment({
@@ -539,7 +590,13 @@ export async function processCompletedRun({
       ? `[ci-wake] wake comment posted on #${prNumber}`
       : `[ci-wake] comment post failed on #${prNumber}: HTTP ${status}`,
   );
-  return { ...classification, rerunResult, commented: posted, prNumber };
+  return {
+    ...classification,
+    shouldComment,
+    rerunResult,
+    commented: posted,
+    prNumber,
+  };
 }
 
 // ── CLI entry ───────────────────────────────────────────────────────────────
