@@ -256,15 +256,23 @@ export function deriveSignetPalette(
  *
  * `chapters.theme_palette` is applied by iterating every key and calling
  * `root.style.setProperty` (`apps/web/lib/hooks/use-chapter-theme.ts`). Web's
- * legacy stylesheet defines `--primary` and `--ring` as **HSL triples**
- * (`30 45% 32%`) and the Tailwind preset reads them as `hsl(var(--primary))`.
- * Writing a hex under those names would produce `hsl(#C49A3A)` — invalid, and
+ * legacy stylesheet still defines `--primary` as an **HSL triple**
+ * (`30 45% 32%`) and the Tailwind preset reads it as `hsl(var(--primary))`.
+ * Writing a hex under that name would produce `hsl(#C49A3A)` — invalid, and
  * every primary-colored surface on the dashboard would lose its color at once.
+ *
+ * `--ring` used to be in that same group and no longer is: #1143 moved it, and
+ * the whole `--side-*` family, to complete colour values read as bare
+ * `var(--token)`. So web is **half**-migrated, and "has the preset moved?" is
+ * now a per-token question — `spec/ui/design-system/accent-engine.md` §6 holds
+ * the table, and writing the wrong shape fails in whichever direction you get
+ * it wrong.
  *
  * So the persisted map stays namespaced, where nothing in the legacy stylesheet
  * can collide with it, and this mapping is opt-in: a surface calls it once it
- * has moved its own preset to bare `var(--token)`. That is the web reskin
- * (#920); mobile has no stylesheet at all and can consume either shape.
+ * has moved its own preset — all of it — to bare `var(--token)`. That is the
+ * web reskin (#920); mobile has no stylesheet at all and can consume either
+ * shape.
  */
 export function signetAccentSemanticVars(
   palette: SignetPalette,

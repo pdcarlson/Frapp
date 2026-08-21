@@ -1,46 +1,23 @@
 import { expect, test } from "@playwright/test";
 
-const dashboardRouteSnapshots = [
-  { path: "/members", snapshotName: "members-main-content.png" },
-  // `/alumni` now redirects into the Directory screen's Alumni tab (Wave 0 nav
-  // restructure), so shooting it would only re-photograph `/members` under a
-  // second name. Its baseline is retired; the Alumni tab renders the same
-  // `AlumniDirectory` the retired snapshot covered.
-  //
-  // `/roles` likewise redirects into Settings → Roles (Chunk 07b, #538); the
-  // standalone snapshot is retired. The settings surface is covered by
-  // the `/settings` baseline below.
-  { path: "/events", snapshotName: "events-main-content.png" },
-  { path: "/tasks", snapshotName: "tasks-main-content.png" },
-  { path: "/service", snapshotName: "service-main-content.png" },
-  { path: "/documents", snapshotName: "documents-main-content.png" },
-  { path: "/backwork", snapshotName: "backwork-main-content.png" },
-  { path: "/geofences", snapshotName: "geofences-main-content.png" },
-  { path: "/study", snapshotName: "study-main-content.png" },
-  { path: "/polls", snapshotName: "polls-main-content.png" },
-  { path: "/chat", snapshotName: "chat-main-content.png" },
-  { path: "/points", snapshotName: "points-main-content.png" },
-  { path: "/billing", snapshotName: "billing-main-content.png" },
-  { path: "/reports", snapshotName: "reports-main-content.png" },
-  { path: "/profile", snapshotName: "profile-main-content.png" },
-  { path: "/settings", snapshotName: "settings-main-content.png" },
-] as const;
+import { DASHBOARD_ROUTES, snapshotNameFor } from "./routes";
+
 
 test.describe("dashboard route visual baselines", () => {
   test.beforeEach(async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 960 });
   });
 
-  for (const route of dashboardRouteSnapshots) {
-    test(`matches baseline for ${route.path}`, async ({ page }) => {
-      await page.goto(route.path);
+  for (const route of DASHBOARD_ROUTES) {
+    test(`matches baseline for ${route}`, async ({ page }) => {
+      await page.goto(route);
       // Wait for the dev server's initial data fetches + font swap so the
       // rendered `<main>` height is stable. Without this, Playwright can
       // screenshot before Geist Sans finishes loading, causing a 1px
       // rounding drift in CI vs. local baselines.
       await page.waitForLoadState("networkidle");
       await expect(page.locator("main")).toBeVisible();
-      await expect(page.locator("main")).toHaveScreenshot(route.snapshotName, {
+      await expect(page.locator("main")).toHaveScreenshot(snapshotNameFor(route), {
         animations: "disabled",
         caret: "hide",
       });

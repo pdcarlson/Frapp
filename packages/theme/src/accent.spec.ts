@@ -1,14 +1,16 @@
 import { describe, it, expect } from "vitest";
-import { resolveChapterAccentColor } from "@repo/theme/accent";
-import { frappLightTokens, frappDarkTokens } from "@repo/theme/tokens";
+import { resolveChapterAccentColor } from "./accent";
+import { frappLightTokens, frappDarkTokens } from "./tokens";
 
 /**
  * Covers the shared `@repo/theme/accent` helper.
  *
- * It lives in the web suite because that is where `resolveChapterAccentColor`
- * is consumed (`dashboard-shell.tsx`, `settings-page.tsx`) *and* because
- * `packages/theme` has no test runner and no CI job — a spec placed beside the
- * source would never execute (cf. #320, #766).
+ * It used to live in `apps/web`, in the suite of one of its consumers
+ * (`dashboard-shell.tsx`, `settings-page.tsx`), because `packages/theme` had no
+ * test runner and no CI job — a spec placed beside the source would never have
+ * executed. That is no longer true (#1144): the package now has both, so the
+ * test sits with the code it tests, and `apps/mobile`, the other consumer, is
+ * covered by the same run rather than by a suite it has nothing to do with.
  */
 
 const LIGHT_SURFACE = frappLightTokens.color.surface.card;

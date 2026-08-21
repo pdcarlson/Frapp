@@ -1,7 +1,8 @@
 # Dashboard visual regression suite
 
-Playwright-driven screenshot tests for the five dashboard routes currently in
-`apps/web/app/(dashboard)`. Runs in CI as the `web-visual-regression` job.
+Playwright-driven screenshot tests for the dashboard routes in
+`apps/web/app/(dashboard)` — fifteen shots today, listed in
+`dashboard-routes.spec.ts`. Runs in CI as the `web-visual-regression` job.
 
 ## Running locally
 
@@ -55,6 +56,56 @@ Each regenerated baseline must be listed with a reason + Chromium revision
 entry below each time a chunk touches a dashboard surface (or, when nothing
 changed, record why the existing baseline still applies) so reviewers don't
 re-investigate the same surface.
+
+### `/points` — #1142 responsive fix + #1145 secondary token, NOT regenerated
+
+**Status:** baseline **unchanged** and still correct. Recorded here because the
+change does touch `<main>` on this route, which is what this section exists to
+stop a reviewer re-investigating.
+
+**What changed on the route:** `CardHeader` on the Points Ledger card now stacks
+below `sm`, and its button cluster is `flex-wrap` (#1142); separately,
+`--secondary` / `--secondary-foreground` are now defined, so
+`<Badge variant="secondary">My balance</Badge>` finally paints a background
+instead of none (#1145).
+
+**Why the baseline still applies.** The `#1142` classes are `max-sm:`-scoped, so
+they contribute nothing at `sm` and above; the one unscoped class, `flex-wrap` on
+the button cluster, is inert while the content fits, which at 1440 it does.
+Verified rather than argued: `<main>` was screenshotted on all fifteen routes
+before and after the change on one browser, and fourteen came back
+**byte-identical, 0 differing pixels**. `/points` differed by **1,893 px of
+810,648 — ratio 0.00234**, against the suite's `maxDiffPixelRatio: 0.01`. The
+differing region is the bounding box `x 49–136, y 116–137`, which is precisely
+the `My balance` badge (measured at `x:49 y:116 w:88 h:22`) — the #1145 fix and
+nothing else. Dimensions are identical at 1112×729, so no layout moved. The
+other routes that use `<Badge variant="secondary">` are unaffected here because
+the sessionless harness renders their empty-state cards and never mounts those
+badges; `/points` is the only one that does.
+
+**What that measurement does and does not bound.** It bounds this change's own
+contribution — 0.00234 of the 0.01 budget — and nothing else. It does **not**
+bound the browser-revision term: the committed `points-main-content-linux.png`
+was attested at Chromium **1223** (below), CI now installs **1234**, and the
+comparison above ran on **1194**. That drift is unmeasured, and it is
+unfalsifiable from this sandbox — the `/backwork` note below records revision
+mismatch alone producing 8 spurious failures of 16 at ratios of 0.02–0.04. So:
+this change should not move `/points` past the threshold on its own, and if CI
+reports otherwise, suspect the revision before suspecting the diff.
+
+**Why this was a before/after comparison and not a run of the suite.** Same
+sandbox gap the `/backwork` note below records, one revision further on:
+`@playwright/test` is now 1.62.1 and wants Chromium **1234**, while this sandbox
+pre-installs **1194**. Comparing absolute pixels against the committed baselines
+on 1194 is known to produce spurious failures at ratios of 0.02–0.04 (below),
+so it proves nothing. Comparing the *same* browser to itself across the change
+is unaffected by the revision, and is the question that actually matters here.
+Baselines were deliberately not regenerated: that needs the CI-matching build
+and is tracked as #1146.
+
+**Chromium revision used for the comparison:** `chromium-1194` at
+`PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`. Valid for a before/after diff,
+**not** valid for regenerating a baseline.
 
 ### `/backwork` — #911's no-chapter guard, regenerated
 

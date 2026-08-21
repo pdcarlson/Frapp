@@ -100,13 +100,28 @@ This spec documents the target engine. The code that exists today serves the leg
 Token names are flat and string-valued so the additive field cannot disturb legacy readers: `apps/web/lib/hooks/use-chapter-theme.ts` iterates every key of `theme_palette` and sets it as a custom property, and nothing in the legacy stylesheet references `--signet-*`.
 
 **Why the persisted map keeps the `--signet-` prefix.** `apps/web/lib/hooks/use-chapter-theme.ts`
-applies the column by iterating every key onto `:root`. The legacy stylesheet defines `--primary`
-and `--ring` as **HSL triples** (`30 45% 32%`) and the Tailwind preset reads them as
-`hsl(var(--primary))`, so a hex stored under those names would resolve to `hsl(#C49A3A)` and every
-primary-coloured surface on the dashboard would lose its colour at once. The namespace is what makes
-the field additive. `signetAccentSemanticVars` exists for a surface that has already moved its own
-preset to bare `var(--token)` — the web reskin — and for native, which has no stylesheet to collide
-with.
+applies the column by iterating every key onto `:root`. Most of the legacy stylesheet still defines
+its tokens as **HSL triples** (`--primary: 30 45% 32%`) which the Tailwind preset reads as
+`hsl(var(--primary))`, so a hex stored under those names resolves to `hsl(#C49A3A)` and every surface
+using them loses its colour at once. The namespace is what makes the field additive.
+`signetAccentSemanticVars` exists for a surface that has already moved its own preset to bare
+`var(--token)` — the web reskin — and for native, which has no stylesheet to collide with.
+
+**The web preset is now half-migrated, so "the legacy stylesheet" is no longer one rule.** This is
+the canonical statement of which half is which; treat it as a precondition before wiring
+`signetAccentSemanticVars` into web.
+
+| Format in `packages/theme/src/globals.css` | Read by the preset as | Tokens |
+| --- | --- | --- |
+| Complete colour (`hsl(30 45% 32%)`, `#C49A3A`, `rgba(255,255,255,.08)`) | bare `var(--token)`, via `colorVar()` | `--ring`, `--side-bg`, `--side-bg-hi`, `--side-fg`, `--side-fg-hi`, `--side-muted`, `--side-divider`, `--side-accent` |
+| Bare HSL triple (`30 45% 32%`) | `hsl(var(--token))` | everything else, including `--primary*`, `--background`, `--card`, `--border`, `--muted`, `--accent`, `--secondary`, `--destructive`, `--success` |
+
+The first group moved in #1143, because those are the tokens `derivePalette` rewrites and it persists
+hex — under the old convention an injected `#C49A3A` became `hsl(#C49A3A)` and the chapter's branding
+silently did not paint. Writing a **triple** into one of those now fails the same way, in the other
+direction, so the format is not a free choice on either side.
+`packages/theme/src/tailwind.config.spec.ts` enforces the pairing for every token in both groups; the
+reskin (#920) moves the second group and deletes this table.
 
 ### Not yet implemented
 

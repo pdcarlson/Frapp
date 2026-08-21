@@ -135,9 +135,10 @@ jobs:
       - name: Shared validation package tests
         run: npm run test -w @repo/validation
 
-      # Same reasoning as above, and the same trap: `packages/theme` and
-      # `packages/chapter-theme` have no runner of their own, so the contrast
-      # math they both now import would be tested by nothing without this step.
+      # Same reasoning as above. The contrast math here is imported by both
+      # `packages/theme` and `packages/chapter-theme`; each now has a suite of
+      # its own (below), but those pin their callers' behaviour, not this
+      # package's, so it still needs its own step.
       - name: Shared color package tests
         run: npm run test -w @repo/color
 
@@ -152,6 +153,16 @@ jobs:
       # what this suite exists to catch.
       - name: Chapter theme package tests
         run: npm run test -w @repo/chapter-theme
+
+      # `@repo/theme` owns every token value in the app — the legacy bone/bronze
+      # set, the Signet dark set, and the shared Tailwind preset — and until
+      # #1144 its only gate was `tsc`, which proves the fields are `string` and
+      # `number` and nothing about what they contain. The suite compares them
+      # against `spec/ui/design-system/foundations.md`, so it fails whichever
+      # side drifts. `lint` needs no step here: it arrives through `turbo run
+      # lint` in the `Lint` step above as soon as the package declares a script.
+      - name: Theme package tests
+        run: npm run test -w @repo/theme
 
       # Hand-written `statusOf` / `serverMessageOf` / `codeOf` live in
       # `@repo/api-sdk` (consumed by API + web + mobile). Same trap as
