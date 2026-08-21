@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { contrastRatio, parseHex } from "@repo/color";
 
-import { deriveSignetPalette, HOUSE_SEED, type SignetPalette } from "./signet.js";
+import {
+  deriveSignetPalette,
+  HOUSE_SEED,
+  signetAccentSemanticVars,
+  type SignetPalette,
+} from "./signet.js";
 
 /**
  * Every distinct color in `supabase/seed/chapter_directory.csv` — 50 real
@@ -164,5 +169,113 @@ describe("deriveSignetPalette", () => {
         expect(() => deriveSignetPalette(input)).not.toThrow();
       }
     });
+  });
+});
+
+/**
+ * The bridge between the persisted `--signet-accent-*` names and the semantic
+ * names `foundations.md` §6 gives the accent slot. Pure remapping — the whole
+ * risk is that a role gets wired to the wrong step, which no type catches
+ * because every value is a string.
+ */
+describe("signetAccentSemanticVars", () => {
+  const { palette } = deriveSignetPalette("#8B0000");
+  const semantic = signetAccentSemanticVars(palette);
+
+  it("maps each semantic name to its specified role", () => {
+    expect(semantic).toEqual({
+      "--primary": palette["--signet-accent-primary"],
+      "--primary-hover": palette["--signet-accent-hover"],
+      "--primary-foreground": palette["--signet-accent-on-primary"],
+      "--ring": palette["--signet-accent-ring"],
+      "--accent-subtle": palette["--signet-accent-subtle-bg"],
+      "--accent-border": palette["--signet-accent-border"],
+      "--accent-text": palette["--signet-accent-text"],
+    });
+  });
+
+  it("emits no `--signet-` prefixed key", () => {
+    // The two naming systems must not leak into each other: this map is for a
+    // surface that has already moved its preset to bare `var(--token)`.
+    for (const key of Object.keys(semantic)) {
+      expect(key.startsWith("--signet-")).toBe(false);
+    }
+  });
+
+  it("carries the contrast guarantees through unchanged", () => {
+    // It is a remap, not a regeneration, so §8's by-construction guarantees
+    // must still hold on the renamed roles for every real chapter color.
+    for (const seed of REAL_CHAPTER_COLORS) {
+      const result = deriveSignetPalette(seed);
+      const mapped = signetAccentSemanticVars(result.palette);
+      const fg = parseHex(mapped["--primary-foreground"]!);
+      const bg = parseHex(mapped["--primary"]!);
+      expect(fg, seed).not.toBeNull();
+      expect(bg, seed).not.toBeNull();
+      expect(contrastRatio(fg!, bg!), seed).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("is a pure function of the palette it is handed", () => {
+    expect(signetAccentSemanticVars(palette)).toEqual(semantic);
+  });
+});
+
+/**
+ * Which role a consumer may paint as a foreground.
+ *
+ * §8 gates the accent-derived *text* roles and deliberately does not gate
+ * `accent-primary`, which is the solid fill. That distinction is easy to lose
+ * — `accent-primary` reads like "the chapter's colour" — and losing it ships
+ * an invisible UI rather than a merely off-brand one. `apps/mobile`'s
+ * `useChapterBranding` hands one value to tab tints, glyphs and chip labels,
+ * so it reads step 11; these are the numbers that decided that.
+ */
+describe("accent-text is the foreground-safe role", () => {
+  /** The Signet neutral ladder (foundations.md §2), which consumers draw on. */
+  const SURFACES = {
+    background: "#0E0D0B",
+    surface1: "#171512",
+    card: "#1E1B17",
+    popover: "#26221C",
+  };
+  /** Drawn on an accent fill — `gold.onHouse` in `@repo/theme`'s Signet tokens. */
+  const ON_ACCENT_LABEL = "#2C2000";
+
+  function ratio(a: string, b: string): number {
+    return contrastRatio(parseHex(a)!, parseHex(b)!);
+  }
+
+  it("clears AA on every step of the neutral ladder, for every real chapter colour", () => {
+    for (const seed of REAL_CHAPTER_COLORS) {
+      const accentText = deriveSignetPalette(seed).palette["--signet-accent-text"];
+      for (const [name, surface] of Object.entries(SURFACES)) {
+        expect(
+          ratio(accentText, surface),
+          `${seed} → ${accentText} on ${name}`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+
+  it("also works the other way round, as a chip fill under a fixed label", () => {
+    for (const seed of REAL_CHAPTER_COLORS) {
+      const accentText = deriveSignetPalette(seed).palette["--signet-accent-text"];
+      expect(
+        ratio(ON_ACCENT_LABEL, accentText),
+        `${seed} → label on ${accentText}`,
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("shows why accent-primary is not interchangeable with it", () => {
+    // Not a defect in the engine — step 9 is doing its specified job as a fill,
+    // paired with `on-primary`. This pins the reason a consumer must not reach
+    // for it when it needs a foreground.
+    const illegible = REAL_CHAPTER_COLORS.filter((seed) => {
+      const primary = deriveSignetPalette(seed).palette["--signet-accent-primary"];
+      return ratio(primary, SURFACES.card) < 4.5;
+    });
+    expect(illegible.length).toBeGreaterThan(0);
   });
 });

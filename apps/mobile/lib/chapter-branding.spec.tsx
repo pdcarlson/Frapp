@@ -148,3 +148,123 @@ describe("useChapterBranding", () => {
     );
   });
 });
+
+// `accent-engine.md` §1 and `spec/ui/mobile/README.md` both forbid painting the
+// raw seed: only generated scale steps may reach a screen. The served palette
+// carries step 9 as `--signet-accent-primary`, so that is what the hook reads —
+// the legacy per-surface resolver survives only for a chapter whose palette
+// predates the Signet map.
+describe("useChapterBranding accent source", () => {
+  /** Step 11 of a generated scale — not equal to any seed we pass in. */
+  const GENERATED_ACCENT_TEXT = "#FF907F";
+
+  it("paints the generated step, not the chapter's raw seed", async () => {
+    const { result } = renderBranding(
+      {
+        "chapter-1": {
+          id: "chapter-1",
+          name: "Tau Nu",
+          accent_color: CRIMSON,
+          theme_palette: { "--signet-accent-text": GENERATED_ACCENT_TEXT },
+        },
+      },
+      "chapter-1",
+    );
+
+    await waitFor(() => {
+      expect(result.current.accent).toBe(GENERATED_ACCENT_TEXT);
+    });
+    expect(result.current.accent).not.toBe(CRIMSON);
+  });
+
+  it("reports no fallback on the engine path", async () => {
+    // Generated steps are contrast-correct by construction (§8), so the runtime
+    // substitution the legacy resolver performs has nothing to catch — claiming
+    // otherwise would surface a "contrast adjusted" notice that is not true.
+    const { result } = renderBranding(
+      {
+        "chapter-1": {
+          id: "chapter-1",
+          // A seed that WOULD fail the legacy dark-surface check.
+          accent_color: CRIMSON,
+          theme_palette: { "--signet-accent-text": GENERATED_ACCENT_TEXT },
+        },
+      },
+      "chapter-1",
+    );
+
+    await waitFor(() => {
+      expect(result.current.accent).toBe(GENERATED_ACCENT_TEXT);
+    });
+    expect(result.current.accentFallbackApplied).toBe(false);
+  });
+
+  it("falls back to the legacy resolver when the palette has no Signet map", async () => {
+    const { result } = renderBranding(
+      {
+        "chapter-1": {
+          id: "chapter-1",
+          accent_color: DARK_LEGIBLE_ACCENT,
+          theme_palette: { "--side-bg": "#171512" },
+        },
+      },
+      "chapter-1",
+    );
+
+    await waitFor(() => {
+      expect(result.current.accent).toBe(DARK_LEGIBLE_ACCENT);
+    });
+  });
+
+  it("still substitutes house gold on that legacy path when the seed fails AA", async () => {
+    const { result } = renderBranding(
+      { "chapter-1": { id: "chapter-1", accent_color: CRIMSON } },
+      "chapter-1",
+    );
+
+    await waitFor(() => {
+      expect(result.current.accent).toBe(BRAND);
+    });
+    expect(result.current.accentFallbackApplied).toBe(true);
+  });
+});
+
+/**
+ * The role choice is the whole safety argument, so pin the role *name* here and
+ * let the engine's own suite prove the contrast property
+ * (`packages/chapter-theme/src/signet.spec.ts`).
+ *
+ * The split is deliberate: `apps/mobile/package.json` is a frozen hotspot file
+ * and declares neither `@repo/chapter-theme` nor `@repo/color`, so importing the
+ * generator here would create an undeclared workspace dependency — the exact
+ * trap `spec/ui/mobile/navigation.md` § Hotspot freeze calls out, because npm
+ * hoisting makes it resolve anyway and breaks only under an isolated install.
+ *
+ * An earlier draft of this hook read `--signet-accent-primary` (step 9) and
+ * justified it with §8's "contrast-correct by construction". §8 does not cover
+ * step 9 — it is the solid *fill* role, and only the text roles are gated. On
+ * the card surface a crimson chapter's step 9 measures 1.71:1.
+ */
+describe("the accent role this hook reads", () => {
+  it("reads accent-text (step 11), never accent-primary (step 9)", async () => {
+    const { result } = renderBranding(
+      {
+        "chapter-1": {
+          id: "chapter-1",
+          accent_color: CRIMSON,
+          theme_palette: {
+            // Both present, so this asserts the choice rather than a fallback.
+            "--signet-accent-primary": "#8B0000",
+            "--signet-accent-text": "#FF907F",
+          },
+        },
+      },
+      "chapter-1",
+    );
+
+    await waitFor(() => {
+      expect(result.current.accent).toBe("#FF907F");
+    });
+    expect(result.current.accent).not.toBe("#8B0000");
+  });
+});

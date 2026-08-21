@@ -68,7 +68,7 @@ Rules:
 1. If a component is workflow-specific, keep it app-local.
 2. If a component is a reusable dashboard primitive, keep it in `apps/web/components/ui/` (shadcn/Radix). Landing uses inline Tailwind; mobile uses React Native composites. Do not recreate a shared web-component workspace for that.
 3. Never duplicate token values in app-local files when semantic tokens exist.
-4. If no existing token role fits, extend or amend the token definitions (`packages/theme/src/tokens.ts`) and adopt the new role consistently — never one-off the value at the call site.
+4. If no existing token role fits, extend or amend the token definitions and adopt the new role consistently — never one-off the value at the call site. Signet surfaces extend `packages/theme/src/signet.ts`; the frozen web/landing surfaces extend the legacy `packages/theme/src/tokens.ts`. The per-tenant accent family is not in either file — it comes from the engine ([`accent-engine.md`](accent-engine.md)).
 
 ---
 

@@ -35,7 +35,7 @@ supabase/     — Supabase project config + migrations
 | ------------- | ------------------------------------------- |
 | Monorepo      | Turborepo + npm workspaces                  |
 | Web + Landing | Next.js (App Router), Tailwind, ShadCN UI   |
-| Mobile        | Expo, React Native, Expo Router, NativeWind |
+| Mobile        | Expo, React Native, Expo Router, RN StyleSheet |
 | API           | NestJS 11, TypeScript (strict)              |
 | Database      | PostgreSQL via Supabase                     |
 | Auth          | Supabase Auth                               |

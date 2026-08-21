@@ -13,6 +13,7 @@ import {
   isAllowedUploadMime,
 } from '@repo/validation';
 import { assertSafeStoragePath } from '../../domain/utils/storage-path';
+import { buildChapterPalette } from './chapter-palette';
 import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
 import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
@@ -263,13 +264,42 @@ export class ChapterService {
     const branding = (existing?.branding ?? {}) as {
       colors?: Record<string, string>;
     };
+    const colors: Record<string, string> = {
+      ...(branding.colors ?? {}),
+      accent: data.accent_color,
+    };
+
+    // Recompute the palette on the same write that changes the accent.
+    //
+    // This is the only door the accent editor uses — Settings sends
+    // `PATCH /v1/chapters/current { accent_color }`, not the config PATCH — so
+    // without this `theme_palette` stays frozen at whatever onboarding derived.
+    // That was survivable while every client re-derived the accent from
+    // `accent_color` itself, and stopped being survivable the moment a client
+    // started reading the generated scale: mobile would paint the wizard's
+    // original colour forever, with no in-product way to change it.
+    //
+    // `buildChapterPalette` never throws and always yields at least the Signet
+    // map, so this cannot turn a legitimate accent save into a failed request.
+    const build = buildChapterPalette({
+      dark: colors.dark,
+      accent: colors.accent,
+    });
+    if (build.invalidSeed) {
+      this.logger.warn(
+        `Invalid accent seed for chapter ${id}: accent="${data.accent_color}" — substituted house gold. Expected #RRGGBB.`,
+      );
+    }
+    if (build.legacyFailed) {
+      this.logger.warn(
+        `Failed to derive the legacy theme palette for chapter ${id}; persisted the Signet map alone.`,
+      );
+    }
 
     return this.chapterRepo.update(id, {
       ...data,
-      branding: {
-        ...branding,
-        colors: { ...(branding.colors ?? {}), accent: data.accent_color },
-      },
+      branding: { ...branding, colors },
+      theme_palette: build.palette,
     });
   }
 

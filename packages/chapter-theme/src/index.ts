@@ -25,11 +25,14 @@ import {
 } from "@repo/color";
 
 // The Signet accent engine. Additive: `derivePalette` below still generates the
-// legacy web token map that `apps/web` reads. Nothing calls `deriveSignetPalette`
-// in production yet — persisting its output alongside the legacy map is the
-// remaining wiring, tracked in spec/ui/design-system/accent-engine.md §6.
+// legacy web token map that `apps/web` reads, and both are now written to
+// `chapters.theme_palette` on the same recompute — the Signet keys are
+// namespaced so legacy readers cannot see them. `derivePalette` is removed only
+// once the web reskin stops reading its tokens
+// (spec/ui/design-system/accent-engine.md §6).
 export {
   deriveSignetPalette,
+  signetAccentSemanticVars,
   HOUSE_SEED,
   type DeriveSignetPaletteResult,
   type SignetContrastCheck,

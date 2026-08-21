@@ -80,13 +80,13 @@ Frapp/
 
 ### 3.3 Mobile App (`apps/mobile`)
 
-- **Framework:** Expo (~54), React Native, Expo Router, NativeWind.
+- **Framework:** Expo (~57), React Native, Expo Router. Styling is typed `StyleSheet` factories over the `@repo/theme` Signet tokens — **not** NativeWind, which was removed and is banned on this surface (`spec/ui/design-system/README.md` §2, `spec/ui/mobile/README.md`).
 - **Auth:** Supabase Auth (React Native client with `AsyncStorage` persistence).
 - **Data fetching:** TanStack Query + `@repo/api-sdk`.
 - **Push notifications:** Registers push token with API on login; receives via Expo Push.
 - **Study mode:** Uses Expo `AppState` API for foreground/background detection. Heartbeat timer stops on background.
 - **Haptics:** Expo Haptics for tactile feedback on key actions.
-- **Dark mode:** Supported via NativeWind with system preference detection and manual override.
+- **Dark mode:** The app is dark-only. Signet is dark-first and `SignetAppearance` admits exactly `"dark"`, so there is no light theme to detect or override (`spec/ui/design-system/foundations.md`).
 - **Offline:** Future consideration (WatermelonDB or similar for chat caching). Not in scope for v1.
 
 ### 3.4 Landing (`apps/landing`)

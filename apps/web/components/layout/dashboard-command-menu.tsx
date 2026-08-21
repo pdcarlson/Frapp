@@ -2,22 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { Loader2 } from "lucide-react";
 import {
-  BookOpen,
-  CalendarDays,
-  CircleDollarSign,
-  FileText,
-  FolderOpen,
-  GraduationCap,
-  Loader2,
-  MessagesSquare,
-  Settings as SettingsIcon,
-  ShieldCheck,
-  Sparkles,
-  Star,
-  Users,
-} from "lucide-react";
-import { SEARCH_MIN_QUERY_LENGTH, useOrgConfig, useSearch } from "@repo/hooks";
+  SEARCH_MIN_QUERY_LENGTH,
+  useMyPermissions,
+  useOrgConfig,
+  useSearch,
+} from "@repo/hooks";
 import {
   CommandDialog,
   CommandEmpty,
@@ -27,7 +18,9 @@ import {
   CommandList,
   CommandShortcut,
 } from "@/components/ui/command";
-import { DASHBOARD_NAV_BY_HREF } from "@/components/layout/nav-config";
+import { DASHBOARD_NAV_ITEMS } from "@/components/layout/nav-config";
+import { isNavItemVisible } from "@/components/layout/protected-nav-item";
+import { useChapterStore } from "@/lib/stores/chapter-store";
 import { asArray } from "@/lib/utils";
 
 type DashboardCommandMenuProps = {
@@ -36,69 +29,32 @@ type DashboardCommandMenuProps = {
 };
 
 /**
- * Exported so tests can assert every href still resolves in `nav-config`.
- * An href that doesn't resolve silently loses its module gate (#264).
+ * The palette's Navigation group, derived from `nav-config` rather than
+ * restated.
+ *
+ * This used to be a hand-maintained array of thirteen commands, and it had
+ * drifted exactly as you would expect: it was missing Polls, Study and Study
+ * Zones entirely, and it routed Roles to `/roles` while the sidebar routed it
+ * to `/settings?tab=roles` — a discrepancy the test suite had to whitelist.
+ * Deriving the list makes that class of drift unrepresentable: there is one
+ * nav definition, and the sidebar, the drawer and this palette all read it.
+ *
+ * The old entries also rendered a shortcut hint (`G C`, `G E`, …) for a
+ * `g`-prefix sequence handler that was never built. Advertising a keybinding
+ * that does nothing is the dead-end affordance `spec/ui/design-system/components.md`
+ * §5 bans, so the hints are gone with the array that carried them. ⌘K itself
+ * is real and still opens this palette.
+ *
+ * Exported so tests can assert the palette and the sidebar stay the same set.
  */
-export const navigationCommands = [
-  { icon: MessagesSquare, label: "Go to Chat", shortcut: "G C", href: "/chat" },
-  { icon: Sparkles, label: "Go to Profile", shortcut: "G P", href: "/profile" },
-  { icon: Users, label: "Go to Members", shortcut: "G M", href: "/members" },
-  {
-    icon: GraduationCap,
-    label: "Go to Alumni",
-    shortcut: "G A",
-    href: "/alumni",
-  },
-  {
-    icon: ShieldCheck,
-    label: "Go to Roles",
-    shortcut: "G R",
-    href: "/roles",
-  },
-  {
-    icon: CalendarDays,
-    label: "Go to Events",
-    shortcut: "G E",
-    href: "/events",
-  },
-  { icon: Star, label: "Go to Points", shortcut: "G O", href: "/points" },
-  {
-    icon: CircleDollarSign,
-    label: "Go to Billing",
-    shortcut: "G B",
-    href: "/billing",
-  },
-  {
-    icon: FileText,
-    label: "Go to Reports",
-    shortcut: "G X",
-    href: "/reports",
-  },
-  {
-    icon: FolderOpen,
-    label: "Go to Documents",
-    shortcut: "G D",
-    href: "/documents",
-  },
-  {
-    icon: BookOpen,
-    label: "Go to Service Hours",
-    shortcut: "G S",
-    href: "/service",
-  },
-  {
-    icon: MessagesSquare,
-    label: "Go to Tasks",
-    shortcut: "G T",
-    href: "/tasks",
-  },
-  {
-    icon: SettingsIcon,
-    label: "Go to Settings",
-    shortcut: "G ,",
-    href: "/settings",
-  },
-];
+export const navigationCommands = DASHBOARD_NAV_ITEMS.filter(
+  (item) => item.href,
+).map((item) => ({
+  item,
+  icon: item.icon,
+  label: `Go to ${item.label}`,
+  href: item.href as string,
+}));
 
 type SearchGroup = {
   heading: string;
@@ -207,28 +163,29 @@ export function DashboardCommandMenu({
     [hasMinQuery, searchResults.data],
   );
 
-  // Module gating for the command palette (#264). The sidebar hides nav items
-  // for disabled modules via ProtectedNavItem; without this the Cmd+K menu
-  // stayed a way to reach the same disabled surfaces.
+  // Gating for the command palette (#264). The sidebar hides nav items the
+  // caller cannot reach; without this the Cmd+K menu stayed a way around it.
+  // Both gates run through the same `isNavItemVisible` the sidebar uses —
+  // including its fail-open-while-loading behaviour — so the palette can never
+  // offer a route the sidebar is hiding.
   const orgConfig = useOrgConfig();
   const isModuleEnabled = orgConfig.data?.isModuleEnabled;
+  const activeChapterId = useChapterStore((s) => s.activeChapterId);
+  const { data: permissionsPayload } = useMyPermissions({
+    enabled: Boolean(activeChapterId),
+  });
+  const permissions = permissionsPayload?.permissions;
 
   const filteredNavigation = useMemo(() => {
     const q = query.trim().toLowerCase();
     return navigationCommands.filter((command) => {
-      // Resolve each command's module from nav-config rather than repeating
-      // the map here, so this menu cannot drift from the sidebar again.
-      const moduleKey = DASHBOARD_NAV_BY_HREF[command.href]?.module;
-      // Fail-safe, matching ProtectedNavItem: `isModuleEnabled` is undefined
-      // while the chapter config loads, and nothing is hidden until it
-      // resolves. Showing a link is harmless — the route itself is gated.
-      if (moduleKey && isModuleEnabled && !isModuleEnabled(moduleKey)) {
+      if (!isNavItemVisible(command.item, permissions, isModuleEnabled)) {
         return false;
       }
       if (!q) return true;
       return command.label.toLowerCase().includes(q);
     });
-  }, [query, isModuleEnabled]);
+  }, [query, isModuleEnabled, permissions]);
 
   return (
     <CommandDialog
@@ -270,7 +227,6 @@ export function DashboardCommandMenu({
               >
                 <command.icon className="h-4 w-4" />
                 <span>{command.label}</span>
-                <CommandShortcut>{command.shortcut}</CommandShortcut>
               </CommandItem>
             ))}
           </CommandGroup>

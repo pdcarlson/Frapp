@@ -6,10 +6,18 @@
  * and the by-construction contrast guarantee in §8.
  *
  * Coexists with `derivePalette` rather than replacing it. That one still feeds
- * the legacy web token map that `apps/web` reads from `chapters.theme_palette`.
- * Nothing persists the Signet map yet — no API caller invokes this function; it
- * is the engine, ready for the mobile rebuild and the recompute endpoint to
- * call. `accent-engine.md` §6 tracks that remaining wiring.
+ * the legacy web token map that `apps/web` reads from `chapters.theme_palette`;
+ * this one's output is persisted into the same jsonb column alongside it, under
+ * `--signet-*` keys the legacy stylesheet cannot see.
+ *
+ * The two are produced together by `buildChapterPalette`
+ * (`apps/api/src/application/services/chapter-palette.ts`), so neither can go
+ * stale while the other is refreshed — but they are not always both *present*.
+ * A chapter that supplied no brand colours gets the Signet map alone, because
+ * §3 defines the no-accent case as the house seed run through this pipeline
+ * while the legacy map has no such default. Do not infer one map from the
+ * other. `derivePalette` is deleted when the web reskin stops reading its
+ * tokens (`accent-engine.md` §6).
  *
  * DOM-free and CommonJS-safe, because the NestJS API calls it.
  */
@@ -231,4 +239,43 @@ export function deriveSignetPalette(
   ].map((check) => ({ ...check, passes: check.ratio >= MIN_TEXT_CONTRAST }));
 
   return { palette, resolvedSeed, invalidSeed, contrastChecks };
+}
+
+/**
+ * The `--signet-accent-*` roles under the semantic names
+ * `spec/ui/design-system/foundations.md` §6 gives the accent slot.
+ *
+ * Two naming systems exist here on purpose. `deriveSignetPalette` emits
+ * namespaced `--signet-accent-*` because that is what gets **persisted**, and
+ * §6 names the slot by the semantic names components actually consume. This is
+ * the bridge, and it is a pure function of an already-generated palette — it
+ * never re-runs the generator, so the §8 contrast guarantees carry through
+ * unchanged.
+ *
+ * ## Why this is not what gets stored
+ *
+ * `chapters.theme_palette` is applied by iterating every key and calling
+ * `root.style.setProperty` (`apps/web/lib/hooks/use-chapter-theme.ts`). Web's
+ * legacy stylesheet defines `--primary` and `--ring` as **HSL triples**
+ * (`30 45% 32%`) and the Tailwind preset reads them as `hsl(var(--primary))`.
+ * Writing a hex under those names would produce `hsl(#C49A3A)` — invalid, and
+ * every primary-colored surface on the dashboard would lose its color at once.
+ *
+ * So the persisted map stays namespaced, where nothing in the legacy stylesheet
+ * can collide with it, and this mapping is opt-in: a surface calls it once it
+ * has moved its own preset to bare `var(--token)`. That is the web reskin
+ * (#920); mobile has no stylesheet at all and can consume either shape.
+ */
+export function signetAccentSemanticVars(
+  palette: SignetPalette,
+): Record<string, string> {
+  return {
+    "--primary": palette["--signet-accent-primary"],
+    "--primary-hover": palette["--signet-accent-hover"],
+    "--primary-foreground": palette["--signet-accent-on-primary"],
+    "--ring": palette["--signet-accent-ring"],
+    "--accent-subtle": palette["--signet-accent-subtle-bg"],
+    "--accent-border": palette["--signet-accent-border"],
+    "--accent-text": palette["--signet-accent-text"],
+  };
 }

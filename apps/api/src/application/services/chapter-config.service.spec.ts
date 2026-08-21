@@ -41,6 +41,22 @@ jest.mock('@repo/chapter-theme', () => ({
     resolvedDark: '#1F1A15',
     resolvedAccent: '#7A5A2F',
   })),
+  // Mirrors the real DeriveSignetPaletteResult shape, for the same reason as
+  // above: the service reads `invalidSeed` and iterates `contrastChecks`, and a
+  // partial double would either throw or silently assert nothing.
+  deriveSignetPalette: jest.fn(() => ({
+    palette: { '--signet-accent-primary': '#C49A3A' },
+    resolvedSeed: '#F2B72E',
+    invalidSeed: false,
+    contrastChecks: [
+      {
+        role: '--signet-accent-text',
+        against: '#0E0D0B',
+        ratio: 7.2,
+        passes: true,
+      },
+    ],
+  })),
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
@@ -407,6 +423,41 @@ describe('ChapterConfigService — branding accent (#795)', () => {
       expect(auditRow.diff.branding.to).toMatchObject({
         colors: { accent: '#8B0000' },
       });
+    });
+
+    it('persists the legacy and Signet maps together in one theme_palette', async () => {
+      const supabase = makeSupabase([]);
+      const service = await buildService(supabase);
+
+      await service.patchConfig(CHAPTER_ID, 'user-1', {
+        branding: { colors: { accent: '#8B0000' } },
+      });
+
+      // The recompute is the second write. Both maps must ride it: a chapter
+      // with a fresh legacy palette beside a stale Signet one would render two
+      // different accents depending on which surface read it.
+      const paletteUpdate = supabase.chapterUpdate.mock.calls[1][0];
+      expect(paletteUpdate.theme_palette).toMatchObject({
+        '--side-bg': '#1F1A15',
+        '--signet-accent-primary': '#C49A3A',
+      });
+    });
+
+    it('feeds the engine the branding accent, not a third read path', async () => {
+      const supabase = makeSupabase([]);
+      const service = await buildService(supabase);
+
+      await service.patchConfig(CHAPTER_ID, 'user-1', {
+        branding: { colors: { accent: '#8B0000' } },
+      });
+
+      // `chapters.accent_color` is a second source for the same fact and the
+      // two can disagree; which one wins is open in #795. Until that lands the
+      // engine must read exactly what `derivePalette` reads.
+      const { deriveSignetPalette } = jest.requireMock(
+        '@repo/chapter-theme',
+      ) as { deriveSignetPalette: jest.Mock };
+      expect(deriveSignetPalette).toHaveBeenCalledWith('#8B0000');
     });
 
     it('does not write the column for a branding PATCH that leaves the accent alone', async () => {

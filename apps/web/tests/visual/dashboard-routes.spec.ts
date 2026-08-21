@@ -2,8 +2,12 @@ import { expect, test } from "@playwright/test";
 
 const dashboardRouteSnapshots = [
   { path: "/members", snapshotName: "members-main-content.png" },
-  { path: "/alumni", snapshotName: "alumni-main-content.png" },
-  // `/roles` now redirects into Settings → Roles (Chunk 07b, #538); the
+  // `/alumni` now redirects into the Directory screen's Alumni tab (Wave 0 nav
+  // restructure), so shooting it would only re-photograph `/members` under a
+  // second name. Its baseline is retired; the Alumni tab renders the same
+  // `AlumniDirectory` the retired snapshot covered.
+  //
+  // `/roles` likewise redirects into Settings → Roles (Chunk 07b, #538); the
   // standalone snapshot is retired. The settings surface is covered by
   // the `/settings` baseline below.
   { path: "/events", snapshotName: "events-main-content.png" },

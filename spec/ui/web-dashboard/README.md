@@ -1,4 +1,6 @@
 > **FROZEN (pre-Signet).** This surface ships the legacy Frapp bone/bronze design until its Signet reskin session. Do not implement visual changes from this document and do not file spec-vs-implementation drift issues against it.
+>
+> The freeze is **visual**, not structural: it is about palette, type and iconography. [`../design-system/README.md`](../design-system/README.md) draws the same line in its **Scope** note above §1 — the process standards bind every surface, the visual specification is Signet-only — and §2's `Binds` column scopes each ban accordingly. The navigation restructure below therefore landed ahead of the reskin, rendered in this surface's own legacy tokens. The palette swap is still #920.
 
 # UI/UX Specification: Web Dashboard (app.frapp.live)
 
@@ -8,27 +10,45 @@
 
 Source of truth: [`apps/web/components/layout/nav-config.ts`](../../../apps/web/components/layout/nav-config.ts). Each item declares `requirePermission` or `requireAnyOf`; the shell hides items the caller cannot access. The caller's effective permission set is loaded once via `GET /v1/users/me/permissions` and cached with TanStack Query (resolution rules: [`spec/behavior/rbac.md`](../../behavior/rbac.md)).
 
-| Section | Item | Route | Permission |
-| --- | --- | --- | --- |
-| Overview | Chat | `/chat` | — (send gated by channel permissions) |
-| Overview | Profile | `/profile` | — |
-| People | Members | `/members` | `members:view` |
-| People | Alumni | `/alumni` | `members:view` |
-| People | Roles | `/roles` | `roles:manage` |
-| Operations | Events | `/events` | — |
-| Operations | Points | `/points` | — |
-| Operations | Tasks | `/tasks` | — (filtered to own tasks unless `tasks:manage`) |
-| Operations | Service Hours | `/service` | — (log/approve gated inline via `service:log` / `service:approve`) |
-| Communications | Polls | `/polls` | `polls:view_all` (chapter list + tallies; vote/create remain channel-scoped) |
-| Resources | Backwork | `/backwork` | — (upload gated by `backwork:upload`) |
-| Resources | Documents | `/documents` | — (upload gated by `chapter_docs:upload`, delete by `chapter_docs:manage`) |
-| Resources | Study session | `/study` | — |
-| Resources | Study Zones | `/geofences` | `geofences:manage` |
-| Finance | Billing | `/billing` | `billing:view` |
-| Finance | Reports | `/reports` | `reports:export` |
-| Settings | Settings | `/settings` | — |
+A Chat anchor, three member sections, Finance, and a role-gated Admin group — 14 items where there were 17 across seven sections.
 
-The standalone `/roles` page redirects to `/settings?tab=roles` (role IA canon: [`spec/behavior/settings/customization.md`](../../behavior/settings/customization.md)); `nav-config.ts` remains the source of truth for what renders. Roadmap entries render soft-disabled with a `Soon` chip (`aria-disabled="true"` + `tabIndex={-1}`).
+| Section | Item | Route | Module | Permission |
+| --- | --- | --- | --- | --- |
+| _(anchor)_ | Chat | `/chat` | — | — (send gated by channel permissions) |
+| Chapter | Events | `/events` | `events` | — |
+| Chapter | Tasks | `/tasks` | `tasks` | — (filtered to own tasks unless `tasks:manage`) |
+| Chapter | Points | `/points` | `points` | — |
+| Chapter | Study hours | `/study` | `hours` | — |
+| Chapter | Service hours | `/service` | `hours` | — (log/approve gated inline via `service:log` / `service:approve`) |
+| Chapter | Polls | `/polls` | `polls` | `polls:view_all` (chapter list + tallies; vote/create remain channel-scoped) |
+| Resources | Documents | `/documents` | `documents` | — (upload gated by `chapter_docs:upload`, delete by `chapter_docs:manage`) |
+| Resources | Backwork | `/backwork` | `backwork` | — (upload gated by `backwork:upload`) |
+| Directory | Directory | `/members` | — | `members:view` |
+| Finance | Billing | `/billing` | — | `billing:view` |
+| Admin | Roles | `/settings?tab=roles` | — | `roles:manage` |
+| Admin | Study Zones | `/geofences` | `geofences` | `geofences:manage` |
+| Admin | Reports | `/reports` | `reports` | `reports:export` |
+| Admin | Settings | `/settings` | — | `chapter-config:view` |
+
+Four structural facts the table alone does not carry:
+
+- **Chat is an anchor, not a section.** It renders first with no heading, because it is where `/`, `/dashboard`, and the route-group index all land — it is the app's home rather than a member of any group.
+- **A section heading hides with its items.** Section visibility is derived, never declared: `isNavItemVisible` (`apps/web/components/layout/protected-nav-item.tsx`) is exported so `dashboard-shell.tsx` can ask the same question the items do, and a section with zero surviving items renders nothing at all. That is the whole mechanism behind the Admin group being role-gated — every item in it carries a permission, so an ordinary member sees neither the rows nor the word "Admin". A future ungated item added there would silently un-gate the heading, which `protected-nav-item.test.tsx` pins against.
+- **Settings is permission-gated now.** It reads `GET /chapters/:id/config`, which the API guards with `chapter-config:view`; an ungated entry point sent members without it to a screen that could not load, which is the fail-fast rule in [`../design-system/README.md`](../design-system/README.md) §5 inverted.
+- **Profile left the nav** for the account menu (below). It is about the viewer, not the chapter, so it did not belong among chapter surfaces.
+
+**Directory is one screen with two tabs.** `/members` hosts `?tab=members|alumni` (`apps/web/components/members/directory-page.tsx`), and `/alumni` redirects into `?tab=alumni`. Actives and alumni are one directory; asking a member to know which list a person is on before they can look them up was the defect. The redirect keeps existing links and bookmarks alive, the same shape `/roles` uses to reach Settings → Roles (role IA canon: [`spec/behavior/settings/customization.md`](../../behavior/settings/customization.md)). `nav-config.ts` remains the source of truth for what renders. Roadmap entries render soft-disabled with a `Soon` chip (`aria-disabled="true"` + `tabIndex={-1}`).
+
+## Account menu
+
+`apps/web/components/layout/account-menu.tsx` anchors the bottom of the sidebar and carries the viewer's identity, Profile, the theme control, and Sign out. It replaced three scattered affordances in the same change — the Profile nav row, the header's bare `Sign out` button, and the standalone header theme toggle — rather than shipping beside them. It renders inside the shared sidebar-bottom region, so the mobile drawer gets it without duplicating navigation.
+
+## Top bar
+
+Left: breadcrumb and page title. Right: the mobile nav trigger (`lg:hidden`), global search, the ✦ Ask entry, notifications, and the active route's primary action.
+
+- **Search** opens the `cmdk` palette (`dashboard-command-menu.tsx`), bound to ⌘/Ctrl+K. Its Navigation group is **derived from `nav-config`**, not restated, and runs the same `isNavItemVisible` gate the sidebar does — so the palette can never offer a route the sidebar is hiding. The former hand-maintained command array had drifted (no Polls, Study or Study Zones; Roles pointed at a route the sidebar did not use) and its display-only `G C`-style shortcut hints advertised a key sequence that was never implemented; both are gone.
+- **Ask** (`ask-pill.tsx`) is a shell. It opens a dialog stating that Ask cannot answer yet and pointing at ⌘K and Documents — a control that silently did nothing would be the dead end [`../design-system/components.md`](../design-system/components.md) §5 bans. No retrieval, no corpus, no model call. It is deliberately painted in this surface's legacy tokens rather than Signet gold, because mixing token systems on one surface is what the cutover rules exist to prevent; the gold treatment lands with #920.
 
 ## Gating & routing semantics
 
@@ -48,8 +68,9 @@ Shell geometry as built. Source of truth: [`apps/web/components/layout/dashboard
 
 - **Two states, not four.** The shell switches once, at `lg`. There is no collapsed icon-rail tier and no hover-expand sidebar; adding or removing a tier is a spec change, not a refactor.
 - **The cap is on the shell, not the content.** `max-w-[1400px]` with `mx-auto` bounds sidebar and content together and centers them, so above 1400px the surface gains bare-background gutters (the visual regression suite shoots at 1440px, so that is the state its baselines capture). The content column carries no max-width of its own. Horizontal padding is `px-4` below 640px and `px-6` from 640px up, applied identically to the sticky 64px header and to `<main>`.
-- **The drawer is the sidebar.** Both render the same section list, so every nav item and its permission and module gates reach the drawer automatically. Navigation MUST NOT be duplicated into a separate mobile list; the trigger keeps its "Open navigation menu" accessible name and the drawer keeps its labelled title and description.
-- **375px is the floor.** Every dashboard route MUST render without horizontal scroll down to 375px.
+- **The drawer is the sidebar.** Both render the same section list, so every nav item and its permission and module gates reach the drawer automatically. Navigation MUST NOT be duplicated into a separate mobile list; the trigger keeps its "Open navigation menu" accessible name and the drawer keeps its labelled title and description. The account menu rides the same shared bottom region, so it reaches the drawer the same way.
+- **The header collapses below `sm`.** The breadcrumb column is `min-w-0` and truncates; the search control goes icon-only; the page's primary action stands down (every one of those actions is also reachable inside the page). Without this the control row alone measured ~557px at a 375px viewport. Moving theme and sign-out into the account menu recovered most of the excess, and these three cover the rest.
+- **375px is the floor.** Every dashboard route MUST render without horizontal scroll down to 375px. The **shell** holds this. Seven routes still breach it on their own page content inside `<main>` — `/service`, `/documents`, `/geofences`, `/study`, `/points`, `/reports`, `/settings` — which is per-screen work, not shell work, and is tracked in #1142. Nothing verifies the floor today: the visual suite pins every shot to 1440×960, so no gate can catch this class of defect.
 - **In-page columns collapse on their own breakpoint.** Chat stacks to one column below 768px and becomes a `260px / 1fr / 300px` grid at `md` and up ([`apps/web/components/chat/chat-shell.tsx`](../../../apps/web/components/chat/chat-shell.tsx)); Settings is a wrapped horizontal tab row below 1024px and a 224px vertical rail at `lg` ([`apps/web/components/settings/settings-page.tsx`](../../../apps/web/components/settings/settings-page.tsx)). Both tiers count as impacted responsive behavior for those routes.
 
 ## Surviving data contracts
