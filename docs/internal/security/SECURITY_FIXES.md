@@ -124,7 +124,7 @@ Two gotchas worth not re-learning:
 - Current allowlist: the four Expo-chain highs above, all `trackedBy: "#289"`, expiring 2026-11-15. **Zero critical entries.**
 - The threshold is effectively `--audit-level=high` (the level the #618 escalation asked for), made landable by the sweep above; anything newly disclosed at high/critical goes red on the next PR or push.
 - Unit tests: `scripts/ci/__tests__/check-npm-audit.test.mjs` (runs in `ci-scripts-tests`).
-- **Blocking status:** `dependency-audit` is listed in `scripts/configure-branch-protection.mjs` under the standard ROLLOUT caveat — after this lands on `main` and runs green once, re-run `npm run configure:branch-protection` to make it a required check (see `docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`).
+- **Blocking status:** `dependency-audit` is listed in `CI_CHECKS` in `scripts/configure-branch-protection.mjs`, which is the intended required set. Whether it is live on a given branch depends on when an admin last ran `npm run configure:branch-protection`; read live state per [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md#required-status-checks) rather than from this page.
 
 ### Prevention
 

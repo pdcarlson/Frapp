@@ -41,7 +41,11 @@ Frapp is a Turborepo + npm workspaces monorepo (**4 apps, 13 shared packages**).
 For **every** non-doc code change (tests, refactors, tooling, CI, config), update at least one related file under **`docs/`** or **`spec/`** in the same PR. Satisfy the gate by updating the **relevant** existing doc/spec per the placement map in [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md) — never by dropping a new stray file. **Canonical developer guides** live under [`docs/guides/`](docs/guides/README.md).
 
 - Run or reason against `scripts/check-docs-impact.mjs` before finishing.
-- If user-visible behavior is unchanged, add brief maintenance notes on what changed technically.
+- **If the change genuinely has no docs impact, label the PR `no-doc-change-needed`.** That is the
+  expected path for a mechanical PR, not a last resort. Never append a note to an unrelated doc to
+  turn the check green — the gate only sees that *some* doc moved, so filler passes, and what it
+  leaves behind is an unowned claim in a doc's canonical home. Worked example and mechanics:
+  [`DOCS_CI.md`](docs/internal/ci-cd/DOCS_CI.md#the-no-doc-change-needed-waiver).
 
 ## Work tracking
 
@@ -135,6 +139,7 @@ All skills live under [`.claude/skills/`](.claude/skills/) and are invocable by 
 | [`/issue-curator`](.claude/skills/issue-curator/SKILL.md) | Scheduled backlog-curator routine ([`ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md)). |
 | [`/issue-triage`](.claude/skills/issue-triage/SKILL.md) | Scheduled triage routine ([`ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md)). |
 | [`/pr-followups`](.claude/skills/pr-followups/SKILL.md) | Weekly PR follow-ups harvester ([`ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md)). |
+| [`/docs-upkeep`](.claude/skills/docs-upkeep/SKILL.md) | Weekly docs sweep — verifies a rotating slice and **fixes** it ([`ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md)). |
 | [`/diff-review`](.claude/skills/diff-review/SKILL.md) | Pre-push review gate. Mechanics: [`AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md). |
 | [`/handoff`](.claude/skills/handoff/SKILL.md) | Copy-pasteable prompt handing work to a fresh session. Offer it proactively. |
 | [`/needs-me`](.claude/skills/needs-me/SKILL.md) | Owner-facing: sweep what's waiting on Paul, pick one, walk it to done. Reads only. |

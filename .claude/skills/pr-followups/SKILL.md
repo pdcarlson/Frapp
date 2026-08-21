@@ -1,7 +1,7 @@
 ---
 name: pr-followups
 description: >
-  Run the PR Follow-ups routine (3 of 3) — harvest human-action and deferred items out of recent
+  Run the PR Follow-ups routine (3 of 4) — harvest human-action and deferred items out of recent
   pull requests (Flagged-for-review sections, agent-stated TODOs, unresolved review threads),
   research how each one gets done against the repo's configs and runbooks, file them as tracked
   GitHub issues, refresh the "PR Follow-ups — Human Action List" tracking issue, and audit
@@ -10,7 +10,7 @@ description: >
   items.
 ---
 
-# PR Follow-ups harvester (routine 3 of 3)
+# PR Follow-ups harvester (routine 3 of 4)
 
 Agent-driven PRs routinely end with things **no PR can finish**: "Flagged for review" lists,
 deferred decisions, credential rotations, dashboard clicks, verification the sandbox couldn't run.
@@ -209,7 +209,7 @@ The routine's completion notification is Paul's weekly digest — put the "Needs
 
 ## Self-maintenance
 
-Same binding contract as the other two routines —
+Same binding contract as the other three routines —
 [`ROUTINES.md` → Self-maintenance](../../../docs/internal/ci-cd/ROUTINES.md#self-maintenance-the-update-themselves-contract):
 verify this file's tool names, doc links, and the state-marker format still match reality;
 mechanical drift → one docs-only PR (allowed paths include `.claude/skills/pr-followups/`);

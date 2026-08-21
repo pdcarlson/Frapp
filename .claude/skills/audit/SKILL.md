@@ -12,7 +12,9 @@ description: >
 > Read before performing code audits, security reviews, dependency checks, migration reviews, or
 > quality assessments — whether interactively or as a read-only pass inside a scheduled routine
 > (e.g. the [Issue Curator](../issue-curator/SKILL.md)'s engineering-gaps lens). In read-only
-> runs, findings are filed as GitHub issues rather than fixed in place. `npm run lint` is read-only in
+> runs, findings are filed as GitHub issues rather than fixed in place — except in
+> [`docs-upkeep`](../docs-upkeep/SKILL.md) (routine 4), which fixes documentation in a docs-only PR
+> and never files `area:docs` issues (ADR-16 amendment 6). `npm run lint` is read-only in
 > every workspace and will not touch your tree — `npm run lint:api:fix` is the only *lint* script
 > that writes, and no audit needs it. `npm run check:api-contract` does regenerate `openapi.json`
 > and `packages/api-sdk/src/types.ts` when API-related files changed; treat those edits as throwaway

@@ -83,7 +83,9 @@ search first (`search_issues`, open **and** closed) before creating.
 - **Implementation notes:** constraints, helpers to reuse, gotchas.
 - **Definition of done:** "PR linked with `Fixes #N`, criteria met, CI green."
 
-`area:<x>` groups by surface (`api`/`web`/`db`/`ci`/`security`/`ux`/`product`/`research`/`docs`/`deps`).
+`area:<x>` groups by surface — canonical roster in
+[`ROUTINES.md` → Tracker access](../../../docs/internal/ci-cd/ROUTINES.md#tracker-access-shared-by-all-routines).
+Don't restate it here; a second copy is how it drifted before (#1077).
 Express dependencies as a **`Blocked by #N`** body line, not a label.
 
 ## Lifecycle (short)
@@ -92,6 +94,8 @@ File with `triage` → accepted to **Backlog** (label removed, priority confirme
 claims it via `/next` → PR with `Fixes #N`. Express blockers as `Blocked by #N` lines so an
 issue isn't started until they're resolved.
 
-Scheduled routines have a narrower write surface (`suggestion`-labeled issues only; no product-code
-PRs) — [`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
+Scheduled routines 1–3 have a narrower write surface (`suggestion`-labeled issues only; no
+product-code PRs) — [`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
+[`docs-upkeep`](../docs-upkeep/SKILL.md) (routine 4) differs on both counts: it opens docs-only
+PRs and files nothing here except a proven human-only blocker.
 **This skill is used from feature work; it does not put you under that product-code ban.**

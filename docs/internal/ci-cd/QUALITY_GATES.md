@@ -18,7 +18,7 @@ baseline story actually supports.
 | oasdiff breaking changes | `npm run check:api-breaking` | step in `api-contract-check` | **Advisory** | Every consumer is in this repo and ships with the change |
 | `nestjs-typed` response schema | `npm run lint -w apps/api` | step in `lint-and-typecheck` | **`warn`** | 142 findings and no ESLint baseline mechanism |
 | jscpd duplication | `npm run check:duplication` | `duplicate-detection` | **Advisory** | No clone-level baseline exists; a repo-wide % is too coarse to block on |
-| 375px responsive floor | `npm run test:floor -w apps/web` | `web-responsive-floor` | **Required** (after the one-time rollout run) | No baseline at all — it reads one integer per route. Nothing to grandfather and nothing to drift |
+| 375px responsive floor | `npm run test:floor -w apps/web` | `web-responsive-floor` | **Required** | No baseline at all — it reads one integer per route. Nothing to grandfather and nothing to drift |
 | Dashboard visual snapshots | `npm run test:visual -w apps/web` | `web-visual-regression` | **Advisory** | Baselines are pinned to CI's Chromium build and drift with it; only regenerable on a matching machine |
 
 The last two rows are the same suite directory and opposite postures, which is the point. Posture
@@ -284,7 +284,7 @@ declares it as an exact peer.
 
 ```sh
 npm run test:cov              # every workspace, via turbo
-npm run test:cov -w apps/api  # 1911 tests, Jest + v8
+npm run test:cov -w apps/api  # Jest + v8
 npm run test:cov -w packages/hooks
 ```
 

@@ -110,7 +110,8 @@ that gate wanted in the first place.
 3. **Delete the claim** if nothing needs to assert it.
 4. **File an issue** only when the fix is genuinely out of scope — per
    [`file-follow-up`](../file-follow-up/SKILL.md), with `area:docs`. Say what you verified and how,
-   so the next session doesn't redo it.
+   so the next session doesn't redo it. (Not if you are the [`docs-upkeep`](../docs-upkeep/SKILL.md)
+   routine — it reports instead of filing; see [below](#inside-a-scheduled-routine).)
 
 **Placement is not your choice** — [`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md)
 holds the map, and `scripts/check-docs-structure.mjs` enforces part of it. Never satisfy a gate by
@@ -221,7 +222,14 @@ Same read-only inversion [`audit`](../audit/SKILL.md) uses: routines don't edit 
 issues** (`triage` + `area:docs` + priority, with an Agent brief). Include what you verified, against
 which source, and on what date — a docs issue without its evidence gets re-litigated from scratch.
 
-The exception the routines already carve out is a skill's own docs-only self-maintenance PR.
+Two exceptions, and the second is a full inversion:
+
+- A skill's own docs-only self-maintenance PR.
+- **[`docs-upkeep`](../docs-upkeep/SKILL.md) (routine 4) fixes rather than files, and is forbidden
+  from opening `area:docs` issues at all.** It exists because filing docs debt here demonstrably
+  does not work — those issues age instead of getting done — so the sweep that finds a stale claim
+  is the one that repairs it (ADR-16 amendment 6). If you are running *that* routine, follow its
+  skill, not this paragraph.
 
 ---
 

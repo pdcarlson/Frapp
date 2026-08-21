@@ -7,14 +7,15 @@ it in sync when you change a routine. History of how backlog automation got here
 amendments in [`spec/architecture/README.md`](../../../spec/architecture/README.md); the
 Linear-to-GitHub migration record is [#680](https://github.com/pdcarlson/Frapp/issues/680).
 
-There are **three** routines — two staggered daily, one weekly — all writing to **GitHub Issues**
-on `pdcarlson/Frapp` (Linear is retired):
+There are **four** routines — two staggered daily, two weekly. Three write to **GitHub Issues**
+on `pdcarlson/Frapp` (Linear is retired); the fourth writes docs:
 
 | # | Routine | Skill (behavior contract) | When |
 | --- | --- | --- | --- |
 | 1 | **Issue Curator** | [`.claude/skills/issue-curator/SKILL.md`](../../../.claude/skills/issue-curator/SKILL.md) | daily 08:00 ET |
 | 2 | **Issue Triage** | [`.claude/skills/issue-triage/SKILL.md`](../../../.claude/skills/issue-triage/SKILL.md) | daily 09:00 ET (~1h after #1) |
 | 3 | **PR Follow-ups** | [`.claude/skills/pr-followups/SKILL.md`](../../../.claude/skills/pr-followups/SKILL.md) | weekly Mon 07:00 ET (a full hour before #1–2 that morning) |
+| 4 | **Docs Upkeep** | [`.claude/skills/docs-upkeep/SKILL.md`](../../../.claude/skills/docs-upkeep/SKILL.md) | weekly Wed 07:00 ET |
 
 The curator **creates and maintains** `suggestion` issues in the **`triage`** inbox. An hour later
 the triage routine works **both** the **`triage` inbox** (prioritize, bucket, backfill Agent
@@ -29,21 +30,26 @@ review threads — researches how each gets done, files them into the **`triage`
 audits the `fp=human/…` blocker issues any agent session may file under the
 [`file-follow-up`](../../../.claude/skills/file-follow-up/SKILL.md) skill, and
 republishes the **"PR Follow-ups — Human Action List"** tracking issue; running it on Monday
-*before* #1–2 means that same morning's curator/triage passes maintain and rank what it filed. The
-routine prompts are thin — the real rules live in the skill files, which the routine session loads
-from the repo.
+*before* #1–2 means that same morning's curator/triage passes maintain and rank what it filed. Also weekly, on a different day, **Docs Upkeep** sweeps a rotating fifth of the docs corpus,
+verifies its claims against code and providers, and **fixes what is wrong in a docs-only PR** — the
+one routine that repairs rather than files, because docs debt filed as an issue reliably ages
+instead of getting done. The routine prompts are thin — the real rules live in the skill files,
+which the routine session loads from the repo.
 
 > **Hard rule (see `AGENTS.md`):** all issues are **opened on GitHub with the `triage` label**.
 > Work is **closed via PRs** (`Fixes #N`, native close-on-merge) or an explicit
 > `issue_write` close with the right `state_reason`. These routines never write to Linear (retired)
 > and never touch product code — their single repo-write permission is the
-> [self-maintenance](#self-maintenance-the-update-themselves-contract) docs-only PR.
+> [self-maintenance](#self-maintenance-the-update-themselves-contract) docs-only PR. **Docs Upkeep
+> is the one exception to the *scope* of that PR, never to the product-code ban:** its whole job is
+> editing `docs/` and `spec/`, on the same never-self-merged terms.
 
 ## Shared ownership boundary (all routines)
 
-The four routine-facing skills ([`issue-curator`](../../../.claude/skills/issue-curator/SKILL.md),
+The five routine-facing skills ([`issue-curator`](../../../.claude/skills/issue-curator/SKILL.md),
 [`issue-triage`](../../../.claude/skills/issue-triage/SKILL.md),
-[`pr-followups`](../../../.claude/skills/pr-followups/SKILL.md), and the tracker angle in
+[`pr-followups`](../../../.claude/skills/pr-followups/SKILL.md),
+[`docs-upkeep`](../../../.claude/skills/docs-upkeep/SKILL.md), and the tracker angle in
 [`diff-review`](../../../.claude/skills/diff-review/SKILL.md)) **point here** instead of restating
 this block. Policy detail: [`GITHUB_PM.md` → Ownership boundary](GITHUB_PM.md#ownership-boundary-organize-broadly-destroy-narrowly).
 
@@ -53,10 +59,17 @@ this block. Policy detail: [`GITHUB_PM.md` → Ownership boundary](GITHUB_PM.md#
    allowed **only** on issues carrying the **`suggestion`** label. Confirm with `issue_read
    get_labels` before every such write; if `suggestion` is absent, SKIP and log. Human-filed and
    planning issues are strictly read-only for destructive actions.
-3. **Never modify product code. Never open feature PRs.** The single repo-write exception is the
-   [docs-only self-maintenance PR](#self-maintenance-the-update-themselves-contract), restricted to
-   the routine's own skill files and this runbook.
+3. **Never modify product code. Never open feature PRs.** Repo writes are docs-only, never merged
+   by the routine, at most one PR per run, and confined to a path allowlist:
+   - Routines 1–3: the [self-maintenance PR](#self-maintenance-the-update-themselves-contract),
+     restricted to the routine's own skill files and this runbook.
+   - **Routine 4 (Docs Upkeep):** its sweep PR, over `docs/**`, `spec/**`, the root guides, and
+     its own skill directory — editing those *is* its job
+     ([`docs-upkeep`](../../../.claude/skills/docs-upkeep/SKILL.md), ADR-16 amendment 6). The
+     product-code ban binds it exactly as it binds the others.
 4. **GitHub MCP only.** If it is unavailable, stop and report — no `gh`, no REST, no scratch file.
+   Routine 4 is the exception: it writes a PR rather than issues, so an unavailable MCP does not
+   block its sweep. It stops and reports if **git push** fails.
 5. **`issue_write` labels replace the whole set.** Always send the union of existing labels plus
    the change.
 
@@ -74,7 +87,9 @@ starts by loading the
 GitHub MCP tool schemas (via `ToolSearch`, e.g.
 `select:mcp__github__list_issues,mcp__github__issue_read,mcp__github__issue_write,mcp__github__add_issue_comment,mcp__github__search_issues`)
 and verifying access (e.g. `issue_read` on a known issue resolves). **If the MCP is unavailable,
-the routine stops and reports — there is no fallback tracker.**
+the routine stops and reports — there is no fallback tracker.** Routine 4 writes no issues, so this
+section does not gate it; see rule 4 of the
+[ownership boundary](#shared-ownership-boundary-all-routines).
 
 > **No MCP read path returns a body faithfully — never source a body rewrite from one.**
 > `issue_read`, `list_issues` **and** `search_issues` all strip HTML comments (the `fp=` dedup and
@@ -135,7 +150,7 @@ Reads accept issue numbers (`issue_read`, `list_issues`, `search_issues`); write
 | Setting | Value | Notes |
 |---|---|---|
 | Environment | the Frapp Claude Code web environment (`pdcarlson/Frapp`) | Routine sessions clone the repo and load `.claude/` skills from the default branch (`main`) at run time. |
-| Schedule | Curator **daily 08:00 ET**; Triage **daily 09:00 ET**; PR Follow-ups **weekly Mon 07:00 ET** | If the UI takes cron in UTC: `0 12 * * *`, `0 13 * * *`, and `0 11 * * 1` during EDT (shift +1h when ET returns to EST). Daily/weekly cadence — no per-PR trigger. Flip PR Follow-ups to twice weekly with `0 11 * * 1,4` if a week's batch runs long. |
+| Schedule | Curator **daily 08:00 ET**; Triage **daily 09:00 ET**; PR Follow-ups **weekly Mon 07:00 ET**; Docs Upkeep **weekly Wed 07:00 ET** | If the UI takes cron in UTC: `0 12 * * *`, `0 13 * * *`, `0 11 * * 1`, and `0 11 * * 3` during EDT (shift +1h when ET returns to EST). Docs Upkeep sits on Wednesday so it never shares a morning with the PR Follow-ups batch. Daily/weekly cadence — no per-PR trigger. Flip PR Follow-ups to twice weekly with `0 11 * * 1,4` if a week's batch runs long. |
 | Model | **Fable** (`claude-fable-5`) | Quality scales with reasoning; use the strongest available model. |
 | Session | fresh session per run | Each run re-reads its skill from `main` — no state carried between runs; the tracker itself is the memory (markers, labels, comments). |
 | Access | **GitHub MCP** (pre-approved by the environment) | Plus the repo itself for the curator's engineering/spec lenses. No secrets needed. |
@@ -203,6 +218,25 @@ stop and report. Where this prompt and the skill disagree, the skill wins. End w
 report the skill specifies, leading with the "Needs you" count and top 3 items.
 ```
 
+**Routine 4 — "Docs Upkeep"** (weekly Wed 07:00 ET):
+
+```text
+You are the Docs Upkeep agent for the Frapp repository — you keep the documentation true. Invoke
+the docs-upkeep skill (.claude/skills/docs-upkeep/SKILL.md) and follow it EXACTLY: pick this
+week's slice by the rotation the skill defines (do NOT carry state between runs), read every file
+in it, and verify the claims that a machine can settle — commands against package.json, CI jobs
+and required checks against .github/workflows and configure-branch-protection.mjs, env var names
+against the codebase, paths via check-doc-paths, provider state via infrastructure-research. FIX
+what is wrong, in one docs-only PR restricted to the skill's path allowlist, and prefer deleting a
+duplicated fact and linking to its canonical home over syncing two copies. NEVER open an
+area:docs issue — this routine repairs, it does not file; anything not fixable in a docs edit goes
+in the run report instead. Never modify product code, never rewrite an ADR in place, never merge
+your own PR. Zero changes is a perfectly good outcome — never manufacture edits to show work. Say
+"unverified" rather than guessing when a provider is unreachable. Where this prompt and the skill
+disagree, the skill wins. End with the run report the skill specifies, leading with the slice and
+the "found but not fixable" list.
+```
+
 ---
 
 ## How to create them (UI)
@@ -214,8 +248,10 @@ report the skill specifies, leading with the "Needs you" count and top 3 items.
 4. Repeat for **"Issue Triage"**, scheduled **09:00 ET**, with the **Triage** prompt.
 5. Repeat for **"PR Follow-ups"**, scheduled **weekly Mon 07:00 ET**, with the **PR Follow-ups**
    prompt.
-6. Enable all three.
-7. **One-time migration step (2026-08) — treat as urgent, not housekeeping:** the three
+6. Repeat for **"Docs Upkeep"**, scheduled **weekly Wed 07:00 ET**, with the **Docs Upkeep**
+   prompt.
+7. Enable all four.
+8. **One-time migration step (2026-08) — treat as urgent, not housekeeping:** the three
    predecessor Routines were named **"Linear Issue Curator"** and **"Linear Triage"** (the
    PR Follow-ups name is unchanged) and their stored prompts still instruct writing to Linear.
    Their skill files are gone from `main`, but the prompts carry inline instructions, and the
@@ -244,6 +280,13 @@ report the skill specifies, leading with the "Needs you" count and top 3 items.
   label + a "How to do it" section + the `fp=pr-followup/…` marker; the **"PR Follow-ups — Human
   Action List"** tracking issue exists with a fresh `pr-followups-state` marker; run it again →
   no duplicates; previously filed items are only closed with cited proof.
+- **Docs Upkeep:** run it once manually. Confirm it reports which slice it took (group index +
+  week number) and opens **at most one** docs-only PR, touching only the corpus its skill defines
+  — `docs/`, `spec/`, `.claude/skills/**/*.md`, any `AGENTS.md`, root `CONTRIBUTING.md` /
+  `README.md`. Confirm it opens **no** `area:docs` issue, leaves product code untouched, and that
+  the PR passes `doc-paths`, `docs-spec-sync` and `link-check`. **A clean slice means no PR at
+  all** — a report saying so is a pass, not a failure. Run it again the same week → the **same**
+  slice (the rotation is derived from `date -u +%V` and the corpus, not random).
 - Confirm all schedules show a next-run time.
 
 ## Self-maintenance (the "update themselves" contract)
@@ -255,20 +298,26 @@ epic, label, spec area, or MCP tool) should change their behavior. On drift:
 
 - **Mechanical drift** → the routine opens a **docs-only PR** restricted to
   `.claude/skills/issue-curator/`, `.claude/skills/issue-triage/`,
-  `.claude/skills/pr-followups/`, and this file, on a `claude/…`
+  `.claude/skills/pr-followups/`, `.claude/skills/docs-upkeep/`, and this file, on a `claude/…`
   branch through the normal pre-push review gate. At most one per run; the routine never merges it —
   a human does.
 - **Judgment-laden drift** → the routine files a `suggestion` issue (`area:docs`) describing the
-  change instead.
+  change instead. **Routine 4 does not do this** — it is forbidden from opening `area:docs` issues
+  at all, and reports judgement-laden drift to the owner in its run report instead (ADR-16
+  amendment 6, and the reasoning in
+  [`docs-upkeep`](../../../.claude/skills/docs-upkeep/SKILL.md)).
 
-This is the routines' **only** permitted repo write.
+For routines 1–3 this is their **only** permitted repo write. Routine 4 also has its sweep PR,
+per rule 3 of the [ownership boundary](#shared-ownership-boundary-all-routines).
 
 > **A `.claude/`-only self-maintenance PR cannot merge — always pair it with this file.**
 > `docs-spec-sync` is a **required** check under `enforce_admins: true`, and
 > `scripts/check-docs-impact.mjs` classifies a path as documentation only when it starts with
-> `docs/` or `spec/` (`const docsOrSpec = ["docs/", "spec/"]`). `.claude/` matches neither, so a PR
-> touching only a `SKILL.md` reads to the gate as "code changed, no docs updated" and fails it;
-> the sole exemption is Dependabot. Every `.claude/skills/` change merged to date has carried a
+> `docs/` or `spec/` (`const DOCS_OR_SPEC = ["docs/", "spec/"]`). `.claude/` matches neither, so a PR
+> touching only a `SKILL.md` reads to the gate as "code changed, no docs updated" and fails it.
+> Dependabot is the only *authorship*-keyed exemption; the `no-doc-change-needed` label applies here
+> too, though for self-maintenance the pairing below is usually the better answer. Every
+> `.claude/skills/` change merged to date has carried a
 > `docs/` file alongside it (#1075 is the pattern: skill + `GITHUB_PM.md` + `AGENTS.md`). Since this
 > file is both inside the allowed path set and under `docs/`, updating it alongside the skill
 > satisfies the gate — and usually should anyway, because a rule worth changing in a skill is
