@@ -99,11 +99,21 @@ issue if anything looks off):
 - **State:** `triage` · `in-progress` · `in-review` (Backlog = open with none of these)
 - **Priority:** `P1` (urgent) · `P2` (high) · `P3` (medium) · `P4` (low) — exactly one per
   triaged issue
-- **Ownership / lifecycle:** `suggestion` · `stale`
+- **Ownership / lifecycle:** `suggestion` · `stale` · `human` (in use on #1146; **decorative
+  only — it is not a hold mechanism**. The human-action hold is recognised by the `[human]` /
+  `[pr-followup][human]` title prefix or the `**Human action required — hold in triage` body
+  opener, per [`GITHUB_PM.md`](GITHUB_PM.md#labels-and-priority-lean-taxonomy); `/next` §0.2 reads
+  the *title*. So a `human`-labelled issue whose title carries no prefix is held by its `triage`
+  label alone, and promoting it would expose it to `/next` — the #709 failure mode. Whether this
+  label should become a fourth recognised hold form is an open question for the owner, not a
+  routine's call)
 - **Area:** `area:api` · `area:web` · `area:db` · `area:deps` · `area:security` · `area:ci` ·
   `area:docs` · `area:product` · `area:ux` · `area:research` · `area:dx` (created in use rather
   than declared — it carries no label description; see #1049 and #1059. Rostered 2026-08-18 so
-  routines stop reading it as a typo; its scope is the owner's to define)
+  routines stop reading it as a typo; its scope is the owner's to define) · `area:infra`
+  (same story, rostered 2026-08-21 — in use on #1138 and #1148 for branch-protection and
+  repo-settings work that is neither `area:ci` nor `area:dx`; carries no label description, and
+  its scope is likewise the owner's to define)
 - **Scope:** `scope:production` — work that only becomes relevant once a production environment
   exists (owner decision 2026-08-10; see
   [`GITHUB_PM.md` → Labels and priority](GITHUB_PM.md#labels-and-priority-lean-taxonomy) and the
