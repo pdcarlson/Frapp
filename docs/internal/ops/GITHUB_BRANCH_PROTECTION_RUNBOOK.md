@@ -96,13 +96,21 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 
 > **That exemption is about pixels, and it stops there.** Until #1152 the 375px floor gate ran inside `web-visual-regression` and inherited its advisory posture by sharing a directory, so a breached floor was a red mark a PR could merge past. It stores no baseline and compares no pixels — it reads one integer per route — so none of the flake reasoning applied to it. It now runs in its own **required** `web-responsive-floor` job, selected by the `@floor` Playwright tag (`--grep @floor` there, `--grep-invert @floor` in the snapshot job) so each suite runs exactly once. The snapshot job's advisory status is unchanged and deliberate.
 
-> **Script vs live drift — check before you assume.** The arrays in the script are the *intended* state; the live config is whatever the last manual run applied. As of 2026-08-19 the live `main` protection carried 12 contexts and was missing `chapter-directory-seed`, which had been listed in the script since #840. Running `npm run configure:branch-protection` applies **everything** in the arrays, not just the entry you added — read the `--dry-run` output in full before applying.
+> **Script vs live drift — check before you assume.** The arrays in the script are the *intended* state; the live config is whatever the last manual run applied, and the two drift apart silently because only a human re-run closes the gap. It has happened twice: `main` sat at 12 contexts against 17 intended until **2026-08-21**, when a run brought both branches up to date (`main` 17, `production` 18 — the same set plus `branch-policy`). Read live state from the API rather than from this paragraph, which is a dated observation and not a source of truth:
+>
+> ```sh
+> gh api repos/pdcarlson/Frapp/branches/main/protection/required_status_checks --jq '.contexts'
+> ```
+>
+> Running `npm run configure:branch-protection` applies **everything** in the arrays, not just the entry you added, and PUTs the whole payload — anything set by hand outside the arrays is overwritten. Read the `--dry-run` output in full before applying.
 
 **Docs check (from `.github/workflows/docs.yml`):**
 
 | Check name       | What it validates                                                     |
 | ---------------- | --------------------------------------------------------------------- |
-| `docs-spec-sync` | Docs/spec sync on PRs (`check-docs-impact.mjs`; no `apps/docs` build) |
+| `docs-spec-sync` | Docs/spec sync **and** structure on PRs (`check-docs-impact.mjs` + `check-docs-structure.mjs`) |
+| `doc-paths`      | Backticked repo-path citations resolve to real files (`check-doc-paths.mjs`, whole-tree) |
+| `doc-tables`     | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml` (`check-doc-tables.mjs`) — **not required yet**, see [`DOCS_CI.md`](../ci-cd/DOCS_CI.md) |
 
 ### Vercel policy (not a required check)
 

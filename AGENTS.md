@@ -112,6 +112,7 @@ See [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md). 
 | API compile  | `npm run build -w apps/api` (matches Render `Dockerfile` builder) |
 | API image    | `docker build -f apps/api/Dockerfile .` (also runs in CI as `api-docker-build`) |
 | API contract | `npm run check:api-contract`        |
+| Doc rosters  | `npm run check:doc-tables` — hand-copied required-check tables vs `CI_CHECKS`/`ci.yml`; advisory |
 | Migrations   | `npm run check:migration-safety`    |
 | Boundaries   | `npm run check:dep-cruiser` — required gate; existing violations grandfathered in `.dependency-cruiser-known-violations.json`, which exists to shrink |
 | Duplication  | `npm run check:duplication` — advisory; repo-wide threshold that only ratchets down |
