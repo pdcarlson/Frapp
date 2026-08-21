@@ -687,23 +687,32 @@ and nothing tied to a personal account changes. The mint step carries `continue-
 purpose — with the secrets absent it fails, and a red workflow would be exactly the noise this sweep
 exists to remove; instead the token comes out empty and the alert issue explains why.
 
-**Half-confirmed as of 2026-08-21.** The first sweep after #1171 merged
-([run 156](https://github.com/pdcarlson/Frapp/actions/runs/32504830354)) logged
-`PR_BASE_SYNC_TOKEN: ***`, `[pr-base-sync] base main @ 131175b — sweeping 0 open PR(s)
-(auto-update enabled)`, and `Token revoked` at cleanup — so the credential mints, the sweep enters
-auto-update mode, and the token's lifetime ends with the job. **That is all it proves.** `sweeping 0
-open PR(s)`: #1171 was the only open PR and it had just merged, so no `update-branch` call has ever
-run.
+**Confirmed end to end on 2026-08-21T17:28Z**, on the first behind PR the sweep ever encountered.
+This closes the one claim the design rested on and could not check from a session: that an App
+installation token's pushes **create workflow runs**, where `GITHUB_TOKEN`'s do not (GitHub's
+documented recursion guard). `docs.github.com` is blocked by the cloud sandbox's egress proxy, so
+that half stayed docs-verified until a real sweep exercised it. It has now been observed directly:
 
-Still unobserved, and load-bearing: that an App installation token's pushes **create workflow
-runs**, where `GITHUB_TOKEN`'s do not (GitHub's documented recursion guard — both halves are
-docs-verified, and `docs.github.com` is blocked by the cloud sandbox's egress proxy, so neither
-could be checked from a session). Confirm on the first sweep that finds a behind PR: the log must
-read `#N: behind by K — auto-updated via update-branch` **and a fresh CI run must appear on that
-PR**. An update with no CI strands required checks at "Expected" forever, which is strictly worse
-than not updating — that is why the pre-App code refused to try. If it happens, fall back to a
-fine-grained PAT (contents + pull-requests write) stored directly as `PR_BASE_SYNC_TOKEN`,
-replacing the mint step.
+```
+17:27:53  #1174 merges to main → PR base sync run 157 fires
+17:28:02  Mint base-sync app token — success
+17:28:09  [pr-base-sync] #1172: behind by 1 — auto-updated via update-branch
+17:28:10  Token revoked
+17:28:15  CI run 32508320750 starts on the new head          ← the load-bearing observation
+17:28:24  check suites begin reporting success on 2fb22e4
+```
+
+The resulting head commit `2fb22e4` is authored by `frapp-base-sync[bot]` ("Merge branch 'main'
+into …") with no human, no agent and no comment on the thread, and CI ran on it. Under
+`GITHUB_TOKEN` those required checks would have sat at "Expected" indefinitely — strictly worse than
+not updating, which is why the pre-App code refused to try. An earlier sweep
+([run 156](https://github.com/pdcarlson/Frapp/actions/runs/32504830354)) had already shown the mint
+half: `PR_BASE_SYNC_TOKEN: ***`, `(auto-update enabled)`, and `Token revoked` at cleanup.
+
+**If this ever regresses** — a sweep reports `auto-updated via update-branch` and the PR's required
+checks then sit at "Expected" with no run — the fallback is a fine-grained PAT (contents +
+pull-requests write) stored directly as `PR_BASE_SYNC_TOKEN`, replacing the mint step. Nothing else
+in the sweep changes; the script reads one env var either way.
 
 #### Why the App is safe on a public repo
 
