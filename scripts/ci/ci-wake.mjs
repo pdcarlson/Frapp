@@ -80,8 +80,11 @@ export function wakeMarkerFor(workflowName) {
   return `${WAKE_COMMENT_MARKER_PREFIX}${workflowName} -->`;
 }
 
-// Pages of 100 comments to scan for previous wake comments before giving up
-// (stale extras are cleaned up by the next upsert, so a cap is safe).
+// Pages of 100 comments to scan for previous wake comments before giving up.
+// The cap is safe because every informative verdict revisits this list — the
+// commenting ones through upsertWakeComment, the silent ones through the clear
+// path — so an extra beyond the cap is picked up by the next run of the same
+// workflow rather than stranded.
 const MAX_COMMENT_PAGES = 10;
 
 /**
@@ -245,22 +248,15 @@ export function buildWakeComment({ run, verdict, reason, rerunResult }) {
     reason,
   ];
 
-  if (rerunResult?.requeued) {
-    lines.push(
-      "",
-      `Auto-requeued as attempt ${attempt + 1} (\`${rerunResult.mode}\`); the next completion posts a fresh wake.`,
-    );
-  } else if (verdict === "infra-failure") {
+  // No `rerunResult.requeued` branch: a successful re-queue suppresses the
+  // comment entirely (processCompletedRun), because the fresh attempt's own
+  // completion is the wake. Nor a `success` one — success never reaches here.
+  if (verdict === "infra-failure") {
     lines.push(
       "",
       rerunResult?.error
         ? `Re-queue attempt failed (${rerunResult.error}); re-run manually via the Actions UI or MCP \`actions_run_trigger\`.`
         : `Attempt cap (${MAX_RUN_ATTEMPTS}) reached — do not blind-retry again; check githubstatus.com, then re-run manually once the incident clears.`,
-    );
-  } else if (verdict === "success") {
-    lines.push(
-      "",
-      "If you are babysitting this PR: re-check mergeability, review state, and conversation resolution now.",
     );
   }
 
@@ -269,7 +265,7 @@ export function buildWakeComment({ run, verdict, reason, rerunResult }) {
     `- Run: ${run.html_url}`,
     `- Commit: ${run.head_sha}`,
     "",
-    "_Automated wake signal for watching agent sessions (`docs/internal/ci-cd/AGENT_INFRA.md` § PR babysitting): the PR-activity webhook carries CI failures and successes, but nothing for a cancelled or timed-out run — so this comment is the wake for those. One live comment per watched workflow, removed once the workflow reports again; success, real failures and superseded runs stay silent._",
+    "_Automated wake signal for watching agent sessions (`docs/internal/ci-cd/AGENT_INFRA.md` § PR babysitting): the PR-activity webhook carries CI failures and successes, but nothing for a cancelled or timed-out run — so this comment is the wake for those. One live comment per watched workflow, removed the next time that workflow reports a real verdict (a `skipped`/`neutral` report or a superseded run leaves it in place); success and real failures stay silent._",
   );
   return lines.join("\n");
 }
@@ -428,7 +424,13 @@ export async function findMarkedCommentIds({
  * Deletes every comment on the PR that leads with `marker`, without posting a
  * replacement. Shared by upsertWakeComment (its delete half) and pr-base-sync's
  * back-in-sync cleanup, so the delete semantics can't drift between watchdogs.
- * Returns the number of comments deleted.
+ *
+ * Returns `{ found, deleted }` rather than a bare count. The difference became
+ * load-bearing when success stopped posting a replacement comment: a DELETE that
+ * 403s or 502s now leaves a stale red wake as the thread's ONLY wake, and a bare
+ * count that could not distinguish "nothing to clear" from "could not clear it"
+ * would log a clean run over a PR that still shows red. `found > deleted` is a
+ * caller's signal to say so; the next run re-attempts either way.
  */
 export async function clearMarkedComments({
   token,
@@ -444,15 +446,17 @@ export async function clearMarkedComments({
     marker,
     fetchImpl,
   });
+  let deleted = 0;
   for (const id of staleIds) {
-    await ghRequest({
+    const { ok } = await ghRequest({
       token,
       fetchImpl,
       method: "DELETE",
       path: `/repos/${repo}/issues/comments/${id}`,
     });
+    if (ok) deleted += 1;
   }
-  return staleIds.length;
+  return { found: staleIds.length, deleted };
 }
 
 /**
@@ -550,23 +554,28 @@ export async function processCompletedRun({
   // a red comment on a PR that has since gone green. This is the half that the
   // old always-comment-on-success behaviour got for free by overwriting.
   if (!shouldComment) {
-    const cleared = await clearMarkedComments({
+    const { found, deleted } = await clearMarkedComments({
       token,
       repo,
       prNumber,
       marker: wakeMarkerFor(run.name),
       fetchImpl,
     });
+    // Nothing replaces a failed delete now, so an incomplete clear has to be
+    // visible in the log rather than rounded up to success — otherwise a red
+    // wake survives on a green PR and the run that left it there reads clean.
     logger.log?.(
-      `[ci-wake] no wake needed on #${prNumber}` +
-        (cleared ? `, cleared ${cleared} stale wake comment(s)` : ""),
+      deleted < found
+        ? `[ci-wake] no wake needed on #${prNumber}, but only cleared ${deleted} of ${found} stale wake comment(s) — the rest are still on the thread`
+        : `[ci-wake] no wake needed on #${prNumber}` +
+            (deleted ? `, cleared ${deleted} stale wake comment(s)` : ""),
     );
     return {
       ...classification,
       shouldComment,
       rerunResult,
       commented: false,
-      cleared,
+      cleared: deleted,
       prNumber,
     };
   }

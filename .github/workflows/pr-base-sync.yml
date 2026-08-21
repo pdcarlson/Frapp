@@ -30,7 +30,10 @@ permissions:
 
 # Only the newest sweep matters — it re-reads every open PR against the newest
 # base tip, so cancelling a superseded in-progress or pending run loses nothing
-# (unlike ci-wake, whose per-workflow wakes must all land).
+# durable (unlike ci-wake, whose per-workflow wakes must all land). The one thing
+# a cancel can drop is the trailing alert-issue reconciliation, which runs after
+# the per-PR pass; the per-PR wakes themselves are written inline, and the next
+# merge to main re-sweeps and re-raises.
 concurrency:
   group: pr-base-sync
   cancel-in-progress: true
@@ -63,8 +66,11 @@ jobs:
           client-id: ${{ secrets.PR_BASE_SYNC_APP_CLIENT_ID }}
           private-key: ${{ secrets.PR_BASE_SYNC_APP_PRIVATE_KEY }}
           # Narrow the installation token to exactly what update-branch needs.
-          # If the App was granted less than this, the mint fails loudly here
-          # rather than 403-ing per PR halfway through a sweep.
+          # An App granted less than this fails the mint outright rather than
+          # 403-ing per PR halfway through a sweep — but note that continue-on-error
+          # above makes that failure QUIET: the run stays green and the only
+          # signal is the alert issue, whose body names under-granted permissions
+          # as a cause precisely because there is no red workflow to find.
           permission-contents: write
           permission-pull-requests: write
 

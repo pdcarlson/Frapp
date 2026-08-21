@@ -200,7 +200,10 @@ test("behind + PAT: updates via update-branch with expected_head_sha, no comment
   );
 });
 
-test("behind with no app token: ONE alert issue, and no comment on the PR", async () => {
+const filedIssues = (calls) =>
+  calls.filter((c) => c.method === "POST" && /\/issues$/.test(c.url.split("?")[0]));
+
+test("no app token: the PR still gets its wake, and the DIAGNOSIS goes to one issue", async () => {
   const pr = makePr(13);
   const { results, calls } = await sweep({
     routes: [listRoute([pr]), detailRoute(pr), compareRoute(pr.head.sha, 1), emptyCommentsRoute],
@@ -208,21 +211,25 @@ test("behind with no app token: ONE alert issue, and no comment on the PR", asyn
   });
   assert.equal(results[0].number, 13);
   assert.equal(results[0].verdict, "behind");
-  assert.equal(results[0].action, "blocked");
+  assert.equal(results[0].action, "commented");
   assert.ok(!calls.some((c) => c.url.includes("/update-branch")));
-  assert.ok(
-    !calls.some((c) => c.method === "POST" && c.url.includes("/issues/13/comments")),
-    "a repo-wide cause must not be restated on every PR",
-  );
-  const filed = calls.find(
-    (c) => c.method === "POST" && /\/issues$/.test(c.url.split("?")[0]),
-  );
-  assert.ok(filed, "the sweep files one alert issue instead");
-  assert.equal(JSON.parse(filed.body).title, ALERT_ISSUE_TITLE);
-  assert.match(JSON.parse(filed.body).body, /PR_BASE_SYNC_APP_CLIENT_ID/);
+
+  // The wake is what unblocks THIS PR — never suppressed.
+  const posted = calls.find((c) => c.method === "POST" && c.url.includes("/issues/13/comments"));
+  assert.ok(posted, "the watching session still gets told the base moved");
+  const body = JSON.parse(posted.body).body;
+  assert.match(body, /git merge origin\/main/);
+  // ...but the repo-level cause is NOT restated on a PR whose reader cannot fix it.
+  assert.ok(!body.includes("PR_BASE_SYNC_APP_CLIENT_ID"));
+
+  const filed = filedIssues(calls);
+  assert.equal(filed.length, 1);
+  assert.equal(JSON.parse(filed[0].body).title, ALERT_ISSUE_TITLE);
+  assert.match(JSON.parse(filed[0].body).body, /PR_BASE_SYNC_APP_CLIENT_ID/);
+  assert.match(JSON.parse(filed[0].body).body, /Contents: Read and write/);
 });
 
-test("no app token: twenty behind PRs still file exactly one alert issue", async () => {
+test("no app token, twenty behind PRs: twenty wakes but exactly one alert issue", async () => {
   const prs = Array.from({ length: 20 }, (_, i) => makePr(100 + i));
   const { calls } = await sweep({
     routes: [
@@ -233,18 +240,38 @@ test("no app token: twenty behind PRs still file exactly one alert issue", async
     ],
     updateToken: null,
   });
-  const filed = calls.filter(
-    (c) => c.method === "POST" && /\/issues$/.test(c.url.split("?")[0]),
-  );
-  assert.equal(filed.length, 1, "one alert for the sweep, not one per PR");
+  assert.equal(filedIssues(calls).length, 1, "one alert for the sweep, not one per PR");
   assert.equal(
     calls.filter((c) => c.method === "POST" && c.url.includes("/comments")).length,
-    0,
-    "this is the twenty-identical-comments case the alert exists to replace",
+    20,
+    "each PR keeps the wake that tells its own session what to do",
   );
 });
 
-test("a rejected app token takes the alert path, not twenty comments", async () => {
+test("an already-open alert is not re-commented on every merge to main", async () => {
+  const pr = makePr(21);
+  const { calls } = await sweep({
+    routes: [
+      listRoute([pr]),
+      detailRoute(pr),
+      compareRoute(pr.head.sha, 1),
+      {
+        method: "GET",
+        path: "/issues?state=all",
+        body: [{ number: 900, state: "open", title: ALERT_ISSUE_TITLE }],
+      },
+      emptyCommentsRoute,
+    ],
+    updateToken: null,
+  });
+  assert.equal(filedIssues(calls).length, 0, "no duplicate issue");
+  assert.ok(
+    !calls.some((c) => c.method === "POST" && c.url.includes("/issues/900/comments")),
+    "an open alert says everything a fresh comment would; this fires on EVERY merge",
+  );
+});
+
+test("a rejected app token names the token, and still wakes the PR", async () => {
   const pr = makePr(15);
   const { results, calls } = await sweep({
     routes: [
@@ -261,14 +288,36 @@ test("a rejected app token takes the alert path, not twenty comments", async () 
     ],
     updateToken: "expired-app-token",
   });
-  assert.equal(results[0].action, "blocked");
-  assert.match(results[0].detail, /rejected/);
-  assert.ok(
-    !calls.some((c) => c.method === "POST" && c.url.includes("/issues/15/comments")),
+  assert.equal(results[0].action, "commented");
+  assert.match(results[0].blockedDetail, /rejected/);
+  assert.ok(calls.some((c) => c.method === "POST" && c.url.includes("/issues/15/comments")));
+  assert.equal(filedIssues(calls).length, 1);
+});
+
+test("a rate-limit 403 is NOT a dead token: skip fail-safe, no alert, no comment", async () => {
+  const pr = makePr(22);
+  const { results, calls } = await sweep({
+    routes: [
+      listRoute([pr]),
+      detailRoute(pr),
+      compareRoute(pr.head.sha, 1),
+      {
+        method: "PUT",
+        path: "/pulls/22/update-branch",
+        status: 403,
+        body: { message: "You have exceeded a secondary rate limit. Please wait a few minutes." },
+      },
+      emptyCommentsRoute,
+    ],
+    updateToken: "healthy-app-token",
+  });
+  assert.deepEqual(results, [{ number: 22, verdict: "unknown", action: "skipped" }]);
+  assert.equal(
+    filedIssues(calls).length,
+    0,
+    "accusing a healthy credential is worse than waiting for the next sweep",
   );
-  assert.ok(
-    calls.some((c) => c.method === "POST" && /\/issues$/.test(c.url.split("?")[0])),
-  );
+  assert.ok(!calls.some((c) => c.method === "POST" && c.url.includes("/comments")));
 });
 
 test("a successful update closes an open alert; a quiet sweep does not", async () => {
@@ -292,9 +341,32 @@ test("a successful update closes an open alert; a quiet sweep does not", async (
   assert.ok(closed, "proof that auto-update works closes the alert");
   assert.equal(JSON.parse(closed.body).state, "closed");
 
-  // A sweep where nothing was behind proves nothing about the token.
+  // A quiet sweep WITH a working token also closes it: this repo merges about
+  // one PR at a time, so an alert gated on a same-sweep update would outlive
+  // the fix by weeks. The closing comment must not overstate what it saw.
   const inSync = makePr(17);
-  const quietSweep = await sweep({
+  const quiet = await sweep({
+    routes: [
+      listRoute([inSync]),
+      detailRoute(inSync),
+      compareRoute(inSync.head.sha, 0),
+      alertLookupRoute,
+      { method: "PATCH", path: "/issues/900", status: 200, body: {} },
+      emptyCommentsRoute,
+    ],
+    updateToken: "app-token",
+  });
+  const quietClose = quiet.calls.find(
+    (c) => c.method === "PATCH" && c.url.includes("/issues/900"),
+  );
+  assert.ok(quietClose, "the cause is gone, so the alert must not outlive it");
+  const recovery = quiet.calls.find(
+    (c) => c.method === "POST" && c.url.includes("/issues/900/comments"),
+  );
+  assert.match(JSON.parse(recovery.body).body, /absence of the fault/);
+
+  // But a sweep with NO token proves nothing and must leave it open.
+  const untokened = await sweep({
     routes: [
       listRoute([inSync]),
       detailRoute(inSync),
@@ -302,11 +374,11 @@ test("a successful update closes an open alert; a quiet sweep does not", async (
       alertLookupRoute,
       emptyCommentsRoute,
     ],
-    updateToken: "app-token",
+    updateToken: null,
   });
   assert.ok(
-    !quietSweep.calls.some((c) => c.method === "PATCH" && c.url.includes("/issues/900")),
-    "a no-op sweep must never close a live alert",
+    !untokened.calls.some((c) => c.method === "PATCH" && c.url.includes("/issues/900")),
+    "an untokened sweep with nothing behind is the one case that proves nothing",
   );
 });
 

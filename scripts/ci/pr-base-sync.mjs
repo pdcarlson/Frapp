@@ -53,6 +53,7 @@ import {
   upsertWakeComment,
 } from "./ci-wake.mjs";
 import {
+  findAlertIssuesDetailed,
   raiseAlert as raiseAlertIssue,
   resolveAlert as resolveAlertIssue,
 } from "./lib/alert-issue.mjs";
@@ -71,8 +72,7 @@ export const BASE_SYNC_MARKER = "<!-- frapp-base-sync -->";
 // P2, not P1: the sweep degrades rather than breaks. PRs still merge; they just
 // need a human or an agent to press Update branch, which is where this repo was
 // before the sweep existed.
-export const ALERT_ISSUE_TITLE =
-  "PR base sync cannot auto-update — the base-sync app token is missing or rejected";
+export const ALERT_ISSUE_TITLE = "PR base sync cannot auto-update PR branches";
 export const ALERT_ISSUE_LOOKUP_LABEL = "routine-state";
 export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P2"];
 
@@ -85,8 +85,8 @@ const SETUP_STEPS = [
 
 function alertBody(detail) {
   return [
-    `\`main\` moved, at least one open PR was behind it, and the sweep could not`,
-    "update any branch automatically.",
+    `\`main\` moved, at least one open PR was behind it, and the sweep updated`,
+    "no branch automatically.",
     "",
     `- Cause: ${detail}`,
     "",
@@ -102,7 +102,7 @@ function alertBody(detail) {
 }
 
 /** One alert for the whole repo, however many PRs were affected this sweep. */
-export async function raiseTokenAlert({ token, repo, detail, fetchImpl }) {
+export async function raiseAutoUpdateAlert({ token, repo, detail, fetchImpl }) {
   return raiseAlertIssue({
     token,
     repo,
@@ -125,11 +125,17 @@ export async function raiseTokenAlert({ token, repo, detail, fetchImpl }) {
 }
 
 /**
- * Closed only on PROOF that auto-update works — a real update-branch success.
- * A sweep with no behind PRs proves nothing (deploy-alert.mjs makes the same
- * call: a no-op run never closes an open alert), so a quiet sweep leaves it up.
+ * Closed when the sweep can show the cause is gone — either a real update-branch
+ * success (direct proof), or a sweep that ran with a token and blocked on
+ * nothing (the alert's cause no longer holds).
+ *
+ * The second condition exists because the first almost never fires here. This
+ * repo merges roughly one PR at a time, so the usual sweep finds no OTHER open
+ * PR to update, and an alert gated on a same-sweep success would stay open for
+ * weeks after the fix — which is how a P2 becomes wallpaper. `proven` records
+ * which of the two it was, so the closing comment does not overstate itself.
  */
-export async function resolveTokenAlert({ token, repo, fetchImpl }) {
+export async function resolveAutoUpdateAlert({ token, repo, proven, fetchImpl }) {
   return resolveAlertIssue({
     token,
     repo,
@@ -138,8 +144,14 @@ export async function resolveTokenAlert({ token, repo, fetchImpl }) {
     lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
     buildRecoveryBody: () =>
       [
-        "**Base-branch auto-update recovered.** A PR branch was updated via the",
-        "update-branch API on this sweep. Closing.",
+        "**Base-branch auto-update recovered.** Closing.",
+        "",
+        proven
+          ? "A PR branch was updated via the update-branch API on this sweep."
+          : "A sweep ran with a working app token and nothing was blocked. No " +
+            "branch needed updating, so this is the absence of the fault rather " +
+            "than a demonstration of the fix; the next behind PR re-raises if it " +
+            "is still broken.",
         "",
         "_Closed automatically by `scripts/ci/pr-base-sync.mjs`._",
       ].join("\n"),
@@ -164,6 +176,11 @@ export const MERGEABLE_POLL_DELAY_MS = 3000;
 const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const shortSha = (sha) => (sha ?? "").slice(0, 7);
+
+// GitHub answers a secondary rate limit with 403 and one of these phrasings, the
+// same status it uses for a dead token. Matching on the message is the only way
+// to tell them apart from the response body alone.
+const RATE_LIMITED = /rate limit|abuse detection|too many requests|retry after/i;
 
 /**
  * The PR detail with `mergeable` resolved, or null when it cannot be
@@ -246,13 +263,14 @@ export async function updatePrBranch({
 
 /** Deletes this sweep's stale wake comments without posting a new one. */
 export async function clearWakeComments({ token, repo, prNumber, fetchImpl }) {
-  return clearMarkedComments({
+  const { deleted } = await clearMarkedComments({
     token,
     repo,
     prNumber,
     marker: BASE_SYNC_MARKER,
     fetchImpl,
   });
+  return deleted;
 }
 
 const WAKE_FOOTER =
@@ -379,7 +397,14 @@ export async function processBaseMove({
     }
   }
 
-  await reconcileTokenAlert({ token, repo, results, fetchImpl, logger });
+  await reconcileTokenAlert({
+    token,
+    updateToken,
+    repo,
+    results,
+    fetchImpl,
+    logger,
+  });
 
   return results;
 }
@@ -387,31 +412,76 @@ export async function processBaseMove({
 /**
  * One alert for the whole sweep, raised or closed on evidence only.
  *
- * Raise beats resolve when both appear in one sweep: a token that worked for
- * one PR and was rejected for the next is still a broken token.
+ * A single successful update outranks a blocked sibling in the same sweep, and
+ * resolves rather than raises. The reasoning runs the other way from the obvious
+ * one: an update that went through is direct proof the mechanism works, so a
+ * failure beside it is something narrower — a transient 502, a rate limit — and
+ * filing a P2 that accuses a working credential sends the owner hunting for a
+ * fault that is not there. Under-raising is the cheap error here: the affected
+ * PRs still got their wakes, and the next merge to `main` re-evaluates.
  */
-async function reconcileTokenAlert({ token, repo, results, fetchImpl, logger }) {
-  const blocked = results.filter((result) => result.action === "blocked");
-  if (blocked.length > 0) {
-    const alert = await raiseTokenAlert({
+async function reconcileTokenAlert({
+  token,
+  updateToken,
+  repo,
+  results,
+  fetchImpl,
+  logger,
+}) {
+  const updated = results.some((result) => result.action === "updated");
+  const failures = updated
+    ? []
+    : results.filter((result) => result.blockedDetail);
+  if (failures.length > 0) {
+    // `raiseAlert` comments on every raise, which is right for deploy-alert.mjs
+    // (it fires only on a failed deploy) and wrong here: this sweep runs on
+    // EVERY merge to main, so raising unconditionally would put a "still broken"
+    // comment on the alert per merge — the same fan-out this change removes,
+    // relocated from N PRs to one issue. So only a state CHANGE is written: an
+    // already-open alert is left exactly as it is.
+    const { issues, lookupOk } = await findAlertIssuesDetailed({
       token,
       repo,
-      detail: blocked[0].detail,
+      fetchImpl,
+      title: ALERT_ISSUE_TITLE,
+      lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+    });
+    // A failed lookup falls through to raise, matching alert-issue.mjs's own
+    // trade-off: a duplicate alert self-heals (resolveAlert closes every match),
+    // silence about a broken watchdog does not.
+    if (lookupOk && issues.some((issue) => issue.state === "open")) {
+      logger.log?.(
+        `[pr-base-sync] ${failures.length} behind PR(s) not auto-updated; alert already open — not re-commenting`,
+      );
+      return;
+    }
+
+    const alert = await raiseAutoUpdateAlert({
+      token,
+      repo,
+      detail: failures[0].blockedDetail,
       fetchImpl,
     });
     logger.log?.(
-      `[pr-base-sync] ${blocked.length} behind PR(s) could not be auto-updated — ` +
+      `[pr-base-sync] ${failures.length} behind PR(s) could not be auto-updated — ` +
         `alert issue ${alert.action}` +
         (alert.issueNumber ? ` (#${alert.issueNumber})` : ""),
     );
     return;
   }
 
-  // Only a real update-branch success proves the token works. A sweep with no
-  // behind PRs proves nothing, and must not close a live alert.
-  if (!results.some((result) => result.action === "updated")) return;
+  // Nothing blocked. Close on a real update (proof), or on a sweep that at least
+  // held a token and hit no failure (the cause is gone). A sweep with NO token
+  // never reaches here — an untokened sweep with zero behind PRs is the one case
+  // that genuinely proves nothing, and it must not close a live alert.
+  if (!updated && !updateToken) return;
 
-  const recovery = await resolveTokenAlert({ token, repo, fetchImpl });
+  const recovery = await resolveAutoUpdateAlert({
+    token,
+    repo,
+    proven: updated,
+    fetchImpl,
+  });
   if (recovery.action === "closed") {
     logger.log?.(
       `[pr-base-sync] auto-update proven working — closed alert issue(s) ` +
@@ -492,30 +562,34 @@ async function processOnePr({
   // Behind and clean. A fork head cannot be updated through the API from here,
   // and without a working app token an update would run no CI (see header).
   //
-  // The token cases are REPO-WIDE: every behind PR this sweep touches would get
-  // the identical comment, so they return `action: "blocked"` and the sweep
-  // raises one alert issue instead. Anything genuinely per-PR still comments.
+  // Every one of these still gets its per-PR wake, because the instruction in it
+  // — merge `origin/main` yourself — is what unblocks THIS PR, and it is the
+  // watching session's only signal that the base moved. What was noise was never
+  // the wake; it was repeating a repo-level DIAGNOSIS ("no secret is configured")
+  // on twenty PRs whose readers cannot act on it. So the diagnosis moves to one
+  // alert issue, the wake stays, and `autoUpdateBlocked` marks the PR as evidence
+  // for that issue rather than as a reason to say nothing.
   const isFork = pr.head?.repo?.full_name !== repo;
-  const blocked = async (detail) => {
-    const cleared = await clearWakeComments({ token, repo, prNumber: number, fetchImpl });
-    logger.log?.(
-      `[pr-base-sync] #${number}: behind by ${behindBy}, not auto-updated (${detail}) — ` +
-        `no per-PR comment; the sweep raises one alert issue` +
-        (cleared ? `, cleared ${cleared} stale wake comment(s)` : ""),
+  let blockedDetail = null;
+  const autoUpdateBlocked = (detail) => {
+    blockedDetail = detail;
+    return (
+      "automatic base-branch updates are off for this repo right now — the cause " +
+      "is diagnosed in the open `PR base sync cannot auto-update` issue"
     );
-    return { number, verdict: "behind", action: "blocked", detail };
   };
-
-  if (!isFork && !updateToken) {
-    return blocked(
-      "the workflow minted no app token — `PR_BASE_SYNC_APP_CLIENT_ID` / " +
-        "`PR_BASE_SYNC_APP_PRIVATE_KEY` are missing, or the mint step failed",
-    );
-  }
 
   let reason = null;
   if (isFork) {
     reason = "the head branch lives in a fork, which this sweep cannot push to";
+  } else if (!updateToken) {
+    reason = autoUpdateBlocked(
+      "the workflow minted no app token. Either `PR_BASE_SYNC_APP_CLIENT_ID` / " +
+        "`PR_BASE_SYNC_APP_PRIVATE_KEY` are missing, or the mint step failed — " +
+        "most often because the App is not installed on this repository, or was " +
+        "installed without **Contents: Read and write** and **Pull requests: " +
+        "Read and write** (the mint requests both and fails if either is absent)",
+    );
   } else {
     const result = await updatePrBranch({
       updateToken,
@@ -546,13 +620,34 @@ async function processOnePr({
       );
       return postConflictComment();
     }
-    // 401/403 is the token itself being rejected — expired, revoked, or the App
-    // uninstalled. That is repo-wide by definition: every remaining PR in this
-    // sweep would fail identically, so it takes the alert path, not N comments.
-    if (result.status === 401 || result.status === 403) {
-      return blocked(`the app token was rejected (${result.error})`);
+    // 403 is overloaded: it is what GitHub returns for a dead or under-permitted
+    // token, and ALSO for a secondary rate limit — which a sequential twenty-push
+    // sweep is exactly the shape to trip. Calling a rate limit a revoked token
+    // would file a P2 accusing a credential that is fine, so the rate-limited
+    // case skips fail-safe (the module's standing contract) and the next base
+    // move re-sweeps. Only a non-rate-limited 401/403 is a token verdict.
+    if (RATE_LIMITED.test(result.error)) {
+      logger.log?.(
+        `[pr-base-sync] #${number}: update-branch rate-limited (${result.error}) — skipping, fail safe`,
+      );
+      return { number, verdict: "unknown", action: "skipped" };
     }
-    reason = `the update-branch call failed (${result.error})`;
+    // Everything left splits into "this PR" and "this repo". A 422 is per-PR by
+    // construction (`expected_head_sha` lost a race with a push), so it stays a
+    // plain per-PR reason. A rejected token, a GitHub 5xx, or a transport
+    // failure (`ghRequest` reports those as status 0) would hit every remaining
+    // PR identically — those are the repo-level ones, and their diagnosis
+    // belongs in the alert rather than repeated on twenty threads.
+    if (result.status === 401 || result.status === 403) {
+      reason = autoUpdateBlocked(`the app token was rejected (${result.error})`);
+    } else if (!result.status || result.status >= 500) {
+      reason = autoUpdateBlocked(
+        `the update-branch API is failing (${result.error}) — a GitHub incident ` +
+          "or a network fault, not this PR",
+      );
+    } else {
+      reason = `the update-branch call failed (${result.error})`;
+    }
   }
 
   const { posted } = await upsertWakeComment({
@@ -566,7 +661,12 @@ async function processOnePr({
   logger.log?.(
     `[pr-base-sync] #${number}: behind by ${behindBy}, not auto-updated (${reason}) — wake comment ${posted ? "posted" : "FAILED"}`,
   );
-  return { number, verdict: "behind", action: "commented" };
+  return {
+    number,
+    verdict: "behind",
+    action: "commented",
+    ...(blockedDetail ? { blockedDetail } : {}),
+  };
 }
 
 // ── CLI entry ───────────────────────────────────────────────────────────────

@@ -214,12 +214,15 @@ test("wake comment carries the per-workflow marker, conclusion, and rerun status
     run: makeRun(),
     verdict: "infra-failure",
     reason: "setup died",
-    rerunResult: { requeued: true, mode: "rerun-failed-jobs" },
+    // A REQUEUED infra failure never reaches this builder — processCompletedRun
+    // suppresses the comment entirely, because the fresh attempt's own
+    // completion is the wake. The reachable shape is a re-queue that failed.
+    rerunResult: { requeued: false, error: "HTTP 503" },
   });
   assert.ok(body.startsWith(wakeMarkerFor("CI")));
   assert.ok(!body.includes(wakeMarkerFor("Links")));
   assert.match(body, /attempt 1: \*\*failure\*\* \(infra-failure\)/);
-  assert.match(body, /Auto-requeued as attempt 2/);
+  assert.match(body, /Re-queue attempt failed \(HTTP 503\)/);
 });
 
 test("capped infra comment says not to blind-retry", () => {
@@ -548,6 +551,33 @@ test("going green DELETES the previous red wake instead of leaving it stale", as
     !calls.some((c) => c.url.includes("/issues/comments/556")),
     "a human comment is never touched",
   );
+});
+
+test("a clear that could not delete reports what it actually removed", async () => {
+  const { fetchImpl } = makeFetchMock([
+    {
+      method: "GET",
+      path: "/actions/workflows/241114608/runs",
+      body: { workflow_runs: [{ id: 31119232391, created_at: "2026-08-06T16:16:24Z" }] },
+    },
+    { method: "GET", path: "/pulls?head=", body: [{ number: 659 }] },
+    {
+      method: "GET",
+      path: "/issues/659/comments",
+      body: [{ id: 555, body: `${wakeMarkerFor("CI")}\n**CI wake** — cancelled` }],
+    },
+    { method: "DELETE", path: "/issues/comments/555", status: 502, body: {} },
+  ]);
+  const result = await processCompletedRun({
+    token: "t",
+    repo: "pdcarlson/Frapp",
+    run: makeRun({ conclusion: "success" }),
+    fetchImpl,
+    logger: quiet,
+  });
+  // Nothing replaces a failed delete now, so counting the attempt as a clear
+  // would report a clean thread while a red wake sits on a green PR.
+  assert.equal(result.cleared, 0, "an attempted delete is not a delete");
 });
 
 test("an ignored conclusion clears nothing — it carries no verdict", async () => {

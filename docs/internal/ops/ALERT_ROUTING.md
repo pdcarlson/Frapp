@@ -25,9 +25,9 @@
 
 ## Automated GitHub-issue alerts
 
-Three watchdogs alert through GitHub Issues rather than a provider channel — no new service, no new
+Four watchdogs alert through GitHub Issues rather than a provider channel — no new service, no new
 token, and the issue thread doubles as the incident log. Each upserts **one** tracking issue (created
-if absent, reopened if closed, otherwise commented). All three carry `routine-state`, which `/next` §0.2
+if absent, reopened if closed, otherwise commented). All four carry `routine-state`, which `/next` §0.2
 treats as never-claimable — they track live state, not a unit of work, so do not pick them up as
 backlog.
 
@@ -36,6 +36,12 @@ backlog.
 | *Deploy API is failing — pushes are not reaching the environment* | `deploy-outcome` job, `deploy-api.yml` | the last `Deploy API` run that tried to deploy did not succeed | a later run deploys successfully |
 | *Staging conformance is failing — frapp-staging has drifted* | `staging-conformance.yml` (daily 07:00 UTC) | at least one assertion about live `frapp-staging` **failed** — paused project, disabled auth hook, or a failing secret sync | the assertions named in the issue's own `conformance-failing:` marker **pass again** |
 | *Database schema drift — a deployed database no longer matches supabase/migrations/* | `check-migration-drift.yml` (daily 07:00 UTC) | a deployed database's `schema_migrations` does not match `supabase/migrations/` — behind, or carrying a version that exists nowhere in the repo | every environment is back in sync |
+| *PR base sync cannot auto-update PR branches* | `pr-base-sync.yml` (every push to `main`) | at least one open PR was behind `main` and none could be updated automatically — no App token minted, the token rejected, or the update-branch API failing. **P2, not P1:** PRs still merge, they just need `Update branch` by hand, so this is degraded rather than down | a later sweep updates a branch, or runs with a working token and blocks on nothing |
+
+Unlike the other three, the base-sync alert fires on a **per-merge** cadence rather than per-incident
+or daily, so it is written only on a state *change* — an already-open one is never re-commented. An
+open one that has gone quiet is still live, not stale. Setup for the App it depends on is human-only
+and tracked in [#689](https://github.com/pdcarlson/Frapp/issues/689).
 
 **Two scheduled watchdogs, two separate concerns.** `check-migration-drift.yml` owns migration
 parity for *every* environment; `staging-conformance.yml` owns everything else about staging and
