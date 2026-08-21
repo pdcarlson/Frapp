@@ -5,12 +5,10 @@ import {
   ClipboardCheck,
   FileText,
   FolderOpen,
-  GraduationCap,
   MapPin,
   MessagesSquare,
   Settings,
   ShieldCheck,
-  Sparkles,
   Star,
   Timer,
   Users,
@@ -22,13 +20,18 @@ import {
  *
  * Kept in a single module so the sidebar, mobile sheet, command palette, and
  * breadcrumb title map all stay in sync. Each entry mirrors the nav table
- * in `spec/ui/web-dashboard/README.md` plus member-only surfaces.
+ * in `spec/ui/web-dashboard/README.md`.
+ *
+ * Structure (Wave 0 restructure): a Chat anchor with no section header,
+ * followed by five sections. Chat leads because chat is the product's home —
+ * `/` and `/dashboard` both redirect there. Profile is deliberately absent:
+ * it moved to the account menu at the bottom of the sidebar
+ * (`account-menu.tsx`), because it is about the viewer, not about the chapter.
  *
  * Permission semantics:
  * - `requirePermission` — a single permission string; hide when absent.
  * - `requireAnyOf` — shown when the caller holds at least one listed.
- * - Omitting both renders the item unconditionally (home, chat, points, etc.
- *   are available to every authenticated member).
+ * - Omitting both renders the item unconditionally.
  *
  * Status flags:
  * - `status: 'available'` — route is built and clickable.
@@ -39,9 +42,15 @@ import {
  * - `module` — the `enabled_modules` key (see `@repo/org-archetypes`
  *   `MODULE_CATALOG`) that gates this item. When the chapter disables the
  *   module in Settings → Modules, the item is hidden from the sidebar. Items
- *   without a `module` are always-on (chat, profile, members) or governed
- *   purely by permission. Hiding is fail-safe: while the chapter config is
- *   still loading the item stays visible.
+ *   without a `module` are always-on or governed purely by permission. Hiding
+ *   is fail-safe: while the chapter config is still loading the item stays
+ *   visible.
+ *
+ * Section gating is derived, never declared: a section renders only when at
+ * least one of its items survives both gates (`isNavItemVisible` in
+ * `protected-nav-item.tsx`). That is what makes the Admin section role-gated —
+ * every item in it carries a permission, so an ordinary member sees neither
+ * the rows nor the heading.
  */
 
 export type NavPermissionRule =
@@ -69,12 +78,18 @@ export type NavSection = {
   id: string;
   label: string;
   items: NavItem[];
+  /**
+   * Anchor sections render their items with no heading. Used for Chat, which
+   * is the app's home rather than a member of any group.
+   */
+  anchor?: boolean;
 };
 
 export const DASHBOARD_NAV: NavSection[] = [
   {
-    id: "overview",
-    label: "Overview",
+    id: "anchor",
+    label: "Chat",
+    anchor: true,
     items: [
       {
         id: "chat",
@@ -86,57 +101,11 @@ export const DASHBOARD_NAV: NavSection[] = [
         description: "Channels, DMs, announcements, realtime.",
         status: "available",
       },
-      {
-        id: "profile",
-        label: "Profile",
-        icon: Sparkles,
-        href: "/profile",
-        breadcrumbTitle: "My Profile",
-        description: "Name, photo, bio, quiet hours, theme, session.",
-        status: "available",
-      },
     ],
   },
   {
-    id: "people",
-    label: "People",
-    items: [
-      {
-        id: "members",
-        label: "Members",
-        icon: Users,
-        href: "/members",
-        breadcrumbTitle: "Members",
-        primaryActionLabel: "Invite Member",
-        description: "Directory, profile cards, invites, deactivation.",
-        status: "available",
-        requirePermission: "members:view",
-      },
-      {
-        id: "alumni",
-        label: "Alumni",
-        icon: GraduationCap,
-        href: "/alumni",
-        breadcrumbTitle: "Alumni",
-        description: "Searchable alumni directory with filters.",
-        status: "available",
-        requirePermission: "members:view",
-      },
-      {
-        id: "roles",
-        label: "Roles",
-        icon: ShieldCheck,
-        href: "/settings?tab=roles",
-        breadcrumbTitle: "Roles & Permissions",
-        description: "Role pack, permission matrix, custom roles, presidency transfer.",
-        status: "available",
-        requirePermission: "roles:manage",
-      },
-    ],
-  },
-  {
-    id: "operations",
-    label: "Operations",
+    id: "chapter",
+    label: "Chapter",
     items: [
       {
         id: "events",
@@ -150,17 +119,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         module: "events",
       },
       {
-        id: "points",
-        label: "Points",
-        icon: Star,
-        href: "/points",
-        breadcrumbTitle: "Points Ledger",
-        primaryActionLabel: "Adjust Points",
-        description: "Leaderboard, transactions, anomaly audit.",
-        status: "available",
-        module: "points",
-      },
-      {
         id: "tasks",
         label: "Tasks",
         icon: ClipboardCheck,
@@ -172,22 +130,38 @@ export const DASHBOARD_NAV: NavSection[] = [
         module: "tasks",
       },
       {
+        id: "points",
+        label: "Points",
+        icon: Star,
+        href: "/points",
+        breadcrumbTitle: "Points Ledger",
+        primaryActionLabel: "Adjust Points",
+        description: "Leaderboard, transactions, anomaly audit.",
+        status: "available",
+        module: "points",
+      },
+      {
+        id: "study",
+        label: "Study hours",
+        icon: Timer,
+        href: "/study",
+        breadcrumbTitle: "Study session",
+        primaryActionLabel: "Start session",
+        description: "Start a tracked study session inside a study zone.",
+        status: "available",
+        module: "hours",
+      },
+      {
         id: "service",
-        label: "Service Hours",
+        label: "Service hours",
         icon: FileText,
         href: "/service",
-        breadcrumbTitle: "Service Hours",
+        breadcrumbTitle: "Service hours",
         primaryActionLabel: "Log service",
         description: "Log service hours and approve entries for points.",
         status: "available",
         module: "hours",
       },
-    ],
-  },
-  {
-    id: "communications",
-    label: "Communications",
-    items: [
       {
         id: "polls",
         label: "Polls",
@@ -207,17 +181,6 @@ export const DASHBOARD_NAV: NavSection[] = [
     label: "Resources",
     items: [
       {
-        id: "backwork",
-        label: "Backwork",
-        icon: BookOpen,
-        href: "/backwork",
-        breadcrumbTitle: "Backwork",
-        primaryActionLabel: "Upload Resource",
-        description: "Academic library with rich filters.",
-        status: "available",
-        module: "backwork",
-      },
-      {
         id: "documents",
         label: "Documents",
         icon: FolderOpen,
@@ -229,27 +192,32 @@ export const DASHBOARD_NAV: NavSection[] = [
         module: "documents",
       },
       {
-        id: "study",
-        label: "Study session",
-        icon: Timer,
-        href: "/study",
-        breadcrumbTitle: "Study session",
-        primaryActionLabel: "Start session",
-        description: "Start a tracked study session inside a study zone.",
+        id: "backwork",
+        label: "Backwork",
+        icon: BookOpen,
+        href: "/backwork",
+        breadcrumbTitle: "Backwork",
+        primaryActionLabel: "Upload Resource",
+        description: "Academic library with rich filters.",
         status: "available",
-        module: "hours",
+        module: "backwork",
       },
+    ],
+  },
+  {
+    id: "directory",
+    label: "Directory",
+    items: [
       {
-        id: "geofences",
-        label: "Study Zones",
-        icon: MapPin,
-        href: "/geofences",
-        breadcrumbTitle: "Study Zones",
-        primaryActionLabel: "Add Study Zone",
-        description: "Draw study polygons and reward rates.",
+        id: "members",
+        label: "Directory",
+        icon: Users,
+        href: "/members",
+        breadcrumbTitle: "Directory",
+        primaryActionLabel: "Invite Member",
+        description: "Actives and alumni, profile cards, invites, deactivation.",
         status: "available",
-        module: "geofences",
-        requirePermission: "geofences:manage",
+        requirePermission: "members:view",
       },
     ],
   },
@@ -264,9 +232,37 @@ export const DASHBOARD_NAV: NavSection[] = [
         href: "/billing",
         breadcrumbTitle: "Billing",
         primaryActionLabel: "Create Invoice",
-        description: "Subscription, Stripe portal, member invoices.",
+        description: "Subscription, Stripe portal, member invoices, dues.",
         status: "available",
         requirePermission: "billing:view",
+      },
+    ],
+  },
+  {
+    id: "admin",
+    label: "Admin",
+    items: [
+      {
+        id: "roles",
+        label: "Roles",
+        icon: ShieldCheck,
+        href: "/settings?tab=roles",
+        breadcrumbTitle: "Roles & Permissions",
+        description: "Role pack, permission matrix, custom roles, presidency transfer.",
+        status: "available",
+        requirePermission: "roles:manage",
+      },
+      {
+        id: "geofences",
+        label: "Study Zones",
+        icon: MapPin,
+        href: "/geofences",
+        breadcrumbTitle: "Study Zones",
+        primaryActionLabel: "Add Study Zone",
+        description: "Draw study polygons and reward rates.",
+        status: "available",
+        module: "geofences",
+        requirePermission: "geofences:manage",
       },
       {
         id: "reports",
@@ -280,12 +276,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         module: "reports",
         requirePermission: "reports:export",
       },
-    ],
-  },
-  {
-    id: "settings",
-    label: "Settings",
-    items: [
       {
         id: "settings",
         label: "Settings",
@@ -294,10 +284,31 @@ export const DASHBOARD_NAV: NavSection[] = [
         breadcrumbTitle: "Chapter Settings",
         description: "Chapter profile, branding, semester, danger zone.",
         status: "available",
+        // The settings screen reads `GET /chapters/:id/config`, which the API
+        // guards with this same permission — a member without it would land on
+        // a screen that cannot load. Gating the entry point is the fail-fast
+        // rule in `spec/ui/design-system/README.md` §5.
+        requirePermission: "chapter-config:view",
       },
     ],
   },
 ];
+
+/**
+ * Titles for routes that are reachable but deliberately absent from the nav.
+ *
+ * The breadcrumb and header title resolve off `DASHBOARD_NAV_BY_HREF`, so a
+ * route with no nav entry falls through to the bare "Dashboard". That was
+ * harmless while every destination had a sidebar row; moving Profile into the
+ * account menu made it a visible defect — `/profile` rendered a page titled
+ * "Dashboard".
+ *
+ * Keep this to routes a member actually lands on. Redirects (`/alumni`,
+ * `/roles`) never render a shell of their own and do not belong here.
+ */
+export const OFF_NAV_ROUTE_TITLES: Record<string, string> = {
+  "/profile": "My Profile",
+};
 
 /** Flattened list of nav items for lookup helpers. */
 export const DASHBOARD_NAV_ITEMS: NavItem[] = DASHBOARD_NAV.flatMap(

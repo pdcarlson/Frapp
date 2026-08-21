@@ -36,6 +36,37 @@ function isGranted(
 }
 
 /**
+ * The single gate both a nav item and its enclosing section read.
+ *
+ * `ProtectedNavItem` returns `null` for a hidden item, which tells the parent
+ * nothing — so a section whose every item was hidden used to render a bare
+ * heading over empty space. The Admin section makes that load-bearing: it is
+ * role-gated purely by its items' permissions, and an ordinary member must see
+ * neither the rows nor the word "Admin". Exported so `dashboard-shell.tsx` can
+ * ask the same question before it draws the heading.
+ *
+ * Both gates are deliberately fail-open while their source is unresolved:
+ * `permissions` is undefined until the query settles, and `isModuleEnabled` is
+ * undefined until the chapter config loads. Showing a link one render early is
+ * harmless — the route itself is guarded server-side — whereas hiding one is a
+ * visible flash of nav items disappearing. (`<Can>` fails closed instead,
+ * because it guards actions rather than signposts.)
+ */
+export function isNavItemVisible(
+  item: NavItem,
+  permissions: readonly string[] | null | undefined,
+  isModuleEnabled?: (moduleKey: string) => boolean,
+): boolean {
+  if (permissions !== undefined && permissions !== null && !isGranted(item, permissions)) {
+    return false;
+  }
+  if (item.module && isModuleEnabled && !isModuleEnabled(item.module)) {
+    return false;
+  }
+  return true;
+}
+
+/**
  * Dashboard sidebar entry that hides itself when the caller lacks the
  * item's required permissions. Items that are not yet wired to a route
  * render as disabled with a small "Soon" chip to preserve roadmap
@@ -57,13 +88,7 @@ export function ProtectedNavItem({
   focusClassName,
   isModuleEnabled,
 }: Props) {
-  if (permissions !== undefined && permissions !== null && !isGranted(item, permissions)) {
-    return null;
-  }
-
-  // Module gating: hide an item whose module the chapter has turned off.
-  // Fail-safe: only hide once we have a resolved predicate.
-  if (item.module && isModuleEnabled && !isModuleEnabled(item.module)) {
+  if (!isNavItemVisible(item, permissions, isModuleEnabled)) {
     return null;
   }
 

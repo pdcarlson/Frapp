@@ -61,8 +61,8 @@ The generated scale is computed once and cached on the chapter (tenant) record �
 
 | Aspect | Behavior |
 |---|---|
-| Storage | `chapters.theme_palette` (jsonb). Today it holds the legacy web token map (§6). The Signet scale lands as an **additive** field alongside those tokens — not yet implemented (§6) — so legacy readers keep working. |
-| Regenerate when | An admin changes the accent (config PATCH touching branding colors triggers recompute), or via the manual recompute endpoint. Never on read, never client-side. |
+| Storage | `chapters.theme_palette` (jsonb). It holds the legacy web token map and the Signet role tokens side by side, written on the same recompute. The Signet keys are namespaced `--signet-*` so legacy readers, which iterate every key of the column, keep working (§6). |
+| Regenerate when | An admin changes the accent, through **either** door: `PATCH /chapters/:id/config` carrying `branding.colors` (the onboarding wizards), or `PATCH /v1/chapters/current` carrying `accent_color` (the Settings accent editor, and the only path that UI actually uses). Also via the manual recompute endpoint. Never on read, never client-side. |
 | Recompute endpoint | `POST /chapters/:id/theme-palette` (`apps/api/src/interface/controllers/chapter-config.controller.ts`), guarded by `CHAPTER_CONFIG_MANAGE`. See [`../../behavior/chapter-config.md`](../../behavior/chapter-config.md). |
 | Delivery | Web: CSS custom properties set from the cached tokens. Native: theme context providing the same roles. |
 
@@ -92,14 +92,29 @@ This spec documents the target engine. The code that exists today serves the leg
 | Unit | Location | Behavior |
 |---|---|---|
 | `deriveSignetPalette(seed?)` | `packages/chapter-theme/src/signet.ts` | Wraps `generateRadixColors` with the §1 parameters and emits the §2 role tokens as flat `--signet-*` CSS custom properties, plus their alpha counterparts. DOM-free and CommonJS-safe. Never throws — an absent seed resolves to house gold, an unparseable one does too and sets `invalidSeed`. |
+| `signetAccentSemanticVars(palette)` | `packages/chapter-theme/src/signet.ts` | Re-keys an already-generated palette onto the semantic names [`foundations.md`](foundations.md) §6 gives the accent slot (`--primary`, `--ring`, …). Pure remap; the §8 guarantees carry through. Opt-in, and **not** what is persisted — see the storage row above and the note below. |
+| Persistence | `apps/api/src/application/services/chapter-palette.ts` (`buildChapterPalette`) | One builder behind all three writers — onboarding, the config PATCH / recompute endpoint, and the Settings accent save (`chapter.service.ts`). It merges `{...legacy, ...signet}`, so the two maps cannot drift apart. The Signet map is produced for **every** chapter, including one that supplied no colours (§3); the legacy map only when a brand colour was given, so the two are not always both present. The seed is `branding.colors.accent` — the same value `derivePalette` reads, per §7. An invalid seed and any sub-AA contrast check are logged, never thrown: a colour problem must not fail a save the officer asked for. |
+| Delivery (native) | `apps/mobile/lib/chapter-branding.ts` | `useChapterBranding()` reads **`--signet-accent-text`** (step 11) off the served palette. Step 11, not step 9: the hook's single value is consumed as a foreground (tab tint, glyphs, chip labels), and §8 gates only the text roles — `accent-primary` is the solid fill and is not held to 4.5:1, measuring 1.71:1 for a crimson chapter on the mobile card surface. A surface wanting a solid accent fill reads `--signet-accent-primary` with `--signet-accent-on-primary`. The legacy `resolveChapterAccentColor` remains only as the fallback for a chapter whose palette predates the Signet map. |
 | `generateRadixColors` | `packages/chapter-theme/src/vendor/` | Vendored from `radix-ui/website` (MIT, © 2024 WorkOS); it is not published to npm. Provenance and resync procedure in that directory's README. |
 
 Token names are flat and string-valued so the additive field cannot disturb legacy readers: `apps/web/lib/hooks/use-chapter-theme.ts` iterates every key of `theme_palette` and sets it as a custom property, and nothing in the legacy stylesheet references `--signet-*`.
 
+**Why the persisted map keeps the `--signet-` prefix.** `apps/web/lib/hooks/use-chapter-theme.ts`
+applies the column by iterating every key onto `:root`. The legacy stylesheet defines `--primary`
+and `--ring` as **HSL triples** (`30 45% 32%`) and the Tailwind preset reads them as
+`hsl(var(--primary))`, so a hex stored under those names would resolve to `hsl(#C49A3A)` and every
+primary-coloured surface on the dashboard would lose its colour at once. The namespace is what makes
+the field additive. `signetAccentSemanticVars` exists for a surface that has already moved its own
+preset to bare `var(--token)` — the web reskin — and for native, which has no stylesheet to collide
+with.
+
 ### Not yet implemented
 
-- `chapters.theme_palette` gains the additive Signet field (§4); the recompute endpoint writes both maps.
-- Legacy `derivePalette` and `resolveChapterAccentColor` are removed only after the web reskin stops reading their tokens.
+- The web dashboard consumes neither map's Signet half: `apps/web` still paints the legacy
+  bone/bronze tokens until its reskin session (#920).
+- Legacy `derivePalette` and `resolveChapterAccentColor` are removed only after the web reskin stops
+  reading their tokens. `resolveChapterAccentColor` additionally survives on mobile as the
+  pre-Signet-map fallback described above, so it goes when every chapter has been through one save.
 
 ## 7. Open decision
 

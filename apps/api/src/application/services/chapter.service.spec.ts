@@ -5,6 +5,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
+import { deriveSignetPalette } from '@repo/chapter-theme';
 import { ChapterService } from './chapter.service';
 import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
 import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
@@ -615,11 +616,14 @@ describe('ChapterService', () => {
     // `branding.colors` is authoritative (#795) and this is the one path that
     // sets the column directly, so without the mirror a Settings edit would
     // leave the two stores disagreeing.
-    expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
-      name: 'Alpha Updated',
-      accent_color: '#1E293B',
-      branding: { colors: { accent: '#1E293B' } },
-    });
+    expect(mockChapterRepo.update).toHaveBeenCalledWith(
+      'ch-1',
+      expect.objectContaining({
+        name: 'Alpha Updated',
+        accent_color: '#1E293B',
+        branding: { colors: { accent: '#1E293B' } },
+      }),
+    );
     expect(result).toEqual(updatedChapter);
   });
 
@@ -635,13 +639,16 @@ describe('ChapterService', () => {
 
     await service.update('ch-1', { accent_color: '#1E293B' });
 
-    expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
-      accent_color: '#1E293B',
-      branding: {
-        greek_letters: 'ΦΓΔ',
-        colors: { dark: '#4B2E2E', accent: '#1E293B' },
-      },
-    });
+    expect(mockChapterRepo.update).toHaveBeenCalledWith(
+      'ch-1',
+      expect.objectContaining({
+        accent_color: '#1E293B',
+        branding: {
+          greek_letters: 'ΦΓΔ',
+          colors: { dark: '#4B2E2E', accent: '#1E293B' },
+        },
+      }),
+    );
   });
 
   it('does not touch branding when the update carries no accent', async () => {
@@ -653,6 +660,36 @@ describe('ChapterService', () => {
       name: 'Renamed',
     });
     expect(mockChapterRepo.findById).not.toHaveBeenCalled();
+  });
+
+  it('recomputes the theme palette on the same write', async () => {
+    // Settings sends `PATCH /v1/chapters/current { accent_color }`, not the
+    // config PATCH, so this is the only door the accent editor uses. Without a
+    // recompute here `theme_palette` stayed frozen at whatever onboarding
+    // derived, and a client reading the generated scale — mobile does — would
+    // paint the wizard's original colour forever with no way to change it.
+    mockChapterRepo.findById.mockResolvedValue({
+      id: 'ch-1',
+      branding: { colors: { dark: '#4B2E2E', accent: '#8B0000' } },
+    });
+    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+
+    await service.update('ch-1', { accent_color: '#0C5C3D' });
+
+    const [, patch] = mockChapterRepo.update.mock.calls[0] as [
+      string,
+      { theme_palette?: Record<string, string> },
+    ];
+    const palette = patch.theme_palette ?? {};
+    // Both maps, derived from the NEW accent — not the stored one.
+    expect(palette['--signet-accent-primary']).toBeDefined();
+    expect(palette['--side-bg']).toBeDefined();
+    expect(palette['--signet-accent-primary']).not.toBe(
+      deriveSignetPalette('#8B0000').palette['--signet-accent-primary'],
+    );
+    expect(palette['--signet-accent-primary']).toBe(
+      deriveSignetPalette('#0C5C3D').palette['--signet-accent-primary'],
+    );
   });
 
   it('accepts a low-contrast accent rather than gating it on save', async () => {
@@ -674,10 +711,13 @@ describe('ChapterService', () => {
     // #C9A56F is 2.16:1 on bone and is the most common accent in the seed.
     await service.update('ch-1', { accent_color: '#C9A56F' });
 
-    expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
-      accent_color: '#C9A56F',
-      branding: { colors: { accent: '#C9A56F' } },
-    });
+    expect(mockChapterRepo.update).toHaveBeenCalledWith(
+      'ch-1',
+      expect.objectContaining({
+        accent_color: '#C9A56F',
+        branding: { colors: { accent: '#C9A56F' } },
+      }),
+    );
   });
 
   it('should generate logo upload URL', async () => {

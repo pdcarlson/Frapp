@@ -12,7 +12,7 @@ import {
   MODULE_CATALOG,
 } from '@repo/org-archetypes';
 import { isModuleEnabled } from '@repo/validation';
-import { derivePalette } from '@repo/chapter-theme';
+import { buildChapterPalette } from './chapter-palette';
 import type { PatchChapterConfigDto } from '../../interface/dtos/chapter-config.dto';
 import {
   SERVICE_CONFIG_DEFAULTS,
@@ -529,32 +529,40 @@ export class ChapterConfigService {
     chapterId: string,
     colors: { dark?: string; accent?: string },
   ) {
-    const result = derivePalette({
-      dark: colors.dark ?? '#1F1A15',
-      accent: colors.accent ?? '#7A5A2F',
-    });
+    const build = buildChapterPalette(colors);
 
-    // derivePalette substitutes bronze for an unparseable hex rather than
-    // throwing, so an invalid color would otherwise be persisted as a
-    // plausible-looking wrong brand color with no trace of the substitution
-    // (#840). Warn rather than reject: the palette written is still valid, and
-    // failing a config save on a bad color is a behavior change this does not
-    // make. Chapter id is included because this is a per-tenant data problem.
-    // `?? {}` so a stale @repo/chapter-theme build cannot turn a config save into
-    // a 500 — this path is not inside a try/catch, and a log line must never be
-    // able to fail the write it is describing.
-    const invalid = Object.keys(result.invalidInputs ?? {});
-    if (invalid.length > 0) {
+    // Colour problems are logged, never thrown: the palette written is still
+    // valid, and failing a config save the officer asked for because one hex
+    // was malformed is a worse outcome than a slightly wrong accent (#840).
+    // Chapter id is included because these are per-tenant data problems.
+    if (build.invalidLegacyInputs.length > 0) {
       this.logger.warn(
-        `Invalid brand color(s) for chapter ${chapterId}: ${invalid
+        `Invalid brand color(s) for chapter ${chapterId}: ${build.invalidLegacyInputs
           .map((key) => `${key}="${colors[key as 'dark' | 'accent']}"`)
           .join(', ')} — substituted platform bronze. Expected #RRGGBB.`,
       );
     }
+    if (build.invalidSeed) {
+      this.logger.warn(
+        `Invalid accent seed for chapter ${chapterId}: accent="${colors.accent}" — substituted house gold. Expected #RRGGBB.`,
+      );
+    }
+    // The engine guarantees these by construction (accent-engine.md §8), so a
+    // failure means the vendored generator changed behaviour under us.
+    if (build.failedContrastChecks.length > 0) {
+      this.logger.warn(
+        `Signet accent contrast below AA for chapter ${chapterId}: ${build.failedContrastChecks
+          .map((c) => `${c.role} on ${c.against} = ${c.ratio.toFixed(2)}:1`)
+          .join(', ')}`,
+      );
+    }
+    if (build.legacyFailed) {
+      this.logger.warn(
+        `Failed to derive the legacy theme palette for chapter ${chapterId}; persisted the Signet map alone.`,
+      );
+    }
 
-    const patch: TablesUpdate<'chapters'> = {
-      theme_palette: { ...result.palette },
-    };
+    const patch: TablesUpdate<'chapters'> = { theme_palette: build.palette };
     const { error } = await this.supabase
       .from('chapters')
       .update(patch)
@@ -565,6 +573,6 @@ export class ChapterConfigService {
       throw error;
     }
 
-    return result;
+    return build;
   }
 }

@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Clock,
   Menu,
+  Search,
   ShieldCheck,
 } from "lucide-react";
 import {
@@ -34,16 +35,20 @@ import {
 import { cn } from "@/lib/utils";
 import { DashboardCommandMenu } from "@/components/layout/dashboard-command-menu";
 import { DashboardNotificationDrawer } from "@/components/layout/dashboard-notification-drawer";
-import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { AccountMenu } from "@/components/layout/account-menu";
+import { AskPill } from "@/components/layout/ask-pill";
 import {
   DASHBOARD_NAV,
   DASHBOARD_NAV_BY_HREF,
+  OFF_NAV_ROUTE_TITLES,
   type NavItem,
 } from "@/components/layout/nav-config";
-import { ProtectedNavItem } from "@/components/layout/protected-nav-item";
+import {
+  isNavItemVisible,
+  ProtectedNavItem,
+} from "@/components/layout/protected-nav-item";
 import { ChapterWizardGate } from "@/components/onboarding/chapter-wizard";
 import { OnboardingTutorial } from "@/components/onboarding/onboarding-tutorial";
-import { signOutCurrentSession } from "@/lib/auth/session";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { ChapterLockup } from "@/components/layout/chapter-lockup";
 import { ChapterSwitcher } from "@/components/layout/chapter-switcher";
@@ -205,7 +210,6 @@ export function DashboardShell({ children }: DashboardShellProps) {
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [notificationDrawerOpen, setNotificationDrawerOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [isSigningOut, setIsSigningOut] = useState(false);
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
   const { data: permissionsPayload } = useMyPermissions({
     enabled: Boolean(activeChapterId),
@@ -227,30 +231,48 @@ export function DashboardShell({ children }: DashboardShellProps) {
   }, [notificationsData]);
 
   const activeItem = findNavItemByPath(pathname);
-  const pageTitle = activeItem?.breadcrumbTitle ?? activeItem?.label ?? "Dashboard";
+  // A route can be legitimately absent from the nav — Profile lives in the
+  // account menu — and still needs a name in the header.
+  const crumbLabel =
+    (activeItem ? (activeItem.breadcrumbTitle ?? activeItem.label) : undefined) ??
+    OFF_NAV_ROUTE_TITLES[pathname];
+  const pageTitle = crumbLabel ?? "Dashboard";
   const primaryActionLabel = activeItem?.primaryActionLabel ?? null;
   const primaryActionHref = activeItem?.href ?? pathname;
 
   function renderSections(onNavigate?: () => void) {
-    return DASHBOARD_NAV.map((section) => (
-      <div key={section.id} className="space-y-1">
-        <p className="px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-side-muted">
-          {section.label}
-        </p>
-        {section.items.map((item) => (
-          <ProtectedNavItem
-            key={item.id}
-            item={item}
-            isActive={item.href === pathname}
-            permissions={permissions}
-            iconClassName={navIconClassName}
-            onNavigate={onNavigate}
-            focusClassName={sidebarFocusRingClassName}
-            isModuleEnabled={isModuleEnabled}
-          />
-        ))}
-      </div>
-    ));
+    return DASHBOARD_NAV.map((section) => {
+      // A section heading is a promise that something sits under it. Ask the
+      // same gate the items use, so a section whose every item is hidden — the
+      // Admin group for an ordinary member — takes its heading with it rather
+      // than leaving "ADMIN" floating over nothing.
+      const visibleItems = section.items.filter((item) =>
+        isNavItemVisible(item, permissions, isModuleEnabled),
+      );
+      if (visibleItems.length === 0) return null;
+
+      return (
+        <div key={section.id} className="space-y-1">
+          {section.anchor ? null : (
+            <p className="px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-side-muted">
+              {section.label}
+            </p>
+          )}
+          {visibleItems.map((item) => (
+            <ProtectedNavItem
+              key={item.id}
+              item={item}
+              isActive={item.href === pathname}
+              permissions={permissions}
+              iconClassName={navIconClassName}
+              onNavigate={onNavigate}
+              focusClassName={sidebarFocusRingClassName}
+              isModuleEnabled={isModuleEnabled}
+            />
+          ))}
+        </div>
+      );
+    });
   }
 
   useEffect(() => {
@@ -265,16 +287,6 @@ export function DashboardShell({ children }: DashboardShellProps) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  async function handleSignOut() {
-    setIsSigningOut(true);
-    try {
-      await signOutCurrentSession();
-      window.location.assign("/sign-in");
-    } finally {
-      setIsSigningOut(false);
-    }
-  }
-
   return (
     <div className="min-h-screen bg-background">
       <ChapterWizardGate />
@@ -288,9 +300,18 @@ export function DashboardShell({ children }: DashboardShellProps) {
         onOpenChange={setNotificationDrawerOpen}
       />
       <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+        {/*
+          A column with one scroll region, mirroring the desktop `<aside>`.
+          `SheetContent` is `inset-y-0 h-full` with no overflow of its own, so a
+          flat stack put the account block below the fold on a phone — and this
+          change moved sign-out, theme, and Profile into that block and removed
+          them from the header, so "below the fold" meant "gone". The nav
+          scrolls; identity and chapter status stay pinned where they are always
+          reachable.
+        */}
         <SheetContent
           side="left"
-          className="border-side-divider bg-side-bg px-4 py-6 text-side-fg"
+          className="flex flex-col border-side-divider bg-side-bg px-4 py-6 text-side-fg"
         >
           <SheetHeader>
             <SheetTitle className="text-side-fg-hi">Navigation</SheetTitle>
@@ -298,14 +319,20 @@ export function DashboardShell({ children }: DashboardShellProps) {
               Open dashboard routes and chapter tools.
             </SheetDescription>
           </SheetHeader>
-          <div className="mt-6 space-y-2">
+          <div className="mt-6 shrink-0 space-y-2">
             <ChapterLockup />
             <ChapterSwitcher />
           </div>
-          <nav className="mt-6 space-y-4">
+          <nav className="mt-6 flex-1 space-y-4 overflow-y-auto">
             {renderSections(() => setMobileNavOpen(false))}
           </nav>
-          <DashboardChapterPanel variant="sheet" />
+          <div className="mt-4 shrink-0 space-y-3 border-t border-side-divider pt-4">
+            <AccountMenu
+              variant="sheet"
+              onNavigate={() => setMobileNavOpen(false)}
+            />
+            <DashboardChapterPanel variant="sheet" />
+          </div>
         </SheetContent>
       </Sheet>
       <a
@@ -327,6 +354,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
             {renderSections()}
           </nav>
           <div className="mt-6 space-y-3 border-t border-side-divider pt-4">
+            <AccountMenu variant="sidebar" />
             <DashboardChapterPanel variant="sidebar" />
             {BETA_CONFIG.enabled && BETA_CONFIG.style === "sidebar_pill" ? (
               <div className="flex items-center justify-between px-1">
@@ -340,24 +368,33 @@ export function DashboardShell({ children }: DashboardShellProps) {
         </aside>
 
         <div className="min-h-screen flex-1">
+          {/*
+            The control cluster collapses below `sm` so the header holds the
+            375px floor the responsive contract requires. It did not before:
+            hamburger + a text search button + bell + theme + "Sign out" + the
+            page's primary action overflowed to ~557px at 375px wide. Folding
+            theme and sign-out into the account menu recovered most of it; the
+            rest is the search button going icon-only and the primary action —
+            which is always also reachable inside the page — standing down.
+          */}
           <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur">
-            <div className="flex h-16 items-center justify-between px-4 sm:px-6">
-              <nav aria-label="Breadcrumb">
-                <p className="flex items-center gap-1 text-xs text-muted-foreground">
+            <div className="flex h-16 items-center justify-between gap-2 px-4 sm:px-6">
+              <nav aria-label="Breadcrumb" className="min-w-0">
+                <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">
                   <span>Dashboard</span>
-                  {activeItem && activeItem.href !== "/" ? (
+                  {crumbLabel && pathname !== "/" ? (
                     <>
                       <ChevronRight
                         className="h-3 w-3 text-muted-foreground/70"
                         aria-hidden="true"
                       />
-                      <span>{activeItem.breadcrumbTitle ?? activeItem.label}</span>
+                      <span>{crumbLabel}</span>
                     </>
                   ) : null}
                 </p>
-                <h1 className="text-lg font-semibold">{pageTitle}</h1>
+                <h1 className="truncate text-lg font-semibold">{pageTitle}</h1>
               </nav>
-              <div className="flex items-center gap-2">
+              <div className="flex shrink-0 items-center gap-2">
                 <Button
                   variant="outline"
                   size="icon"
@@ -370,8 +407,18 @@ export function DashboardShell({ children }: DashboardShellProps) {
                 </Button>
                 <Button
                   variant="outline"
+                  size="icon"
+                  className="sm:hidden"
+                  aria-label="Search commands and resources (Command K)"
+                  title="Search commands and resources"
+                  onClick={() => setCommandMenuOpen(true)}
+                >
+                  <Search className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
                   size="sm"
-                  className="inline-flex"
+                  className="hidden sm:inline-flex"
                   aria-label="Search commands and resources (Command K)"
                   title="Search commands and resources"
                   onClick={() => setCommandMenuOpen(true)}
@@ -400,17 +447,9 @@ export function DashboardShell({ children }: DashboardShellProps) {
                     </span>
                   ) : null}
                 </Button>
-                <ThemeToggle />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleSignOut}
-                  disabled={isSigningOut}
-                >
-                  {isSigningOut ? "Signing out..." : "Sign out"}
-                </Button>
+                <AskPill />
                 {primaryActionLabel ? (
-                  <Button size="sm" asChild>
+                  <Button size="sm" className="hidden sm:inline-flex" asChild>
                     <Link href={primaryActionHref}>{primaryActionLabel}</Link>
                   </Button>
                 ) : null}

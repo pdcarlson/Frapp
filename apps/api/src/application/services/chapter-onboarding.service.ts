@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { buildChapterConfigFromArchetype } from '@repo/org-archetypes';
-import { derivePalette } from '@repo/chapter-theme';
+import { buildChapterPalette } from './chapter-palette';
 import { LEGAL_POLICY_VERSION } from '@repo/validation';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type {
@@ -74,11 +74,11 @@ export class ChapterOnboardingService {
       // Royal Blue for a chapter that had chosen something else. `branding` is
       // authoritative; this mirrors it into the column in the same INSERT.
       ...(colors.accent ? { accent_color: colors.accent } : {}),
-      ...(themePalette
-        ? {
-            theme_palette: themePalette as unknown as Record<string, unknown>,
-          }
-        : {}),
+      // Always present now: `buildChapterPalette` yields at least the Signet
+      // map even for a chapter that supplied no colours, because §3 defines the
+      // no-accent case as the house seed run through the same pipeline. The
+      // conditional spread this replaced could never be false.
+      theme_palette: themePalette,
     };
 
     const chapter = await this.chapterService.create(userId, {
@@ -140,34 +140,30 @@ export class ChapterOnboardingService {
   }
 
   private buildPalette(colors: { dark?: string; accent?: string }) {
-    if (!colors.dark && !colors.accent) return null;
-    try {
-      const result = derivePalette({
-        dark: colors.dark ?? '#1F1A15',
-        accent: colors.accent ?? '#7A5A2F',
-      });
-      // derivePalette substitutes bronze for an unparseable hex and carries on,
-      // so without this the chapter is onboarded with a plausible-looking wrong
-      // brand color and nothing anywhere records that it happened (#840).
-      //
-      // `?? {}` is load-bearing, not defensive habit: this block sits inside the
-      // try/catch below, so a result missing the field (a stale @repo/chapter-theme
-      // build, a test double written against the older shape) would throw here and
-      // be swallowed into `return null` — silently dropping the palette entirely.
-      // Logging must never be able to cost more than the thing it reports on.
-      const invalid = Object.keys(result.invalidInputs ?? {});
-      if (invalid.length > 0) {
-        this.logger.warn(
-          `Invalid chapter brand color(s) during onboarding: ${invalid
-            .map((key) => `${key}="${colors[key as 'dark' | 'accent']}"`)
-            .join(', ')} — substituted platform bronze. Expected #RRGGBB.`,
-        );
-      }
-      return result.palette;
-    } catch (err) {
-      this.logger.warn('Failed to derive theme palette during onboarding', err);
-      return null;
+    const build = buildChapterPalette(colors);
+
+    // A substituted colour is always an upstream data or plumbing bug, and
+    // without a log the chapter is simply onboarded with a plausible-looking
+    // wrong brand colour and nothing anywhere records it (#840).
+    if (build.invalidLegacyInputs.length > 0) {
+      this.logger.warn(
+        `Invalid chapter brand color(s) during onboarding: ${build.invalidLegacyInputs
+          .map((key) => `${key}="${colors[key as 'dark' | 'accent']}"`)
+          .join(', ')} — substituted platform bronze. Expected #RRGGBB.`,
+      );
     }
+    if (build.invalidSeed) {
+      this.logger.warn(
+        `Invalid chapter accent seed during onboarding: accent="${colors.accent}" — substituted house gold. Expected #RRGGBB.`,
+      );
+    }
+    if (build.legacyFailed) {
+      this.logger.warn(
+        'Failed to derive the legacy theme palette during onboarding; persisted the Signet map alone.',
+      );
+    }
+
+    return build.palette;
   }
 
   private async postWelcomeMessage(chapterId: string, branding: Branding) {

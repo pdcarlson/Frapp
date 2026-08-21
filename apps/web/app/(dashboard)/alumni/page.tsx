@@ -1,10 +1,9 @@
-import { AlumniDirectory } from "@/components/alumni/alumni-directory";
+import { redirect } from "next/navigation";
 
-export const metadata = {
-  title: "Alumni — Frapp",
-  description: "Searchable alumni directory for the active chapter.",
-};
-
+// The standalone alumni directory folded into the Directory screen's Alumni
+// tab (Wave 0 nav restructure). Kept as a redirect so existing links, chat
+// messages, and bookmarks pointing at /alumni still land somewhere real —
+// the same shape /roles uses to reach Settings → Roles.
 export default function AlumniPage() {
-  return <AlumniDirectory />;
+  redirect("/members?tab=alumni");
 }

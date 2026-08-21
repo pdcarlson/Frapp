@@ -30,6 +30,22 @@ jest.mock('@repo/chapter-theme', () => ({
     resolvedDark: '#1F1A15',
     resolvedAccent: '#7A5A2F',
   })),
+  // Mirrors the real DeriveSignetPaletteResult shape, for the same reason as
+  // above: the service reads `invalidSeed` and iterates `contrastChecks`, and a
+  // partial double would either throw or silently assert nothing.
+  deriveSignetPalette: jest.fn(() => ({
+    palette: { '--signet-accent-primary': '#C49A3A' },
+    resolvedSeed: '#F2B72E',
+    invalidSeed: false,
+    contrastChecks: [
+      {
+        role: '--signet-accent-text',
+        against: '#0E0D0B',
+        ratio: 7.2,
+        passes: true,
+      },
+    ],
+  })),
 }));
 jest.mock('@repo/validation', () => ({ LEGAL_POLICY_VERSION: 'test-version' }));
 
@@ -144,6 +160,53 @@ describe('ChapterOnboardingService', () => {
     });
     // A derived theme palette is persisted when colors are supplied.
     expect(payload.config.theme_palette).toBeDefined();
+  });
+
+  describe('Signet accent map', () => {
+    it('persists the legacy and Signet maps together', async () => {
+      await service.onboard('user-1', directoryDto);
+
+      const [, payload] = chapterService.create.mock.calls[0];
+      // One jsonb column, both maps, written on the same insert. The Signet
+      // keys are namespaced so the legacy readers that iterate every key of
+      // this object cannot see them.
+      expect(payload.config.theme_palette).toMatchObject({
+        '--side-bg': '#1F1A15',
+        '--signet-accent-primary': '#C49A3A',
+      });
+    });
+
+    it('writes the Signet map even when the chapter picked no colors', async () => {
+      // `accent-engine.md` §3 defines the no-accent case as the house seed run
+      // through the same pipeline, not as an absent palette — so unlike the
+      // legacy map this one is written for every chapter.
+      const { colors: _dropped, ...brandingWithoutColors } =
+        directoryDto.branding;
+      await service.onboard('user-1', {
+        ...directoryDto,
+        branding: brandingWithoutColors,
+      });
+
+      const [, payload] = chapterService.create.mock.calls[0];
+      expect(payload.config.theme_palette).toMatchObject({
+        '--signet-accent-primary': '#C49A3A',
+      });
+      // The legacy half stays absent for such a chapter, as it always was.
+      expect(payload.config.theme_palette).not.toHaveProperty('--side-bg');
+    });
+
+    it('seeds the engine from the branding accent, not a third read path', async () => {
+      const { deriveSignetPalette } = jest.requireMock(
+        '@repo/chapter-theme',
+      ) as { deriveSignetPalette: jest.Mock };
+      deriveSignetPalette.mockClear();
+
+      await service.onboard('user-1', directoryDto);
+
+      // #795: `chapters.accent_color` is a second source for this fact and can
+      // disagree. Until that decision lands, no new read path.
+      expect(deriveSignetPalette).toHaveBeenCalledWith('#C9A56F');
+    });
   });
 
   describe('accent_color mirror (#795)', () => {
