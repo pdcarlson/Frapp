@@ -41,13 +41,21 @@ const spec = (() => {
 
 // ── Markdown helpers ─────────────────────────────────────────────────────────
 
-/** Body text of a `## <n>. ...` section, up to the next `## ` heading. */
+/**
+ * Body text of a `## <n>. ...` section, up to the next `## ` heading.
+ *
+ * Split rather than matched with an end-anchored lookahead: JavaScript has no
+ * `\Z`, so the obvious `(?=^## |\Z)` silently degrades to "next heading, or the
+ * first literal capital Z" — which happens to work on today's document and
+ * would truncate a section the moment someone wrote "Zones" above a table.
+ */
 function section(n: number): string {
-  const match = spec.match(
-    new RegExp(`^## ${n}\\..*?$([\\s\\S]*?)(?=^## |\\Z)`, "m"),
-  );
-  if (!match?.[1]) throw new Error(`foundations.md has no section ${n}`);
-  return match[1];
+  const body = spec
+    .split(/^## /m)
+    .slice(1)
+    .find((chunk) => chunk.startsWith(`${n}.`));
+  if (!body) throw new Error(`foundations.md has no section ${n}`);
+  return body;
 }
 
 /** Table rows of a section as trimmed, backtick-stripped cells (header dropped). */
