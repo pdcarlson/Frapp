@@ -97,6 +97,26 @@ const CI_CHECKS = [
   // Safe to require: `changes` has no job-level `if:` (the condition is on its filter
   // STEP), so the job always runs and always reports, on both pull_request and push.
   "changes",
+  // The 375px responsive floor (issue #1152). `spec/ui/web-dashboard/README.md` states
+  // it as a MUST — every dashboard route renders without horizontal scroll down to
+  // 375px — and `apps/web/tests/visual/responsive-floor.spec.ts` measures it per route.
+  //
+  // It used to run inside `web-visual-regression` and therefore could not block. That
+  // job's advisory posture is about PIXEL flake: baselines drift with Chromium
+  // revisions and font rendering, so blocking merges on them is the worse trade. This
+  // suite stores no baseline and compares no pixels — it reads one integer per route
+  // and compares it to 375 — so it has none of those failure modes and inherited the
+  // exemption purely by sharing a directory. #1153 split it into its own job, selected
+  // by the `@floor` tag rather than by path.
+  //
+  // The defect it catches is a silent one and has already happened once: a shell
+  // refactor dropped `min-w-0` from the content column and broke six of seven routes,
+  // which nothing measured until #1142. Path-gated, same as `web-tests` above and safe
+  // for the same reason; both of its `needs:` parents are required checks.
+  //
+  // ROLLOUT: same caveat as secret-scan — required only once the web-responsive-floor
+  // job exists on the target branch and has run green.
+  "web-responsive-floor",
   // Architectural boundary linting (dependency-cruiser): the API's layer direction
   // and the monorepo's app/package separation. HARD GATE from day one, which is only
   // survivable because `.dependency-cruiser-known-violations.json` grandfathers the

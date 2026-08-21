@@ -10,7 +10,8 @@
     "start": "next start",
     "lint": "eslint --max-warnings 0",
     "check-types": "next typegen && tsc --noEmit",
-    "test:visual": "playwright test",
+    "test:visual": "playwright test --grep-invert @floor",
+    "test:floor": "playwright test --grep @floor",
     "test": "vitest run",
     "test:cov": "vitest run --coverage"
   },

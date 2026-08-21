@@ -351,7 +351,7 @@ cs_failure_hint() {
 # turning one legible error into two illegible ones.
 #
 # On failure the caller reads two globals. A shell function returns a status OR a value, not
-# both, and stdout is spoken for here — write_env_local captures `supabase status` on stdout,
+# both, and stdout is spoken for here — write_env_files captures `supabase status` on stdout,
 # which is why every helper in this file logs to stderr:
 #
 #   CS_RETRY_CLASS  policy | ratelimit | deterministic | transient | unknown | toolchain
