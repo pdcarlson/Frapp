@@ -83,7 +83,9 @@ search first (`search_issues`, open **and** closed) before creating.
 - **Implementation notes:** constraints, helpers to reuse, gotchas.
 - **Definition of done:** "PR linked with `Fixes #N`, criteria met, CI green."
 
-`area:<x>` groups by surface (`api`/`web`/`db`/`ci`/`security`/`ux`/`product`/`research`/`docs`/`deps`).
+`area:<x>` groups by surface — canonical roster in
+[`ROUTINES.md` → Tracker access](../../../docs/internal/ci-cd/ROUTINES.md#tracker-access-shared-by-all-routines).
+Don't restate it here; a second copy is how it drifted before (#1077).
 Express dependencies as a **`Blocked by #N`** body line, not a label.
 
 ## Lifecycle (short)
