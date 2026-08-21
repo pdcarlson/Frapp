@@ -17,6 +17,15 @@ msg=""
 #
 # Silent when the manifest is absent (bringup still running, probe skipped, or a laptop
 # session), because a missing capability report is not itself news.
+#
+# On a FIRST session in a fresh container this is silent, and that is not a bug to chase:
+# bringup is launched by this very hook, so no manifest from THIS bringup exists yet (it
+# lands about a second later -- longer if a probe has to time out -- and is gitignored, so a
+# fresh clone never carries one). STARTING_MSG below names the file and tells the session to
+# read it. The summary is for a LATER fire of this hook in the same container -- resume,
+# /clear, /compact, a second session -- once the running bringup has written one. The
+# caller, not this function, decides whether the manifest on disk is current; see the
+# freshness test at the call site.
 egress_summary() {
   local manifest="$ROOT/.cloud-sandbox-capabilities.json"
   [ -r "$manifest" ] || return 0
@@ -32,7 +41,13 @@ except Exception:
 parts = [" " + m.get("summary", "")]
 for w in m.get("warnings", []):
     parts.append(" " + w)
-if m.get("staging_reachable"):
+# Gate the nudge on a CLEAN manifest, not on `staging_reachable` being truthy: that key is
+# a list of the hosts that answered, so one reachable host out of four made it true. The
+# probe emits a warning for every host that missed its expectation (and a SECURITY warning
+# when a production host answers), so "no warnings" is the only honest signal that live
+# checks are actually available -- and it stops this line contradicting a "NOT reachable"
+# warning printed two clauses earlier.
+if isinstance(m.get("staging_reachable"), list) and m["staging_reachable"] and not m.get("warnings"):
     parts.append(" Live checks against deployed staging are available — read "
                  ".claude/skills/live-verification/SKILL.md before pointing anything at a "
                  "frapp.live or supabase.co host, and never at production.")
@@ -60,7 +75,6 @@ if { [ -f /etc/frapp-cloud-sandbox ] || [ "${FRAPP_CLOUD_SANDBOX:-}" = "1" ]; } 
     msg="${msg}${STARTING_MSG}"
   elif [ -f "$ROOT/.cloud-sandbox-up.done" ] || [ -f "$ROOT/.cloud-sandbox-up.failed" ]; then
     msg="${msg} CLOUD SANDBOX: stack bringup already finished this session — check ${ROOT}/.cloud-sandbox-up.done / .cloud-sandbox-up.failed and /tmp/cloud-sandbox-up.log."
-    msg="${msg}$(egress_summary)"
   else
     # The lock exists but no .done/.failed sentinel has been written. Either a
     # prior bringup is still running, or it was killed (e.g. the session was
@@ -81,14 +95,50 @@ if { [ -f /etc/frapp-cloud-sandbox ] || [ "${FRAPP_CLOUD_SANDBOX:-}" = "1" ]; } 
       fi
     fi
   fi
+
+  # Summarise the manifest, but ONLY when it belongs to the bringup that owns the current
+  # lock. It used to hang off the `.done`/`.failed` branch alone, which tied it to the wrong
+  # signal: the probe runs FIRST in bringup and the manifest lands in about a second, while
+  # `.done` waits on the whole stack (~60-90s with a warm image cache, several minutes when
+  # it is cold). Every fire in that window had a current manifest on disk and said nothing.
+  #
+  # The freshness test is the lock's own mtime, and it is what makes this safe rather than
+  # merely broader. `launch_bringup` writes $LOCK/pid immediately, so the lock is stamped at
+  # launch and the probe's manifest lands ~1s after it. So:
+  #   manifest NEWER than lock -> written by the bringup this lock represents. Report it.
+  #   manifest OLDER than lock -> predates it, and the probe that just started is about to
+  #                               overwrite it. Stay silent.
+  # That resolves every branch correctly without naming any of them: the three that just
+  # (re)launched bringup -- fresh start, stale-lock reclaim, concurrent reclaim -- all stamp
+  # a lock newer than any manifest on disk and fall silent, while `.done`/`.failed` and
+  # "still running" both report. Reporting a pre-relaunch manifest would be worse than
+  # silence: a stale "production correctly blocked" would mask a SECURITY warning the new
+  # probe is writing right then, and session start is the only place that surfaces it.
+  #
+  # Assigned via its own `|| summary=""` rather than interpolated straight into msg: under
+  # `set -e` the status of `x=$(f)` IS the substitution's, so a non-zero there would abort
+  # the hook with EMPTY stdout -- and on the fresh path that costs STARTING_MSG too, leaving
+  # a session that never learns to wait for .cloud-sandbox-up.done while a bringup it cannot
+  # see runs behind it. egress_summary cannot return non-zero today; this keeps a future
+  # edit from making that failure mode the whole message rather than one line.
+  if [ -e "$LOCK" ] && [ "$ROOT/.cloud-sandbox-capabilities.json" -nt "$LOCK" ]; then
+    summary="$(egress_summary)" || summary=""
+    msg="${msg}${summary}"
+  fi
 fi
 
 # Emit as SessionStart additionalContext so the agent sees it at session start.
 # Only emit when there's something to say (e.g. the cloud-sandbox bringup status).
-# NOTE: msg starts "" and the only contributor below is STARTING_MSG, which is deliberately
-# space-prefixed; ${msg# } strips that single leading space. If you add a branch that sets msg
-# to a non-space-prefixed value, drop the `# ` or you'll lose a real first character.
-if [ -n "$msg" ]; then
-  printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":%s}}\n' \
-    "$(printf '%s' "${msg# }" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')"
+# NOTE: msg starts "" and every contributor above — STARTING_MSG, each branch's own status
+# line, and egress_summary's output — is deliberately space-prefixed; ${msg# } strips that
+# single leading space from whichever landed first. If you add a branch that sets msg to a
+# non-space-prefixed value, drop the `# ` or you'll lose a real first character.
+# The python3 guard is load-bearing, not defensive noise. Without it a host that sets
+# FRAPP_CLOUD_SANDBOX=1 but has no python3 emits `"additionalContext":}` -- exit 0, and
+# invalid JSON. `set -e` does NOT catch that: the failing substitution is an argument to
+# printf rather than an assignment, so its status is discarded. Saying nothing is the
+# correct degradation; a malformed hook payload is not.
+if [ -n "$msg" ] && command -v python3 >/dev/null 2>&1; then
+  encoded="$(printf '%s' "${msg# }" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')"
+  [ -n "$encoded" ] && printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":%s}}\n' "$encoded"
 fi

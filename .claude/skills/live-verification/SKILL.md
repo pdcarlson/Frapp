@@ -36,9 +36,13 @@ it down:
 python3 -m json.tool .cloud-sandbox-capabilities.json
 ```
 
-The SessionStart hook also summarises it into your context, so you may already have the
-answer without running anything. If the file is missing (laptop session, or bringup did not
-run), generate it: `bash scripts/cloud-sandbox-egress-probe.sh`.
+Run it — do not wait for the summary. The SessionStart hook does summarise the manifest into
+your context, but only in a **cloud sandbox** (it is gated on the `/etc/frapp-cloud-sandbox`
+marker, so on a laptop it never fires however many manifests are on disk), and only on a fire
+that finds the manifest already written — which a **fresh container's first session** never
+is, because that same hook is what launches bringup about a second before the probe writes. **No `EGRESS:` line in your context is
+not evidence the probe did not run.** If the file is genuinely missing (laptop session, or bringup did not run),
+generate it: `bash scripts/cloud-sandbox-egress-probe.sh`.
 
 | Manifest `status` | Meaning | Do |
 | ----------------- | ------- | -- |
@@ -78,10 +82,13 @@ Before any command carrying a hostname, read the hostname. `api.frapp.live` and
 `api-staging.frapp.live` differ by nine characters and by every consequence.
 
 The Supabase row is the dangerous one: **nothing in either ref says which is which.** Never
-type a `supabase.co` host from memory or from a doc — resolve it from the environment
-(`SUPABASE_URL` in `apps/*/.env.local`) or from `mcp__Supabase__list_projects`, where the
-project is *named*. If you cannot say out loud which project a ref belongs to, you do not
-yet know enough to send it a request.
+type a `supabase.co` host from memory or from a doc. Resolve it from one of the two sources
+that *name* the project: `mcp__Supabase__list_projects`, or the `staging_supabase` entry in
+`.cloud-sandbox-capabilities.json`, which carries the label `frapp-staging Supabase`
+alongside the URL. Do **not** reach for `SUPABASE_URL` in `apps/*/.env.local` — in a cloud
+sandbox bringup writes the *local* stack there (`http://127.0.0.1:54321`), so it answers a
+different question than the one you are asking. If you cannot say out loud which project a
+ref belongs to, you do not yet know enough to send it a request.
 
 The allowlist is a backstop that should never be the thing that catches you — it enumerates
 staging hosts precisely so a typo fails closed rather than reaching prod, but a `POST` you
@@ -93,9 +100,31 @@ If a task appears to *require* production, it does not. Stop and ask the owner.
 
 Egress alone gets an unauthenticated socket. Authenticated probes use the staging smoke
 account convention already established by `scripts/ci/staging-conformance.mjs`:
+`STAGING_SMOKE_USER_EMAIL` / `STAGING_SMOKE_USER_PASSWORD`, plus a staging project URL and
+anon key. In CI those come from two different places — the smoke pair are GitHub Actions
+secrets (`.github/workflows/staging-conformance.yml`), while `SUPABASE_URL` /
+`SUPABASE_ANON_KEY` are injected by the Infisical step, per
+[`SECRETS_MANAGEMENT.md`](../../../docs/internal/environment/SECRETS_MANAGEMENT.md). Do not
+propose adding the latter as GitHub secrets; they are already stored once, in Infisical.
 
-- `STAGING_SMOKE_USER_EMAIL` / `STAGING_SMOKE_USER_PASSWORD`
-- Hosted staging Supabase via `SUPABASE_URL` + `SUPABASE_ANON_KEY`
+**In a sandbox, none of it is set.** The staging *URL* you can get from the manifest (above);
+the anon key and the smoke credentials you cannot, and the smoke user itself is still the
+open human-action ask in **#893** (the `[human]` there is a title prefix, not a label — do
+not search for it as one). So treat an authenticated staging check as **blocked**, never
+passed, until told otherwise.
+
+**Do not read the URL and key from bare `SUPABASE_URL` / `SUPABASE_ANON_KEY` in a sandbox,
+and never ask for them to be set as sandbox environment variables.** `staging-conformance.mjs`
+reads those names because it runs in **CI**, where nothing else is competing for them. In a
+sandbox they are the *local* stack's names: bringup writes them into `apps/api/.env.local`,
+and `ConfigModule.forRoot({ envFilePath: [...] })` in `apps/api/src/app.module.ts` merges
+`{ ...envFile, ...process.env }` — so a real environment variable of that name **wins over
+the file**, repointing `supabase.provider.ts` at whatever host was exported. The rule: a
+sandbox-side staging credential must use a name **no app-boot path reads** — a `STAGING_`
+prefix is the obvious shape — and be passed explicitly to the check that needs it. If such
+a variable is ever provisioned it belongs in
+[`ENV_REFERENCE.md`](../../../docs/internal/environment/ENV_REFERENCE.md), which is the
+single source of truth for env var names; none exists there today.
 
 Rules: use the dedicated smoke account, never a real member's credentials. Never use a
 service-role key for a check an anon or authenticated key can perform — the point of an
