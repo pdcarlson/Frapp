@@ -10,6 +10,7 @@ import type {
   SubscriptionWriteState,
 } from "@repo/validation";
 import { cn } from "@/lib/utils";
+import { FOCUS_RING_ALWAYS } from "@/components/ui/focus";
 
 /**
  * The reusable half of the §5 entitlement-gating standard
@@ -249,7 +250,23 @@ export function SubscriptionNotice({
       // under an open dialog — that close is otherwise silent.
       role="status"
       className={cn(
-        "mb-4 rounded-md border border-border bg-secondary/40 p-3 text-sm text-muted-foreground",
+        "mb-4 rounded-md border p-3 text-sm",
+        // Two tones, because this box holds two different kinds of sentence.
+        // A definite block is a fact about the chapter's status — foundations
+        // §5's "pending, at-risk" — so it takes the warning tint. The pending
+        // branch is not a status at all, only "still checking", and painting
+        // that warning-coloured would be the decorative use of a semantic hue
+        // §5 forbids; it stays neutral on the elevated step.
+        //
+        // `bg-secondary/40` was neither: on Signet `--secondary` is the card
+        // value, so a 40% wash of it on a card was invisible.
+        isPending
+          ? "border-border bg-accent text-muted-foreground"
+          : "border-warning/45 bg-warning/[.13] text-warning",
+        // Focusable via `tabIndex={-1}` and only ever reached programmatically,
+        // on `useGatedDialog`'s revoke path — `:focus-visible` does not match a
+        // scripted `.focus()` in every engine, so this takes the always-on ring.
+        FOCUS_RING_ALWAYS,
         className,
       )}
     >

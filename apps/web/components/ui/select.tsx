@@ -5,7 +5,23 @@ import * as SelectPrimitive from "@radix-ui/react-select"
 import { Check, ChevronDown, ChevronUp } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { FOCUS_RING } from "@/components/ui/focus"
 
+/*
+ * The highlighted-row recipe in this file is `--accent-subtle` / `--accent-text`,
+ * not `--accent`.
+ *
+ * That is not a preference. On Signet `--accent` and `--popover` are the SAME
+ * value (`#26221C`) — `--accent` is the neutral highlight for a control sitting
+ * on a lower surface, and a menu is already on the top step of the ladder. The
+ * scaffold's `focus:bg-accent` on a `bg-popover` panel therefore painted the
+ * hovered row in exactly its own background: keyboard navigation through a
+ * dropdown moved an invisible cursor.
+ *
+ * The selected row separates by hue instead, which is what the shell slice
+ * settled for the same reason (the ladder's own steps are ~1.1:1 apart) and
+ * what components.md §5 gives as the selected recipe.
+ */
 const Select = SelectPrimitive.Root
 
 const SelectGroup = SelectPrimitive.Group
@@ -19,7 +35,14 @@ const SelectTrigger = React.forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      "flex h-9 w-full items-center justify-between whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background data-[placeholder]:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1",
+      // The §4 text-input recipe: a select is a field, so it matches the
+      // field beside it in height, fill, hairline and focus.
+      // No vertical padding: the row is already centred by `items-center`, and
+      // `py-2` only mattered as a floor — which made the control overflow its
+      // own border the moment a call site pinned a shorter `h-*`.
+      "flex h-12 w-full items-center justify-between whitespace-nowrap rounded-md border border-input bg-surface-1 px-3.5 text-base text-foreground transition-colors data-[placeholder]:text-muted-foreground [&>span]:line-clamp-1",
+      FOCUS_RING,
+      "disabled:cursor-not-allowed disabled:border-border disabled:text-disabled",
       className
     )}
     {...props}
@@ -75,7 +98,7 @@ const SelectContent = React.forwardRef<
     <SelectPrimitive.Content
       ref={ref}
       className={cn(
-        "relative z-50 max-h-[--radix-select-content-available-height] min-w-[8rem] overflow-y-auto overflow-x-hidden rounded-md border bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 origin-[--radix-select-content-transform-origin]",
+        "relative z-50 max-h-[--radix-select-content-available-height] min-w-[8rem] overflow-y-auto overflow-x-hidden rounded-md border border-border bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 origin-[--radix-select-content-transform-origin]",
         position === "popper" &&
           "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
         className
@@ -105,7 +128,7 @@ const SelectLabel = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <SelectPrimitive.Label
     ref={ref}
-    className={cn("px-2 py-1.5 text-sm font-semibold", className)}
+    className={cn("px-2 py-1.5 text-sm font-semibold text-muted-foreground", className)}
     {...props}
   />
 ))
@@ -118,7 +141,7 @@ const SelectItem = React.forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      "relative flex min-h-11 w-full cursor-default select-none items-center rounded-xs px-2 py-1.5 pr-8 text-base outline-none transition-colors focus:bg-accent-subtle focus:text-accent-text data-[disabled]:pointer-events-none data-[disabled]:text-disabled",
       className
     )}
     {...props}
@@ -139,7 +162,7 @@ const SelectSeparator = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <SelectPrimitive.Separator
     ref={ref}
-    className={cn("-mx-1 my-1 h-px bg-secondary", className)}
+    className={cn("-mx-1 my-1 h-px bg-border", className)}
     {...props}
   />
 ))

@@ -230,7 +230,7 @@ function Poll({
           {!poll.isExpired ? (
             <Button
               size="sm"
-              variant="outline"
+              variant="secondary"
               {...gate.controlProps(
                 !poll.userVotes?.length || unvote.isPending,
               )}
@@ -360,7 +360,7 @@ export function PollsPage() {
               </SelectContent>
             </Select>
             <Button
-              variant="outline"
+              variant="secondary"
               size="icon"
               onClick={() => void pollsQuery.refetch()}
               aria-label="Refresh polls"

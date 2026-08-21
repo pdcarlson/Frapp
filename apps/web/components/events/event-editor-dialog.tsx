@@ -435,7 +435,7 @@ export function EventEditorDialog({
         <DialogFooter>
           {/* Cancel only closes the dialog — gating the way out of a surface the
               gate just blocked would be a trap. */}
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button

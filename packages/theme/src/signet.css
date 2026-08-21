@@ -69,6 +69,16 @@
     --warning-foreground: #0E0D0B;
     --destructive: #F85149;
     --destructive-foreground: #0E0D0B;
+    /* The AA-lifted tone for danger text ON a danger tint, which components.md
+     * §5 sanctions explicitly ("implementations MAY lift the text tone for AA
+     * contrast, but the hue is the fixed semantic") and the reference already
+     * does for success and info (#4BC262, #4C93F8). Measured: #F85149 on its
+     * own 13% tint is 4.39:1 over --card and 4.04:1 over --popover, i.e. below
+     * the 4.5:1 release gate in the design-system README §6 on exactly the two
+     * surfaces destructive badges and buttons actually sit on. #FF7B72 is the
+     * same hue lifted and clears 4.86:1 at its worst (over the 20% hover tint
+     * on --popover). The solid `--destructive` stays the fill and the border. */
+    --destructive-text: #FF7B72;
     --info: #2F81F7;
     --info-foreground: #0E0D0B;
     /* "You were addressed" — @-mention or DM. Fixed and semantic: never the
@@ -99,6 +109,23 @@
     --accent-border: #6A5220;
     --accent-text: #FFC64A;
 
+    /* ── Derived accent steps (components.md §3 states) ───────────
+     * NOT a second accent source: each is a `color-mix` of the slot
+     * above, so a chapter that overrides the slot at runtime moves
+     * these with it and nothing has to be re-derived or re-persisted.
+     * They exist because §3's state table names two steps the engine
+     * does not emit — the engine's seven roles are accent 3/7/8/9/10/11
+     * plus the contrast color (accent-engine.md §2).
+     *
+     * `--primary-pressed` is §3's "fill accent-10 + 8% black overlay".
+     * `--accent-subtle-hover` is the Tinted hover, which §3 calls
+     * accent-4: a fifth of the way from accent-3 toward accent-7,
+     * which lands between the two steps rather than on a named one.
+     * Both are stated as approximations here rather than pretending
+     * to a scale step the generator never produced. */
+    --primary-pressed: color-mix(in srgb, rgb(0 0 0) 8%, var(--primary-hover));
+    --accent-subtle-hover: color-mix(in srgb, var(--accent-border) 22%, var(--accent-subtle));
+
     /* ── House gold (brand-identity.md; never retints per chapter) ── */
     --gold-house: #EFB63B;
     --gold-on-house: #2C2000;
@@ -108,15 +135,21 @@
 
     /* ── Radius (foundations §8 map onto the preset's scale keys) ──
      * xs = chip/badge 8 · sm = nav item/large chip 10 · md/DEFAULT =
-     * controls 12 · lg = card 14 · xl = large card 16. Sheets and
-     * dialogs take 20 (the sheet step) when the primitives slice
-     * lands; until then nothing reads a 20 token. */
+     * controls 12 · lg = card 14 · xl = large card 16 · 2xl = sheets,
+     * dialogs and the AI answer card 20 (the ceiling). */
     --radius-xs: 8px;
     --radius-sm: 10px;
     --radius: 12px;
     --radius-md: 12px;
     --radius-lg: 14px;
     --radius-xl: 16px;
+    --radius-2xl: 20px;
+
+    /* ── Skeleton shimmer highlight (components.md §10) ───────────
+     * The one neutral above the ladder's top step, used only by the
+     * shimmer sweep below. Neutral by rule: skeletons are never
+     * accent and never semantic. */
+    --skeleton-highlight: #332E26;
 
     /* ── Shadows are banned on Signet surfaces (foundations §10) ──
      * Elevation is a lighter surface step. The tokens exist because
@@ -158,5 +191,46 @@
     text-transform: uppercase;
     letter-spacing: 0.12em;
     color: var(--muted-foreground);
+  }
+
+  /*
+   * Skeleton shimmer — components.md §10, verbatim: a 90° gradient of the
+   * elevated step at 25%/75% with the highlight neutral at 50%, sized 260px
+   * and swept 1.4s linear. It is one class rather than a Tailwind utility
+   * chain so the phase is shared across every block on a surface, which is
+   * what makes a multi-block skeleton read as one sheet of content rather
+   * than as N independently pulsing rectangles.
+   *
+   * Reduced motion drops the sweep and holds the gradient's midpoint —
+   * README §7 requires reduced-motion compatibility, and a skeleton that
+   * stops animating still has to look like a placeholder rather than an
+   * empty box.
+   */
+  .skeleton-shimmer {
+    background-image: linear-gradient(
+      90deg,
+      var(--popover) 25%,
+      var(--skeleton-highlight) 50%,
+      var(--popover) 75%
+    );
+    background-size: 260px 100%;
+    background-repeat: repeat-x;
+    animation: skeleton-sweep 1.4s linear infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton-shimmer {
+      animation: none;
+      background-position: 130px 0;
+    }
+  }
+}
+
+@keyframes skeleton-sweep {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 260px 0;
   }
 }

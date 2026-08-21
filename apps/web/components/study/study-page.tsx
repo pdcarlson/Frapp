@@ -522,7 +522,7 @@ export function StudyPage() {
               Cancel ungated for the same reason: never gate the way out.
             */}
             <Button
-              variant="outline"
+              variant="secondary"
               onClick={() => setIsPaused((prev) => !prev)}
             >
               {isPaused ? (

@@ -469,7 +469,7 @@ function FindStep({
               <p className="text-sm text-muted-foreground">
                 We couldn&apos;t reach the directory.
               </p>
-              <Button variant="outline" size="sm" onClick={onRetry}>
+              <Button variant="secondary" size="sm" onClick={onRetry}>
                 Retry search
               </Button>
             </div>
@@ -485,7 +485,7 @@ function FindStep({
                 </span>{" "}
                 in our directory.
               </p>
-              <Button variant="outline" size="sm" onClick={onManual}>
+              <Button variant="secondary" size="sm" onClick={onManual}>
                 <PencilLine className="h-4 w-4" />
                 Enter chapter details manually
               </Button>
@@ -522,7 +522,7 @@ function FindStep({
             New colony or a small org — enter your details by hand.
           </p>
         </div>
-        <Button variant="outline" onClick={onManual}>
+        <Button variant="secondary" onClick={onManual}>
           <PencilLine className="h-4 w-4" />
           Manual entry
         </Button>
@@ -773,7 +773,7 @@ function InviteStep({
           <Label htmlFor="wiz-invite-link">Your chapter invite link</Label>
           <div className="flex items-center gap-2">
             <Input id="wiz-invite-link" readOnly value={inviteLink} />
-            <Button variant="outline" onClick={onCopy} aria-label="Copy invite link">
+            <Button variant="secondary" onClick={onCopy} aria-label="Copy invite link">
               {copied ? (
                 <Check className="h-4 w-4 text-primary" />
               ) : (

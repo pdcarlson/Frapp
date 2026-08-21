@@ -86,7 +86,7 @@ export function AskPill({ className }: { className?: string }) {
             {documentsEnabled ? ", and chapter files live under Documents." : "."}
           </p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
+            <Button variant="secondary" onClick={() => setOpen(false)}>
               Close
             </Button>
             {documentsEnabled ? (

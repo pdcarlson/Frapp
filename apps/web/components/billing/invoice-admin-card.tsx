@@ -404,7 +404,7 @@ export function InvoiceAdminCard() {
                   </form>
                   <DialogFooter>
                     <Button
-                      variant="outline"
+                      variant="secondary"
                       onClick={() => createDialog.setOpen(false)}
                       disabled={createInvoice.isPending}
                     >
@@ -505,7 +505,7 @@ export function InvoiceAdminCard() {
                         {invoice.status === "DRAFT" ? (
                           <Button
                             size="sm"
-                            variant="outline"
+                            variant="secondary"
                             {...gate.controlProps(
                               transitioningId === invoice.id,
                             )}
@@ -527,7 +527,7 @@ export function InvoiceAdminCard() {
                             </Button>
                             <Button
                               size="sm"
-                              variant="outline"
+                              variant="secondary"
                               {...gate.controlProps(
                                 transitioningId === invoice.id,
                               )}

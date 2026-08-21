@@ -73,7 +73,12 @@ type Branding = {
   founded_at?: number;
 };
 
-const RAIL_TRIGGER_CLASS = "flex-1 justify-start lg:w-full lg:flex-none";
+// The vertical rail is the one place the §6 underline runs down the side
+// rather than along the bottom: on `lg` the list becomes a column with a right
+// hairline, so each item moves its 2px accent indicator to its right edge to
+// match. Below `lg` it is an ordinary horizontal underline row.
+const RAIL_TRIGGER_CLASS =
+  "flex-1 justify-start lg:w-full lg:flex-none lg:-mr-px lg:mb-0 lg:border-b-0 lg:border-r-2 lg:px-3";
 
 // Valid `?tab=` deep-link targets — mirrors the rail triggers below.
 const SETTINGS_TAB_VALUES: readonly string[] = [
@@ -417,7 +422,7 @@ function SettingsPageContent() {
         onValueChange={setActiveTab}
         className="flex flex-col gap-6 lg:flex-row lg:items-start"
       >
-        <TabsList className="flex h-auto w-full flex-row flex-wrap justify-start gap-1 bg-secondary p-1 lg:w-56 lg:flex-col lg:flex-nowrap">
+        <TabsList className="flex h-auto w-full flex-row flex-wrap justify-start gap-1 lg:w-56 lg:flex-col lg:flex-nowrap lg:items-stretch lg:border-b-0 lg:border-r">
           <TabsTrigger value="org" className={RAIL_TRIGGER_CLASS}>
             Organization
           </TabsTrigger>
@@ -605,7 +610,7 @@ function SettingsPageContent() {
                   }
                 >
                   <Button
-                    variant="outline"
+                    variant="secondary"
                     onClick={() => void openBillingPortal()}
                     disabled={createPortal.isPending}
                   >

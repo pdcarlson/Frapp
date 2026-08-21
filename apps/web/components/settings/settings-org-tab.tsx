@@ -434,7 +434,7 @@ export function SettingsOrgTab({
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPendingArchetype(null)}>
+            <Button variant="secondary" onClick={() => setPendingArchetype(null)}>
               Cancel
             </Button>
             <Button onClick={confirmArchetypeSwitch} disabled={savingConfig}>

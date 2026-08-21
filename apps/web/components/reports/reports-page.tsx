@@ -610,7 +610,7 @@ export function ReportsPage() {
                 generate that was itself gated.
               */}
               <Button
-                variant="outline"
+                variant="secondary"
                 onClick={exportCsv}
                 disabled={!preview || preview.length === 0}
               >
@@ -618,7 +618,7 @@ export function ReportsPage() {
                 Download CSV
               </Button>
               <Button
-                variant="outline"
+                variant="secondary"
                 onClick={exportPdf}
                 // Gate on pdfPending too: activeMutation swaps when the report
                 // kind changes, so keying only off it would re-enable this

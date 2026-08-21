@@ -306,7 +306,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
                       {invite.role} • expires {formatDate(invite.expires_at)}
                     </p>
                   </div>
-                  <Button size="sm" variant="outline" onClick={() => handleCopyInvite(invite)}>
+                  <Button size="sm" variant="secondary" onClick={() => handleCopyInvite(invite)}>
                     <Copy className="h-3.5 w-3.5" />
                     Copy code
                   </Button>
@@ -344,13 +344,13 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button size="sm" variant="outline" onClick={() => handleCopyInvite(invite)}>
+                  <Button size="sm" variant="secondary" onClick={() => handleCopyInvite(invite)}>
                     <Copy className="h-3.5 w-3.5" />
                     Copy code
                   </Button>
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant="secondary"
                     onClick={() => handleRevokeInvite(invite.id)}
                     {...revokeGate.controlProps(
                       revokeInviteMutation.isPending || hasLiveDataError,
@@ -367,7 +367,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
 
         <DialogFooter>
           <Button
-            variant="outline"
+            variant="secondary"
             onClick={() => {
               void invitesQuery.refetch();
               void rolesQuery.refetch();

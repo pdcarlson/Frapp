@@ -232,7 +232,7 @@ function FieldRow({
             }
           >
             <SelectTrigger
-              className="h-8 w-40"
+              className="h-11 w-40"
               aria-label={`${field.label} visibility`}
             >
               <SelectValue />
@@ -451,7 +451,7 @@ function AddFieldForm({ canManage }: { canManage: boolean }) {
                 />
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="secondary"
                   size="sm"
                   disabled={!canManage || !choiceDraft.trim()}
                   onClick={addChoice}
@@ -517,7 +517,7 @@ function AddFieldForm({ canManage }: { canManage: boolean }) {
                   }))
                 }
               >
-                <SelectTrigger className="h-9 w-40" aria-label="Visibility">
+                <SelectTrigger className="h-11 w-40" aria-label="Visibility">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

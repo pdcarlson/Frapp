@@ -509,7 +509,7 @@ export function GeofencesAdminPage() {
               <DialogFooter>
                 {/* Cancel only closes the dialog — not a write, so not gated. */}
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   onClick={() => createDialog.setOpen(false)}
                   disabled={createGeofence.isPending}
                 >
@@ -586,7 +586,7 @@ export function GeofencesAdminPage() {
                   */}
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant="secondary"
                     {...gate.controlProps()}
                     onClick={() => openEditor(zone)}
                   >
@@ -594,7 +594,7 @@ export function GeofencesAdminPage() {
                   </Button>
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant="secondary"
                     {...gate.controlProps()}
                     onClick={() => void toggleActive(zone)}
                   >
@@ -735,7 +735,7 @@ export function GeofencesAdminPage() {
             <DialogFooter>
               {/* Cancel only closes the dialog — not a write, so not gated. */}
               <Button
-                variant="outline"
+                variant="secondary"
                 onClick={() => editDialog.setOpen(false)}
                 disabled={updateGeofence.isPending}
               >

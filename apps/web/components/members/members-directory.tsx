@@ -460,7 +460,7 @@ export function MembersDirectory() {
               </Button>
               <Button
                 size="sm"
-                variant="outline"
+                variant="secondary"
                 onClick={() => {
                   setSelectedMemberIds([]);
                   setBulkRoleId("");
@@ -569,7 +569,7 @@ export function MembersDirectory() {
                         <TableCell>{pointsOf(member)}</TableCell>
                         <TableCell>{formatJoined(member.created_at)}</TableCell>
                         <TableCell className="text-right">
-                          <Button size="sm" variant="outline" onClick={() => openMember(id)}>
+                          <Button size="sm" variant="secondary" onClick={() => openMember(id)}>
                             View details
                           </Button>
                         </TableCell>
@@ -617,7 +617,7 @@ export function MembersDirectory() {
                 <div className="flex gap-2">
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant="secondary"
                     disabled={currentPage <= 1}
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
                   >
@@ -625,7 +625,7 @@ export function MembersDirectory() {
                   </Button>
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant="secondary"
                     disabled={currentPage >= pageCount}
                     onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
                   >

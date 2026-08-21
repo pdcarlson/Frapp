@@ -59,6 +59,16 @@ const motionEasing = frappTokens.motion.easing;
  * way to apply alpha to a custom property of unknown format. Signet's `rgba()`
  * hairlines make that format-agnostic reader mandatory, so the floor is not
  * separable from the cutover.
+ *
+ * **Two Signet tokens carry the floor even un-modified.** `--primary-pressed`
+ * and `--accent-subtle-hover` are themselves `color-mix()` values (the button
+ * states `components.md` §3 names but the accent engine emits no role for), so
+ * `bg-primary-pressed` needs `color-mix` support to resolve at all — the "no
+ * floor without a modifier" guarantee above is about the utility, not about
+ * what the token holds. Below the floor those two degrade to no fill rather
+ * than to the un-pressed colour; they are hover/pressed states on controls that
+ * are legible without them, which is why they were an acceptable place to
+ * spend it. Do not reach for a `color-mix` token for a *rest* state.
  */
 export const colorVar = (token: string): string =>
   // Tailwind resolves a function color value at runtime and documents the form,

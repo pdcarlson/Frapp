@@ -425,7 +425,7 @@ export function MemberDetailSheet({
 
         <SheetFooter className="mt-8 gap-2">
           <Button
-            variant="outline"
+            variant="secondary"
             onClick={() => {
               setSelectedRoleIds(memberRoleIds);
               setSelectedCustomRoleIds(memberCustomRoleIds);

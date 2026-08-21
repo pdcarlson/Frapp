@@ -266,7 +266,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
         {isAssignee && storedStatus === "TODO" ? (
           <Button
             size="sm"
-            variant="outline"
+            variant="secondary"
             {...gate.controlProps(actionsDisabled)}
             onClick={() =>
               updateStatus.mutate(
@@ -284,7 +284,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
         {isAssignee && storedStatus === "IN_PROGRESS" ? (
           <Button
             size="sm"
-            variant="outline"
+            variant="secondary"
             {...gate.controlProps(actionsDisabled)}
             onClick={() =>
               updateStatus.mutate(
@@ -320,7 +320,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
             {pointsAwarded ? null : (
               <Button
                 size="sm"
-                variant="outline"
+                variant="secondary"
                 {...gate.controlProps(actionsDisabled)}
                 onClick={() =>
                   rejectTask.mutate(

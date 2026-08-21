@@ -214,7 +214,7 @@ function OnboardingTutorialDialog({
           </Button>
           <div className="flex gap-2">
             <Button
-              variant="outline"
+              variant="secondary"
               disabled={stepIndex === 0}
               onClick={() => setStepIndex((i) => Math.max(0, i - 1))}
             >

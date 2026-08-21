@@ -9,6 +9,8 @@
 The reference board is the committed visual truth, with two locked corrections:
 
 - **Radii.** Panels 4d/4h draw controls at radius 14 and panel 4e draws chat bubbles at radius 20 — drawings that predate the lock. Where a drawing and the canonical map differ, **the map wins**; the map and its deviation note are owned by [foundations.md](foundations.md) §8.
+- **Type sizes and spacing, same rule.** The tables below quote sizes measured off the board — 15 and 14.5 for button labels (§3), 16.5 for card and state titles (§8, §10), a 22px tab gap and 11px tab padding (§6). The board draws seventeen distinct font sizes; [foundations.md](foundations.md) §7 locks six and says outright that an off-scale size is a defect, and §9 locks a 4px spacing grid. **The maps win here too**, exactly as they do for radius: an implementation rounds a drawn measurement onto the adjacent scale step (15 → the `label` role's 14, 16.5 → `body` 16 at the weight the drawing distinguishes by, 22 → 24, 11 → 12) rather than reproducing it. Only the weights and the relationships between sizes are transcribed literally.
+- **Text tones that miss the contrast gate get lifted one step.** §5 already grants this for badge text on a tint ("implementations MAY lift the text tone for AA contrast, but the hue is the fixed semantic"), and the reference itself does it (`#4BC262`, `#4C93F8`). It generalises: where a *drawn* tone measures below the 4.5:1 text floor [README.md](README.md) §6 sets as a release gate, the implementation moves it one step up the [foundations.md](foundations.md) §4 text ladder — or, for a semantic, to a lifted tone of the same hue — and the surrounding relationships move with it. Measured cases the web implementation carries: `--muted` on the surface ladder is 3.3–4.0:1, so tab labels and input placeholders take `--muted-foreground` (the hover lift moves up to `--foreground` with them); `#f85149` on its own 13% tint is 4.39:1 over card and 4.04:1 over the elevated step, so danger text on a danger tint takes the lifted `#FF7B72`. Fills, borders and the hue itself are unchanged — only text moves.
 - **Tab bar.** Panel 4g's 5-tab bar (with a Home tab) is stale. Four tabs — Chat, Events, Tasks, More — are locked; see [navigation.md](../mobile/navigation.md). Panel 4g's *sheet* drawing remains authoritative and is specced in §9.
 
 Colors below are given by **token role** (`accent-N` per [accent-engine.md](accent-engine.md)). The only literal hexes are the fixed neutral and semantic values, which never vary by tenant. Chat bubbles and the AI sourced-answer card (panel 4e) are the two signature surfaces; they are specced in §11.
@@ -23,9 +25,12 @@ Colors below are given by **token role** (`accent-N` per [accent-engine.md](acce
 - **No pill shapes** except the toggle track (§4). The "Ask pill" is a rounded rectangle, not a capsule.
 - **Borders are neutral hairlines or tokens** — `rgba(255,255,255,.08)` structural, `rgba(255,255,255,.14)` on inputs, `accent-7` on accent-tinted chrome, low-opacity semantic on status surfaces (§10). Never a fixed grey hex.
 - **Focus (keyboard/input):** border swaps to `accent-9` plus a 3px ring of `accent-8` at ~25% opacity. Applies to every focusable control.
+  - **The border swap is the half that carries it.** `accent-8` at 25% composites to ~1.3:1 against every step of the surface ladder — under the 3:1 non-text floor [README.md](README.md) §6 sets — so the ring is the halo and the solid border is the signal. A control that drops the border swap has no focus indicator, whatever the ring looks like.
+  - **Where the border already means something, move the accent into an offset ring instead.** The toggle's border carries on/off (§4) and a tab's bottom border *is* the selected indicator (§6); repainting either on focus loses the state, or — worse, on tabs — draws the exact visual that means "selected" onto a merely-focused item. Those controls keep their border and take a 2px `accent-9` ring offset from the control.
 - **Semantic colors are status-only** (success `#3fb950`, warning `#e5a000`, danger `#f85149`, info `#2f81f7`) — never decorative.
 - **Raw chapter hex never paints.** Every accent role resolves through the generated scale ([accent-engine.md](accent-engine.md)).
 - Undrawn primitives (select, radio, dropdown menu, popover) MUST compose from the same tokens: elevated `#26221C` fill, hairline border, radius 12, `accent-8` ring.
+- **A highlighted row inside one of those primitives takes the accent tint, never a surface step.** The elevated fill above is the *top* of the surface ladder ([foundations.md](foundations.md) §2), so there is no step above it to highlight with — and `--accent`, the neutral highlight for a control sitting on a lower surface, holds that same `#26221C`. A menu that highlights with it paints the hovered row in its own background. Selection and hover inside menus, command palettes, selects and table rows therefore use the §5 accent-tint recipe (`accent-3` fill, `accent-11` text), which separates by hue: the ladder's own steps are ~1.1:1 apart and cannot carry "this one" on luminance alone.
 
 ## 3. Buttons
 
@@ -91,6 +96,8 @@ Height 26–28px, radius 8–10, padding-x 10–12, text 12.5px / 600.
 | Kind | Fill | Border | Text | Use |
 | ---- | ---- | ------ | ---- | --- |
 | Accent | `accent-3` | 1px `accent-7` | `accent-11` | accent-worthy stats: points, active filters |
+| Neutral | `rgba(255,255,255,.14)` | none | `#EDEAE3` | counts and unread markers ([foundations.md](foundations.md) §5) |
+| Hairline | transparent | 1px `rgba(255,255,255,.08)` | `#A9A399` | quiet metadata that must not read as a status |
 | Semantic | status color @ 13% alpha | none | status color | Paid / Overdue / status only — never decorative |
 | Mention / DM | mention/DM red | none | white | unread mentions and DMs only |
 

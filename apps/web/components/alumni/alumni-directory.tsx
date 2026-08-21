@@ -164,7 +164,7 @@ export function AlumniDirectory() {
                 <Search className="h-4 w-4" />
                 Apply filters
               </Button>
-              <Button type="button" variant="outline" onClick={clearFilters}>
+              <Button type="button" variant="secondary" onClick={clearFilters}>
                 Clear
               </Button>
             </div>

@@ -57,7 +57,7 @@ Signet must not read as another generic Google/Material utility, and must not be
 
 | Layer | Location | Ownership |
 | --- | --- | --- |
-| Web primitives (shadcn/Radix) | `apps/web/components/ui/` | Dashboard foundational controls (Button, Card, Dialog, …) |
+| Web primitives (Radix + Signet recipes) | `apps/web/components/ui/` | Dashboard foundational controls (Button, Card, Dialog, …) |
 | Theme/tokens | `packages/theme` | Semantic tokens + motion/elevation defaults |
 | Dashboard composites | `apps/web/components/*` | Workflow-specific and shadcn/radix compositions |
 | Landing sections | `apps/landing/app/*` | Marketing-specific content modules (inline Tailwind; no shared component package) |
@@ -66,7 +66,9 @@ Signet must not read as another generic Google/Material utility, and must not be
 Rules:
 
 1. If a component is workflow-specific, keep it app-local.
-2. If a component is a reusable dashboard primitive, keep it in `apps/web/components/ui/` (shadcn/Radix). Landing uses inline Tailwind; mobile uses React Native composites. Do not recreate a shared web-component workspace for that.
+2. If a component is a reusable dashboard primitive, keep it in `apps/web/components/ui/`. Landing uses inline Tailwind; mobile uses React Native composites. Do not recreate a shared web-component workspace for that.
+   - Those files keep Radix for behaviour — focus management, portals, keyboard semantics — but their **appearance is [components.md](components.md), not the shadcn scaffold's defaults**, since the #920 primitives slice. A variant the scaffold ships and Signet does not spec is not automatically kept: `Button`'s `outline` was deleted in that slice because Signet's Secondary already is the outlined button, and two live spellings of one recipe is what the cutover rule forbids.
+   - A primitive with **no importers is deleted, not kept for later** (the tech-debt protocol in [`AGENTS.md`](../../../AGENTS.md)). Seven went with the primitives slice. "It ships with shadcn" is not a consumer, and neither is an `index` re-export.
 3. Never duplicate token values in app-local files when semantic tokens exist.
 4. If no existing token role fits, extend or amend the token definitions and adopt the new role consistently — never one-off the value at the call site. Signet surfaces extend the Signet token definitions — `packages/theme/src/signet.ts`, its stylesheet `packages/theme/src/signet.css`, and, for web, `apps/web/tailwind.config.ts`; the frozen landing surface extends the legacy `packages/theme/src/tokens.ts`. The per-tenant accent family is not in either file — it comes from the engine ([`accent-engine.md`](accent-engine.md)).
 

@@ -203,7 +203,7 @@ export default function PointsPage() {
           <div className="flex flex-wrap items-center gap-2">
             <Button
               size="sm"
-              variant="outline"
+              variant="secondary"
               {...adjustGate.controlProps()}
               onClick={() => adjustDialog.setOpen(true)}
             >
@@ -213,7 +213,7 @@ export default function PointsPage() {
             {windows.map((item) => (
               <Button
                 key={item.value}
-                variant={window === item.value ? "default" : "outline"}
+                variant={window === item.value ? "default" : "secondary"}
                 size="sm"
                 onClick={() => setWindow(item.value)}
               >
@@ -337,14 +337,14 @@ export default function PointsPage() {
                 <div className="flex gap-2">
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant="secondary"
                     onClick={() => handleBulkTransactionAction("Export selected")}
                   >
                     Export selected
                   </Button>
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant="secondary"
                     onClick={() => handleBulkTransactionAction("Flag for audit")}
                   >
                     Flag for audit
