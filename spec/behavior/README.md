@@ -50,7 +50,7 @@ Each topic file is canonical **intended** behavior. Delivery (which is shipped v
 - Full dark mode support across web and mobile.
 - Respects the device/OS system preference by default.
 - Manual override available in user settings (Light, Dark, System).
-- Palette, typeface, and dark-first Signet tokens live in [`spec/ui/brand-identity.md`](../ui/brand-identity.md) and [`spec/ui/design-system/`](../ui/design-system/README.md) — do not duplicate values here. Frozen web/landing still ship the legacy `@repo/theme` tokens until their reskin.
+- Palette, typeface, and dark-first Signet tokens live in [`spec/ui/brand-identity.md`](../ui/brand-identity.md) and [`spec/ui/design-system/`](../ui/design-system/README.md) — do not duplicate values here. The frozen landing site still ships the legacy `@repo/theme` tokens until its reskin; the web dashboard ships Signet dark-only since the #920 shell slice (no theme control).
 
 ---
 

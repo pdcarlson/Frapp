@@ -102,7 +102,7 @@ export function ChapterSwitcher({ className }: ChapterSwitcherProps) {
     return (
       <div
         className={cn(
-          "flex items-center gap-2 rounded-md border border-side-divider bg-side-bg-hi px-3 py-2 text-[11px] text-side-muted",
+          "flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-[11px] text-muted-foreground",
           className,
         )}
       >
@@ -128,15 +128,15 @@ export function ChapterSwitcher({ className }: ChapterSwitcherProps) {
     return (
       <div
         className={cn(
-          "space-y-2 rounded-md border border-destructive/45 bg-destructive/10 px-3 py-2.5",
+          "space-y-2 rounded-lg border border-destructive/45 bg-destructive/[.13] px-3 py-2.5",
           className,
         )}
       >
-        <p className="flex items-center gap-1.5 text-[11px] font-semibold text-side-fg-hi">
+        <p className="flex items-center gap-1.5 text-[11px] font-semibold text-foreground">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
           {activeChapterId ? "Chapter unavailable" : "No chapter selected"}
         </p>
-        <p className="text-[11px] text-side-muted">
+        <p className="text-[11px] text-muted-foreground">
           {activeChapterId
             ? "You no longer have access to the chapter you were in. Pick one to continue:"
             : "Pick a chapter to continue:"}
@@ -147,7 +147,7 @@ export function ChapterSwitcher({ className }: ChapterSwitcherProps) {
               <button
                 type="button"
                 onClick={() => handleSelect(membership.chapter_id)}
-                className="w-full truncate rounded-xs border border-side-divider bg-side-bg px-2 py-1.5 text-left text-[11px] text-side-fg-hi hover:bg-side-bg-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-side-accent/70"
+                className="w-full truncate rounded-xs border border-border bg-surface-1 px-2 py-1.5 text-left text-[11px] text-foreground hover:bg-card focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25"
               >
                 {membership.chapter?.name ?? "Untitled chapter"}
               </button>
@@ -170,7 +170,7 @@ export function ChapterSwitcher({ className }: ChapterSwitcherProps) {
           type="button"
           aria-label={`Switch chapter (currently ${activeMembership.chapter?.name ?? "unknown"})`}
           className={cn(
-            "flex w-full items-center gap-2 rounded-md border border-side-divider bg-side-bg-hi px-3 py-2 text-left text-[11px] text-side-muted hover:bg-side-bg-hi/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-side-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-side-bg",
+            "flex w-full items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-left text-[11px] text-muted-foreground hover:bg-popover focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25",
             className,
           )}
         >

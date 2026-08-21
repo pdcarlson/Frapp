@@ -220,7 +220,7 @@ export default function BillingPage() {
             </div>
             <Button
               size="sm"
-              variant="outline"
+              variant="secondary"
               onClick={() => {
                 statusQuery.refetch();
                 invoicesQuery.refetch();
@@ -267,7 +267,7 @@ export default function BillingPage() {
             <Badge variant="secondary">Paid: {paidCount}</Badge>
           </div>
           {selectedInvoiceIds.length > 0 ? (
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-primary/30 bg-primary-50/70 p-3 dark:bg-primary/10">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-accent-border bg-accent-subtle p-3">
               <p className="text-sm font-medium">
                 {selectedInvoiceIds.length} invoice
                 {selectedInvoiceIds.length > 1 ? "s" : ""} selected
@@ -275,14 +275,14 @@ export default function BillingPage() {
               <div className="flex gap-2">
                 <Button
                   size="sm"
-                  variant="outline"
+                  variant="secondary"
                   onClick={() => handleBulkInvoiceAction("Send reminder")}
                 >
                   Send reminder
                 </Button>
                 <Button
                   size="sm"
-                  variant="outline"
+                  variant="secondary"
                   onClick={() => handleBulkInvoiceAction("Export CSV")}
                 >
                   Export CSV

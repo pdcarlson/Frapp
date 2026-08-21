@@ -103,7 +103,7 @@ function DownloadButton({ id }: { id: string }) {
 
   return (
     <Button
-      variant="outline"
+      variant="secondary"
       size="sm"
       onClick={handleDownload}
       disabled={isFetching}
@@ -381,7 +381,7 @@ export function DocumentsPage() {
                 {/* Cancel only closes the dialog — gating the way out of a
                     surface the gate just blocked would be a trap. */}
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   onClick={() => uploadDialog.setOpen(false)}
                   disabled={uploading}
                 >
@@ -439,7 +439,7 @@ export function DocumentsPage() {
               className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm ${
                 activeFolder === null
                   ? "bg-primary/10 text-primary"
-                  : "hover:bg-muted"
+                  : "hover:bg-accent"
               }`}
             >
               <FolderOpen className="h-4 w-4" /> All files
@@ -450,7 +450,7 @@ export function DocumentsPage() {
               className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm ${
                 activeFolder === ""
                   ? "bg-primary/10 text-primary"
-                  : "hover:bg-muted"
+                  : "hover:bg-accent"
               }`}
             >
               <FileText className="h-4 w-4" /> No folder
@@ -463,7 +463,7 @@ export function DocumentsPage() {
                 className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm ${
                   activeFolder === folder
                     ? "bg-primary/10 text-primary"
-                    : "hover:bg-muted"
+                    : "hover:bg-accent"
                 }`}
               >
                 <FolderOpen className="h-4 w-4" /> {folder}

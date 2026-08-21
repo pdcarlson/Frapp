@@ -1,19 +1,21 @@
 import {
-  BookOpen,
-  Calendar as CalendarIcon,
-  CircleDollarSign,
-  ClipboardCheck,
-  FileText,
-  FolderOpen,
-  MapPin,
-  MessagesSquare,
-  Settings,
-  ShieldCheck,
-  Star,
-  Timer,
-  Users,
-  Vote,
-} from "lucide-react";
+  BackworkGlyph,
+  BillingGlyph,
+  ChatGlyph,
+  DirectoryGlyph,
+  DocumentsGlyph,
+  EventsGlyph,
+  PointsGlyph,
+  PollsGlyph,
+  ReportsGlyph,
+  RolesGlyph,
+  ServiceGlyph,
+  SettingsGlyph,
+  StudyGlyph,
+  StudyZonesGlyph,
+  TasksGlyph,
+  type NavGlyphComponent,
+} from "@/components/layout/nav-glyphs";
 
 /**
  * Permission-aware dashboard navigation.
@@ -63,7 +65,8 @@ export type NavStatus = "available" | "coming-soon";
 export type NavItem = {
   id: string;
   label: string;
-  icon: React.ComponentType<{ className?: string }>;
+  /** A Signet duotone glyph (`nav-glyphs.tsx`) — the intent → glyph map is `iconography.md` §6.2. */
+  icon: NavGlyphComponent;
   href?: string;
   breadcrumbTitle?: string;
   primaryActionLabel?: string;
@@ -94,7 +97,7 @@ export const DASHBOARD_NAV: NavSection[] = [
       {
         id: "chat",
         label: "Chat",
-        icon: MessagesSquare,
+        icon: ChatGlyph,
         href: "/chat",
         breadcrumbTitle: "Chat",
         primaryActionLabel: "New Message",
@@ -110,7 +113,7 @@ export const DASHBOARD_NAV: NavSection[] = [
       {
         id: "events",
         label: "Events",
-        icon: CalendarIcon,
+        icon: EventsGlyph,
         href: "/events",
         breadcrumbTitle: "Events",
         primaryActionLabel: "New Event",
@@ -121,7 +124,7 @@ export const DASHBOARD_NAV: NavSection[] = [
       {
         id: "tasks",
         label: "Tasks",
-        icon: ClipboardCheck,
+        icon: TasksGlyph,
         href: "/tasks",
         breadcrumbTitle: "Tasks",
         primaryActionLabel: "New Task",
@@ -132,7 +135,7 @@ export const DASHBOARD_NAV: NavSection[] = [
       {
         id: "points",
         label: "Points",
-        icon: Star,
+        icon: PointsGlyph,
         href: "/points",
         breadcrumbTitle: "Points Ledger",
         primaryActionLabel: "Adjust Points",
@@ -143,7 +146,7 @@ export const DASHBOARD_NAV: NavSection[] = [
       {
         id: "study",
         label: "Study hours",
-        icon: Timer,
+        icon: StudyGlyph,
         href: "/study",
         breadcrumbTitle: "Study session",
         primaryActionLabel: "Start session",
@@ -154,7 +157,7 @@ export const DASHBOARD_NAV: NavSection[] = [
       {
         id: "service",
         label: "Service hours",
-        icon: FileText,
+        icon: ServiceGlyph,
         href: "/service",
         breadcrumbTitle: "Service hours",
         primaryActionLabel: "Log service",
@@ -165,7 +168,7 @@ export const DASHBOARD_NAV: NavSection[] = [
       {
         id: "polls",
         label: "Polls",
-        icon: Vote,
+        icon: PollsGlyph,
         href: "/polls",
         breadcrumbTitle: "Polls",
         primaryActionLabel: "Open chat",
@@ -183,7 +186,7 @@ export const DASHBOARD_NAV: NavSection[] = [
       {
         id: "documents",
         label: "Documents",
-        icon: FolderOpen,
+        icon: DocumentsGlyph,
         href: "/documents",
         breadcrumbTitle: "Chapter Documents",
         primaryActionLabel: "Upload Document",
@@ -194,7 +197,7 @@ export const DASHBOARD_NAV: NavSection[] = [
       {
         id: "backwork",
         label: "Backwork",
-        icon: BookOpen,
+        icon: BackworkGlyph,
         href: "/backwork",
         breadcrumbTitle: "Backwork",
         primaryActionLabel: "Upload Resource",
@@ -211,7 +214,7 @@ export const DASHBOARD_NAV: NavSection[] = [
       {
         id: "members",
         label: "Directory",
-        icon: Users,
+        icon: DirectoryGlyph,
         href: "/members",
         breadcrumbTitle: "Directory",
         primaryActionLabel: "Invite Member",
@@ -228,7 +231,7 @@ export const DASHBOARD_NAV: NavSection[] = [
       {
         id: "billing",
         label: "Billing",
-        icon: CircleDollarSign,
+        icon: BillingGlyph,
         href: "/billing",
         breadcrumbTitle: "Billing",
         primaryActionLabel: "Create Invoice",
@@ -245,7 +248,7 @@ export const DASHBOARD_NAV: NavSection[] = [
       {
         id: "roles",
         label: "Roles",
-        icon: ShieldCheck,
+        icon: RolesGlyph,
         href: "/settings?tab=roles",
         breadcrumbTitle: "Roles & Permissions",
         description: "Role pack, permission matrix, custom roles, presidency transfer.",
@@ -255,7 +258,7 @@ export const DASHBOARD_NAV: NavSection[] = [
       {
         id: "geofences",
         label: "Study Zones",
-        icon: MapPin,
+        icon: StudyZonesGlyph,
         href: "/geofences",
         breadcrumbTitle: "Study Zones",
         primaryActionLabel: "Add Study Zone",
@@ -267,7 +270,7 @@ export const DASHBOARD_NAV: NavSection[] = [
       {
         id: "reports",
         label: "Reports",
-        icon: FileText,
+        icon: ReportsGlyph,
         href: "/reports",
         breadcrumbTitle: "Reports & Export",
         primaryActionLabel: "Generate Report",
@@ -279,7 +282,7 @@ export const DASHBOARD_NAV: NavSection[] = [
       {
         id: "settings",
         label: "Settings",
-        icon: Settings,
+        icon: SettingsGlyph,
         href: "/settings",
         breadcrumbTitle: "Chapter Settings",
         description: "Chapter profile, branding, semester, danger zone.",

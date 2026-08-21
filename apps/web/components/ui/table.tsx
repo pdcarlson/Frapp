@@ -2,6 +2,22 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
+/*
+ * Tables are not drawn in the reference, so this composes from the tokens
+ * `spec/ui/design-system/components.md` §2 requires of undrawn primitives.
+ *
+ * Three scaffold values did not survive the move to Signet: `font-medium` on
+ * the header and footer (500 is not one of the three weights Figtree ships —
+ * foundations.md §7 locks 400/600/700, so 500 was being synthesised), the
+ * `bg-secondary` footer (the card step, i.e. the same colour as the card a
+ * table usually sits in), and `hover:bg-accent/50` for the row hover, which
+ * half-mixed the elevated step into the row underneath it. Selection takes the
+ * accent tint, matching the menus and tabs — the neutral ladder's steps are too
+ * close together to signal "this one" on their own.
+ *
+ * Cell text is `body` (16). A table on the 375px floor scrolls inside its own
+ * container rather than shrinking its type below the §7 floor.
+ */
 const Table = React.forwardRef<
   HTMLTableElement,
   React.HTMLAttributes<HTMLTableElement>
@@ -9,7 +25,7 @@ const Table = React.forwardRef<
   <div className="relative w-full overflow-auto">
     <table
       ref={ref}
-      className={cn("w-full caption-bottom text-sm", className)}
+      className={cn("w-full caption-bottom text-base", className)}
       {...props}
     />
   </div>
@@ -20,7 +36,11 @@ const TableHeader = React.forwardRef<
   HTMLTableSectionElement,
   React.HTMLAttributes<HTMLTableSectionElement>
 >(({ className, ...props }, ref) => (
-  <thead ref={ref} className={cn("[&_tr]:border-b", className)} {...props} />
+  <thead
+    ref={ref}
+    className={cn("[&_tr]:border-b [&_tr]:border-border", className)}
+    {...props}
+  />
 ))
 TableHeader.displayName = "TableHeader"
 
@@ -43,7 +63,7 @@ const TableFooter = React.forwardRef<
   <tfoot
     ref={ref}
     className={cn(
-      "border-t bg-muted/50 font-medium [&>tr]:last:border-b-0",
+      "border-t border-border bg-card font-semibold [&>tr]:last:border-b-0",
       className
     )}
     {...props}
@@ -58,7 +78,7 @@ const TableRow = React.forwardRef<
   <tr
     ref={ref}
     className={cn(
-      "border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted",
+      "border-b border-border transition-colors hover:bg-accent data-[state=selected]:bg-accent-subtle data-[state=selected]:text-accent-text",
       className
     )}
     {...props}
@@ -73,7 +93,7 @@ const TableHead = React.forwardRef<
   <th
     ref={ref}
     className={cn(
-      "h-10 px-2 text-left align-middle font-medium text-muted-foreground [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
+      "h-11 px-2 text-left align-middle text-sm font-semibold text-muted-foreground [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
       className
     )}
     {...props}

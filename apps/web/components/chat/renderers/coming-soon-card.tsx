@@ -17,7 +17,7 @@ interface ComingSoonCardProps {
  */
 export function ComingSoonCard({ message, label }: ComingSoonCardProps) {
   return (
-    <div className="mt-1 rounded-md border border-dashed bg-muted/20 px-3 py-2">
+    <div className="mt-1 rounded-md border border-dashed bg-secondary/20 px-3 py-2">
       <div className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
         <Hammer className="h-3 w-3" aria-hidden="true" />
         {label ?? message.kind} renderer coming in Chunk 10

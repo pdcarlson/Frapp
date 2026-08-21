@@ -6,14 +6,14 @@
  * `NetworkProvider` in the dashboard tree, so by the time it renders we have
  * a query client, an api-sdk client, and the active chapter id available.
  *
- * Also calls `useChapterTheme()` so the chat surface picks up the chapter's
- * brand palette without a separate hook on every leaf component.
+ * Chapter branding is NOT applied here any more: `useChapterTheme()` moved to
+ * `DashboardShell` with the #920 reskin, so the accent paints shell-wide
+ * instead of only while a chat route is mounted.
  */
 
 import { useEffect, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useFrappClient } from "@repo/hooks";
-import { useChapterTheme } from "@/lib/hooks/use-chapter-theme";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useToast } from "@/hooks/use-toast";
 import { browserNetworkState } from "@repo/chat-core/adapters";
@@ -29,9 +29,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const { userId } = useFrappUser();
   const { toast } = useToast();
   const supabase = useMemo(() => getRealtimeClient(), []);
-
-  // Apply the active chapter's derived palette to :root.
-  useChapterTheme();
 
   // Configure the realtime manager exactly once per mount. Manager is a
   // module singleton; this just rebinds it to the current QueryClient /

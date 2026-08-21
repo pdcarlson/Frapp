@@ -129,7 +129,7 @@ function InlineDownloadCell({ id }: { id: string }) {
 
   return (
     <Button
-      variant="outline"
+      variant="secondary"
       size="sm"
       onClick={handle}
       disabled={isFetching}
@@ -615,7 +615,7 @@ export function BackworkPage() {
                   and a revoked subscription must still leave a way out.
                 */}
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   onClick={() => uploadDialog.setOpen(false)}
                   disabled={uploading}
                 >
@@ -791,7 +791,7 @@ export function BackworkPage() {
             </div>
             <div className="flex items-end gap-2 md:col-span-3">
               <Button type="submit">Apply filters</Button>
-              <Button type="button" variant="outline" onClick={clearFilters}>
+              <Button type="button" variant="secondary" onClick={clearFilters}>
                 Clear
               </Button>
             </div>

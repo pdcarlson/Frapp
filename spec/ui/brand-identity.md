@@ -80,4 +80,4 @@ Signet's direction is dark-first, warm, and consumer-grade. Every fact below has
 
 ## 5. What still ships legacy
 
-The web dashboard and the landing site still ship the legacy Frapp **bone/bronze** look until their reskin sessions; their frozen READMEs mark this — [web-dashboard/README.md](web-dashboard/README.md) and [landing/README.md](landing/README.md). New Signet work MUST NOT copy visual patterns from those surfaces.
+The landing site still ships the legacy Frapp **bone/bronze** look until its reskin session; its frozen README marks this — [landing/README.md](landing/README.md). The web dashboard cut over with the #920 shell slice and is Signet — [web-dashboard/README.md](web-dashboard/README.md). New Signet work MUST NOT copy visual patterns from the landing surface.

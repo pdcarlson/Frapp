@@ -12,10 +12,14 @@ Behavior and boundaries for per-chapter branding. Visual design tokens (palette,
 
 ## Accent Color
 
-> This section describes the **currently shipping** single-accent model. Signet replaces it with a
+> This section describes the legacy single-accent model. Signet replaces it with a
 > 12-step generated scale — see [`../ui/design-system/accent-engine.md`](../ui/design-system/accent-engine.md).
-> Both are live during the cutover: Signet surfaces consume the generated scale; `apps/web` and
-> `apps/landing` keep the model below until their reskin. Update this section when that lands.
+> Both are live during the cutover: Signet surfaces consume the generated scale, and since the
+> #920 shell slice that includes the web dashboard — `apps/web/lib/hooks/use-chapter-theme.ts`
+> maps the persisted `--signet-accent-*` roles onto the shell's semantic tokens via
+> `signetAccentSemanticVars` and applies **no** token from the model below — every one of them is
+> composited over bone, so carrying any onto the dark surface would paint a light value on it.
+> `apps/landing` keeps the model below until its reskin. Update this section when that lands.
 
 - Chapters can set a custom accent color (hex string, e.g. `#8B0000` for crimson). It is stored on the `chapters` table in two places, and **`branding.colors.accent` is authoritative** (#795). The `accent_color` column is a mirror the API maintains on every write path — onboarding, the config PATCH, and the direct column update from Settings, which also writes the value back into `branding.colors.accent` so the two cannot drift. Before this, the onboarding wizard wrote only the jsonb, so the column kept its default and every surface reading it showed Royal Blue for a chapter that had chosen otherwise.
 - The accent color is applied to: primary buttons, links, active tab indicators, the chat self-bubble, mention pills, and highlights throughout the app — for that chapter's members only. On mobile that means the active tab tint, primary buttons, and in-chapter highlights.

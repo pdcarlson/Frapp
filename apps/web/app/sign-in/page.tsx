@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { getErrorMessage } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -89,7 +88,7 @@ function SignInPageContent() {
   }
 
   return (
-    <main className="min-h-screen bg-muted/30 px-6 py-10">
+    <main className="min-h-screen bg-background px-6 py-10">
       <div className="mx-auto flex max-w-5xl items-start justify-between gap-6">
         <div className="max-w-2xl space-y-4">
           <p className="text-sm uppercase tracking-[0.18em] text-primary">
@@ -103,7 +102,6 @@ function SignInPageContent() {
             and test member administration workflows against staging data.
           </p>
         </div>
-        <ThemeToggle />
       </div>
 
       <div className="mx-auto mt-10 grid max-w-5xl gap-6 lg:grid-cols-[1.2fr_0.8fr]">
@@ -137,7 +135,7 @@ function SignInPageContent() {
               After signing up, the app will guide you through chapter creation,
               billing activation, and live member administration.
             </p>
-            <Button asChild variant="outline" className="w-full justify-between">
+            <Button asChild variant="secondary" className="w-full justify-between">
               <Link href={`/sign-up?redirectTo=${encodeURIComponent(redirectTo)}`}>
                 Create an account
                 <ArrowRight className="h-4 w-4" />
@@ -191,7 +189,7 @@ function SignInPageContent() {
                 </Button>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="secondary"
                   onClick={handleMagicLink}
                   disabled={isMagicLinkPending}
                 >
@@ -222,7 +220,7 @@ function SignInPageContent() {
 
 export default function SignInPage() {
   return (
-    <Suspense fallback={<main className="min-h-screen bg-muted/30" />}>
+    <Suspense fallback={<main className="min-h-screen bg-background" />}>
       <SignInPageContent />
     </Suspense>
   );

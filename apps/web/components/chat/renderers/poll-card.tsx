@@ -97,7 +97,7 @@ export function PollCard({
 
   if (!payload) {
     return (
-      <div className="mt-1 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+      <div className="mt-1 rounded-md border bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
         Malformed poll · {message.content}
       </div>
     );
@@ -130,7 +130,7 @@ export function PollCard({
             <li key={option.id}>
               <Button
                 type="button"
-                variant={isMyVote ? "default" : "outline"}
+                variant={isMyVote ? "default" : "secondary"}
                 size="sm"
                 className="w-full justify-between gap-2 text-left text-xs"
                 onClick={() => cast(option)}
@@ -143,11 +143,11 @@ export function PollCard({
                 </span>
               </Button>
               <div
-                className="mt-0.5 h-1 w-full overflow-hidden rounded-full bg-muted"
+                className="mt-0.5 h-1 w-full overflow-hidden rounded-full bg-secondary"
                 aria-hidden="true"
               >
                 <div
-                  className="h-full bg-[color:var(--side-accent,#7A5A2F)]"
+                  className="h-full bg-[color:var(--accent-text)]"
                   style={{ width: `${pct}%` }}
                 />
               </div>

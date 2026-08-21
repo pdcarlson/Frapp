@@ -25,8 +25,8 @@ export function AnnouncementCard({ message }: AnnouncementCardProps) {
   const body = payload?.body ?? message.content;
 
   return (
-    <div className="mt-1 rounded-md border-l-4 border-[color:var(--side-accent,#7A5A2F)] bg-[color:var(--mention-bg,theme(colors.amber.50))] px-3 py-2">
-      <div className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-[color:var(--side-accent,#7A5A2F)]">
+    <div className="mt-1 rounded-md border-l-4 border-[color:var(--accent-text)] bg-[color:var(--accent-subtle)] px-3 py-2">
+      <div className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-[color:var(--accent-text)]">
         <Megaphone className="h-3 w-3" aria-hidden="true" /> Announcement
       </div>
       <div className="mt-1 whitespace-pre-wrap break-words text-sm">{body}</div>

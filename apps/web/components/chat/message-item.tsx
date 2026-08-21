@@ -76,7 +76,7 @@ export function MessageItem({
 
   return (
     <li
-      className="group/message relative flex gap-3 px-4 py-1 hover:bg-muted/30"
+      className="group/message relative flex gap-3 px-4 py-1 hover:bg-accent/30"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       data-status={message._status}

@@ -33,7 +33,9 @@ describe("OfflineBanner", () => {
     const banner = screen.getByRole("alert");
     expect(banner).toBeInTheDocument();
     expect(banner).toHaveTextContent("Slow connection. Some features may be delayed.");
-    expect(banner).toHaveClass("bg-amber-50 text-amber-800 border-amber-200");
+    // The Signet warning tint — degraded is a status, so it takes a semantic
+    // hue rather than a palette colour (foundations.md §5).
+    expect(banner).toHaveClass("border-warning/45 bg-warning/[.13] text-warning");
   });
 
   it("renders offline banner when the network state is OFFLINE", () => {
@@ -49,6 +51,8 @@ describe("OfflineBanner", () => {
     const banner = screen.getByRole("alert");
     expect(banner).toBeInTheDocument();
     expect(banner).toHaveTextContent("You're offline. Showing cached data. Changes will sync when you reconnect.");
-    expect(banner).toHaveClass("bg-red-50 text-red-800 border-red-200");
+    expect(banner).toHaveClass(
+      "border-destructive/45 bg-destructive/[.13] text-destructive",
+    );
   });
 });

@@ -37,13 +37,13 @@ export function SystemAuditCard({ message }: SystemAuditCardProps) {
   const payload = readPayload(message);
   if (!payload || !payload.action) {
     return (
-      <div className="mt-1 rounded-md border bg-muted/40 px-3 py-2 font-mono text-[11px] text-muted-foreground">
+      <div className="mt-1 rounded-md border bg-secondary/40 px-3 py-2 font-mono text-[11px] text-muted-foreground">
         {message.content || "audit event"}
       </div>
     );
   }
   return (
-    <div className="mt-1 rounded-md border bg-muted/40 px-3 py-2">
+    <div className="mt-1 rounded-md border bg-secondary/40 px-3 py-2">
       <div className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
         <ShieldAlert className="h-3 w-3" aria-hidden="true" /> Audit
       </div>

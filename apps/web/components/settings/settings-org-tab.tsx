@@ -165,7 +165,7 @@ export function SettingsOrgTab({
   const manageHint = canManage ? null : (
     <p className="text-xs text-muted-foreground">
       Editing chapter settings requires the{" "}
-      <code className="rounded bg-muted px-1 py-0.5">chapter-config:manage</code>{" "}
+      <code className="rounded bg-secondary px-1 py-0.5">chapter-config:manage</code>{" "}
       permission.
     </p>
   );
@@ -434,7 +434,7 @@ export function SettingsOrgTab({
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPendingArchetype(null)}>
+            <Button variant="secondary" onClick={() => setPendingArchetype(null)}>
               Cancel
             </Button>
             <Button onClick={confirmArchetypeSwitch} disabled={savingConfig}>

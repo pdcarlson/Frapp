@@ -476,7 +476,7 @@ export function TasksBoard() {
                   chapter still needs a way out of a form it can't submit.
                 */}
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   onClick={() => createDialog.setOpen(false)}
                   disabled={createTask.isPending}
                 >
@@ -573,7 +573,7 @@ export function TasksBoard() {
                             {isMine && actionStatus(task) === "TODO" ? (
                               <Button
                                 size="sm"
-                                variant="outline"
+                                variant="secondary"
                                 {...gate.controlProps(lifecycleWritePending)}
                                 onClick={() =>
                                   void changeStatus(task, "IN_PROGRESS")
@@ -585,7 +585,7 @@ export function TasksBoard() {
                             {isMine && actionStatus(task) === "IN_PROGRESS" ? (
                               <Button
                                 size="sm"
-                                variant="outline"
+                                variant="secondary"
                                 {...gate.controlProps(lifecycleWritePending)}
                                 onClick={() =>
                                   void changeStatus(task, "COMPLETED")
@@ -609,7 +609,7 @@ export function TasksBoard() {
                                   </Button>
                                   <Button
                                     size="sm"
-                                    variant="outline"
+                                    variant="secondary"
                                     {...gate.controlProps(lifecycleWritePending)}
                                     onClick={() => void rejectCompletion(task)}
                                   >

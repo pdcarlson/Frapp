@@ -191,7 +191,7 @@ function OnboardingTutorialDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex items-center justify-between rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+        <div className="flex items-center justify-between rounded-md border border-border bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
           <span>
             Step {stepIndex + 1} of {STEPS.length}
           </span>
@@ -214,7 +214,7 @@ function OnboardingTutorialDialog({
           </Button>
           <div className="flex gap-2">
             <Button
-              variant="outline"
+              variant="secondary"
               disabled={stepIndex === 0}
               onClick={() => setStepIndex((i) => Math.max(0, i - 1))}
             >

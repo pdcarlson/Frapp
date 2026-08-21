@@ -203,7 +203,7 @@ export default function PointsPage() {
           <div className="flex flex-wrap items-center gap-2">
             <Button
               size="sm"
-              variant="outline"
+              variant="secondary"
               {...adjustGate.controlProps()}
               onClick={() => adjustDialog.setOpen(true)}
             >
@@ -213,7 +213,7 @@ export default function PointsPage() {
             {windows.map((item) => (
               <Button
                 key={item.value}
-                variant={window === item.value ? "default" : "outline"}
+                variant={window === item.value ? "default" : "secondary"}
                 size="sm"
                 onClick={() => setWindow(item.value)}
               >
@@ -329,7 +329,7 @@ export default function PointsPage() {
               </select>
             </div>
             {selectedTransactionIds.length > 0 ? (
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-primary/30 bg-primary-50/70 p-3 dark:bg-primary/10">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-accent-border bg-accent-subtle p-3">
                 <p className="text-sm font-medium">
                   {selectedTransactionIds.length} transaction
                   {selectedTransactionIds.length > 1 ? "s" : ""} selected
@@ -337,14 +337,14 @@ export default function PointsPage() {
                 <div className="flex gap-2">
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant="secondary"
                     onClick={() => handleBulkTransactionAction("Export selected")}
                   >
                     Export selected
                   </Button>
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant="secondary"
                     onClick={() => handleBulkTransactionAction("Flag for audit")}
                   >
                     Flag for audit

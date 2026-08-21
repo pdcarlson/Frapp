@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { useToast } from "@/hooks/use-toast";
 import { getSessionUser } from "@/lib/auth/session";
 import { useSelectChapter } from "@/lib/auth/select-chapter";
@@ -86,7 +85,7 @@ function JoinPageContent() {
 
   if (!sessionChecked) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-muted/30 px-6 py-10">
+      <main className="flex min-h-screen items-center justify-center bg-background px-6 py-10">
         <Card className="w-full max-w-md">
           <CardContent className="flex items-center gap-3 pt-6 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -98,7 +97,7 @@ function JoinPageContent() {
   }
 
   return (
-    <main className="min-h-screen bg-muted/30 px-6 py-10">
+    <main className="min-h-screen bg-background px-6 py-10">
       <div className="mx-auto flex max-w-5xl items-start justify-between gap-6">
         <div className="max-w-2xl space-y-4">
           <p className="text-sm uppercase tracking-[0.18em] text-primary">
@@ -112,7 +111,6 @@ function JoinPageContent() {
             into the member workflow.
           </p>
         </div>
-        <ThemeToggle />
       </div>
 
       <div className="mx-auto mt-10 grid max-w-5xl gap-6 lg:grid-cols-[1.1fr_0.9fr]">
@@ -195,7 +193,7 @@ function JoinPageContent() {
 
 export default function JoinPage() {
   return (
-    <Suspense fallback={<main className="min-h-screen bg-muted/30" />}>
+    <Suspense fallback={<main className="min-h-screen bg-background" />}>
       <JoinPageContent />
     </Suspense>
   );

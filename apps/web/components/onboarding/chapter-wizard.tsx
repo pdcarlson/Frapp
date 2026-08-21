@@ -48,7 +48,7 @@ const CHAT_LANDING_PATH = "/chat?channel=general";
 const LEGAL_BASE_URL =
   process.env.NEXT_PUBLIC_LANDING_URL ?? "https://frapp.live";
 const DEFAULT_DARK = "#1F1A15";
-const DEFAULT_ACCENT = "#7A5A2F";
+const DEFAULT_ACCENT = "#F2B72E";
 const HEX6 = /^#[0-9a-fA-F]{6}$/;
 const INVITE_ROLE = "Member";
 
@@ -469,7 +469,7 @@ function FindStep({
               <p className="text-sm text-muted-foreground">
                 We couldn&apos;t reach the directory.
               </p>
-              <Button variant="outline" size="sm" onClick={onRetry}>
+              <Button variant="secondary" size="sm" onClick={onRetry}>
                 Retry search
               </Button>
             </div>
@@ -485,7 +485,7 @@ function FindStep({
                 </span>{" "}
                 in our directory.
               </p>
-              <Button variant="outline" size="sm" onClick={onManual}>
+              <Button variant="secondary" size="sm" onClick={onManual}>
                 <PencilLine className="h-4 w-4" />
                 Enter chapter details manually
               </Button>
@@ -522,7 +522,7 @@ function FindStep({
             New colony or a small org — enter your details by hand.
           </p>
         </div>
-        <Button variant="outline" onClick={onManual}>
+        <Button variant="secondary" onClick={onManual}>
           <PencilLine className="h-4 w-4" />
           Manual entry
         </Button>
@@ -560,10 +560,10 @@ function ArchetypeStep({
               aria-checked={isActive}
               onClick={() => onSelect(archetype.key)}
               className={cn(
-                "flex flex-col gap-1 rounded-lg border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                "flex flex-col gap-1 rounded-lg border p-3 text-left transition focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25",
                 isActive
-                  ? "border-primary bg-primary/5 shadow-sm"
-                  : "border-border hover:bg-muted/50",
+                  ? "border-primary bg-primary/5"
+                  : "border-border hover:bg-accent/50",
               )}
             >
               <span className="font-mono text-[0.65rem] uppercase tracking-widest text-muted-foreground">
@@ -773,7 +773,7 @@ function InviteStep({
           <Label htmlFor="wiz-invite-link">Your chapter invite link</Label>
           <div className="flex items-center gap-2">
             <Input id="wiz-invite-link" readOnly value={inviteLink} />
-            <Button variant="outline" onClick={onCopy} aria-label="Copy invite link">
+            <Button variant="secondary" onClick={onCopy} aria-label="Copy invite link">
               {copied ? (
                 <Check className="h-4 w-4 text-primary" />
               ) : (

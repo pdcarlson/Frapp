@@ -156,7 +156,7 @@ export function EventDetailSheet({
 
         <div className="mt-4 flex flex-wrap gap-2">
           <Button
-            variant="outline"
+            variant="secondary"
             {...gate.controlProps(!resolvedEvent)}
             onClick={() => {
               if (!resolvedEvent) return;

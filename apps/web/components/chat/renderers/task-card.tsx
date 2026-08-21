@@ -244,9 +244,9 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   }
 
   return (
-    <div className="mt-1 rounded-md border-l-4 border-[color:var(--side-accent,#7A5A2F)] bg-[color:var(--mention-bg,theme(colors.amber.50))] px-3 py-2">
+    <div className="mt-1 rounded-md border-l-4 border-[color:var(--accent-text)] bg-[color:var(--accent-subtle)] px-3 py-2">
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-[color:var(--side-accent,#7A5A2F)]">
+        <div className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-[color:var(--accent-text)]">
           <ClipboardList className="h-3 w-3" aria-hidden="true" /> Task
         </div>
         <Badge variant={STATUS_BADGE[status]}>{STATUS_LABELS[status]}</Badge>
@@ -266,7 +266,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
         {isAssignee && storedStatus === "TODO" ? (
           <Button
             size="sm"
-            variant="outline"
+            variant="secondary"
             {...gate.controlProps(actionsDisabled)}
             onClick={() =>
               updateStatus.mutate(
@@ -284,7 +284,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
         {isAssignee && storedStatus === "IN_PROGRESS" ? (
           <Button
             size="sm"
-            variant="outline"
+            variant="secondary"
             {...gate.controlProps(actionsDisabled)}
             onClick={() =>
               updateStatus.mutate(
@@ -320,7 +320,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
             {pointsAwarded ? null : (
               <Button
                 size="sm"
-                variant="outline"
+                variant="secondary"
                 {...gate.controlProps(actionsDisabled)}
                 onClick={() =>
                   rejectTask.mutate(

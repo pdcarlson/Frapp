@@ -7,7 +7,7 @@
 ## 1. Sources & Scope
 
 - **Visual truth:** [`reference/signet-design-system.dc.html`](reference/signet-design-system.dc.html). Panel 4h is the written token spec this file transcribes; panels 4a–4g render the same tokens. [`reference/canvas-screens.dc.html`](reference/canvas-screens.dc.html) is the screen-level reference. Where the Canvas header and panel 4h disagree, **the Canvas header wins** — the only such case is radius (§8).
-- **Scope:** these tokens govern **Signet surfaces** — the mobile app now, the web dashboard and landing site when they reskin. Until that reskin, `apps/web` and `apps/landing` keep shipping the legacy bone/bronze/ink tokens from `packages/theme` (`@repo/theme`). The two systems MUST NOT mix on one surface.
+- **Scope:** these tokens govern **Signet surfaces** — the mobile app and the web dashboard (`apps/web` ships them via `packages/theme/src/signet.css` since the #920 shell cutover), plus the landing site when it reskins. Until then, `apps/landing` keeps shipping the legacy bone/bronze/ink tokens from `packages/theme` (`@repo/theme`). The two systems MUST NOT mix on one surface.
 - **Naming:** prose says Signet; code identifiers and package names stay `frapp` / `@repo/*` until the deferred repo rename.
 - Brand identity (house gold, the "S" mark, direction) is owned by [`brand-identity.md`](../brand-identity.md). Per-chapter accent generation is owned by [`accent-engine.md`](accent-engine.md). Component-level application of these tokens is owned by [`components.md`](components.md).
 

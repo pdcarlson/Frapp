@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
-import { Star } from "lucide-react";
+import { PointsGlyph } from "@/components/layout/nav-glyphs";
 import type { NavItem } from "./nav-config";
 
 // next/link needs a router context that jsdom lacks; render a plain anchor.
@@ -20,7 +20,7 @@ const { ProtectedNavItem } = await import("./protected-nav-item");
 const moduleItem: NavItem = {
   id: "events",
   label: "Events",
-  icon: Star,
+  icon: PointsGlyph,
   href: "/events",
   status: "available",
   module: "events",
@@ -29,7 +29,7 @@ const moduleItem: NavItem = {
 const coreItem: NavItem = {
   id: "chat",
   label: "Chat",
-  icon: Star,
+  icon: PointsGlyph,
   href: "/chat",
   status: "available",
 };
@@ -92,7 +92,7 @@ describe("isNavItemVisible", () => {
   const permissionItem: NavItem = {
     id: "roles",
     label: "Roles",
-    icon: Star,
+    icon: PointsGlyph,
     href: "/settings?tab=roles",
     status: "available",
     requirePermission: "roles:manage",

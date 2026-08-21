@@ -10,8 +10,8 @@ export const metadata = {
 
 export default function NoAccessPage() {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-muted/30 px-6 py-12">
-      <Card className="w-full max-w-lg border-border shadow-sm">
+    <main className="flex min-h-screen items-center justify-center bg-background px-6 py-12">
+      <Card className="w-full max-w-lg border-border">
         <CardHeader className="space-y-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-background">
             <LockKeyhole className="h-4 w-4 text-muted-foreground" />
@@ -36,7 +36,7 @@ export default function NoAccessPage() {
             </li>
           </ul>
           <div className="flex flex-wrap gap-2 pt-2">
-            <Button asChild variant="outline">
+            <Button asChild variant="secondary">
               <Link href="/join">Open invite link</Link>
             </Button>
             <Button asChild>

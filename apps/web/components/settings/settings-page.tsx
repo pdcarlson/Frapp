@@ -22,6 +22,7 @@ import {
   type PatchChapterConfig,
 } from "@repo/validation";
 import { resolveChapterAccentColor } from "@repo/theme/accent";
+import { signetDarkTokens } from "@repo/theme/signet";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -72,7 +73,12 @@ type Branding = {
   founded_at?: number;
 };
 
-const RAIL_TRIGGER_CLASS = "flex-1 justify-start lg:w-full lg:flex-none";
+// The vertical rail is the one place the §6 underline runs down the side
+// rather than along the bottom: on `lg` the list becomes a column with a right
+// hairline, so each item moves its 2px accent indicator to its right edge to
+// match. Below `lg` it is an ordinary horizontal underline row.
+const RAIL_TRIGGER_CLASS =
+  "flex-1 justify-start lg:w-full lg:flex-none lg:-mr-px lg:mb-0 lg:border-b-0 lg:border-r-2 lg:px-3";
 
 // Valid `?tab=` deep-link targets — mirrors the rail triggers below.
 const SETTINGS_TAB_VALUES: readonly string[] = [
@@ -248,7 +254,13 @@ function SettingsPageContent() {
   const workflows = config?.workflows ?? [];
   const dues = config?.dues ?? DEFAULT_DUES;
 
-  const accent = resolveChapterAccentColor(accentDraft || undefined);
+  // #1157: the preview swatch sits on a Signet card, so the WCAG check must
+  // run against that dark surface (with a dark-legible fallback), not the
+  // resolver's white default.
+  const accent = resolveChapterAccentColor(accentDraft || undefined, {
+    background: signetDarkTokens.color.surface.card,
+    fallbackAccent: signetDarkTokens.color.gold.house,
+  });
   const semesters = asArray<SemesterArchive>(semestersQuery.data);
   const permissionsCatalog = asArray<{ key: string; permission: string }>(
     catalogQuery.data,
@@ -410,7 +422,7 @@ function SettingsPageContent() {
         onValueChange={setActiveTab}
         className="flex flex-col gap-6 lg:flex-row lg:items-start"
       >
-        <TabsList className="flex h-auto w-full flex-row flex-wrap justify-start gap-1 bg-muted/50 p-1 lg:w-56 lg:flex-col lg:flex-nowrap">
+        <TabsList className="flex h-auto w-full flex-row flex-wrap justify-start gap-1 lg:w-56 lg:flex-col lg:flex-nowrap lg:items-stretch lg:border-b-0 lg:border-r">
           <TabsTrigger value="org" className={RAIL_TRIGGER_CLASS}>
             Organization
           </TabsTrigger>
@@ -598,7 +610,7 @@ function SettingsPageContent() {
                   }
                 >
                   <Button
-                    variant="outline"
+                    variant="secondary"
                     onClick={() => void openBillingPortal()}
                     disabled={createPortal.isPending}
                   >
@@ -703,14 +715,14 @@ function SettingsPageContent() {
                       className="max-w-xs font-mono"
                     />
                     <div
-                      className="flex h-12 w-36 items-center justify-center rounded-md text-sm font-semibold text-white shadow-sm"
+                      className="flex h-12 w-36 items-center justify-center rounded-md text-sm font-semibold text-white"
                       style={{ backgroundColor: accent.resolvedAccent }}
                     >
                       Preview
                     </div>
                   </div>
                   {accent.fallbackApplied ? (
-                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                    <p className="text-xs text-warning">
                       The color you entered didn&apos;t meet contrast
                       requirements. Using the safe fallback{" "}
                       {accent.resolvedAccent}.

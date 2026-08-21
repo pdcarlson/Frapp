@@ -2,8 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ChevronsUpDown, LogOut, Monitor, Moon, Sun, User } from "lucide-react";
-import { useTheme } from "next-themes";
+import { ChevronsUpDown, LogOut, User } from "lucide-react";
 import { useCurrentUser } from "@repo/hooks";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -11,8 +10,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -25,20 +22,15 @@ type CurrentUser = {
   avatar_url?: string | null;
 };
 
-const THEME_OPTIONS = [
-  { value: "system", label: "System", Icon: Monitor },
-  { value: "light", label: "Light", Icon: Sun },
-  { value: "dark", label: "Dark", Icon: Moon },
-] as const;
-
 /**
  * The account menu that anchors the bottom of the sidebar.
  *
- * It replaces three scattered affordances: the Profile row that used to sit at
+ * It replaces two scattered affordances: the Profile row that used to sit at
  * the top of the nav list (Profile is about the viewer, not the chapter, so it
- * does not belong among chapter surfaces), the naked "Sign out" button in the
- * header, and the standalone theme toggle beside it. All three now live here,
- * which is where a consumer app puts identity.
+ * does not belong among chapter surfaces) and the naked "Sign out" button in
+ * the header. Both now live here, which is where a consumer app puts identity.
+ * (The theme control that once lived here was deleted with next-themes in the
+ * #920 shell slice — Signet is dark-only.)
  *
  * Rendered inside the shared sidebar-bottom region, so the mobile drawer gets
  * it for free — `spec/ui/web-dashboard/README.md` requires the drawer and the
@@ -58,7 +50,6 @@ export function AccountMenu({
    */
   onNavigate?: () => void;
 }) {
-  const { theme = "system", setTheme } = useTheme();
   const [isSigningOut, setIsSigningOut] = useState(false);
   const { data } = useCurrentUser();
 
@@ -84,8 +75,8 @@ export function AccountMenu({
           aria-label={`Account menu for ${name}`}
           className={cn(
             "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition",
-            "hover:bg-side-bg-hi/70",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-side-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-side-bg",
+            "hover:bg-card",
+            "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25",
           )}
         >
           <Avatar className="h-8 w-8 shrink-0">
@@ -95,15 +86,15 @@ export function AccountMenu({
             <AvatarFallback className="text-xs">{initials(name)}</AvatarFallback>
           </Avatar>
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm text-side-fg-hi">{name}</span>
+            <span className="block truncate text-sm text-foreground">{name}</span>
             {email ? (
-              <span className="block truncate text-[11px] text-side-muted">
+              <span className="block truncate text-[11px] text-muted">
                 {email}
               </span>
             ) : null}
           </span>
           <ChevronsUpDown
-            className="h-4 w-4 shrink-0 text-side-muted"
+            className="h-4 w-4 shrink-0 text-muted"
             aria-hidden="true"
           />
         </button>
@@ -128,18 +119,6 @@ export function AccountMenu({
             <span>Profile</span>
           </Link>
         </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-          Theme
-        </DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={theme} onValueChange={setTheme}>
-          {THEME_OPTIONS.map(({ value, label, Icon }) => (
-            <DropdownMenuRadioItem key={value} value={value}>
-              <Icon className="h-4 w-4" aria-hidden="true" />
-              <span>{label}</span>
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           disabled={isSigningOut}

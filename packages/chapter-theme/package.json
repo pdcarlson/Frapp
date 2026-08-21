@@ -10,6 +10,12 @@
       "require": "./dist/index.js",
       "import": "./src/index.ts",
       "default": "./dist/index.js"
+    },
+    "./accent-vars": {
+      "types": "./dist/accent-vars.d.ts",
+      "require": "./dist/accent-vars.js",
+      "import": "./src/accent-vars.ts",
+      "default": "./dist/accent-vars.js"
     }
   },
   "scripts": {

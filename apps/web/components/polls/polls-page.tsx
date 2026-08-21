@@ -193,7 +193,7 @@ function Poll({
               className={`w-full rounded-md border p-3 text-left transition ${
                 isSelected
                   ? "border-primary bg-primary/5"
-                  : "border-border hover:bg-muted"
+                  : "border-border hover:bg-accent"
               } disabled:cursor-not-allowed disabled:opacity-70`}
             >
               <div className="flex items-center justify-between text-sm">
@@ -206,7 +206,7 @@ function Poll({
               </div>
               <div
                 aria-hidden="true"
-                className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"
+                className="mt-2 h-1.5 overflow-hidden rounded-full bg-secondary"
               >
                 <div
                   className="h-full rounded-full bg-primary"
@@ -230,7 +230,7 @@ function Poll({
           {!poll.isExpired ? (
             <Button
               size="sm"
-              variant="outline"
+              variant="secondary"
               {...gate.controlProps(
                 !poll.userVotes?.length || unvote.isPending,
               )}
@@ -303,7 +303,7 @@ export function PollsPage() {
             <h2 className="text-2xl font-semibold tracking-tight">Polls</h2>
             <p className="text-sm text-muted-foreground">
               The chapter-wide poll list and aggregate tallies require the{" "}
-              <code className="rounded bg-muted px-1 py-0.5 text-xs">
+              <code className="rounded bg-secondary px-1 py-0.5 text-xs">
                 polls:view_all
               </code>{" "}
               permission. Ask your chapter president to grant it if you need
@@ -360,7 +360,7 @@ export function PollsPage() {
               </SelectContent>
             </Select>
             <Button
-              variant="outline"
+              variant="secondary"
               size="icon"
               onClick={() => void pollsQuery.refetch()}
               aria-label="Refresh polls"

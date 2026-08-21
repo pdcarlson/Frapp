@@ -256,7 +256,7 @@ export function PointsAdjustmentDialog({
             writing anything, and gating the way out would trap a blocked
             member in a form they cannot submit.
           */}
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button

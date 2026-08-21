@@ -31,7 +31,7 @@ export function BetaBadge({
         <span
           className={cn(
             "inline-flex items-center rounded-xs border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em]",
-            "border-side-accent/30 bg-side-accent/15 text-side-accent",
+            "border-accent-border bg-accent-subtle text-accent-text",
             className,
           )}
         >
@@ -55,7 +55,7 @@ export function BetaBadge({
         <div
           role="status"
           className={cn(
-            "flex items-center gap-2 border-b border-border bg-muted/60 px-6 py-2 text-xs text-foreground",
+            "flex items-center gap-2 border-b border-border bg-secondary/60 px-6 py-2 text-xs text-foreground",
             className,
           )}
         >
@@ -75,7 +75,7 @@ export function BetaBadge({
       return (
         <span
           className={cn(
-            "fixed bottom-4 left-4 z-50 inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-foreground shadow",
+            "fixed bottom-4 left-4 z-50 inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-foreground",
             className,
           )}
         >

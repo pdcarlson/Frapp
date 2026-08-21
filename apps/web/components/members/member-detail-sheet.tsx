@@ -95,7 +95,7 @@ function RoleChecklistItem({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="flex cursor-pointer items-center justify-between rounded-md border border-border p-3 transition hover:bg-muted/40">
+    <label className="flex cursor-pointer items-center justify-between rounded-md border border-border p-3 transition hover:bg-accent/40">
       <div>
         <p className="text-sm font-medium">{title}</p>
         <p
@@ -425,7 +425,7 @@ export function MemberDetailSheet({
 
         <SheetFooter className="mt-8 gap-2">
           <Button
-            variant="outline"
+            variant="secondary"
             onClick={() => {
               setSelectedRoleIds(memberRoleIds);
               setSelectedCustomRoleIds(memberCustomRoleIds);
