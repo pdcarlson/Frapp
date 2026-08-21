@@ -183,14 +183,24 @@ export default function PointsPage() {
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        {/*
+          Stacked below `sm` (#1142): the title plus "Adjust points" and the
+          three window buttons cannot share a row inside a 375px viewport, and
+          every one of them is `whitespace-nowrap`. Scoped with `max-sm:` rather
+          than written mobile-first on purpose — at `sm` and above the class list
+          resolves to exactly what it was, so the pinned 1440px visual baseline
+          for this route does not move.
+        */}
+        <CardHeader className="flex flex-row items-center justify-between max-sm:flex-col max-sm:items-start max-sm:gap-3 max-sm:space-y-0">
           <div>
             <CardTitle>Points Ledger</CardTitle>
             <CardDescription>
               Track chapter ranking, manual adjustments, and transaction history.
             </CardDescription>
           </div>
-          <div className="flex items-center gap-2">
+          {/* `flex-wrap` is inert at desktop width and lets the four nowrap
+              buttons stack instead of overflow at 375px. */}
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               size="sm"
               variant="outline"

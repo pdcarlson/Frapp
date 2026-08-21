@@ -367,7 +367,21 @@ export function DashboardShell({ children }: DashboardShellProps) {
           </div>
         </aside>
 
-        <div className="min-h-screen flex-1">
+        {/*
+          `min-w-0` is load-bearing, not tidying. This column is a flex item, so
+          its automatic minimum size is its min-content width — and without the
+          override it simply refuses to shrink below whatever the widest
+          unbreakable thing on the route needs. The header then never gets a
+          reason to shrink either, so the breadcrumb keeps its full width and the
+          whole page scrolls sideways.
+
+          That single missing declaration was six of the seven routes in #1142
+          (`/documents` 426, `/reports` 408, `/settings` 408, `/study` 392,
+          `/service` 390, `/geofences` 383 → all 375). It reads like page-content
+          overflow from the outside, which is why it was filed that way; the
+          content was only ever the thing supplying the min-content width.
+        */}
+        <div className="min-h-screen min-w-0 flex-1">
           {/*
             The control cluster collapses below `sm` so the header holds the
             375px floor the responsive contract requires. It did not before:
