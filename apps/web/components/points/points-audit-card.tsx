@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, Flag, RefreshCcw } from "lucide-react";
+import { AlertTriangle, Flag, RefreshCw } from "lucide-react";
 import { useMembers, usePointsTransactions } from "@repo/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,10 +20,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  EmptyState,
-  ErrorState,
-  LoadingState,
-} from "@/components/shared/async-states";
+  NestedEmpty,
+  NestedError,
+  NestedLoading,
+} from "@/components/shared/nested-states";
 import { Can } from "@/components/shared/can";
 import { formatLocaleDateTime as formatTimestamp } from "@repo/formatting";
 
@@ -126,7 +126,7 @@ export function PointsAuditCard() {
               disabled={transactionsQuery.isFetching}
               aria-label="Refresh audit list"
             >
-              <RefreshCcw
+              <RefreshCw
                 className={
                   transactionsQuery.isFetching
                     ? "h-4 w-4 animate-spin"
@@ -176,9 +176,9 @@ export function PointsAuditCard() {
           </div>
 
           {transactionsQuery.isPending ? (
-            <LoadingState message="Loading audit transactions..." />
+            <NestedLoading message="Loading audit transactions..." />
           ) : transactionsQuery.isError ? (
-            <ErrorState
+            <NestedError
               title="Audit unavailable"
               description="Couldn't load chapter transactions. Retry or confirm your points:view_all access."
               onRetry={() => void transactionsQuery.refetch()}
@@ -188,7 +188,7 @@ export function PointsAuditCard() {
               const rows = asArray<TransactionRow>(transactionsQuery.data);
               if (rows.length === 0) {
                 return (
-                  <EmptyState
+                  <NestedEmpty
                     title={
                       flaggedOnly
                         ? "No flagged transactions in this window"
@@ -203,7 +203,7 @@ export function PointsAuditCard() {
                 );
               }
               return (
-                <ul className="divide-y divide-border/70">
+                <ul className="divide-y divide-border">
                   {rows.map((row) => {
                     const flagged = row.metadata?.flagged === true;
                     const name = row.user_id
@@ -219,9 +219,7 @@ export function PointsAuditCard() {
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="text-sm font-semibold">{name}</span>
-                            <Badge variant={flagged ? "destructive" : "outline"}>
-                              {row.category ?? "UNKNOWN"}
-                            </Badge>
+                            <Badge variant="outline">{row.category ?? "UNKNOWN"}</Badge>
                             {flagged ? (
                               <Badge variant="destructive" className="gap-1">
                                 <AlertTriangle className="h-3 w-3" />
@@ -241,8 +239,8 @@ export function PointsAuditCard() {
                         <span
                           className={
                             (row.amount ?? 0) >= 0
-                              ? "text-sm font-semibold text-emerald-700"
-                              : "text-sm font-semibold text-destructive"
+                              ? "font-mono text-sm font-semibold tabular-nums text-success"
+                              : "font-mono text-sm font-semibold tabular-nums text-destructive-text"
                           }
                         >
                           {sign}

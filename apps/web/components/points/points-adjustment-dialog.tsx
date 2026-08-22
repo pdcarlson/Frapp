@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Scale, WandSparkles } from "lucide-react";
+import { Loader2, Scale } from "lucide-react";
 import { useAdjustPoints, useMembers } from "@repo/hooks";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -201,7 +201,7 @@ export function PointsAdjustmentDialog({
             <select
               value={targetUserId}
               onChange={(event) => setTargetUserId(event.target.value)}
-              className={dashboardFilterSelectClassName}
+              className={`${dashboardFilterSelectClassName} w-full`}
               {...gate.controlProps()}
             >
               {memberOptions.map((option) => (
@@ -229,7 +229,7 @@ export function PointsAdjustmentDialog({
               <select
                 value={category}
                 onChange={(event) => setCategory(event.target.value as "MANUAL" | "FINE")}
-                className={dashboardFilterSelectClassName}
+                className={`${dashboardFilterSelectClassName} w-full`}
                 {...gate.controlProps()}
               >
                 <option value="MANUAL">Manual adjustment</option>
@@ -265,9 +265,7 @@ export function PointsAdjustmentDialog({
           >
             {adjustPointsMutation.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <WandSparkles className="h-4 w-4" />
-            )}
+            ) : null}
             {submitLabel}
           </Button>
         </DialogFooter>

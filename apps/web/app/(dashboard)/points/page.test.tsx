@@ -64,7 +64,7 @@ vi.mock("@/lib/providers/network-provider", () => ({
 vi.mock("@/components/points/points-audit-card", () => ({
   PointsAuditCard: () => <div data-testid="points-audit-card" />,
 }));
-vi.mock("@/components/points-adjustment-dialog", () => ({
+vi.mock("@/components/points/points-adjustment-dialog", () => ({
   PointsAdjustmentDialog: () => <div data-testid="points-adjustment-dialog" />,
 }));
 

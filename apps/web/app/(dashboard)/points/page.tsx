@@ -8,15 +8,18 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { EmptyState, ErrorState, LoadingState, OfflineState } from "@/components/shared/async-states";
+import { ErrorState, LoadingState, OfflineState } from "@/components/shared/async-states";
+import { NestedEmpty } from "@/components/shared/nested-states";
 import {
+  dashboardCheckboxCellClassName,
+  dashboardCheckboxHitAreaClassName,
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
 import { useToast } from "@/hooks/use-toast";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
-import { PointsAdjustmentDialog } from "@/components/points-adjustment-dialog";
+import { PointsAdjustmentDialog } from "@/components/points/points-adjustment-dialog";
 import {
   SubscriptionNotice,
   useGatedDialog,
@@ -233,7 +236,7 @@ export default function PointsPage() {
           />
           <div className="flex flex-wrap items-center gap-3">
             <Badge variant="secondary">My balance</Badge>
-            <p className="text-2xl font-semibold">
+            <p className="text-2xl font-bold tabular-nums">
               {typeof summary?.balance === "number" ? summary.balance : 0} points
             </p>
           </div>
@@ -257,7 +260,7 @@ export default function PointsPage() {
               />
             </div>
             {filteredLeaderboard.length === 0 ? (
-              <EmptyState
+              <NestedEmpty
                 title={stateMicrocopy.points.emptyLeaderboardTitle}
                 description={stateMicrocopy.points.emptyLeaderboardDescription}
               />
@@ -273,11 +276,13 @@ export default function PointsPage() {
                 <TableBody>
                   {filteredLeaderboard.map((entry, index) => (
                     <TableRow key={entry.user_id}>
-                      <TableCell>#{index + 1}</TableCell>
+                      <TableCell className="font-mono tabular-nums">#{index + 1}</TableCell>
                       <TableCell className="font-mono text-[12.5px]">
                         {entry.user_id}
                       </TableCell>
-                      <TableCell className="font-semibold">{entry.total}</TableCell>
+                      <TableCell className="font-mono font-semibold tabular-nums">
+                        {entry.total}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -303,6 +308,7 @@ export default function PointsPage() {
                 />
               </div>
               <select
+                aria-label="Filter transactions by amount"
                 value={amountFilter}
                 onChange={(event) =>
                   setAmountFilter(
@@ -316,6 +322,7 @@ export default function PointsPage() {
                 <option value="negative">Amount: Negative</option>
               </select>
               <select
+                aria-label="Filter transactions by category"
                 value={categoryFilter}
                 onChange={(event) => setCategoryFilter(event.target.value)}
                 className={dashboardFilterSelectClassName}
@@ -353,7 +360,7 @@ export default function PointsPage() {
               </div>
             ) : null}
             {filteredTransactions.length === 0 ? (
-              <EmptyState
+              <NestedEmpty
                 title={stateMicrocopy.points.emptyTransactionsTitle}
                 description={stateMicrocopy.points.emptyTransactionsDescription}
               />
@@ -361,14 +368,16 @@ export default function PointsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-10">
-                      <input
-                        type="checkbox"
-                        aria-label="Select all visible transactions"
-                        className={dashboardTableCheckboxClassName}
-                        checked={allTransactionsSelected}
-                        onChange={(event) => toggleAllTransactions(event.target.checked)}
-                      />
+                    <TableHead className={dashboardCheckboxCellClassName}>
+                      <label className={dashboardCheckboxHitAreaClassName}>
+                        <input
+                          type="checkbox"
+                          aria-label="Select all visible transactions"
+                          className={dashboardTableCheckboxClassName}
+                          checked={allTransactionsSelected}
+                          onChange={(event) => toggleAllTransactions(event.target.checked)}
+                        />
+                      </label>
                     </TableHead>
                     <TableHead>Amount</TableHead>
                     <TableHead>Category</TableHead>
@@ -378,21 +387,32 @@ export default function PointsPage() {
                 </TableHeader>
                 <TableBody>
                   {filteredTransactions.map((transaction) => (
-                    <TableRow key={transaction.id}>
-                      <TableCell className="w-10">
-                        <input
-                          type="checkbox"
-                          aria-label={`Select ${transaction.description}`}
-                          className={dashboardTableCheckboxClassName}
-                          checked={selectedTransactionIds.includes(transaction.id)}
-                          onChange={(event) => toggleTransaction(transaction.id, event.target.checked)}
-                        />
+                    <TableRow
+                      key={transaction.id}
+                      data-state={
+                        selectedTransactionIds.includes(transaction.id)
+                          ? "selected"
+                          : undefined
+                      }
+                    >
+                      <TableCell className={dashboardCheckboxCellClassName}>
+                        <label className={dashboardCheckboxHitAreaClassName}>
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${transaction.description}`}
+                            className={dashboardTableCheckboxClassName}
+                            checked={selectedTransactionIds.includes(transaction.id)}
+                            onChange={(event) =>
+                              toggleTransaction(transaction.id, event.target.checked)
+                            }
+                          />
+                        </label>
                       </TableCell>
                       <TableCell
                         className={
                           transaction.amount >= 0
-                            ? "font-semibold text-emerald-700"
-                            : "font-semibold text-destructive"
+                            ? "font-mono font-semibold tabular-nums text-success"
+                            : "font-mono font-semibold tabular-nums text-destructive-text"
                         }
                       >
                         {transaction.amount >= 0 ? `+${transaction.amount}` : transaction.amount}
