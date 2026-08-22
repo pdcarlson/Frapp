@@ -41,6 +41,7 @@ import { NestedEmpty } from "@/components/shared/nested-states";
 import {
   ErrorState,
   LoadingState,
+  OfflineState,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import {
@@ -49,6 +50,7 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
+import { useNetwork } from "@/lib/providers/network-provider";
 import { asArray, getErrorMessage } from "@/lib/utils";
 import {
   MAX_UPLOAD_LABEL,
@@ -79,6 +81,7 @@ type MemberSummary = {
 
 export function ServiceHoursPage() {
   const { toast } = useToast();
+  const { isOffline } = useNetwork();
   // Every write on `ServiceEntryController` (proof-upload-url, create, review,
   // delete) carries no `@FreeTier`, so they are all paid-ops behind the same
   // subscription guard — one gate covers the surface (#841). `GET
@@ -371,6 +374,23 @@ export function ServiceHoursPage() {
         variant: "destructive",
       });
     }
+  }
+
+  /*
+   * README §4 item 4: a network-dependent async view ships an offline state.
+   * This screen had none, so a disconnected member sat on the loading
+   * skeleton until the query gave up. Copy is writing.md §7's row.
+   */
+  if (isOffline) {
+    return (
+      <OfflineState
+        title="Service hours unavailable offline"
+        description="Reconnect to log hours and review the approval queue."
+        onRetry={() => {
+          void entriesQuery.refetch();
+        }}
+      />
+    );
   }
 
   if (entriesQuery.isPending) {

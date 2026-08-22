@@ -37,6 +37,7 @@ import {
   EmptyState,
   ErrorState,
   LoadingState,
+  OfflineState,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import {
@@ -45,6 +46,7 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
+import { useNetwork } from "@/lib/providers/network-provider";
 import { asArray, getErrorMessage } from "@/lib/utils";
 
 type Geofence = {
@@ -116,6 +118,7 @@ function formatCoordinates(
 
 export function GeofencesAdminPage() {
   const { toast } = useToast();
+  const { isOffline } = useNetwork();
   // `StudyGeofenceController` carries no `@FreeTier`, so every write here is
   // paid-ops and mirrors the subscription gate (#841). Reads are untouched —
   // the server guard returns early for GET, so a lapsed chapter still sees its
@@ -336,6 +339,23 @@ export function GeofencesAdminPage() {
         variant: "destructive",
       });
     }
+  }
+
+  /*
+   * README §4 item 4: a network-dependent async view ships an offline state.
+   * This screen had none, so a disconnected member sat on the loading
+   * skeleton until the query gave up. Copy is writing.md §7's row.
+   */
+  if (isOffline) {
+    return (
+      <OfflineState
+        title="Study zones unavailable offline"
+        description="Reconnect to draw a zone or change its reward rate."
+        onRetry={() => {
+          void geofencesQuery.refetch();
+        }}
+      />
+    );
   }
 
   if (geofencesQuery.isPending) {

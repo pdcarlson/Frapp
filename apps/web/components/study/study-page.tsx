@@ -31,12 +31,17 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { studySessionStatusKind } from "@/components/study/study-status";
 import { NestedEmpty } from "@/components/shared/nested-states";
-import { ErrorState, LoadingState } from "@/components/shared/async-states";
+import {
+  ErrorState,
+  LoadingState,
+  OfflineState,
+} from "@/components/shared/async-states";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
+import { useNetwork } from "@/lib/providers/network-provider";
 import {
   formatLocaleDateTime as formatShortDate,
   formatPaddedStopwatch as formatDuration,
@@ -99,6 +104,7 @@ function getCurrentPosition(): Promise<GeolocationPosition> {
 
 export function StudyPage() {
   const { toast } = useToast();
+  const { isOffline } = useNetwork();
   // `StudySessionController` carries no `@FreeTier`, so every one of its five
   // writes is paid-ops and the member-facing controls have to mirror the guard
   // (#841). The heartbeat is the exception below — see `sendHeartbeat`.
@@ -408,6 +414,23 @@ export function StudyPage() {
       setElapsedSeconds(0);
       setIsPaused(false);
     }
+  }
+
+  /*
+   * README §4 item 4: a network-dependent async view ships an offline state.
+   * This screen had none, so a disconnected member sat on the loading
+   * skeleton until the query gave up. Copy is writing.md §7's row.
+   */
+  if (isOffline) {
+    return (
+      <OfflineState
+        title="Study hours unavailable offline"
+        description="Reconnect to start a session — tracking needs a live location check."
+        onRetry={() => {
+          void geofencesQuery.refetch();
+        }}
+      />
+    );
   }
 
   if (geofencesQuery.isPending || sessionsQuery.isPending) {

@@ -175,6 +175,7 @@ The offline string MUST keep its closing clause — a member who edited or poste
 | Loading | — | `Loading chapter tasks...` |
 | Empty | `No tasks yet` | `Admins can create the first chapter task to assign ownership and award points.` |
 | Error | `Couldn't load tasks` | `Confirm your chapter access and retry. Assignees see only their own tasks; admins need tasks:manage to see every task.` |
+| Offline | `Tasks unavailable offline` | `Reconnect to load the chapter board and move tasks through it.` |
 
 ### Service Hours (dashboard)
 
@@ -184,6 +185,7 @@ The offline string MUST keep its closing clause — a member who edited or poste
 | Empty queue | `No pending entries` | `Approved or rejected entries appear in the History card below.` |
 | Empty history | `No service activity yet` | `Log your first service entry to build up chapter service hours.` |
 | Error | `Couldn't load service entries` | `Members see only their own entries; admins need service:approve to see every entry.` |
+| Offline | `Service hours unavailable offline` | `Reconnect to log hours and review the approval queue.` |
 
 ### Chapter Documents (dashboard)
 
@@ -226,6 +228,7 @@ The offline string MUST keep its closing clause — a member who edited or poste
 | Empty zones | `No active study zones` | `Ask a chapter admin with geofences:manage to add one.` |
 | Empty history | `No sessions logged yet` | `Start a tracked session inside a study zone to start earning study points.` |
 | Error | `Couldn't load study data` | `Confirm your chapter access and retry.` |
+| Offline | `Study hours unavailable offline` | `Reconnect to start a session — tracking needs a live location check.` |
 | Paused (tab hidden) | `Paused (tab hidden)` (badge) | Surfaced live while the timer is paused by the Page Visibility API. |
 
 ### Study session (mobile, s10)
@@ -260,6 +263,7 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Loading | — | `Loading study zones...` |
 | Empty | `No study zones yet` | `Create your first zone to let members start tracked study sessions for points.` |
 | Error | `Couldn't load study zones` | `Confirm your chapter access and retry.` |
+| Offline | `Study zones unavailable offline` | `Reconnect to draw a zone or change its reward rate.` |
 | Permission denied | `Study zones` | `Managing study zones requires the geofences:manage permission. Ask your chapter president to grant access.` |
 
 ### Polls (dashboard)

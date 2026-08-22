@@ -48,6 +48,7 @@ import {
   EmptyState,
   ErrorState,
   LoadingState,
+  OfflineState,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import {
@@ -56,6 +57,7 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
+import { useNetwork } from "@/lib/providers/network-provider";
 import { asArray, getErrorMessage } from "@/lib/utils";
 
 type Task = {
@@ -139,6 +141,7 @@ function actionStatus(task: Task): TaskStatus | undefined {
 
 export function TasksBoard() {
   const { toast } = useToast();
+  const { isOffline } = useNetwork();
   // Every write on this board (create, status, confirm, reject, delete) hits
   // `TaskController`, which carries no `@FreeTier`, so all five mirror one
   // paid-ops gate (#841). Reads stay ungated — the server guard returns early
@@ -341,6 +344,23 @@ export function TasksBoard() {
         variant: "destructive",
       });
     }
+  }
+
+  /*
+   * README §4 item 4: a network-dependent async view ships an offline state.
+   * This screen had none, so a disconnected member sat on the loading
+   * skeleton until the query gave up. Copy is writing.md §7's row.
+   */
+  if (isOffline) {
+    return (
+      <OfflineState
+        title="Tasks unavailable offline"
+        description="Reconnect to load the chapter board and move tasks through it."
+        onRetry={() => {
+          void tasksQuery.refetch();
+        }}
+      />
+    );
   }
 
   if (tasksQuery.isPending) {
