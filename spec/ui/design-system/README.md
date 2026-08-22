@@ -88,6 +88,12 @@ Skeleton, empty, and error render as one visual family — the states panel (4f)
 
 **A disabled query is not a loading state.** TanStack Query v5 keeps `isPending` true for a query whose `enabled` flag is false — nothing is in flight, and nothing will be (`fetchStatus: "idle"`). Gate spinners on `isLoading` (`isPending && isFetching`) or `fetchStatus === "paused"` (offline, no cached data). Treat `isPending && fetchStatus === "idle"` as the entitlement/empty branch (permission denied, no chapter selected), not as a spinner. Do not use `isPending && !isFetching` for that branch — paused queries share those flags and are not disabled. `/polls` (`polls:view_all`) and `/backwork` (no chapter) are the reference surfaces.
 
+**The same rule binds the gate, not just the data query.** `<Can>` (`apps/web/components/shared/can.tsx`) branched on `isPending` alone across all fifteen gated surfaces, so a member opening a gated route offline for the first time in a session held the gate's fallback forever — twelve of them on `null`, i.e. on nothing at all (#1211). The data queries on `/polls` and `/backwork` had been given the rule above; the permission query deciding whether those queries render at all had not. Three branches, and the middle one is new:
+
+- **A cached answer is used, whatever the fetch is doing.** Permissions are stale-while-revalidate, as §10 requires of any background refetch. This needs no branch — `isPending` is false whenever `data` exists — but it is the half a later "simplification" to `fetchStatus === "paused"` alone silently breaks, so it is pinned in `apps/web/components/shared/can-fallback.test.tsx`.
+- **Paused with nothing cached renders an offline state with a retry, never `null`.** An unanswerable check is a *recoverable* state, and §5 rule 4 reserves hiding for permissions the user will never hold. The chrome follows §10's container rule: a gate standing in for a screen or a card passes the card-shaped `OfflineState`; a gate standing in for a single control gets `PermissionsOffline`, which is `<Can>`'s non-null **default** — the twelve blank surfaces were reached by *omitting* the prop, so the default is where the fix has to live. Copy: [writing.md](writing.md) §7's "Permission check offline".
+- **Idle with nothing cached still fails closed.** This is the entitlement branch above, and it is why swapping `isPending` for `isLoading` is not the fix — it would render gated content to a viewer whose permissions were never fetched.
+
 ---
 
 ## 5. Entitlement gating standard (fail fast)
@@ -102,7 +108,7 @@ For each of the three gate classes the API enforces, the client must mirror the 
 
 | Gate | Enforced server-side by | Client must |
 | --- | --- | --- |
-| Permission | `@RequirePermissions` → `PermissionsGuard` (`apps/api/src/interface/guards/permissions.guard.ts`) | Hide or disable the control (`<Can>`, `apps/web/components/shared/can.tsx`) |
+| Permission | `@RequirePermissions` → `PermissionsGuard` (`apps/api/src/interface/guards/permissions.guard.ts`) | Hide or disable the control (`<Can>`, `apps/web/components/shared/can.tsx`) — but say so, not hide, while the check itself cannot be made (§4) |
 | Subscription | `ChapterGuard.enforceSubscription` (`apps/api/src/interface/guards/chapter.guard.ts`) | Disable the control and name the reason (`useSubscriptionGate`, `apps/web/components/shared/subscription-gate.tsx`) |
 | Module enabled | `ChapterGuard.enforceModule` | Hide the surface |
 
@@ -170,7 +176,7 @@ Three of `chapter-document`'s six writes — folder create, rename and delete �
 1. **Gate the trigger, not the submit.** Disable the button that opens the form. Never let a dialog open onto an action that cannot succeed.
 2. **Say why, and say what fixes it.** A disabled control with no explanation is its own dead end. Pair it with the reason and the recovery path — the API's own message is a good source: "Chapter subscription is not active; complete checkout to use this feature." Per [`writing.md`](writing.md), name the blocker and the next action.
 3. **Keep the recovery path reachable.** Whatever clears the block must stay enabled — this is why `BillingController` is `@SubscriptionExempt()` (`apps/api/src/interface/controllers/billing.controller.ts`). Never gate a user out of the screen that ungates them.
-4. **Disable, don't hide, for recoverable states.** A subscription lapse is temporary and the user can fix it; hiding the feature makes the product look broken or missing. Hide only for permissions the user will never hold and modules the chapter has switched off.
+4. **Disable, don't hide, for recoverable states.** A subscription lapse is temporary and the user can fix it; hiding the feature makes the product look broken or missing. Hide only for permissions the user will never hold and modules the chapter has switched off. **An unresolved permission is not a held one.** Hiding is the right answer to a *denial*; a check that could not run — the offline pause §4 describes — is as recoverable as a lapsed subscription, and gets the same treatment: state it, and offer the recovery.
 5. **The server gate stays regardless.** Client-side gating is a UX affordance, never a security boundary — a direct API call bypasses all of it. Mirroring a gate never means removing it.
 
 ### Reviewer check

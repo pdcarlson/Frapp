@@ -26,6 +26,7 @@ import {
   NestedError,
   NestedLoading,
 } from "@/components/shared/nested-states";
+import { OfflineState } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import { formatLocaleDateTime as formatTimestamp } from "@repo/formatting";
 
@@ -80,6 +81,13 @@ export function PointsAuditCard() {
   return (
     <Can
       permission="points:view_all"
+      offlineFallback={(retry) => (
+        <OfflineState
+          title="Can't confirm your access"
+          description="Reconnect to check whether you can view the chapter's transaction log."
+          onRetry={retry}
+        />
+      )}
       deniedFallback={
         <Card>
           <CardHeader>

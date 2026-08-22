@@ -369,6 +369,13 @@ export function GeofencesAdminPage() {
           </Card>
         </div>
       }
+      offlineFallback={(retry) => (
+        <OfflineState
+          title="Can't confirm your access"
+          description="Reconnect to check whether you can manage study zones."
+          onRetry={retry}
+        />
+      )}
     >
       {/*
         The states render INSIDE the gate, not before it. `Can` answers "may
