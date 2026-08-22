@@ -70,6 +70,8 @@ Status terms MUST match backend domain language:
 
 Do not invent alternate terms for the same state on different platforms. Status labels render with the semantic status colors defined in [foundations.md](foundations.md) — status color is never decorative.
 
+**Render the server's own token, not a re-cased version of it.** `OVERDUE` put through `.toLowerCase()` and a `capitalize` class comes out as "Overdue", which is an alternate term for the same state by another route — and `/billing` was doing exactly that in its member-facing table while the admin card one file over rendered the token. The web mapping from state to badge kind lives in one place, [`apps/web/components/billing/invoice-status.ts`](../../../apps/web/components/billing/invoice-status.ts), for both invoice and subscription state; `DRAFT` is the one state that takes the Hairline kind rather than a semantic one, because it is the absence of a status rather than a status.
+
 ## 6. Trust copy rules
 
 Billing, legal, and data-sensitive surfaces MUST:
@@ -105,6 +107,7 @@ The offline string MUST keep its closing clause — a member who edited or poste
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading chapter members...` |
+| Loading (supporting queries) | — | `Loading chapter members...` — the roles-and-points load uses the *same* string. A second, differently-worded loading state for one screen is what this table exists to prevent. |
 | Empty | `No members match this view` | `Try a broader search or invite your first members to populate this directory.` |
 | Error | `Unable to load live member records` | `The members workflow no longer falls back to preview data. Verify your chapter access and API health, then retry.` |
 | Offline | `Members directory unavailable offline` | `Reconnect to load live membership records and role updates.` |
@@ -297,6 +300,8 @@ Channel seeding happens at chapter onboarding and has no billing prerequisite; [
 | Loading | — | `Loading billing overview...` |
 | Empty | `No invoices yet` | `Create your first invoice to start chapter dues collection.` |
 | Preview/unauthenticated | `Showing preview billing data` | `Sign in to load live chapter subscription and invoice records.` |
+| Error | `Couldn't load invoices` | `Verify your chapter access and API health, then retry.` |
+| Empty (filtered) | `No invoices match this filter` | `Try a different status, or clear the filter to see every invoice.` |
 
 ### Dues (mobile, s11)
 

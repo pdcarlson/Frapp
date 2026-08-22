@@ -36,6 +36,7 @@ Colors below are given by **token role** (`accent-N` per [accent-engine.md](acce
 - Undrawn primitives (select, radio, dropdown menu, popover) MUST compose from the same tokens: elevated `#26221C` fill, hairline border, radius 12, `accent-8` ring.
 - **A bubble cannot sit on its own fill.** §11 paints the incoming bubble `--card` with a hairline, which means the surface *hosting* a thread must be a different step — the web dashboard's chat panes are `--background` for the thread and `--surface-1` for the rails, because wrapping the thread in a card made the specified bubble `#1E1B17` on `#1E1B17`. Note what carries the edge once they differ: one ladder step is ~1.12:1 and the composited hairline reaches ~1.4:1, both under the 3:1 non-text floor, so the **hairline is load-bearing** — an incoming bubble that drops its border is delineated by 1.12:1 and effectively has no edge.
 - **A highlighted row inside one of those primitives takes the accent tint, never a surface step.** The elevated fill above is the *top* of the surface ladder ([foundations.md](foundations.md) §2), so there is no step above it to highlight with — and `--accent`, the neutral highlight for a control sitting on a lower surface, holds that same `#26221C`. A menu that highlights with it paints the hovered row in its own background. Selection and hover inside menus, command palettes, selects and table rows therefore use the §5 accent-tint recipe (`accent-3` fill, `accent-11` text), which separates by hue: the ladder's own steps are ~1.1:1 apart and cannot carry "this one" on luminance alone.
+  - **The tint separates by hue, and only by hue — do not read it as a contrast remedy.** Measured across the seeded chapter directory, `accent-3` sits **1.032–1.143:1** from `--card`, against the neutral highlight's 1.085:1: no better, and for the dark red seeds measurably flatter. What it does buy is chroma — 7–86 points of channel spread from the surface, against the neutral step's 3, holding even for the achromatic seeds. So a surface that needs to distinguish *two* row states cannot get the second one from the tint alone. A table row does: hover takes `accent-3`, and **selection takes `accent-4` plus `accent-11` text** — the one-step lift §3's state table already uses for tinted controls (1.178–1.358:1 on `--card`, and 1.108–1.193:1 above the hover fill, for every seed), with the text tone at 6.34–8.68:1 doing the work the fill cannot. None of these fills clears the 3:1 non-text floor and at this ladder none can, so a state that carries *information* rather than pointer feedback must be redundant with something that is not a fill — the row's own checkbox, a text tone, a summary bar. Measured in [`apps/web/components/shared/table-contrast.test.ts`](../../../apps/web/components/shared/table-contrast.test.ts).
 
 ## 3. Buttons
 
@@ -73,6 +74,8 @@ Tinted is the accent-soft variant: empty-state CTAs (§10). The Ask entry (§7) 
 
 ## 4. Inputs and selection
 
+**Dashboard filter toolbars take the Inline height (44), not the default field height (48).** A filter row is secondary chrome sitting above the thing it filters, and mixing §4's 48px field with §3's 44px Inline button in one row renders two visibly different heights — which is what `/members`, `/events`, `/polls` and `/roles` all did. Inline is also the touch floor (§2), so nothing in the row can go under it, and it is what `dashboardFilterSelectClassName` already ships. This settles the second half of #1187 once rather than per family: the Directory & Finance slice applies it to its own screens, and each remaining #920 slice applies it to theirs.
+
 ### Text input
 
 | State | Fill | Border | Text |
@@ -108,6 +111,8 @@ Height 26–28px, radius 8–10, padding-x 10–12, text 12.5px / 600.
 
 - The mention/DM red value, its fixed-and-semantic rule, and the treatment of channel unread markers are owned by [foundations.md](foundations.md) §5; this section specs only the badge geometry. Placement in nav: [navigation.md](../mobile/navigation.md).
 - The reference lifts success/info badge text slightly for contrast on the tint (`#4BC262`, `#4C93F8`); implementations MAY lift the text tone for AA contrast, but the hue is the fixed semantic.
+- **The Semantic kind ships three hues, and only danger needs the lift.** Measured on its own 13% tint across the whole surface ladder: success **5.02–6.46:1** and warning **5.57–7.15:1** both clear §6's 4.5:1 gate unlifted, so they render in the semantic hue itself; danger is **4.04–4.39:1** on `--popover` and `--card`, which is what `--destructive-text` exists for. Info would need one too (3.65:1 on `--popover`) and deliberately has no kind, because it has no call site. The lift applies **on the tint only** — on a plain ladder surface the solid danger measures 4.72–5.79:1 and is the correct tone; reaching for the lifted one there over-applies §1. Measured in [`apps/web/components/billing/status-contrast.test.ts`](../../../apps/web/components/billing/status-contrast.test.ts).
+- **A status badge is never the chapter accent.** Under a green-seeded chapter an accent badge is indistinguishable from the success badge (1.08:1) and under a red-seeded one from the danger badge (1.13:1) — so a chapter whose brand is red reads `PAID` as overdue. [`writing.md`](writing.md) §5 owns the rule; this is the measurement behind it.
 
 ## 6. Tabs
 
@@ -203,6 +208,10 @@ Same anatomy as empty, recolored semantic:
 | Retry | Secondary button, 44px, radius 12 — wiring per [resilience.md](../resilience.md) |
 
 Error surfaces MUST NOT use the chapter accent. Field-level validation errors use the input error state (§4), not this surface.
+
+### Nested inside a card
+
+A state that replaces a whole screen paints `--card`, as the tables above spec. A state rendered **inside** a `<CardContent>` MUST drop that fill: `--card` on `--card` is 1.00:1 and the region disappears into its container. It keeps everything else — the hairline (which is the load-bearing edge once the fill is gone, §2), the icon tile, the title, the body, the CTA, and the error's sanctioned semantic border — because this family is required to differ **in colour rather than in shape**, and bordering some variants and not others would break exactly that. Web implementation: [`apps/web/components/shared/nested-states.tsx`](../../../apps/web/components/shared/nested-states.tsx).
 
 ## 11. Signature surfaces
 
