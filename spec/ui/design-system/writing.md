@@ -72,6 +72,8 @@ Do not invent alternate terms for the same state on different platforms. Status 
 
 **Render the server's own token, not a re-cased version of it.** `OVERDUE` put through `.toLowerCase()` and a `capitalize` class comes out as "Overdue", which is an alternate term for the same state by another route — and `/billing` was doing exactly that in its member-facing table while the admin card one file over rendered the token. The web mapping from state to badge kind lives in one place, [`apps/web/components/billing/invoice-status.ts`](../../../apps/web/components/billing/invoice-status.ts), for both invoice and subscription state; `DRAFT` is the one state that takes the Hairline kind rather than a semantic one, because it is the absence of a status rather than a status.
 
+**One mapper per domain vocabulary, not one mapper.** Billing's two states share a file because both are billing's; Chapter Ops added four more vocabularies — attendance, service review, study-session close and study-zone enablement — with no overlapping members, so each has its own module rather than one widened to `string`. Where a vocabulary needs a *label* as well as a kind is decided by this section: states §5 names above render their token (`PENDING` stays `PENDING`), and a vocabulary with no row here maps to plain language **once**, in its mapper, which is why `attendance-status.ts` carries `attendanceStatusLabel` and `service-status.ts` deliberately does not.
+
 ## 6. Trust copy rules
 
 Billing, legal, and data-sensitive surfaces MUST:

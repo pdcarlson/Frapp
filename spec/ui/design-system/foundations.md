@@ -100,7 +100,10 @@ Body text MUST NOT render below 16. Label and caption are for controls and metad
 > brand face on the largest number on the screen. The reference wins on visuals
 > ([`../README.md`](../README.md)), so `apps/mobile/components/study/session-card.tsx`
 > ships tabular-nums Figtree and this list no longer claims otherwise. Prefer
-> the same treatment for any other live-counting numeral.
+> the same treatment for any other live-counting numeral — the web dashboard's
+> own study timer (`apps/web/components/study/study-page.tsx`) was still on
+> `font-mono` until the #920 Chapter Ops slice, so "prefer" now has two
+> shipped consumers rather than one and a standing exception.
 
 **Money is a figure, not a code-like string.** Amounts are stored and
 transported as integer **cents** (`financial_invoices.amount`, bounded
