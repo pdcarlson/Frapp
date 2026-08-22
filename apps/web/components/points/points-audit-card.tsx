@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { amountToneClassName } from "@/components/points/amount-tone";
 import {
   NestedEmpty,
   NestedError,
@@ -83,7 +84,7 @@ export function PointsAuditCard() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
-              <FlaggedGlyph className="h-4 w-4 text-muted-foreground" />
+              <FlaggedGlyph className="h-5 w-5 text-muted-foreground" />
               Audit tab
             </CardTitle>
             <CardDescription>
@@ -100,7 +101,7 @@ export function PointsAuditCard() {
         <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <CardTitle className="flex items-center gap-2 text-lg">
-              <FlaggedGlyph className="h-4 w-4 text-muted-foreground" />
+              <FlaggedGlyph className="h-5 w-5 text-muted-foreground" />
               Audit tab
             </CardTitle>
             <CardDescription>
@@ -238,11 +239,7 @@ export function PointsAuditCard() {
                           </p>
                         </div>
                         <span
-                          className={
-                            (row.amount ?? 0) >= 0
-                              ? "font-mono text-sm font-semibold tabular-nums text-success"
-                              : "font-mono text-sm font-semibold tabular-nums text-destructive"
-                          }
+                          className={amountToneClassName(row.amount ?? 0, "sm")}
                         >
                           {sign}
                           {row.amount ?? 0} points

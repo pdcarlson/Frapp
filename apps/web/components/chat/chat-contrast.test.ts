@@ -1,11 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { applyAlpha, contrastRatio, parseHex } from "@repo/color";
+import { applyAlpha } from "@repo/color";
 import {
-  deriveSignetPalette,
+  AA_NON_TEXT,
+  AA_TEXT,
+  accentRolesFor,
+  DESTRUCTIVE_TEXT,
+  HAIRLINE_ALPHA,
   HOUSE_SEED,
-  signetAccentSemanticVars,
-} from "@repo/chapter-theme";
-import { signetDarkTokens } from "@repo/theme/signet";
+  ratio,
+  SEEDS,
+  SEMANTIC,
+  signetDarkTokens,
+  SURFACE,
+  TEXT,
+  tint,
+} from "@/tests/signet-contrast";
 
 /**
  * Contrast on the surfaces chat actually composites.
@@ -21,68 +30,9 @@ import { signetDarkTokens } from "@repo/theme/signet";
  * The accent-varying pairs are measured against every distinct colour in the
  * seeded chapter directory, not just house gold: `--primary` is per-tenant, so a
  * bubble that passes under gold and fails under `#FFFFFF` is a defect 1 chapter
- * in 50 would see and nobody testing locally ever would. The seed list is the
- * frozen corpus `packages/chapter-theme/src/signet.spec.ts` owns and explains.
+ * in 50 would see and nobody testing locally ever would. Seed corpus and the
+ * shared helpers: `tests/signet-contrast.ts`.
  */
-
-const SEEDS = [
-  "#000000",
-  "#003087",
-  "#006400",
-  "#1F1A15",
-  "#1F4E79",
-  "#472B62",
-  "#4B0082",
-  "#4B1A7E",
-  "#4B2E2E",
-  "#800000",
-  "#8B0000",
-  "#8B4513",
-  "#BF0A30",
-  "#C0C0C0",
-  "#C9A56F",
-  "#CC0000",
-  "#FF69B4",
-  "#FFFFFF",
-  HOUSE_SEED,
-] as const;
-
-/**
- * The fixed half of the palette, **read from the token source** rather than
- * restated here. A guard that hardcodes the values it is guarding goes green
- * against constants that no longer ship — which is the drift class this whole
- * file exists to catch, so it would be a poor place to reintroduce it.
- */
-const SURFACE = signetDarkTokens.color.surface;
-const TEXT = signetDarkTokens.color.text;
-const SEMANTIC = signetDarkTokens.color.semantic;
-
-/**
- * `--destructive-text` is a CSS-only token (`packages/theme/src/signet.css`);
- * it has no `signetDarkTokens` entry to read, so it is the one literal here.
- */
-const DESTRUCTIVE_TEXT = "#FF7B72";
-
-/** The hairline's alpha, parsed from the token so the two cannot disagree. */
-const HAIRLINE_ALPHA = Number(
-  /rgba\([^)]*,\s*([\d.]+)\)/.exec(signetDarkTokens.color.border.hairline)?.[1] ??
-    "0.08",
-);
-
-const AA_TEXT = 4.5;
-/** README §6's non-text floor, for the hairline-and-fill relationships. */
-const AA_NON_TEXT = 3;
-
-const ratio = (fg: string, bg: string) =>
-  contrastRatio(parseHex(fg)!, parseHex(bg)!);
-
-/** The `bg-x/[.13]` recipe, composited over the surface it lands on. */
-const tint = (hue: string, over: string, alpha = 0.13) =>
-  applyAlpha(hue, alpha, over);
-
-function accentRolesFor(seed: string) {
-  return signetAccentSemanticVars(deriveSignetPalette(seed).palette);
-}
 
 describe("chat bubbles", () => {
   it("does not paint the incoming bubble in its own pane's fill", () => {

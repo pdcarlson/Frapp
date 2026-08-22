@@ -254,8 +254,11 @@ recipe (§1). The glyphs live in
 [`apps/web/components/members/directory-glyphs.tsx`](../../../apps/web/components/members/directory-glyphs.tsx)
 and [`apps/web/components/points/points-glyphs.tsx`](../../../apps/web/components/points/points-glyphs.tsx),
 both composing the shared recipe module and re-exporting the shell's
-silhouettes rather than redrawing them. Rendered at 20px in card headers and
-dialog titles, 16px in table cells, buttons and badge companions (§2).
+silhouettes rather than redrawing them. Rendered at 20px in card, dialog and
+sheet titles, 16px in table cells, and 14–16px as a badge companion (§2).
+Inside a `Button` they render at 16 whatever the call site asks for, because
+`buttonVariants` pins `[&_svg]:size-4` — which is also what keeps the required
+375px floor gate unaffected by a glyph swap.
 
 Alumni draws from the Directory file rather than one of its own: `/members`
 hosts both tabs, so they are one screen with one set of intents. Billing has no

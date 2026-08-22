@@ -175,7 +175,7 @@ export function PointsAdjustmentDialog({
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <AdjustGlyph className="h-4 w-4" />
+            <AdjustGlyph className="h-5 w-5" />
             Adjust points
           </DialogTitle>
           <DialogDescription>

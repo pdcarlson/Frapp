@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { applyAlpha, contrastRatio, mixHex, parseHex } from "@repo/color";
+import { applyAlpha } from "@repo/color";
 import {
-  deriveSignetPalette,
-  HOUSE_SEED,
-  signetAccentSemanticVars,
-} from "@repo/chapter-theme";
-import { signetDarkTokens } from "@repo/theme/signet";
+  AA_NON_TEXT,
+  AA_TEXT,
+  accentFour,
+  accentRolesFor,
+  chromaShift,
+  HAIRLINE_ALPHA,
+  ratio,
+  SEEDS,
+  SURFACE,
+  TEXT,
+} from "@/tests/signet-contrast";
 
 /**
  * Contrast for the row states `components/ui/table.tsx` paints.
@@ -21,80 +27,15 @@ import { signetDarkTokens } from "@repo/theme/signet";
  * The reason this file is not two assertions long is the *fix* had the same
  * trap in it. components.md §2 says to highlight with the accent tint instead,
  * which reads like a contrast remedy and is not one: measured across the seeded
- * chapter directory, `--accent-subtle` sits 1.032–1.143:1 from `--card` — no
- * better than the neutral step, and worse for the dark red seeds. What §2's
- * recipe actually buys is **hue**. So the assertions below pin the hue, the
- * one-step lift that separates selection from hover, and the text tone that
- * carries selection — and pin the near-equality that makes all three necessary,
- * so a later "simplification" back to a single tint fails loudly.
+ * chapter directory, `--accent-subtle` sits 1.032–1.143:1 from `--card`, a range
+ * that straddles the neutral step rather than beating it. What §2's recipe
+ * actually buys is **hue**. So the assertions below pin the hue, the one-step
+ * lift that separates selection from hover, and the text tone that carries
+ * selection — and pin the near-equality that makes all three necessary, so a
+ * later "simplification" back to a single tint fails loudly.
+ *
+ * Seed corpus and the shared helpers: `tests/signet-contrast.ts`.
  */
-
-/**
- * The frozen seed corpus. `packages/chapter-theme/src/signet.spec.ts` owns it
- * and explains why it is copied rather than read from
- * `supabase/seed/chapter_directory.csv`: the seed file is production data that
- * gets edited, and a suite reading it would change what it asserts whenever
- * that data moves — or silently narrow its own coverage.
- */
-const SEEDS = [
-  "#000000",
-  "#003087",
-  "#006400",
-  "#1F1A15",
-  "#1F4E79",
-  "#472B62",
-  "#4B0082",
-  "#4B1A7E",
-  "#4B2E2E",
-  "#800000",
-  "#8B0000",
-  "#8B4513",
-  "#BF0A30",
-  "#C0C0C0",
-  "#C9A56F",
-  "#CC0000",
-  "#FF69B4",
-  "#FFFFFF",
-  HOUSE_SEED,
-] as const;
-
-/** Read from the token source; a guard that restates its values guards nothing. */
-const SURFACE = signetDarkTokens.color.surface;
-const TEXT = signetDarkTokens.color.text;
-
-/** The hairline's alpha, parsed from the token so the two cannot disagree. */
-const HAIRLINE_ALPHA = Number(
-  /rgba\([^)]*,\s*([\d.]+)\)/.exec(signetDarkTokens.color.border.hairline)?.[1] ??
-    "0.08",
-);
-
-const AA_TEXT = 4.5;
-/** README §6's non-text floor. */
-const AA_NON_TEXT = 3;
-
-const ratio = (fg: string, bg: string) =>
-  contrastRatio(parseHex(fg)!, parseHex(bg)!);
-
-function accentRolesFor(seed: string) {
-  return signetAccentSemanticVars(deriveSignetPalette(seed).palette);
-}
-
-/**
- * `--accent-subtle-hover` is a `color-mix(in srgb, var(--accent-border) 22%,
- * var(--accent-subtle))` in `signet.css`. CSS resolves it at paint time; here it
- * is recomputed from the same two roles and the same 22%, so a change to the
- * mix in the stylesheet has to be mirrored here to keep these green.
- */
-const accentFour = (roles: Record<string, string>) =>
-  mixHex(roles["--accent-subtle"]!, roles["--accent-border"]!, 0.22);
-
-/** The channel spread of a fill's delta from a surface — its hue shift. */
-function chromaShift(fill: string, base: string) {
-  const a = parseHex(fill)!;
-  const b = parseHex(base)!;
-  const deltas = [a.r - b.r, a.g - b.g, a.b - b.b];
-  return Math.max(...deltas) - Math.min(...deltas);
-}
 
 describe("the defect this file exists for", () => {
   it("would have caught `hover:bg-accent` on a card-seated row", () => {

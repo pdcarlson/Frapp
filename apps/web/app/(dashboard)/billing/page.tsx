@@ -306,7 +306,7 @@ export default function BillingPage() {
           {filteredInvoices.length === 0 ? (
             <NestedEmpty
               title={stateMicrocopy.billing.emptyTitle}
-              description="Create the first one from Member invoices below to start dues collection."
+              description={stateMicrocopy.billing.emptyDescription}
             />
           ) : (
             <Table>

@@ -13,7 +13,7 @@ import {
 } from "@repo/hooks";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { FOCUS_RING } from "@/components/ui/focus";
+import { FOCUS_RING, FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -685,7 +685,17 @@ function SortableHead({
       <button
         type="button"
         onClick={() => onSort(sortKey)}
-        className={`-mx-1 flex items-center gap-1 rounded-xs px-1 font-semibold transition-colors hover:text-foreground ${FOCUS_RING}`}
+        /*
+         * `FOCUS_RING_OFFSET`, not `FOCUS_RING`. The standard recipe swaps the
+         * border to accent and treats the ring as a halo — `focus.ts` is
+         * explicit that the border swap is the half that carries it, since the
+         * ring composites to ~1.3:1. This button has no border *width*
+         * (Preflight zeroes it), so `border-primary` would recolour nothing
+         * while `outline-none` removed the browser's own outline: a control
+         * with no focus indicator at all, which is a README §6 release-gate
+         * failure. The offset ring is solid accent and needs no border.
+         */
+        className={`-mx-1 flex items-center gap-1 rounded-xs px-1 font-semibold transition-colors hover:text-foreground ${FOCUS_RING_OFFSET}`}
         aria-label={
           isActive
             ? `Sort by ${label}, currently ${direction}`

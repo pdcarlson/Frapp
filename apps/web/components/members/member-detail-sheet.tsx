@@ -309,7 +309,7 @@ export function MemberDetailSheet({
       <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
-            <DirectoryGlyph className="h-4 w-4" />
+            <DirectoryGlyph className="h-5 w-5" />
             {displayName}
           </SheetTitle>
           <SheetDescription>

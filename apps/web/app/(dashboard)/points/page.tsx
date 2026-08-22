@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ErrorState, LoadingState, OfflineState } from "@/components/shared/async-states";
 import { NestedEmpty } from "@/components/shared/nested-states";
+import { amountToneClassName } from "@/components/points/amount-tone";
 import {
   dashboardCheckboxCellClassName,
   dashboardCheckboxHitAreaClassName,
@@ -409,11 +410,7 @@ export default function PointsPage() {
                         </label>
                       </TableCell>
                       <TableCell
-                        className={
-                          transaction.amount >= 0
-                            ? "font-mono font-semibold tabular-nums text-success"
-                            : "font-mono font-semibold tabular-nums text-destructive"
-                        }
+                        className={amountToneClassName(transaction.amount)}
                       >
                         {transaction.amount >= 0 ? `+${transaction.amount}` : transaction.amount}
                       </TableCell>

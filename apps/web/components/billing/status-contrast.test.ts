@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { applyAlpha, contrastRatio, parseHex } from "@repo/color";
 import {
-  deriveSignetPalette,
-  HOUSE_SEED,
-  signetAccentSemanticVars,
-} from "@repo/chapter-theme";
-import { signetDarkTokens } from "@repo/theme/signet";
+  AA_TEXT,
+  accentRolesFor,
+  DESTRUCTIVE_TEXT,
+  ratio,
+  SEEDS,
+  SEMANTIC,
+  SURFACE,
+  tint,
+} from "@/tests/signet-contrast";
 
 /**
  * Contrast for the §5 Semantic badge, which billing and points state status in.
@@ -23,49 +26,12 @@ import { signetDarkTokens } from "@repo/theme/signet";
  * and a red-accented chapter's is its danger badge. `writing.md` §5 says status
  * colour is never decorative; these assertions are why that is a measurement
  * rather than a matter of taste.
+ *
+ * Seed corpus and the shared helpers: `tests/signet-contrast.ts`.
  */
-
-const SEEDS = [
-  "#000000",
-  "#003087",
-  "#006400",
-  "#1F1A15",
-  "#1F4E79",
-  "#472B62",
-  "#4B0082",
-  "#4B1A7E",
-  "#4B2E2E",
-  "#800000",
-  "#8B0000",
-  "#8B4513",
-  "#BF0A30",
-  "#C0C0C0",
-  "#C9A56F",
-  "#CC0000",
-  "#FF69B4",
-  "#FFFFFF",
-  HOUSE_SEED,
-] as const;
-
-const SURFACE = signetDarkTokens.color.surface;
-const SEMANTIC = signetDarkTokens.color.semantic;
-
-/**
- * `--destructive-text` is CSS-only (`packages/theme/src/signet.css`) with no
- * `signetDarkTokens` entry, so it is one of the two literals here.
- */
-const DESTRUCTIVE_TEXT = "#FF7B72";
-
-const AA_TEXT = 4.5;
-
-const ratio = (fg: string, bg: string) =>
-  contrastRatio(parseHex(fg)!, parseHex(bg)!);
-
-/** §5's Semantic fill: the status hue at 13%, composited over its surface. */
-const tint = (hue: string, over: string) => applyAlpha(hue, 0.13, over);
 
 const accentSubtleFor = (seed: string) =>
-  signetAccentSemanticVars(deriveSignetPalette(seed).palette)["--accent-subtle"]!;
+  accentRolesFor(seed)["--accent-subtle"]!;
 
 describe("the Semantic badge kinds", () => {
   it("puts success and warning text over the gate on their own tint, unlifted", () => {
