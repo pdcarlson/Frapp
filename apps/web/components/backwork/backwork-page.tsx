@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BookOpen, Download, Loader2, Upload } from "lucide-react";
+import { Download, Loader2, Upload } from "lucide-react";
 import {
   useBackworkResource,
   useBackworkResources,
@@ -37,11 +37,14 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/shared/async-states";
 import {
-  EmptyState,
-  ErrorState,
-  LoadingState,
-} from "@/components/shared/async-states";
+  NestedEmpty,
+  NestedError,
+  NestedLoading,
+  NestedOffline,
+} from "@/components/shared/nested-states";
+import { BackworkGlyph } from "@/components/documents/resources-glyphs";
 import { Can } from "@/components/shared/can";
 import {
   SubscriptionNotice,
@@ -49,6 +52,7 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useChapterStore } from "@/lib/stores/chapter-store";
+import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
 import {
@@ -108,8 +112,10 @@ function InlineDownloadCell({ id }: { id: string }) {
     try {
       const fresh = await query.refetch();
       const url =
-        fresh.data && typeof fresh.data === "object" && "download_url" in fresh.data
-          ? (fresh.data as { download_url?: string }).download_url ?? null
+        fresh.data &&
+        typeof fresh.data === "object" &&
+        "download_url" in fresh.data
+          ? ((fresh.data as { download_url?: string }).download_url ?? null)
           : null;
       if (!url) throw new Error("No download URL returned.");
       window.open(url, "_blank", "noopener");
@@ -151,6 +157,7 @@ export function BackworkPage() {
   // subscription gate (#841). Browsing, filtering, and the signed download link
   // are reads — `enforceSubscription` returns early for GET, so they stay live.
   const gate = useSubscriptionGate();
+  const { isOffline } = useNetwork();
   const [filters, setFilters] = useState<{
     search: string;
     department_id: string;
@@ -291,7 +298,9 @@ export function BackworkPage() {
           ? (signed as { storage_path?: string }).storage_path
           : null;
       if (!signedUrl || !storagePath) {
-        throw new Error("Upload URL response missing signed URL or storage path.");
+        throw new Error(
+          "Upload URL response missing signed URL or storage path.",
+        );
       }
 
       const response = await fetch(signedUrl, {
@@ -392,8 +401,8 @@ export function BackworkPage() {
           <h2 className="text-2xl font-semibold tracking-tight">Backwork</h2>
           <p className="text-sm text-muted-foreground">
             Academic library for the chapter. Browse and download with a signed
-            URL, or upload new resources. Duplicate files (matching SHA-256)
-            are rejected automatically.
+            URL, or upload new resources. Duplicate files (matching SHA-256) are
+            rejected automatically.
           </p>
         </div>
         <Can permission="backwork:upload">
@@ -663,7 +672,10 @@ export function BackworkPage() {
                 id="bw-search"
                 value={filters.search}
                 onChange={(event) =>
-                  setFilters((prev) => ({ ...prev, search: event.target.value }))
+                  setFilters((prev) => ({
+                    ...prev,
+                    search: event.target.value,
+                  }))
                 }
                 placeholder="Title, tag, or course text"
               />
@@ -802,7 +814,7 @@ export function BackworkPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <BookOpen className="h-4 w-4 text-muted-foreground" />
+            <BackworkGlyph className="h-4 w-4 text-muted-foreground" />
             Resources
           </CardTitle>
           <CardDescription>
@@ -815,23 +827,52 @@ export function BackworkPage() {
             `enabled: !!chapterId`, and a disabled query stays `isPending`
             with `fetchStatus: "idle"`. `isLoading` is a fetch in flight;
             `paused` is offline with no data — not an empty library.
+
+            The nested variants, not the whole-screen ones: these render
+            inside a `<CardContent>`, where a `bg-card` state on a `bg-card`
+            card is exactly 1.00:1 and the region disappears (§10). And the
+            offline branch comes first, because a paused query is `isPending`
+            and would otherwise spin behind an offline member indefinitely
+            (README §4 item 4) — but only when there is nothing loaded. README
+            §4 scopes it to "offline, **no cached data**" and §10 keeps stale
+            content in place on a refetch, so an archive already in hand stays
+            readable and the shell's `OfflineBanner` carries the connection
+            state, as it does on every route.
+
+            The `paused` branch needs the same qualifier: `isLoading` implies
+            no data, but `paused` alone does not — TanStack pauses a background
+            refetch while keeping the cached rows, so an unqualified check
+            replaced a readable archive with a spinner on the same blip.
+            `isPending && paused` is README §4's "offline, no cached data".
           */}
-          {resourcesQuery.isLoading ||
-          resourcesQuery.fetchStatus === "paused" ? (
-            <LoadingState message="Loading backwork..." />
+          {isOffline && resources.length === 0 ? (
+            <NestedOffline
+              sole
+              title="Backwork unavailable offline"
+              description="Reconnect to browse the coursework archive and download a resource."
+              onRetry={() => {
+                void resourcesQuery.refetch();
+              }}
+            />
+          ) : resourcesQuery.isLoading ||
+            (resourcesQuery.isPending &&
+              resourcesQuery.fetchStatus === "paused") ? (
+            <NestedLoading message="Loading backwork..." sole />
           ) : resourcesQuery.isError ? (
-            <ErrorState
+            <NestedError
+              sole
               title="Couldn't load backwork"
               description="Confirm your chapter access and retry."
               onRetry={() => void resourcesQuery.refetch()}
             />
           ) : resources.length === 0 ? (
-            <EmptyState
+            <NestedEmpty
+              sole
               title="No backwork matches this view"
               description="Loosen the filters, or upload the first resource to build the library."
             />
           ) : (
-            <ul className="divide-y divide-border/70">
+            <ul className="divide-y divide-border">
               {resources.map((row) => {
                 const department = row.department_id
                   ? departmentById.get(row.department_id)
@@ -888,4 +929,3 @@ export function BackworkPage() {
     </div>
   );
 }
-

@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Download, FileSpreadsheet, FileText, Loader2 } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { Download, Loader2 } from "lucide-react";
 import {
   isReportExportEnvelope,
   useAttendanceReport,
@@ -21,6 +21,24 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  NestedEmpty,
+  NestedError,
+  NestedLoading,
+} from "@/components/shared/nested-states";
+import {
+  DocumentsGlyph,
+  ReportsGlyph,
+} from "@/components/documents/resources-glyphs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -180,6 +198,28 @@ export function ReportsPage() {
   const [preview, setPreview] = useState<ReportRow[] | null>(null);
   /** Truncation reported alongside the current preview, if any. */
   const [truncation, setTruncation] = useState<ReportTruncation | null>(null);
+  /*
+    A failed run used to be a toast and nothing else: `setPreview` was
+    never reached, so `preview` stayed `null` and the panel fell through to
+    "Generate a report to see a preview here." — a failure rendering as the
+    initial state, with no retry. README §4 requires an error state with a
+    retry path on every async view, and `writing.md` §7's Reports table had
+    no Error row for it, which is why nothing caught it.
+  */
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  /*
+    Which run the preview belongs to.
+
+    `onFilterChange` clears the preview the moment a filter is edited, but it
+    cannot cancel a request already in flight — so a generate started under the
+    old filters would resolve afterwards and call `setPreview` with rows that no
+    longer match what the form says. The member sees a table scoped to nobody
+    beside a Member ID field naming somebody, and "Download CSV" — which gates
+    only on `preview` being non-empty — exports those rows under that
+    appearance. Each run takes a token and only the newest one is allowed to
+    write.
+  */
+  const runToken = useRef(0);
 
   /**
    * Any filter edit invalidates the preview.
@@ -194,8 +234,10 @@ export function ReportsPage() {
   function onFilterChange<T>(setter: (value: T) => void) {
     return (value: T) => {
       setter(value);
+      runToken.current += 1;
       setPreview(null);
       setTruncation(null);
+      setPreviewError(null);
     };
   }
   // Tracked separately from the mutation's own isPending: the PDF export reuses
@@ -269,12 +311,21 @@ export function ReportsPage() {
   }
 
   async function runReport() {
+    runToken.current += 1;
+    const token = runToken.current;
+    // The previous run's verdict is not this run's. Without this the header
+    // keeps its "Incomplete report" badge for the whole time a fresh request
+    // is in flight, describing a result nobody has seen yet.
+    setTruncation(null);
+    setPreviewError(null);
     try {
       const { payload, truncation } = await invokeReport("json");
+      if (token !== runToken.current) return;
 
       const rows = extractRows(payload);
       setPreview(rows);
       setTruncation(truncation);
+      setPreviewError(null);
 
       if (rows.length === 0) {
         toast({
@@ -302,12 +353,20 @@ export function ReportsPage() {
         description: `${rows.length} row${rows.length === 1 ? "" : "s"} previewed. Download CSV to share.`,
       });
     } catch (error) {
+      if (token !== runToken.current) return;
+      const description =
+        error instanceof Error
+          ? error.message
+          : "The API rejected the request. Confirm reports:export and retry.";
+      // Both, deliberately: the toast reports the moment, and the panel keeps
+      // saying so after the toast dismisses. A failed run that leaves the idle
+      // copy on screen is a failure reported as "nothing has happened yet".
+      setPreview(null);
+      setTruncation(null);
+      setPreviewError(description);
       toast({
         title: `Couldn't generate ${reportLabel[kind].toLowerCase()} report`,
-        description:
-          error instanceof Error
-            ? error.message
-            : "The API rejected the request. Confirm reports:export and retry.",
+        description,
         variant: "destructive",
       });
     }
@@ -394,7 +453,7 @@ export function ReportsPage() {
     <Can
       permission="reports:export"
       fallback={
-        <div style={{ minHeight: 160 }}>
+        <div className="min-h-40">
           <Card aria-label="Reports & Export permissions check">
             <CardHeader>
               <CardTitle>Reports &amp; Export</CardTitle>
@@ -406,7 +465,7 @@ export function ReportsPage() {
         </div>
       }
       deniedFallback={
-        <div style={{ minHeight: 160 }}>
+        <div className="min-h-40">
           <Card>
             <CardHeader>
               <CardTitle>Reports &amp; Export</CardTitle>
@@ -460,8 +519,10 @@ export function ReportsPage() {
                   disabled={pdfPending || activeMutation.isPending}
                   onValueChange={(value) => {
                     setKind(value as ReportKind);
+                    runToken.current += 1;
                     setPreview(null);
                     setTruncation(null);
+                    setPreviewError(null);
                   }}
                 >
                   <SelectTrigger id="report-kind">
@@ -628,7 +689,7 @@ export function ReportsPage() {
                 {pdfPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <FileText className="h-4 w-4" />
+                  <DocumentsGlyph className="h-4 w-4" />
                 )}
                 {pdfPending ? "Preparing PDF..." : "Download PDF"}
               </Button>
@@ -639,7 +700,7 @@ export function ReportsPage() {
                 {activeMutation.isPending && !pdfPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <FileSpreadsheet className="h-4 w-4" />
+                  <ReportsGlyph className="h-4 w-4" />
                 )}
                 Generate report
               </Button>
@@ -649,61 +710,112 @@ export function ReportsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Preview</CardTitle>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle className="text-lg">Preview</CardTitle>
+              {/*
+                `spec/behavior/reports.md` caps a report at 5,000 rows and
+                says truncation is never silent — but the only signal was a
+                toast, so once it dismissed a partial table sat on screen
+                claiming to be the whole report, and the CSV built from it
+                carries the same claim into a file. §5's Semantic warning
+                kind, which needs no §1 lift on its own tint (5.57–7.15:1).
+              */}
+              {truncation?.truncated ? (
+                <Badge variant="warning">Incomplete report</Badge>
+              ) : null}
+            </div>
             <CardDescription>
-              First 25 rows of the generated report. The CSV download contains
-              every returned row.
+              {truncation?.truncated
+                ? `${truncationSummary(truncation)} This preview and the CSV built from it are not a complete record of the chapter.`
+                : "First 25 rows of the generated report. The CSV download contains every returned row."}
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {/*
+              The nested state variants: this renders inside a
+              `<CardContent>`, where a `bg-card` state on a `bg-card` card is
+              exactly 1.00:1 and the region disappears (`components.md` §10).
+              This panel previously rendered no state-family component at all —
+              bare paragraphs and a hand-rolled spinner row — so it was the one
+              surface in the family whose states did not match the other three.
+            */}
             {activeMutation.isPending && !pdfPending ? (
-              <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Generating report...
-              </div>
+              <NestedLoading message="Generating report..." sole />
+            ) : previewError ? (
+              <NestedError
+                sole
+                title={`Couldn't generate ${reportLabel[kind].toLowerCase()} report`}
+                description={previewError}
+                onRetry={() => void runReport()}
+                /*
+                  `gate.controlProps`, not a hand-built `{ disabled }`. Retry
+                  re-enters `runReport` — the same paid-ops POST the two footer
+                  buttons carry the gate on — so it is a third trigger for a
+                  gated write and README §5's "gate the trigger" reaches it
+                  too. Building the object by hand disabled it only while busy,
+                  so a chapter that lapsed between the failed run and the click
+                  would have fired the doomed request the standard exists to
+                  prevent. The busy flags go *into* `controlProps`, which ORs
+                  them with the verdict rather than replacing it — and this is
+                  the shape `actionProps`/`retryProps` were built to take.
+
+                  The busy half matters on its own: the loading branch above is
+                  `activeMutation.isPending && !pdfPending`, so during a PDF
+                  export it is false and this branch renders its stale error
+                  with Retry wired to the same mutation the export is using.
+                */
+                retryProps={gate.controlProps(
+                  pdfPending || activeMutation.isPending,
+                )}
+              />
             ) : preview === null ? (
-              <p className="text-sm text-muted-foreground">
-                Generate a report to see a preview here.
-              </p>
+              <NestedEmpty
+                sole
+                title="No report generated yet"
+                description="Generate a report to see a preview here."
+              />
             ) : preview.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Report returned no rows — the filters matched nothing in the
-                active chapter.
-              </p>
+              <NestedEmpty
+                sole
+                title="Report returned no rows"
+                description="The filters matched nothing in the active chapter."
+              />
             ) : (
-              <div className="overflow-x-auto rounded-md border border-border">
-                <table className="min-w-full divide-y divide-border text-xs">
-                  <thead className="bg-secondary/40">
-                    <tr>
-                      {previewColumnKeys.map((key) => (
-                        <th
-                          key={key}
-                          className="whitespace-nowrap px-3 py-2 text-left font-medium text-muted-foreground"
-                        >
-                          {key}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {preview.slice(0, 25).map((row, index) => {
-                      const flat = flattenRecord(row);
-                      return (
-                        <tr key={index} className="border-t border-border/70">
-                          {previewColumnKeys.map((key) => (
-                            <td
-                              key={key}
-                              className="whitespace-nowrap px-3 py-1.5"
-                            >
-                              {flat[key] ?? ""}
-                            </td>
-                          ))}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              /*
+                The shared primitive rather than a hand-rolled `<table>`. It
+                brings the `overflow-auto` wrapper that keeps a wide report off
+                the 375px floor, the undiluted `--border` hairline, and the row
+                recipe `components/shared/table-contrast.test.ts` already pins.
+                The hand-rolled one carried three defects at once: a
+                `bg-secondary/40` header that is 1.000:1 on a card, a
+                `border-border/70` row rule at the diluted alpha §2 forbids,
+                and `text-xs` cells under foundations §7's 16px body floor.
+              */
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    {previewColumnKeys.map((key) => (
+                      <TableHead key={key} className="whitespace-nowrap">
+                        {key}
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {preview.slice(0, 25).map((row, index) => {
+                    const flat = flattenRecord(row);
+                    return (
+                      <TableRow key={index}>
+                        {previewColumnKeys.map((key) => (
+                          <TableCell key={key} className="whitespace-nowrap">
+                            {flat[key] ?? ""}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
             )}
           </CardContent>
         </Card>

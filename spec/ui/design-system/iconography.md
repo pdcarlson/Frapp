@@ -94,8 +94,9 @@ duotone. Interim rules:
   path**: the shell's sidebar and top-bar glyphs are duotone SVG components in
   `apps/web/components/layout/nav-glyphs.tsx`, and chat's are in
   `apps/web/components/chat/chat-glyphs.tsx`, both transcribed from the
-  reference boards; the Directory & Finance and Chapter Ops families have since
-  followed (§6.2.3, §6.2.4). Lucide remains the interim pack for the screen families
+  reference boards; the Directory & Finance, Chapter Ops and Resources &
+  Reporting families have since followed (§6.2.3, §6.2.4, §6.2.5). Lucide
+  remains the interim pack for the screen families
   whose #920 slice has not landed, and — on every surface, reskinned or not —
   for control furniture (§6.2).
 - **Mobile (Ionicons)** — outline variants for navigation and neutral states;
@@ -190,9 +191,10 @@ theme control.
 Screens whose family slice has not landed still draw Lucide, replaced per
 family as each #920 slice rebuilds its screens — the same shape as mobile's
 §6.1.1. Chat has departed (§6.2.2), so have the four Directory & Finance families —
-members, alumni, billing and points (§6.2.3) — and so has Chapter Ops —
-events, tasks, study hours, service hours and study zones (§6.2.4). One pick
-worth pinning meanwhile:
+members, alumni, billing and points (§6.2.3) — Chapter Ops —
+events, tasks, study hours, service hours and study zones (§6.2.4) — and
+Resources & Reporting — documents, backwork, polls and reports (§6.2.5). One
+pick worth pinning meanwhile:
 
 - **Reserved:** `LayoutDashboard` is held for the **Overview** intent and is
   deliberately unused today — the dashboard home screen was removed in the
@@ -344,6 +346,60 @@ points — and the events table drew its role-targeting and recurrence markers a
   the study timer, `Eye`/`EyeOff` on its tracking state, `Power`/`PowerOff` on
   a zone's enable toggle, and `CheckCircle2`/`XCircle`/`Undo2` on approve,
   reject and withdraw.
+
+### 6.2.5 Resources & Reporting (Signet duotone)
+
+Since the #920 Resources & Reporting slice these four families draw the
+duotone recipe (§1). The glyphs live in
+[`apps/web/components/documents/resources-glyphs.tsx`](../../../apps/web/components/documents/resources-glyphs.tsx),
+one file for four screens rather than four files, for the reason §6.2.4 gives:
+the four share their intents rather than partitioning them. The document
+silhouette marks a file row on `/documents`, an unfiled document's folder
+button, and the PDF a report exports to.
+
+| Semantic intent | Glyph |
+|---|---|
+| A document row on `/documents`, the "No folder" filter, and the PDF a report exports to | `DocumentsGlyph` (re-export) |
+| A folder, and the folder filter that names one | `FolderGlyph` |
+| A backwork resource, and the archive that holds them | `BackworkGlyph` (re-export) |
+| A poll, and the control that casts a vote on one | `PollsGlyph` (re-export) |
+| A report, and the control that generates one | `ReportsGlyph` (re-export) |
+
+Four of the five are re-exports from
+[`apps/web/components/layout/nav-glyphs.tsx`](../../../apps/web/components/layout/nav-glyphs.tsx),
+which is §1 rule 1's rule and the two preceding families' practice. Only
+`FolderGlyph` is drawn here, and only because no nav intent covers a folder —
+the sidebar links to Documents as a whole.
+
+This is the one family where the reference settles the geometry directly:
+`DocumentsGlyph`'s path is the file glyph
+[`canvas-screens.dc.html`](reference/canvas-screens.dc.html) draws on **s12**
+(the Documents screen) and **s21** (the upload sheet). s12 marks every document
+row with it, which `/documents` did not — the rows carried no glyph at all —
+so the leading marker was added with the pack change rather than left for a
+later pass. s12 also draws the two-tone split this family uses on its folder
+rail: the *pinned* rows take the accent duotone and the ordinary rows the
+neutral one, which is `fillProps(active)`. Web has no pin field
+([`../mobile/screens.md`](../mobile/screens.md) records the same absence on
+mobile), so document rows take the neutral variant and only the selected
+folder is accented.
+
+Two of the swaps were corrections rather than a pack change, in §6.2.4's sense:
+
+- `/polls` drew `RefreshCcw`, which §6.2.3 already recorded as "a stray second
+  spelling of §6.2.2's `RefreshCw`". It was the last one in the tree.
+- `/reports` marked **Generate report** with `FileSpreadsheet` and **Download
+  PDF** with `FileText` — a spreadsheet labelling a report, and a generic page
+  labelling the PDF. Both now name what the control produces.
+
+- **Control furniture**, unchanged from §6.2.2's rule: `Loader2`, `Trash2`,
+  `Upload`, `Download` and `RefreshCw`. This family has fewer of the second
+  kind than Chapter Ops — every one of these is a verb on a button or a
+  spinner, not the thing a row is *about*. Note `FolderOpen` survives in
+  [`apps/web/components/shared/nested-states.tsx`](../../../apps/web/components/shared/nested-states.tsx)
+  and is deliberately **not** this family's to move: §6.2.3 already records
+  that the state family's glyphs migrate with a pass over
+  `components/shared/**`, not with a screen family.
 
 ### 6.3 Maintenance Rule
 

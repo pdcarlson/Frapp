@@ -2,9 +2,25 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
+import { networkMock } from "@/tests/network";
 
-const { mockCurrentChapter } = vi.hoisted(() => ({
+const {
+  mockCurrentChapter,
+  mockDeleteDoc,
+  mockRefetch,
+  documentsQuery,
+  mockOffline,
+} = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
+  mockDeleteDoc: vi.fn().mockResolvedValue({}),
+  mockRefetch: vi.fn(),
+  mockOffline: { value: false },
+  documentsQuery: {
+    data: [] as unknown[],
+    isPending: false,
+    isError: false,
+    refetch: () => undefined as unknown,
+  },
 }));
 
 // Only the chapter payload is stubbed — `useSubscriptionWriteState` and
@@ -23,15 +39,11 @@ const BYLAWS = {
 
 vi.mock("@repo/hooks", () => ({
   useCurrentChapter: () => mockCurrentChapter(),
-  useDocuments: () => ({
-    data: [BYLAWS],
-    isPending: false,
-    isError: false,
-  }),
+  useDocuments: () => documentsQuery,
   useDocument: () => ({ refetch: vi.fn() }),
   useRequestDocumentUploadUrl: () => ({ mutateAsync: vi.fn() }),
   useConfirmDocumentUpload: () => ({ mutateAsync: vi.fn() }),
-  useDeleteDocument: () => ({ mutateAsync: vi.fn() }),
+  useDeleteDocument: () => ({ mutateAsync: mockDeleteDoc }),
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
@@ -45,9 +57,18 @@ vi.mock("@/components/shared/can", () => ({
 
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 
+vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
+
 const { DocumentsPage } = await import("./documents-page");
 
 const chapter = chapterSubscription(mockCurrentChapter);
+
+function resolvedDocumentsQuery() {
+  documentsQuery.data = [BYLAWS];
+  documentsQuery.isPending = false;
+  documentsQuery.isError = false;
+  documentsQuery.refetch = mockRefetch;
+}
 
 const uploadTrigger = () =>
   screen.getByRole("button", { name: /upload document/i });
@@ -56,7 +77,11 @@ const deleteButton = () =>
 const downloadButton = () => screen.getByRole("button", { name: /download/i });
 
 describe("DocumentsPage subscription gating", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOffline.value = false;
+    resolvedDocumentsQuery();
+  });
 
   it("leaves every document write alone on an active chapter", () => {
     chapter.active();
@@ -116,9 +141,7 @@ describe("DocumentsPage subscription gating", () => {
     render(<DocumentsPage />);
 
     expect(downloadButton()).toBeEnabled();
-    expect(
-      screen.getByRole("button", { name: /all files/i }),
-    ).toBeEnabled();
+    expect(screen.getByRole("button", { name: /all files/i })).toBeEnabled();
   });
 
   it("holds the gate shut while the chapter is still loading", () => {
@@ -206,5 +229,144 @@ describe("DocumentsPage upload allowlist", () => {
     expect(accept.split(",")).toContain(".doc");
     expect(accept.split(",")).toContain(".xls");
     expect(accept.split(",")).toContain(".ppt");
+  });
+});
+
+describe("DocumentsPage state ordering", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOffline.value = false;
+    resolvedDocumentsQuery();
+    chapter.active();
+  });
+
+  it("keeps an open upload dialog mounted when the list query fails under it", async () => {
+    // The defect: `isError` was an early return above the whole tree, so a
+    // background refetch failure unmounted `DialogContent` mid-draft and
+    // discarded whatever had been typed. `subscription-gate.tsx` names this
+    // hazard for `useGatedDialog` by hand; nothing asserted it.
+    const user = userEvent.setup();
+    const { rerender } = render(<DocumentsPage />);
+
+    await user.click(uploadTrigger());
+    const title = await screen.findByLabelText(/title/i);
+    await user.type(title, "Retreat agenda");
+
+    documentsQuery.isError = true;
+    documentsQuery.data = [];
+    rerender(<DocumentsPage />);
+
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByLabelText(/title/i)).toHaveValue("Retreat agenda");
+    // And the failure is still reported — in the list, where it belongs.
+    expect(screen.getByText(/couldn't load documents/i)).toBeInTheDocument();
+  });
+
+  it("offers a retry when offline rather than a spinner that cannot resolve", () => {
+    // `useDocuments` has no `enabled` gate, so a paused query keeps
+    // `isPending` true — an offline member sat on the loading copy forever.
+    mockOffline.value = true;
+    documentsQuery.isPending = true;
+    documentsQuery.data = [];
+
+    render(<DocumentsPage />);
+
+    expect(
+      screen.getByText(/documents unavailable offline/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Loading chapter documents..."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("announces the load, which moving to the nested state family nearly cost", () => {
+    // `NestedLoading` omits `role="status"` by default, because it was written
+    // for pages that also render a top-level `LoadingState`. This page does
+    // not — the nested state is its only state — so without `announce` a
+    // screen-reader user opening it mid-load hears nothing at all.
+    documentsQuery.isPending = true;
+    documentsQuery.data = [];
+
+    render(<DocumentsPage />);
+
+    const live = screen.getByRole("status");
+    expect(live).toHaveTextContent("Loading chapter documents...");
+    expect(live).toHaveAttribute("aria-live", "polite");
+  });
+
+  it("keeps a loaded library readable when the connection drops", () => {
+    // TanStack does not clear `data` when the link goes; README §4 scopes the
+    // offline state to "no cached data" and §10 keeps stale content in place.
+    // An unconditional `isOffline` branch threw away a list the member could
+    // still read, on a WiFi blip. The shell's OfflineBanner states the
+    // connection on every route, so the screen owes no state here.
+    mockOffline.value = true;
+
+    render(<DocumentsPage />);
+
+    expect(screen.getByText("Chapter bylaws")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/documents unavailable offline/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("still lets a member reach the upload dialog while the list is loading", () => {
+    documentsQuery.isPending = true;
+    documentsQuery.data = [];
+
+    render(<DocumentsPage />);
+
+    expect(uploadTrigger()).toBeInTheDocument();
+    expect(
+      screen.getByText("Loading chapter documents..."),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("DocumentsPage delete confirmation", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOffline.value = false;
+    resolvedDocumentsQuery();
+    chapter.active();
+  });
+
+  it("confirms through the in-product dialog, never window.confirm", async () => {
+    // README §2's ban binds "Every surface" (#1198). §9 also requires the
+    // confirm button to name its action rather than say "Confirm".
+    const nativeConfirm = vi.spyOn(window, "confirm");
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.click(deleteButton());
+
+    const dialog = await screen
+      .findByRole("alertdialog")
+      .catch(() => screen.getByRole("dialog"));
+    expect(
+      within(dialog).getByRole("button", { name: /delete document/i }),
+    ).toBeInTheDocument();
+    expect(nativeConfirm).not.toHaveBeenCalled();
+
+    await user.click(
+      within(dialog).getByRole("button", { name: /delete document/i }),
+    );
+    await waitFor(() => expect(mockDeleteDoc).toHaveBeenCalledWith("doc-1"));
+  });
+
+  it("does not delete when the confirmation is dismissed", async () => {
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.click(deleteButton());
+    const dialog = await screen
+      .findByRole("alertdialog")
+      .catch(() => screen.getByRole("dialog"));
+    await user.click(within(dialog).getByRole("button", { name: /cancel/i }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(mockDeleteDoc).not.toHaveBeenCalled();
   });
 });

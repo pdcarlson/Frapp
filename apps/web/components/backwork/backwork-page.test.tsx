@@ -1,7 +1,14 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
+import { networkMock } from "@/tests/network";
 
 const {
   mockCurrentChapter,
@@ -9,6 +16,7 @@ const {
   mockConfirmUpload,
   mockChapterId,
   mockToast,
+  mockOffline,
   resourcesQuery,
 } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
@@ -16,6 +24,7 @@ const {
   mockConfirmUpload: vi.fn().mockResolvedValue({}),
   mockChapterId: { value: "chap-1" as string | null },
   mockToast: vi.fn(),
+  mockOffline: { value: false },
   resourcesQuery: {
     data: [] as unknown[],
     isPending: false,
@@ -62,15 +71,20 @@ vi.mock("@repo/hooks", () => ({
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
-  useChapterStore: (selector: (s: { activeChapterId: string | null }) => unknown) =>
-    selector({ activeChapterId: mockChapterId.value }),
+  useChapterStore: (
+    selector: (s: { activeChapterId: string | null }) => unknown,
+  ) => selector({ activeChapterId: mockChapterId.value }),
 }));
 
 vi.mock("@/components/shared/can", () => ({
   Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: mockToast }) }));
+vi.mock("@/hooks/use-toast", () => ({
+  useToast: () => ({ toast: mockToast }),
+}));
+
+vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
 
 const { BackworkPage } = await import("./backwork-page");
 
@@ -92,8 +106,81 @@ function resolvedResourcesQuery() {
 describe("BackworkPage disabled-query handling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockOffline.value = false;
     resolvedResourcesQuery();
     chapter.active();
+  });
+
+  it("offers a retry when offline rather than spinning on a paused query", () => {
+    // README §4 item 4. `paused` was routed to the loading copy, so an
+    // offline member with no cached archive sat on "Loading backwork..."
+    // for as long as they stayed offline.
+    mockOffline.value = true;
+    resourcesQuery.data = undefined as unknown as unknown[];
+    resourcesQuery.isPending = true;
+    resourcesQuery.fetchStatus = "paused";
+
+    render(<BackworkPage />);
+
+    expect(
+      screen.getByText(/backwork unavailable offline/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Loading backwork...")).not.toBeInTheDocument();
+  });
+
+  it("announces the load, which moving to the nested state family nearly cost", () => {
+    // Same trap as `/documents`: this page renders no top-level `LoadingState`,
+    // so the nested one has to carry the announcement or there is none.
+    resourcesQuery.data = undefined as unknown as unknown[];
+    resourcesQuery.isPending = true;
+    resourcesQuery.isLoading = true;
+    resourcesQuery.fetchStatus = "fetching";
+
+    render(<BackworkPage />);
+
+    const live = screen.getByRole("status");
+    expect(live).toHaveTextContent("Loading backwork...");
+    expect(live).toHaveAttribute("aria-live", "polite");
+  });
+
+  it("keeps a loaded archive readable when the connection drops", () => {
+    // Same rule as `/documents` and `/polls`: offline replaces the list only
+    // when there is nothing loaded to replace.
+    mockOffline.value = true;
+
+    render(<BackworkPage />);
+
+    expect(screen.getByText("CS 3320 Midterm")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/backwork unavailable offline/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the loaded archive through a paused background refetch", () => {
+    // Same distinction as `/polls`: a paused *background* refetch keeps the
+    // cached rows, so it must not render as a first load.
+    resourcesQuery.isPending = false;
+    resourcesQuery.isLoading = false;
+    resourcesQuery.fetchStatus = "paused";
+
+    render(<BackworkPage />);
+
+    expect(screen.getByText("CS 3320 Midterm")).toBeInTheDocument();
+    expect(screen.queryByText("Loading backwork...")).not.toBeInTheDocument();
+  });
+
+  it("keeps the upload trigger reachable while the list is offline", () => {
+    // The offline state is scoped to the Resources card rather than replacing
+    // the page, so it cannot unmount the gated upload dialog above it — the
+    // defect `/documents` shipped with its own early returns.
+    mockOffline.value = true;
+    resourcesQuery.data = [];
+
+    render(<BackworkPage />);
+
+    expect(
+      screen.getByRole("button", { name: /^upload$/i }),
+    ).toBeInTheDocument();
   });
 
   it("shows an empty chapter-pick state instead of spinning when no chapter is selected", () => {
@@ -256,7 +343,9 @@ describe("BackworkPage subscription gating", () => {
     chapter.incomplete();
     render(<BackworkPage />);
 
-    expect(screen.getByRole("button", { name: /apply filters/i })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: /apply filters/i }),
+    ).toBeEnabled();
     expect(screen.getByRole("button", { name: /^clear$/i })).toBeEnabled();
     expect(screen.getByRole("button", { name: /download/i })).toBeEnabled();
     expect(screen.getByLabelText(/^search$/i)).toBeEnabled();
@@ -314,10 +403,7 @@ describe("BackworkPage upload allowlist", () => {
       storage_path: "chapters/chap-1/backwork/res-1/notes.gif",
     });
     mockConfirmUpload.mockResolvedValue({});
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({ ok: true } as Response),
-    );
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true } as Response));
     vi.spyOn(globalThis.crypto.subtle, "digest").mockResolvedValue(
       new Uint8Array(32).buffer,
     );

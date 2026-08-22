@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Loader2, RefreshCcw, Vote } from "lucide-react";
+import { Loader2, RefreshCw } from "lucide-react";
 import {
   useChannels,
   usePolls,
@@ -9,6 +9,13 @@ import {
   useVoteOnPoll,
 } from "@repo/hooks";
 import { Badge } from "@/components/ui/badge";
+import { PollsGlyph } from "@/components/documents/resources-glyphs";
+import { FOCUS_RING } from "@/components/ui/focus";
+import {
+  meterFillClassName,
+  meterTrackClassName,
+} from "@/components/shared/meter";
+import { pollStatusKind, pollStatusLabel } from "./poll-status";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -29,6 +36,7 @@ import {
   EmptyState,
   ErrorState,
   LoadingState,
+  OfflineState,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import {
@@ -36,6 +44,7 @@ import {
   useSubscriptionGate,
   type SubscriptionGate,
 } from "@/components/shared/subscription-gate";
+import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/hooks/use-toast";
 import { formatLocaleDateTime as formatDate } from "@repo/formatting";
 import { asArray, getErrorMessage } from "@/lib/utils";
@@ -165,8 +174,13 @@ function Poll({
           </CardDescription>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant={poll.isExpired ? "outline" : "default"}>
-            {poll.isExpired ? "Closed" : "Open"}
+          {/*
+            `variant="default"` is §5's Accent kind — the chapter's own colour
+            on a domain status, which is #1202's defect reached by an inline
+            ternary. `poll-status.ts` owns both the kind and the label now.
+          */}
+          <Badge variant={pollStatusKind(!poll.isExpired)}>
+            {pollStatusLabel(!poll.isExpired)}
           </Badge>
           <Badge variant="outline">
             {isMultiChoice ? "Multi-choice" : "Single choice"}
@@ -190,10 +204,10 @@ function Poll({
               type="button"
               disabled={poll.isExpired}
               onClick={() => toggleOption(result.optionIndex)}
-              className={`w-full rounded-md border p-3 text-left transition ${
+              className={`w-full rounded-md border p-3 text-left transition ${FOCUS_RING} ${
                 isSelected
-                  ? "border-primary bg-primary/5"
-                  : "border-border hover:bg-accent"
+                  ? "border-accent-border bg-accent-subtle-hover text-accent-text"
+                  : "border-border enabled:hover:bg-accent-subtle"
               } disabled:cursor-not-allowed disabled:opacity-70`}
             >
               <div className="flex items-center justify-between text-sm">
@@ -204,12 +218,9 @@ function Poll({
                   {pct}%
                 </span>
               </div>
-              <div
-                aria-hidden="true"
-                className="mt-2 h-1.5 overflow-hidden rounded-full bg-secondary"
-              >
+              <div aria-hidden="true" className={`mt-2 ${meterTrackClassName}`}>
                 <div
-                  className="h-full rounded-full bg-primary"
+                  className={meterFillClassName}
                   style={{ width: `${pct}%` }}
                 />
               </div>
@@ -252,7 +263,7 @@ function Poll({
               {vote.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <Vote className="h-4 w-4" />
+                <PollsGlyph className="h-4 w-4" />
               )}
               Save vote
             </Button>
@@ -268,6 +279,7 @@ export function PollsPage() {
   // both are paid-ops and mirror the gate (#841). The list, the filters, and
   // the tallies stay live — `enforceSubscription` returns early for GET.
   const gate = useSubscriptionGate();
+  const { isOffline } = useNetwork();
   const [channelFilter, setChannelFilter] = useState<string>(ANY_CHANNEL);
   const [statusFilter, setStatusFilter] = useState<"ALL" | "OPEN" | "CLOSED">(
     "ALL",
@@ -288,24 +300,34 @@ export function PollsPage() {
 
   const pollsQuery = usePolls({
     channelId: channelFilter === ANY_CHANNEL ? undefined : channelFilter,
-    active:
-      statusFilter === "ALL" ? undefined : statusFilter === "OPEN",
+    active: statusFilter === "ALL" ? undefined : statusFilter === "OPEN",
     limit: 50,
   });
-  const polls = useMemo(() => asArray<PollRow>(pollsQuery.data), [pollsQuery.data]);
+  const polls = useMemo(
+    () => asArray<PollRow>(pollsQuery.data),
+    [pollsQuery.data],
+  );
 
   return (
     <Can
       permission="polls:view_all"
+      fallback={
+        <div className="space-y-4">
+          <header>
+            <h2 className="text-2xl font-semibold tracking-tight">Polls</h2>
+            <p className="text-sm text-muted-foreground">
+              Checking your chapter permissions&hellip;
+            </p>
+          </header>
+        </div>
+      }
       deniedFallback={
         <div className="space-y-4">
           <header>
             <h2 className="text-2xl font-semibold tracking-tight">Polls</h2>
             <p className="text-sm text-muted-foreground">
               The chapter-wide poll list and aggregate tallies require the{" "}
-              <code className="rounded bg-secondary px-1 py-0.5 text-xs">
-                polls:view_all
-              </code>{" "}
+              <code className="font-mono text-xs">polls:view_all</code>{" "}
               permission. Ask your chapter president to grant it if you need
               this view; you can still vote on polls from chat channels you can
               access.
@@ -327,7 +349,7 @@ export function PollsPage() {
           <div className="flex items-center gap-2">
             <Select value={channelFilter} onValueChange={setChannelFilter}>
               <SelectTrigger
-                className="w-[180px]"
+                className="h-11 w-[180px]"
                 aria-label="Filter polls by channel"
               >
                 <SelectValue />
@@ -335,7 +357,10 @@ export function PollsPage() {
               <SelectContent>
                 <SelectItem value={ANY_CHANNEL}>All channels</SelectItem>
                 {channels.map((c) => (
-                  <SelectItem key={c.id ?? "unknown"} value={String(c.id ?? "")}>
+                  <SelectItem
+                    key={c.id ?? "unknown"}
+                    value={String(c.id ?? "")}
+                  >
                     {c.name ?? "Channel"}
                   </SelectItem>
                 ))}
@@ -348,7 +373,7 @@ export function PollsPage() {
               }
             >
               <SelectTrigger
-                className="w-[140px]"
+                className="h-11 w-[140px]"
                 aria-label="Filter polls by status"
               >
                 <SelectValue />
@@ -369,7 +394,7 @@ export function PollsPage() {
               {pollsQuery.isFetching ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <RefreshCcw className="h-4 w-4" />
+                <RefreshCw className="h-4 w-4" />
               )}
             </Button>
           </div>
@@ -390,8 +415,39 @@ export function PollsPage() {
           !isFetching` pair as disabled, but the member has the grant.
           Gating the spinner on `isPending` is how a member without
           `polls:view_all` used to spin forever (#872).
+
+          The offline branch sits above all three and inside `Can`, which is
+          the Chapter Ops ordering: permission, then network, then data. It
+          also has to come first among the query branches, because a paused
+          query is `isPending` and would otherwise spin behind an offline
+          member indefinitely — README §4 requires an offline state with a
+          retry here, not a spinner that cannot resolve.
+
+          It applies only when nothing is loaded. README §4 scopes the offline
+          treatment to "offline, **no cached data**" and §10 keeps stale
+          content in place on a refetch, so a list already rendered is not
+          thrown away on a WiFi blip — the shell's `OfflineBanner` states the
+          connection, and the vote controls fail with their own message.
+
+          The `paused` branch carries the same qualifier, and it is the one
+          that is easy to miss: `isLoading` already implies no data, but
+          `fetchStatus === "paused"` on its own does not — TanStack pauses a
+          *background* refetch (reconnect, window focus) while keeping the
+          cached rows, so an unqualified check swapped a rendered list for a
+          spinner on exactly the blip the branch above was fixed for.
+          `isPending && paused` is README §4's "offline, no cached data",
+          spelled in flags.
         */}
-        {pollsQuery.isLoading || pollsQuery.fetchStatus === "paused" ? (
+        {isOffline && polls.length === 0 ? (
+          <OfflineState
+            title="Polls unavailable offline"
+            description="Reconnect to load the chapter's polls and cast a vote."
+            onRetry={() => {
+              void pollsQuery.refetch();
+            }}
+          />
+        ) : pollsQuery.isLoading ||
+          (pollsQuery.isPending && pollsQuery.fetchStatus === "paused") ? (
           <LoadingState message="Loading chapter polls..." />
         ) : pollsQuery.isPending && pollsQuery.fetchStatus === "idle" ? (
           <EmptyState

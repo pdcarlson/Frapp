@@ -136,7 +136,7 @@ Canonical map (locked; supersedes panel 4h — see deviation note):
 | Avatars | 50% (circle) |
 
 - Radii MUST come from this map. Inventing an off-map radius in screen code is a defect, exactly as a raw hex value is.
-- **No pill shapes** (`border-radius: 999px` on rectangles) except toggle tracks.
+- **No pill shapes** (`border-radius: 999px` on rectangles) except toggle tracks and **proportion meters** — a meter's track and its fill are both full-round. The reference draws them that way ([`reference/canvas-screens.dc.html`](reference/canvas-screens.dc.html) s10 and s22 both render an 8px track and its fill at `999px`), and references beat docs on visuals, so the exception is recorded here rather than left as a standing conflict. The recipe is [`apps/web/components/shared/meter.ts`](../../../apps/web/components/shared/meter.ts).
 - The graduated map is intentional: small elements take small radii, conversational and elevated surfaces take the largest, so roundness itself signals what kind of surface you are on. Sheets and the AI card share the 20 ceiling because both are "special" surfaces.
 
 > **Deviation note — panel 4h predates the radius lock.** 4h reads `control/card: 14 · card-lg: 16 · bubble/AI/sheet: 20 · badge/chip: 8`, and panel 4e renders bubbles at r20. The Canvas header ([`reference/canvas-screens.dc.html`](reference/canvas-screens.dc.html)) locks the map above — controls 12, bubbles 18 (tail 6) — and wins. This is the only place the reference HTML is not truth for tokens. (Panel 4g's 5-tab bar is the equivalent stale artifact for navigation; see the mobile spec.)

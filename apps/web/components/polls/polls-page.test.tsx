@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
+import { networkMock } from "@/tests/network";
 
 const { mockCurrentChapter, mockVote, mockUnvote, mockRefetch, pollsQuery } =
   vi.hoisted(() => ({
@@ -75,7 +76,12 @@ vi.mock("@/lib/stores/chapter-store", () => ({
     selector({ activeChapterId: "chap-1" }),
 }));
 
-const { mockCanGrant } = vi.hoisted(() => ({ mockCanGrant: { value: true } }));
+const { mockCanGrant, mockOffline } = vi.hoisted(() => ({
+  mockCanGrant: { value: true },
+  mockOffline: { value: false },
+}));
+
+vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
 
 vi.mock("@/components/shared/can", () => ({
   Can: ({
@@ -94,7 +100,8 @@ const { PollsPage } = await import("./polls-page");
 const chapter = chapterSubscription(mockCurrentChapter);
 
 /** First card = the poll this member has already voted on. */
-const saveVote = () => screen.getAllByRole("button", { name: /save vote/i })[0]!;
+const saveVote = () =>
+  screen.getAllByRole("button", { name: /save vote/i })[0]!;
 const withdrawVote = () =>
   screen.getAllByRole("button", { name: /withdraw vote/i })[0]!;
 
@@ -112,6 +119,7 @@ describe("PollsPage disabled-query handling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCanGrant.value = true;
+    mockOffline.value = false;
     resolvedPollsQuery();
     chapter.active();
   });
@@ -165,6 +173,70 @@ describe("PollsPage disabled-query handling", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("offers a retry when offline instead of a spinner that cannot resolve", () => {
+    // README §4 item 4. A paused query is `isPending`, so without this branch
+    // an offline member with no cached polls sat on "Loading chapter polls..."
+    // for as long as they stayed offline.
+    mockOffline.value = true;
+    pollsQuery.data = undefined as unknown as unknown[];
+    pollsQuery.isPending = true;
+    pollsQuery.fetchStatus = "paused";
+
+    render(<PollsPage />);
+
+    expect(screen.getByText(/polls unavailable offline/i)).toBeInTheDocument();
+    expect(
+      screen.queryByText("Loading chapter polls..."),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+  });
+
+  it("keeps loaded polls on screen when the connection drops", () => {
+    // TanStack keeps `data` when the link goes; README §4 scopes the offline
+    // state to "no cached data" and §10 keeps stale content in place. The
+    // shell's OfflineBanner states the connection on every route, and the vote
+    // controls fail with their own message, so the list is not thrown away.
+    mockOffline.value = true;
+
+    render(<PollsPage />);
+
+    expect(screen.getAllByText("Pizza night?").length).toBeGreaterThan(0);
+    expect(
+      screen.queryByText(/polls unavailable offline/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps loaded polls through a paused background refetch", () => {
+    // `isLoading` implies no data, but `fetchStatus === "paused"` alone does
+    // not: TanStack pauses a *background* refetch (reconnect, window focus)
+    // while keeping the cached rows. An unqualified check swapped a rendered
+    // list for a spinner on exactly the blip the offline branch guards.
+    pollsQuery.isPending = false;
+    pollsQuery.isLoading = false;
+    pollsQuery.fetchStatus = "paused";
+
+    render(<PollsPage />);
+
+    expect(screen.getAllByText("Pizza night?").length).toBeGreaterThan(0);
+    expect(
+      screen.queryByText("Loading chapter polls..."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("answers the permission question before the network one", () => {
+    // Chapter Ops' ordering: an unauthorized member reaching this route while
+    // offline must not be told to reconnect to do something they may not do.
+    mockCanGrant.value = false;
+    mockOffline.value = true;
+
+    render(<PollsPage />);
+
+    expect(
+      screen.queryByText(/polls unavailable offline/i),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/polls:view_all/)).toBeInTheDocument();
+  });
+
   it("shows the Can denied copy, not a spinner, when the caller lacks polls:view_all", () => {
     mockCanGrant.value = false;
     pollsQuery.data = undefined as unknown as unknown[];
@@ -179,9 +251,41 @@ describe("PollsPage disabled-query handling", () => {
       screen.queryByText("Loading chapter polls..."),
     ).not.toBeInTheDocument();
     expect(screen.getByText(/polls:view_all/i)).toBeInTheDocument();
-    expect(
-      screen.getByText(/ask your chapter president/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/ask your chapter president/i)).toBeInTheDocument();
+  });
+});
+
+describe("PollsPage status colour", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCanGrant.value = true;
+    mockOffline.value = false;
+    resolvedPollsQuery();
+    chapter.active();
+  });
+
+  it("never paints the poll status in the chapter accent", () => {
+    // `status-kind.test.ts` constrains the *mapper*; this constrains the call
+    // site. The defect it replaces was an inline ternary, which a mapper-level
+    // guard cannot see — so a revert to `variant="default"` here would pass
+    // that file and fail this one.
+    render(<PollsPage />);
+
+    const badge = screen.getAllByText("Open")[0]!;
+    expect(badge.className).not.toContain("bg-accent-subtle");
+    expect(badge.className).not.toContain("text-accent-text");
+    expect(badge.className).toContain("bg-success");
+  });
+
+  it("renders a closed poll as quiet metadata, not a failure", () => {
+    pollsQuery.data = [{ ...VOTED_POLL, isExpired: true }];
+
+    render(<PollsPage />);
+
+    const badge = screen.getAllByText("Closed")[0]!;
+    expect(badge.className).toContain("border-border");
+    expect(badge.className).not.toContain("bg-destructive");
+    expect(badge.className).not.toContain("bg-accent-subtle");
   });
 });
 
@@ -284,7 +388,9 @@ describe("PollsPage subscription gating", () => {
     expect(
       screen.getByRole("combobox", { name: /filter polls by status/i }),
     ).toBeEnabled();
-    expect(screen.getByRole("button", { name: /refresh polls/i })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: /refresh polls/i }),
+    ).toBeEnabled();
     // The option rows are the results display and only move local selection
     // state, so they stay live with their counts readable.
     expect(screen.getByRole("button", { name: /friday/i })).toBeEnabled();

@@ -194,6 +194,7 @@ The offline string MUST keep its closing clause — a member who edited or poste
 | Loading | — | `Loading chapter documents...` |
 | Empty | `No documents here yet` | `Upload chapter files like bylaws, agendas, and meeting minutes so everyone can find them.` |
 | Error | `Couldn't load documents` | `Confirm your chapter access and retry.` |
+| Offline | `Documents unavailable offline` | `Reconnect to browse the chapter library and download files.` |
 
 ### Notifications (dashboard)
 
@@ -207,10 +208,16 @@ The offline string MUST keep its closing clause — a member who edited or poste
 
 | State | Title | Description |
 |---|---|---|
-| Idle | — | `Generate a report to see a preview here.` |
+| Idle | `No report generated yet` | `Generate a report to see a preview here.` |
 | Loading | — | `Generating report...` |
-| Empty filter | — | `Report returned no rows — the filters matched nothing in the active chapter.` |
+| Empty filter | `Report returned no rows` | `The filters matched nothing in the active chapter.` |
+| Error | `Couldn't generate <kind> report` | the API's own message, or `The API rejected the request. Confirm reports:export and retry.` |
+| Truncated | `Incomplete report` (badge) | `<cap summary> This preview and the CSV built from it are not a complete record of the chapter.` |
 | Permission denied | `Reports & Export` | `Exporting chapter data requires the reports:export permission. Ask your chapter president to grant access.` |
+
+**This table had no Error row until the Resources & Reporting slice, and that is why the screen had no error state.** A failed run reported a toast and never touched `preview`, so the panel fell through to the Idle copy — a failure rendering as "nothing has happened yet", against [README.md](README.md) §4's requirement of an error state with a retry path on every async view. The Idle and Empty-filter titles were added in the same pass: [components.md](components.md) §10's state family needs a title and a description, and the approved sentences are kept verbatim as the descriptions rather than rewritten.
+
+**The Truncated row is a state, not a toast.** [`../../behavior/reports.md`](../../behavior/reports.md) caps a report at 5,000 rows and requires that truncation is never silent; the toast fires once and then a partial table sits on screen claiming to be the whole report, and the CSV built from it carries that claim into a file. The badge is [components.md](components.md) §5's Semantic warning kind, which needs no §1 lift on its own tint.
 
 ### Backwork (dashboard)
 
@@ -219,6 +226,7 @@ The offline string MUST keep its closing clause — a member who edited or poste
 | Loading | — | `Loading backwork...` |
 | Empty | `No backwork matches this view` | `Loosen the filters, or upload the first resource to build the library.` |
 | Error | `Couldn't load backwork` | `Confirm your chapter access and retry.` |
+| Offline | `Backwork unavailable offline` | `Reconnect to browse the coursework archive and download a resource.` |
 
 ### Study session (dashboard)
 
@@ -273,6 +281,7 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Loading | — | `Loading chapter polls...` |
 | Empty | `No polls match this view` | `Create a poll inside a chat channel and it will appear here. Loosen the filters if you're expecting results.` |
 | Error | `Couldn't load polls` | `Confirm your chapter access and retry.` |
+| Offline | `Polls unavailable offline` | `Reconnect to load the chapter's polls and cast a vote.` |
 
 ### Chat (dashboard)
 
