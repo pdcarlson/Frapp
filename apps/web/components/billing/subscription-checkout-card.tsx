@@ -231,12 +231,9 @@ export function SubscriptionCheckoutCard() {
             >
               Check again
             </Button>
-            <a
-              href="/billing"
-              className="text-sm text-muted-foreground underline underline-offset-4"
-            >
-              I haven&apos;t paid yet
-            </a>
+            <Button asChild variant="link" size="sm">
+              <a href="/billing">I haven&apos;t paid yet</a>
+            </Button>
           </CardContent>
         ) : null}
       </Card>
@@ -244,7 +241,7 @@ export function SubscriptionCheckoutCard() {
   }
 
   return (
-    <Card className="border-primary/40">
+    <Card className="border-accent-border">
       <CardHeader>
         <CardTitle className="text-lg">
           {status === "past_due"

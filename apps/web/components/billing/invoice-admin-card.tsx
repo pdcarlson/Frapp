@@ -22,6 +22,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { invoiceStatusKind } from "@/components/billing/invoice-status";
+import { stateMicrocopy } from "@/lib/state-microcopy";
+import {
+  NestedEmpty,
+  NestedError,
+  NestedLoading,
+} from "@/components/shared/nested-states";
 import {
   Dialog,
   DialogContent,
@@ -68,21 +75,6 @@ type MemberSummary = {
 };
 
 type StatusFilter = "ALL" | "DRAFT" | "OPEN" | "PAID" | "VOID" | "OVERDUE";
-
-function statusVariant(
-  status: Invoice["status"],
-): "default" | "outline" | "secondary" | "destructive" {
-  switch (status) {
-    case "PAID":
-      return "default";
-    case "OPEN":
-      return "secondary";
-    case "DRAFT":
-      return "outline";
-    case "VOID":
-      return "destructive";
-  }
-}
 
 export function InvoiceAdminCard() {
   const { toast } = useToast();
@@ -231,9 +223,9 @@ export function InvoiceAdminCard() {
     >
       <div className="space-y-6">
         {overdueQuery.isError ? (
-          <Card className="border-destructive/40 bg-destructive/5">
+          <Card className="border-destructive/[.28] bg-destructive/[.13]">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-destructive">
+              <CardTitle className="flex items-center gap-2 text-destructive-text">
                 <AlertCircle className="h-4 w-4" />
                 Overdue status unavailable
               </CardTitle>
@@ -244,10 +236,10 @@ export function InvoiceAdminCard() {
             </CardHeader>
           </Card>
         ) : overdue.length > 0 ? (
-          <Card className="border-destructive/40 bg-destructive/5">
+          <Card className="border-destructive/[.28] bg-destructive/[.13]">
             <CardHeader className="flex flex-row items-start justify-between gap-2">
               <div>
-                <CardTitle className="flex items-center gap-2 text-destructive">
+                <CardTitle className="flex items-center gap-2 text-destructive-text">
                   <AlertCircle className="h-4 w-4" />
                   Overdue invoices
                 </CardTitle>
@@ -447,22 +439,27 @@ export function InvoiceAdminCard() {
               }
             />
             {invoicesQuery.isPending ? (
-              <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Loading invoices...
-              </div>
+              <NestedLoading message={stateMicrocopy.billing.loading} />
             ) : invoicesQuery.isError ? (
-              <p className="text-sm text-destructive">
-                Couldn&apos;t load invoices. Retry in a moment.
-              </p>
+              <NestedError
+                title="Couldn't load invoices"
+                description="Verify your chapter access and API health, then retry."
+                onRetry={() => void invoicesQuery.refetch()}
+              />
             ) : filtered.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                {statusFilter === "ALL"
-                  ? "No invoices yet. Use Create invoice to send your first dues request."
-                  : "No invoices match this filter."}
-              </p>
+              statusFilter === "ALL" ? (
+                <NestedEmpty
+                  title={stateMicrocopy.billing.emptyTitle}
+                  description={stateMicrocopy.billing.emptyDescription}
+                />
+              ) : (
+                <NestedEmpty
+                  title="No invoices match this filter"
+                  description="Try a different status, or clear the filter to see every invoice."
+                />
+              )
             ) : (
-              <ul className="divide-y divide-border/70">
+              <ul className="divide-y divide-border">
                 {filtered.map((invoice) => {
                   const overdueRow = overdueIds.has(invoice.id);
                   const name =
@@ -487,10 +484,10 @@ export function InvoiceAdminCard() {
                         ) : null}
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-semibold">
+                        <span className="text-sm font-semibold tabular-nums">
                           {formatCurrency(invoice.amount)}
                         </span>
-                        <Badge variant={statusVariant(invoice.status)}>
+                        <Badge variant={invoiceStatusKind(invoice.status)}>
                           {invoice.status}
                         </Badge>
                         {overdueRow ? (
