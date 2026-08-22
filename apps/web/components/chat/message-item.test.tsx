@@ -40,7 +40,7 @@ const nameFor: NameResolver = (id) => (id === OTHER ? "Alice Chen" : null);
 
 function renderItem(msg: ChatMessage, resolver: NameResolver = nameFor) {
   return render(
-    <ul>
+    <div role="list">
       <MessageItem
         message={msg}
         viewerId={VIEWER}
@@ -49,7 +49,7 @@ function renderItem(msg: ChatMessage, resolver: NameResolver = nameFor) {
         onReact={vi.fn()}
         onUnreact={vi.fn()}
       />
-    </ul>,
+    </div>,
   );
 }
 
@@ -81,9 +81,63 @@ describe("MessageItem author rendering", () => {
     expect(screen.getByText("Member 222222")).toBeInTheDocument();
   });
 
-  it("still says 'You' for the viewer's own message", () => {
-    renderItem(message({ sender_id: VIEWER }));
+  it("says 'You' on the viewer's own *card*, which keeps the incoming layout", () => {
+    // §11 sides bubbles only. A rich card is a card in the flow whoever sent
+    // it, so it still carries the author line.
+    renderItem(message({ sender_id: VIEWER, kind: "announcement" }));
 
     expect(screen.getByText("You")).toBeInTheDocument();
+  });
+});
+
+/**
+ * The two shapes `components.md` §11 draws. The distinction is load-bearing
+ * rather than cosmetic — it is the whole of "mine vs theirs" on a surface where
+ * the accent varies per chapter — so it is asserted rather than eyeballed.
+ */
+describe("MessageItem bubble sides", () => {
+  function bubbleOf(container: HTMLElement): HTMLElement {
+    const found = container.querySelector<HTMLElement>(
+      '[class*="rounded-\\[18px\\]"]',
+    );
+    if (!found) throw new Error("no bubble rendered");
+    return found;
+  }
+
+  it("gives an incoming bubble the card fill, a hairline and the left tail", () => {
+    const { container } = renderItem(message());
+    const bubble = bubbleOf(container);
+
+    expect(bubble.className).toContain("bg-card");
+    expect(bubble.className).toContain("border-border");
+    expect(bubble.className).toContain("rounded-bl-[6px]");
+  });
+
+  it("gives the viewer's own bubble the accent pair and the right tail", () => {
+    const { container } = renderItem(message({ sender_id: VIEWER }));
+    const bubble = bubbleOf(container);
+
+    // The one place a message takes the chapter accent, and the engine
+    // guarantees this pair together — never a hand-picked foreground.
+    expect(bubble.className).toContain("bg-primary");
+    expect(bubble.className).toContain("text-primary-foreground");
+    expect(bubble.className).toContain("rounded-br-[6px]");
+    expect(bubble.className).not.toContain("border-border");
+  });
+
+  it("drops the avatar and the name from the viewer's own bubble row", () => {
+    renderItem(message({ sender_id: VIEWER }));
+
+    // §11: self is right-aligned with no avatar, and its caption is the time
+    // (plus the delivery state), not a name.
+    expect(screen.queryByText("You")).not.toBeInTheDocument();
+    expect(screen.queryByText("11")).not.toBeInTheDocument();
+  });
+
+  it("keeps a deleted message on its own side rather than reflowing the thread", () => {
+    renderItem(message({ sender_id: VIEWER, is_deleted: true }));
+
+    expect(screen.getByText("[message deleted]")).toBeInTheDocument();
+    expect(screen.queryByText("You")).not.toBeInTheDocument();
   });
 });

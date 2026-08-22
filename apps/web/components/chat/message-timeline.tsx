@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { forwardRef, useImperativeHandle, useMemo, useRef } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import {
   EmptyState,
@@ -11,6 +11,56 @@ import { MessageItem } from "./message-item";
 import type { ChatMessage } from "@repo/chat-core/types";
 
 const GROUPING_GAP_MS = 5 * 60 * 1000;
+
+/**
+ * Virtuoso owns the scroller's DOM and types both wrappers as `div`, so the
+ * list semantics are carried by ARIA rather than by `<ul>`/`<li>`. That is why
+ * `MessageItem` renders `role="listitem"` on a `div` instead of an `<li>`: a
+ * real `<li>` inside Virtuoso's `div` was an orphan list item on this surface,
+ * while the same component sat inside a genuine `<ul>` in the thread panel —
+ * two call sites disagreeing about the row's own element.
+ */
+const TimelineList = forwardRef<
+  HTMLDivElement,
+  { style?: React.CSSProperties; children?: React.ReactNode }
+>(function TimelineList({ style, children }, ref) {
+  return (
+    <div ref={ref} style={style} role="list">
+      {children}
+    </div>
+  );
+});
+
+/** Local calendar day, so "yesterday" breaks where the reader's day breaks. */
+function dayKey(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return "";
+  return `${at.getFullYear()}-${at.getMonth()}-${at.getDate()}`;
+}
+
+function dayLabel(iso: string): string {
+  const at = new Date(iso);
+  const today = dayKey(new Date().toISOString());
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (dayKey(iso) === today) return "Today";
+  if (dayKey(iso) === dayKey(yesterday.toISOString())) return "Yesterday";
+  return at.toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+/**
+ * What the shell can ask the timeline to do. Narrow on purpose: the timeline
+ * owns the virtualizer, so scrolling is its job, and the shell only names a
+ * message.
+ */
+export interface MessageTimelineHandle {
+  /** No-ops for a message that is not in the loaded window. */
+  scrollToMessage: (messageId: string) => void;
+}
 
 export interface MessageTimelineProps {
   messages: ChatMessage[];
@@ -36,21 +86,36 @@ export interface MessageTimelineProps {
  * Virtualized message timeline. Messages within 5 minutes from the same author
  * collapse their header (Slack-style grouping). Empty / loading / error all
  * render explicit states — never a blank pane.
+ *
+ * **Grouping survives the Signet cutover, deliberately.** `components.md` §11
+ * carries a TODO-DESIGN saying consecutive messages from one sender are not
+ * drawn, and that until they are, "every message renders that full chrome".
+ * That is guidance for a surface with no answer, not a ban on one that already
+ * shipped: the reference draws no grouped run to contradict, and a dashboard
+ * feed that repeats an avatar and a name on every line of a burst is noisier,
+ * not more correct. A grouped follow-on renders its bubble with the meta
+ * chrome suppressed, which is the same shape mobile would take if it grouped.
  */
-export function MessageTimeline({
-  messages,
-  viewerId,
-  nameFor,
-  isLoading,
-  loadError,
-  onRetryLoad,
-  onReact,
-  onUnreact,
-  onOpenThread,
-  onRetry,
-  onDiscard,
-  onAct,
-}: MessageTimelineProps) {
+export const MessageTimeline = forwardRef<
+  MessageTimelineHandle,
+  MessageTimelineProps
+>(function MessageTimeline(
+  {
+    messages,
+    viewerId,
+    nameFor,
+    isLoading,
+    loadError,
+    onRetryLoad,
+    onReact,
+    onUnreact,
+    onOpenThread,
+    onRetry,
+    onDiscard,
+    onAct,
+  },
+  ref,
+) {
   const virtuoso = useRef<VirtuosoHandle | null>(null);
 
   // Precompute "showHeader" so we don't recompute per render in the renderer.
@@ -64,9 +129,37 @@ export function MessageTimeline({
         new Date(message.created_at).getTime() -
           new Date(prev.created_at).getTime() <
           GROUPING_GAP_MS;
-      return { message, showHeader: !(sameAuthor && within) };
+      const startsDay = !prev || dayKey(prev.created_at) !== dayKey(message.created_at);
+      return {
+        message,
+        // A new day always restarts the chrome: a grouped follow-on under a
+        // divider would inherit the previous day's author line.
+        showHeader: startsDay || !(sameAuthor && within),
+        startsDay,
+      };
     });
   }, [messages]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      scrollToMessage: (messageId: string) => {
+        const index = decorated.findIndex(
+          (entry) => entry.message.id === messageId,
+        );
+        // A pin older than the loaded window has no index to scroll to. Doing
+        // nothing is the honest outcome; backfilling to reach it is its own
+        // piece of work.
+        if (index < 0) return;
+        virtuoso.current?.scrollToIndex({
+          index,
+          align: "center",
+          behavior: "smooth",
+        });
+      },
+    }),
+    [decorated],
+  );
 
   if (isLoading) {
     return <LoadingState message="Loading messages…" />;
@@ -75,7 +168,10 @@ export function MessageTimeline({
     return (
       <ErrorState
         title="Couldn't load messages"
-        description={loadError.message || "Retry in a moment."}
+        // The canonical string from `writing.md` §7, not `loadError.message`.
+        // A raw fetch rejection ("Failed to fetch") is not copy, and the doc
+        // that owns this table already answers the question a member has.
+        description="Confirm your chapter access and retry."
         onRetry={onRetryLoad}
       />
     );
@@ -83,8 +179,8 @@ export function MessageTimeline({
   if (messages.length === 0) {
     return (
       <EmptyState
-        title="Be the first to post"
-        description="Send a message to kick off the conversation. It will stream live to everyone in this channel."
+        title="Nothing in this channel yet"
+        description="Be the first to post — everyone in the channel sees it right away."
       />
     );
   }
@@ -96,7 +192,15 @@ export function MessageTimeline({
         data={decorated}
         followOutput="smooth"
         initialTopMostItemIndex={Math.max(decorated.length - 1, 0)}
+        components={{ List: TimelineList }}
         itemContent={(_, entry) => (
+          <>
+            {entry.startsDay ? (
+              // components.md §11: "Day divider: centered caption 12.5px / 600".
+              <p className="py-3 text-center text-[12.5px] font-semibold text-muted-foreground">
+                {dayLabel(entry.message.created_at)}
+              </p>
+            ) : null}
           <MessageItem
             nameFor={nameFor}
             message={entry.message}
@@ -109,6 +213,7 @@ export function MessageTimeline({
             onDiscard={onDiscard}
             onAct={onAct}
           />
+          </>
         )}
         computeItemKey={(_, entry) =>
           entry.message.client_message_id ?? entry.message.id
@@ -116,4 +221,4 @@ export function MessageTimeline({
       />
     </div>
   );
-}
+});

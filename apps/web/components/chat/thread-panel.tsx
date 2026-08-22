@@ -41,27 +41,40 @@ export function ThreadPanel({
   if (!parent) return null;
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b px-3 py-2">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex items-start justify-between gap-2 border-b border-border px-3 py-3">
+        <div className="min-w-0">
+          <p className="text-[12.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
             Thread
           </p>
-          <p className="text-xs text-muted-foreground">
+          <p className="mt-1 text-[12.5px] text-muted-foreground">
             Replies stay in this thread; they still appear in the channel.
           </p>
         </div>
         <Button
           variant="ghost"
-          size="sm"
+          size="icon"
           aria-label="Close thread"
           onClick={onClose}
         >
-          <X className="h-4 w-4" />
+          <X className="h-5 w-5" />
         </Button>
       </div>
-      <div className="flex-1 overflow-y-auto">
-        <ul className="divide-y divide-border/70">
+      {/*
+        `bg-background`, not the rail's `--surface-1`. `MessageItem` renders the
+        §11 incoming bubble at `--card` with a hairline, and `--card` on
+        `--surface-1` is 1.08:1 — the bubble would be invisible here even though
+        the centre pane was fixed for exactly this reason. Wherever a message
+        renders, the surface under it is the app floor.
+      */}
+      <div className="min-h-0 flex-1 overflow-y-auto bg-background py-1">
+        {/*
+          `divide-border/70` was an alpha on an alpha: `--border` is already
+          `rgba(255,255,255,.08)`, so the modifier composited it to ~.056 —
+          below the hairline foundations §3 fixes, and invisible on
+          `--surface-1`.
+        */}
+        <div role="list" className="divide-y divide-border">
           <MessageItem
             nameFor={nameFor}
             message={parent}
@@ -71,9 +84,9 @@ export function ThreadPanel({
             onUnreact={onUnreact}
           />
           {replies.length === 0 ? (
-            <li className="px-4 py-4 text-xs text-muted-foreground">
+            <p className="px-5 py-4 text-[12.5px] text-muted-foreground">
               No replies yet. Start the thread.
-            </li>
+            </p>
           ) : (
             replies.map((message) => (
               <MessageItem
@@ -87,7 +100,7 @@ export function ThreadPanel({
               />
             ))
           )}
-        </ul>
+        </div>
       </div>
     </div>
   );

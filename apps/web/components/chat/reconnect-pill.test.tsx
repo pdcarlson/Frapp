@@ -18,9 +18,23 @@ describe("ReconnectPill", () => {
     const pill = screen.getByRole("status");
     expect(pill).toHaveTextContent(SPEC_POLLING_COPY);
     // Degraded-but-receiving is a warning, not an error — offline owns the
-    // destructive tone.
-    expect(pill.className).toContain("amber");
+    // destructive tone. `warning`, not `amber-500`: the pill used to paint raw
+    // Tailwind palette with an inert `dark:` twin, and this assertion is what
+    // would have caught a revert to it.
+    expect(pill.className).toContain("warning");
     expect(pill.className).not.toContain("destructive");
+  });
+
+  it("paints from semantic tokens, never the raw palette", () => {
+    for (const status of ["polling", "reconnecting", "offline"] as const) {
+      const { unmount } = render(<ReconnectPill status={status} />);
+      const pill = screen.getByRole("status");
+      // Signet is dark-only, so a `dark:` variant here is dead code that ships
+      // its light branch — the exact defect this replaced.
+      expect(pill.className).not.toMatch(/\b(amber|red|emerald|yellow)-\d/);
+      expect(pill.className).not.toContain("dark:");
+      unmount();
+    }
   });
 
   it("distinguishes polling from plain reconnecting", () => {
@@ -36,7 +50,9 @@ describe("ReconnectPill", () => {
     expect(pill).toHaveTextContent(
       "Offline — messages will send when you reconnect",
     );
-    expect(pill.className).toContain("destructive");
+    // The AA-lifted tone: `--destructive` on its own 13% tint measures 4.39:1
+    // over `--card`, under README §6's 4.5:1 floor (components.md §1).
+    expect(pill.className).toContain("text-destructive-text");
   });
 
   it("announces politely for screen readers in every degraded state", () => {

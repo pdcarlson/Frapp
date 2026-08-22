@@ -50,7 +50,18 @@ These follow ShadCN conventions:
 - `cn()` utility from `@/lib/utils` (clsx + tailwind-merge)
 - Radix UI primitives for accessible behavior
 
-Available components: accordion, avatar, badge, button, card, command, dialog, dropdown-menu, input, label, popover, progress, scroll-area, select, separator, sheet, skeleton, sonner, switch, table, tabs, textarea, toast, toaster, tooltip.
+Available components: avatar, badge, button, card, command, dialog, dropdown-menu, duotone, focus, input, label, popover, select, sheet, switch, table, tabs, textarea, toast, toaster.
+
+`accordion`, `progress`, `scroll-area`, `separator`, `skeleton`, `sonner` and
+`tooltip` were **deleted** by the #920 primitives slice — each had exactly one
+reference in the repo, its own definition — along with their npm dependencies.
+Do not re-add one from the ShadCN registry to satisfy a single call site; the
+replacements are `components/shared/async-states.tsx` for skeletons,
+`components/ui/toast.tsx` + `hooks/use-toast.ts` for toasts, and
+`DropdownMenuSeparator`'s `-mx-1 my-1 h-px bg-border` for a rule. `Button` has
+no `outline` variant either — Signet's Secondary *is* the outlined button.
+`apps/web/components/ui/focus.ts` and `apps/web/components/ui/duotone.tsx`
+are shared recipes rather than components.
 
 ### Adding a new ShadCN component
 

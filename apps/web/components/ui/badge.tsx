@@ -14,15 +14,19 @@ import { FOCUS_RING } from "@/components/ui/focus"
  * The names are the scaffold's; the recipes are §5's plus the neutral count
  * badge foundations.md §5 specs for channel unread:
  *
- *   default     Accent   — accent-worthy stats: points, active filters
- *   secondary   Neutral  — counts and unread markers; the `--input` fill
- *   outline     Hairline — quiet metadata that must not read as a status
- *   destructive Semantic — status only, as a 13% tint and never a solid fill
+ *   default     Accent      — accent-worthy stats: points, active filters
+ *   secondary   Neutral     — counts and unread markers; the `--input` fill
+ *   outline     Hairline    — quiet metadata that must not read as a status
+ *   destructive Semantic    — status only, as a 13% tint and never a solid fill
+ *   mention     Mention/DM  — "you were addressed", and nothing else
  *
- * There is deliberately no `mention` kind here. Mention/DM red is the neutral
- * badge with the fill swapped and the text set to white (foundations §5), and
- * its only consumers are the chat surfaces the chat slice of #920 owns — a
- * variant with no call sites is what this slice is deleting elsewhere.
+ * `mention` landed with the chat slice of #920, which brought its first call
+ * sites (`components/chat/channel-list.tsx`). It is the *neutral* badge with the
+ * fill swapped and the text set to white — fill and text are the only
+ * difference, so badge geometry stays one recipe (foundations.md §5). Its red
+ * is fixed and never accent-derived: an @-mention or a DM must read identically
+ * under every chapter seed, including a red-accented one. It is also the one
+ * kind that is not a status — do not reach for it to mean "urgent".
  */
 const badgeVariants = cva(
   cn(
@@ -40,6 +44,7 @@ const badgeVariants = cva(
         // 4.39:1 over `--card`, the surface a status badge normally sits on.
         destructive:
           "border-transparent bg-destructive/[.13] text-destructive-text",
+        mention: "border-transparent bg-mention text-mention-foreground",
       },
     },
     defaultVariants: {

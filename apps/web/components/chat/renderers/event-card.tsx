@@ -1,7 +1,11 @@
 "use client";
 
-import { CalendarDays, Check, MapPin } from "lucide-react";
+import { Check } from "lucide-react";
+import { EventsGlyph, LocationGlyph } from "../chat-glyphs";
 import { useAttendance, useCheckIn, useMyPermissions } from "@repo/hooks";
+import { EYEBROW, MESSAGE_CARD } from "../chip";
+import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
 import type { EventPayload } from "@repo/chat-integrations";
 import { can } from "@repo/validation";
@@ -143,7 +147,7 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
 
   if (!payload) {
     return (
-      <div className="mt-1 whitespace-pre-wrap break-words text-sm">
+      <div className="mt-1 whitespace-pre-wrap break-words text-base">
         {message.content}
       </div>
     );
@@ -185,23 +189,23 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
   };
 
   return (
-    <div className="mt-1 rounded-md border-l-4 border-[color:var(--accent-text)] bg-[color:var(--accent-subtle)] px-3 py-2">
+    <Card className={cn(MESSAGE_CARD)}>
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-[color:var(--accent-text)]">
-          <CalendarDays className="h-3 w-3" aria-hidden="true" /> Event
+        <div className={cn(EYEBROW, "flex items-center gap-1.5 text-accent-text")}>
+          <EventsGlyph className="h-4 w-4" /> Event
         </div>
         {payload.is_mandatory ? (
           <Badge variant="default">Mandatory</Badge>
         ) : null}
       </div>
-      <p className="mt-1 text-sm font-medium">{payload.name}</p>
-      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+      <p className="mt-2 text-base font-bold">{payload.name}</p>
+      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-muted-foreground">
         <span>{formatRange(payload.start_time, payload.end_time)}</span>
         {payload.location ? (
           <>
             <span aria-hidden="true">·</span>
             <span className="inline-flex items-center gap-1">
-              <MapPin className="h-3 w-3" aria-hidden="true" />
+              <LocationGlyph className="h-4 w-4" />
               {payload.location}
             </span>
           </>
@@ -211,12 +215,12 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
         ) : null}
       </div>
       {canViewAttendance ? (
-        <p className="mt-1 text-xs text-muted-foreground">
+        <p className="mt-2 text-[12.5px] text-muted-foreground">
           {checkedIn === 1 ? "1 checked in" : `${checkedIn} checked in`}
         </p>
       ) : null}
       {windowOpen ? (
-        <div className="mt-2 flex flex-wrap gap-2">
+        <div className="mt-3 flex flex-wrap gap-2">
           <Button
             size="sm"
             {...gate.controlProps(actionsDisabled)}
@@ -237,6 +241,6 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
           />
         </div>
       ) : null}
-    </div>
+    </Card>
   );
 }

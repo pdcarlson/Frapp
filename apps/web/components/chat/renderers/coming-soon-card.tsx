@@ -1,6 +1,7 @@
 "use client";
 
-import { Hammer } from "lucide-react";
+import { EYEBROW } from "../chip";
+import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
 
 interface ComingSoonCardProps {
@@ -9,21 +10,23 @@ interface ComingSoonCardProps {
 }
 
 /**
- * Stub renderer for `event` / `task` / `dues` / `points` / `hours` kinds.
- * Chunk 10 sub-chunks swap each kind to a concrete renderer without
- * touching the dispatcher in `./index.tsx`. The card always renders the
- * raw `content` underneath so a misfired hot-path send still surfaces
- * something the user can read.
+ * Placeholder renderer for the kinds that are in `CHAT_MESSAGE_KINDS` but have
+ * no card yet — `dues` and `hours`, per the dispatcher in `./index.tsx`. The
+ * docstring used to list `event`, `task` and `points` too, and the copy still
+ * said "coming in Chunk 10"; all three shipped their own renderers long ago,
+ * and chunks are not a unit anything else in the repo still counts in.
+ *
+ * The card always renders the raw `content` underneath so a misfired hot-path
+ * send still surfaces something the user can read.
  */
 export function ComingSoonCard({ message, label }: ComingSoonCardProps) {
   return (
-    <div className="mt-1 rounded-md border border-dashed bg-secondary/20 px-3 py-2">
-      <div className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-        <Hammer className="h-3 w-3" aria-hidden="true" />
-        {label ?? message.kind} renderer coming in Chunk 10
-      </div>
+    <div className="mt-1 rounded-lg border border-dashed border-border p-4">
+      <p className={cn(EYEBROW, "text-muted-foreground")}>
+        {label ?? message.kind} · not built yet
+      </p>
       {message.content ? (
-        <div className="mt-1 whitespace-pre-wrap break-words text-xs text-muted-foreground">
+        <div className="mt-2 whitespace-pre-wrap break-words text-base text-muted-foreground">
           {message.content}
         </div>
       ) : null}

@@ -272,9 +272,21 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Loading channels | — | `Loading chapter channels...` |
 | Loading messages | — | `Loading messages...` |
 | No channels | `No channels yet` | `New chapters seed #general, #announcements, and #chapter-audit during onboarding. Ask an admin if none appear.` |
-| Empty timeline | `Nothing in this channel yet` | `Be the first to post — messages render live with Supabase Realtime.` |
+| Empty timeline | `Nothing in this channel yet` | `Be the first to post — everyone in the channel sees it right away.` |
 | Error | `Couldn't load channels` / `Couldn't load messages` | `Confirm your chapter access and retry.` |
 | Read-only channel | — | `This channel is read-only. Posting requires the announcements:post permission.` |
+| No chapter selected | `No chapter selected` | `Pick an active chapter to load its channels and messages.` |
+| Offline (composer) | — | `You're offline — messages send when you reconnect.` |
+
+The empty-timeline line used to end "messages render live with Supabase
+Realtime." It named the vendor and the transport to a member who wants to know
+whether it is safe to type, which §1's plain-language rule rules out — the
+promise worth making is that other people will see it.
+
+The composer's offline line is a **label, not a warning**: the send path queues
+before it touches the network, so the composer stays usable and says what will
+happen. Never reword it into an error — [resilience.md](../resilience.md) §2 owns
+that rule and the string is shared with mobile.
 
 Channel seeding happens at chapter onboarding and has no billing prerequisite; [onboarding.md](../../behavior/onboarding.md) owns the seeding flow.
 

@@ -97,7 +97,24 @@ disabled-with-tooltip rule holds only where a failed write is *lost*. It must no
 applied to a surface with a queue: the chat composer's `sendMessage` enqueues to the
 outbox and returns before touching the network, so gating it would defeat the queue
 built to make composing-while-offline work — it stays enabled and gains the label
-"You're offline — messages send when you reconnect." Queueless surfaces disable and
+"You're offline — messages send when you reconnect."
+
+**Web violated this until the #920 chat slice.** `apps/web` passed `disabled`
+into the composer on `connection === "offline"`, and `submit()` returned early
+on the same flag — so Send greyed out and Enter did nothing at all, with no
+explanation, on the one surface built to survive being offline. (The draft
+itself survived; the loss was the send, not the text.) The composer now takes an
+`isOffline` prop that only renders the label;
+`packages/chat-core/src/chat-client.ts` has had the "Offline: the row is safely
+queued" branch the whole time, unreachable from web.
+
+**The split runs inside that one control**, which is the part worth carrying to
+other surfaces. The text path queues, so it stays live and is labelled. The
+**slash commands do not**: `/points`, `/task` and `/event` POST straight to
+their controllers from `packages/chat-core/src/dispatch.ts` with no outbox
+behind them, so an offline dispatch is a queueless write and refuses — before
+clearing the composer, so the typed command survives to be re-sent. One control,
+both halves of this rule, decided per action rather than per screen. Queueless surfaces disable and
 say why: service hours (s20) and check-in (s18) both take
 `writeBlockedReason` and wire it to the control's `accessibilityHint`, not merely to
 a sentence beside it. Dues is already gated by its own Stripe guard. The rule lives
