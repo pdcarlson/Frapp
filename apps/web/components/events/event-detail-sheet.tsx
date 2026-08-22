@@ -1,15 +1,13 @@
 "use client";
 
 import { useMemo } from "react";
+import { AlertTriangle, Loader2, Trash2 } from "lucide-react";
 import {
-  AlertTriangle,
-  CalendarDays,
-  Clock3,
-  Loader2,
-  MapPin,
-  Shield,
-  Trash2,
-} from "lucide-react";
+  PointsGlyph,
+  RolesGlyph,
+  ScheduleGlyph,
+  StudyZonesGlyph,
+} from "@/components/events/chapter-ops-glyphs";
 import { useDeleteEvent, useEvent, useRoles } from "@repo/hooks";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
@@ -216,7 +214,7 @@ export function EventDetailSheet({
             </div>
             <div className="mt-3">
               <p className="mb-1 flex items-center gap-1 text-[12.5px] text-muted-foreground">
-                <Shield className="h-3 w-3" />
+                <RolesGlyph className="h-3.5 w-3.5" />
                 Required roles
               </p>
               {requiredRoleIds.length === 0 ? (
@@ -237,14 +235,14 @@ export function EventDetailSheet({
             <p className="mb-2 text-[12.5px] text-muted-foreground">Schedule</p>
             <div className="space-y-2 text-sm">
               <div className="flex items-start gap-2">
-                <Clock3 className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                <ScheduleGlyph className="mt-0.5 h-4 w-4 text-muted-foreground" />
                 <div>
                   <p>Starts: {formatDateTime(resolvedEvent?.start_time)}</p>
                   <p>Ends: {formatDateTime(resolvedEvent?.end_time)}</p>
                 </div>
               </div>
               <div className="flex items-start gap-2">
-                <MapPin className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                <StudyZonesGlyph className="mt-0.5 h-4 w-4 text-muted-foreground" />
                 <p>
                   {typeof resolvedEvent?.location === "string"
                     ? resolvedEvent.location
@@ -252,7 +250,7 @@ export function EventDetailSheet({
                 </p>
               </div>
               <div className="flex items-start gap-2">
-                <CalendarDays className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                <PointsGlyph className="mt-0.5 h-4 w-4 text-muted-foreground" />
                 <p>
                   {typeof resolvedEvent?.point_value === "number"
                     ? `${resolvedEvent.point_value} point(s)`
@@ -264,7 +262,9 @@ export function EventDetailSheet({
 
           {description ? (
             <div className="rounded-lg border border-border p-3">
-              <p className="mb-1 text-[12.5px] text-muted-foreground">Description</p>
+              <p className="mb-1 text-[12.5px] text-muted-foreground">
+                Description
+              </p>
               <p className="text-sm">{description}</p>
             </div>
           ) : null}

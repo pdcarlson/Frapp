@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertCircle, Loader2, UsersRound } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
+import { DirectoryGlyph } from "@/components/events/chapter-ops-glyphs";
 import {
   useActiveChapterId,
   useAttendance,
@@ -270,7 +271,7 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h3 className="flex items-center gap-2 text-lg font-semibold">
-            <UsersRound className="h-4 w-4 text-muted-foreground" />
+            <DirectoryGlyph className="h-4 w-4 text-muted-foreground" />
             Attendance
           </h3>
           <p className="text-sm text-muted-foreground">

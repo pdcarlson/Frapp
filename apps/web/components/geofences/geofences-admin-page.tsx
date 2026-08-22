@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, MapPin, Plus, Power, PowerOff, Trash2 } from "lucide-react";
+import { Loader2, Plus, Power, PowerOff, Trash2 } from "lucide-react";
+import { StudyZonesGlyph } from "@/components/events/chapter-ops-glyphs";
 import {
   useCreateGeofence,
   useDeleteGeofence,
@@ -557,7 +558,7 @@ export function GeofencesAdminPage() {
                 <CardHeader className="flex flex-row items-start justify-between gap-2">
                   <div>
                     <CardTitle className="flex items-center gap-2 text-lg">
-                      <MapPin className="h-4 w-4 text-muted-foreground" />
+                      <StudyZonesGlyph className="h-4 w-4 text-muted-foreground" />
                       {zone.name}
                     </CardTitle>
                     <CardDescription>

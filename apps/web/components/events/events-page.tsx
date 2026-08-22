@@ -1,7 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CalendarDays, Plus, Search, Shield } from "lucide-react";
+import { Plus } from "lucide-react";
+import {
+  EventsGlyph,
+  RolesGlyph,
+  SearchGlyph,
+} from "@/components/events/chapter-ops-glyphs";
 import { useEvents } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import {
@@ -238,7 +243,7 @@ export function EventsPage() {
           />
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="relative max-w-md">
-              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <SearchGlyph className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
@@ -422,7 +427,9 @@ export function EventsPage() {
                           />
                         </label>
                       </TableCell>
-                      <TableCell className="font-semibold">{eventName}</TableCell>
+                      <TableCell className="font-semibold">
+                        {eventName}
+                      </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {formatDate(event.start_time)}
                       </TableCell>
@@ -437,13 +444,13 @@ export function EventsPage() {
                           )}
                           {recurrenceRule ? (
                             <Badge variant="outline" className="gap-1">
-                              <CalendarDays className="h-3 w-3" />
+                              <EventsGlyph className="h-3.5 w-3.5" />
                               {recurrenceRule}
                             </Badge>
                           ) : null}
                           {requiredRoleIds.length > 0 ? (
                             <Badge variant="outline" className="gap-1">
-                              <Shield className="h-3 w-3" />
+                              <RolesGlyph className="h-3.5 w-3.5" />
                               Targeted
                             </Badge>
                           ) : null}

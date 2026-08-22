@@ -94,7 +94,8 @@ duotone. Interim rules:
   path**: the shell's sidebar and top-bar glyphs are duotone SVG components in
   `apps/web/components/layout/nav-glyphs.tsx`, and chat's are in
   `apps/web/components/chat/chat-glyphs.tsx`, both transcribed from the
-  reference boards. Lucide remains the interim pack for the screen families
+  reference boards; the Directory & Finance and Chapter Ops families have since
+  followed (§6.2.3, §6.2.4). Lucide remains the interim pack for the screen families
   whose #920 slice has not landed, and — on every surface, reskinned or not —
   for control furniture (§6.2).
 - **Mobile (Ionicons)** — outline variants for navigation and neutral states;
@@ -188,13 +189,11 @@ theme control.
 
 Screens whose family slice has not landed still draw Lucide, replaced per
 family as each #920 slice rebuilds its screens — the same shape as mobile's
-§6.1.1. Chat has departed (§6.2.2), and so have the four Directory & Finance
-families — members, alumni, billing and points (§6.2.3). Two picks worth
-pinning meanwhile:
+§6.1.1. Chat has departed (§6.2.2), so have the four Directory & Finance families —
+members, alumni, billing and points (§6.2.3) — and so has Chapter Ops —
+events, tasks, study hours, service hours and study zones (§6.2.4). One pick
+worth pinning meanwhile:
 
-- Event **content** surfaces (event detail, the events screens) use
-  `CalendarDays` for date rows; the nav intent is `EventsGlyph`. Chat's event
-  card has left this pick with its own slice and takes `EventsGlyph` (§6.2.2).
 - **Reserved:** `LayoutDashboard` is held for the **Overview** intent and is
   deliberately unused today — the dashboard home screen was removed in the
   chat-first redesign and the index route redirects to `/chat`. If an Overview
@@ -304,6 +303,45 @@ Three things this table deliberately does not contain:
   `List`/`LayoutGrid` name a control's own action — sort direction and view
   mode — rather than a domain object. `RefreshCcw` in the audit card was a
   stray second spelling of §6.2.2's `RefreshCw` and is now the sanctioned one.
+
+### 6.2.4 Chapter Ops (Signet duotone)
+
+Since the #920 Chapter Ops slice these five families draw the duotone recipe
+(§1). The glyphs live in
+[`apps/web/components/events/chapter-ops-glyphs.tsx`](../../../apps/web/components/events/chapter-ops-glyphs.tsx),
+one file for five screens rather than five files, because the five share their
+intents rather than partitioning them — the map pin marks an event's location,
+a running session's zone and a zone row alike.
+
+| Semantic intent | Glyph |
+|---|---|
+| An event, and the create/edit dialog that names one | `EventsGlyph` (re-export) |
+| An event's schedule row | `ScheduleGlyph` |
+| A location, a study zone, a session's zone | `StudyZonesGlyph` (re-export) |
+| Role targeting on an event | `RolesGlyph` (re-export) |
+| The attendance roster | `DirectoryGlyph` (re-export) |
+| An event's point value | `PointsGlyph` (re-export) |
+| Search, in the events toolbar | `SearchGlyph` (re-export) |
+
+Five of the seven are re-exports from
+[`apps/web/components/layout/nav-glyphs.tsx`](../../../apps/web/components/layout/nav-glyphs.tsx),
+which is the rule §1 rule 1 already sets and the Directory family already
+follows: a second copy of the same path data is the drift the rule exists to
+stop. Only `ScheduleGlyph` is drawn here, and only because no nav intent
+covers it.
+
+Two of the swaps were corrections rather than a pack change. The event detail
+sheet marked its **point value** row with `CalendarDays` — a calendar labelling
+points — and the events table drew its role-targeting and recurrence markers at
+12px, under §2's 14–16 badge-companion floor.
+
+- **Control furniture**, unchanged from §6.2.2's rule: `Loader2`,
+  `AlertCircle`, `AlertTriangle`, `Trash2`, `Plus` and `Save`. This family has
+  more of the second kind than any other — every pair naming a *control's own
+  action* rather than a domain object stays Lucide: `Play`/`Pause`/`Square` on
+  the study timer, `Eye`/`EyeOff` on its tracking state, `Power`/`PowerOff` on
+  a zone's enable toggle, and `CheckCircle2`/`XCircle`/`Undo2` on approve,
+  reject and withdraw.
 
 ### 6.3 Maintenance Rule
 

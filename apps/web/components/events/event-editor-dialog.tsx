@@ -1,13 +1,11 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { AlertTriangle, Loader2, Save } from "lucide-react";
 import {
-  AlertTriangle,
-  CalendarPlus2,
-  Loader2,
-  Save,
-  Shield,
-} from "lucide-react";
+  EventsGlyph,
+  RolesGlyph,
+} from "@/components/events/chapter-ops-glyphs";
 import { useCreateEvent, useRoles, useUpdateEvent } from "@repo/hooks";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -288,7 +286,7 @@ export function EventEditorDialog({
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <CalendarPlus2 className="h-4 w-4" />
+            <EventsGlyph className="h-4 w-4" />
             {mode === "create" ? "Create event" : "Edit event"}
           </DialogTitle>
           <DialogDescription>
@@ -405,7 +403,7 @@ export function EventEditorDialog({
 
           <div className="space-y-2 text-sm">
             <div className="flex items-center gap-2">
-              <Shield className="h-4 w-4 text-muted-foreground" />
+              <RolesGlyph className="h-4 w-4 text-muted-foreground" />
               <span className="text-muted-foreground">Required roles</span>
             </div>
             <p className="text-[12.5px] text-muted-foreground">

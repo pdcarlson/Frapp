@@ -1,15 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Eye,
-  EyeOff,
-  Loader2,
-  MapPin,
-  Pause,
-  Play,
-  Square,
-} from "lucide-react";
+import { Eye, EyeOff, Loader2, Pause, Play, Square } from "lucide-react";
+import { StudyZonesGlyph } from "@/components/events/chapter-ops-glyphs";
 import {
   useGeofences,
   usePauseStudySession,
@@ -38,10 +31,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { studySessionStatusKind } from "@/components/study/study-status";
 import { NestedEmpty } from "@/components/shared/nested-states";
-import {
-  ErrorState,
-  LoadingState,
-} from "@/components/shared/async-states";
+import { ErrorState, LoadingState } from "@/components/shared/async-states";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -70,11 +60,7 @@ type StudySession = {
   user_id: string;
   geofence_id: string;
   status:
-    | "ACTIVE"
-    | "COMPLETED"
-    | "EXPIRED"
-    | "PAUSED_EXPIRED"
-    | "LOCATION_INVALID";
+    "ACTIVE" | "COMPLETED" | "EXPIRED" | "PAUSED_EXPIRED" | "LOCATION_INVALID";
   start_time: string;
   end_time: string | null;
   last_heartbeat_at: string | null;
@@ -461,12 +447,10 @@ export function StudyPage() {
       <SubscriptionNotice gate={gate} feature="study sessions" />
 
       {activeSession ? (
-        <Card
-          className={pageHidden ? "border-warning/45" : ""}
-        >
+        <Card className={pageHidden ? "border-warning/45" : ""}>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
-              <MapPin className="h-4 w-4 text-muted-foreground" />
+              <StudyZonesGlyph className="h-4 w-4 text-muted-foreground" />
               {activeGeofence?.name ?? "Study session"}
             </CardTitle>
             <CardDescription>
@@ -514,7 +498,9 @@ export function StudyPage() {
               </p>
             ) : null}
             {geolocationError ? (
-              <p className="text-[12.5px] text-destructive">{geolocationError}</p>
+              <p className="text-[12.5px] text-destructive">
+                {geolocationError}
+              </p>
             ) : null}
           </CardContent>
           <CardFooter className="flex flex-wrap gap-2">
