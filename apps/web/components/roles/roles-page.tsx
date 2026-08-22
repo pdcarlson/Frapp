@@ -1,7 +1,8 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
-import { Loader2, ShieldCheck, Trash2 } from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
 import {
   useCreateRole,
   useDeleteRole,
@@ -34,11 +35,21 @@ import {
   EmptyState,
   ErrorState,
   LoadingState,
+  OfflineState,
   PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
+import { RolesGlyph } from "@/components/layout/nav-glyphs";
+import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/hooks/use-toast";
-import { asArray, getErrorMessage } from "@/lib/utils";
+import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import { asArray, cn, getErrorMessage } from "@/lib/utils";
+import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
+import {
+  dashboardCheckboxHitAreaClassName,
+  dashboardTableCheckboxClassName,
+} from "@/components/shared/table-controls";
+import { HOUSE_SEED } from "@repo/chapter-theme";
 
 type Role = {
   id: string;
@@ -63,8 +74,29 @@ type MemberSummary = {
   role_ids?: string[];
 };
 
+/**
+ * What the colour picker opens on when a role has none.
+ *
+ * The two pickers seeded themselves `#2563EB` and `#10B981` — one concept,
+ * two arbitrary values, and both of them from the palette this cutover is
+ * replacing. `#2563EB` is the royal blue the cutover skill bans by name
+ * ("never brown-bronze, never royal blue"); `#10B981` is #916's conflicting
+ * emerald, the raw Tailwind green that shipped beside `--success`.
+ *
+ * `HOUSE_SEED` rather than a Signet token: `roles.color` is chapter data
+ * written to the database and rendered as a raw swatch, not a token reference,
+ * so a `var(--…)` here would be stored as a literal string and paint nothing.
+ * The house gold is the system's own default seed, which makes the picker open
+ * on the product's colour instead of a stranger's blue. The column's server
+ * default is `null` and stays that way — this only decides where the picker
+ * starts, never what an untouched role stores.
+ */
+const DEFAULT_ROLE_SWATCH = HOUSE_SEED;
+
 export function RolesAndPermissionsPage() {
   const { toast } = useToast();
+  const { confirm, confirmDialog } = useConfirmDialog();
+  const { isOffline } = useNetwork();
   const rolesQuery = useRoles();
   const catalogQuery = usePermissionsCatalog();
   const membersQuery = useMembers();
@@ -191,9 +223,12 @@ export function RolesAndPermissionsPage() {
 
   async function handleDeleteRole(role: Role) {
     if (role.is_system) return;
-    const confirmed = window.confirm(
-      `Delete ${role.name}? Members assigned this role will lose its permissions immediately.`,
-    );
+    const confirmed = await confirm({
+      title: `Delete ${role.name}?`,
+      description:
+        "Members assigned this role lose its permissions immediately. This cannot be undone.",
+      confirmLabel: "Delete role",
+    });
     if (!confirmed) return;
     try {
       await deleteRole.mutateAsync(role.id);
@@ -218,9 +253,12 @@ export function RolesAndPermissionsPage() {
 
   async function handleTransferPresidency() {
     if (!transferTargetMemberId) return;
-    const confirmed = window.confirm(
-      "Transfer presidency? This immediately moves the President role to the selected member and removes it from you.",
-    );
+    const confirmed = await confirm({
+      title: "Transfer presidency?",
+      description:
+        "The President role moves to the selected member immediately and is removed from you. Only the current president can undo it.",
+      confirmLabel: "Transfer presidency",
+    });
     if (!confirmed) return;
     try {
       await transferPresidency.mutateAsync({
@@ -243,44 +281,63 @@ export function RolesAndPermissionsPage() {
     }
   }
 
-  if (rolesQuery.isPending || catalogQuery.isPending) {
-    return <LoadingState message="Loading roles and permissions..." />;
+  function retryQueries() {
+    void rolesQuery.refetch();
+    void catalogQuery.refetch();
   }
 
-  if (rolesQuery.isError || catalogQuery.isError) {
-    return (
+  /*
+    §4's four flags, and the three defects this replaces.
+
+    **The states used to render above the gate.** `isPending` and `isError`
+    early-returned before `<Can>` ran, so a member without `roles:manage` who
+    reached this route by URL was told the roles were loading, and then that
+    they had failed to load, for a surface they were never going to see. The
+    order is permission, then network, then data — the one
+    `geofences-admin-page.tsx` spells out and `/polls` follows.
+
+    **`isPending` alone is not a spinner.** Both queries are
+    `enabled: !!chapterId`, so `isPending` is true for a query that is not
+    running and never will be. `isLoading` is the in-flight half, and a paused
+    query is the other one §4 names.
+
+    **There was no offline state at all**, so a member with a dropped
+    connection sat on the skeleton until the retry budget ran out. Gated on
+    "no cached data" rather than on `isOffline` alone: TanStack keeps `data`
+    through a blip, and replacing a rendered roster with "unavailable offline"
+    throws away an answer we hold.
+
+    No entitlement branch: `isPending && fetchStatus === "idle"` needs a
+    disabled query, and inside `<Can>` a chapter is always active, which is the
+    only thing these two are gated on.
+  */
+  const rolesReady = rolesQuery.data !== undefined;
+  const catalogReady = catalogQuery.data !== undefined;
+  const paused =
+    (rolesQuery.isPending && rolesQuery.fetchStatus === "paused") ||
+    (catalogQuery.isPending && catalogQuery.fetchStatus === "paused");
+
+  let body: ReactNode;
+  if (isOffline && !(rolesReady && catalogReady)) {
+    body = (
+      <OfflineState
+        title="Roles unavailable offline"
+        description="Reconnect to load the chapter's roles and edit their permissions."
+        onRetry={retryQueries}
+      />
+    );
+  } else if (rolesQuery.isLoading || catalogQuery.isLoading || paused) {
+    body = <LoadingState message="Loading roles and permissions..." />;
+  } else if (rolesQuery.isError || catalogQuery.isError) {
+    body = (
       <ErrorState
         title="Couldn't load roles"
         description="Retry in a moment. This view requires the roles:manage permission."
-        onRetry={() => {
-          void rolesQuery.refetch();
-          void catalogQuery.refetch();
-        }}
+        onRetry={retryQueries}
       />
     );
-  }
-
-  return (
-    <Can
-      permission="roles:manage"
-      offlineFallback={(retry) => (
-        <PermissionsOfflineSurface
-          description="Reconnect to check whether you can manage roles."
-          onRetry={retry}
-        />
-      )}
-      deniedFallback={
-        <Card>
-          <CardHeader>
-            <CardTitle>Roles & Permissions</CardTitle>
-            <CardDescription>
-              Managing roles requires the <code>roles:manage</code>{" "}
-              permission. Ask your chapter president to grant access.
-            </CardDescription>
-          </CardHeader>
-        </Card>
-      }
-    >
+  } else {
+    body = (
       <div className="space-y-6">
         <header>
           <h2 className="text-2xl font-semibold tracking-tight">
@@ -319,7 +376,21 @@ export function RolesAndPermissionsPage() {
                       >
                         <button
                           type="button"
-                          className="flex min-w-0 flex-1 items-center gap-3 rounded-md px-2 py-1 text-left hover:bg-accent"
+                          /*
+                            `--accent` aliases `--popover`; inside this
+                            `CardContent` that is 1.085:1, i.e. no hover at
+                            all. Same recipe as `/documents`' folder rail: the
+                            tint for hover, `accent-4` plus `accent-11` for the
+                            selected row, since a rail on a card needs two
+                            states the ladder cannot give it.
+                          */
+                          className={cn(
+                            "flex min-w-0 flex-1 items-center gap-3 rounded-md px-2 py-1 text-left transition-colors",
+                            FOCUS_RING_OFFSET,
+                            activeRoleId === role.id
+                              ? "bg-accent-subtle-hover text-accent-text"
+                              : "hover:bg-accent-subtle",
+                          )}
                           aria-pressed={activeRoleId === role.id}
                           onClick={() => selectRole(role)}
                         >
@@ -395,7 +466,7 @@ export function RolesAndPermissionsPage() {
                     <Input
                       id="role-color"
                       type="color"
-                      value={colorDraft || "#2563EB"}
+                      value={colorDraft || DEFAULT_ROLE_SWATCH}
                       onChange={(event) => setColorDraft(event.target.value)}
                     />
                   </div>
@@ -435,15 +506,17 @@ export function RolesAndPermissionsPage() {
                                 : undefined
                             }
                           >
-                            <input
-                              type="checkbox"
-                              className="h-4 w-4"
-                              checked={permissionsDraft.has(entry.permission)}
-                              disabled={lockedWildcard}
-                              onChange={() =>
-                                toggleDraftPermission(entry.permission)
-                              }
-                            />
+                            <span className={dashboardCheckboxHitAreaClassName}>
+                              <input
+                                type="checkbox"
+                                className={dashboardTableCheckboxClassName}
+                                checked={permissionsDraft.has(entry.permission)}
+                                disabled={lockedWildcard}
+                                onChange={() =>
+                                  toggleDraftPermission(entry.permission)
+                                }
+                              />
+                            </span>
                             <code className="text-xs">{entry.permission}</code>
                             <span className="text-xs text-muted-foreground">
                               {entry.key}
@@ -509,7 +582,7 @@ export function RolesAndPermissionsPage() {
                   <Input
                     id="create-role-color"
                     type="color"
-                    value={createColor || "#10B981"}
+                    value={createColor || DEFAULT_ROLE_SWATCH}
                     onChange={(event) => setCreateColor(event.target.value)}
                   />
                 </div>
@@ -528,14 +601,16 @@ export function RolesAndPermissionsPage() {
                       key={entry.permission}
                       className="flex cursor-pointer items-center gap-2 text-sm"
                     >
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4"
-                        checked={createPermissions.has(entry.permission)}
-                        onChange={() =>
-                          toggleCreatePermission(entry.permission)
-                        }
-                      />
+                      <span className={dashboardCheckboxHitAreaClassName}>
+                        <input
+                          type="checkbox"
+                          className={dashboardTableCheckboxClassName}
+                          checked={createPermissions.has(entry.permission)}
+                          onChange={() =>
+                            toggleCreatePermission(entry.permission)
+                          }
+                        />
+                      </span>
                       <code className="text-xs">{entry.permission}</code>
                       <span className="text-xs text-muted-foreground">
                         {entry.key}
@@ -562,7 +637,18 @@ export function RolesAndPermissionsPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
-              <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+              {/*
+                Lucide's `ShieldCheck` marked the one card on this screen that
+                is *about* a role rather than about editing one, and
+                `iconography.md` §6.2 reserves Lucide for control furniture —
+                verbs on buttons and spinners. The roles intent is already
+                drawn as a Signet duotone in `nav-glyphs.tsx`; a second
+                spelling of it would be the drift §1 rule 1 bans, and a
+                re-export module holding nothing but that alias would be the
+                parallel path the cutover rule bans. So this imports the one
+                that exists.
+              */}
+              <RolesGlyph className="h-4 w-4 text-muted-foreground" />
               Transfer presidency
             </CardTitle>
             <CardDescription>
@@ -606,6 +692,40 @@ export function RolesAndPermissionsPage() {
           </CardContent>
         </Card>
       </div>
+    );
+  }
+
+  return (
+    <Can
+      permission="roles:manage"
+      offlineFallback={(retry) => (
+        <PermissionsOfflineSurface
+          description="Reconnect to check whether you can manage roles."
+          onRetry={retry}
+        />
+      )}
+      deniedFallback={
+        <Card>
+          <CardHeader>
+            <CardTitle>Roles &amp; Permissions</CardTitle>
+            <CardDescription>
+              Managing roles requires the <code>roles:manage</code> permission.
+              Ask your chapter president to grant access.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      }
+    >
+      {/*
+        Above the state branch, not inside it. `ConfirmDialogHost` settles a
+        pending promise on unmount, so a screen whose states sit over its own
+        dialog cancels a confirmation the moment a background refetch fails —
+        the shape §10 names from the other side and the Chapter Ops slice hit
+        with this same primitive. It stays inside the gate: a member who loses
+        the permission mid-flight should lose the confirmation with it.
+      */}
+      {confirmDialog}
+      {body}
     </Can>
   );
 }

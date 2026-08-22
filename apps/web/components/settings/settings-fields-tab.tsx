@@ -33,6 +33,8 @@ import {
 } from "@/components/shared/async-states";
 import { useToast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
+import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
+import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import {
   useCustomFields,
   useCreateCustomField,
@@ -139,6 +141,7 @@ function FieldRow({
   canManage: boolean;
 }) {
   const { toast } = useToast();
+  const { confirm, confirmDialog } = useConfirmDialog();
   const updateField = useUpdateCustomField();
   const deleteField = useDeleteCustomField();
 
@@ -157,7 +160,12 @@ function FieldRow({
   }
 
   async function handleDelete() {
-    const confirmed = window.confirm(`Delete the field "${field.label}"?`);
+    const confirmed = await confirm({
+      title: `Delete the field "${field.label}"?`,
+      description:
+        "Members lose the values they have entered for it, and the column disappears from the directory. This cannot be undone.",
+      confirmLabel: "Delete field",
+    });
     if (!confirmed) return;
     try {
       await deleteField.mutateAsync(field.id);
@@ -175,6 +183,14 @@ function FieldRow({
 
   return (
     <li className="rounded-md border border-border p-4">
+      {/*
+        One confirmation per row rather than one for the list. The handler
+        lives here, so hoisting it would mean drilling `confirm` through
+        `FieldRow`'s props for no gain — and a per-row host settles its own
+        promise when a successful delete unmounts the row, which is the
+        guarantee `ConfirmDialogHost`'s unmount effect exists for.
+      */}
+      {confirmDialog}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <span className="text-sm font-medium">{field.label}</span>
@@ -231,8 +247,18 @@ function FieldRow({
               void patch({ visibility: visibility as CustomFieldVisibility })
             }
           >
+            {/*
+              No height override. §4's 44 is a carve-out for *filter chrome* —
+              "secondary chrome sitting above the thing it filters" — and
+              neither visibility select filters anything: both write. Reading
+              that carve-out as "the height for a select" is the defect §4 was
+              written about, and here it ran backwards, shrinking below
+              `SelectTrigger`'s own 48 rather than up from 44. The primitive's
+              default is the field height, and it is what the two unoverridden
+              triggers in this same file already render at.
+            */}
             <SelectTrigger
-              className="h-11 w-40"
+              className="w-40"
               aria-label={`${field.label} visibility`}
             >
               <SelectValue />
@@ -427,7 +453,14 @@ function AddFieldForm({ canManage }: { canManage: boolean }) {
                       disabled={!canManage}
                       onClick={() => removeChoice(choice)}
                       aria-label={`Remove option ${choice}`}
-                      className="rounded-sm hover:bg-accent"
+                      /*
+                        `--accent` aliases `--popover`, so `hover:bg-accent`
+                        on a chip inside a card composites to 1.085:1 —
+                        `shared/table-contrast.test.ts` pins that exact
+                        measurement. The accent tint separates by hue instead
+                        of by a ladder step that is not there.
+                      */
+                      className={`rounded-sm hover:bg-accent-subtle ${FOCUS_RING_OFFSET}`}
                     >
                       <X className="h-3 w-3" />
                     </button>
@@ -517,7 +550,7 @@ function AddFieldForm({ canManage }: { canManage: boolean }) {
                   }))
                 }
               >
-                <SelectTrigger className="h-11 w-40" aria-label="Visibility">
+                <SelectTrigger className="w-40" aria-label="Visibility">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

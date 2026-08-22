@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { AlertTriangle, CreditCard, Loader2, Trash2 } from "lucide-react";
+import { AlertTriangle, Loader2, Trash2 } from "lucide-react";
 import {
   type OrgDues,
   useCreatePortal,
@@ -41,7 +41,10 @@ import {
   LoadingState,
 } from "@/components/shared/async-states";
 import { PermissionsOfflineSurface } from "@/components/shared/async-states";
+import { BillingGlyph } from "@/components/layout/nav-glyphs";
 import { Can } from "@/components/shared/can";
+import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import { HOUSE_SEED } from "@repo/chapter-theme";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -136,6 +139,7 @@ const COMING_SOON_TABS: ReadonlyArray<{
 
 function SettingsPageContent() {
   const { toast } = useToast();
+  const { confirm, confirmDialog } = useConfirmDialog();
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
   const chapterQuery = useCurrentChapter({
     chapterId: activeChapterId,
@@ -335,9 +339,16 @@ function SettingsPageContent() {
   async function startRollover(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!semesterLabel || !semesterStart || !semesterEnd) return;
-    const confirmed = window.confirm(
-      `Start a new semester labelled "${semesterLabel}"? The current leaderboard period will be archived and a new one will begin.`,
-    );
+    const confirmed = await confirm({
+      title: `Start a new semester labelled "${semesterLabel}"?`,
+      description:
+        "The current leaderboard period is archived and a new one begins. Points already awarded are kept — only the leaderboard's default window moves.",
+      confirmLabel: "Start new semester",
+      // Not destructive: a rollover archives rather than deletes, and
+      // `writing.md` §7's own copy for this flow says the history stays. A red
+      // button would state a loss the API does not perform.
+      tone: "default",
+    });
     if (!confirmed) return;
     try {
       await rollover.mutateAsync({
@@ -408,6 +419,13 @@ function SettingsPageContent() {
 
   return (
     <div className="space-y-6">
+      {/*
+        Above the tabs, so switching tab never unmounts an open confirmation
+        mid-flight — `ConfirmDialogHost` would settle it `null` and the
+        rollover would silently not run. Same reason the Chapter Ops slice
+        keeps `{confirmDialog}` out from under its screens' early returns.
+      */}
+      {confirmDialog}
       <header>
         <h2 className="text-2xl font-semibold tracking-tight">
           Chapter settings
@@ -624,7 +642,13 @@ function SettingsPageContent() {
                     {createPortal.isPending ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
-                      <CreditCard className="h-4 w-4" />
+                      // Names the destination, not the verb — §6.2 keeps
+                      // Lucide for control furniture, and the billing intent
+                      // is already a Signet duotone in `nav-glyphs.tsx`.
+                      // `AlertTriangle` above stays Lucide: it is the danger
+                      // marker `async-states.tsx` draws for the same tone, not
+                      // a domain intent.
+                      <BillingGlyph className="h-4 w-4" />
                     )}
                     Open Stripe billing portal
                   </Button>
@@ -718,11 +742,22 @@ function SettingsPageContent() {
                       aria-label="Accent color hex value"
                       value={accentDraft}
                       onChange={(event) => setAccentDraft(event.target.value)}
-                      placeholder="#7A5A2F"
+                      placeholder={HOUSE_SEED}
                       className="max-w-xs font-mono"
                     />
+                    {/*
+                      The one place a raw chapter hex legitimately paints — it
+                      is a preview *of* that hex, which is the carve-out
+                      README §2's ban is written around. What it must not do is
+                      hardcode the text on top: `text-white` is a guess that is
+                      wrong for every light seed the directory ships (`#FFFFFF`,
+                      `#C0C0C0`, `#C9A56F`), where white on the fill is 1.0–2.2:1
+                      and the word "Preview" disappears. `accent-contrast` is
+                      the role the engine resolves for exactly this pairing, and
+                      `resolveChapterAccentColor` has already run it here.
+                    */}
                     <div
-                      className="flex h-12 w-36 items-center justify-center rounded-md text-sm font-semibold text-white"
+                      className="flex h-12 w-36 items-center justify-center rounded-md text-sm font-semibold text-primary-foreground"
                       style={{ backgroundColor: accent.resolvedAccent }}
                     >
                       Preview

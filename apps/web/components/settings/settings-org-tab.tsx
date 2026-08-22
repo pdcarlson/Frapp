@@ -29,6 +29,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { FOCUS_RING } from "@/components/ui/focus";
 
 type Branding = {
   greek_letters?: string;
@@ -165,7 +166,16 @@ export function SettingsOrgTab({
   const manageHint = canManage ? null : (
     <p className="text-xs text-muted-foreground">
       Editing chapter settings requires the{" "}
-      <code className="rounded bg-secondary px-1 py-0.5">chapter-config:manage</code>{" "}
+      {/*
+        `--secondary` aliases `--card` and this sits in a `CardContent`, so
+        `bg-secondary` here was 1.000:1 — a chip with no chip. `--surface-1` is
+        the step *below* the card, which is what §4 already specifies for an
+        input fill inside a card, and a recess cannot invert the way a raised
+        step can.
+      */}
+      <code className="rounded bg-surface-1 px-1 py-0.5">
+        chapter-config:manage
+      </code>{" "}
       permission.
     </p>
   );
@@ -335,11 +345,25 @@ export function SettingsOrgTab({
                   disabled={!canManage || isCurrent}
                   aria-pressed={isCurrent}
                   onClick={() => setPendingArchetype(option.key)}
+                  /*
+                    The other direction of the accent sweep. This selection is
+                    accent-worthy — §5 names active filters, and a chosen
+                    archetype is the same shape as `/documents`' selected
+                    folder — but `bg-primary/5` was a raw opacity wash of the
+                    chapter hex, which README §2 bans outright, and at 5% it
+                    was invisible besides. The recipe is §2's two card-seated
+                    states, the one `shared/table-contrast.test.ts` pins:
+                    hover `accent-3`, selected `accent-4` plus `accent-11`
+                    text. `border-primary/40` on hover went with it — the
+                    border swap is `FOCUS_RING`'s job, and using it for hover
+                    too left focus and hover indistinguishable on a card.
+                  */
                   className={cn(
-                    "flex flex-col gap-1 rounded-md border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    "flex flex-col gap-1 rounded-md border p-3 text-left transition-colors",
+                    FOCUS_RING,
                     isCurrent
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-primary/40",
+                      ? "border-accent-border bg-accent-subtle-hover text-accent-text"
+                      : "border-border hover:bg-accent-subtle",
                     !canManage && !isCurrent && "cursor-not-allowed opacity-60",
                   )}
                 >
@@ -348,9 +372,12 @@ export function SettingsOrgTab({
                       {option.short}
                     </span>
                     {isCurrent ? (
-                      <span className="text-[11px] font-medium text-primary">
-                        Current
-                      </span>
+                      // `accent-11` rather than `--primary`: the fill under it
+                      // is `accent-4`, and §1's ladder puts the readable tone
+                      // at 11. It also inherits from the button above, so this
+                      // states the weight and lets the colour come from one
+                      // place.
+                      <span className="text-[11px] font-medium">Current</span>
                     ) : null}
                   </span>
                   <span className="text-sm font-medium">{option.label}</span>

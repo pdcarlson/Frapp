@@ -171,6 +171,14 @@ Implementation: `PermissionsOffline` (`apps/web/components/shared/async-states.t
 | Error | `Couldn't load roles` | `Retry in a moment. This view requires the roles:manage permission.` |
 | Permission denied | `Roles & Permissions` | `Managing roles requires the roles:manage permission. Ask your chapter president to grant access.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can manage roles.` |
+| Offline | `Roles unavailable offline` | `Reconnect to load the chapter's roles and edit their permissions.` |
+| Delete role confirmation | `Delete <name>?` | `Members assigned this role lose its permissions immediately. This cannot be undone.` · confirm `Delete role` |
+| Transfer presidency confirmation | `Transfer presidency?` | `The President role moves to the selected member immediately and is removed from you. Only the current president can undo it.` · confirm `Transfer presidency` |
+| Custom roles offline | `Custom roles unavailable offline` | `Reconnect to load this chapter's custom roles and edit their capabilities.` |
+| Custom roles empty | `No custom roles yet` | `Create one below to extend the permission matrix.` |
+| Custom roles error | `Couldn't load custom roles` | `Retry to fetch this chapter's custom roles.` |
+
+The confirmation rows below and under Roles & Permissions are the five `window.confirm` strings the Settings & Roles slice converted to [`confirm-dialog.tsx`](../../../apps/web/components/shared/confirm-dialog.tsx). A browser dialog's text was never in this table because it was never the product's; an in-product one is, and `writing.md` §2's verb-plus-object CTA rule governs the button. The rollover is the one that is **not** destructive-toned — it archives rather than deletes, and a red button would state a loss the API does not perform.
 
 ### Settings (dashboard)
 
@@ -181,6 +189,9 @@ Implementation: `PermissionsOffline` (`apps/web/components/shared/async-states.t
 | No chapter | `Chapter settings` | `Select an active chapter to edit its branding, semester state, or billing configuration.` |
 | Semester empty | `No archived semesters yet` | `After you run your first rollover, the history appears here.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can start a new semester.` |
+| Rollover confirmation | `Start a new semester labelled "<label>"?` | `The current leaderboard period is archived and a new one begins. Points already awarded are kept — only the leaderboard's default window moves.` · confirm `Start new semester` |
+| Delete field confirmation | `Delete the field "<label>"?` | `Members lose the values they have entered for it, and the column disappears from the directory. This cannot be undone.` · confirm `Delete field` |
+| Delete custom role confirmation | `Delete the custom role "<label>"?` | `Members holding it lose its capabilities on their next request. This cannot be undone.` · confirm `Delete custom role` |
 
 ### Tasks (dashboard)
 

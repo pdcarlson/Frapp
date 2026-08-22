@@ -15,6 +15,10 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import {
+  moduleTierKind,
+  moduleTierLabel,
+} from "@/components/settings/settings-status";
 
 type Props = {
   /** Merged `enabled_modules` map from the chapter config. */
@@ -181,15 +185,16 @@ function ModuleRow({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium">{m.label}</span>
-            {locked ? (
-              <Badge variant="outline" className="border-success/50 text-success">
-                Free
-              </Badge>
-            ) : (
-              <Badge variant="outline" className="border-primary/40 text-primary">
-                Chapter Pro
-              </Badge>
-            )}
+            {/*
+              One badge, not a ternary between two hand-spelled tints. The
+              accent half was §5's ban (#1202's defect, reached by a ternary
+              this family had no mapper for) and the success half put a price
+              tag in the status channel — a green `Free` beside an off switch
+              said the module was on. `settings-status.ts` has the reasoning.
+            */}
+            <Badge variant={moduleTierKind(m.tier)}>
+              {moduleTierLabel(m.tier)}
+            </Badge>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">{m.description}</p>
         </div>
@@ -214,7 +219,16 @@ function ModuleRow({
       </div>
 
       {open && hasSubFeatures ? (
-        <div className="border-t border-border bg-secondary/30 px-4 py-3 pl-11">
+        /*
+          No fill. `--secondary` aliases `--card` (`elevation-contrast.test.ts`
+          pins it), so `bg-secondary/30` inside this card composited to
+          1.000:1 — the strip it was meant to draw was never there. The
+          hairline above it is the load-bearing edge (§2), and it already
+          separates the expansion from the row; adding a step that cannot
+          exist is what §10 means by a state that cannot rise above its
+          container.
+        */
+        <div className="border-t border-border px-4 py-3 pl-11">
           <ul className="space-y-1.5">
             {m.subFeatures.map((sub) => (
               <li

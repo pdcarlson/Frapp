@@ -1,5 +1,7 @@
 "use client";
 
+import type { ReactNode } from "react";
+
 import { useMemo, useState } from "react";
 import { Loader2, Trash2 } from "lucide-react";
 import { getArchetype, getRolePack } from "@repo/org-archetypes";
@@ -19,8 +21,15 @@ import {
   EmptyState,
   ErrorState,
   LoadingState,
+  OfflineState,
 } from "@/components/shared/async-states";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import { useNetwork } from "@/lib/providers/network-provider";
+import {
+  dashboardCheckboxHitAreaClassName,
+  dashboardTableCheckboxClassName,
+} from "@/components/shared/table-controls";
 import { getErrorMessage } from "@/lib/utils";
 import { RolesAndPermissionsPage } from "@/components/roles/roles-page";
 import {
@@ -212,7 +221,15 @@ function MatrixView({
                         <td key={col.key} className="p-2 text-center">
                           <span
                             aria-label={`${col.label} capabilities managed under Live roles`}
-                            className="text-muted-foreground/40"
+                            /*
+                              The same 2.3:1 wash as the held/not-held marks
+                              below, on the cell that carries the most text of
+                              the three. `--muted` is not the escape hatch —
+                              3.568:1 on this card, under §6 — so "n/a" takes
+                              the same secondary tone as every other caption on
+                              the screen, and the `title` carries the reason.
+                            */
+                            className="text-muted-foreground"
                             title="Pack-role permissions are managed under Live roles"
                           >
                             n/a
@@ -231,10 +248,34 @@ function MatrixView({
                               ? `${col.label} has ${entry.permission}`
                               : `${col.label} lacks ${entry.permission}`
                           }
+                          /*
+                            Three defects in one class string. `emerald` is
+                            #916's conflicting green — a raw Tailwind scale
+                            beside `--success`, which is the token this repo
+                            ships for exactly this fact. The `dark:` variant
+                            was the last one left in the tree and had been
+                            inert since the shell slice made Signet dark-only,
+                            so the shipped colour was the *light* one,
+                            `emerald-600`, on a dark card. And
+                            `text-muted-foreground/40` is `--muted-foreground`
+                            at 40% — 2.3:1 on a card, under §6's floor for the
+                            one mark that tells an admin a role lacks a
+                            capability.
+
+                            Both marks take a **text** tone, not a non-text
+                            one: `✓` and `—` are characters, so §6's 4.5:1
+                            applies rather than the 3:1 glyph floor. That rules
+                            out `--muted`, which reads like the token for
+                            absent metadata and is 3.568:1 on `--card` — the
+                            chat slice already recorded that it "is not usable
+                            as text anywhere on the ladder", and reaching for
+                            it here would have reproduced that finding one
+                            family over. Measured in `settings-contrast.test.ts`:
+                            success 6.752:1, muted-foreground 6.849:1 on the
+                            card this table sits in.
+                          */
                           className={
-                            held
-                              ? "text-emerald-600 dark:text-emerald-400"
-                              : "text-muted-foreground/40"
+                            held ? "text-success" : "text-muted-foreground"
                           }
                         >
                           {held ? "✓" : "—"}
@@ -267,6 +308,8 @@ function CustomView({
   catalog: PermissionCatalogEntry[];
 }) {
   const { toast } = useToast();
+  const { confirm, confirmDialog } = useConfirmDialog();
+  const { isOffline } = useNetwork();
   const customRolesQuery = useCustomRoles();
   const createRole = useCreateCustomRole();
   const updateRole = useUpdateCustomRole();
@@ -328,7 +371,12 @@ function CustomView({
   }
 
   async function handleDelete(role: ChapterCustomRole) {
-    const confirmed = window.confirm(`Delete the custom role "${role.label}"?`);
+    const confirmed = await confirm({
+      title: `Delete the custom role "${role.label}"?`,
+      description:
+        "Members holding it lose its capabilities on their next request. This cannot be undone.",
+      confirmLabel: "Delete custom role",
+    });
     if (!confirmed) return;
     try {
       await deleteRole.mutateAsync(role.id);
@@ -368,21 +416,45 @@ function CustomView({
     }
   }
 
-  if (customRolesQuery.isPending) {
-    return <LoadingState message="Loading custom roles..." />;
-  }
-  if (customRolesQuery.isError) {
-    return (
+  /*
+    §4's flags, and the two things this tab was missing.
+
+    `isPending` alone was the spinner gate, but `useCustomRoles` is
+    `enabled: !!chapterId`, so it is true for a query that is not running —
+    and a query paused offline shares it. And there was no offline state at
+    all, so a member with a dropped connection sat on the skeleton until the
+    retry budget ran out. Gated on "no cached data", not on `isOffline`: a blip
+    must not replace a rendered list with "unavailable offline".
+
+    The states render *below* `{confirmDialog}` rather than above it, so a
+    background refetch failure cannot unmount an open confirmation and settle
+    its promise `null` behind the member's back.
+  */
+  const paused =
+    customRolesQuery.isPending && customRolesQuery.fetchStatus === "paused";
+
+  let body: ReactNode;
+  if (isOffline && customRolesQuery.data === undefined) {
+    body = (
+      <OfflineState
+        title="Custom roles unavailable offline"
+        description="Reconnect to load this chapter's custom roles and edit their capabilities."
+        onRetry={() => void customRolesQuery.refetch()}
+      />
+    );
+  } else if (customRolesQuery.isLoading || paused) {
+    body = <LoadingState message="Loading custom roles..." />;
+  } else if (customRolesQuery.isError) {
+    body = (
       <ErrorState
         title="Couldn't load custom roles"
         description="Retry to fetch this chapter's custom roles."
         onRetry={() => void customRolesQuery.refetch()}
       />
     );
-  }
-
-  return (
-    <div className="space-y-6">
+  } else {
+    body = (
+      <>
       <Card>
         <CardHeader>
           <CardTitle>Custom roles</CardTitle>
@@ -436,15 +508,21 @@ function CustomView({
                           key={entry.permission}
                           className="flex items-center gap-1.5 text-xs"
                         >
-                          <input
-                            type="checkbox"
-                            checked={held}
-                            disabled={!canManage || updateRole.isPending}
-                            onChange={() =>
-                              void handleToggleCapability(role, entry.permission)
-                            }
-                            aria-label={`${role.label} ${entry.permission}`}
-                          />
+                          <span className={dashboardCheckboxHitAreaClassName}>
+                            <input
+                              type="checkbox"
+                              className={dashboardTableCheckboxClassName}
+                              checked={held}
+                              disabled={!canManage || updateRole.isPending}
+                              onChange={() =>
+                                void handleToggleCapability(
+                                  role,
+                                  entry.permission,
+                                )
+                              }
+                              aria-label={`${role.label} ${entry.permission}`}
+                            />
+                          </span>
                           <span className="font-mono">{entry.permission}</span>
                         </label>
                       );
@@ -515,13 +593,16 @@ function CustomView({
                     key={entry.permission}
                     className="flex items-center gap-1.5 text-xs"
                   >
-                    <input
-                      type="checkbox"
-                      checked={draft.capabilities.includes(entry.permission)}
-                      disabled={!canManage}
-                      onChange={() => toggleDraftCapability(entry.permission)}
-                      aria-label={`new role ${entry.permission}`}
-                    />
+                    <span className={dashboardCheckboxHitAreaClassName}>
+                      <input
+                        type="checkbox"
+                        className={dashboardTableCheckboxClassName}
+                        checked={draft.capabilities.includes(entry.permission)}
+                        disabled={!canManage}
+                        onChange={() => toggleDraftCapability(entry.permission)}
+                        aria-label={`new role ${entry.permission}`}
+                      />
+                    </span>
                     <span className="font-mono">{entry.permission}</span>
                   </label>
                 ))}
@@ -546,6 +627,15 @@ function CustomView({
           </CardContent>
         </form>
       </Card>
+      </>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Above the branch, so no state change unmounts an open confirmation. */}
+      {confirmDialog}
+      {body}
     </div>
   );
 }
