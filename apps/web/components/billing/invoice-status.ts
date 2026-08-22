@@ -1,6 +1,4 @@
-import type { BadgeProps } from "@/components/ui/badge";
-
-type BadgeKind = NonNullable<BadgeProps["variant"]>;
+import type { BadgeKind } from "@/components/ui/badge";
 
 /**
  * Invoice and subscription state → the §5 badge kind that states it.
@@ -63,7 +61,9 @@ export function invoiceStatusKind(status: string): BadgeKind {
  * contract offers checkout only there. Painting a brand-new chapter's unstarted
  * setup in danger red would be the decorative use of a semantic hue §5 forbids.
  */
-export function subscriptionStatusKind(status: string | null | undefined): BadgeKind {
+export function subscriptionStatusKind(
+  status: string | null | undefined,
+): BadgeKind {
   switch (status) {
     case "active":
       return "success";
@@ -86,7 +86,9 @@ export function subscriptionStatusKind(status: string | null | undefined): Badge
  * these are Stripe's own and have no §5 row, so they map to the plain-language
  * equivalent once, here, rather than being re-cased at each call site.
  */
-export function subscriptionStatusLabel(status: string | null | undefined): string {
+export function subscriptionStatusLabel(
+  status: string | null | undefined,
+): string {
   switch (status) {
     case "active":
       return "Active";
