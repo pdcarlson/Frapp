@@ -118,6 +118,22 @@ describe("the defect this file exists for", () => {
       ).toBeLessThan(0.15);
     }
   });
+
+  it("would have caught claiming the tint is *better* than the neutral step", () => {
+    // The first draft of the docblock said "no better than the neutral step",
+    // which review caught as overstated in the other direction: the range
+    // straddles neutral, and six seeds do beat it. The defensible claim — and
+    // the one that actually motivates the design — is that a majority land at
+    // or below it, so the tint cannot be *relied on* for luminance. Asserted as
+    // "more than half" rather than the exact 13, which would fail on a
+    // derivation change that is not a defect.
+    const neutral = ratio(SURFACE.popover, SURFACE.card);
+    const atOrBelow = SEEDS.filter(
+      (seed) =>
+        ratio(accentRolesFor(seed)["--accent-subtle"]!, SURFACE.card) <= neutral,
+    ).length;
+    expect(atOrBelow).toBeGreaterThan(SEEDS.length / 2);
+  });
 });
 
 describe("row hover", () => {
@@ -192,6 +208,35 @@ describe("the hairline", () => {
       const thinned = ratio(applyAlpha("#FFFFFF", HAIRLINE_ALPHA * 0.7, bg), bg);
       expect(thinned, `thinned hairline over ${name}`).toBeLessThan(full);
       expect(full, `full hairline over ${name}`).toBeLessThan(AA_NON_TEXT);
+    }
+  });
+});
+
+describe("text the row states leave behind", () => {
+  it("keeps the secondary tone legible on a selected row, for every seed", () => {
+    // Only *uncolored* cell text inherits `--accent-text` on selection; a
+    // sub-line that sets `text-muted-foreground` (the member's email, an
+    // invoice's due date) keeps its own tone and lands on the selected fill.
+    // That pair is neither the base surface nor the accent text, so neither of
+    // the assertions above reaches it.
+    for (const seed of SEEDS) {
+      expect(
+        ratio(TEXT.mutedForeground, accentFour(accentRolesFor(seed))),
+        `${seed} --muted-foreground on the selected fill`,
+      ).toBeGreaterThanOrEqual(AA_TEXT);
+    }
+  });
+
+  it("keeps the bulk-action bar's own text legible, for every seed", () => {
+    // The "N selected" bars on /members, /billing and /points are
+    // `bg-accent-subtle` with plain `--foreground` text — an accent-tinted
+    // surface that is not a row and not a badge.
+    for (const seed of SEEDS) {
+      const three = accentRolesFor(seed)["--accent-subtle"]!;
+      expect(
+        ratio(TEXT.foreground, three),
+        `${seed} --foreground on the bulk-action bar`,
+      ).toBeGreaterThanOrEqual(AA_TEXT);
     }
   });
 });

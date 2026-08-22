@@ -20,9 +20,13 @@ import { cn } from "@/lib/utils"
  * `--card` surface hovered at **1.085:1** — no feedback at all. §2's remedy is
  * the accent tint, and the trap is that the tint does not fix it *by luminance*:
  * `--accent-subtle` measures 1.032–1.143:1 on `--card` across the 19 seeded
- * chapter colours, i.e. no better than the neutral step, and for the four dark
- * red seeds it is measurably worse. What the tint actually buys is **hue** —
- * its channel spread from `--card` is 7–86 against the neutral step's 3.
+ * chapter colours, which straddles the neutral step it replaces rather than
+ * beating it — **13 of the 19 seeds land at or below 1.085**, the four dark reds
+ * worst at 1.032, and the best of them reaches only 1.143. So luminance
+ * separation is not something the tint can be relied on to provide at all. What
+ * it does buy is **hue** — its channel spread from `--card` is 7–86 against the
+ * neutral step's 3, and that holds for every seed including the achromatic
+ * three.
  *
  * So the two states are separated from each other, and from the base row, by
  * three different mechanisms rather than one:
@@ -31,7 +35,7 @@ import { cn } from "@/lib/utils"
  *   selected   accent-4 (`--accent-subtle-hover`), which is a real step: 1.178–
  *              1.358:1 on `--card` and 1.108–1.193:1 above the hover fill, for
  *              every seed. §3's own state table takes the same one-step lift.
- *   selected   `--accent-text` on that fill measures 6.34–8.68:1 for every seed
+ *   selected   `--accent-text` on that fill measures 6.33–8.68:1 for every seed
  *              — the load-bearing half, the way focus.ts documents the border
  *              swap as the load-bearing half of the focus ring.
  *

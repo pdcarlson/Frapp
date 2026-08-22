@@ -259,9 +259,16 @@ export function SubscriptionNotice({
         // §5 forbids; it stays neutral on the elevated step.
         //
         // `bg-secondary/40` was neither: on Signet `--secondary` is the card
-        // value, so a 40% wash of it on a card was invisible.
+        // value, so a 40% wash of it on a card was invisible. `bg-accent` was
+        // the same mistake one step over — `--accent` holds `--popover`'s value,
+        // so on a card it is the 1.085:1 near-miss the #920 Directory & Finance
+        // slice measured for table-row hover, and inside a Dialog (which *is*
+        // `--popover`) it is literally 1:1. This notice renders in both places.
+        // The pending branch therefore carries no fill at all: components.md §2
+        // makes the hairline the load-bearing edge, and a hairline reads on
+        // every step of the ladder where a one-step fill does not.
         isPending
-          ? "border-border bg-accent text-muted-foreground"
+          ? "border-border text-muted-foreground"
           : "border-warning/45 bg-warning/[.13] text-warning",
         // Focusable via `tabIndex={-1}` and only ever reached programmatically,
         // on `useGatedDialog`'s revoke path — `:focus-visible` does not match a

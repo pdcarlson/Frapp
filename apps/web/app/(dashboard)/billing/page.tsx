@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   invoiceStatusKind,
   subscriptionStatusKind,
+  subscriptionStatusLabel,
 } from "@/components/billing/invoice-status";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -197,11 +198,10 @@ export default function BillingPage() {
                 variant={subscriptionStatusKind(
                   subscriptionStatus ?? billingStatus?.subscription_status,
                 )}
-                className="capitalize"
               >
-                {subscriptionStatus ??
-                  billingStatus?.subscription_status ??
-                  "unknown"}
+                {subscriptionStatusLabel(
+                  subscriptionStatus ?? billingStatus?.subscription_status,
+                )}
               </Badge>
             </div>
           </div>
@@ -256,6 +256,7 @@ export default function BillingPage() {
               value={invoiceSearch}
               onChange={(event) => setInvoiceSearch(event.target.value)}
               placeholder="Search invoice or member"
+              className="h-11"
             />
             <select
               aria-label="Invoice status filter"
@@ -305,9 +306,7 @@ export default function BillingPage() {
           {filteredInvoices.length === 0 ? (
             <NestedEmpty
               title={stateMicrocopy.billing.emptyTitle}
-              description={stateMicrocopy.billing.emptyDescription}
-              actionLabel="Create invoice"
-              onAction={() => handleInvoiceAction("Create Invoice")}
+              description="Create the first one from Member invoices below to start dues collection."
             />
           ) : (
             <Table>

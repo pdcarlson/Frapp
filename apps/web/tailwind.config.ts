@@ -27,6 +27,12 @@ import sharedConfig, { colorVar } from "@repo/theme/tailwind";
  * occurrences of `pointer: coarse`. Unknown variants are dropped silently
  * rather than erroring, which is why it read as working for two slices; it was
  * caught by compiling the sheet and grepping it, not by inspection.
+ *
+ * Registering it therefore *activates* chat's chips for the first time, which
+ * is a cross-surface change riding on a config edit. Measured in Chromium at
+ * 375px before shipping it: the reaction chips go from 26px to 44px tall on a
+ * coarse pointer, keep their widths, stay on one row and do not overlap — which
+ * is exactly what `CHIP_HIT_AREA` was written to do.
  */
 const config: Config = {
   content: [

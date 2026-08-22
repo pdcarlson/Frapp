@@ -34,6 +34,14 @@ import {
  * `min-h-40` rather than `min-h-52`: the containing card supplies its own
  * padding, and a nested state that reserves the full top-level height pushes
  * the card taller than the content it is standing in for.
+ *
+ * The title is a `<p>`, not the `<h2>` the top-level family uses. A state that
+ * replaces a screen is that screen's section; a state standing in for a card's
+ * *contents* is not a document section, and `/billing` proved the difference —
+ * it renders two of these from the same query, so two `<h2>No invoices yet</h2>`
+ * landed back to back and a reader navigating by heading got two identical
+ * landmarks with nothing to tell them apart. The text is styled identically and
+ * still read in order; it just no longer claims to be an outline entry.
  */
 
 const NESTED_BOX =
@@ -84,7 +92,7 @@ export function NestedEmpty({
       <StateTile tone="accent">
         <FolderOpen className="h-6 w-6" />
       </StateTile>
-      <h2 className="text-base font-bold">{title}</h2>
+      <p className="text-base font-bold">{title}</p>
       <p className="max-w-[220px] text-sm text-muted-foreground">{description}</p>
       {actionLabel && onAction ? (
         <Button variant="tinted" size="sm" onClick={onAction} {...actionProps}>
@@ -95,13 +103,21 @@ export function NestedEmpty({
   );
 }
 
+/**
+ * `title` and `description` are required rather than defaulted. The top-level
+ * `ErrorState` defaults to "Unable to load data" / "Please retry in a moment.",
+ * and the second is the shape `writing.md` §1 bans by name — vague copy that
+ * states no failure, no reason and no next step. Every caller here supplies
+ * §7's own strings; requiring them means the next caller cannot ship the banned
+ * copy by forgetting a prop.
+ */
 export function NestedError({
-  title = "Unable to load data",
-  description = "Please retry in a moment.",
+  title,
+  description,
   onRetry,
 }: {
-  title?: string;
-  description?: string;
+  title: string;
+  description: string;
   onRetry?: () => void;
 }) {
   return (
@@ -109,7 +125,7 @@ export function NestedError({
       <StateTile tone="destructive">
         <AlertTriangle className="h-6 w-6" />
       </StateTile>
-      <h2 className="text-base font-bold">{title}</h2>
+      <p className="text-base font-bold">{title}</p>
       <p className="max-w-[220px] text-sm text-muted-foreground">{description}</p>
       {onRetry ? (
         <Button variant="secondary" size="sm" onClick={onRetry}>

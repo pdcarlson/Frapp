@@ -56,3 +56,27 @@ export function subscriptionStatusKind(status: string | null | undefined): Badge
       return "outline";
   }
 }
+
+/**
+ * The subscription state as a person should read it.
+ *
+ * Stripe's tokens are snake_case, and CSS `capitalize` does not treat `_` as a
+ * word boundary — so `past_due` under a `capitalize` class rendered as
+ * "Past_due". `writing.md` §5 fixes the vocabulary for the states it names;
+ * these are Stripe's own and have no §5 row, so they map to the plain-language
+ * equivalent once, here, rather than being re-cased at each call site.
+ */
+export function subscriptionStatusLabel(status: string | null | undefined): string {
+  switch (status) {
+    case "active":
+      return "Active";
+    case "incomplete":
+      return "Incomplete";
+    case "past_due":
+      return "Past due";
+    case "canceled":
+      return "Canceled";
+    default:
+      return "Unknown";
+  }
+}

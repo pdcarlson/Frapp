@@ -13,7 +13,10 @@
  * the import statement points.
  *
  * **Control furniture stays Lucide** (§6.2.2): `Loader2`, `RefreshCw`, `Plus`,
- * `CheckCircle2`, and the §10 state family's `AlertTriangle` / `AlertCircle`.
+ * `CheckCircle2`. The §10 state family's `AlertTriangle` / `AlertCircle` also
+ * stay, but on a different warrant — they belong to the shared state family
+ * rather than to any screen, and §6.2.3 now lists them so that warrant is
+ * written down rather than assumed.
  *
  * `WandSparkles` is deliberately absent rather than replaced. It sat on the
  * adjustment dialog's submit button; components.md §11 claims ✦ for the Ask/AI

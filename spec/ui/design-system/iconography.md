@@ -285,6 +285,17 @@ Three things this table deliberately does not contain:
   `WandSparkles` on its submit button. `components.md` §11 claims ✦ for the
   Ask/AI affordance alone, and the chat slice deleted `Sparkles` for the same
   reason. The button now carries no glyph: its label already names its verb.
+- **The §10 state family's own glyphs.** `AlertTriangle` (error), `FolderOpen`
+  (empty) and `WifiOff` (offline) are drawn from Lucide by
+  [`async-states.tsx`](../../../apps/web/components/shared/async-states.tsx) and
+  its nested counterpart on *every* surface, reskinned or not, and
+  `AlertCircle` names the same "needs attention" state on the billing overdue
+  card. They are listed here rather than left implicit because §6.3 requires
+  every interim pick to be in this map and these had never been written down —
+  a family slice that read the map literally would have concluded they were
+  unmigrated domain intents. They are not this family's to move: the state
+  family is shared, so its glyphs migrate with a pass over
+  `components/shared/**`, not with a screen family.
 - **Control furniture**, unchanged from §6.2.2's rule, plus this family's four:
   `Copy` and `Plus` are verbs on buttons, and `ArrowUp`/`ArrowDown` and
   `List`/`LayoutGrid` name a control's own action — sort direction and view

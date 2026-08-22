@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { EYEBROW } from "@/components/ui/typography";
 import {
   EmptyState,
   ErrorState,
@@ -121,7 +122,7 @@ export function AlumniDirectory() {
             <div className="grid gap-1">
               <label
                 htmlFor="alumni-grad-year"
-                className="text-[12.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+                className={`${EYEBROW} text-muted-foreground`}
               >
                 Graduation year
               </label>
@@ -136,7 +137,7 @@ export function AlumniDirectory() {
             <div className="grid gap-1">
               <label
                 htmlFor="alumni-city"
-                className="text-[12.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+                className={`${EYEBROW} text-muted-foreground`}
               >
                 City
               </label>
@@ -150,7 +151,7 @@ export function AlumniDirectory() {
             <div className="grid gap-1">
               <label
                 htmlFor="alumni-company"
-                className="text-[12.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+                className={`${EYEBROW} text-muted-foreground`}
               >
                 Company
               </label>

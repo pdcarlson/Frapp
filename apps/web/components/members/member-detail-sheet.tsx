@@ -16,7 +16,6 @@ import { formatLocaleDate as formatDate } from "@repo/formatting";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FOCUS_RING_WITHIN } from "@/components/ui/focus";
 import {
   Sheet,
   SheetContent,
@@ -97,9 +96,7 @@ function RoleChecklistItem({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label
-      className={`flex cursor-pointer items-center justify-between rounded-md border border-border p-3 transition-colors hover:bg-accent-subtle ${FOCUS_RING_WITHIN}`}
-    >
+    <label className="flex cursor-pointer items-center justify-between rounded-md border border-border p-3 transition-colors hover:bg-accent-subtle">
       <div>
         <p className="text-sm font-semibold">{title}</p>
         <p
@@ -341,7 +338,7 @@ export function MemberDetailSheet({
           <div className="rounded-md border border-border p-3">
             <p className="text-[12.5px] text-muted-foreground">Onboarding</p>
             <div className="mt-1">
-              <Badge variant={hasCompletedOnboarding ? "default" : "secondary"}>
+              <Badge variant={hasCompletedOnboarding ? "success" : "warning"}>
                 {hasCompletedOnboarding ? "Complete" : "Pending"}
               </Badge>
             </div>

@@ -232,7 +232,11 @@ export function SubscriptionCheckoutCard() {
             >
               Check again
             </Button>
-            <Button asChild variant="link" size="sm">
+            {/* `h-auto px-0` cancels the size's box classes, which `link` does
+                not reset — without them the anchor renders as a 44px padded
+                block beside the button rather than as inline text. Same pairing
+                as `service-page.tsx`'s proof link. */}
+            <Button asChild variant="link" size="sm" className="h-auto px-0">
               <a href="/billing">I haven&apos;t paid yet</a>
             </Button>
           </CardContent>

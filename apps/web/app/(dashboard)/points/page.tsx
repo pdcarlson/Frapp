@@ -256,7 +256,7 @@ export default function PointsPage() {
                 value={leaderboardSearch}
                 onChange={(event) => setLeaderboardSearch(event.target.value)}
                 placeholder="Search by user id"
-                className="pl-9"
+                className="h-11 pl-9"
               />
             </div>
             {filteredLeaderboard.length === 0 ? (
@@ -304,7 +304,7 @@ export default function PointsPage() {
                   value={transactionSearch}
                   onChange={(event) => setTransactionSearch(event.target.value)}
                   placeholder="Search descriptions"
-                  className="pl-9"
+                  className="h-11 pl-9"
                 />
               </div>
               <select
