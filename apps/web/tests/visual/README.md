@@ -75,6 +75,13 @@ Keep it uncommitted: it hardcodes one sandbox's revision path, and CI installs
 the pinned browser properly. Check the actual directory name under
 `/opt/pw-browsers` rather than copying the revision above.
 
+**Delete it once the run is done.** `check-types` compiles everything under
+`apps/web`, and this file fails it — `TS4082: Default export of the module has
+or is using private name 'TestConfigWebServer'`, because spreading the base
+config widens the inferred type past what the package exports. It is not in
+`.gitignore` either, so leaving it behind turns both `npm run check-types` and
+`git status` red for reasons that have nothing to do with the branch.
+
 ## What the harness does and does not exercise
 
 Every spec here runs with **no session and no active chapter**: Playwright opens

@@ -148,7 +148,7 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Study hours",
         icon: StudyGlyph,
         href: "/study",
-        breadcrumbTitle: "Study session",
+        breadcrumbTitle: "Study hours",
         primaryActionLabel: "Start session",
         description: "Start a tracked study session inside a study zone.",
         status: "available",

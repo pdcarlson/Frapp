@@ -1,7 +1,11 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CalendarPlus2, Loader2, Save, Shield } from "lucide-react";
+import { AlertTriangle, Loader2, Save } from "lucide-react";
+import {
+  EventsGlyph,
+  RolesGlyph,
+} from "@/components/events/chapter-ops-glyphs";
 import { useCreateEvent, useRoles, useUpdateEvent } from "@repo/hooks";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -14,8 +18,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
-  dashboardFilterSelectClassName,
+  dashboardFormSelectClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
 import {
@@ -86,7 +92,8 @@ export function EventEditorDialog({
   const rolesQuery = useRoles();
 
   const eventId = typeof event?.id === "string" ? event.id : "";
-  const isSubmitting = createEventMutation.isPending || updateEventMutation.isPending;
+  const isSubmitting =
+    createEventMutation.isPending || updateEventMutation.isPending;
 
   const roleOptions = useMemo(
     () =>
@@ -113,14 +120,21 @@ export function EventEditorDialog({
     if (!open) return;
     if (mode === "edit" && event) {
       setName(typeof event.name === "string" ? event.name : "");
-      setDescription(typeof event.description === "string" ? event.description : "");
+      setDescription(
+        typeof event.description === "string" ? event.description : "",
+      );
       setLocation(typeof event.location === "string" ? event.location : "");
       setStartAt(isoToLocalInput(event.start_time));
       setEndAt(isoToLocalInput(event.end_time));
-      setPointValue(typeof event.point_value === "number" ? event.point_value : 10);
-      setIsMandatory(typeof event.is_mandatory === "boolean" ? event.is_mandatory : true);
+      setPointValue(
+        typeof event.point_value === "number" ? event.point_value : 10,
+      );
+      setIsMandatory(
+        typeof event.is_mandatory === "boolean" ? event.is_mandatory : true,
+      );
       setRecurrenceRule(
-        typeof event.recurrence_rule === "string" && event.recurrence_rule.length > 0
+        typeof event.recurrence_rule === "string" &&
+          event.recurrence_rule.length > 0
           ? event.recurrence_rule
           : "NONE",
       );
@@ -155,7 +169,9 @@ export function EventEditorDialog({
     return mode === "create" ? "Create event" : "Save changes";
   }, [isSubmitting, mode]);
 
-    const handlePointValueChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePointValueChange = (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     const parsed = Number(event.target.value);
     if (Number.isNaN(parsed)) return;
     setPointValue(Math.max(0, parsed));
@@ -236,8 +252,14 @@ export function EventEditorDialog({
       }
     } catch (error) {
       toast({
-        title: mode === "create" ? "Could not create event" : "Could not update event",
-        description: getErrorMessage(error, "Something went wrong. Please retry."),
+        title:
+          mode === "create"
+            ? "Could not create event"
+            : "Could not update event",
+        description: getErrorMessage(
+          error,
+          "Something went wrong. Please retry.",
+        ),
         variant: "destructive",
       });
       return;
@@ -249,7 +271,8 @@ export function EventEditorDialog({
     } catch {
       toast({
         title: "Event saved",
-        description: "The event was saved, but this view could not refresh automatically.",
+        description:
+          "The event was saved, but this view could not refresh automatically.",
         variant: "destructive",
       });
     }
@@ -263,18 +286,21 @@ export function EventEditorDialog({
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <CalendarPlus2 className="h-4 w-4" />
+            <EventsGlyph className="h-4 w-4" />
             {mode === "create" ? "Create event" : "Edit event"}
           </DialogTitle>
           <DialogDescription>
-            Configure scheduling, attendance rules, and points for this chapter event.
+            Configure scheduling, attendance rules, and points for this chapter
+            event.
           </DialogDescription>
         </DialogHeader>
 
         {usingPreviewData ? (
-          <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+          <div className="flex items-start gap-3 rounded-md border border-warning/45 bg-warning/[.13] p-3 text-[12.5px] text-warning">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <div>Preview mode is active. Sign in to create and edit live events.</div>
+            <div>
+              Preview mode is active. Sign in to create and edit live events.
+            </div>
           </div>
         ) : null}
 
@@ -288,98 +314,110 @@ export function EventEditorDialog({
         <SubscriptionNotice gate={gate} feature="managing events" />
 
         <div className="grid gap-3">
-          <label className="space-y-1 text-sm">
-            <span className="text-muted-foreground">Event name</span>
+          <div className="grid gap-1">
+            <Label htmlFor="event-name">Event name</Label>
             <Input
+              id="event-name"
               value={name}
               onChange={(eventValue) => setName(eventValue.target.value)}
               placeholder="Chapter Meeting"
             />
-          </label>
+          </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="space-y-1 text-sm">
-              <span className="text-muted-foreground">Start</span>
+            <div className="grid gap-1">
+              <Label htmlFor="event-start">Start</Label>
               <Input
+                id="event-start"
                 type="datetime-local"
                 value={startAt}
                 onChange={(eventValue) => setStartAt(eventValue.target.value)}
               />
-            </label>
-            <label className="space-y-1 text-sm">
-              <span className="text-muted-foreground">End</span>
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="event-end">End</Label>
               <Input
+                id="event-end"
                 type="datetime-local"
                 value={endAt}
                 onChange={(eventValue) => setEndAt(eventValue.target.value)}
               />
-            </label>
+            </div>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="space-y-1 text-sm">
-              <span className="text-muted-foreground">Location</span>
+            <div className="grid gap-1">
+              <Label htmlFor="event-location">Location</Label>
               <Input
+                id="event-location"
                 value={location}
                 onChange={(eventValue) => setLocation(eventValue.target.value)}
                 placeholder="Chapter House"
               />
-            </label>
-            <label className="space-y-1 text-sm">
-              <span className="text-muted-foreground">Point value</span>
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="event-point-value">Point value</Label>
               <Input
+                id="event-point-value"
                 type="number"
                 min={0}
                 value={pointValue}
                 onChange={handlePointValueChange}
               />
-            </label>
+            </div>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="space-y-1 text-sm">
-              <span className="text-muted-foreground">Attendance policy</span>
+            <div className="grid gap-1">
+              <Label htmlFor="event-attendance-policy">Attendance policy</Label>
               <select
+                id="event-attendance-policy"
                 value={isMandatory ? "mandatory" : "optional"}
-                onChange={(eventValue) => setIsMandatory(eventValue.target.value === "mandatory")}
-                className={dashboardFilterSelectClassName}
+                onChange={(eventValue) =>
+                  setIsMandatory(eventValue.target.value === "mandatory")
+                }
+                className={dashboardFormSelectClassName}
               >
                 <option value="mandatory">Mandatory</option>
                 <option value="optional">Optional</option>
               </select>
-            </label>
+            </div>
 
-            <label className="space-y-1 text-sm">
-              <span className="text-muted-foreground">Recurrence</span>
+            <div className="grid gap-1">
+              <Label htmlFor="event-recurrence">Recurrence</Label>
               <select
+                id="event-recurrence"
                 value={recurrenceRule}
-                onChange={(eventValue) => setRecurrenceRule(eventValue.target.value)}
-                className={dashboardFilterSelectClassName}
+                onChange={(eventValue) =>
+                  setRecurrenceRule(eventValue.target.value)
+                }
+                className={dashboardFormSelectClassName}
               >
                 <option value="NONE">One-time</option>
                 <option value="WEEKLY">Weekly</option>
                 <option value="BIWEEKLY">Bi-weekly</option>
                 <option value="MONTHLY">Monthly</option>
               </select>
-            </label>
+            </div>
           </div>
 
           <div className="space-y-2 text-sm">
             <div className="flex items-center gap-2">
-              <Shield className="h-4 w-4 text-muted-foreground" />
+              <RolesGlyph className="h-4 w-4 text-muted-foreground" />
               <span className="text-muted-foreground">Required roles</span>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Leave all unchecked to require every member. Select roles to limit attendance and
-              auto-absent to members holding any selected role.
+            <p className="text-[12.5px] text-muted-foreground">
+              Leave all unchecked to require every member. Select roles to limit
+              attendance and auto-absent to members holding any selected role.
             </p>
             {rolesQuery.isError ? (
-              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-                Couldn&apos;t load chapter roles, so the list below may be incomplete.
+              <div className="rounded-md border border-warning/45 bg-warning/[.13] p-3 text-[12.5px] text-warning">
+                Couldn&apos;t load chapter roles, so the list below may be
+                incomplete.
               </div>
             ) : null}
             {displayedRoles.length === 0 ? (
-              <div className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
+              <div className="rounded-md border border-dashed border-border p-3 text-[12.5px] text-muted-foreground">
                 {rolesQuery.isLoading
                   ? "Loading roles…"
                   : rolesQuery.isError
@@ -391,16 +429,19 @@ export function EventEditorDialog({
                 {displayedRoles.map((role) => (
                   <label
                     key={role.id}
-                    className="flex cursor-pointer items-center justify-between rounded-md border border-border p-3 transition hover:bg-accent/40"
+                    className="flex cursor-pointer items-center justify-between rounded-md border border-border p-3 transition hover:bg-accent-subtle"
                   >
-                    <span className="font-medium">{role.name}</span>
+                    <span className="font-semibold">{role.name}</span>
                     <input
                       type="checkbox"
                       className={dashboardTableCheckboxClassName}
                       checked={requiredRoleIds.includes(role.id)}
                       disabled={usingPreviewData}
                       onChange={(eventValue) =>
-                        handleRequiredRoleChange(role.id, eventValue.target.checked)
+                        handleRequiredRoleChange(
+                          role.id,
+                          eventValue.target.checked,
+                        )
                       }
                     />
                   </label>
@@ -409,27 +450,28 @@ export function EventEditorDialog({
             )}
           </div>
 
-          <label className="space-y-1 text-sm">
-            <span className="text-muted-foreground">Description</span>
-            <textarea
+          <div className="grid gap-1">
+            <Label htmlFor="event-description">Description</Label>
+            <Textarea
+              id="event-description"
               value={description}
               onChange={(eventValue) => setDescription(eventValue.target.value)}
               rows={3}
-              className="min-h-[96px] rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              className="min-h-[96px]"
               placeholder="Discuss chapter priorities and attendance expectations."
             />
-          </label>
+          </div>
 
-          <label className="space-y-1 text-sm">
-            <span className="text-muted-foreground">Internal notes</span>
-            <textarea
+          <div className="grid gap-1">
+            <Label htmlFor="event-internal-notes">Internal notes</Label>
+            <Textarea
+              id="event-internal-notes"
               value={notes}
               onChange={(eventValue) => setNotes(eventValue.target.value)}
               rows={2}
-              className="rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               placeholder="Optional notes for event planners."
             />
-          </label>
+          </div>
         </div>
 
         <DialogFooter>
@@ -442,7 +484,11 @@ export function EventEditorDialog({
             onClick={handleSubmit}
             {...gate.controlProps(usingPreviewData || isSubmitting)}
           >
-            {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            {isSubmitting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
             {submitLabel}
           </Button>
         </DialogFooter>

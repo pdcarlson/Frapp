@@ -72,6 +72,8 @@ Do not invent alternate terms for the same state on different platforms. Status 
 
 **Render the server's own token, not a re-cased version of it.** `OVERDUE` put through `.toLowerCase()` and a `capitalize` class comes out as "Overdue", which is an alternate term for the same state by another route — and `/billing` was doing exactly that in its member-facing table while the admin card one file over rendered the token. The web mapping from state to badge kind lives in one place, [`apps/web/components/billing/invoice-status.ts`](../../../apps/web/components/billing/invoice-status.ts), for both invoice and subscription state; `DRAFT` is the one state that takes the Hairline kind rather than a semantic one, because it is the absence of a status rather than a status.
 
+**One mapper per domain vocabulary, not one mapper.** Billing's two states share a file because both are billing's; Chapter Ops added four more vocabularies — attendance, service review, study-session close and study-zone enablement — with no overlapping members, so each has its own module rather than one widened to `string`. Where a vocabulary needs a *label* as well as a kind is decided by this section: states §5 names above render their token (`PENDING` stays `PENDING`), and a vocabulary with no row here maps to plain language **once**, in its mapper, which is why `attendance-status.ts` carries `attendanceStatusLabel` and `service-status.ts` deliberately does not.
+
 ## 6. Trust copy rules
 
 Billing, legal, and data-sensitive surfaces MUST:
@@ -173,6 +175,7 @@ The offline string MUST keep its closing clause — a member who edited or poste
 | Loading | — | `Loading chapter tasks...` |
 | Empty | `No tasks yet` | `Admins can create the first chapter task to assign ownership and award points.` |
 | Error | `Couldn't load tasks` | `Confirm your chapter access and retry. Assignees see only their own tasks; admins need tasks:manage to see every task.` |
+| Offline | `Tasks unavailable offline` | `Reconnect to load the chapter board and move tasks through it.` |
 
 ### Service Hours (dashboard)
 
@@ -182,6 +185,7 @@ The offline string MUST keep its closing clause — a member who edited or poste
 | Empty queue | `No pending entries` | `Approved or rejected entries appear in the History card below.` |
 | Empty history | `No service activity yet` | `Log your first service entry to build up chapter service hours.` |
 | Error | `Couldn't load service entries` | `Members see only their own entries; admins need service:approve to see every entry.` |
+| Offline | `Service hours unavailable offline` | `Reconnect to log hours and review the approval queue.` |
 
 ### Chapter Documents (dashboard)
 
@@ -224,6 +228,7 @@ The offline string MUST keep its closing clause — a member who edited or poste
 | Empty zones | `No active study zones` | `Ask a chapter admin with geofences:manage to add one.` |
 | Empty history | `No sessions logged yet` | `Start a tracked session inside a study zone to start earning study points.` |
 | Error | `Couldn't load study data` | `Confirm your chapter access and retry.` |
+| Offline | `Study hours unavailable offline` | `Reconnect to start a session — tracking needs a live location check.` |
 | Paused (tab hidden) | `Paused (tab hidden)` (badge) | Surfaced live while the timer is paused by the Page Visibility API. |
 
 ### Study session (mobile, s10)
@@ -258,6 +263,7 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Loading | — | `Loading study zones...` |
 | Empty | `No study zones yet` | `Create your first zone to let members start tracked study sessions for points.` |
 | Error | `Couldn't load study zones` | `Confirm your chapter access and retry.` |
+| Offline | `Study zones unavailable offline` | `Reconnect to draw a zone or change its reward rate.` |
 | Permission denied | `Study zones` | `Managing study zones requires the geofences:manage permission. Ask your chapter president to grant access.` |
 
 ### Polls (dashboard)

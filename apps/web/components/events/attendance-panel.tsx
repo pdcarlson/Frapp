@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertCircle, Loader2, UsersRound } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
+import { DirectoryGlyph } from "@/components/events/chapter-ops-glyphs";
 import {
   useActiveChapterId,
   useAttendance,
@@ -9,13 +10,6 @@ import {
   useMembers,
   useUpdateAttendanceStatus,
 } from "@repo/hooks";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,10 +20,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  EmptyState,
-  ErrorState,
-  LoadingState,
-} from "@/components/shared/async-states";
+  NestedEmpty,
+  NestedError,
+  NestedLoading,
+} from "@/components/shared/nested-states";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -39,8 +33,11 @@ import { formatLocaleDateTime as formatDate } from "@repo/formatting";
 import { asArray } from "@/lib/utils";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
 import { Can } from "@/components/shared/can";
-
-type AttendanceStatus = "PRESENT" | "EXCUSED" | "ABSENT" | "LATE";
+import {
+  attendanceStatusKind,
+  attendanceStatusLabel,
+} from "@/components/events/attendance-status";
+import type { AttendanceStatus } from "@/components/events/attendance-status";
 
 type AttendanceRow = {
   id?: string;
@@ -58,30 +55,6 @@ type MemberSummary = {
   email?: string | null;
 };
 
-const STATUS_LABELS: Record<AttendanceStatus, string> = {
-  PRESENT: "Present",
-  EXCUSED: "Excused",
-  ABSENT: "Absent",
-  LATE: "Late",
-};
-
-function statusVariant(
-  status: AttendanceStatus | "UNRECORDED",
-): "default" | "secondary" | "destructive" | "outline" {
-  switch (status) {
-    case "PRESENT":
-      return "default";
-    case "LATE":
-      return "secondary";
-    case "EXCUSED":
-      return "outline";
-    case "ABSENT":
-      return "destructive";
-    default:
-      return "outline";
-  }
-}
-
 export function AttendancePanel({ eventId }: { eventId: string }) {
   const chapterId = useActiveChapterId();
   const { toast } = useToast();
@@ -95,8 +68,9 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
   // GET, so a lapsed chapter can still see who showed up.
   const gate = useSubscriptionGate();
 
-  const [statusFilter, setStatusFilter] =
-    useState<"ALL" | AttendanceStatus | "UNRECORDED">("ALL");
+  const [statusFilter, setStatusFilter] = useState<
+    "ALL" | AttendanceStatus | "UNRECORDED"
+  >("ALL");
 
   // Live updates: other admins marking attendance or members checking in
   // appear without a manual refresh. Invalidate the event detail too so
@@ -207,7 +181,7 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
       });
       toast({
         title: "Attendance updated",
-        description: `${STATUS_LABELS[next]} recorded for this member.`,
+        description: `${attendanceStatusLabel(next)} recorded for this member.`,
       });
     } catch (error) {
       toast({
@@ -243,26 +217,64 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
     }
   }
 
-  if (attendanceQuery.isPending) {
-    return <LoadingState message="Loading attendance..." />;
+  /*
+   * `isPending`, not `isLoading`. `isLoading` is `isPending && isFetching`, and
+   * `isFetching` is false while a query is *disabled* — `useMembers` is
+   * `enabled: !!chapterId` (`packages/hooks/src/use-members.ts`). So an
+   * unresolved chapter read as "not loading" on both flags, `membersQuery`
+   * was not errored either (merely disabled), and the panel fell through to
+   * "No attendance records yet": the same false-empty the roster branch below
+   * exists to prevent, reached by another door. README §4's warning about
+   * `isPending` on a disabled query is about spinning forever; here the roster
+   * is genuinely not available yet, and claiming nobody checked in is worse.
+   */
+  if (attendanceQuery.isPending || membersQuery.isPending) {
+    return (
+      <div role="status" aria-live="polite" aria-busy="true">
+        <NestedLoading message="Loading attendance..." />
+      </div>
+    );
   }
 
   if (attendanceQuery.isError) {
     return (
-      <ErrorState
-        title="Attendance unavailable"
-        description="Couldn't load attendance for this event. Retry or confirm you have events:update or permission to view attendance."
-        onRetry={() => void attendanceQuery.refetch()}
-      />
+      <div role="status" aria-live="polite">
+        <NestedError
+          title="Attendance unavailable"
+          description="Couldn't load attendance for this event. Retry or confirm you have events:update or permission to view attendance."
+          onRetry={() => void attendanceQuery.refetch()}
+        />
+      </div>
+    );
+  }
+
+  /*
+   * The roster is the other half of every row, and its failure used to be
+   * silent: `rows` is built from `members`, so a failed `useMembers` produced
+   * an empty list and the panel rendered "No attendance records yet" — copy
+   * asserting that nobody has checked in, at the one moment we cannot know.
+   * README §4 wants an error with a retry path, and this is one.
+   */
+  if (membersQuery.isError) {
+    return (
+      <div role="status" aria-live="polite">
+        <NestedError
+          title="Attendance unavailable"
+          description="Couldn't load the chapter roster, so attendance can't be shown against it. Retry in a moment."
+          onRetry={() => void membersQuery.refetch()}
+        />
+      </div>
     );
   }
 
   if (rows.length === 0) {
     return (
-      <EmptyState
-        title="No attendance records yet"
-        description="Once members check in — or you record attendance manually — they'll show up here."
-      />
+      <div role="status" aria-live="polite">
+        <NestedEmpty
+          title="No attendance records yet"
+          description="Once members check in — or you record attendance manually — they'll show up here."
+        />
+      </div>
     );
   }
 
@@ -276,20 +288,19 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
   for (const row of rows) counts[row.status] += 1;
 
   return (
-    <Card>
-      <CardHeader className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+    <section className="rounded-lg border border-border p-4">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <UsersRound className="h-4 w-4 text-muted-foreground" />
+          <h3 className="flex items-center gap-2 text-lg font-semibold">
+            <DirectoryGlyph className="h-4 w-4 text-muted-foreground" />
             Attendance
-          </CardTitle>
-          <CardDescription>
-            {counts.PRESENT + counts.LATE} checked in · {counts.EXCUSED} excused ·
-            {" "}
-            {counts.ABSENT} absent · {counts.UNRECORDED} unrecorded
-          </CardDescription>
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            {counts.PRESENT + counts.LATE} checked in · {counts.EXCUSED} excused
+            · {counts.ABSENT} absent · {counts.UNRECORDED} unrecorded
+          </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Not gated: filtering is a read, and §5 gates writes only. */}
           <Select
             value={statusFilter}
@@ -298,7 +309,7 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
             }
           >
             <SelectTrigger
-              className="w-[180px]"
+              className="w-full sm:w-[180px]"
               aria-label="Filter attendance by status"
             >
               <SelectValue />
@@ -328,8 +339,8 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
             </Button>
           </Can>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
+      </div>
+      <div className="mt-4 space-y-3">
         {/*
           Disable, don't hide (§5 rule 4): the roster, the counts, and the
           filter keep working for a lapsed chapter — only recording attendance
@@ -350,50 +361,46 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
             No members match that filter.
           </p>
         ) : (
-          <ul className="divide-y divide-border/70">
+          <ul className="divide-y divide-border">
             {filteredRows.map((row) => (
               <li
                 key={row.userId}
                 className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">
+                  <p className="truncate text-sm font-semibold">
                     {row.displayName}
                   </p>
                   {row.email ? (
-                    <p className="truncate text-xs text-muted-foreground">
+                    <p className="truncate text-[12.5px] text-muted-foreground">
                       {row.email}
                     </p>
                   ) : null}
                   {row.status === "PRESENT" || row.status === "LATE" ? (
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-[12.5px] text-muted-foreground">
                       Checked in: {formatDate(row.checkInTime)}
                     </p>
                   ) : null}
                   {row.status === "EXCUSED" && row.excuseReason ? (
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-[12.5px] text-muted-foreground">
                       Reason: {row.excuseReason}
                     </p>
                   ) : null}
                 </div>
-                <div className="flex items-center gap-3">
-                  <Badge variant={statusVariant(row.status)}>
-                    {row.status === "UNRECORDED"
-                      ? "Unrecorded"
-                      : STATUS_LABELS[row.status]}
+                <div className="flex flex-wrap items-center gap-3">
+                  <Badge variant={attendanceStatusKind(row.status)}>
+                    {attendanceStatusLabel(row.status)}
                   </Badge>
                   <Can
                     permission="events:update"
                     deniedFallback={
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-[12.5px] text-muted-foreground">
                         View only
                       </span>
                     }
                   >
                     <Select
-                      value={
-                        row.status === "UNRECORDED" ? "" : row.status
-                      }
+                      value={row.status === "UNRECORDED" ? "" : row.status}
                       onValueChange={(value) => {
                         if (!value) return;
                         void changeStatus(
@@ -412,7 +419,7 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
                         node, so `aria-describedby` would be dropped there.
                       */}
                       <SelectTrigger
-                        className="w-[150px]"
+                        className="w-full sm:w-[150px]"
                         aria-label={`Update attendance for ${row.displayName}`}
                         {...gate.controlProps()}
                       >
@@ -431,7 +438,7 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
             ))}
           </ul>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }

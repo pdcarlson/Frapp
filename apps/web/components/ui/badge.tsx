@@ -1,8 +1,8 @@
-import * as React from "react"
-import { cva, type VariantProps } from "class-variance-authority"
+import * as React from "react";
+import { cva, type VariantProps } from "class-variance-authority";
 
-import { cn } from "@/lib/utils"
-import { FOCUS_RING } from "@/components/ui/focus"
+import { cn } from "@/lib/utils";
+import { FOCUS_RING } from "@/components/ui/focus";
 
 /*
  * Badges and chips, `spec/ui/design-system/components.md` §5.
@@ -74,17 +74,30 @@ const badgeVariants = cva(
     defaultVariants: {
       variant: "default",
     },
-  }
-)
+  },
+);
 
 export interface BadgeProps
-  extends React.HTMLAttributes<HTMLDivElement>,
+  extends
+    React.HTMLAttributes<HTMLDivElement>,
     VariantProps<typeof badgeVariants> {}
+
+/**
+ * The §5 kinds, derived from the variant map rather than restated.
+ *
+ * Every domain status mapper returns this, so deleting a variant here becomes a
+ * compile error in each of them instead of a silent fallback. It lives on the
+ * primitive because five mappers now need it — `billing/invoice-status.ts`,
+ * `events/attendance-status.ts`, `service/service-status.ts`,
+ * `study/study-status.ts` and `geofences/geofence-status.ts` — and five local
+ * copies of one type is the drift `ui/typography.ts` was hoisted to stop.
+ */
+export type BadgeKind = NonNullable<BadgeProps["variant"]>;
 
 function Badge({ className, variant, ...props }: BadgeProps) {
   return (
     <div className={cn(badgeVariants({ variant }), className)} {...props} />
-  )
+  );
 }
 
-export { Badge, badgeVariants }
+export { Badge, badgeVariants };

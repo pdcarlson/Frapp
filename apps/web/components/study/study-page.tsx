@@ -1,15 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Eye,
-  EyeOff,
-  Loader2,
-  MapPin,
-  Pause,
-  Play,
-  Square,
-} from "lucide-react";
+import { Eye, EyeOff, Loader2, Pause, Play, Square } from "lucide-react";
+import { StudyZonesGlyph } from "@/components/events/chapter-ops-glyphs";
 import {
   useGeofences,
   usePauseStudySession,
@@ -36,16 +29,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { studySessionStatusKind } from "@/components/study/study-status";
+import { NestedEmpty } from "@/components/shared/nested-states";
 import {
-  EmptyState,
   ErrorState,
   LoadingState,
+  OfflineState,
 } from "@/components/shared/async-states";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
+import { useNetwork } from "@/lib/providers/network-provider";
 import {
   formatLocaleDateTime as formatShortDate,
   formatPaddedStopwatch as formatDuration,
@@ -69,11 +65,7 @@ type StudySession = {
   user_id: string;
   geofence_id: string;
   status:
-    | "ACTIVE"
-    | "COMPLETED"
-    | "EXPIRED"
-    | "PAUSED_EXPIRED"
-    | "LOCATION_INVALID";
+    "ACTIVE" | "COMPLETED" | "EXPIRED" | "PAUSED_EXPIRED" | "LOCATION_INVALID";
   start_time: string;
   end_time: string | null;
   last_heartbeat_at: string | null;
@@ -112,6 +104,7 @@ function getCurrentPosition(): Promise<GeolocationPosition> {
 
 export function StudyPage() {
   const { toast } = useToast();
+  const { isOffline } = useNetwork();
   // `StudySessionController` carries no `@FreeTier`, so every one of its five
   // writes is paid-ops and the member-facing controls have to mirror the guard
   // (#841). The heartbeat is the exception below — see `sendHeartbeat`.
@@ -358,7 +351,8 @@ export function StudyPage() {
     if (!zoneId) {
       toast({
         title: "No study zones available",
-        description: "Ask an admin to create a study zone before starting a session.",
+        description:
+          "Ask an admin to create a study zone before starting a session.",
         variant: "destructive",
       });
       return;
@@ -422,6 +416,33 @@ export function StudyPage() {
     }
   }
 
+  /*
+   * README §4 item 4: a network-dependent async view ships an offline state.
+   * This screen had none, so a disconnected member sat on the loading
+   * skeleton until the query gave up. Copy is writing.md §7's row.
+   *
+   * **Not while a session is running.** This screen's own invariant, stated
+   * on the Pause/Stop controls below, is that a member is never pinned to a
+   * live timer they cannot end — which is exactly why those two writes are
+   * deliberately ungated. Replacing the whole page with an offline card would
+   * enforce the same trap by unmounting instead of disabling, and losing
+   * network mid-session (a dead zone, a lift, weak house wifi) is the likeliest
+   * way to reach it. A running session keeps its card, its badges and its Stop
+   * button; `stopSession`'s `finally` clears the session locally even when the
+   * server refuses, so ending it offline works.
+   */
+  if (isOffline && !activeSession) {
+    return (
+      <OfflineState
+        title="Study hours unavailable offline"
+        description="Reconnect to start a session — tracking needs a live location check."
+        onRetry={() => {
+          void geofencesQuery.refetch();
+        }}
+      />
+    );
+  }
+
   if (geofencesQuery.isPending || sessionsQuery.isPending) {
     return <LoadingState message="Loading study zones..." />;
   }
@@ -442,7 +463,6 @@ export function StudyPage() {
   return (
     <div className="space-y-6">
       <header>
-        <h2 className="text-2xl font-semibold tracking-tight">Study hours</h2>
         <p className="text-sm text-muted-foreground">
           Start a tracked study session inside a chapter study zone. Hiding the
           tab pauses the session on the server — time stops counting, and if you
@@ -460,12 +480,10 @@ export function StudyPage() {
       <SubscriptionNotice gate={gate} feature="study sessions" />
 
       {activeSession ? (
-        <Card
-          className={pageHidden ? "border-amber-500/40 bg-amber-500/5" : ""}
-        >
+        <Card className={pageHidden ? "border-warning/45" : ""}>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
-              <MapPin className="h-4 w-4 text-muted-foreground" />
+              <StudyZonesGlyph className="h-4 w-4 text-muted-foreground" />
               {activeGeofence?.name ?? "Study session"}
             </CardTitle>
             <CardDescription>
@@ -475,28 +493,29 @@ export function StudyPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="text-4xl font-mono font-bold tabular-nums tracking-tight">
+            {/*
+              32 is foundations §7's `display` role, spelled the way
+              `ui/badge.tsx` spells `caption` — an arbitrary value that is on
+              the scale, not off it. No mono: §7's own callout retired it for
+              this numeral, and the Canvas reference (s10) draws the running
+              timer in Figtree 700 with tabular-nums in `accent-text`.
+            */}
+            <div className="text-[32px] font-bold tabular-nums tracking-tight text-accent-text">
               {formatDuration(elapsedSeconds)}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {pageHidden ? (
-                <Badge variant="outline" className="gap-1">
+                <Badge variant="warning" className="gap-1">
                   <EyeOff className="h-3 w-3" /> Paused (tab hidden)
                 </Badge>
               ) : (
-                <Badge variant="default" className="gap-1">
+                <Badge variant="success" className="gap-1">
                   <Eye className="h-3 w-3" /> Tracking
                 </Badge>
               )}
               {isPaused ? (
-                <Badge variant="outline" className="gap-1">
+                <Badge variant="warning" className="gap-1">
                   <Pause className="h-3 w-3" /> Manually paused
-                </Badge>
-              ) : null}
-              {isPaused || pageHidden ? (
-                <Badge variant="secondary">
-                  Return within {activeGeofence?.pause_grace_minutes ?? 5} min
-                  or the session expires
                 </Badge>
               ) : null}
               {geolocationError ? (
@@ -505,8 +524,16 @@ export function StudyPage() {
                 </Badge>
               ) : null}
             </div>
+            {isPaused || pageHidden ? (
+              <p className="text-[12.5px] text-muted-foreground">
+                Return within {activeGeofence?.pause_grace_minutes ?? 5} min or
+                the session expires.
+              </p>
+            ) : null}
             {geolocationError ? (
-              <p className="text-xs text-destructive">{geolocationError}</p>
+              <p className="text-[12.5px] text-destructive">
+                {geolocationError}
+              </p>
             ) : null}
           </CardContent>
           <CardFooter className="flex flex-wrap gap-2">
@@ -557,7 +584,7 @@ export function StudyPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             {geofences.length === 0 ? (
-              <EmptyState
+              <NestedEmpty
                 title="No active study zones"
                 description="Ask a chapter admin with geofences:manage to add one."
               />
@@ -566,7 +593,7 @@ export function StudyPage() {
                 <div className="grid gap-1">
                   <label
                     htmlFor="study-geofence"
-                    className="text-xs uppercase tracking-wide text-muted-foreground"
+                    className="text-[12.5px] uppercase tracking-wide text-muted-foreground"
                   >
                     Study zone
                   </label>
@@ -604,7 +631,7 @@ export function StudyPage() {
               </div>
             )}
           </CardContent>
-          <CardFooter className="text-xs text-muted-foreground">
+          <CardFooter className="text-[12.5px] text-muted-foreground">
             Closing this tab ends the session — that&apos;s a deliberate web
             adaptation of the mobile foreground rule. Use the mobile app for
             longer sessions or when you expect to switch tabs frequently.
@@ -619,23 +646,23 @@ export function StudyPage() {
         </CardHeader>
         <CardContent>
           {sessions.length === 0 ? (
-            <EmptyState
+            <NestedEmpty
               title="No sessions logged yet"
               description="Start a tracked session inside a study zone to start earning study points."
             />
           ) : (
-            <ul className="divide-y divide-border/70">
+            <ul className="divide-y divide-border">
               {sessions.map((session) => (
                 <li
                   key={session.id}
                   className="flex flex-col gap-1 py-3 md:flex-row md:items-center md:justify-between"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">
+                    <p className="text-sm font-semibold">
                       {session.total_foreground_minutes} minute
                       {session.total_foreground_minutes === 1 ? "" : "s"}
                     </p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-[12.5px] text-muted-foreground">
                       Started {formatShortDate(session.start_time)}
                       {session.end_time
                         ? ` · Ended ${formatShortDate(session.end_time)}`
@@ -643,15 +670,7 @@ export function StudyPage() {
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge
-                      variant={
-                        session.status === "COMPLETED"
-                          ? "default"
-                          : session.status === "ACTIVE"
-                            ? "secondary"
-                            : "outline"
-                      }
-                    >
+                    <Badge variant={studySessionStatusKind(session.status)}>
                       {session.status}
                     </Badge>
                     {session.points_awarded ? (

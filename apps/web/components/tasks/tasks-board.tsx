@@ -24,6 +24,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -43,10 +44,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { NestedEmpty } from "@/components/shared/nested-states";
+import { TasksGlyph } from "@/components/events/chapter-ops-glyphs";
 import {
   EmptyState,
   ErrorState,
   LoadingState,
+  OfflineState,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import {
@@ -55,8 +59,8 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
+import { useNetwork } from "@/lib/providers/network-provider";
 import { asArray, getErrorMessage } from "@/lib/utils";
-
 
 type Task = {
   id: string;
@@ -89,26 +93,40 @@ type MemberSummary = {
   display_name?: string | null;
 };
 
-const COLUMNS: { status: TaskStatus; label: string; description: string }[] = [
+const COLUMNS: {
+  status: TaskStatus;
+  label: string;
+  description: string;
+  /**
+   * Per-column empty copy. §10's Empty slot wants one line that says what puts
+   * something here, and a column is not the screen — four identical "No tasks
+   * yet" cards would say less than the four the board actually needs.
+   */
+  emptyDescription: string;
+}[] = [
   {
     status: "TODO",
     label: "To do",
     description: "Assigned but not started yet.",
+    emptyDescription: "New tasks land here when an admin assigns them.",
   },
   {
     status: "IN_PROGRESS",
     label: "In progress",
     description: "Assignee is working on it.",
+    emptyDescription: "A task moves here once its assignee starts work.",
   },
   {
     status: "COMPLETED",
     label: "Awaiting confirmation",
     description: "Assignee marked done; admin confirms to award points.",
+    emptyDescription: "Tasks an assignee marked done wait here for an admin.",
   },
   {
     status: "OVERDUE",
     label: "Overdue",
     description: "Past due date and not yet complete.",
+    emptyDescription: "Nothing is past its due date — the good kind of empty.",
   },
 ];
 
@@ -139,11 +157,13 @@ function actionStatus(task: Task): TaskStatus | undefined {
 
 export function TasksBoard() {
   const { toast } = useToast();
+  const { isOffline } = useNetwork();
   // Every write on this board (create, status, confirm, reject, delete) hits
   // `TaskController`, which carries no `@FreeTier`, so all five mirror one
   // paid-ops gate (#841). Reads stay ungated — the server guard returns early
   // for GET, and it remains the enforcement either way.
   const gate = useSubscriptionGate();
+  const { confirm, confirmDialog } = useConfirmDialog();
   const createDialog = useGatedDialog(gate);
   const tasksQuery = useTasks();
   const membersQuery = useMembers();
@@ -154,7 +174,10 @@ export function TasksBoard() {
   const rejectTask = useRejectTask();
   const deleteTask = useDeleteTask();
 
-  const tasks = useMemo(() => asArray<Task>(tasksQuery.data), [tasksQuery.data]);
+  const tasks = useMemo(
+    () => asArray<Task>(tasksQuery.data),
+    [tasksQuery.data],
+  );
   const members = useMemo(
     () => asArray<MemberSummary>(membersQuery.data),
     [membersQuery.data],
@@ -162,7 +185,8 @@ export function TasksBoard() {
   const membersByUserId = useMemo(() => {
     const map = new Map<string, string>();
     for (const m of members) {
-      if (m.user_id) map.set(String(m.user_id), m.display_name ?? "Unnamed member");
+      if (m.user_id)
+        map.set(String(m.user_id), m.display_name ?? "Unnamed member");
     }
     return map;
   }, [members]);
@@ -247,7 +271,7 @@ export function TasksBoard() {
       });
       toast({
         title: "Status updated",
-        description: `${task.title} → ${next.replace("_", " ")}.`,
+        description: `${task.title} → ${next}.`,
       });
     } catch (error) {
       toast({
@@ -283,14 +307,24 @@ export function TasksBoard() {
   }
 
   async function rejectCompletion(task: Task) {
-    const comment = window.prompt(
-      `Reject completion of "${task.title}"? Optional comment for the assignee:`,
-    );
-    if (comment === null) return;
+    const result = await confirm({
+      title: `Reject completion of "${task.title}"?`,
+      description:
+        "The task goes back to IN_PROGRESS and the assignee is notified to keep working.",
+      confirmLabel: "Reject completion",
+      tone: "destructive",
+      comment: {
+        label: "Comment for the assignee",
+        placeholder: "Optional — what still needs doing?",
+      },
+    });
+    // `null` is cancel; a confirmed empty box is still a rejection, which is the
+    // distinction `window.prompt` carried and the dialog preserves.
+    if (result === null) return;
     try {
       await rejectTask.mutateAsync({
         id: task.id,
-        body: { comment: comment || undefined },
+        body: { comment: result.comment || undefined },
       });
       toast({
         title: "Task reverted to IN_PROGRESS",
@@ -299,19 +333,19 @@ export function TasksBoard() {
     } catch (error) {
       toast({
         title: "Couldn't reject task",
-        description: getErrorMessage(
-          error,
-          "Retry or check your permissions.",
-        ),
+        description: getErrorMessage(error, "Retry or check your permissions."),
         variant: "destructive",
       });
     }
   }
 
   async function removeTask(task: Task) {
-    const confirmed = window.confirm(
-      `Delete "${task.title}"? This can't be undone.`,
-    );
+    const confirmed = await confirm({
+      title: `Delete "${task.title}"?`,
+      description: "This can't be undone.",
+      confirmLabel: "Delete task",
+      tone: "destructive",
+    });
     if (!confirmed) return;
     try {
       await deleteTask.mutateAsync(task.id);
@@ -322,13 +356,27 @@ export function TasksBoard() {
     } catch (error) {
       toast({
         title: "Couldn't delete task",
-        description: getErrorMessage(
-          error,
-          "Retry or check your permissions.",
-        ),
+        description: getErrorMessage(error, "Retry or check your permissions."),
         variant: "destructive",
       });
     }
+  }
+
+  /*
+   * README §4 item 4: a network-dependent async view ships an offline state.
+   * This screen had none, so a disconnected member sat on the loading
+   * skeleton until the query gave up. Copy is writing.md §7's row.
+   */
+  if (isOffline) {
+    return (
+      <OfflineState
+        title="Tasks unavailable offline"
+        description="Reconnect to load the chapter board and move tasks through it."
+        onRetry={() => {
+          void tasksQuery.refetch();
+        }}
+      />
+    );
   }
 
   if (tasksQuery.isPending) {
@@ -357,10 +405,9 @@ export function TasksBoard() {
     <div className="space-y-6">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight">Tasks</h2>
           <p className="text-sm text-muted-foreground">
-            Admins create and confirm chapter tasks; assignees move them
-            through the workflow.
+            Admins create and confirm chapter tasks; assignees move them through
+            the workflow.
           </p>
         </div>
         <Can permission="tasks:manage">
@@ -375,7 +422,10 @@ export function TasksBoard() {
               {...createDialog.contentProps}
             >
               <DialogHeader>
-                <DialogTitle>Create a task</DialogTitle>
+                <DialogTitle className="flex items-center gap-2">
+                  <TasksGlyph className="h-4 w-4" />
+                  Create a task
+                </DialogTitle>
                 <DialogDescription>
                   Assign it to a chapter member with a due date. Point rewards
                   are optional.
@@ -526,15 +576,16 @@ export function TasksBoard() {
                 <CardHeader>
                   <CardTitle className="flex items-center justify-between text-base">
                     <span>{column.label}</span>
-                    <Badge variant="outline">{list.length}</Badge>
+                    <Badge variant="secondary">{list.length}</Badge>
                   </CardTitle>
                   <CardDescription>{column.description}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {list.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">
-                      Nothing here yet.
-                    </p>
+                    <NestedEmpty
+                      title="Nothing here yet"
+                      description={column.emptyDescription}
+                    />
                   ) : (
                     list.map((task) => {
                       const assigneeName =
@@ -544,22 +595,20 @@ export function TasksBoard() {
                       return (
                         <div
                           key={task.id}
-                          className="rounded-md border border-border/70 p-3"
+                          className="rounded-lg border border-border p-3"
                         >
-                          <p className="text-sm font-medium">{task.title}</p>
+                          <p className="text-sm font-semibold">{task.title}</p>
                           {task.description ? (
-                            <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+                            <p className="mt-1 text-[12.5px] text-muted-foreground line-clamp-2">
                               {task.description}
                             </p>
                           ) : null}
-                          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-[12.5px] text-muted-foreground">
                             <span>Due {formatDate(task.due_date)}</span>
                             <span aria-hidden="true">·</span>
                             <span>{assigneeName}</span>
                             {task.point_reward ? (
-                              <Badge variant="outline">
-                                +{task.point_reward} pts
-                              </Badge>
+                              <Badge>+{task.point_reward} pts</Badge>
                             ) : null}
                           </div>
                           <div className="mt-3 flex flex-wrap gap-2">
@@ -600,7 +649,10 @@ export function TasksBoard() {
                                   <Button
                                     size="sm"
                                     onClick={() => void confirmCompletion(task)}
-                                    {...gate.controlProps(task.points_awarded || lifecycleWritePending)}
+                                    {...gate.controlProps(
+                                      task.points_awarded ||
+                                        lifecycleWritePending,
+                                    )}
                                   >
                                     <CheckCircle2 className="h-4 w-4" />
                                     {task.points_awarded
@@ -610,7 +662,9 @@ export function TasksBoard() {
                                   <Button
                                     size="sm"
                                     variant="secondary"
-                                    {...gate.controlProps(lifecycleWritePending)}
+                                    {...gate.controlProps(
+                                      lifecycleWritePending,
+                                    )}
                                     onClick={() => void rejectCompletion(task)}
                                   >
                                     <Undo2 className="h-4 w-4" />
@@ -634,9 +688,9 @@ export function TasksBoard() {
                   )}
                 </CardContent>
                 {column.status === "COMPLETED" ? (
-                  <CardFooter className="text-xs text-muted-foreground">
-                    Confirming a task awards its point reward (when set) to
-                    the assignee.
+                  <CardFooter className="text-[12.5px] text-muted-foreground">
+                    Confirming a task awards its point reward (when set) to the
+                    assignee.
                   </CardFooter>
                 ) : null}
               </Card>
@@ -644,6 +698,7 @@ export function TasksBoard() {
           })}
         </div>
       )}
+      {confirmDialog}
     </div>
   );
 }

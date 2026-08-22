@@ -48,11 +48,31 @@ import { FOCUS_RING } from "@/components/ui/focus";
  * `Table`'s own `overflow-auto` wrapper, so those 12px scroll the table rather
  * than the page and the 375px floor is unaffected.
  */
-export const dashboardFilterSelectClassName = [
-  "h-11 rounded-md border border-input bg-surface-1 px-3.5 text-sm text-foreground transition-colors",
+/*
+ * §4's native-`<select>` paint, with the height left out — the two heights the
+ * spec gives it are the only difference between the pair below, so the fill,
+ * border, type and focus recipe are written once.
+ */
+const NATIVE_SELECT = [
+  "rounded-md border border-input bg-surface-1 px-3.5 text-sm text-foreground transition-colors",
   FOCUS_RING,
   "disabled:cursor-not-allowed disabled:border-border disabled:text-disabled",
 ].join(" ");
+
+/** A dashboard filter toolbar: §3's Inline height, per `components.md` §4. */
+export const dashboardFilterSelectClassName = `h-11 ${NATIVE_SELECT}`;
+
+/**
+ * A `<select>` that is a **form field** rather than filter chrome, at §4's
+ * default 48.
+ *
+ * §4's 44 is a carve-out for filter rows specifically — "secondary chrome
+ * sitting above the thing it filters" — and reading it as the height for every
+ * native select gets the same defect §4 was written about, one context over:
+ * the event editor put two of these in a `sm:grid-cols-2` beside `Input`s,
+ * which are `h-12`, so one form row rendered at two heights.
+ */
+export const dashboardFormSelectClassName = `h-12 ${NATIVE_SELECT}`;
 
 export const dashboardTableCheckboxClassName = [
   "h-6 w-6 rounded-[7px] border-input accent-primary",

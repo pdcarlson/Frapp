@@ -1,15 +1,13 @@
 "use client";
 
 import { useMemo } from "react";
+import { AlertTriangle, Loader2, Trash2 } from "lucide-react";
 import {
-  AlertTriangle,
-  CalendarDays,
-  Clock3,
-  Loader2,
-  MapPin,
-  Shield,
-  Trash2,
-} from "lucide-react";
+  PointsGlyph,
+  RolesGlyph,
+  ScheduleGlyph,
+  StudyZonesGlyph,
+} from "@/components/events/chapter-ops-glyphs";
 import { useDeleteEvent, useEvent, useRoles } from "@repo/hooks";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +27,7 @@ import { AttendancePanel } from "@/components/events/attendance-panel";
 import { normalizeRoleOptions } from "@/lib/roles";
 import { formatLocaleDateTime as formatDateTime } from "@repo/formatting";
 import { getErrorMessage } from "@/lib/utils";
+import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 
 type EventRecord = Record<string, unknown>;
 
@@ -57,6 +56,7 @@ export function EventDetailSheet({
   // dialog because this button *is* the trigger for that flow (§5 rule 1) —
   // gating only the editor's submit would let the user reopen and refill it.
   const gate = useSubscriptionGate();
+  const { confirm, confirmDialog } = useConfirmDialog();
   const rolesQuery = useRoles();
   const { toast } = useToast();
 
@@ -75,14 +75,20 @@ export function EventDetailSheet({
       ? resolvedEvent.name
       : "Untitled event";
   const isMandatory =
-    typeof resolvedEvent?.is_mandatory === "boolean" ? resolvedEvent.is_mandatory : false;
+    typeof resolvedEvent?.is_mandatory === "boolean"
+      ? resolvedEvent.is_mandatory
+      : false;
   const recurrenceRule =
-    typeof resolvedEvent?.recurrence_rule === "string" && resolvedEvent.recurrence_rule.length > 0
+    typeof resolvedEvent?.recurrence_rule === "string" &&
+    resolvedEvent.recurrence_rule.length > 0
       ? resolvedEvent.recurrence_rule
       : "One-time";
   const description =
-    typeof resolvedEvent?.description === "string" ? resolvedEvent.description : "";
-  const notes = typeof resolvedEvent?.notes === "string" ? resolvedEvent.notes : "";
+    typeof resolvedEvent?.description === "string"
+      ? resolvedEvent.description
+      : "";
+  const notes =
+    typeof resolvedEvent?.notes === "string" ? resolvedEvent.notes : "";
   const rawRequiredRoleIds = resolvedEvent?.required_role_ids;
   const requiredRoleIds = Array.isArray(rawRequiredRoleIds)
     ? rawRequiredRoleIds.filter((id): id is string => typeof id === "string")
@@ -90,16 +96,23 @@ export function EventDetailSheet({
   const roleNameById = useMemo(
     () =>
       new Map(
-        normalizeRoleOptions(rolesQuery.data).map((role) => [role.id, role.name]),
+        normalizeRoleOptions(rolesQuery.data).map((role) => [
+          role.id,
+          role.name,
+        ]),
       ),
     [rolesQuery.data],
   );
 
   async function handleDelete() {
     if (!eventId) return;
-    const confirmed = window.confirm(
-      `Delete ${eventName}? This action cannot be undone and attendance records may be affected.`,
-    );
+    const confirmed = await confirm({
+      title: `Delete ${eventName}?`,
+      description:
+        "This cannot be undone, and attendance records for the event may be affected.",
+      confirmLabel: "Delete event",
+      tone: "destructive",
+    });
     if (!confirmed) return;
 
     try {
@@ -107,7 +120,10 @@ export function EventDetailSheet({
     } catch (error) {
       toast({
         title: "Could not delete event",
-        description: getErrorMessage(error, "Something went wrong. Please retry."),
+        description: getErrorMessage(
+          error,
+          "Something went wrong. Please retry.",
+        ),
         variant: "destructive",
       });
       return;
@@ -136,14 +152,18 @@ export function EventDetailSheet({
         <SheetHeader>
           <SheetTitle>{eventName}</SheetTitle>
           <SheetDescription>
-            Review scheduling details, recurrence settings, and attendance policy.
+            Review scheduling details, recurrence settings, and attendance
+            policy.
           </SheetDescription>
         </SheetHeader>
 
         {usingPreviewData ? (
-          <div className="mt-5 flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+          <div className="mt-5 flex items-start gap-3 rounded-md border border-warning/45 bg-warning/[.13] p-3 text-[12.5px] text-warning">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <div>Showing preview event details. Sign in to edit and delete live events.</div>
+            <div>
+              Showing preview event details. Sign in to edit and delete live
+              events.
+            </div>
           </div>
         ) : null}
 
@@ -182,8 +202,10 @@ export function EventDetailSheet({
         <SubscriptionNotice gate={gate} feature="editing events" />
 
         <div className="mt-5 grid gap-3">
-          <div className="rounded-md border border-border p-3">
-            <p className="mb-2 text-xs text-muted-foreground">Attendance policy</p>
+          <div className="rounded-lg border border-border p-3">
+            <p className="mb-2 text-[12.5px] text-muted-foreground">
+              Attendance policy
+            </p>
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant={isMandatory ? "default" : "secondary"}>
                 {isMandatory ? "Mandatory" : "Optional"}
@@ -191,8 +213,8 @@ export function EventDetailSheet({
               <Badge variant="outline">{recurrenceRule}</Badge>
             </div>
             <div className="mt-3">
-              <p className="mb-1 flex items-center gap-1 text-xs text-muted-foreground">
-                <Shield className="h-3 w-3" />
+              <p className="mb-1 flex items-center gap-1 text-[12.5px] text-muted-foreground">
+                <RolesGlyph className="h-3.5 w-3.5" />
                 Required roles
               </p>
               {requiredRoleIds.length === 0 ? (
@@ -209,22 +231,26 @@ export function EventDetailSheet({
             </div>
           </div>
 
-          <div className="rounded-md border border-border p-3">
-            <p className="mb-2 text-xs text-muted-foreground">Schedule</p>
+          <div className="rounded-lg border border-border p-3">
+            <p className="mb-2 text-[12.5px] text-muted-foreground">Schedule</p>
             <div className="space-y-2 text-sm">
               <div className="flex items-start gap-2">
-                <Clock3 className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                <ScheduleGlyph className="mt-0.5 h-4 w-4 text-muted-foreground" />
                 <div>
                   <p>Starts: {formatDateTime(resolvedEvent?.start_time)}</p>
                   <p>Ends: {formatDateTime(resolvedEvent?.end_time)}</p>
                 </div>
               </div>
               <div className="flex items-start gap-2">
-                <MapPin className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                <p>{typeof resolvedEvent?.location === "string" ? resolvedEvent.location : "TBD"}</p>
+                <StudyZonesGlyph className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                <p>
+                  {typeof resolvedEvent?.location === "string"
+                    ? resolvedEvent.location
+                    : "TBD"}
+                </p>
               </div>
               <div className="flex items-start gap-2">
-                <CalendarDays className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                <PointsGlyph className="mt-0.5 h-4 w-4 text-muted-foreground" />
                 <p>
                   {typeof resolvedEvent?.point_value === "number"
                     ? `${resolvedEvent.point_value} point(s)`
@@ -235,15 +261,19 @@ export function EventDetailSheet({
           </div>
 
           {description ? (
-            <div className="rounded-md border border-border p-3">
-              <p className="mb-1 text-xs text-muted-foreground">Description</p>
+            <div className="rounded-lg border border-border p-3">
+              <p className="mb-1 text-[12.5px] text-muted-foreground">
+                Description
+              </p>
               <p className="text-sm">{description}</p>
             </div>
           ) : null}
 
           {notes ? (
-            <div className="rounded-md border border-border p-3">
-              <p className="mb-1 text-xs text-muted-foreground">Internal notes</p>
+            <div className="rounded-lg border border-border p-3">
+              <p className="mb-1 text-[12.5px] text-muted-foreground">
+                Internal notes
+              </p>
               <p className="text-sm">{notes}</p>
             </div>
           ) : null}
@@ -252,6 +282,7 @@ export function EventDetailSheet({
             <AttendancePanel eventId={eventId} />
           ) : null}
         </div>
+        {confirmDialog}
       </SheetContent>
     </Sheet>
   );
