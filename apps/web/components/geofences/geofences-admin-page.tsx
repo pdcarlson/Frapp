@@ -38,6 +38,7 @@ import {
   ErrorState,
   LoadingState,
   OfflineState,
+  PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import {
@@ -370,8 +371,7 @@ export function GeofencesAdminPage() {
         </div>
       }
       offlineFallback={(retry) => (
-        <OfflineState
-          title="Can't confirm your access"
+        <PermissionsOfflineSurface
           description="Reconnect to check whether you can manage study zones."
           onRetry={retry}
         />

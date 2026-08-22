@@ -35,7 +35,7 @@ import {
   NestedError,
   NestedLoading,
 } from "@/components/shared/nested-states";
-import { OfflineState } from "@/components/shared/async-states";
+import { PermissionsOfflineSurface } from "@/components/shared/async-states";
 import {
   DocumentsGlyph,
   ReportsGlyph,
@@ -454,8 +454,7 @@ export function ReportsPage() {
     <Can
       permission="reports:export"
       offlineFallback={(retry) => (
-        <OfflineState
-          title="Can't confirm your access"
+        <PermissionsOfflineSurface
           description="Reconnect to check whether you can export chapter data."
           onRetry={retry}
         />

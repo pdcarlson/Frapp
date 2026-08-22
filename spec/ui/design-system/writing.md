@@ -180,6 +180,7 @@ Implementation: `PermissionsOffline` (`apps/web/components/shared/async-states.t
 | Error | `Couldn't load chapter settings` | `Confirm your chapter access and retry. Changes you make here update every surface in the dashboard.` |
 | No chapter | `Chapter settings` | `Select an active chapter to edit its branding, semester state, or billing configuration.` |
 | Semester empty | `No archived semesters yet` | `After you run your first rollover, the history appears here.` |
+| Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can start a new semester.` |
 
 ### Tasks (dashboard)
 
@@ -199,6 +200,7 @@ Implementation: `PermissionsOffline` (`apps/web/components/shared/async-states.t
 | Empty history | `No service activity yet` | `Log your first service entry to build up chapter service hours.` |
 | Error | `Couldn't load service entries` | `Members see only their own entries; admins need service:approve to see every entry.` |
 | Offline | `Service hours unavailable offline` | `Reconnect to log hours and review the approval queue.` |
+| Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can review submitted hours.` |
 
 ### Chapter Documents (dashboard)
 
@@ -333,6 +335,7 @@ Channel seeding happens at chapter onboarding and has no billing prerequisite; [
 | Preview/unauthenticated | `Showing preview billing data` | `Sign in to load live chapter subscription and invoice records.` |
 | Error | `Couldn't load invoices` | `Verify your chapter access and API health, then retry.` |
 | Empty (filtered) | `No invoices match this filter` | `Try a different status, or clear the filter to see every invoice.` |
+| Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can manage chapter invoices.` |
 
 ### Dues (mobile, s11)
 

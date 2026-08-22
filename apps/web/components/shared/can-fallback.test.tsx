@@ -105,6 +105,19 @@ describe("a paused permission check is never silent", () => {
     expect(refetch).toHaveBeenCalled();
   });
 
+  it("honours an explicit `null`, which is not the same answer as omitting the prop", () => {
+    // The bug this catches shipped for one commit. The branch read
+    // `offlineFallback ?? <PermissionsOffline/>`, and `null ?? x` is `x`, so
+    // the three gates that pass `null` to stay silent rendered the very chip
+    // they were suppressing — a second, identical row beside the one the real
+    // control already showed. No source-level assertion below can see that:
+    // the attribute is present and correct in every one of those files.
+    renderGate(PAUSED, { offlineFallback: null });
+    expect(screen.queryByText(/can't check your access/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /^retry$/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /create poll/i })).toBeNull();
+  });
+
   it("does not reach for the offline state on a paused refetch that has an answer", () => {
     // The half a "simplification" to `fetchStatus === 'paused'` would break.
     // README §4's rule is "offline, **no cached data**"; §10's is "background
@@ -345,24 +358,26 @@ function gatesIn(file: string): Gate[] {
   const open = new RegExp(`<${name}(?=[\\s/>])`, "g");
   let match: RegExpExecArray | null;
   while ((match = open.exec(source))) {
-    // Walk to the `>` that closes the opening tag, ignoring the ones inside
+    // Walk to the `>` that closes the opening tag, skipping the ones inside
     // JSX expression braces — `anyOf={[...]}` and every arrow-function
-    // fallback in this tree contain `>` characters of their own.
+    // fallback here contain `>` of their own — and inside string literals,
+    // where a `>` or a stray brace is just prose.
     let depth = 0;
+    let quote = "";
     let i = match.index + match[0].length;
     for (; i < source.length; i += 1) {
-      const ch = source[i];
-      if (ch === "{") depth += 1;
+      const ch = source[i]!;
+      if (quote) {
+        if (ch === quote) quote = "";
+        continue;
+      }
+      if (ch === '"' || ch === "'" || ch === "`") quote = ch;
+      else if (ch === "{") depth += 1;
       else if (ch === "}") depth -= 1;
       else if (ch === ">" && depth === 0) break;
     }
     const attrs = source.slice(match.index + match[0].length, i);
-    const close = source.indexOf(`</${name}>`, i);
-    gates.push({
-      file,
-      attrs,
-      body: close === -1 ? "" : source.slice(i + 1, close).trim(),
-    });
+    gates.push({ file, attrs, body: bodyAfter(source, name, i).trim() });
   }
   return gates;
 }
@@ -372,7 +387,10 @@ const ALL_GATES = CONSUMERS.flatMap(gatesIn);
 describe("no call site can go blank again", () => {
   it("finds a gate in every consumer, so a rename cannot drop one out of the sweep", () => {
     for (const file of CONSUMERS) {
-      expect(gatesIn(file).length, file).toBeGreaterThan(0);
+      expect(
+        ALL_GATES.filter((gate) => gate.file === file).length,
+        file,
+      ).toBeGreaterThan(0);
     }
     expect(ALL_GATES.length).toBeGreaterThanOrEqual(CONSUMERS.length);
   });
@@ -392,11 +410,30 @@ describe("no call site can go blank again", () => {
 
   it("keeps the screen-level gates on the card-shaped offline state", () => {
     for (const { file, match } of SURFACE_GATES) {
-      const gate = gatesIn(file).find((g) => g.attrs.includes(match));
+      const gate = ALL_GATES.find(
+        (g) => g.file === file && g.attrs.includes(match),
+      );
       expect(gate, `${file} :: ${match}`).toBeDefined();
       expect(gate!.attrs, `${file} :: ${match}`).toContain("offlineFallback=");
-      expect(gate!.attrs, `${file} :: ${match}`).toContain("OfflineState");
+      expect(gate!.attrs, `${file} :: ${match}`).toContain(
+        "PermissionsOfflineSurface",
+      );
     }
+  });
+
+  it("gives each surface its own description, so a paste keeps no other screen's copy", () => {
+    // The title is shared and lives in `PermissionsOfflineSurface`; the
+    // description is the per-surface half (`writing.md` §7) and is the one a
+    // copy-paste from a sibling gate would silently carry over — "check
+    // whether you can manage roles" on the Reports page type-checks fine.
+    const descriptions = SURFACE_GATES.map(({ file, match }) => {
+      const gate = ALL_GATES.find(
+        (g) => g.file === file && g.attrs.includes(match),
+      );
+      return /description="([^"]*)"/.exec(gate?.attrs ?? "")?.[1];
+    });
+    expect(descriptions.filter(Boolean)).toHaveLength(SURFACE_GATES.length);
+    expect(new Set(descriptions).size).toBe(SURFACE_GATES.length);
   });
 
   it("silences exactly the gates whose child is a lone SubscriptionNotice", () => {
@@ -411,6 +448,36 @@ describe("no call site can go blank again", () => {
     }
   });
 });
+
+/**
+ * The children of the tag that opens at `from`, up to its **matching** close.
+ *
+ * Counting rather than `indexOf("</Can>")`: this tree has no nested gate today,
+ * but a `<Can>` inside another one's fallback would make both resolve to the
+ * inner close, truncating the outer body — and `isExplanatory` reads the body,
+ * so the classification would silently flip on a file nobody edited.
+ */
+function bodyAfter(source: string, name: string, from: number): string {
+  const openTag = new RegExp(`<${name}(?=[\\s/>])`, "g");
+  const closeTag = `</${name}>`;
+  let depth = 1;
+  let cursor = from + 1;
+  while (depth > 0) {
+    const close = source.indexOf(closeTag, cursor);
+    if (close === -1) return "";
+    openTag.lastIndex = cursor;
+    let nested = openTag.exec(source);
+    while (nested && nested.index < close) {
+      depth += 1;
+      openTag.lastIndex = nested.index + 1;
+      nested = openTag.exec(source);
+    }
+    depth -= 1;
+    if (depth === 0) return source.slice(from + 1, close);
+    cursor = close + closeTag.length;
+  }
+  return "";
+}
 
 /** A gate whose entire child is one `<SubscriptionNotice />`. */
 function isExplanatory(gate: Gate): boolean {

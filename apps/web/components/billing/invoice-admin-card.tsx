@@ -45,7 +45,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { OfflineState } from "@/components/shared/async-states";
+import { PermissionsOfflineSurface } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import {
   SubscriptionNotice,
@@ -222,8 +222,7 @@ export function InvoiceAdminCard() {
       permission="billing:manage"
       deniedFallback={null}
       offlineFallback={(retry) => (
-        <OfflineState
-          title="Can't confirm your access"
+        <PermissionsOfflineSurface
           description="Reconnect to check whether you can manage chapter invoices."
           onRetry={retry}
         />

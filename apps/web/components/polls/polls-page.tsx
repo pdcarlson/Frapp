@@ -37,6 +37,7 @@ import {
   ErrorState,
   LoadingState,
   OfflineState,
+  PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import {
@@ -316,8 +317,7 @@ export function PollsPage() {
           <header>
             <h2 className="text-2xl font-semibold tracking-tight">Polls</h2>
           </header>
-          <OfflineState
-            title="Can't confirm your access"
+          <PermissionsOfflineSurface
             description="Reconnect to check whether you can see the chapter's polls."
             onRetry={retry}
           />

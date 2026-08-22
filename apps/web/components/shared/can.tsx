@@ -133,7 +133,16 @@ export function Can({
       <>
         {typeof offlineFallback === "function"
           ? offlineFallback(retry)
-          : (offlineFallback ?? <PermissionsOffline onRetry={retry} />)}
+          : offlineFallback === undefined
+            ? // Omitted, so the caller gets the default. `=== undefined` and
+              // not `??`: the three gates that deliberately pass `null` mean
+              // "render nothing", and `null ?? x` is `x`, so `??` handed them
+              // the very chip they were suppressing — two identical rows on
+              // `/backwork`, one where the Upload button was and one where the
+              // notice should have been silent. Found by the pre-push review,
+              // twice, because the source-level guard below cannot see it.
+              <PermissionsOffline onRetry={retry} />
+            : offlineFallback}
       </>
     );
   }

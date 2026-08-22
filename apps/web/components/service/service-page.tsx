@@ -43,6 +43,7 @@ import {
   ErrorState,
   LoadingState,
   OfflineState,
+  PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import {
@@ -555,8 +556,7 @@ export function ServiceHoursPage() {
       <Can
         permission="service:approve"
         offlineFallback={(retry) => (
-          <OfflineState
-            title="Can't confirm your access"
+          <PermissionsOfflineSurface
             description="Reconnect to check whether you can review submitted hours."
             onRetry={retry}
           />

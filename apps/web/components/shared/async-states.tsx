@@ -292,6 +292,37 @@ export function OfflineState({
  * "access" rather than "permissions" because the member is not the one who
  * holds them — what they can act on is whether to retry.
  */
+/**
+ * The same statement at **surface** scale, for a gate standing in for a whole
+ * screen or a whole card.
+ *
+ * A thin wrapper over `OfflineState`, and it exists for the title. Eight gates
+ * render this, and the title is the half of the copy that does not vary — it
+ * is `writing.md` §7's "(global)" row, where the descriptions are per-surface.
+ * Retyped eight times it is one tone pass away from forking, and jscpd cannot
+ * see it: each occurrence is ~30 tokens against a 50-token floor, so the
+ * duplication gate this repo runs is structurally blind to exactly this shape.
+ * That is the same argument `ui/typography.ts` makes for `EYEBROW` — "twelve
+ * copies of a four-part class string is how the eleventh and the twelfth
+ * quietly become different".
+ */
+export function PermissionsOfflineSurface({
+  description,
+  onRetry,
+}: {
+  /** What this surface would let them do, per `writing.md` §7. */
+  description: string;
+  onRetry?: () => void;
+}) {
+  return (
+    <OfflineState
+      title="Can't confirm your access"
+      description={description}
+      onRetry={onRetry}
+    />
+  );
+}
+
 export function PermissionsOffline({
   onRetry,
   className,
