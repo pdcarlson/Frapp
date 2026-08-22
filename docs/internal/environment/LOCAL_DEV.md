@@ -76,50 +76,47 @@ npx -w apps/api nest start --watch --builder swc
 
 For type safety, run `npm run check-types` separately. The cloud-sandbox fallback in [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md) also uses this.
 
-## Web visual regression suite
+## Web browser suite (375px responsive floor)
 
 `apps/web/playwright.config.ts` boots `npm run dev` with benign fallbacks for
 `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and
 `NEXT_PUBLIC_API_URL` when no real values are in the shell. Real values always
-win — the defaults are only used to let CI capture baselines without
-credentials. See [`apps/web/tests/visual/README.md`](../../../apps/web/tests/visual/README.md)
-for the rationale and for how to refresh snapshots locally.
-
-When GitHub’s **`web-visual-regression`** job fails, refresh from `apps/web`
-with the same **`CI=true`** Playwright uses in CI:
-`CI=true npx playwright test --update-snapshots`, then commit the updated
-`*-snapshots/*-linux.png` files.
-
-**Check the browser revision first — `CI=true` alone is not enough.** Playwright
-pins a Chromium build, and a baseline regenerated on any other build drifts past
-the 0.01 `maxDiffPixelRatio` and is a wrong fixture even when it happens to pass.
-The cloud sandbox pre-installs revision **1194** at
-`PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`, which Playwright 1.60 refuses to
-launch; forcing it produced **8 spurious failures of 16** on routes CI passes.
-Run `npx playwright install chromium` to fetch the pinned revision (1223 as of
-1.60.0) before regenerating, and confirm the rest of the suite still passes.
-Once on the right build, this sandbox reproduces CI's results exactly.
-
-**When you cannot regenerate locally**, the `web-visual-regression` job uploads
-`apps/web/test-results/` and `apps/web/playwright-report/` as the
-`playwright-visual-results` artifact on failure (14-day retention). It contains
-each failing route's `-actual.png` and `-diff.png`, rendered by CI's own browser
-— download and commit the `-actual` as the new baseline, or open the bundled
-HTML report with `npx playwright show-report`. Before that artifact existed, a
-failure printed only image dimensions and a diff ratio, so the render itself was
-unreachable (#936).
-
-Note the job is path-gated: it runs on every push to `main`, and on pull
-requests only when the `web` filter matches (`apps/web/**`, `packages/**`,
-`package-lock.json`, `turbo.json`), so a docs- or API-only PR skips it.
-
-Every regenerated baseline needs a per-route attestation in
+win — the defaults only let CI run the suite without credentials. See
 [`apps/web/tests/visual/README.md`](../../../apps/web/tests/visual/README.md)
-recording why it moved and the Chromium revision used.
+for what the harness does and does not exercise.
+
+Run it from the repo root:
+
+```bash
+npm run test:floor -w apps/web
+```
+
+That runs every spec under `apps/web/tests/visual/` — today just
+`responsive-floor.spec.ts`, which asserts each dashboard route renders without
+horizontal scroll at 375px. It stores no baseline and compares no pixels, so
+there is no regeneration ritual and no browser-revision sensitivity: any
+Chromium Playwright will launch gives the same answer. Prefix with `CI=true` to
+match CI's `workers: 1` and `forbidOnly` exactly when reproducing a failure.
+
+A failure names the offending route, the widest element inside `<main>`, its
+width against the budget, and its classes, so there is no artifact to download —
+the log is the diagnosis.
+
+The gate runs as **`web-responsive-floor`**, a required check. It is path-gated:
+every push to `main`, and on pull requests only when the `web` filter matches
+(`apps/web/**`, `packages/**`, `package-lock.json`, `turbo.json`), so a docs- or
+API-only PR skips it.
+
+> **The `web-visual-regression` snapshot job is gone.** It compared each route
+> against a committed PNG and was advisory, because baselines pinned to CI's
+> Chromium build drift with it. The job, its spec, its sixteen baselines and the
+> `test:visual` script were deleted together — see
+> [`QUALITY_GATES.md`](../ci-cd/QUALITY_GATES.md). Nothing to regenerate; if a
+> UI change looks wrong, look at it.
 
 `apps/web/proxy.ts` (Next.js 16 middleware) reads Supabase env per request and
 falls back to passthrough when the vars are missing, so the module is safe to
-import in the visual-regression environment.
+import under this harness.
 
 ## Troubleshooting
 

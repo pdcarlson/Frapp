@@ -155,27 +155,37 @@ The cases where it beats the local stack:
 local `webServer` entirely. No code change needed:
 
 ```bash
-PLAYWRIGHT_BASE_URL=https://app.staging.frapp.live npm run test:visual -w apps/web
+PLAYWRIGHT_BASE_URL=https://app.staging.frapp.live npm run test:floor -w apps/web
 ```
 
-**A green run here can mean nothing was tested.** With an external `PLAYWRIGHT_BASE_URL`
-the config skips `webServer`, so `SUPABASE_AUTH_BYPASS` is never applied. Unauthenticated,
-every protected route redirects to `/sign-in` — and as
-`apps/web/tests/visual/responsive-floor.spec.ts` puts it, that page's "centred card holds
-375px unconditionally — and all fifteen tests go green having never rendered the dashboard
-shell at all." The floor suite asserts `toHaveURL` to catch exactly this; the snapshot suite
-(`test:visual`) does not. So before believing any staging run:
+**Unauthenticated, this run measures nothing — all fifteen abort before the floor is read.**
+With an external `PLAYWRIGHT_BASE_URL` the config skips `webServer`, so `SUPABASE_AUTH_BYPASS`
+is never applied. Every dashboard route is in `PROTECTED_ROUTE_PREFIXES`, so each redirects to
+`/sign-in?redirectTo=%2F…` (`URLSearchParams.set` percent-encodes the slash, so the spec's
+`toHaveURL` regex cannot match). `toHaveURL` is the **first** assertion in
+`responsive-floor.spec.ts`, ahead of the `<main>` visibility check and the `scrollWidth`
+evaluate — so every test stops there and not one route is measured.
 
-- Confirm you are **authenticated** (§3), or restrict the run to genuinely public routes.
-- Confirm the **route under test actually rendered** — assert the URL, or eyeball a
-  screenshot. "Exit code 0" is not evidence here.
+That guard is doing its job: the sign-in card holds 375px unconditionally, so without it all
+fifteen would go *green* having never rendered the dashboard shell. Never "fix" that assertion
+to make a run pass — converting a false green into an honest red is the whole reason it exists.
 
-Then treat the pixels with care too: committed baselines were captured against the local dev
-server (`tests/visual/**-snapshots/*-linux.png`), so diffs against deployed staging are
-expected and are **not** by themselves a regression — different fonts, real data, real
-latency. Use this mode to answer "does the deployed page work / render / not throw", keep
-`npm run test:visual -w apps/web` on its local baseline as the actual gate, and never
-refresh a baseline from a staging run.
+**But do not invert it into a verification.** Fifteen red `toHaveURL` failures tell you only
+that you did not reach the dashboard. That is exactly what an unauthenticated run looks like,
+and also what a genuinely regressed staging redirect, an expired session, or a Vercel SSO wall
+looks like — so the result distinguishes none of them, and it is never evidence the deployed
+pages hold 375px. Read the URL each test actually landed on before concluding anything.
+
+§3 notes no staging credential is provisioned today, so in practice pointing this suite at
+staging measures zero protected routes. Until that changes, treat it as a reachability probe,
+not a floor check: **the 375px gate is the local `web-responsive-floor` run, and a staging run
+is not a substitute for it.** For a visual read on deployed staging, take a screenshot and look
+at it.
+
+There is no pixel-baseline suite to point at staging any more — `web-visual-regression`,
+its spec and its committed PNGs were deleted (see
+[`QUALITY_GATES.md`](../../../docs/internal/ci-cd/QUALITY_GATES.md)). For a visual check
+against deployed staging, take a screenshot and look at it.
 
 ## 5. Writes and cleanup
 

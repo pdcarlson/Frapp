@@ -101,13 +101,14 @@ const CI_CHECKS = [
   // it as a MUST — every dashboard route renders without horizontal scroll down to
   // 375px — and `apps/web/tests/visual/responsive-floor.spec.ts` measures it per route.
   //
-  // It used to run inside `web-visual-regression` and therefore could not block. That
-  // job's advisory posture is about PIXEL flake: baselines drift with Chromium
-  // revisions and font rendering, so blocking merges on them is the worse trade. This
-  // suite stores no baseline and compares no pixels — it reads one integer per route
-  // and compares it to 375 — so it has none of those failure modes and inherited the
-  // exemption purely by sharing a directory. #1153 split it into its own job, selected
-  // by the `@floor` tag rather than by path.
+  // It used to run inside the advisory `web-visual-regression` and therefore could not
+  // block. That job's advisory posture was about PIXEL flake: baselines drift with
+  // Chromium revisions and font rendering, so blocking merges on them was the worse
+  // trade. This suite stores no baseline and compares no pixels — it reads one integer
+  // per route and compares it to 375 — so it has none of those failure modes and
+  // inherited the exemption purely by sharing a directory. #1153 split it into its own
+  // job; the snapshot job has since been deleted, and this one now runs the whole
+  // `apps/web/tests/visual/` directory rather than a tagged slice of it.
   //
   // The defect it catches is a silent one and has already happened once: a shell
   // refactor dropped `min-w-0` from the content column and broke six of seven routes,

@@ -19,20 +19,38 @@ baseline story actually supports.
 | `nestjs-typed` response schema | `npm run lint -w apps/api` | step in `lint-and-typecheck` | **`warn`** | 142 findings and no ESLint baseline mechanism |
 | jscpd duplication | `npm run check:duplication` | `duplicate-detection` | **Advisory** | No clone-level baseline exists; a repo-wide % is too coarse to block on |
 | 375px responsive floor | `npm run test:floor -w apps/web` | `web-responsive-floor` | **Required** | No baseline at all — it reads one integer per route. Nothing to grandfather and nothing to drift |
-| Dashboard visual snapshots | `npm run test:visual -w apps/web` | `web-visual-regression` | **Advisory** | Baselines are pinned to CI's Chromium build and drift with it; only regenerable on a matching machine |
 
-The last two rows are the same suite directory and opposite postures, which is the point. Posture
-follows the **baseline story**, not the tooling: both run Playwright against the same dev server, but
-one compares stored pixels and one compares a number. Until #1152 they shared a job, so the floor
-gate inherited the snapshot gate's exemption and could not block. They are now split by the `@floor`
-Playwright tag — `--grep @floor` for the required job, `--grep-invert @floor` for the advisory one —
-so each suite runs exactly once and a new spec in that directory joins the advisory job by default.
+**The dashboard visual snapshot gate used to sit in this table and is gone.** `web-visual-regression`
+shot each dashboard route at 1440×960 and compared it to one of sixteen committed PNGs. It was
+**advisory**, because baselines
+pinned to CI's Chromium build drift with it and are only regenerable on a matching machine. That
+posture was honest about the tooling and is also the argument for deletion: a gate that cannot block,
+and whose red X is normally answered by regenerating the fixture rather than fixing the page, taxes
+every UI change without measuring one. The job, the spec, the baselines, and the `test:visual` script
+were removed together. Pixel coverage, if it returns, belongs in a hosted service with per-PR
+baseline review (Percy, Chromatic, Argos), not in the repo.
 
-Two things keep the required half from passing vacuously, and both are load-bearing: Playwright exits
-**1** on "No tests found", so dropping the tag reddens the job rather than emptying it, and
-`forbidOnly` is set under `CI` so a committed `test.only` cannot narrow the gate to one route while
-still exiting 0. Neither is inferable from the job definition — check them before changing how the
-suite is selected.
+The floor gate is what survived, and its posture is the reason. Posture follows the **baseline
+story**, not the tooling: both suites ran Playwright against the same dev server, but one compared
+stored pixels and one compares a number. Until #1152 they shared a job, so the floor gate inherited
+the snapshot gate's exemption and could not block.
+
+Two things keep the required gate from passing vacuously, and both are load-bearing. `forbidOnly` is
+set under `CI`, so a committed `test.only` cannot narrow the gate to one route while still exiting 0.
+And Playwright exits **1** when a run collects no tests, so an emptied suite reddens the job rather
+than silently asserting nothing. That was verified by running it, not assumed — against the 1.62.1
+`npm ci` resolves today; `apps/web/package.json` asks for `^1.62.1`, so re-check on any upgrade that
+moves the lockfile.
+
+**That second guard narrowed when the snapshot suite went away, and the narrowing is the thing to
+know.** `test:floor` now runs the whole `apps/web/tests/visual/` directory instead of `--grep @floor`.
+Directory selection is the safer default for *adding* a spec — a new one joins the required job rather
+than falling into no job at all, which is why a `--grep` filter must not come back without a second
+job catching what it excludes. But it keys on the collected-test count, where the tag version fired
+whenever the floor suite specifically went missing. Deleting today's only spec still reddens the job.
+What stops being caught is the two-spec case: add a second spec, then delete or rename the floor spec,
+and the run passes on the survivor while the floor goes unmeasured. Adding a second spec to that
+directory means taking that on deliberately.
 
 ---
 
@@ -241,8 +259,9 @@ That mechanism is why this gate is advisory. A repo-wide percentage cannot disti
 copy-paste from ordinary drift, which is too coarse to block a merge on.
 
 **Advisory here means the job is allowed to go red**, not that it is silenced. `duplicate-detection`
-is deliberately absent from `CI_CHECKS`, so a failure reports loudly and blocks nothing — the same
-shape as `web-visual-regression`. It must **not** carry `continue-on-error`: that key rewrites the
+is deliberately absent from `CI_CHECKS`, so a failure reports loudly and blocks nothing —
+`pglite-migrations` is advisory the same way. (`web-visual-regression` was a third, and was deleted
+rather than kept red.) It must **not** carry `continue-on-error`: that key rewrites the
 step's conclusion to success, so the job goes green and a breached threshold becomes invisible. An
 advisory gate nobody can see is not advisory, it is off.
 

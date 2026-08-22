@@ -71,9 +71,13 @@ function readSupabaseEnv(): SupabaseEnv | null {
  * Lazy Supabase server-client factory.
  *
  * `createServerClient` is invoked per request (never at module load) so this
- * module can be imported in environments without Supabase env vars — notably
- * the CI Playwright job, which boots `npm run dev` to capture visual
- * regression baselines and does not have production secrets.
+ * module can be imported in environments without production Supabase secrets.
+ *
+ * The CI Playwright job (`web-responsive-floor`) is not an example of the
+ * missing-vars path, despite being the usual reason this matters:
+ * `playwright.config.ts` injects stand-ins for both vars, so it reaches
+ * passthrough via the `SUPABASE_AUTH_BYPASS` branch in `readSupabaseEnv()`
+ * instead — see the comment at the `if (!env)` guard below.
  */
 function createSupabaseProxyClient(
   env: SupabaseEnv,
@@ -115,7 +119,7 @@ export async function proxy(request: NextRequest) {
   const env = readSupabaseEnv();
 
   // Environments without Supabase credentials, or with SUPABASE_AUTH_BYPASS
-  // set (e.g. the Playwright visual regression job in CI), cannot make auth
+  // set (e.g. the Playwright `web-responsive-floor` job in CI), cannot make auth
   // decisions. All routes proceed without redirects so pages render their
   // actual content. Real deployments always have valid env vars and never
   // set the bypass flag.

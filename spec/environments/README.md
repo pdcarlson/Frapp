@@ -184,7 +184,9 @@ Live branch protection is whatever an admin last applied and can lag the script,
 per-check whether a gate is live today; read live state per
 [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
 
-`web-visual-regression` and `pglite-migrations` are also path-gated but remain **advisory** — snapshot flake should not block merge. That exemption is specifically about pixels: the 375px floor gate used to live in the same job and inherited it by directory, and #1152 split it into the required `web-responsive-floor` above, selected by the `@floor` Playwright tag. It stores no baseline and compares no pixels, so none of the flake reasoning ever applied to it. `duplicate-detection` is advisory for a different reason: jscpd has no clone-level baseline, so its only lever is a repo-wide percentage that cannot tell one bad copy-paste from ordinary drift. Postures and their rationale: [`docs/internal/ci-cd/QUALITY_GATES.md`](../../docs/internal/ci-cd/QUALITY_GATES.md).
+`pglite-migrations` is also path-gated but remains **advisory**. `duplicate-detection` is advisory for a different reason: jscpd has no clone-level baseline, so its only lever is a repo-wide percentage that cannot tell one bad copy-paste from ordinary drift. Postures and their rationale: [`docs/internal/ci-cd/QUALITY_GATES.md`](../../docs/internal/ci-cd/QUALITY_GATES.md).
+
+There was a third advisory job, `web-visual-regression`, and it has been **deleted**. It compared each dashboard route against a committed PNG; its exemption was specifically about pixels, since baselines pinned to CI's Chromium build drift with it. The 375px floor gate used to live in the same job and inherited that exemption by directory despite storing no baseline and comparing no pixels — #1152 split it into the required `web-responsive-floor` above, and the snapshot job was later removed along with its spec, its baselines and the `test:visual` script.
 
 ### Additional Docs Checks
 
