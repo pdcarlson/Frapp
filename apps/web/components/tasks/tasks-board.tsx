@@ -557,7 +557,7 @@ export function TasksBoard() {
                 <CardHeader>
                   <CardTitle className="flex items-center justify-between text-base">
                     <span>{column.label}</span>
-                    <Badge variant="outline">{list.length}</Badge>
+                    <Badge variant="secondary">{list.length}</Badge>
                   </CardTitle>
                   <CardDescription>{column.description}</CardDescription>
                 </CardHeader>
@@ -588,9 +588,7 @@ export function TasksBoard() {
                             <span aria-hidden="true">·</span>
                             <span>{assigneeName}</span>
                             {task.point_reward ? (
-                              <Badge variant="outline">
-                                +{task.point_reward} pts
-                              </Badge>
+                              <Badge>+{task.point_reward} pts</Badge>
                             ) : null}
                           </div>
                           <div className="mt-3 flex flex-wrap gap-2">
