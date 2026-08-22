@@ -9,13 +9,6 @@ import {
   useMembers,
   useUpdateAttendanceStatus,
 } from "@repo/hooks";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,10 +19,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  EmptyState,
-  ErrorState,
-  LoadingState,
-} from "@/components/shared/async-states";
+  NestedEmpty,
+  NestedError,
+  NestedLoading,
+} from "@/components/shared/nested-states";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -223,13 +216,13 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
     }
   }
 
-  if (attendanceQuery.isPending) {
-    return <LoadingState message="Loading attendance..." />;
+  if (attendanceQuery.isLoading || membersQuery.isLoading) {
+    return <NestedLoading message="Loading attendance..." />;
   }
 
   if (attendanceQuery.isError) {
     return (
-      <ErrorState
+      <NestedError
         title="Attendance unavailable"
         description="Couldn't load attendance for this event. Retry or confirm you have events:update or permission to view attendance."
         onRetry={() => void attendanceQuery.refetch()}
@@ -237,9 +230,26 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
     );
   }
 
+  /*
+   * The roster is the other half of every row, and its failure used to be
+   * silent: `rows` is built from `members`, so a failed `useMembers` produced
+   * an empty list and the panel rendered "No attendance records yet" — copy
+   * asserting that nobody has checked in, at the one moment we cannot know.
+   * README §4 wants an error with a retry path, and this is one.
+   */
+  if (membersQuery.isError) {
+    return (
+      <NestedError
+        title="Attendance unavailable"
+        description="Couldn't load the chapter roster, so attendance can't be shown against it. Retry in a moment."
+        onRetry={() => void membersQuery.refetch()}
+      />
+    );
+  }
+
   if (rows.length === 0) {
     return (
-      <EmptyState
+      <NestedEmpty
         title="No attendance records yet"
         description="Once members check in — or you record attendance manually — they'll show up here."
       />
@@ -256,17 +266,17 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
   for (const row of rows) counts[row.status] += 1;
 
   return (
-    <Card>
-      <CardHeader className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+    <section className="rounded-lg border border-border p-4">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <CardTitle className="flex items-center gap-2 text-lg">
+          <h3 className="flex items-center gap-2 text-lg font-semibold">
             <UsersRound className="h-4 w-4 text-muted-foreground" />
             Attendance
-          </CardTitle>
-          <CardDescription>
+          </h3>
+          <p className="text-sm text-muted-foreground">
             {counts.PRESENT + counts.LATE} checked in · {counts.EXCUSED} excused
             · {counts.ABSENT} absent · {counts.UNRECORDED} unrecorded
-          </CardDescription>
+          </p>
         </div>
         <div className="flex items-center gap-2">
           {/* Not gated: filtering is a read, and §5 gates writes only. */}
@@ -307,8 +317,8 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
             </Button>
           </Can>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
+      </div>
+      <div className="mt-4 space-y-3">
         {/*
           Disable, don't hide (§5 rule 4): the roster, the counts, and the
           filter keep working for a lapsed chapter — only recording attendance
@@ -329,7 +339,7 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
             No members match that filter.
           </p>
         ) : (
-          <ul className="divide-y divide-border/70">
+          <ul className="divide-y divide-border">
             {filteredRows.map((row) => (
               <li
                 key={row.userId}
@@ -406,7 +416,7 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
             ))}
           </ul>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }

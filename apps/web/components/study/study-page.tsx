@@ -37,8 +37,8 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { studySessionStatusKind } from "@/components/study/study-status";
+import { NestedEmpty } from "@/components/shared/nested-states";
 import {
-  EmptyState,
   ErrorState,
   LoadingState,
 } from "@/components/shared/async-states";
@@ -463,7 +463,7 @@ export function StudyPage() {
 
       {activeSession ? (
         <Card
-          className={pageHidden ? "border-amber-500/40 bg-amber-500/5" : ""}
+          className={pageHidden ? "border-warning/45" : ""}
         >
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
@@ -559,7 +559,7 @@ export function StudyPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             {geofences.length === 0 ? (
-              <EmptyState
+              <NestedEmpty
                 title="No active study zones"
                 description="Ask a chapter admin with geofences:manage to add one."
               />
@@ -621,7 +621,7 @@ export function StudyPage() {
         </CardHeader>
         <CardContent>
           {sessions.length === 0 ? (
-            <EmptyState
+            <NestedEmpty
               title="No sessions logged yet"
               description="Start a tracked session inside a study zone to start earning study points."
             />

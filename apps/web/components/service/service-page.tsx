@@ -37,8 +37,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { NestedEmpty } from "@/components/shared/nested-states";
 import {
-  EmptyState,
   ErrorState,
   LoadingState,
 } from "@/components/shared/async-states";
@@ -542,7 +542,7 @@ export function ServiceHoursPage() {
           </CardHeader>
           <CardContent>
             {pending.length === 0 ? (
-              <EmptyState
+              <NestedEmpty
                 title="No pending entries"
                 description="Approved or rejected entries appear in the History card below."
               />
@@ -623,7 +623,7 @@ export function ServiceHoursPage() {
         </CardHeader>
         <CardContent>
           {history.length === 0 && pending.length === 0 ? (
-            <EmptyState
+            <NestedEmpty
               title="No service activity yet"
               description="Log your first service entry to build up chapter service hours."
             />

@@ -575,7 +575,7 @@ export function GeofencesAdminPage() {
                   </Badge>
                 </CardHeader>
                 <CardContent>
-                  <div className="max-h-40 overflow-y-auto rounded-md border border-border bg-secondary/40 p-2 text-xs font-mono text-muted-foreground">
+                  <div className="max-h-40 overflow-y-auto rounded-md border border-border p-2 font-mono text-[12.5px] text-muted-foreground">
                     {zone.coordinates && zone.coordinates.length > 0 ? (
                       <ul>
                         {zone.coordinates.map((c, idx) => (

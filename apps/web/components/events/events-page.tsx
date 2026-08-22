@@ -4,10 +4,23 @@ import { useMemo, useState } from "react";
 import { CalendarDays, Plus, Search, Shield } from "lucide-react";
 import { useEvents } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   EmptyState,
   ErrorState,
@@ -20,6 +33,8 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import {
+  dashboardCheckboxCellClassName,
+  dashboardCheckboxHitAreaClassName,
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
@@ -43,8 +58,12 @@ export function EventsPage() {
   const [timeFilter, setTimeFilter] = useState<"upcoming" | "past" | "all">(
     "upcoming",
   );
-  const [attendanceFilter, setAttendanceFilter] = useState<"all" | "mandatory" | "optional">("all");
-  const [recurrenceFilter, setRecurrenceFilter] = useState<"all" | "recurring" | "one-time">("all");
+  const [attendanceFilter, setAttendanceFilter] = useState<
+    "all" | "mandatory" | "optional"
+  >("all");
+  const [recurrenceFilter, setRecurrenceFilter] = useState<
+    "all" | "recurring" | "one-time"
+  >("all");
   const [selectedEventIds, setSelectedEventIds] = useState<string[]>([]);
   const [detailSheetOpen, setDetailSheetOpen] = useState(false);
   // `POST /v1/events` and `PATCH /v1/events/:id` are paid-ops, so the editor's
@@ -89,7 +108,11 @@ export function EventsPage() {
       const isMandatory =
         typeof event.is_mandatory === "boolean" ? event.is_mandatory : false;
 
-      if (queryLower && !name.includes(queryLower) && !location.includes(queryLower)) {
+      if (
+        queryLower &&
+        !name.includes(queryLower) &&
+        !location.includes(queryLower)
+      ) {
         return false;
       }
       if (attendanceFilter === "mandatory" && !isMandatory) {
@@ -118,14 +141,18 @@ export function EventsPage() {
       return true;
     });
   }, [events, query, attendanceFilter, recurrenceFilter, timeFilter, nowTick]);
-  const visibleEventIds = filteredEvents.map((event) => String(event.id ?? event.name ?? ""));
+  const visibleEventIds = filteredEvents.map((event) =>
+    String(event.id ?? event.name ?? ""),
+  );
   const allVisibleSelected =
     visibleEventIds.length > 0 &&
     visibleEventIds.every((eventId) => selectedEventIds.includes(eventId));
 
   function toggleAllVisibleEvents(checked: boolean) {
     if (checked) {
-      setSelectedEventIds((previous) => [...new Set([...previous, ...visibleEventIds])]);
+      setSelectedEventIds((previous) => [
+        ...new Set([...previous, ...visibleEventIds]),
+      ]);
       return;
     }
     setSelectedEventIds((previous) =>
@@ -182,7 +209,9 @@ export function EventsPage() {
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle>Events</CardTitle>
-            <CardDescription>Plan chapter events and monitor attendance operations.</CardDescription>
+            <CardDescription>
+              Plan chapter events and monitor attendance operations.
+            </CardDescription>
           </div>
           <Button
             className="gap-2"
@@ -214,7 +243,8 @@ export function EventsPage() {
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search events by name or location"
-                className="pl-9"
+                aria-label="Search events by name or location"
+                className="h-11 pl-9"
               />
             </div>
             <div className="flex flex-wrap gap-2">
@@ -269,7 +299,8 @@ export function EventsPage() {
         <Card className="border-accent-border bg-accent-subtle">
           <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm font-medium">
-              {selectedEventIds.length} event{selectedEventIds.length > 1 ? "s" : ""} selected
+              {selectedEventIds.length} event
+              {selectedEventIds.length > 1 ? "s" : ""} selected
             </p>
             <div className="flex flex-wrap gap-2">
               <Button
@@ -322,14 +353,18 @@ export function EventsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-10">
-                    <input
-                      type="checkbox"
-                      aria-label="Select all visible events"
-                      className={dashboardTableCheckboxClassName}
-                      checked={allVisibleSelected}
-                      onChange={(event) => toggleAllVisibleEvents(event.target.checked)}
-                    />
+                  <TableHead className={dashboardCheckboxCellClassName}>
+                    <label className={dashboardCheckboxHitAreaClassName}>
+                      <input
+                        type="checkbox"
+                        aria-label="Select all visible events"
+                        className={dashboardTableCheckboxClassName}
+                        checked={allVisibleSelected}
+                        onChange={(event) =>
+                          toggleAllVisibleEvents(event.target.checked)
+                        }
+                      />
+                    </label>
                   </TableHead>
                   <TableHead>Event</TableHead>
                   <TableHead>Schedule</TableHead>
@@ -341,29 +376,51 @@ export function EventsPage() {
               </TableHeader>
               <TableBody>
                 {filteredEvents.map((event) => {
-                  const eventId = String(event.id ?? event.name ?? "unknown-event");
+                  const eventId = String(
+                    event.id ?? event.name ?? "unknown-event",
+                  );
                   const eventName = String(event.name ?? "Untitled event");
                   const pointValue =
-                    typeof event.point_value === "number" ? event.point_value : 0;
+                    typeof event.point_value === "number"
+                      ? event.point_value
+                      : 0;
                   const isMandatory =
-                    typeof event.is_mandatory === "boolean" ? event.is_mandatory : false;
+                    typeof event.is_mandatory === "boolean"
+                      ? event.is_mandatory
+                      : false;
                   const recurrenceRule =
-                    typeof event.recurrence_rule === "string" ? event.recurrence_rule : "";
+                    typeof event.recurrence_rule === "string"
+                      ? event.recurrence_rule
+                      : "";
                   const requiredRoleIds = Array.isArray(event.required_role_ids)
                     ? event.required_role_ids.filter(
                         (id): id is string => typeof id === "string",
                       )
                     : [];
                   return (
-                    <TableRow key={eventId}>
-                      <TableCell className="w-10">
-                        <input
-                          type="checkbox"
-                          aria-label={`Select ${eventName}`}
-                          className={dashboardTableCheckboxClassName}
-                          checked={selectedEventIds.includes(eventId)}
-                          onChange={(eventValue) => toggleEventSelection(eventId, eventValue.target.checked)}
-                        />
+                    <TableRow
+                      key={eventId}
+                      data-state={
+                        selectedEventIds.includes(eventId)
+                          ? "selected"
+                          : undefined
+                      }
+                    >
+                      <TableCell className={dashboardCheckboxCellClassName}>
+                        <label className={dashboardCheckboxHitAreaClassName}>
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${eventName}`}
+                            className={dashboardTableCheckboxClassName}
+                            checked={selectedEventIds.includes(eventId)}
+                            onChange={(eventValue) =>
+                              toggleEventSelection(
+                                eventId,
+                                eventValue.target.checked,
+                              )
+                            }
+                          />
+                        </label>
                       </TableCell>
                       <TableCell className="font-medium">{eventName}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">
@@ -373,7 +430,11 @@ export function EventsPage() {
                       <TableCell>{pointValue}</TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-2">
-                          {isMandatory ? <Badge>Mandatory</Badge> : <Badge variant="secondary">Optional</Badge>}
+                          {isMandatory ? (
+                            <Badge>Mandatory</Badge>
+                          ) : (
+                            <Badge variant="secondary">Optional</Badge>
+                          )}
                           {recurrenceRule ? (
                             <Badge variant="outline" className="gap-1">
                               <CalendarDays className="h-3 w-3" />
