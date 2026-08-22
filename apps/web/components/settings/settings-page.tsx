@@ -40,6 +40,7 @@ import {
   ErrorState,
   LoadingState,
 } from "@/components/shared/async-states";
+import { OfflineState } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import {
   SubscriptionNotice,
@@ -480,6 +481,13 @@ function SettingsPageContent() {
             <Can
               permission="semester:rollover"
               deniedFallback={null}
+              offlineFallback={(retry) => (
+                <OfflineState
+                  title="Can't confirm your access"
+                  description="Reconnect to check whether you can start a new semester."
+                  onRetry={retry}
+                />
+              )}
             >
               <Card>
                 <CardHeader>

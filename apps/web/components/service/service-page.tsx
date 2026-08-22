@@ -552,7 +552,16 @@ export function ServiceHoursPage() {
       */}
       <SubscriptionNotice gate={gate} feature="logging service hours" />
 
-      <Can permission="service:approve">
+      <Can
+        permission="service:approve"
+        offlineFallback={(retry) => (
+          <OfflineState
+            title="Can't confirm your access"
+            description="Reconnect to check whether you can review submitted hours."
+            onRetry={retry}
+          />
+        )}
+      >
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Review queue</CardTitle>

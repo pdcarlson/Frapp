@@ -262,12 +262,31 @@ export function OfflineState({
  * It carries **no fill and no border**. §10's hairline is the load-bearing
  * edge for a *region*; this is not a region, and a bordered chip where a
  * button was reads as a disabled button rather than as a statement about the
- * network. The glyph and the caption carry it, which is what the shell's
- * `offline-banner.tsx` already does for the same condition one layer up.
+ * network. What the family may **not** drop is the colour — §10 requires its
+ * members to differ in colour rather than in shape, and an all-`--muted-
+ * foreground` row is indistinguishable from an ordinary `deniedFallback` like
+ * the attendance sheet's "View only", which is the exact conflation of
+ * "hidden because denied" and "hidden because we could not check" this whole
+ * change exists to end. So the glyph carries the destructive tone, as it does
+ * in `offline-banner.tsx` one layer up, and the caption stays on
+ * `--muted-foreground` because it is a sentence rather than a status.
  *
- * `min-h-11` rather than a height: the row must clear §2's touch floor for the
- * Retry inside it, but it also has to be free to wrap at 375px rather than
- * push its container wide.
+ * The glyph is the **solid** `--destructive`, not `--destructive-text`. §5's
+ * lift is for a hue on its own 13% tint; there is no tint here, and on a plain
+ * ladder surface the solid measures 4.717–5.795:1 across all four steps —
+ * clear of §6's text floor, let alone the 3:1 non-text one. Reaching for the
+ * lifted tone here would over-apply §1, which is the correction three sites
+ * in the Chapter Ops slice already had to make.
+ *
+ * 16px, not 14: `iconography.md` §2 puts inline metadata rows at 16, which is
+ * what `offline-banner.tsx` — the precedent this borrows — already draws. 14
+ * is the badge-companion carve-out, and this glyph leads the notice rather
+ * than trailing a badge.
+ *
+ * `min-h-11` does **not** make the Retry reach §2's floor — `Button size="sm"`
+ * is `h-11` on its own and the row sizes to it. It is for the other branch:
+ * with no `onRetry` the row is text-only, and a bare caption standing in for a
+ * 44px control would let the layout collapse around it.
  *
  * Copy names the blocker and the next action (`writing.md` §1). It says
  * "access" rather than "permissions" because the member is not the one who
@@ -287,8 +306,8 @@ export function PermissionsOffline({
         className
       )}
     >
-      <WifiOff aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
-      <span>Offline &mdash; can&apos;t check your access.</span>
+      <WifiOff aria-hidden="true" className="h-4 w-4 shrink-0 text-destructive" />
+      <span>Offline — can&apos;t check your access.</span>
       {onRetry ? (
         <Button variant="secondary" size="sm" onClick={onRetry}>
           Retry

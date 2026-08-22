@@ -85,11 +85,12 @@ type CanProps = BaseProps &
  *
  * The three branches below are that rule spelled in flags:
  *
- * - **Cached answer, whatever the fetch is doing** → evaluate it. This needs no
- *   branch of its own: v5 keeps `isPending` false whenever `data` exists, so a
- *   paused *refetch* falls straight through to the verdict. It is stated here
- *   and pinned in `can-fallback.test.tsx` because the obvious fix — gate on
- *   `fetchStatus === "paused"` alone — breaks exactly this, which is the defect
+ * - **Cached answer, whatever the fetch is doing** → evaluate it. v5 keeps
+ *   `isPending` false whenever `data` exists, so a paused *refetch* falls
+ *   straight through to the verdict on its own; the `isError` branch below had
+ *   to be narrowed to `!data` for a *failed* refetch to do the same. Both are
+ *   pinned in `can-fallback.test.tsx`, because the obvious fix — gate on
+ *   `fetchStatus === "paused"` alone — breaks the first, which is the defect
  *   the Resources & Reporting slice found on two data queries.
  * - **Paused, nothing cached** → `offlineFallback`. Never `null`: an
  *   unanswerable check is a recoverable state, and §5 rule 4 reserves hiding
@@ -141,10 +142,19 @@ export function Can({
     return <>{fallback}</>;
   }
 
-  if (isError) {
-    // A failed permissions fetch is fail-safe closed. The shell shows a
-    // global error banner in this case; individual gated controls just
-    // disappear until the fetch recovers.
+  if (isError && !data) {
+    // A failed permissions fetch with nothing cached is fail-safe closed. The
+    // shell shows a global error banner in this case; individual gated
+    // controls just disappear until the fetch recovers.
+    //
+    // `&& !data` because v5 keeps `data` through a *background* refetch
+    // failure and only resets `status` to `pending` when there is none
+    // (`query-core`'s reducer guards that reset on `data === undefined`). So a
+    // 500 on a refetch used to discard an answer we still hold and deny a
+    // member their own controls — the same stale-while-revalidate mistake as
+    // the paused branch above, one status over. Found by the pre-push review
+    // of this change, which correctly refused the docstring's claim that a
+    // cached answer is used "whatever the fetch is doing" until it was.
     return <>{deniedFallback}</>;
   }
 
