@@ -21,10 +21,16 @@ import type { ConfirmResult } from "@/components/shared/confirm-dialog";
  * sides of the conversion.
  */
 
+/**
+ * One harness for both shapes. The only difference the tests care about is
+ * whether the request asks for a comment, so that is the only parameter.
+ */
 function Harness({
   onSettle,
+  withComment = true,
 }: {
-  onSettle: (r: ConfirmResult | null) => void;
+  onSettle: (result: ConfirmResult | null) => void;
+  withComment?: boolean;
 }) {
   const { confirm, confirmDialog } = useConfirmDialog();
   return (
@@ -33,13 +39,22 @@ function Harness({
         type="button"
         onClick={async () => {
           onSettle(
-            await confirm({
-              title: "Reject this?",
-              description: "The member is notified.",
-              confirmLabel: "Reject entry",
-              tone: "destructive",
-              comment: { label: "Comment for the member" },
-            }),
+            await confirm(
+              withComment
+                ? {
+                    title: "Reject this?",
+                    description: "The member is notified.",
+                    confirmLabel: "Reject entry",
+                    tone: "destructive",
+                    comment: { label: "Comment for the member" },
+                  }
+                : {
+                    title: "Delete this?",
+                    description: "This can't be undone.",
+                    confirmLabel: "Delete study zone",
+                    tone: "destructive",
+                  },
+            ),
           );
         }}
       >
@@ -50,29 +65,7 @@ function Harness({
   );
 }
 
-function PlainHarness({ onSettle }: { onSettle: (r: unknown) => void }) {
-  const { confirm, confirmDialog } = useConfirmDialog();
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={async () => {
-          onSettle(
-            await confirm({
-              title: "Delete this?",
-              description: "This can't be undone.",
-              confirmLabel: "Delete study zone",
-              tone: "destructive",
-            }),
-          );
-        }}
-      >
-        Open
-      </button>
-      {confirmDialog}
-    </div>
-  );
-}
+const noop = () => {};
 
 describe("cancel and an empty comment are different answers", () => {
   it("resolves null when cancelled, so the caller's `=== null` guard still returns early", async () => {
@@ -154,7 +147,7 @@ describe("the confirmation is in-product, and reads as a verb", () => {
     const user = userEvent.setup();
     const nativeConfirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     const nativePrompt = vi.spyOn(window, "prompt").mockReturnValue("x");
-    render(<PlainHarness onSettle={() => {}} />);
+    render(<Harness onSettle={noop} withComment={false} />);
 
     await user.click(screen.getByRole("button", { name: "Open" }));
     await user.click(screen.getByRole("button", { name: "Delete study zone" }));
@@ -170,7 +163,7 @@ describe("the confirmation is in-product, and reads as a verb", () => {
     // suites unambiguous: `tasks-board.test.tsx` queries `/^delete$/i` and
     // `service-page.test.tsx` queries `/reject/i` against the page's buttons.
     const user = userEvent.setup();
-    render(<PlainHarness onSettle={() => {}} />);
+    render(<Harness onSettle={noop} withComment={false} />);
 
     await user.click(screen.getByRole("button", { name: "Open" }));
 
