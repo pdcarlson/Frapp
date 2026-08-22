@@ -653,7 +653,22 @@ export function BackworkPage() {
         it describes — a member who never sees an Upload button has nothing to
         restore, and the sentence would just be noise on their screen.
       */}
-      <Can permission="backwork:upload">
+      {/*
+        Silent on purpose, and the only three gates that are. This wraps a
+        `SubscriptionNotice` — an explanation of why *another* control is
+        disabled — not an affordance. There is nothing here for a member to act
+        on, so a second notice saying we cannot check their access states a
+        problem about a sentence rather than about anything they can do, and
+        stacks a duplicate of the chip the gated control already shows. §5 rule
+        4's "disable, don't hide" is about controls; supplementary copy has
+        nothing to disable. `can-fallback.test.tsx` derives this rather than
+        listing it: a lone `SubscriptionNotice` child both may and must be
+        `null` here.
+      */}
+      <Can
+        permission="backwork:upload"
+        offlineFallback={null}
+      >
         <SubscriptionNotice gate={gate} feature="uploading backwork" />
       </Can>
 

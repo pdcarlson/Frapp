@@ -316,6 +316,7 @@ function DefaultRecovery({
       permission="billing:manage"
       fallback={askAnOfficer}
       deniedFallback={askAnOfficer}
+      offlineFallback={askAnOfficer}
     >
       <Link href="/billing" className="font-medium underline underline-offset-4">
         {action}

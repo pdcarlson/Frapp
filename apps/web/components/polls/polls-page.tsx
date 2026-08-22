@@ -37,6 +37,7 @@ import {
   ErrorState,
   LoadingState,
   OfflineState,
+  PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import {
@@ -311,6 +312,17 @@ export function PollsPage() {
   return (
     <Can
       permission="polls:view_all"
+      offlineFallback={(retry) => (
+        <div className="space-y-4">
+          <header>
+            <h2 className="text-2xl font-semibold tracking-tight">Polls</h2>
+          </header>
+          <PermissionsOfflineSurface
+            description="Reconnect to check whether you can see the chapter's polls."
+            onRetry={retry}
+          />
+        </div>
+      )}
       fallback={
         <div className="space-y-4">
           <header>

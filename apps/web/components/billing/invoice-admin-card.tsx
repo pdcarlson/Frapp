@@ -45,6 +45,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { PermissionsOfflineSurface } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import {
   SubscriptionNotice,
@@ -220,6 +221,12 @@ export function InvoiceAdminCard() {
     <Can
       permission="billing:manage"
       deniedFallback={null}
+      offlineFallback={(retry) => (
+        <PermissionsOfflineSurface
+          description="Reconnect to check whether you can manage chapter invoices."
+          onRetry={retry}
+        />
+      )}
     >
       <div className="space-y-6">
         {overdueQuery.isError ? (

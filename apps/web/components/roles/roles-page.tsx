@@ -34,6 +34,7 @@ import {
   EmptyState,
   ErrorState,
   LoadingState,
+  PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import { useToast } from "@/hooks/use-toast";
@@ -262,6 +263,12 @@ export function RolesAndPermissionsPage() {
   return (
     <Can
       permission="roles:manage"
+      offlineFallback={(retry) => (
+        <PermissionsOfflineSurface
+          description="Reconnect to check whether you can manage roles."
+          onRetry={retry}
+        />
+      )}
       deniedFallback={
         <Card>
           <CardHeader>

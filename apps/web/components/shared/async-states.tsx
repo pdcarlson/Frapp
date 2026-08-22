@@ -246,3 +246,104 @@ export function OfflineState({
     </div>
   );
 }
+
+/**
+ * The offline state for a **control slot** — the third container variant.
+ *
+ * `OfflineState` above paints `--card` and reserves `min-h-52`, which is right
+ * where the state replaces a screen. `NestedOffline` (`nested-states.tsx`)
+ * drops the fill for a state inside a card it cannot rise above. Neither fits
+ * the third case #1211 surfaced: `<Can>` standing in for a *single control* —
+ * an Upload button in a toolbar, a row action in a table cell — where a 208px
+ * card is not a smaller version of the right answer, it is the wrong object.
+ * So this is the same family at control scale: same `WifiOff` glyph, same
+ * destructive-tinted tone, same Retry, laid out as one inline row.
+ *
+ * It carries **no fill and no border**. §10's hairline is the load-bearing
+ * edge for a *region*; this is not a region, and a bordered chip where a
+ * button was reads as a disabled button rather than as a statement about the
+ * network. What the family may **not** drop is the colour — §10 requires its
+ * members to differ in colour rather than in shape, and an all-`--muted-
+ * foreground` row is indistinguishable from an ordinary `deniedFallback` like
+ * the attendance sheet's "View only", which is the exact conflation of
+ * "hidden because denied" and "hidden because we could not check" this whole
+ * change exists to end. So the glyph carries the destructive tone, as it does
+ * in `offline-banner.tsx` one layer up, and the caption stays on
+ * `--muted-foreground` because it is a sentence rather than a status.
+ *
+ * The glyph is the **solid** `--destructive`, not `--destructive-text`. §5's
+ * lift is for a hue on its own 13% tint; there is no tint here, and on a plain
+ * ladder surface the solid measures 4.717–5.795:1 across all four steps —
+ * clear of §6's text floor, let alone the 3:1 non-text one. Reaching for the
+ * lifted tone here would over-apply §1, which is the correction three sites
+ * in the Chapter Ops slice already had to make.
+ *
+ * 16px, not 14: `iconography.md` §2 puts inline metadata rows at 16, which is
+ * what `offline-banner.tsx` — the precedent this borrows — already draws. 14
+ * is the badge-companion carve-out, and this glyph leads the notice rather
+ * than trailing a badge.
+ *
+ * `min-h-11` does **not** make the Retry reach §2's floor — `Button size="sm"`
+ * is `h-11` on its own and the row sizes to it. It is for the other branch:
+ * with no `onRetry` the row is text-only, and a bare caption standing in for a
+ * 44px control would let the layout collapse around it.
+ *
+ * Copy names the blocker and the next action (`writing.md` §1). It says
+ * "access" rather than "permissions" because the member is not the one who
+ * holds them — what they can act on is whether to retry.
+ */
+/**
+ * The same statement at **surface** scale, for a gate standing in for a whole
+ * screen or a whole card.
+ *
+ * A thin wrapper over `OfflineState`, and it exists for the title. Eight gates
+ * render this, and the title is the half of the copy that does not vary — it
+ * is `writing.md` §7's "(global)" row, where the descriptions are per-surface.
+ * Retyped eight times it is one tone pass away from forking, and jscpd cannot
+ * see it: each occurrence is ~30 tokens against a 50-token floor, so the
+ * duplication gate this repo runs is structurally blind to exactly this shape.
+ * That is the same argument `ui/typography.ts` makes for `EYEBROW` — "twelve
+ * copies of a four-part class string is how the eleventh and the twelfth
+ * quietly become different".
+ */
+export function PermissionsOfflineSurface({
+  description,
+  onRetry,
+}: {
+  /** What this surface would let them do, per `writing.md` §7. */
+  description: string;
+  onRetry?: () => void;
+}) {
+  return (
+    <OfflineState
+      title="Can't confirm your access"
+      description={description}
+      onRetry={onRetry}
+    />
+  );
+}
+
+export function PermissionsOffline({
+  onRetry,
+  className,
+}: {
+  onRetry?: () => void;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "inline-flex min-h-11 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground",
+        className
+      )}
+    >
+      <WifiOff aria-hidden="true" className="h-4 w-4 shrink-0 text-destructive" />
+      <span>Offline — can&apos;t check your access.</span>
+      {onRetry ? (
+        <Button variant="secondary" size="sm" onClick={onRetry}>
+          Retry
+        </Button>
+      ) : null}
+    </div>
+  );
+}

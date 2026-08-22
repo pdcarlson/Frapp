@@ -104,6 +104,17 @@ The tables below are the canonical strings for high-frequency state messages, so
 
 The offline string MUST keep its closing clause — a member who edited or posted while offline needs to be told the work is queued, not lost. [resilience.md](../resilience.md) carries the connection-state indicator strings alongside the detection thresholds and banner behavior; where the two differ, the wording above is approved.
 
+### Permission check offline (global)
+
+| State | Title | Description |
+|---|---|---|
+| Offline (permission check), control slot | — | `Offline — can't check your access.` |
+| Offline (permission check), whole surface | `Can't confirm your access` | `Reconnect to check whether you can <do the thing the surface does>.` |
+
+A paused permission check is **not** the surface being unavailable, and must not borrow that row's copy. "Polls unavailable offline" states a fact about the polls; here we do not know whether this member may see them at all, and saying otherwise promises access on reconnect that may not arrive. Both strings therefore report the *check*, and the second names the surface's verb rather than its noun. The per-surface descriptions are in the five tables below.
+
+Implementation: `PermissionsOffline` (`apps/web/components/shared/async-states.tsx`) carries the first string; the second is passed to `<Can offlineFallback>` at each screen-level gate. Behaviour is [README.md](README.md) §4.
+
 ### Members (dashboard)
 
 | State | Title | Description |
@@ -149,6 +160,7 @@ The offline string MUST keep its closing clause — a member who edited or poste
 | Empty (flagged only) | `No flagged transactions in this window` | `Large single adjustments (\|amount\| ≥ 100) will appear here automatically.` |
 | Empty (filtered) | `No transactions match this filter` | `Try relaxing the category or member filter.` |
 | Error | `Audit unavailable` | `Couldn't load chapter transactions. Retry or confirm your points:view_all access.` |
+| Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can view the chapter's transaction log.` |
 
 ### Roles & Permissions (dashboard)
 
@@ -158,6 +170,7 @@ The offline string MUST keep its closing clause — a member who edited or poste
 | Empty | `No roles yet` | `Chapters always start with default system roles. Refresh to reload or create a new custom role.` |
 | Error | `Couldn't load roles` | `Retry in a moment. This view requires the roles:manage permission.` |
 | Permission denied | `Roles & Permissions` | `Managing roles requires the roles:manage permission. Ask your chapter president to grant access.` |
+| Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can manage roles.` |
 
 ### Settings (dashboard)
 
@@ -167,6 +180,7 @@ The offline string MUST keep its closing clause — a member who edited or poste
 | Error | `Couldn't load chapter settings` | `Confirm your chapter access and retry. Changes you make here update every surface in the dashboard.` |
 | No chapter | `Chapter settings` | `Select an active chapter to edit its branding, semester state, or billing configuration.` |
 | Semester empty | `No archived semesters yet` | `After you run your first rollover, the history appears here.` |
+| Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can start a new semester.` |
 
 ### Tasks (dashboard)
 
@@ -186,6 +200,7 @@ The offline string MUST keep its closing clause — a member who edited or poste
 | Empty history | `No service activity yet` | `Log your first service entry to build up chapter service hours.` |
 | Error | `Couldn't load service entries` | `Members see only their own entries; admins need service:approve to see every entry.` |
 | Offline | `Service hours unavailable offline` | `Reconnect to log hours and review the approval queue.` |
+| Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can review submitted hours.` |
 
 ### Chapter Documents (dashboard)
 
@@ -214,6 +229,7 @@ The offline string MUST keep its closing clause — a member who edited or poste
 | Error | `Couldn't generate <kind> report` | the API's own message, or `The API rejected the request. Confirm reports:export and retry.` |
 | Truncated | `Incomplete report` (badge) | `<cap summary> This preview and the CSV built from it are not a complete record of the chapter.` |
 | Permission denied | `Reports & Export` | `Exporting chapter data requires the reports:export permission. Ask your chapter president to grant access.` |
+| Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can export chapter data.` |
 
 **This table had no Error row until the Resources & Reporting slice, and that is why the screen had no error state.** A failed run reported a toast and never touched `preview`, so the panel fell through to the Idle copy — a failure rendering as "nothing has happened yet", against [README.md](README.md) §4's requirement of an error state with a retry path on every async view. The Idle and Empty-filter titles were added in the same pass: [components.md](components.md) §10's state family needs a title and a description, and the approved sentences are kept verbatim as the descriptions rather than rewritten.
 
@@ -272,6 +288,7 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Empty | `No study zones yet` | `Create your first zone to let members start tracked study sessions for points.` |
 | Error | `Couldn't load study zones` | `Confirm your chapter access and retry.` |
 | Offline | `Study zones unavailable offline` | `Reconnect to draw a zone or change its reward rate.` |
+| Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can manage study zones.` |
 | Permission denied | `Study zones` | `Managing study zones requires the geofences:manage permission. Ask your chapter president to grant access.` |
 
 ### Polls (dashboard)
@@ -282,6 +299,7 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Empty | `No polls match this view` | `Create a poll inside a chat channel and it will appear here. Loosen the filters if you're expecting results.` |
 | Error | `Couldn't load polls` | `Confirm your chapter access and retry.` |
 | Offline | `Polls unavailable offline` | `Reconnect to load the chapter's polls and cast a vote.` |
+| Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can see the chapter's polls.` |
 
 ### Chat (dashboard)
 
@@ -317,6 +335,7 @@ Channel seeding happens at chapter onboarding and has no billing prerequisite; [
 | Preview/unauthenticated | `Showing preview billing data` | `Sign in to load live chapter subscription and invoice records.` |
 | Error | `Couldn't load invoices` | `Verify your chapter access and API health, then retry.` |
 | Empty (filtered) | `No invoices match this filter` | `Try a different status, or clear the filter to see every invoice.` |
+| Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can manage chapter invoices.` |
 
 ### Dues (mobile, s11)
 

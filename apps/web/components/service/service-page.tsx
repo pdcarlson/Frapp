@@ -43,6 +43,7 @@ import {
   ErrorState,
   LoadingState,
   OfflineState,
+  PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import {
@@ -552,7 +553,15 @@ export function ServiceHoursPage() {
       */}
       <SubscriptionNotice gate={gate} feature="logging service hours" />
 
-      <Can permission="service:approve">
+      <Can
+        permission="service:approve"
+        offlineFallback={(retry) => (
+          <PermissionsOfflineSurface
+            description="Reconnect to check whether you can review submitted hours."
+            onRetry={retry}
+          />
+        )}
+      >
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Review queue</CardTitle>

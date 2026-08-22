@@ -35,6 +35,7 @@ import {
   NestedError,
   NestedLoading,
 } from "@/components/shared/nested-states";
+import { PermissionsOfflineSurface } from "@/components/shared/async-states";
 import {
   DocumentsGlyph,
   ReportsGlyph,
@@ -452,6 +453,12 @@ export function ReportsPage() {
   return (
     <Can
       permission="reports:export"
+      offlineFallback={(retry) => (
+        <PermissionsOfflineSurface
+          description="Reconnect to check whether you can export chapter data."
+          onRetry={retry}
+        />
+      )}
       fallback={
         <div className="min-h-40">
           <Card aria-label="Reports & Export permissions check">

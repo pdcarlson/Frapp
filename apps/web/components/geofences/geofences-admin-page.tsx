@@ -38,6 +38,7 @@ import {
   ErrorState,
   LoadingState,
   OfflineState,
+  PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import {
@@ -369,6 +370,12 @@ export function GeofencesAdminPage() {
           </Card>
         </div>
       }
+      offlineFallback={(retry) => (
+        <PermissionsOfflineSurface
+          description="Reconnect to check whether you can manage study zones."
+          onRetry={retry}
+        />
+      )}
     >
       {/*
         The states render INSIDE the gate, not before it. `Can` answers "may
