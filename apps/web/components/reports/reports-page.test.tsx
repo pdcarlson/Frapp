@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
@@ -158,5 +159,72 @@ describe("ReportsPage subscription gating", () => {
     expect(generateButton()).toBeEnabled();
     expect(pdfButton()).toBeEnabled();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+});
+
+describe("ReportsPage preview states", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chapter.active();
+  });
+
+  it("renders an error with a retry when a run fails, not the idle copy", async () => {
+    // The defect: the catch reported a toast and never touched `preview`, so
+    // `preview === null` fell through to "Generate a report to see a preview
+    // here." — a failed report rendering as "nothing has happened yet", with
+    // no retry path. README §4 requires an error state on every async view.
+    const user = userEvent.setup();
+    mockAttendanceReport.mockReturnValue({
+      mutateAsync: vi.fn().mockRejectedValue(new Error("Chapter has no terms")),
+      isPending: false,
+    });
+
+    render(<ReportsPage />);
+    await user.click(generateButton());
+
+    expect(
+      await screen.findByText(/couldn't generate attendance report/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Chapter has no terms")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Generate a report to see a preview here."),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+  });
+
+  it("says so on screen when the report is truncated, not only in a toast", async () => {
+    // `spec/behavior/reports.md`: truncation is never silent. The toast is
+    // transient; the preview and the CSV built from it are not.
+    const user = userEvent.setup();
+    mockAttendanceReport.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({
+        payload: [{ member: "Paul", status: "PRESENT" }],
+        truncation: { truncated: true, rowLimit: 5000, note: null },
+      }),
+      isPending: false,
+    });
+
+    render(<ReportsPage />);
+    await user.click(generateButton());
+
+    expect(await screen.findByText(/incomplete report/i)).toBeInTheDocument();
+    expect(screen.getByText(/not a complete record/i)).toBeInTheDocument();
+  });
+
+  it("keeps the preview clean when the report is complete", async () => {
+    const user = userEvent.setup();
+    mockAttendanceReport.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({
+        payload: [{ member: "Paul", status: "PRESENT" }],
+        truncation: { truncated: false, rowLimit: null, note: null },
+      }),
+      isPending: false,
+    });
+
+    render(<ReportsPage />);
+    await user.click(generateButton());
+
+    expect(await screen.findByText("Paul")).toBeInTheDocument();
+    expect(screen.queryByText(/incomplete report/i)).not.toBeInTheDocument();
   });
 });

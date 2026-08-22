@@ -1,6 +1,10 @@
 "use client";
 
 import { useMemo } from "react";
+import {
+  meterFillClassName,
+  meterTrackDenseClassName,
+} from "@/components/shared/meter";
 import { Button } from "@/components/ui/button";
 import { EYEBROW, MESSAGE_CARD } from "../chip";
 import { Card } from "@/components/ui/card";
@@ -69,7 +73,8 @@ function tallyByOption(
   let myVote: string | null = null;
   for (const action of message.actions) {
     if (action.action_type !== POLL_VOTE_ACTION_TYPE) continue;
-    const optionId = (action.payload as { option_id?: unknown } | null)?.option_id;
+    const optionId = (action.payload as { option_id?: unknown } | null)
+      ?.option_id;
     if (typeof optionId !== "string" || !(optionId in byOption)) continue;
     byOption[optionId] = (byOption[optionId] ?? 0) + 1;
     total += 1;
@@ -93,7 +98,11 @@ export function PollCard({
   const payload = readPayload(message);
   const now = useNow();
 
-  const { byOption, total, myVote: viewerVote } = useMemo(() => {
+  const {
+    byOption,
+    total,
+    myVote: viewerVote,
+  } = useMemo(() => {
     if (!payload) return { byOption: {}, total: 0, myVote: null };
     return tallyByOption(message, payload.options, viewerId);
   }, [message, payload, viewerId]);
@@ -155,11 +164,11 @@ export function PollCard({
                 </span>
               </Button>
               <div
-                className="mt-1 h-1 w-full overflow-hidden rounded-full bg-input"
+                className={`mt-1 ${meterTrackDenseClassName}`}
                 aria-hidden="true"
               >
                 <div
-                  className="h-full bg-primary"
+                  className={meterFillClassName}
                   style={{ width: `${pct}%` }}
                 />
               </div>

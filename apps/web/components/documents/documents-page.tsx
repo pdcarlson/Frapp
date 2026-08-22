@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Download, FileText, FolderOpen, Loader2, Trash2, Upload } from "lucide-react";
+import { Download, Loader2, Trash2, Upload } from "lucide-react";
 import {
   useConfirmDocumentUpload,
   useDeleteDocument,
@@ -30,16 +30,23 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
-  EmptyState,
-  ErrorState,
-  LoadingState,
-} from "@/components/shared/async-states";
+  NestedEmpty,
+  NestedError,
+  NestedLoading,
+} from "@/components/shared/nested-states";
 import { Can } from "@/components/shared/can";
+import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import {
+  DocumentsGlyph,
+  FolderGlyph,
+} from "@/components/documents/resources-glyphs";
+import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import {
   SubscriptionNotice,
   useGatedDialog,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
+import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
 import {
@@ -82,7 +89,9 @@ function DownloadButton({ id }: { id: string }) {
     try {
       const result = await query.refetch();
       const url =
-        result.data && typeof result.data === "object" && "download_url" in result.data
+        result.data &&
+        typeof result.data === "object" &&
+        "download_url" in result.data
           ? (result.data as { download_url?: string }).download_url
           : null;
       if (!url) throw new Error("No download URL returned.");
@@ -124,6 +133,8 @@ export function DocumentsPage() {
   // delete) carries no `@FreeTier`, so they are all paid-ops behind the same
   // subscription guard — one gate covers the surface (#841).
   const gate = useSubscriptionGate();
+  const { isOffline } = useNetwork();
+  const { confirm, confirmDialog } = useConfirmDialog();
   const documentsQuery = useDocuments();
   const requestUpload = useRequestDocumentUploadUrl();
   const confirmUpload = useConfirmDocumentUpload();
@@ -149,9 +160,7 @@ export function DocumentsPage() {
       activeFolder === null
         ? documents
         : documents.filter((doc) =>
-            activeFolder === ""
-              ? !doc.folder
-              : doc.folder === activeFolder,
+            activeFolder === "" ? !doc.folder : doc.folder === activeFolder,
           );
     return filtered.sort((a, b) =>
       (a.title || "").localeCompare(b.title || ""),
@@ -206,7 +215,9 @@ export function DocumentsPage() {
           ? (signed as { storage_path?: string }).storage_path
           : null;
       if (!signedUrl || !storagePath) {
-        throw new Error("Upload URL response missing signed URL or storage path.");
+        throw new Error(
+          "Upload URL response missing signed URL or storage path.",
+        );
       }
 
       const response = await fetch(signedUrl, {
@@ -250,9 +261,17 @@ export function DocumentsPage() {
   }
 
   async function handleDelete(doc: ChapterDocument) {
-    const confirmed = window.confirm(
-      `Delete ${doc.title}? This removes the file from chapter storage immediately.`,
-    );
+    // README §2 bans `window.confirm` on *every* surface, and §9 specs the
+    // replacement. No comment is collected, so this is the truthiness form —
+    // the `null`-vs-`""` distinction only matters where a `comment` is asked
+    // for, as it is on the two Chapter Ops rejection flows.
+    const confirmed = await confirm({
+      title: `Delete ${doc.title}?`,
+      description:
+        "This removes the file from chapter storage immediately and cannot be undone.",
+      confirmLabel: "Delete document",
+      tone: "destructive",
+    });
     if (!confirmed) return;
     try {
       await deleteDoc.mutateAsync(doc.id);
@@ -272,29 +291,40 @@ export function DocumentsPage() {
     }
   }
 
-  if (documentsQuery.isPending) {
-    return <LoadingState message="Loading chapter documents..." />;
-  }
+  /*
+    These used to be early returns above everything, which meant a background
+    refetch failure unmounted the `Can`-gated upload `Dialog` mid-draft — the
+    hazard `subscription-gate.tsx` names for `useGatedDialog` ("a surface can
+    unmount its dialog subtree ... while `open` is still true"), and the same
+    shape the Chapter Ops slice hit with `{confirmDialog}`. The header, the
+    dialog and the notice now always render, and the states scope to the list
+    they describe.
 
-  if (documentsQuery.isError) {
-    return (
-      <ErrorState
-        title="Couldn't load documents"
-        description="Confirm your chapter access and retry."
-        onRetry={() => void documentsQuery.refetch()}
-      />
-    );
-  }
+    `useDocuments` has no `enabled` gate, so `isPending` is honest here — but
+    it is also true for a *paused* query, which is why an offline member with
+    no cached documents sat on "Loading chapter documents..." indefinitely.
+    The offline branch answers README §4 item 4.
+  */
+  const listState = isOffline
+    ? "offline"
+    : documentsQuery.isPending
+      ? "loading"
+      : documentsQuery.isError
+        ? "error"
+        : visible.length === 0
+          ? "empty"
+          : "ready";
 
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight">Chapter documents</h2>
+          <h2 className="text-2xl font-semibold tracking-tight">
+            Chapter documents
+          </h2>
           <p className="text-sm text-muted-foreground">
-            Organizational files — bylaws, constitutions, meeting agendas.
-            Every chapter member can download; upload and delete are
-            permission-gated.
+            Organizational files — bylaws, constitutions, meeting agendas. Every
+            chapter member can download; upload and delete are permission-gated.
           </p>
         </div>
         <Can permission="chapter_docs:upload">
@@ -311,8 +341,8 @@ export function DocumentsPage() {
               <DialogHeader>
                 <DialogTitle>Upload a chapter document</DialogTitle>
                 <DialogDescription>
-                  Max {MAX_UPLOAD_LABEL}. PDFs, Word/Excel/PowerPoint, text/CSV, and images
-                  are allowed — no SVGs or executables.
+                  Max {MAX_UPLOAD_LABEL}. PDFs, Word/Excel/PowerPoint, text/CSV,
+                  and images are allowed — no SVGs or executables.
                 </DialogDescription>
               </DialogHeader>
               <form
@@ -335,7 +365,9 @@ export function DocumentsPage() {
                   />
                 </div>
                 <div className="grid gap-1">
-                  <Label htmlFor="doc-description">Description (optional)</Label>
+                  <Label htmlFor="doc-description">
+                    Description (optional)
+                  </Label>
                   <Textarea
                     id="doc-description"
                     rows={2}
@@ -436,37 +468,46 @@ export function DocumentsPage() {
             <button
               type="button"
               onClick={() => setActiveFolder(null)}
-              className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm ${
+              className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors ${FOCUS_RING_OFFSET} ${
                 activeFolder === null
-                  ? "bg-primary/10 text-primary"
-                  : "hover:bg-accent"
+                  ? "bg-accent-subtle-hover text-accent-text"
+                  : "text-muted-foreground hover:bg-accent-subtle hover:text-foreground"
               }`}
             >
-              <FolderOpen className="h-4 w-4" /> All files
+              <FolderGlyph className="h-4 w-4" active={activeFolder === null} />{" "}
+              All files
             </button>
             <button
               type="button"
               onClick={() => setActiveFolder("")}
-              className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm ${
+              className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors ${FOCUS_RING_OFFSET} ${
                 activeFolder === ""
-                  ? "bg-primary/10 text-primary"
-                  : "hover:bg-accent"
+                  ? "bg-accent-subtle-hover text-accent-text"
+                  : "text-muted-foreground hover:bg-accent-subtle hover:text-foreground"
               }`}
             >
-              <FileText className="h-4 w-4" /> No folder
+              <DocumentsGlyph
+                className="h-4 w-4"
+                active={activeFolder === ""}
+              />{" "}
+              No folder
             </button>
             {folders.map((folder) => (
               <button
                 key={folder}
                 type="button"
                 onClick={() => setActiveFolder(folder)}
-                className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm ${
+                className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors ${FOCUS_RING_OFFSET} ${
                   activeFolder === folder
-                    ? "bg-primary/10 text-primary"
-                    : "hover:bg-accent"
+                    ? "bg-accent-subtle-hover text-accent-text"
+                    : "text-muted-foreground hover:bg-accent-subtle hover:text-foreground"
                 }`}
               >
-                <FolderOpen className="h-4 w-4" /> {folder}
+                <FolderGlyph
+                  className="h-4 w-4"
+                  active={activeFolder === folder}
+                />{" "}
+                {folder}
               </button>
             ))}
           </CardContent>
@@ -481,31 +522,71 @@ export function DocumentsPage() {
                   ? "Uncategorized documents"
                   : activeFolder}
             </CardTitle>
-            <CardDescription>
-              {visible.length} document{visible.length === 1 ? "" : "s"}.
-            </CardDescription>
+            {/*
+              Rendered only once there is a count to state. A placeholder
+              character here would put a stray non-breaking space in the
+              accessibility tree, and "0 documents." while the query is still
+              in flight is a claim about the library rather than a description
+              of it — the state below already says what is happening.
+            */}
+            {listState === "ready" ? (
+              <CardDescription>
+                {visible.length} document{visible.length === 1 ? "" : "s"}.
+              </CardDescription>
+            ) : null}
           </CardHeader>
           <CardContent>
-            {visible.length === 0 ? (
-              <EmptyState
+            {/*
+              The nested variants, not the whole-screen ones: these render
+              inside a `<CardContent>`, where a `bg-card` state on a `bg-card`
+              card composites to exactly 1.00:1 and the region disappears
+              (`components.md` §10).
+            */}
+            {listState === "offline" ? (
+              <NestedError
+                title="Documents unavailable offline"
+                description="Reconnect to browse the chapter library and download files."
+                onRetry={() => {
+                  void documentsQuery.refetch();
+                }}
+              />
+            ) : listState === "loading" ? (
+              <NestedLoading message="Loading chapter documents..." />
+            ) : listState === "error" ? (
+              <NestedError
+                title="Couldn't load documents"
+                description="Confirm your chapter access and retry."
+                onRetry={() => void documentsQuery.refetch()}
+              />
+            ) : listState === "empty" ? (
+              <NestedEmpty
                 title="No documents here yet"
                 description="Upload chapter files like bylaws, agendas, and meeting minutes so everyone can find them."
               />
             ) : (
-              <ul className="divide-y divide-border/70">
+              /*
+                `divide-border/70` dilutes `--border` to 1.169:1 on a card
+                against the token's 1.253:1, and neither clears the 3:1
+                non-text floor — `components.md` §2: "a hairline's alpha is
+                not a free parameter". Chapter Ops found five of these; this
+                is the sixth.
+              */
+              <ul className="divide-y divide-border">
                 {visible.map((doc) => (
                   <li
                     key={doc.id}
                     className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{doc.title}</p>
+                      <p className="truncate text-sm font-medium">
+                        {doc.title}
+                      </p>
                       {doc.description ? (
                         <p className="line-clamp-1 text-xs text-muted-foreground">
                           {doc.description}
                         </p>
                       ) : null}
-                      <p className="text-[11px] text-muted-foreground">
+                      <p className="text-[12.5px] text-muted-foreground">
                         Uploaded {new Date(doc.created_at).toLocaleDateString()}
                         {doc.folder ? ` · ${doc.folder}` : ""}
                       </p>
@@ -537,6 +618,14 @@ export function DocumentsPage() {
           </CardContent>
         </Card>
       </div>
+      {/*
+        Rendered last and unconditionally, for the reason the states above no
+        longer are: an offline or error branch that sits over this would
+        unmount a pending confirmation without settling its promise, leaving
+        `await confirm(...)` hanging forever. That is the two-change
+        interaction the Chapter Ops slice shipped and its guard caught.
+      */}
+      {confirmDialog}
     </div>
   );
 }

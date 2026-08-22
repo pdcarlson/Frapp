@@ -9,6 +9,7 @@ const {
   mockConfirmUpload,
   mockChapterId,
   mockToast,
+  mockOffline,
   resourcesQuery,
 } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
@@ -16,6 +17,7 @@ const {
   mockConfirmUpload: vi.fn().mockResolvedValue({}),
   mockChapterId: { value: "chap-1" as string | null },
   mockToast: vi.fn(),
+  mockOffline: { value: false },
   resourcesQuery: {
     data: [] as unknown[],
     isPending: false,
@@ -72,6 +74,10 @@ vi.mock("@/components/shared/can", () => ({
 
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: mockToast }) }));
 
+vi.mock("@/lib/providers/network-provider", () => ({
+  useNetwork: () => ({ isOffline: mockOffline.value }),
+}));
+
 const { BackworkPage } = await import("./backwork-page");
 
 const chapter = chapterSubscription(mockCurrentChapter);
@@ -92,8 +98,40 @@ function resolvedResourcesQuery() {
 describe("BackworkPage disabled-query handling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockOffline.value = false;
     resolvedResourcesQuery();
     chapter.active();
+  });
+
+  it("offers a retry when offline rather than spinning on a paused query", () => {
+    // README §4 item 4. `paused` was routed to the loading copy, so an
+    // offline member with no cached archive sat on "Loading backwork..."
+    // for as long as they stayed offline.
+    mockOffline.value = true;
+    resourcesQuery.data = undefined as unknown as unknown[];
+    resourcesQuery.isPending = true;
+    resourcesQuery.fetchStatus = "paused";
+
+    render(<BackworkPage />);
+
+    expect(
+      screen.getByText(/backwork unavailable offline/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Loading backwork...")).not.toBeInTheDocument();
+  });
+
+  it("keeps the upload trigger reachable while the list is offline", () => {
+    // The offline state is scoped to the Resources card rather than replacing
+    // the page, so it cannot unmount the gated upload dialog above it — the
+    // defect `/documents` shipped with its own early returns.
+    mockOffline.value = true;
+    resourcesQuery.data = [];
+
+    render(<BackworkPage />);
+
+    expect(
+      screen.getByRole("button", { name: /^upload$/i }),
+    ).toBeInTheDocument();
   });
 
   it("shows an empty chapter-pick state instead of spinning when no chapter is selected", () => {
