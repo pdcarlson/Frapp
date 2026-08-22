@@ -39,8 +39,11 @@ import { formatLocaleDateTime as formatDate } from "@repo/formatting";
 import { asArray } from "@/lib/utils";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
 import { Can } from "@/components/shared/can";
-
-type AttendanceStatus = "PRESENT" | "EXCUSED" | "ABSENT" | "LATE";
+import {
+  attendanceStatusKind,
+  attendanceStatusLabel,
+} from "@/components/events/attendance-status";
+import type { AttendanceStatus } from "@/components/events/attendance-status";
 
 type AttendanceRow = {
   id?: string;
@@ -58,30 +61,6 @@ type MemberSummary = {
   email?: string | null;
 };
 
-const STATUS_LABELS: Record<AttendanceStatus, string> = {
-  PRESENT: "Present",
-  EXCUSED: "Excused",
-  ABSENT: "Absent",
-  LATE: "Late",
-};
-
-function statusVariant(
-  status: AttendanceStatus | "UNRECORDED",
-): "default" | "secondary" | "destructive" | "outline" {
-  switch (status) {
-    case "PRESENT":
-      return "default";
-    case "LATE":
-      return "secondary";
-    case "EXCUSED":
-      return "outline";
-    case "ABSENT":
-      return "destructive";
-    default:
-      return "outline";
-  }
-}
-
 export function AttendancePanel({ eventId }: { eventId: string }) {
   const chapterId = useActiveChapterId();
   const { toast } = useToast();
@@ -95,8 +74,9 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
   // GET, so a lapsed chapter can still see who showed up.
   const gate = useSubscriptionGate();
 
-  const [statusFilter, setStatusFilter] =
-    useState<"ALL" | AttendanceStatus | "UNRECORDED">("ALL");
+  const [statusFilter, setStatusFilter] = useState<
+    "ALL" | AttendanceStatus | "UNRECORDED"
+  >("ALL");
 
   // Live updates: other admins marking attendance or members checking in
   // appear without a manual refresh. Invalidate the event detail too so
@@ -207,7 +187,7 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
       });
       toast({
         title: "Attendance updated",
-        description: `${STATUS_LABELS[next]} recorded for this member.`,
+        description: `${attendanceStatusLabel(next)} recorded for this member.`,
       });
     } catch (error) {
       toast({
@@ -284,9 +264,8 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
             Attendance
           </CardTitle>
           <CardDescription>
-            {counts.PRESENT + counts.LATE} checked in · {counts.EXCUSED} excused ·
-            {" "}
-            {counts.ABSENT} absent · {counts.UNRECORDED} unrecorded
+            {counts.PRESENT + counts.LATE} checked in · {counts.EXCUSED} excused
+            · {counts.ABSENT} absent · {counts.UNRECORDED} unrecorded
           </CardDescription>
         </div>
         <div className="flex items-center gap-2">
@@ -377,10 +356,8 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
                   ) : null}
                 </div>
                 <div className="flex items-center gap-3">
-                  <Badge variant={statusVariant(row.status)}>
-                    {row.status === "UNRECORDED"
-                      ? "Unrecorded"
-                      : STATUS_LABELS[row.status]}
+                  <Badge variant={attendanceStatusKind(row.status)}>
+                    {attendanceStatusLabel(row.status)}
                   </Badge>
                   <Can
                     permission="events:update"
@@ -391,9 +368,7 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
                     }
                   >
                     <Select
-                      value={
-                        row.status === "UNRECORDED" ? "" : row.status
-                      }
+                      value={row.status === "UNRECORDED" ? "" : row.status}
                       onValueChange={(value) => {
                         if (!value) return;
                         void changeStatus(

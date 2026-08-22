@@ -22,6 +22,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import { serviceStatusKind } from "@/components/service/service-status";
+import type { ServiceStatus } from "@/components/service/service-status";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -54,8 +57,6 @@ import {
 } from "@repo/validation";
 import { formatMinutesExact as formatDuration } from "@repo/formatting";
 
-type ServiceStatus = "PENDING" | "APPROVED" | "REJECTED";
-
 type ServiceEntry = {
   id: string;
   chapter_id: string;
@@ -76,21 +77,6 @@ type MemberSummary = {
   display_name?: string | null;
 };
 
-function statusBadgeVariant(
-  status: ServiceStatus,
-): "default" | "outline" | "destructive" | "secondary" {
-  switch (status) {
-    case "APPROVED":
-      return "default";
-    case "PENDING":
-      return "secondary";
-    case "REJECTED":
-      return "destructive";
-    default:
-      return "outline";
-  }
-}
-
 export function ServiceHoursPage() {
   const { toast } = useToast();
   // Every write on `ServiceEntryController` (proof-upload-url, create, review,
@@ -98,6 +84,7 @@ export function ServiceHoursPage() {
   // subscription guard — one gate covers the surface (#841). `GET
   // /service-entries/:id/proof-url` is a read and stays ungated.
   const gate = useSubscriptionGate();
+  const { confirm, confirmDialog } = useConfirmDialog();
   const entriesQuery = useServiceEntries();
   const membersQuery = useMembers();
   const createEntry = useCreateServiceEntry();
@@ -131,7 +118,8 @@ export function ServiceHoursPage() {
   const memberNameById = useMemo(() => {
     const map = new Map<string, string>();
     for (const m of members) {
-      if (m.user_id) map.set(String(m.user_id), m.display_name ?? "Unnamed member");
+      if (m.user_id)
+        map.set(String(m.user_id), m.display_name ?? "Unnamed member");
     }
     return map;
   }, [members]);
@@ -180,7 +168,8 @@ export function ServiceHoursPage() {
     event.preventDefault();
     if (submitting) return;
     const totalMinutes =
-      Math.max(0, Number(draft.hours)) * 60 + Math.max(0, Number(draft.minutes));
+      Math.max(0, Number(draft.hours)) * 60 +
+      Math.max(0, Number(draft.minutes));
     if (totalMinutes === 0) {
       toast({
         title: "Enter a duration",
@@ -207,7 +196,9 @@ export function ServiceHoursPage() {
       return;
     }
     const proofContentType =
-      proofInspected && proofInspected.ok ? proofInspected.contentType : undefined;
+      proofInspected && proofInspected.ok
+        ? proofInspected.contentType
+        : undefined;
     setSubmitting(true);
     try {
       let proofPath: string | undefined;
@@ -299,14 +290,26 @@ export function ServiceHoursPage() {
   }
 
   async function reject(entry: ServiceEntry) {
-    const comment = window.prompt(
-      `Reject "${entry.description || "this entry"}"? Optional comment for the member:`,
-    );
-    if (comment === null) return;
+    const result = await confirm({
+      title: `Reject "${entry.description || "this entry"}"?`,
+      description:
+        "The member is notified, and the hours are not credited. They can submit the entry again.",
+      confirmLabel: "Reject entry",
+      tone: "destructive",
+      comment: {
+        label: "Comment for the member",
+        placeholder: "Optional — why was this rejected?",
+      },
+    });
+    // `null` is cancel; a confirmed empty box is still a rejection.
+    if (result === null) return;
     try {
       await reviewEntry.mutateAsync({
         id: entry.id,
-        body: { status: "REJECTED", review_comment: comment || undefined },
+        body: {
+          status: "REJECTED",
+          review_comment: result.comment || undefined,
+        },
       });
       toast({
         title: "Entry rejected",
@@ -315,10 +318,7 @@ export function ServiceHoursPage() {
     } catch (error) {
       toast({
         title: "Couldn't reject entry",
-        description: getErrorMessage(
-          error,
-          "Retry or check your permissions.",
-        ),
+        description: getErrorMessage(error, "Retry or check your permissions."),
         variant: "destructive",
       });
     }
@@ -348,9 +348,12 @@ export function ServiceHoursPage() {
   }
 
   async function withdraw(entry: ServiceEntry) {
-    const confirmed = window.confirm(
-      "Withdraw this pending service entry? You can always resubmit.",
-    );
+    const confirmed = await confirm({
+      title: "Withdraw this pending service entry?",
+      description: "You can always resubmit it.",
+      confirmLabel: "Withdraw entry",
+      tone: "destructive",
+    });
     if (!confirmed) return;
     try {
       await deleteEntry.mutateAsync(entry.id);
@@ -388,7 +391,9 @@ export function ServiceHoursPage() {
     <div className="space-y-6">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight">Service hours</h2>
+          <h2 className="text-2xl font-semibold tracking-tight">
+            Service hours
+          </h2>
           <p className="text-sm text-muted-foreground">
             Members log hours; admins approve them for service points. Approved
             hours also appear in chapter service reports.
@@ -405,8 +410,8 @@ export function ServiceHoursPage() {
               <DialogHeader>
                 <DialogTitle>Log service hours</DialogTitle>
                 <DialogDescription>
-                  Submit a service entry for admin approval. Attach a photo
-                  or PDF as proof of your service.
+                  Submit a service entry for admin approval. Attach a photo or
+                  PDF as proof of your service.
                 </DialogDescription>
               </DialogHeader>
               <form
@@ -531,8 +536,8 @@ export function ServiceHoursPage() {
           <CardHeader>
             <CardTitle className="text-lg">Review queue</CardTitle>
             <CardDescription>
-              {pending.length} pending entr{pending.length === 1 ? "y" : "ies"}
-              {" "}awaiting approval.
+              {pending.length} pending entr{pending.length === 1 ? "y" : "ies"}{" "}
+              awaiting approval.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -544,7 +549,8 @@ export function ServiceHoursPage() {
             ) : (
               <ul className="divide-y divide-border/70">
                 {pending.map((entry) => {
-                  const name = memberNameById.get(entry.user_id) ?? entry.user_id;
+                  const name =
+                    memberNameById.get(entry.user_id) ?? entry.user_id;
                   return (
                     <li
                       key={entry.id}
@@ -553,7 +559,8 @@ export function ServiceHoursPage() {
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold">{name}</p>
                         <p className="text-xs text-muted-foreground">
-                          {entry.date} · {formatDuration(entry.duration_minutes)}
+                          {entry.date} ·{" "}
+                          {formatDuration(entry.duration_minutes)}
                         </p>
                         <p className="mt-1 text-sm">{entry.description}</p>
                         {/* Deliberately ungated: the signed link comes from
@@ -647,7 +654,7 @@ export function ServiceHoursPage() {
                       ) : null}
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge variant={statusBadgeVariant(entry.status)}>
+                      <Badge variant={serviceStatusKind(entry.status)}>
                         {entry.status}
                       </Badge>
                       {entry.points_awarded ? (
@@ -702,6 +709,7 @@ export function ServiceHoursPage() {
           </CardContent>
         </Card>
       ) : null}
+      {confirmDialog}
     </div>
   );
 }

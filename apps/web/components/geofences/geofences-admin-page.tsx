@@ -18,6 +18,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import { geofenceStatusKind } from "@/components/geofences/geofence-status";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -63,10 +65,12 @@ type Geofence = {
  * the user — the API treats the vertex list as an open polygon and closes
  * it during point-in-polygon checks.
  */
-function parseCoordinates(input: string): {
-  ok: true;
-  coordinates: { lat: number; lng: number }[];
-} | { ok: false; error: string } {
+function parseCoordinates(input: string):
+  | {
+      ok: true;
+      coordinates: { lat: number; lng: number }[];
+    }
+  | { ok: false; error: string } {
   const lines = input
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -116,6 +120,7 @@ export function GeofencesAdminPage() {
   // the server guard returns early for GET, so a lapsed chapter still sees its
   // zones.
   const gate = useSubscriptionGate();
+  const { confirm, confirmDialog } = useConfirmDialog();
   const geofencesQuery = useGeofences();
   const createGeofence = useCreateGeofence();
   const updateGeofence = useUpdateGeofence();
@@ -292,7 +297,9 @@ export function GeofencesAdminPage() {
         body: { is_active: !geofence.is_active },
       });
       toast({
-        title: geofence.is_active ? "Study zone disabled" : "Study zone enabled",
+        title: geofence.is_active
+          ? "Study zone disabled"
+          : "Study zone enabled",
         description: `${geofence.name} is ${
           geofence.is_active ? "hidden from" : "available to"
         } study sessions.`,
@@ -307,9 +314,13 @@ export function GeofencesAdminPage() {
   }
 
   async function handleDelete(geofence: Geofence) {
-    const confirmed = window.confirm(
-      `Delete "${geofence.name}"? Active sessions inside this zone will be expired on the next heartbeat.`,
-    );
+    const confirmed = await confirm({
+      title: `Delete "${geofence.name}"?`,
+      description:
+        "Active sessions inside this zone will be expired on the next heartbeat.",
+      confirmLabel: "Delete study zone",
+      tone: "destructive",
+    });
     if (!confirmed) return;
     try {
       await deleteGeofence.mutateAsync(geofence.id);
@@ -349,9 +360,8 @@ export function GeofencesAdminPage() {
             <CardHeader>
               <CardTitle>Study zones</CardTitle>
               <CardDescription>
-                Managing study zones requires the{" "}
-                <code>geofences:manage</code> permission. Ask your chapter
-                president to grant access.
+                Managing study zones requires the <code>geofences:manage</code>{" "}
+                permission. Ask your chapter president to grant access.
               </CardDescription>
             </CardHeader>
           </Card>
@@ -362,7 +372,9 @@ export function GeofencesAdminPage() {
           <Card>
             <CardHeader>
               <CardTitle>Study zones</CardTitle>
-              <CardDescription>Checking your chapter permissions…</CardDescription>
+              <CardDescription>
+                Checking your chapter permissions…
+              </CardDescription>
             </CardHeader>
           </Card>
         </div>
@@ -376,8 +388,8 @@ export function GeofencesAdminPage() {
             </h2>
             <p className="text-sm text-muted-foreground">
               Draw a polygon from GPS coordinates, set the reward rate, and
-              members can start tracked study sessions when they&apos;re
-              inside the zone.
+              members can start tracked study sessions when they&apos;re inside
+              the zone.
             </p>
           </div>
           <Dialog {...createDialog.dialogProps}>
@@ -394,8 +406,8 @@ export function GeofencesAdminPage() {
               <DialogHeader>
                 <DialogTitle>Create a study zone</DialogTitle>
                 <DialogDescription>
-                  Paste at least three lat/lng vertices (one per line).
-                  Polygons close automatically on the server.
+                  Paste at least three lat/lng vertices (one per line). Polygons
+                  close automatically on the server.
                 </DialogDescription>
               </DialogHeader>
               <form
@@ -558,7 +570,7 @@ export function GeofencesAdminPage() {
                       {zone.pause_grace_minutes ?? 5} min pause grace
                     </CardDescription>
                   </div>
-                  <Badge variant={zone.is_active ? "default" : "outline"}>
+                  <Badge variant={geofenceStatusKind(zone.is_active)}>
                     {zone.is_active ? "Active" : "Disabled"}
                   </Badge>
                 </CardHeader>
@@ -754,6 +766,7 @@ export function GeofencesAdminPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        {confirmDialog}
       </div>
     </Can>
   );

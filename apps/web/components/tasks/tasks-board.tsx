@@ -24,6 +24,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -56,7 +57,6 @@ import {
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
-
 
 type Task = {
   id: string;
@@ -144,6 +144,7 @@ export function TasksBoard() {
   // paid-ops gate (#841). Reads stay ungated — the server guard returns early
   // for GET, and it remains the enforcement either way.
   const gate = useSubscriptionGate();
+  const { confirm, confirmDialog } = useConfirmDialog();
   const createDialog = useGatedDialog(gate);
   const tasksQuery = useTasks();
   const membersQuery = useMembers();
@@ -154,7 +155,10 @@ export function TasksBoard() {
   const rejectTask = useRejectTask();
   const deleteTask = useDeleteTask();
 
-  const tasks = useMemo(() => asArray<Task>(tasksQuery.data), [tasksQuery.data]);
+  const tasks = useMemo(
+    () => asArray<Task>(tasksQuery.data),
+    [tasksQuery.data],
+  );
   const members = useMemo(
     () => asArray<MemberSummary>(membersQuery.data),
     [membersQuery.data],
@@ -162,7 +166,8 @@ export function TasksBoard() {
   const membersByUserId = useMemo(() => {
     const map = new Map<string, string>();
     for (const m of members) {
-      if (m.user_id) map.set(String(m.user_id), m.display_name ?? "Unnamed member");
+      if (m.user_id)
+        map.set(String(m.user_id), m.display_name ?? "Unnamed member");
     }
     return map;
   }, [members]);
@@ -283,14 +288,24 @@ export function TasksBoard() {
   }
 
   async function rejectCompletion(task: Task) {
-    const comment = window.prompt(
-      `Reject completion of "${task.title}"? Optional comment for the assignee:`,
-    );
-    if (comment === null) return;
+    const result = await confirm({
+      title: `Reject completion of "${task.title}"?`,
+      description:
+        "The task goes back to IN_PROGRESS and the assignee is notified to keep working.",
+      confirmLabel: "Reject completion",
+      tone: "destructive",
+      comment: {
+        label: "Comment for the assignee",
+        placeholder: "Optional — what still needs doing?",
+      },
+    });
+    // `null` is cancel; a confirmed empty box is still a rejection, which is the
+    // distinction `window.prompt` carried and the dialog preserves.
+    if (result === null) return;
     try {
       await rejectTask.mutateAsync({
         id: task.id,
-        body: { comment: comment || undefined },
+        body: { comment: result.comment || undefined },
       });
       toast({
         title: "Task reverted to IN_PROGRESS",
@@ -299,19 +314,19 @@ export function TasksBoard() {
     } catch (error) {
       toast({
         title: "Couldn't reject task",
-        description: getErrorMessage(
-          error,
-          "Retry or check your permissions.",
-        ),
+        description: getErrorMessage(error, "Retry or check your permissions."),
         variant: "destructive",
       });
     }
   }
 
   async function removeTask(task: Task) {
-    const confirmed = window.confirm(
-      `Delete "${task.title}"? This can't be undone.`,
-    );
+    const confirmed = await confirm({
+      title: `Delete "${task.title}"?`,
+      description: "This can't be undone.",
+      confirmLabel: "Delete task",
+      tone: "destructive",
+    });
     if (!confirmed) return;
     try {
       await deleteTask.mutateAsync(task.id);
@@ -322,10 +337,7 @@ export function TasksBoard() {
     } catch (error) {
       toast({
         title: "Couldn't delete task",
-        description: getErrorMessage(
-          error,
-          "Retry or check your permissions.",
-        ),
+        description: getErrorMessage(error, "Retry or check your permissions."),
         variant: "destructive",
       });
     }
@@ -359,8 +371,8 @@ export function TasksBoard() {
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">Tasks</h2>
           <p className="text-sm text-muted-foreground">
-            Admins create and confirm chapter tasks; assignees move them
-            through the workflow.
+            Admins create and confirm chapter tasks; assignees move them through
+            the workflow.
           </p>
         </div>
         <Can permission="tasks:manage">
@@ -600,7 +612,10 @@ export function TasksBoard() {
                                   <Button
                                     size="sm"
                                     onClick={() => void confirmCompletion(task)}
-                                    {...gate.controlProps(task.points_awarded || lifecycleWritePending)}
+                                    {...gate.controlProps(
+                                      task.points_awarded ||
+                                        lifecycleWritePending,
+                                    )}
                                   >
                                     <CheckCircle2 className="h-4 w-4" />
                                     {task.points_awarded
@@ -610,7 +625,9 @@ export function TasksBoard() {
                                   <Button
                                     size="sm"
                                     variant="secondary"
-                                    {...gate.controlProps(lifecycleWritePending)}
+                                    {...gate.controlProps(
+                                      lifecycleWritePending,
+                                    )}
                                     onClick={() => void rejectCompletion(task)}
                                   >
                                     <Undo2 className="h-4 w-4" />
@@ -635,8 +652,8 @@ export function TasksBoard() {
                 </CardContent>
                 {column.status === "COMPLETED" ? (
                   <CardFooter className="text-xs text-muted-foreground">
-                    Confirming a task awards its point reward (when set) to
-                    the assignee.
+                    Confirming a task awards its point reward (when set) to the
+                    assignee.
                   </CardFooter>
                 ) : null}
               </Card>
@@ -644,6 +661,7 @@ export function TasksBoard() {
           })}
         </div>
       )}
+      {confirmDialog}
     </div>
   );
 }

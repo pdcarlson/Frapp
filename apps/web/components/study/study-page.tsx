@@ -36,6 +36,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { studySessionStatusKind } from "@/components/study/study-status";
 import {
   EmptyState,
   ErrorState,
@@ -358,7 +359,8 @@ export function StudyPage() {
     if (!zoneId) {
       toast({
         title: "No study zones available",
-        description: "Ask an admin to create a study zone before starting a session.",
+        description:
+          "Ask an admin to create a study zone before starting a session.",
         variant: "destructive",
       });
       return;
@@ -480,23 +482,17 @@ export function StudyPage() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {pageHidden ? (
-                <Badge variant="outline" className="gap-1">
+                <Badge variant="warning" className="gap-1">
                   <EyeOff className="h-3 w-3" /> Paused (tab hidden)
                 </Badge>
               ) : (
-                <Badge variant="default" className="gap-1">
+                <Badge variant="success" className="gap-1">
                   <Eye className="h-3 w-3" /> Tracking
                 </Badge>
               )}
               {isPaused ? (
-                <Badge variant="outline" className="gap-1">
+                <Badge variant="warning" className="gap-1">
                   <Pause className="h-3 w-3" /> Manually paused
-                </Badge>
-              ) : null}
-              {isPaused || pageHidden ? (
-                <Badge variant="secondary">
-                  Return within {activeGeofence?.pause_grace_minutes ?? 5} min
-                  or the session expires
                 </Badge>
               ) : null}
               {geolocationError ? (
@@ -505,6 +501,12 @@ export function StudyPage() {
                 </Badge>
               ) : null}
             </div>
+            {isPaused || pageHidden ? (
+              <p className="text-[12.5px] text-muted-foreground">
+                Return within {activeGeofence?.pause_grace_minutes ?? 5} min or
+                the session expires.
+              </p>
+            ) : null}
             {geolocationError ? (
               <p className="text-xs text-destructive">{geolocationError}</p>
             ) : null}
@@ -643,15 +645,7 @@ export function StudyPage() {
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge
-                      variant={
-                        session.status === "COMPLETED"
-                          ? "default"
-                          : session.status === "ACTIVE"
-                            ? "secondary"
-                            : "outline"
-                      }
-                    >
+                    <Badge variant={studySessionStatusKind(session.status)}>
                       {session.status}
                     </Badge>
                     {session.points_awarded ? (
