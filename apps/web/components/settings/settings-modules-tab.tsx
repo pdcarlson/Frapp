@@ -177,11 +177,21 @@ function ModuleRow({
               because it is furniture rather than a field. It matters more than
               most: the button has no border, so `FOCUS_RING`'s load-bearing
               half — the border going solid accent — has nothing to swap, and
-              the ring *is* the whole indicator. At full-opacity `--ring` that
-              indicator measures under §6's 3:1 non-text floor on 8 of the 19
-              seeded chapter accents (worst `#4B0082` at 2.69:1), so a member
-              on one of them tabbing to this chevron saw nothing at all.
-              `FOCUS_RING_OFFSET` is the recipe for exactly this case.
+              the ring *is* the whole indicator. `FOCUS_RING_OFFSET` is the
+              system's recipe for exactly that shape.
+
+              **It improves this control without fixing it, and the residual is
+              not this call site's to fix.** Measured across the 19 seeds: the
+              old bare ring sat straight on `--card` and missed §6's 3:1
+              non-text floor on 8 of them; the offset ring abuts `--background`
+              instead and misses on 5. Better, and still not clean — because
+              `FOCUS_RING_OFFSET` draws in `--primary` (accent-9), and against
+              `--background` that fails for `#006400`, `#1F4E79`, `#800000`,
+              `#8B0000` and `#8B4513`. `--ring` (accent-8) fails 0 of 19 on the
+              same surface, so the primitive has a one-token answer — but it is
+              a `components/ui/**` primitive with consumers across three
+              slices, which is #1211's situation exactly, so it is filed as
+              #1215 rather than changed under a family repaint.
             */
             className={cn(
               "mt-0.5 rounded-xs text-muted-foreground transition-colors hover:text-foreground",

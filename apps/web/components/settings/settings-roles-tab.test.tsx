@@ -229,8 +229,16 @@ describe("the capability matrix's marks, at the call site", () => {
       // `--muted` is 3.568:1 on this card, and `✓`/`—` are characters, so
       // §6's 4.5:1 text floor applies rather than the 3:1 glyph one.
       expect(className).not.toMatch(/text-muted(?![-\w])/);
-      // The 2.184:1 opacity wash the missing mark shipped in.
-      expect(className).not.toMatch(/text-muted-foreground\/\d/);
+      /*
+       * No opacity modifier on the tone, in *either* Tailwind spelling. The
+       * first cut of this guard banned `text-muted-foreground/40` literally,
+       * and the review walked straight past it with
+       * `text-muted-foreground/[.4]` — the identical 2.184:1 the whole file
+       * exists to prevent, reached through the bracket syntax. Checking which
+       * token is only half the question; a correct token at 40% is the same
+       * defect. `text-success/50` measures 2.64:1 and would have passed too.
+       */
+      expect(className).not.toMatch(/text-(success|muted-foreground)\//);
       // #916's raw palette green beside `--success`, and the dead variant it
       // travelled with — Signet is dark-only, so `dark:` never applied.
       expect(className).not.toMatch(/emerald|green-\d/);

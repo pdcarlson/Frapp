@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AA_TEXT,
+  signetDarkTokens,
   accentFour,
   accentRolesFor,
   ratio,
@@ -117,3 +118,67 @@ function mix(fg: string, bg: string, alpha: number): string {
       .padStart(2, "0");
   return `#${c(fr!, br!)}${c(fg_!, bg_!)}${c(fb!, bb!)}`;
 }
+
+describe("the accent preview's label tone, computed from the draft", () => {
+  /*
+   * Two different questions, and the screen used to ask only one.
+   *
+   * `resolveChapterAccentColor` asks whether the accent is legible *as text on
+   * the card*. The preview swatch needs the other one: whether text is legible
+   * *on the accent* — which is what a primary button is, and what this card's
+   * description promises the colour will be used for. They diverge, and the
+   * review found the band where: `#0080FD` passes the first (`reason: "ok"`,
+   * no warning) and fails the second at 4.191:1.
+   *
+   * The first fix here made it worse in a quiet way — `pickAccessibleColor(...)
+   * ?? gold.onHouse` reasserted the very tone the picker had just rejected, so
+   * the swatch drew an illegible label and reported nothing.
+   */
+  const INK = [
+    signetDarkTokens.color.gold.onHouse,
+    signetDarkTokens.color.text.foreground,
+  ] as const;
+
+  const bestInk = (fill: string) =>
+    INK.reduce((best, candidate) =>
+      ratio(candidate, fill) > ratio(best, fill) ? candidate : best,
+    );
+
+  it("always picks the better of the two tones, never the first that passes", () => {
+    // The property that makes the result defined for every input, including
+    // the ones where neither tone clears AA. `pickAccessibleColor` returns the
+    // first candidate over the bar and `null` when none is — which is a fine
+    // contract, and the wrong one here, because `null` still has to render
+    // something.
+    for (const fill of [...SEEDS, "#0080FD", "#767676", "#FFFFFF", "#000000"]) {
+      const ink = bestInk(fill);
+      for (const other of INK) {
+        expect(ratio(ink, fill), `${fill} vs ${other}`).toBeGreaterThanOrEqual(
+          ratio(other, fill),
+        );
+      }
+    }
+  });
+
+  it("does not claim every accent can carry legible label text", () => {
+    /*
+     * The claim the first fix made and could not keep. A two-tone ladder
+     * cannot clear 4.5:1 against every fill — a mid-tone is far enough from
+     * both ends to fail each. So the contract is not "always legible", it is
+     * "always the best available, and say so when that is not enough", which
+     * is what `previewInkFailsAA` drives.
+     *
+     * `#767676` is the mid-grey `pickAccessibleColor`'s own docstring names as
+     * the case where "a ladder anchored at the extremes can still run dry".
+     */
+    expect(ratio(bestInk("#767676"), "#767676")).toBeLessThan(AA_TEXT);
+  });
+
+  it("would have caught the hex the review typed, which no seed covers", () => {
+    // An admin-typed colour, not a directory seed: nothing in the 19-seed
+    // corpus is in this luminance band, which is why the corpus missed it.
+    const ink = bestInk("#0080FD");
+    expect(ratio(ink, "#0080FD")).toBeLessThan(AA_TEXT);
+    expect(ratio(ink, "#0080FD")).toBeCloseTo(4.191, 2);
+  });
+});
