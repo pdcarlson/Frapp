@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, FolderOpen } from "lucide-react";
+import { AlertTriangle, FolderOpen, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SkeletonText, StateTile } from "@/components/shared/async-states";
 
@@ -45,43 +45,50 @@ const NESTED_BOX =
   "flex min-h-40 flex-col items-center justify-center gap-3 rounded-lg border p-4 text-center";
 
 /**
+ * `sole` — "this nested state is the whole page's async state".
+ *
+ * Two of this module's compromises exist because a nested state is normally
+ * *one of several*: the live region is left to the top-level `LoadingState`
+ * that owns the screen, and the title is a `<p>` rather than an `<h2>` because
+ * `/billing` renders two of these from one query and produced two identical
+ * headings back to back. Both are right for `/points`, `/billing` and the
+ * attendance sheet, which was every consumer when this module was written.
+ *
+ * Neither holds on a page whose nested state is its *only* state. The
+ * Resources & Reporting slice moved `/documents` and `/backwork` onto this
+ * family to fix the 1.00:1 fill collision and, in doing so, took away the one
+ * announcement each page had *and* the only heading its error and empty states
+ * had — `CardTitle` renders a `<div>`, so nothing else nearby is a heading.
+ * Two changes each correct on their own.
+ *
+ * One prop rather than two, because it is one distinction. It turns on the
+ * live region where the state is a spinner and promotes the title to a heading
+ * where the state has one. Defaulting off keeps every pre-existing consumer,
+ * and the tests asserting no live region while settled, exactly as they were.
+ */
+
+/**
  * `role="status"` is **opt-in**, and defaults off.
  *
- * The original reasoning was that the top-level `LoadingState` owns the
- * announcement for the screen, so a nested block inside an already-announced
- * card would either double it or introduce a live region where none belongs.
- * That holds wherever a page renders a top-level state *and* nested ones —
- * `/points`, `/billing`, the attendance sheet — which was every consumer when
- * this module was written.
- *
- * It stopped holding the moment a page's nested state became its *only* state.
- * The Resources & Reporting slice moved `/documents` and `/backwork` onto this
- * family to fix the 1.00:1 fill collision, and in doing so silently took away
- * the one announcement each page had: `aria-busy` alone is not announced by
- * assistive tech without an accompanying role, so a screen-reader user opening
- * either page mid-load heard nothing where they had previously heard "Loading
- * chapter documents…". Two changes each correct on their own.
- *
- * So the caller says which it is. A surface that renders no top-level state
- * passes `announce`; one that renders both leaves it off and the top-level
- * state keeps ownership. Defaulting off keeps every pre-existing consumer, and
- * the tests asserting no live region while settled, exactly as they were.
+ * `aria-busy` alone is not announced by assistive tech without an
+ * accompanying role, so a page whose only state is this one is silent without
+ * `sole`. See the note above.
  */
 export function NestedLoading({
   message,
   lines = 3,
-  announce = false,
+  sole = false,
 }: {
   message: string;
   lines?: number;
-  /** Set on a surface where this is the only async state on the page. */
-  announce?: boolean;
+  /** This is the page's only async state — see the note above. */
+  sole?: boolean;
 }) {
   return (
     <div
       aria-busy="true"
-      role={announce ? "status" : undefined}
-      aria-live={announce ? "polite" : undefined}
+      role={sole ? "status" : undefined}
+      aria-live={sole ? "polite" : undefined}
       className="flex min-h-40 flex-col gap-4 rounded-lg border border-border p-4"
     >
       <SkeletonText lines={lines} />
@@ -91,12 +98,15 @@ export function NestedLoading({
 }
 
 export function NestedEmpty({
+  sole = false,
   title,
   description,
   actionLabel,
   onAction,
   actionProps,
 }: {
+  /** This is the page's only async state — see the note above `NestedLoading`. */
+  sole?: boolean;
   title: string;
   description: string;
   actionLabel?: string;
@@ -111,7 +121,11 @@ export function NestedEmpty({
       <StateTile tone="accent">
         <FolderOpen className="h-6 w-6" />
       </StateTile>
-      <p className="text-base font-bold">{title}</p>
+      {sole ? (
+        <h2 className="text-base font-bold">{title}</h2>
+      ) : (
+        <p className="text-base font-bold">{title}</p>
+      )}
       <p className="max-w-[220px] text-sm text-muted-foreground">
         {description}
       </p>
@@ -133,11 +147,14 @@ export function NestedEmpty({
  * copy by forgetting a prop.
  */
 export function NestedError({
+  sole = false,
   title,
   description,
   onRetry,
   retryProps,
 }: {
+  /** This is the page's only async state — see the note above `NestedLoading`. */
+  sole?: boolean;
   title: string;
   description: string;
   onRetry?: () => void;
@@ -154,12 +171,66 @@ export function NestedError({
       <StateTile tone="destructive">
         <AlertTriangle className="h-6 w-6" />
       </StateTile>
-      <p className="text-base font-bold">{title}</p>
+      {sole ? (
+        <h2 className="text-base font-bold">{title}</h2>
+      ) : (
+        <p className="text-base font-bold">{title}</p>
+      )}
       <p className="max-w-[220px] text-sm text-muted-foreground">
         {description}
       </p>
       {onRetry ? (
         <Button variant="secondary" size="sm" onClick={onRetry} {...retryProps}>
+          Retry
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The fourth member, which this family did not have until `/documents` and
+ * `/backwork` needed one.
+ *
+ * `async-states.tsx` has drawn a distinct `OfflineState` since the shell
+ * slice — same box as the error, but a `WifiOff` glyph rather than the
+ * danger triangle — and every offline surface in the app shows it. The nested
+ * family stopped at three, so the first two screens to render an offline state
+ * *inside* a card reached for `NestedError` and told a member with a dropped
+ * connection that something had failed.
+ *
+ * Same tone as the error deliberately: `resilience.md` treats a lost
+ * connection as a degraded read, and §10 requires this family to differ in
+ * colour rather than in shape. The glyph is what separates them, exactly as it
+ * does at the top level.
+ */
+export function NestedOffline({
+  sole = false,
+  title,
+  description,
+  onRetry,
+}: {
+  /** This is the page's only async state — see the note above `NestedLoading`. */
+  sole?: boolean;
+  title: string;
+  description: string;
+  onRetry?: () => void;
+}) {
+  return (
+    <div className={`${NESTED_BOX} border-destructive/[.28]`}>
+      <StateTile tone="destructive">
+        <WifiOff className="h-6 w-6" />
+      </StateTile>
+      {sole ? (
+        <h2 className="text-base font-bold">{title}</h2>
+      ) : (
+        <p className="text-base font-bold">{title}</p>
+      )}
+      <p className="max-w-[220px] text-sm text-muted-foreground">
+        {description}
+      </p>
+      {onRetry ? (
+        <Button variant="secondary" size="sm" onClick={onRetry}>
           Retry
         </Button>
       ) : null}

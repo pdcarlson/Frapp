@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
+import { networkMock } from "@/tests/network";
 
 const { mockCurrentChapter, mockVote, mockUnvote, mockRefetch, pollsQuery } =
   vi.hoisted(() => ({
@@ -80,9 +81,7 @@ const { mockCanGrant, mockOffline } = vi.hoisted(() => ({
   mockOffline: { value: false },
 }));
 
-vi.mock("@/lib/providers/network-provider", () => ({
-  useNetwork: () => ({ isOffline: mockOffline.value }),
-}));
+vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
 
 vi.mock("@/components/shared/can", () => ({
   Can: ({
@@ -190,6 +189,38 @@ describe("PollsPage disabled-query handling", () => {
       screen.queryByText("Loading chapter polls..."),
     ).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+  });
+
+  it("keeps loaded polls on screen when the connection drops", () => {
+    // TanStack keeps `data` when the link goes; README §4 scopes the offline
+    // state to "no cached data" and §10 keeps stale content in place. The
+    // shell's OfflineBanner states the connection on every route, and the vote
+    // controls fail with their own message, so the list is not thrown away.
+    mockOffline.value = true;
+
+    render(<PollsPage />);
+
+    expect(screen.getAllByText("Pizza night?").length).toBeGreaterThan(0);
+    expect(
+      screen.queryByText(/polls unavailable offline/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps loaded polls through a paused background refetch", () => {
+    // `isLoading` implies no data, but `fetchStatus === "paused"` alone does
+    // not: TanStack pauses a *background* refetch (reconnect, window focus)
+    // while keeping the cached rows. An unqualified check swapped a rendered
+    // list for a spinner on exactly the blip the offline branch guards.
+    pollsQuery.isPending = false;
+    pollsQuery.isLoading = false;
+    pollsQuery.fetchStatus = "paused";
+
+    render(<PollsPage />);
+
+    expect(screen.getAllByText("Pizza night?").length).toBeGreaterThan(0);
+    expect(
+      screen.queryByText("Loading chapter polls..."),
+    ).not.toBeInTheDocument();
   });
 
   it("answers the permission question before the network one", () => {

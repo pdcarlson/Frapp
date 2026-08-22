@@ -42,6 +42,7 @@ import {
   NestedEmpty,
   NestedError,
   NestedLoading,
+  NestedOffline,
 } from "@/components/shared/nested-states";
 import { BackworkGlyph } from "@/components/documents/resources-glyphs";
 import { Can } from "@/components/shared/can";
@@ -837,9 +838,16 @@ export function BackworkPage() {
             content in place on a refetch, so an archive already in hand stays
             readable and the shell's `OfflineBanner` carries the connection
             state, as it does on every route.
+
+            The `paused` branch needs the same qualifier: `isLoading` implies
+            no data, but `paused` alone does not — TanStack pauses a background
+            refetch while keeping the cached rows, so an unqualified check
+            replaced a readable archive with a spinner on the same blip.
+            `isPending && paused` is README §4's "offline, no cached data".
           */}
           {isOffline && resources.length === 0 ? (
-            <NestedError
+            <NestedOffline
+              sole
               title="Backwork unavailable offline"
               description="Reconnect to browse the coursework archive and download a resource."
               onRetry={() => {
@@ -847,16 +855,19 @@ export function BackworkPage() {
               }}
             />
           ) : resourcesQuery.isLoading ||
-            resourcesQuery.fetchStatus === "paused" ? (
-            <NestedLoading message="Loading backwork..." announce />
+            (resourcesQuery.isPending &&
+              resourcesQuery.fetchStatus === "paused") ? (
+            <NestedLoading message="Loading backwork..." sole />
           ) : resourcesQuery.isError ? (
             <NestedError
+              sole
               title="Couldn't load backwork"
               description="Confirm your chapter access and retry."
               onRetry={() => void resourcesQuery.refetch()}
             />
           ) : resources.length === 0 ? (
             <NestedEmpty
+              sole
               title="No backwork matches this view"
               description="Loosen the filters, or upload the first resource to build the library."
             />

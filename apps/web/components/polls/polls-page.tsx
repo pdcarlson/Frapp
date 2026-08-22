@@ -428,6 +428,15 @@ export function PollsPage() {
           content in place on a refetch, so a list already rendered is not
           thrown away on a WiFi blip — the shell's `OfflineBanner` states the
           connection, and the vote controls fail with their own message.
+
+          The `paused` branch carries the same qualifier, and it is the one
+          that is easy to miss: `isLoading` already implies no data, but
+          `fetchStatus === "paused"` on its own does not — TanStack pauses a
+          *background* refetch (reconnect, window focus) while keeping the
+          cached rows, so an unqualified check swapped a rendered list for a
+          spinner on exactly the blip the branch above was fixed for.
+          `isPending && paused` is README §4's "offline, no cached data",
+          spelled in flags.
         */}
         {isOffline && polls.length === 0 ? (
           <OfflineState
@@ -437,7 +446,8 @@ export function PollsPage() {
               void pollsQuery.refetch();
             }}
           />
-        ) : pollsQuery.isLoading || pollsQuery.fetchStatus === "paused" ? (
+        ) : pollsQuery.isLoading ||
+          (pollsQuery.isPending && pollsQuery.fetchStatus === "paused") ? (
           <LoadingState message="Loading chapter polls..." />
         ) : pollsQuery.isPending && pollsQuery.fetchStatus === "idle" ? (
           <EmptyState

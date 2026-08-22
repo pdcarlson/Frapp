@@ -225,6 +225,32 @@ describe("ReportsPage preview states", () => {
     );
   });
 
+  it("mirrors the subscription gate on Retry, not just the busy flags", async () => {
+    // Retry re-enters `runReport`, a paid-ops POST. Disabling it only while
+    // busy meant a chapter that lapsed between the failed run and the click
+    // fired the doomed request README §5 exists to prevent — the canonical
+    // billing-screen bug, reached by a third button on the same controller.
+    const user = userEvent.setup();
+    mockAttendanceReport.mockReturnValue({
+      mutateAsync: vi.fn().mockRejectedValue(new Error("Chapter has no terms")),
+      isPending: false,
+    });
+
+    const { rerender } = render(<ReportsPage />);
+    await user.click(generateButton());
+    expect(await screen.findByRole("button", { name: /retry/i })).toBeEnabled();
+
+    chapter.canceled();
+    rerender(<ReportsPage />);
+
+    expect(screen.getByRole("button", { name: /retry/i })).toBeDisabled();
+    // And it points at the same one explanation every other disabled write does.
+    expect(screen.getByRole("button", { name: /retry/i })).toHaveAttribute(
+      "aria-describedby",
+      generateButton().getAttribute("aria-describedby"),
+    );
+  });
+
   it("says so on screen when the report is truncated, not only in a toast", async () => {
     // `spec/behavior/reports.md`: truncation is never silent. The toast is
     // transient; the preview and the CSV built from it are not.

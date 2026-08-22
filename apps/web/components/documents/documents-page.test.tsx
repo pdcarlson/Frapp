@@ -2,20 +2,26 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
+import { networkMock } from "@/tests/network";
 
-const { mockCurrentChapter, mockDeleteDoc, mockRefetch, documentsQuery, mockOffline } =
-  vi.hoisted(() => ({
-    mockCurrentChapter: vi.fn(),
-    mockDeleteDoc: vi.fn().mockResolvedValue({}),
-    mockRefetch: vi.fn(),
-    mockOffline: { value: false },
-    documentsQuery: {
-      data: [] as unknown[],
-      isPending: false,
-      isError: false,
-      refetch: () => undefined as unknown,
-    },
-  }));
+const {
+  mockCurrentChapter,
+  mockDeleteDoc,
+  mockRefetch,
+  documentsQuery,
+  mockOffline,
+} = vi.hoisted(() => ({
+  mockCurrentChapter: vi.fn(),
+  mockDeleteDoc: vi.fn().mockResolvedValue({}),
+  mockRefetch: vi.fn(),
+  mockOffline: { value: false },
+  documentsQuery: {
+    data: [] as unknown[],
+    isPending: false,
+    isError: false,
+    refetch: () => undefined as unknown,
+  },
+}));
 
 // Only the chapter payload is stubbed — `useSubscriptionWriteState` and
 // `subscriptionWriteState` run for real, so this covers the whole path from the
@@ -51,9 +57,7 @@ vi.mock("@/components/shared/can", () => ({
 
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 
-vi.mock("@/lib/providers/network-provider", () => ({
-  useNetwork: () => ({ isOffline: mockOffline.value }),
-}));
+vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
 
 const { DocumentsPage } = await import("./documents-page");
 
@@ -137,9 +141,7 @@ describe("DocumentsPage subscription gating", () => {
     render(<DocumentsPage />);
 
     expect(downloadButton()).toBeEnabled();
-    expect(
-      screen.getByRole("button", { name: /all files/i }),
-    ).toBeEnabled();
+    expect(screen.getByRole("button", { name: /all files/i })).toBeEnabled();
   });
 
   it("holds the gate shut while the chapter is still loading", () => {
@@ -315,7 +317,9 @@ describe("DocumentsPage state ordering", () => {
     render(<DocumentsPage />);
 
     expect(uploadTrigger()).toBeInTheDocument();
-    expect(screen.getByText("Loading chapter documents...")).toBeInTheDocument();
+    expect(
+      screen.getByText("Loading chapter documents..."),
+    ).toBeInTheDocument();
   });
 });
 
@@ -336,9 +340,9 @@ describe("DocumentsPage delete confirmation", () => {
 
     await user.click(deleteButton());
 
-    const dialog = await screen.findByRole("alertdialog").catch(() =>
-      screen.getByRole("dialog"),
-    );
+    const dialog = await screen
+      .findByRole("alertdialog")
+      .catch(() => screen.getByRole("dialog"));
     expect(
       within(dialog).getByRole("button", { name: /delete document/i }),
     ).toBeInTheDocument();
@@ -355,9 +359,9 @@ describe("DocumentsPage delete confirmation", () => {
     render(<DocumentsPage />);
 
     await user.click(deleteButton());
-    const dialog = await screen.findByRole("alertdialog").catch(() =>
-      screen.getByRole("dialog"),
-    );
+    const dialog = await screen
+      .findByRole("alertdialog")
+      .catch(() => screen.getByRole("dialog"));
     await user.click(within(dialog).getByRole("button", { name: /cancel/i }));
 
     await waitFor(() =>

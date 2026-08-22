@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Download, Loader2 } from "lucide-react";
 import {
   isReportExportEnvelope,
@@ -207,6 +207,19 @@ export function ReportsPage() {
     no Error row for it, which is why nothing caught it.
   */
   const [previewError, setPreviewError] = useState<string | null>(null);
+  /*
+    Which run the preview belongs to.
+
+    `onFilterChange` clears the preview the moment a filter is edited, but it
+    cannot cancel a request already in flight — so a generate started under the
+    old filters would resolve afterwards and call `setPreview` with rows that no
+    longer match what the form says. The member sees a table scoped to nobody
+    beside a Member ID field naming somebody, and "Download CSV" — which gates
+    only on `preview` being non-empty — exports those rows under that
+    appearance. Each run takes a token and only the newest one is allowed to
+    write.
+  */
+  const runToken = useRef(0);
 
   /**
    * Any filter edit invalidates the preview.
@@ -221,6 +234,7 @@ export function ReportsPage() {
   function onFilterChange<T>(setter: (value: T) => void) {
     return (value: T) => {
       setter(value);
+      runToken.current += 1;
       setPreview(null);
       setTruncation(null);
       setPreviewError(null);
@@ -297,8 +311,16 @@ export function ReportsPage() {
   }
 
   async function runReport() {
+    runToken.current += 1;
+    const token = runToken.current;
+    // The previous run's verdict is not this run's. Without this the header
+    // keeps its "Incomplete report" badge for the whole time a fresh request
+    // is in flight, describing a result nobody has seen yet.
+    setTruncation(null);
+    setPreviewError(null);
     try {
       const { payload, truncation } = await invokeReport("json");
+      if (token !== runToken.current) return;
 
       const rows = extractRows(payload);
       setPreview(rows);
@@ -331,6 +353,7 @@ export function ReportsPage() {
         description: `${rows.length} row${rows.length === 1 ? "" : "s"} previewed. Download CSV to share.`,
       });
     } catch (error) {
+      if (token !== runToken.current) return;
       const description =
         error instanceof Error
           ? error.message
@@ -496,6 +519,7 @@ export function ReportsPage() {
                   disabled={pdfPending || activeMutation.isPending}
                   onValueChange={(value) => {
                     setKind(value as ReportKind);
+                    runToken.current += 1;
                     setPreview(null);
                     setTruncation(null);
                     setPreviewError(null);
@@ -716,31 +740,43 @@ export function ReportsPage() {
               surface in the family whose states did not match the other three.
             */}
             {activeMutation.isPending && !pdfPending ? (
-              <NestedLoading message="Generating report..." announce />
+              <NestedLoading message="Generating report..." sole />
             ) : previewError ? (
               <NestedError
+                sole
                 title={`Couldn't generate ${reportLabel[kind].toLowerCase()} report`}
                 description={previewError}
                 onRetry={() => void runReport()}
                 /*
-                  The loading branch above is `activeMutation.isPending &&
-                  !pdfPending`, so during a PDF export it is false and this
-                  branch renders with its stale error — leaving Retry live and
-                  wired to a POST on the same mutation the export is using.
-                  That is the "second render queued" hazard the two footer
-                  buttons already guard against, at a third entry point.
+                  `gate.controlProps`, not a hand-built `{ disabled }`. Retry
+                  re-enters `runReport` — the same paid-ops POST the two footer
+                  buttons carry the gate on — so it is a third trigger for a
+                  gated write and README §5's "gate the trigger" reaches it
+                  too. Building the object by hand disabled it only while busy,
+                  so a chapter that lapsed between the failed run and the click
+                  would have fired the doomed request the standard exists to
+                  prevent. The busy flags go *into* `controlProps`, which ORs
+                  them with the verdict rather than replacing it — and this is
+                  the shape `actionProps`/`retryProps` were built to take.
+
+                  The busy half matters on its own: the loading branch above is
+                  `activeMutation.isPending && !pdfPending`, so during a PDF
+                  export it is false and this branch renders its stale error
+                  with Retry wired to the same mutation the export is using.
                 */
-                retryProps={{
-                  disabled: pdfPending || activeMutation.isPending,
-                }}
+                retryProps={gate.controlProps(
+                  pdfPending || activeMutation.isPending,
+                )}
               />
             ) : preview === null ? (
               <NestedEmpty
+                sole
                 title="No report generated yet"
                 description="Generate a report to see a preview here."
               />
             ) : preview.length === 0 ? (
               <NestedEmpty
+                sole
                 title="Report returned no rows"
                 description="The filters matched nothing in the active chapter."
               />
