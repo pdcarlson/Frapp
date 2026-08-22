@@ -54,3 +54,18 @@ export const FOCUS_RING_OFFSET =
 
 export const FOCUS_RING_ALWAYS =
   "focus:outline-none focus:border-primary focus:ring-[3px] focus:ring-ring/25"
+
+/**
+ * For a container that owns the focus indicator on behalf of the control inside
+ * it — the chat composer, whose editable surface is a ProseMirror node inside a
+ * framed well.
+ *
+ * `focus-within` rather than `focus-visible`: the ring belongs on the well, and
+ * the well is never the focused element. There is no `:focus-visible-within`, so
+ * the trade is a ring that also appears on a pointer click into the composer —
+ * which is the right trade here, because the alternative shipping today is no
+ * focus indicator at all (the editor sets `focus:outline-none` and nothing
+ * replaced it), and that is a README §6 release-gate failure.
+ */
+export const FOCUS_RING_WITHIN =
+  "focus-within:border-primary focus-within:ring-[3px] focus-within:ring-ring/25"

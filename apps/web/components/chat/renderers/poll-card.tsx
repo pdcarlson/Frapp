@@ -2,6 +2,9 @@
 
 import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
+import { EYEBROW, MESSAGE_CARD } from "../chip";
+import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   POLL_VOTE_ACTION_TYPE,
@@ -97,7 +100,7 @@ export function PollCard({
 
   if (!payload) {
     return (
-      <div className="mt-1 rounded-md border bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
+      <div className="mt-1 rounded-lg border border-border bg-card p-4 text-base text-muted-foreground">
         Malformed poll · {message.content}
       </div>
     );
@@ -114,13 +117,15 @@ export function PollCard({
     onVote(message.id, POLL_VOTE_ACTION_TYPE, { option_id: option.id });
   };
 
+  // `bg-card` on a `bg-card` pane was invisible; the thread is `--background`
+  // now, so a card here reads as the step above it (foundations §2).
   return (
-    <div className="mt-1 rounded-md border bg-card px-3 py-2">
-      <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+    <Card className={cn(MESSAGE_CARD)}>
+      <p className={cn(EYEBROW, "text-muted-foreground")}>
         Poll{isClosed ? " · Closed" : ""}
-      </div>
-      <div className="mt-1 text-sm font-semibold">{payload.question}</div>
-      <ul className="mt-2 space-y-1.5">
+      </p>
+      <div className="mt-2 text-base font-bold">{payload.question}</div>
+      <ul className="mt-3 space-y-2">
         {payload.options.map((option) => {
           const count = byOption[option.id] ?? 0;
           const denom = total > 0 ? total : 1;
@@ -132,22 +137,29 @@ export function PollCard({
                 type="button"
                 variant={isMyVote ? "default" : "secondary"}
                 size="sm"
-                className="w-full justify-between gap-2 text-left text-xs"
+                className="w-full justify-between gap-2 text-left"
                 onClick={() => cast(option)}
                 disabled={!canVote}
                 aria-pressed={isMyVote}
               >
                 <span className="truncate">{option.label}</span>
-                <span className="font-mono text-[10px] text-muted-foreground">
+                {/*
+                  Inherits the button's own foreground. It used to be pinned to
+                  `text-muted-foreground`, which on the voted option painted
+                  #A9A399 on the `--primary` fill — about 1.9:1, far under the
+                  4.5:1 text floor. A label inside a filled control has exactly
+                  one correct colour, and the variant already sets it.
+                */}
+                <span className="font-mono tabular-nums">
                   {count} · {pct}%
                 </span>
               </Button>
               <div
-                className="mt-0.5 h-1 w-full overflow-hidden rounded-full bg-secondary"
+                className="mt-1 h-1 w-full overflow-hidden rounded-full bg-input"
                 aria-hidden="true"
               >
                 <div
-                  className="h-full bg-[color:var(--accent-text)]"
+                  className="h-full bg-primary"
                   style={{ width: `${pct}%` }}
                 />
               </div>
@@ -156,17 +168,17 @@ export function PollCard({
         })}
       </ul>
       {total === 0 ? (
-        <div className="mt-2 text-[11px] text-muted-foreground">
+        <p className="mt-3 text-[12.5px] text-muted-foreground">
           No votes yet
           {canVote ? " · be the first to vote" : ""}.
-        </div>
+        </p>
       ) : (
-        <div className="mt-2 text-[11px] text-muted-foreground">
+        <p className="mt-3 text-[12.5px] text-muted-foreground">
           {total} vote{total === 1 ? "" : "s"}
           {viewerVote ? " · your vote is highlighted" : ""}
-        </div>
+        </p>
       )}
-    </div>
+    </Card>
   );
 }
 

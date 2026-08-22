@@ -1,6 +1,9 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
+import { Skeleton } from "@/components/shared/async-states";
+import { EYEBROW, MESSAGE_CARD } from "../chip";
+import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
 
 interface LoadingCardProps {
@@ -16,16 +19,28 @@ interface LoadingCardProps {
  *
  * The hot-path `content` field can carry a short status string
  * ("Computing overdue list…") that surfaces here.
+ *
+ * **Content-shaped, not a spinner.** components.md §10 rules out
+ * "spinner-in-a-box" outright and asks a skeleton to mirror the layout it
+ * becomes — which here is one of the rich cards: an eyebrow line and a body.
+ * The shimmer is the shared `.skeleton-shimmer` recipe, so its sweep stays in
+ * phase with every other skeleton on the surface.
  */
 export function LoadingCard({ message }: LoadingCardProps) {
   return (
-    <div
-      className="mt-1 inline-flex items-center gap-2 rounded-md border bg-secondary/30 px-3 py-2 text-sm text-muted-foreground"
+    <Card
+      className={cn(MESSAGE_CARD)}
       role="status"
       aria-live="polite"
+      aria-busy="true"
     >
-      <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
-      <span>{message.content || "Working on it…"}</span>
-    </div>
+      <p className={cn(EYEBROW, "text-muted-foreground")}>
+        {message.content || "Working on it…"}
+      </p>
+      <div className="mt-2 flex flex-col gap-2" aria-hidden="true">
+        <Skeleton className="h-[13px] w-[62%]" />
+        <Skeleton className="h-[13px] w-[45%]" />
+      </div>
+    </Card>
   );
 }

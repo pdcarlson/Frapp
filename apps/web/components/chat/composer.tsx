@@ -13,13 +13,21 @@ import type { JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import { Extension } from "@tiptap/core";
-import { Paperclip, Send, Smile, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { FOCUS_RING_WITHIN } from "@/components/ui/focus";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  AttachGlyph,
+  OfflineGlyph,
+  ReactionGlyph,
+  SendGlyph,
+  SlashCommandGlyph,
+} from "./chat-glyphs";
+import { cn } from "@/lib/utils";
 import { useRequestChatUploadUrl, useUploadSignedUrl } from "@repo/hooks";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -66,15 +74,29 @@ interface ComposerProps {
    */
   slashCommandsStatus?: "loading" | "error" | "ready";
   onRetrySlashCommands?: () => void;
-  disabled?: boolean;
+  /**
+   * Realtime is down. The composer stays **live** and says so — it does not
+   * disable.
+   *
+   * This used to be `disabled`, and it was a defect: `sendMessage` writes the
+   * row to the Dexie outbox and returns *before* it touches the network
+   * (`packages/chat-core/src/chat-client.ts`, which has an explicit
+   * "Offline: the row is safely queued" branch), so gating the composer defeated
+   * the queue built to make composing-while-offline work. `spec/ui/resilience.md`
+   * §2 states the rule directly — "labeled, never blocked, wherever an outbox
+   * exists" — and reserves disabling for surfaces where a failed write is lost.
+   * Worse than the greyed Send: `submit()` returned early on the same flag, so
+   * pressing Enter offline silently discarded what you had typed.
+   */
+  isOffline?: boolean;
 }
 
 /**
  * Submit on Enter; let Shift+Enter fall through to StarterKit's default
  * hard-break. Bound as a Tiptap extension so we get full ProseMirror context
  * (composition state, etc.) instead of a flaky DOM keydown. The extension
- * reads a ref that holds the latest submit handler, so the keymap always
- * honors the current `disabled` state without re-binding the extension.
+ * reads a ref that holds the latest submit handler, so the keymap always calls
+ * the current one without re-binding the extension.
  */
 function createSubmitKeymap(sendRef: { current: () => void }) {
   return Extension.create({
@@ -130,7 +152,7 @@ export function Composer({
   isModuleEnabled,
   slashCommandsStatus = "ready",
   onRetrySlashCommands,
-  disabled,
+  isOffline,
 }: ComposerProps) {
   const { toast } = useToast();
   const requestUploadUrl = useRequestChatUploadUrl();
@@ -160,8 +182,11 @@ export function Composer({
     content: buildDocFromPlainText(draft),
     editorProps: {
       attributes: {
+        // `prose prose-sm` used to lead this list and did nothing at all —
+        // `@tailwindcss/typography` is not installed in this app or in the
+        // shared preset, so both classes compiled to no rules.
         class:
-          "prose prose-sm max-w-none focus:outline-none min-h-[40px] max-h-40 overflow-y-auto",
+          "min-h-[40px] max-h-40 overflow-y-auto text-base leading-[25px] focus:outline-none",
         "aria-label": "Message composer",
       },
     },
@@ -201,7 +226,6 @@ export function Composer({
   }, [draft, editor]);
 
   const submit = useCallback(() => {
-    if (disabled) return;
     if (!editor) return;
     const text = editor.getText().trim();
     if (text.length === 0) return;
@@ -212,6 +236,22 @@ export function Composer({
     if (parsed.isSlash && parsed.command && onSlashDispatch) {
       const command = getSlashCommand(parsed.command);
       if (command?.implemented) {
+        // A slash command is NOT a queued write. `/points`, `/task` and
+        // `/event` POST straight to their controllers from
+        // `packages/chat-core/src/dispatch.ts` with no outbox behind them, so
+        // resilience.md §2's split applies within this one control: the text
+        // path is labelled and stays live because it queues, and the queueless
+        // path refuses and says why. Refusing *before* `clearContent` is the
+        // load-bearing half — the command text survives to be re-sent.
+        if (isOffline) {
+          toast({
+            title: `/${command.name} needs a connection`,
+            description:
+              "Slash commands aren't queued. Your text is still here — send it when you're back online.",
+            variant: "destructive",
+          });
+          return;
+        }
         editor.commands.clearContent(true);
         void (async () => {
           const result = await onSlashDispatch(command, parsed.args);
@@ -229,7 +269,7 @@ export function Composer({
     void onSend(text);
     // Only clear when a send was actually issued.
     editor.commands.clearContent(true);
-  }, [disabled, editor, onSend, onSlashDispatch, toast]);
+  }, [editor, isOffline, onSend, onSlashDispatch, toast]);
   useLayoutEffect(() => {
     sendRef.current = submit;
   }, [submit]);
@@ -338,10 +378,10 @@ export function Composer({
 
   if (isReadOnly) {
     return (
-      <div className="border-t p-3 text-xs text-muted-foreground">
+      <p className="border-t border-border px-4 py-3 text-[12.5px] text-muted-foreground">
         This channel is read-only. Posting requires the{" "}
-        <code>announcements:post</code> permission.
-      </div>
+        <code className="font-mono">announcements:post</code> permission.
+      </p>
     );
   }
 
@@ -349,20 +389,35 @@ export function Composer({
     requestUploadUrl.isPending || uploadSignedUrl.isPending;
 
   return (
-    <div className="border-t p-2" onKeyDown={handleHostKey}>
-      <div className="rounded-md border border-input bg-background p-2">
+    <div className="border-t border-border p-3" onKeyDown={handleHostKey}>
+      {/*
+        The well is `--surface-1` on the thread's `--background`, per the s05
+        composer — one step up from the floor it sits on, which is how elevation
+        reads on a shadowless surface. It used to be `bg-background` inside a
+        `--card` pane, i.e. a step *down* from its own container.
+
+        The ring lives here rather than on the editor: ProseMirror's node sets
+        `focus:outline-none` and, before this, nothing replaced it, so the
+        composer had no visible focus indicator at all.
+      */}
+      <div
+        className={cn(
+          "rounded-md border border-input bg-surface-1 p-2 transition-colors",
+          FOCUS_RING_WITHIN,
+        )}
+      >
         <EditorContent editor={editor} />
-        <div className="mt-1 flex items-center justify-between">
+        <div className="mt-2 flex items-center justify-between gap-2">
           <div className="flex items-center gap-1">
             <Popover>
               <PopoverTrigger asChild>
                 <Button
                   type="button"
                   variant="ghost"
-                  size="sm"
+                  size="icon"
                   aria-label="Open emoji picker"
                 >
-                  <Smile className="h-4 w-4" />
+                  <ReactionGlyph className="h-5 w-5" />
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0" align="start">
@@ -372,12 +427,12 @@ export function Composer({
             <Button
               type="button"
               variant="ghost"
-              size="sm"
+              size="icon"
               aria-label="Attach file"
               onClick={() => fileInput.current?.click()}
               disabled={attachPending}
             >
-              <Paperclip className="h-4 w-4" />
+              <AttachGlyph className="h-5 w-5" />
             </Button>
             <input
               ref={fileInput}
@@ -387,28 +442,48 @@ export function Composer({
               onChange={(event) => void handleAttach(event)}
               aria-hidden="true"
             />
+            {/*
+              Not a ✦. The four-pointed sparkle is the Ask/AI mark and
+              components.md §11 says it "MUST NOT mark anything that is not an
+              Ask/AI entry point or answer" — a slash palette is a command
+              launcher, not an answer surface.
+            */}
             <Button
               type="button"
               variant="ghost"
-              size="sm"
-              aria-label="Open slash commands (Cmd+/)"
+              size="icon"
+              aria-label="Open slash commands (Command Slash)"
               onClick={() => setPalette({ open: true, query: "" })}
             >
-              <Sparkles className="h-4 w-4" />
+              <SlashCommandGlyph className="h-5 w-5" />
             </Button>
-            <span className="hidden text-[11px] text-muted-foreground sm:inline">
+            <span className="hidden text-[12.5px] text-muted-foreground sm:inline">
               Shift+Enter for a new line · Cmd+/ for slash commands
             </span>
           </div>
           <Button
             type="button"
             onClick={submit}
-            disabled={disabled || !editor || editor.isEmpty}
+            disabled={!editor || editor.isEmpty}
           >
-            <Send className="h-4 w-4" /> Send
+            <SendGlyph className="h-5 w-5" /> Send
           </Button>
         </div>
       </div>
+      {/*
+        The offline label is deliberately NOT a live region. `ReconnectPill` in
+        the same header already announces the connection change from the same
+        `channel.connection` source, and `OfflineBanner` announces it again from
+        the root layout — three polite regions would read one event three times.
+        This is the label beside the control, which is what resilience.md §2 asks
+        the queued surface to carry.
+      */}
+      {isOffline ? (
+        <p className="mt-2 flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
+          <OfflineGlyph className="h-4 w-4 shrink-0" />
+          You&rsquo;re offline — messages send when you reconnect.
+        </p>
+      ) : null}
       <SlashPalette
         open={palette.open}
         initialQuery={palette.query}

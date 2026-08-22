@@ -1,19 +1,28 @@
 "use client";
 
-import { Pin } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { PinGlyph } from "./chat-glyphs";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { FOCUS_RING } from "@/components/ui/focus";
+import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { formatClock } from "@repo/formatting";
 
 /**
- * Popover that lists messages flagged `is_pinned`. The popover trigger lives
- * in the channel header; clicking a pinned item scrolls the timeline (the
- * caller wires that via `onJump`).
+ * Popover that lists messages flagged `is_pinned`. The trigger lives in the
+ * channel header; picking a row scrolls the timeline to that message.
+ *
+ * **`onJump` is wired now.** It was optional and the shell never passed it, so
+ * every row here was a `<button>` that did nothing — a control that silently
+ * does nothing is the dead end components.md §5 bans, and repainting it would
+ * only have made a prettier one. `MessageTimeline` exposes the scroll through
+ * its ref; a pin older than the loaded window still cannot be reached, and the
+ * timeline no-ops rather than pretending.
  */
 export function PinsPopover({
   messages,
@@ -25,46 +34,62 @@ export function PinsPopover({
   nameFor: (userId: string) => string | null;
   onJump?: (messageId: string) => void;
 }) {
+  const [open, setOpen] = useState(false);
   const pins = messages.filter((message) => message.is_pinned);
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
           variant="secondary"
           size="sm"
           aria-label={`${pins.length} pinned messages`}
         >
-          <Pin className="h-4 w-4" />
+          <PinGlyph className="h-5 w-5" />
           {pins.length > 0 ? <span>{pins.length}</span> : null}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-80 p-0" align="end">
-        <div className="border-b px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <p className="border-b border-border px-3 py-3 text-[12.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
           Pinned in this channel
-        </div>
+        </p>
         {pins.length === 0 ? (
-          <div className="px-3 py-4 text-xs text-muted-foreground">
+          <p className="px-3 py-4 text-[12.5px] text-muted-foreground">
             Nothing pinned yet. Channel managers can pin key messages.
-          </div>
+          </p>
         ) : (
-          <ul className="max-h-72 divide-y divide-border/70 overflow-y-auto">
+          <ul className="max-h-72 divide-y divide-border overflow-y-auto">
             {pins.map((message) => (
-              <li key={message.id} className="px-3 py-2 text-xs">
+              <li key={message.id}>
                 <button
                   type="button"
-                  onClick={() => onJump?.(message.id)}
-                  className="block w-full text-left"
+                  onClick={() => {
+                    // Dismiss on jump. A 320px panel left open over the pane it
+                    // just scrolled hides the message it navigated to — a defect
+                    // the previously-inert rows could not expose.
+                    setOpen(false);
+                    onJump?.(message.id);
+                  }}
+                  className={cn(
+                    "block w-full px-3 py-3 text-left text-[12.5px] transition-colors",
+                    "hover:bg-accent-subtle hover:text-accent-text",
+                    FOCUS_RING,
+                  )}
                 >
-                  <p className="font-semibold">
+                  <span className="block font-semibold text-foreground">
                     {nameFor(message.sender_id) ||
                       `Member ${message.sender_id.slice(0, 6)}`}
-                  </p>
-                  <p className="text-muted-foreground">
+                  </span>
+                  <span className="block text-muted-foreground">
                     {formatClock(message.pinned_at ?? message.created_at)}
-                  </p>
-                  <p className="mt-1 line-clamp-3 whitespace-pre-wrap">
+                  </span>
+                  {/*
+                    The pin's body is a message, and foundations §7 is a hard
+                    MUST NOT on body text below 16 — the surrounding metadata is
+                    caption-sized, the prose is not.
+                  */}
+                  <span className="mt-1 line-clamp-3 block whitespace-pre-wrap text-base text-muted-foreground">
                     {message.content}
-                  </p>
+                  </span>
                 </button>
               </li>
             ))}

@@ -1,6 +1,7 @@
 "use client";
 
-import { CheckCircle2, ClipboardList, Undo2 } from "lucide-react";
+import { CheckCircle2, Undo2 } from "lucide-react";
+import { TasksGlyph } from "../chat-glyphs";
 import {
   useMyPermissions,
   useTask,
@@ -9,6 +10,9 @@ import {
   useRejectTask,
 } from "@repo/hooks";
 import type { TaskStatus } from "@repo/hooks";
+import { EYEBROW, MESSAGE_CARD } from "../chip";
+import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
 import type { TaskPayload } from "@repo/chat-integrations";
 import { Badge } from "@/components/ui/badge";
@@ -178,7 +182,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
 
   if (!payload) {
     return (
-      <div className="mt-1 whitespace-pre-wrap break-words text-sm">
+      <div className="mt-1 whitespace-pre-wrap break-words text-base">
         {message.content}
       </div>
     );
@@ -244,15 +248,15 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   }
 
   return (
-    <div className="mt-1 rounded-md border-l-4 border-[color:var(--accent-text)] bg-[color:var(--accent-subtle)] px-3 py-2">
+    <Card className={cn(MESSAGE_CARD)}>
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-[color:var(--accent-text)]">
-          <ClipboardList className="h-3 w-3" aria-hidden="true" /> Task
+        <div className={cn(EYEBROW, "flex items-center gap-1.5 text-accent-text")}>
+          <TasksGlyph className="h-4 w-4" /> Task
         </div>
         <Badge variant={STATUS_BADGE[status]}>{STATUS_LABELS[status]}</Badge>
       </div>
-      <p className="mt-1 text-sm font-medium">{payload.title}</p>
-      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+      <p className="mt-2 text-base font-bold">{payload.title}</p>
+      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-muted-foreground">
         <span>
           {payload.assigner_name} → {payload.assignee_name}
         </span>
@@ -262,7 +266,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
           <Badge variant="outline">+{payload.point_reward} pts</Badge>
         ) : null}
       </div>
-      <div className="mt-2 flex flex-wrap gap-2">
+      <div className="mt-3 flex flex-wrap gap-2">
         {isAssignee && storedStatus === "TODO" ? (
           <Button
             size="sm"
@@ -346,6 +350,6 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
           />
         ) : null}
       </div>
-    </div>
+    </Card>
   );
 }

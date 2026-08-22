@@ -1,6 +1,9 @@
 "use client";
 
-import { Megaphone } from "lucide-react";
+import { AnnouncementGlyph } from "../chat-glyphs";
+import { EYEBROW, MESSAGE_CARD } from "../chip";
+import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
 import type { AnnouncementPayload } from "@repo/chat-integrations";
 
@@ -16,7 +19,8 @@ function readPayload(message: ChatMessage): AnnouncementPayload | null {
 }
 
 /**
- * Announcement card: accent-banded, mono eyebrow, large body. The hot-path
+ * Announcement card: §8 card chrome, accent eyebrow, body at the `body` role.
+ * The hot-path
  * `content` field doubles as a fallback when `payload.body` is absent so a
  * stale row from a misbehaving sender never renders an empty card.
  */
@@ -25,11 +29,11 @@ export function AnnouncementCard({ message }: AnnouncementCardProps) {
   const body = payload?.body ?? message.content;
 
   return (
-    <div className="mt-1 rounded-md border-l-4 border-[color:var(--accent-text)] bg-[color:var(--accent-subtle)] px-3 py-2">
-      <div className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-[color:var(--accent-text)]">
-        <Megaphone className="h-3 w-3" aria-hidden="true" /> Announcement
+    <Card className={cn(MESSAGE_CARD)}>
+      <div className={cn(EYEBROW, "flex items-center gap-1.5 text-accent-text")}>
+        <AnnouncementGlyph className="h-4 w-4" /> Announcement
       </div>
-      <div className="mt-1 whitespace-pre-wrap break-words text-sm">{body}</div>
-    </div>
+      <div className="mt-2 whitespace-pre-wrap break-words text-base">{body}</div>
+    </Card>
   );
 }

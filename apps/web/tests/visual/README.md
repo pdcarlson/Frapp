@@ -39,6 +39,42 @@ all. Don't reintroduce a filter without a second job to catch what it excludes.
 In **GitHub Actions**, `playwright.config.ts` sets `workers: 1` and `forbidOnly`
 only when `CI=true`. Prefix with `CI=true` to reproduce a CI failure exactly.
 
+### If the browser will not launch (cloud sandboxes)
+
+Agent sandboxes preinstall a Chromium under `PLAYWRIGHT_BROWSERS_PATH`
+(`/opt/pw-browsers`) whose revision may not match the one the pinned
+`@playwright/test` expects — r1194 against r1234, at the time of writing — and
+`playwright test` then fails to find a browser at all. **Do not run
+`playwright install`**: the point of the preinstalled build is that the sandbox
+has no egress for it.
+
+Because this suite stores no baseline and compares no pixels, the revision skew
+cannot affect its *result* — it only has to launch. An uncommitted config that
+extends the real one is enough:
+
+```ts
+// apps/web/playwright.sandbox.config.ts — do NOT commit
+import base from "./playwright.config";
+
+export default {
+  ...base,
+  use: {
+    ...(base as { use?: Record<string, unknown> }).use,
+    launchOptions: {
+      executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
+    },
+  },
+};
+```
+
+```bash
+cd apps/web && CI=true npx playwright test --config=playwright.sandbox.config.ts
+```
+
+Keep it uncommitted: it hardcodes one sandbox's revision path, and CI installs
+the pinned browser properly. Check the actual directory name under
+`/opt/pw-browsers` rather than copying the revision above.
+
 ## What the harness does and does not exercise
 
 Every spec here runs with **no session and no active chapter**: Playwright opens

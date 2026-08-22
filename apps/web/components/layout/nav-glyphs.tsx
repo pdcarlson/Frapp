@@ -22,52 +22,22 @@
  * (`iconography.md` §5) until each screen family's #920 slice lands.
  */
 
-export type NavGlyphProps = {
-  className?: string;
-  /**
-   * Emphasis state. The parent that knows selection passes it down
-   * (`ProtectedNavItem` does); the fill hue follows `currentColor`, so the
-   * accent comes from the text color the parent already sets.
-   */
-  active?: boolean;
-};
+import {
+  Svg,
+  detail,
+  fillProps,
+  stroke,
+  type DuotoneGlyphComponent,
+  type DuotoneGlyphProps,
+} from "@/components/ui/duotone";
 
-export type NavGlyphComponent = (props: NavGlyphProps) => React.ReactNode;
-
-/** Silhouette fill per state: white 6% neutral, stroke-hue 18% active. */
-function fillProps(active: boolean | undefined) {
-  return active
-    ? { fill: "currentColor", fillOpacity: 0.18 }
-    : { fill: "#FFFFFF", fillOpacity: 0.06 };
-}
-
-const stroke = {
-  stroke: "currentColor",
-  strokeWidth: 1.6,
-  strokeLinecap: "round",
-  strokeLinejoin: "round",
-} as const;
-
-const detail = { ...stroke, fill: "none" } as const;
-
-function Svg({
-  className,
-  children,
-}: {
-  className?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      aria-hidden="true"
-      focusable="false"
-    >
-      {children}
-    </svg>
-  );
-}
+/**
+ * The shell's glyphs are the duotone recipe applied to nav intents; the recipe
+ * itself (stroke weight, the 6%/18% silhouette fill, the 24px grid) lives in
+ * `components/ui/duotone.tsx` so chat's glyph set cannot drift off it.
+ */
+export type NavGlyphProps = DuotoneGlyphProps;
+export type NavGlyphComponent = DuotoneGlyphComponent;
 
 /* ── Sidebar nav intents ─────────────────────────────────────────────────── */
 

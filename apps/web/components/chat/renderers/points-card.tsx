@@ -1,6 +1,9 @@
 "use client";
 
-import { Coins } from "lucide-react";
+import { PointsGlyph } from "../chat-glyphs";
+import { EYEBROW, MESSAGE_CARD } from "../chip";
+import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
 import type { PointsPayload } from "@repo/chat-integrations";
 
@@ -51,7 +54,7 @@ export function PointsCard({ message }: PointsCardProps) {
   const payload = readPayload(message);
   if (!payload) {
     return (
-      <div className="mt-1 whitespace-pre-wrap break-words text-sm">
+      <div className="mt-1 whitespace-pre-wrap break-words text-base">
         {message.content}
       </div>
     );
@@ -61,31 +64,38 @@ export function PointsCard({ message }: PointsCardProps) {
   const magnitude = Math.abs(payload.amount);
 
   return (
-    <div className="mt-1 rounded-md border-l-4 border-[color:var(--accent-text)] bg-[color:var(--accent-subtle)] px-3 py-2">
-      <div className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-[color:var(--accent-text)]">
-        <Coins className="h-3 w-3" aria-hidden="true" /> Points
+    <Card className={cn(MESSAGE_CARD)}>
+      <div className={cn(EYEBROW, "flex items-center gap-1.5 text-accent-text")}>
+        <PointsGlyph className="h-4 w-4" /> Points
       </div>
-      <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
-        <span className="font-medium">{payload.actor_name}</span>
+      <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-base">
+        <span className="font-semibold">{payload.actor_name}</span>
         <span className="text-muted-foreground">
           {isFine ? "deducted" : "granted"}
         </span>
+        {/*
+          Semantic tokens, not palette. These were `text-red-600` /
+          `text-emerald-700` with `dark:` twins that could never fire — nothing
+          sets `.dark`, Signet being dark-only — so the *light* branch was what
+          shipped onto `#0E0D0B`. Danger takes the AA-lifted `--destructive-text`
+          (components.md §1); a grant is `--success`.
+        */}
         <span
           className={
             isFine
-              ? "font-semibold text-red-600 dark:text-red-400"
-              : "font-semibold text-emerald-700 dark:text-emerald-400"
+              ? "font-semibold text-destructive-text"
+              : "font-semibold text-success"
           }
         >
           {isFine ? "−" : "+"}
           {magnitude} {magnitude === 1 ? "point" : "points"}
         </span>
         <span className="text-muted-foreground">{isFine ? "from" : "to"}</span>
-        <span className="font-medium">{payload.recipient_name}</span>
+        <span className="font-semibold">{payload.recipient_name}</span>
       </div>
-      <div className="mt-1 whitespace-pre-wrap break-words text-sm text-muted-foreground">
+      <div className="mt-2 whitespace-pre-wrap break-words text-base text-muted-foreground">
         &ldquo;{payload.reason}&rdquo;
       </div>
-    </div>
+    </Card>
   );
 }

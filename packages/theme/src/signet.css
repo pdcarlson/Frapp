@@ -181,19 +181,6 @@
 
 @layer components {
   /*
-   * Eyebrow micro-label — small uppercase tag above titles. Carried over from
-   * the legacy stylesheet because the chat renderers still compose with it;
-   * the chat slice of #920 decides whether it survives as a Signet pattern.
-   */
-  .eyebrow {
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-    color: var(--muted-foreground);
-  }
-
-  /*
    * Skeleton shimmer — components.md §10, verbatim: a 90° gradient of the
    * elevated step at 25%/75% with the highlight neutral at 50%, sized 260px
    * and swept 1.4s linear. It is one class rather than a Tailwind utility
