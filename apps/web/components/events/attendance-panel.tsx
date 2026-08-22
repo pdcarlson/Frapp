@@ -279,7 +279,7 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
             · {counts.ABSENT} absent · {counts.UNRECORDED} unrecorded
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Not gated: filtering is a read, and §5 gates writes only. */}
           <Select
             value={statusFilter}
@@ -288,7 +288,7 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
             }
           >
             <SelectTrigger
-              className="w-[180px]"
+              className="w-full sm:w-[180px]"
               aria-label="Filter attendance by status"
             >
               <SelectValue />
@@ -366,7 +366,7 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
                     </p>
                   ) : null}
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   <Badge variant={attendanceStatusKind(row.status)}>
                     {attendanceStatusLabel(row.status)}
                   </Badge>
@@ -398,7 +398,7 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
                         node, so `aria-describedby` would be dropped there.
                       */}
                       <SelectTrigger
-                        className="w-[150px]"
+                        className="w-full sm:w-[150px]"
                         aria-label={`Update attendance for ${row.displayName}`}
                         {...gate.controlProps()}
                       >
