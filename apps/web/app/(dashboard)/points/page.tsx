@@ -412,7 +412,7 @@ export default function PointsPage() {
                         className={
                           transaction.amount >= 0
                             ? "font-mono font-semibold tabular-nums text-success"
-                            : "font-mono font-semibold tabular-nums text-destructive-text"
+                            : "font-mono font-semibold tabular-nums text-destructive"
                         }
                       >
                         {transaction.amount >= 0 ? `+${transaction.amount}` : transaction.amount}

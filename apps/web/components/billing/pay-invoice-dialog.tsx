@@ -142,7 +142,7 @@ function PayInvoiceForm({
     <form onSubmit={handleSubmit} className="space-y-4">
       <PaymentElement />
       {error ? (
-        <p role="alert" className="text-sm text-destructive-text">
+        <p role="alert" className="text-sm text-destructive">
           {error}
         </p>
       ) : null}
@@ -218,7 +218,7 @@ export function PayInvoiceDialog({
             </Button>
           </div>
         ) : payInvoice.isError ? (
-          <p role="alert" className="text-sm text-destructive-text">
+          <p role="alert" className="text-sm text-destructive">
             {payIntentErrorCopy(payInvoice.error)}
           </p>
         ) : clientSecret ? (

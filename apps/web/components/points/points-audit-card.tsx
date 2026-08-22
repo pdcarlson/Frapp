@@ -241,7 +241,7 @@ export function PointsAuditCard() {
                           className={
                             (row.amount ?? 0) >= 0
                               ? "font-mono text-sm font-semibold tabular-nums text-success"
-                              : "font-mono text-sm font-semibold tabular-nums text-destructive-text"
+                              : "font-mono text-sm font-semibold tabular-nums text-destructive"
                           }
                         >
                           {sign}
