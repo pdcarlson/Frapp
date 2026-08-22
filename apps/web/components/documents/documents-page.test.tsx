@@ -277,6 +277,37 @@ describe("DocumentsPage state ordering", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("announces the load, which moving to the nested state family nearly cost", () => {
+    // `NestedLoading` omits `role="status"` by default, because it was written
+    // for pages that also render a top-level `LoadingState`. This page does
+    // not — the nested state is its only state — so without `announce` a
+    // screen-reader user opening it mid-load hears nothing at all.
+    documentsQuery.isPending = true;
+    documentsQuery.data = [];
+
+    render(<DocumentsPage />);
+
+    const live = screen.getByRole("status");
+    expect(live).toHaveTextContent("Loading chapter documents...");
+    expect(live).toHaveAttribute("aria-live", "polite");
+  });
+
+  it("keeps a loaded library readable when the connection drops", () => {
+    // TanStack does not clear `data` when the link goes; README §4 scopes the
+    // offline state to "no cached data" and §10 keeps stale content in place.
+    // An unconditional `isOffline` branch threw away a list the member could
+    // still read, on a WiFi blip. The shell's OfflineBanner states the
+    // connection on every route, so the screen owes no state here.
+    mockOffline.value = true;
+
+    render(<DocumentsPage />);
+
+    expect(screen.getByText("Chapter bylaws")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/documents unavailable offline/i),
+    ).not.toBeInTheDocument();
+  });
+
   it("still lets a member reach the upload dialog while the list is loading", () => {
     documentsQuery.isPending = true;
     documentsQuery.data = [];

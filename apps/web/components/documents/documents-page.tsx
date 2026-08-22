@@ -175,6 +175,18 @@ export function DocumentsPage() {
     file: File | null;
   }>({ title: "", description: "", folder: "", file: null });
   const [uploading, setUploading] = useState(false);
+  /*
+    Which row's delete is in flight. `useDeleteDocument` is pessimistic —
+    the row only disappears once the DELETE round-trips — so without this
+    the row's button stays enabled across the whole request. That is a
+    second-delete hazard, and it also defeats `confirm-dialog.tsx`'s focus
+    guard: Radix restores focus to the opener the instant the dialog closes,
+    long before the request settles, so focus landed on a control that then
+    unmounted and dropped to `<body>`. Marked disabled before the await, the
+    guard sees `[disabled]` and sends focus to `#main-content` instead —
+    which is the fallback it exists for.
+  */
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -273,6 +285,7 @@ export function DocumentsPage() {
       tone: "destructive",
     });
     if (!confirmed) return;
+    setDeletingId(doc.id);
     try {
       await deleteDoc.mutateAsync(doc.id);
       toast({
@@ -288,6 +301,8 @@ export function DocumentsPage() {
         ),
         variant: "destructive",
       });
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -304,16 +319,27 @@ export function DocumentsPage() {
     it is also true for a *paused* query, which is why an offline member with
     no cached documents sat on "Loading chapter documents..." indefinitely.
     The offline branch answers README §4 item 4.
+
+    It is gated on there being nothing loaded, and that qualifier is
+    load-bearing. README §4 scopes the offline treatment to "offline, **no
+    cached data**", and §10 says background refetches keep stale content in
+    place — so replacing a library already in hand with an "unavailable
+    offline" card on a WiFi blip would discard what the member can still read.
+    Being offline *with* content is the shell's `OfflineBanner`'s job; it
+    renders on every route already, so the screen owes a state only when it
+    has nothing else to say. Gated on `documents`, not `visible`: a folder
+    filter that matches nothing is the empty case, not the offline one.
   */
-  const listState = isOffline
-    ? "offline"
-    : documentsQuery.isPending
-      ? "loading"
-      : documentsQuery.isError
-        ? "error"
-        : visible.length === 0
-          ? "empty"
-          : "ready";
+  const listState =
+    isOffline && documents.length === 0
+      ? "offline"
+      : documentsQuery.isPending
+        ? "loading"
+        : documentsQuery.isError
+          ? "error"
+          : visible.length === 0
+            ? "empty"
+            : "ready";
 
   return (
     <div className="space-y-6">
@@ -468,7 +494,7 @@ export function DocumentsPage() {
             <button
               type="button"
               onClick={() => setActiveFolder(null)}
-              className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors ${FOCUS_RING_OFFSET} ${
+              className={`flex w-full items-center gap-2 min-h-9 rounded-md px-2 py-2 text-left text-sm transition-colors pointer-coarse:min-h-11 ${FOCUS_RING_OFFSET} ${
                 activeFolder === null
                   ? "bg-accent-subtle-hover text-accent-text"
                   : "text-muted-foreground hover:bg-accent-subtle hover:text-foreground"
@@ -480,7 +506,7 @@ export function DocumentsPage() {
             <button
               type="button"
               onClick={() => setActiveFolder("")}
-              className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors ${FOCUS_RING_OFFSET} ${
+              className={`flex w-full items-center gap-2 min-h-9 rounded-md px-2 py-2 text-left text-sm transition-colors pointer-coarse:min-h-11 ${FOCUS_RING_OFFSET} ${
                 activeFolder === ""
                   ? "bg-accent-subtle-hover text-accent-text"
                   : "text-muted-foreground hover:bg-accent-subtle hover:text-foreground"
@@ -497,7 +523,7 @@ export function DocumentsPage() {
                 key={folder}
                 type="button"
                 onClick={() => setActiveFolder(folder)}
-                className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors ${FOCUS_RING_OFFSET} ${
+                className={`flex w-full items-center gap-2 min-h-9 rounded-md px-2 py-2 text-left text-sm transition-colors pointer-coarse:min-h-11 ${FOCUS_RING_OFFSET} ${
                   activeFolder === folder
                     ? "bg-accent-subtle-hover text-accent-text"
                     : "text-muted-foreground hover:bg-accent-subtle hover:text-foreground"
@@ -551,7 +577,7 @@ export function DocumentsPage() {
                 }}
               />
             ) : listState === "loading" ? (
-              <NestedLoading message="Loading chapter documents..." />
+              <NestedLoading message="Loading chapter documents..." announce />
             ) : listState === "error" ? (
               <NestedError
                 title="Couldn't load documents"
@@ -575,8 +601,15 @@ export function DocumentsPage() {
                 {visible.map((doc) => (
                   <li
                     key={doc.id}
-                    className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"
+                    className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:gap-3"
                   >
+                    {/*
+                      s12 draws a leading file glyph on every document row —
+                      the accent duotone on its pinned cards, the neutral one
+                      on the recent list. Web has no pin field, so every row
+                      takes the neutral variant.
+                    */}
+                    <DocumentsGlyph className="h-5 w-5 shrink-0 text-muted-foreground" />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">
                         {doc.title}
@@ -591,7 +624,7 @@ export function DocumentsPage() {
                         {doc.folder ? ` · ${doc.folder}` : ""}
                       </p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 sm:ml-auto">
                       <DownloadButton id={doc.id} />
                       <Can permission="chapter_docs:manage">
                         {/*
@@ -605,7 +638,7 @@ export function DocumentsPage() {
                           size="icon"
                           aria-label={`Delete ${doc.title}`}
                           onClick={() => void handleDelete(doc)}
-                          {...gate.controlProps()}
+                          {...gate.controlProps(deletingId === doc.id)}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>

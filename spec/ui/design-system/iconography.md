@@ -359,7 +359,7 @@ button, and the PDF a report exports to.
 
 | Semantic intent | Glyph |
 |---|---|
-| A chapter document, an unfiled document, and the PDF a report exports to | `DocumentsGlyph` (re-export) |
+| A document row on `/documents`, the "No folder" filter, and the PDF a report exports to | `DocumentsGlyph` (re-export) |
 | A folder, and the folder filter that names one | `FolderGlyph` |
 | A backwork resource, and the archive that holds them | `BackworkGlyph` (re-export) |
 | A poll, and the control that casts a vote on one | `PollsGlyph` (re-export) |
@@ -374,10 +374,15 @@ the sidebar links to Documents as a whole.
 This is the one family where the reference settles the geometry directly:
 `DocumentsGlyph`'s path is the file glyph
 [`canvas-screens.dc.html`](reference/canvas-screens.dc.html) draws on **s12**
-(the Documents screen) and **s21** (the upload sheet), so the document rows on
-`/documents` now draw the shape the board draws. s12 also draws the two-tone
-split this family uses on its folder rail: the *pinned* rows take the accent
-duotone and the ordinary rows the neutral one, which is `fillProps(active)`.
+(the Documents screen) and **s21** (the upload sheet). s12 marks every document
+row with it, which `/documents` did not — the rows carried no glyph at all —
+so the leading marker was added with the pack change rather than left for a
+later pass. s12 also draws the two-tone split this family uses on its folder
+rail: the *pinned* rows take the accent duotone and the ordinary rows the
+neutral one, which is `fillProps(active)`. Web has no pin field
+([`../mobile/screens.md`](../mobile/screens.md) records the same absence on
+mobile), so document rows take the neutral variant and only the selected
+folder is accented.
 
 Two of the swaps were corrections rather than a pack change, in §6.2.4's sense:
 

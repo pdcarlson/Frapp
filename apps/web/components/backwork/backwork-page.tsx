@@ -832,9 +832,13 @@ export function BackworkPage() {
             card is exactly 1.00:1 and the region disappears (§10). And the
             offline branch comes first, because a paused query is `isPending`
             and would otherwise spin behind an offline member indefinitely
-            (README §4 item 4).
+            (README §4 item 4) — but only when there is nothing loaded. README
+            §4 scopes it to "offline, **no cached data**" and §10 keeps stale
+            content in place on a refetch, so an archive already in hand stays
+            readable and the shell's `OfflineBanner` carries the connection
+            state, as it does on every route.
           */}
-          {isOffline ? (
+          {isOffline && resources.length === 0 ? (
             <NestedError
               title="Backwork unavailable offline"
               description="Reconnect to browse the coursework archive and download a resource."
@@ -844,7 +848,7 @@ export function BackworkPage() {
             />
           ) : resourcesQuery.isLoading ||
             resourcesQuery.fetchStatus === "paused" ? (
-            <NestedLoading message="Loading backwork..." />
+            <NestedLoading message="Loading backwork..." announce />
           ) : resourcesQuery.isError ? (
             <NestedError
               title="Couldn't load backwork"

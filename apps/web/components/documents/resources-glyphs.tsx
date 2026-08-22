@@ -9,8 +9,8 @@
  *
  * One file for four screens, as the Chapter Ops family does for its five: the
  * four share their intents rather than partitioning them. The document
- * silhouette marks a file row on `/documents`, an unfiled document's folder
- * button, and the PDF a report exports to — three screens, one shape.
+ * silhouette marks a document row on `/documents`, the "No folder" filter
+ * beside it, and the PDF a report exports to — two screens, one shape.
  *
  * **Four of the five are re-exports, and that is the point.** `nav-glyphs.tsx`
  * already draws all four of this family's nav intents, and a second copy of

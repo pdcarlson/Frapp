@@ -422,8 +422,14 @@ export function PollsPage() {
           query is `isPending` and would otherwise spin behind an offline
           member indefinitely — README §4 requires an offline state with a
           retry here, not a spinner that cannot resolve.
+
+          It applies only when nothing is loaded. README §4 scopes the offline
+          treatment to "offline, **no cached data**" and §10 keeps stale
+          content in place on a refetch, so a list already rendered is not
+          thrown away on a WiFi blip — the shell's `OfflineBanner` states the
+          connection, and the vote controls fail with their own message.
         */}
-        {isOffline ? (
+        {isOffline && polls.length === 0 ? (
           <OfflineState
             title="Polls unavailable offline"
             description="Reconnect to load the chapter's polls and cast a vote."

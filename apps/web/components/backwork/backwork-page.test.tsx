@@ -120,6 +120,21 @@ describe("BackworkPage disabled-query handling", () => {
     expect(screen.queryByText("Loading backwork...")).not.toBeInTheDocument();
   });
 
+  it("announces the load, which moving to the nested state family nearly cost", () => {
+    // Same trap as `/documents`: this page renders no top-level `LoadingState`,
+    // so the nested one has to carry the announcement or there is none.
+    resourcesQuery.data = undefined as unknown as unknown[];
+    resourcesQuery.isPending = true;
+    resourcesQuery.isLoading = true;
+    resourcesQuery.fetchStatus = "fetching";
+
+    render(<BackworkPage />);
+
+    const live = screen.getByRole("status");
+    expect(live).toHaveTextContent("Loading backwork...");
+    expect(live).toHaveAttribute("aria-live", "polite");
+  });
+
   it("keeps the upload trigger reachable while the list is offline", () => {
     // The offline state is scoped to the Resources card rather than replacing
     // the page, so it cannot unmount the gated upload dialog above it — the

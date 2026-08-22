@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
@@ -116,8 +116,13 @@ describe("ReportsPage subscription gating", () => {
 
     expect(generateButton()).toBeDisabled();
     expect(pdfButton()).toBeDisabled();
-    // Busy, not blocked — nothing established a subscription reason.
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    // Busy, not blocked — nothing established a subscription reason. Asserted
+    // through the controls' own `aria-describedby` rather than "no role=status
+    // anywhere": the notice was the only live region on this screen when that
+    // proxy was written, and the Preview panel's loading state is now a second
+    // one. The wiring is what the gate actually promises.
+    expect(generateButton()).not.toHaveAttribute("aria-describedby");
+    expect(pdfButton()).not.toHaveAttribute("aria-describedby");
   });
 
   it("holds the gate shut while the chapter is still loading", () => {
@@ -190,6 +195,34 @@ describe("ReportsPage preview states", () => {
       screen.queryByText("Generate a report to see a preview here."),
     ).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+  });
+
+  it("will not let Retry queue a second run during a PDF export", async () => {
+    // The loading branch is `activeMutation.isPending && !pdfPending`, so a
+    // PDF export falls straight through to the stale error — and `NestedError`
+    // had no way to disable its Retry. That is a third entry point into the
+    // same mutation the two footer buttons already guard.
+    const user = userEvent.setup();
+    // The second call never settles, so the export stays in flight for the
+    // length of the assertion.
+    mockAttendanceReport.mockReturnValue({
+      mutateAsync: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("Chapter has no terms"))
+        .mockImplementation(() => new Promise(() => {})),
+      isPending: false,
+    });
+
+    render(<ReportsPage />);
+    await user.click(generateButton());
+    expect(await screen.findByRole("button", { name: /retry/i })).toBeEnabled();
+
+    // Start a PDF export; the preview keeps its error, and Retry must not
+    // remain a live way into the same mutation.
+    await user.click(pdfButton());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /retry/i })).toBeDisabled(),
+    );
   });
 
   it("says so on screen when the report is truncated, not only in a toast", async () => {

@@ -716,12 +716,23 @@ export function ReportsPage() {
               surface in the family whose states did not match the other three.
             */}
             {activeMutation.isPending && !pdfPending ? (
-              <NestedLoading message="Generating report..." />
+              <NestedLoading message="Generating report..." announce />
             ) : previewError ? (
               <NestedError
                 title={`Couldn't generate ${reportLabel[kind].toLowerCase()} report`}
                 description={previewError}
                 onRetry={() => void runReport()}
+                /*
+                  The loading branch above is `activeMutation.isPending &&
+                  !pdfPending`, so during a PDF export it is false and this
+                  branch renders with its stale error — leaving Retry live and
+                  wired to a POST on the same mutation the export is using.
+                  That is the "second render queued" hazard the two footer
+                  buttons already guard against, at a third entry point.
+                */
+                retryProps={{
+                  disabled: pdfPending || activeMutation.isPending,
+                }}
               />
             ) : preview === null ? (
               <NestedEmpty

@@ -64,7 +64,9 @@ const CONTAINERS = [
   under `--coverage` instrumentation. The full suite caught that; a targeted
   `vitest run` on this file did not.
 */
-const ROLES = new Map(SEEDS.map((seed) => [seed, accentRolesFor(seed)]));
+const ROLES = new Map<string, Record<string, string>>(
+  SEEDS.map((seed) => [seed, accentRolesFor(seed)]),
+);
 
 const roleFor = (seed: string, role: string) => ROLES.get(seed)![role]!;
 const fillFor = (seed: string) => roleFor(seed, "--primary");
@@ -137,7 +139,13 @@ describe("why the track recedes instead of rising", () => {
     // `--surface-1` region and it holds no meters). If one ever does, this is
     // the number saying it needs its own answer rather than this recipe.
     expect(ratio(TRACK, SURFACE.surface1)).toBeLessThan(1.1);
-    expect(CONTAINERS).toContain(SURFACE.surface1);
+    // And it is the *only* container that falls short, so the shortfall is a
+    // property of that one step rather than of the track.
+    const short = CONTAINERS.filter(
+      (container) =>
+        container !== SURFACE.background && ratio(TRACK, container) < 1.1,
+    );
+    expect(short).toEqual([SURFACE.surface1]);
   });
 
   it("would have caught the two candidates that wash out inside a dialog", () => {
@@ -165,7 +173,7 @@ describe("the accent fill, across every seeded chapter", () => {
     }
   });
 
-  it("records that no seed's fill clears the non-text floor against the card", () => {
+  it("records that no seed's fill clears the non-text floor against the track", () => {
     // Deliberately recorded rather than enforced, the same way
     // `table-contrast.test.ts` records it for row states: at this ladder a
     // proportion fill cannot reach 3:1 for every seed, which is exactly why

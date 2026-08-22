@@ -2,10 +2,7 @@
 
 import { AlertTriangle, FolderOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  SkeletonText,
-  StateTile,
-} from "@/components/shared/async-states";
+import { SkeletonText, StateTile } from "@/components/shared/async-states";
 
 /**
  * The §10 state family for a state that renders **inside** a `<CardContent>`.
@@ -48,21 +45,43 @@ const NESTED_BOX =
   "flex min-h-40 flex-col items-center justify-center gap-3 rounded-lg border p-4 text-center";
 
 /**
- * `role="status"` is deliberately absent. The top-level `LoadingState` owns the
- * announcement for the screen; a nested block inside an already-announced card
- * would either double it or, on the surfaces whose tests assert no live region
- * is present while settled, introduce one where none belongs.
+ * `role="status"` is **opt-in**, and defaults off.
+ *
+ * The original reasoning was that the top-level `LoadingState` owns the
+ * announcement for the screen, so a nested block inside an already-announced
+ * card would either double it or introduce a live region where none belongs.
+ * That holds wherever a page renders a top-level state *and* nested ones —
+ * `/points`, `/billing`, the attendance sheet — which was every consumer when
+ * this module was written.
+ *
+ * It stopped holding the moment a page's nested state became its *only* state.
+ * The Resources & Reporting slice moved `/documents` and `/backwork` onto this
+ * family to fix the 1.00:1 fill collision, and in doing so silently took away
+ * the one announcement each page had: `aria-busy` alone is not announced by
+ * assistive tech without an accompanying role, so a screen-reader user opening
+ * either page mid-load heard nothing where they had previously heard "Loading
+ * chapter documents…". Two changes each correct on their own.
+ *
+ * So the caller says which it is. A surface that renders no top-level state
+ * passes `announce`; one that renders both leaves it off and the top-level
+ * state keeps ownership. Defaulting off keeps every pre-existing consumer, and
+ * the tests asserting no live region while settled, exactly as they were.
  */
 export function NestedLoading({
   message,
   lines = 3,
+  announce = false,
 }: {
   message: string;
   lines?: number;
+  /** Set on a surface where this is the only async state on the page. */
+  announce?: boolean;
 }) {
   return (
     <div
       aria-busy="true"
+      role={announce ? "status" : undefined}
+      aria-live={announce ? "polite" : undefined}
       className="flex min-h-40 flex-col gap-4 rounded-lg border border-border p-4"
     >
       <SkeletonText lines={lines} />
@@ -93,7 +112,9 @@ export function NestedEmpty({
         <FolderOpen className="h-6 w-6" />
       </StateTile>
       <p className="text-base font-bold">{title}</p>
-      <p className="max-w-[220px] text-sm text-muted-foreground">{description}</p>
+      <p className="max-w-[220px] text-sm text-muted-foreground">
+        {description}
+      </p>
       {actionLabel && onAction ? (
         <Button variant="tinted" size="sm" onClick={onAction} {...actionProps}>
           {actionLabel}
@@ -115,10 +136,18 @@ export function NestedError({
   title,
   description,
   onRetry,
+  retryProps,
 }: {
   title: string;
   description: string;
   onRetry?: () => void;
+  /**
+   * Passed through to the Retry button, mirroring `NestedEmpty`'s
+   * `actionProps` — so a surface whose retry re-enters a mutation that is
+   * already in flight can disable it rather than hide it (§5 rule 4). Hiding
+   * would also drop the row a keyboard user may already be on.
+   */
+  retryProps?: { disabled?: boolean; "aria-describedby"?: string };
 }) {
   return (
     <div className={`${NESTED_BOX} border-destructive/[.28]`}>
@@ -126,9 +155,11 @@ export function NestedError({
         <AlertTriangle className="h-6 w-6" />
       </StateTile>
       <p className="text-base font-bold">{title}</p>
-      <p className="max-w-[220px] text-sm text-muted-foreground">{description}</p>
+      <p className="max-w-[220px] text-sm text-muted-foreground">
+        {description}
+      </p>
       {onRetry ? (
-        <Button variant="secondary" size="sm" onClick={onRetry}>
+        <Button variant="secondary" size="sm" onClick={onRetry} {...retryProps}>
           Retry
         </Button>
       ) : null}
