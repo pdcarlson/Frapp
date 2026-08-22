@@ -204,8 +204,8 @@ export function EventDetailSheet({
         <SubscriptionNotice gate={gate} feature="editing events" />
 
         <div className="mt-5 grid gap-3">
-          <div className="rounded-md border border-border p-3">
-            <p className="mb-2 text-xs text-muted-foreground">
+          <div className="rounded-lg border border-border p-3">
+            <p className="mb-2 text-[12.5px] text-muted-foreground">
               Attendance policy
             </p>
             <div className="flex flex-wrap items-center gap-2">
@@ -215,7 +215,7 @@ export function EventDetailSheet({
               <Badge variant="outline">{recurrenceRule}</Badge>
             </div>
             <div className="mt-3">
-              <p className="mb-1 flex items-center gap-1 text-xs text-muted-foreground">
+              <p className="mb-1 flex items-center gap-1 text-[12.5px] text-muted-foreground">
                 <Shield className="h-3 w-3" />
                 Required roles
               </p>
@@ -233,8 +233,8 @@ export function EventDetailSheet({
             </div>
           </div>
 
-          <div className="rounded-md border border-border p-3">
-            <p className="mb-2 text-xs text-muted-foreground">Schedule</p>
+          <div className="rounded-lg border border-border p-3">
+            <p className="mb-2 text-[12.5px] text-muted-foreground">Schedule</p>
             <div className="space-y-2 text-sm">
               <div className="flex items-start gap-2">
                 <Clock3 className="mt-0.5 h-4 w-4 text-muted-foreground" />
@@ -263,15 +263,15 @@ export function EventDetailSheet({
           </div>
 
           {description ? (
-            <div className="rounded-md border border-border p-3">
-              <p className="mb-1 text-xs text-muted-foreground">Description</p>
+            <div className="rounded-lg border border-border p-3">
+              <p className="mb-1 text-[12.5px] text-muted-foreground">Description</p>
               <p className="text-sm">{description}</p>
             </div>
           ) : null}
 
           {notes ? (
-            <div className="rounded-md border border-border p-3">
-              <p className="mb-1 text-xs text-muted-foreground">
+            <div className="rounded-lg border border-border p-3">
+              <p className="mb-1 text-[12.5px] text-muted-foreground">
                 Internal notes
               </p>
               <p className="text-sm">{notes}</p>

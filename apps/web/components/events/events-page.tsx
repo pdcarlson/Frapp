@@ -298,7 +298,7 @@ export function EventsPage() {
       {selectedEventIds.length > 0 ? (
         <Card className="border-accent-border bg-accent-subtle">
           <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm font-medium">
+            <p className="text-sm font-semibold">
               {selectedEventIds.length} event
               {selectedEventIds.length > 1 ? "s" : ""} selected
             </p>
@@ -422,7 +422,7 @@ export function EventsPage() {
                           />
                         </label>
                       </TableCell>
-                      <TableCell className="font-medium">{eventName}</TableCell>
+                      <TableCell className="font-semibold">{eventName}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {formatDate(event.start_time)}
                       </TableCell>

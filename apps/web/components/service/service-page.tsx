@@ -391,9 +391,6 @@ export function ServiceHoursPage() {
     <div className="space-y-6">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight">
-            Service hours
-          </h2>
           <p className="text-sm text-muted-foreground">
             Members log hours; admins approve them for service points. Approved
             hours also appear in chapter service reports.
@@ -493,7 +490,7 @@ export function ServiceHoursPage() {
                     }
                     required={receiptRequired}
                   />
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-[12.5px] text-muted-foreground">
                     Photo or PDF, up to 25MB.
                   </p>
                 </div>
@@ -547,7 +544,7 @@ export function ServiceHoursPage() {
                 description="Approved or rejected entries appear in the History card below."
               />
             ) : (
-              <ul className="divide-y divide-border/70">
+              <ul className="divide-y divide-border">
                 {pending.map((entry) => {
                   const name =
                     memberNameById.get(entry.user_id) ?? entry.user_id;
@@ -558,7 +555,7 @@ export function ServiceHoursPage() {
                     >
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold">{name}</p>
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-[12.5px] text-muted-foreground">
                           {entry.date} ·{" "}
                           {formatDuration(entry.duration_minutes)}
                         </p>
@@ -571,7 +568,7 @@ export function ServiceHoursPage() {
                           <Button
                             size="sm"
                             variant="link"
-                            className="h-auto px-0 text-xs"
+                            className="h-auto px-0 text-[12.5px] pointer-coarse:h-11"
                             onClick={() => void viewProof(entry)}
                             disabled={getProofUrl.isPending}
                           >
@@ -633,7 +630,7 @@ export function ServiceHoursPage() {
               approved or rejected.
             </p>
           ) : (
-            <ul className="divide-y divide-border/70">
+            <ul className="divide-y divide-border">
               {history.map((entry) => {
                 const name = memberNameById.get(entry.user_id) ?? entry.user_id;
                 return (
@@ -643,12 +640,12 @@ export function ServiceHoursPage() {
                   >
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold">{name}</p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-[12.5px] text-muted-foreground">
                         {entry.date} · {formatDuration(entry.duration_minutes)}
                       </p>
                       <p className="text-sm">{entry.description}</p>
                       {entry.review_comment ? (
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-[12.5px] text-muted-foreground">
                           Reviewer note: {entry.review_comment}
                         </p>
                       ) : null}
@@ -667,7 +664,7 @@ export function ServiceHoursPage() {
             </ul>
           )}
         </CardContent>
-        <CardFooter className="text-xs text-muted-foreground">
+        <CardFooter className="text-[12.5px] text-muted-foreground">
           Approved hours automatically award service points at your
           chapter&apos;s configured rate. Withdrawing a rejected entry is
           allowed — create a fresh one when ready.
@@ -683,7 +680,7 @@ export function ServiceHoursPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <ul className="divide-y divide-border/70">
+            <ul className="divide-y divide-border">
               {pending.map((entry) => (
                 <li
                   key={entry.id}

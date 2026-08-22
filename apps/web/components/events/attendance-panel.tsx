@@ -346,21 +346,21 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
                 className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">
+                  <p className="truncate text-sm font-semibold">
                     {row.displayName}
                   </p>
                   {row.email ? (
-                    <p className="truncate text-xs text-muted-foreground">
+                    <p className="truncate text-[12.5px] text-muted-foreground">
                       {row.email}
                     </p>
                   ) : null}
                   {row.status === "PRESENT" || row.status === "LATE" ? (
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-[12.5px] text-muted-foreground">
                       Checked in: {formatDate(row.checkInTime)}
                     </p>
                   ) : null}
                   {row.status === "EXCUSED" && row.excuseReason ? (
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-[12.5px] text-muted-foreground">
                       Reason: {row.excuseReason}
                     </p>
                   ) : null}
@@ -372,7 +372,7 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
                   <Can
                     permission="events:update"
                     deniedFallback={
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-[12.5px] text-muted-foreground">
                         View only
                       </span>
                     }

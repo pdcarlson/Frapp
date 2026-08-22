@@ -355,7 +355,7 @@ export function GeofencesAdminPage() {
     <Can
       permission="geofences:manage"
       deniedFallback={
-        <div style={{ minHeight: 160 }}>
+        <div className="min-h-40">
           <Card>
             <CardHeader>
               <CardTitle>Study zones</CardTitle>
@@ -368,7 +368,7 @@ export function GeofencesAdminPage() {
         </div>
       }
       fallback={
-        <div style={{ minHeight: 160 }}>
+        <div className="min-h-40">
           <Card>
             <CardHeader>
               <CardTitle>Study zones</CardTitle>
@@ -383,9 +383,6 @@ export function GeofencesAdminPage() {
       <div className="space-y-6">
         <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h2 className="text-2xl font-semibold tracking-tight">
-              Study zones
-            </h2>
             <p className="text-sm text-muted-foreground">
               Draw a polygon from GPS coordinates, set the reward rate, and
               members can start tracked study sessions when they&apos;re inside
@@ -510,7 +507,7 @@ export function GeofencesAdminPage() {
                         }))
                       }
                     />
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-[12.5px] text-muted-foreground">
                       How long a backgrounded session may stay paused before it
                       expires, counting only the minutes studied before the
                       pause.
@@ -575,7 +572,7 @@ export function GeofencesAdminPage() {
                   </Badge>
                 </CardHeader>
                 <CardContent>
-                  <div className="max-h-40 overflow-y-auto rounded-md border border-border p-2 font-mono text-[12.5px] text-muted-foreground">
+                  <div className="max-h-40 overflow-y-auto rounded-lg border border-border p-2 font-mono text-[12.5px] text-muted-foreground">
                     {zone.coordinates && zone.coordinates.length > 0 ? (
                       <ul>
                         {zone.coordinates.map((c, idx) => (

@@ -408,7 +408,7 @@ export function EventEditorDialog({
               <Shield className="h-4 w-4 text-muted-foreground" />
               <span className="text-muted-foreground">Required roles</span>
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-[12.5px] text-muted-foreground">
               Leave all unchecked to require every member. Select roles to limit
               attendance and auto-absent to members holding any selected role.
             </p>
@@ -419,7 +419,7 @@ export function EventEditorDialog({
               </div>
             ) : null}
             {displayedRoles.length === 0 ? (
-              <div className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
+              <div className="rounded-md border border-dashed border-border p-3 text-[12.5px] text-muted-foreground">
                 {rolesQuery.isLoading
                   ? "Loading roles…"
                   : rolesQuery.isError
@@ -433,7 +433,7 @@ export function EventEditorDialog({
                     key={role.id}
                     className="flex cursor-pointer items-center justify-between rounded-md border border-border p-3 transition hover:bg-accent-subtle"
                   >
-                    <span className="font-medium">{role.name}</span>
+                    <span className="font-semibold">{role.name}</span>
                     <input
                       type="checkbox"
                       className={dashboardTableCheckboxClassName}

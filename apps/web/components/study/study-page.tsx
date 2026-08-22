@@ -444,7 +444,6 @@ export function StudyPage() {
   return (
     <div className="space-y-6">
       <header>
-        <h2 className="text-2xl font-semibold tracking-tight">Study hours</h2>
         <p className="text-sm text-muted-foreground">
           Start a tracked study session inside a chapter study zone. Hiding the
           tab pauses the session on the server — time stops counting, and if you
@@ -477,7 +476,14 @@ export function StudyPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="text-4xl font-mono font-bold tabular-nums tracking-tight">
+            {/*
+              32 is foundations §7's `display` role, spelled the way
+              `ui/badge.tsx` spells `caption` — an arbitrary value that is on
+              the scale, not off it. No mono: §7's own callout retired it for
+              this numeral, and the Canvas reference (s10) draws the running
+              timer in Figtree 700 with tabular-nums in `accent-text`.
+            */}
+            <div className="text-[32px] font-bold tabular-nums tracking-tight text-accent-text">
               {formatDuration(elapsedSeconds)}
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -508,7 +514,7 @@ export function StudyPage() {
               </p>
             ) : null}
             {geolocationError ? (
-              <p className="text-xs text-destructive">{geolocationError}</p>
+              <p className="text-[12.5px] text-destructive">{geolocationError}</p>
             ) : null}
           </CardContent>
           <CardFooter className="flex flex-wrap gap-2">
@@ -568,7 +574,7 @@ export function StudyPage() {
                 <div className="grid gap-1">
                   <label
                     htmlFor="study-geofence"
-                    className="text-xs uppercase tracking-wide text-muted-foreground"
+                    className="text-[12.5px] uppercase tracking-wide text-muted-foreground"
                   >
                     Study zone
                   </label>
@@ -606,7 +612,7 @@ export function StudyPage() {
               </div>
             )}
           </CardContent>
-          <CardFooter className="text-xs text-muted-foreground">
+          <CardFooter className="text-[12.5px] text-muted-foreground">
             Closing this tab ends the session — that&apos;s a deliberate web
             adaptation of the mobile foreground rule. Use the mobile app for
             longer sessions or when you expect to switch tabs frequently.
@@ -626,18 +632,18 @@ export function StudyPage() {
               description="Start a tracked session inside a study zone to start earning study points."
             />
           ) : (
-            <ul className="divide-y divide-border/70">
+            <ul className="divide-y divide-border">
               {sessions.map((session) => (
                 <li
                   key={session.id}
                   className="flex flex-col gap-1 py-3 md:flex-row md:items-center md:justify-between"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">
+                    <p className="text-sm font-semibold">
                       {session.total_foreground_minutes} minute
                       {session.total_foreground_minutes === 1 ? "" : "s"}
                     </p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-[12.5px] text-muted-foreground">
                       Started {formatShortDate(session.start_time)}
                       {session.end_time
                         ? ` · Ended ${formatShortDate(session.end_time)}`

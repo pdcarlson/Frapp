@@ -369,7 +369,6 @@ export function TasksBoard() {
     <div className="space-y-6">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight">Tasks</h2>
           <p className="text-sm text-muted-foreground">
             Admins create and confirm chapter tasks; assignees move them through
             the workflow.
@@ -544,7 +543,7 @@ export function TasksBoard() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {list.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-[12.5px] text-muted-foreground">
                       Nothing here yet.
                     </p>
                   ) : (
@@ -556,15 +555,15 @@ export function TasksBoard() {
                       return (
                         <div
                           key={task.id}
-                          className="rounded-md border border-border/70 p-3"
+                          className="rounded-lg border border-border p-3"
                         >
-                          <p className="text-sm font-medium">{task.title}</p>
+                          <p className="text-sm font-semibold">{task.title}</p>
                           {task.description ? (
-                            <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+                            <p className="mt-1 text-[12.5px] text-muted-foreground line-clamp-2">
                               {task.description}
                             </p>
                           ) : null}
-                          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-[12.5px] text-muted-foreground">
                             <span>Due {formatDate(task.due_date)}</span>
                             <span aria-hidden="true">·</span>
                             <span>{assigneeName}</span>
@@ -651,7 +650,7 @@ export function TasksBoard() {
                   )}
                 </CardContent>
                 {column.status === "COMPLETED" ? (
-                  <CardFooter className="text-xs text-muted-foreground">
+                  <CardFooter className="text-[12.5px] text-muted-foreground">
                     Confirming a task awards its point reward (when set) to the
                     assignee.
                   </CardFooter>
