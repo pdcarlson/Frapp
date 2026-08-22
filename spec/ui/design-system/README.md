@@ -144,7 +144,7 @@ A controller is subscription-gated only if `ChapterGuard` is in its guard chain 
 | `chapter-document` | 6 | `components/documents/documents-page.tsx` |
 | `event` | 3 | `components/events/events-page.tsx` (both create triggers) · `components/events/event-editor-dialog.tsx` · `components/events/event-detail-sheet.tsx` (edit + delete) |
 | `financial-invoice` | 3 (+1 exempt) | `components/billing/invoice-admin-card.tsx` |
-| `points` | 1 | `app/(dashboard)/points/page.tsx` (trigger) · `components/points-adjustment-dialog.tsx` |
+| `points` | 1 | `app/(dashboard)/points/page.tsx` (trigger) · `components/points/points-adjustment-dialog.tsx` |
 | `poll` | 3 | `components/polls/polls-page.tsx` |
 | `report` | 4 | `components/reports/reports-page.tsx` |
 | `semester-rollover` | 1 | `components/settings/settings-page.tsx` (rollover only) |

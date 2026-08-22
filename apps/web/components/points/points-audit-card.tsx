@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, Flag, RefreshCcw } from "lucide-react";
+import { AlertTriangle, RefreshCw } from "lucide-react";
+import { FlaggedGlyph } from "@/components/points/points-glyphs";
 import { useMembers, usePointsTransactions } from "@repo/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,11 +20,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { amountToneClassName } from "@/components/points/amount-tone";
 import {
-  EmptyState,
-  ErrorState,
-  LoadingState,
-} from "@/components/shared/async-states";
+  NestedEmpty,
+  NestedError,
+  NestedLoading,
+} from "@/components/shared/nested-states";
 import { Can } from "@/components/shared/can";
 import { formatLocaleDateTime as formatTimestamp } from "@repo/formatting";
 
@@ -82,7 +84,7 @@ export function PointsAuditCard() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
-              <Flag className="h-4 w-4 text-muted-foreground" />
+              <FlaggedGlyph className="h-5 w-5 text-muted-foreground" />
               Audit tab
             </CardTitle>
             <CardDescription>
@@ -99,7 +101,7 @@ export function PointsAuditCard() {
         <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <CardTitle className="flex items-center gap-2 text-lg">
-              <Flag className="h-4 w-4 text-muted-foreground" />
+              <FlaggedGlyph className="h-5 w-5 text-muted-foreground" />
               Audit tab
             </CardTitle>
             <CardDescription>
@@ -126,7 +128,7 @@ export function PointsAuditCard() {
               disabled={transactionsQuery.isFetching}
               aria-label="Refresh audit list"
             >
-              <RefreshCcw
+              <RefreshCw
                 className={
                   transactionsQuery.isFetching
                     ? "h-4 w-4 animate-spin"
@@ -176,9 +178,9 @@ export function PointsAuditCard() {
           </div>
 
           {transactionsQuery.isPending ? (
-            <LoadingState message="Loading audit transactions..." />
+            <NestedLoading message="Loading audit transactions..." />
           ) : transactionsQuery.isError ? (
-            <ErrorState
+            <NestedError
               title="Audit unavailable"
               description="Couldn't load chapter transactions. Retry or confirm your points:view_all access."
               onRetry={() => void transactionsQuery.refetch()}
@@ -188,7 +190,7 @@ export function PointsAuditCard() {
               const rows = asArray<TransactionRow>(transactionsQuery.data);
               if (rows.length === 0) {
                 return (
-                  <EmptyState
+                  <NestedEmpty
                     title={
                       flaggedOnly
                         ? "No flagged transactions in this window"
@@ -203,7 +205,7 @@ export function PointsAuditCard() {
                 );
               }
               return (
-                <ul className="divide-y divide-border/70">
+                <ul className="divide-y divide-border">
                   {rows.map((row) => {
                     const flagged = row.metadata?.flagged === true;
                     const name = row.user_id
@@ -219,9 +221,7 @@ export function PointsAuditCard() {
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="text-sm font-semibold">{name}</span>
-                            <Badge variant={flagged ? "destructive" : "outline"}>
-                              {row.category ?? "UNKNOWN"}
-                            </Badge>
+                            <Badge variant="outline">{row.category ?? "UNKNOWN"}</Badge>
                             {flagged ? (
                               <Badge variant="destructive" className="gap-1">
                                 <AlertTriangle className="h-3 w-3" />
@@ -230,20 +230,16 @@ export function PointsAuditCard() {
                             ) : null}
                           </div>
                           {row.description ? (
-                            <p className="truncate text-xs text-muted-foreground">
+                            <p className="truncate text-[12.5px] text-muted-foreground">
                               {row.description}
                             </p>
                           ) : null}
-                          <p className="text-[11px] text-muted-foreground">
+                          <p className="text-[12.5px] text-muted-foreground">
                             {formatTimestamp(row.created_at)}
                           </p>
                         </div>
                         <span
-                          className={
-                            (row.amount ?? 0) >= 0
-                              ? "text-sm font-semibold text-emerald-700"
-                              : "text-sm font-semibold text-destructive"
-                          }
+                          className={amountToneClassName(row.amount ?? 0, "sm")}
                         >
                           {sign}
                           {row.amount ?? 0} points

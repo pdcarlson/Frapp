@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, LayoutGrid, List, Search, UserPlus } from "lucide-react";
+import { ArrowDown, ArrowUp, LayoutGrid, List } from "lucide-react";
+import { InviteGlyph, SearchGlyph } from "@/components/members/directory-glyphs";
 import {
   useLeaderboard,
   useMemberSearch,
@@ -12,11 +13,14 @@ import {
 } from "@repo/hooks";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { FOCUS_RING, FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyState, ErrorState, LoadingState, OfflineState } from "@/components/shared/async-states";
 import {
+  dashboardCheckboxCellClassName,
+  dashboardCheckboxHitAreaClassName,
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
@@ -298,7 +302,7 @@ export function MembersDirectory() {
   }
 
   if (activeQuery.isLoading) {
-    return <LoadingState message="Loading live chapter member records..." />;
+    return <LoadingState message={stateMicrocopy.members.loading} />;
   }
 
   if (activeQuery.isError) {
@@ -317,7 +321,7 @@ export function MembersDirectory() {
   // and points sorting. If either query fails silently the directory still looks
   // healthy while those features are quietly broken, so surface their load state.
   if (rolesQuery.isLoading || leaderboardQuery.isLoading) {
-    return <LoadingState message="Loading roles and points…" />;
+    return <LoadingState message={stateMicrocopy.members.loading} />;
   }
 
   if (rolesQuery.isError || leaderboardQuery.isError) {
@@ -345,7 +349,7 @@ export function MembersDirectory() {
           <InviteMemberDialog
             trigger={
               <Button className="gap-2">
-                <UserPlus className="h-4 w-4" />
+                <InviteGlyph className="h-4 w-4" />
                 Invite Member
               </Button>
             }
@@ -354,13 +358,13 @@ export function MembersDirectory() {
         <CardContent>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="relative max-w-md flex-1">
-              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <SearchGlyph className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 aria-label="Search members by name"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search by member name"
-                className="pl-9"
+                className="h-11 pl-9"
               />
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -402,29 +406,25 @@ export function MembersDirectory() {
                 <option value="active">Status: Active</option>
                 <option value="pending">Status: Pending</option>
               </select>
-              <div className="flex overflow-hidden rounded-md border border-border">
-                <button
-                  type="button"
+              <div className="flex items-center gap-2">
+                <Button
+                  size="icon"
+                  variant={view === "table" ? "default" : "secondary"}
                   aria-label="Table view"
                   aria-pressed={view === "table"}
                   onClick={() => setView("table")}
-                  className={`flex h-9 w-9 items-center justify-center transition ${
-                    view === "table" ? "bg-primary text-primary-foreground" : "bg-background"
-                  }`}
                 >
                   <List className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button
+                  size="icon"
+                  variant={view === "card" ? "default" : "secondary"}
                   aria-label="Card view"
                   aria-pressed={view === "card"}
                   onClick={() => setView("card")}
-                  className={`flex h-9 w-9 items-center justify-center transition ${
-                    view === "card" ? "bg-primary text-primary-foreground" : "bg-background"
-                  }`}
                 >
                   <LayoutGrid className="h-4 w-4" />
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -433,8 +433,8 @@ export function MembersDirectory() {
 
       {selectedCount > 0 ? (
         <Card className="border-accent-border bg-accent-subtle">
-          <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm font-medium">
+          <CardContent className="flex flex-col gap-3 pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm font-semibold">
               {selectedCount} member{selectedCount > 1 ? "s" : ""} selected
             </p>
             <div className="flex flex-wrap items-center gap-2">
@@ -474,16 +474,19 @@ export function MembersDirectory() {
       ) : null}
 
       {sortedMembers.length === 0 ? (
+        /*
+         * No CTA. §10 makes the empty-state action optional, and this one was a
+         * control that did not do the thing it named: "Generate invite link"
+         * raised a toast telling the reader to press the Invite Member button
+         * instead — which is the dead end components.md §5 bans, and reads
+         * worst here, where the screen has nothing else on it. That button is
+         * genuinely on screen: the search-and-filter card above renders
+         * whether or not the table has rows, so the empty state does not need
+         * a second copy of it, and §7's description already points at it.
+         */
         <EmptyState
           title={stateMicrocopy.members.emptyTitle}
           description={stateMicrocopy.members.emptyDescription}
-          actionLabel="Generate invite link"
-          onAction={() => {
-            toast({
-              title: "Invite action available in header",
-              description: "Use the Invite Member button at the top-right to generate links.",
-            });
-          }}
         />
       ) : (
         <Card>
@@ -500,24 +503,26 @@ export function MembersDirectory() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-10">
-                      <input
-                        type="checkbox"
-                        aria-label="Select all members on this page"
-                        className={dashboardTableCheckboxClassName}
-                        checked={allPageSelected}
-                        onChange={(event) => {
-                          if (event.target.checked) {
-                            setSelectedMemberIds((prev) => [
-                              ...new Set([...prev, ...pageMemberIds]),
-                            ]);
-                            return;
-                          }
-                          setSelectedMemberIds((prev) =>
-                            prev.filter((id) => !pageMemberIds.includes(id)),
-                          );
-                        }}
-                      />
+                    <TableHead className={dashboardCheckboxCellClassName}>
+                      <label className={dashboardCheckboxHitAreaClassName}>
+                        <input
+                          type="checkbox"
+                          aria-label="Select all members on this page"
+                          className={dashboardTableCheckboxClassName}
+                          checked={allPageSelected}
+                          onChange={(event) => {
+                            if (event.target.checked) {
+                              setSelectedMemberIds((prev) => [
+                                ...new Set([...prev, ...pageMemberIds]),
+                              ]);
+                              return;
+                            }
+                            setSelectedMemberIds((prev) =>
+                              prev.filter((id) => !pageMemberIds.includes(id)),
+                            );
+                          }}
+                        />
+                      </label>
                     </TableHead>
                     <SortableHead label="Name" sortKey="name" active={sortKey} dir={sortDir} onSort={toggleSort} />
                     <SortableHead label="Role" sortKey="role" active={sortKey} dir={sortDir} onSort={toggleSort} />
@@ -531,42 +536,53 @@ export function MembersDirectory() {
                     const id = memberId(member);
                     const name = displayNameOf(member);
                     return (
-                      <TableRow key={id}>
-                        <TableCell className="w-10">
-                          <input
-                            type="checkbox"
-                            aria-label={`Select ${name}`}
-                            className={dashboardTableCheckboxClassName}
-                            checked={selectedMemberIds.includes(id)}
-                            onChange={(event) => {
-                              if (event.target.checked) {
-                                setSelectedMemberIds((prev) => [...new Set([...prev, id])]);
-                                return;
-                              }
-                              setSelectedMemberIds((prev) => prev.filter((c) => c !== id));
-                            }}
-                          />
+                      <TableRow
+                        key={id}
+                        data-state={
+                          selectedMemberIds.includes(id) ? "selected" : undefined
+                        }
+                      >
+                        <TableCell className={dashboardCheckboxCellClassName}>
+                          <label className={dashboardCheckboxHitAreaClassName}>
+                            <input
+                              type="checkbox"
+                              aria-label={`Select ${name}`}
+                              className={dashboardTableCheckboxClassName}
+                              checked={selectedMemberIds.includes(id)}
+                              onChange={(event) => {
+                                if (event.target.checked) {
+                                  setSelectedMemberIds((prev) => [
+                                    ...new Set([...prev, id]),
+                                  ]);
+                                  return;
+                                }
+                                setSelectedMemberIds((prev) =>
+                                  prev.filter((c) => c !== id),
+                                );
+                              }}
+                            />
+                          </label>
                         </TableCell>
-                        <TableCell className="font-medium">
+                        <TableCell className="font-semibold">
                           <div className="flex items-center gap-3">
                             <Avatar className="h-8 w-8">
                               {member.avatar_url ? (
                                 <AvatarImage src={member.avatar_url} alt={name} />
                               ) : null}
-                              <AvatarFallback className="text-xs">
-                                {initials(name)}
-                              </AvatarFallback>
+                              <AvatarFallback>{initials(name)}</AvatarFallback>
                             </Avatar>
                             <div>
                               <span>{name}</span>
                               {member.email ? (
-                                <p className="text-xs text-muted-foreground">{member.email}</p>
+                                <p className="text-[12.5px] text-muted-foreground">{member.email}</p>
                               ) : null}
                             </div>
                           </div>
                         </TableCell>
                         <TableCell>{primaryRoleName(member)}</TableCell>
-                        <TableCell>{pointsOf(member)}</TableCell>
+                        <TableCell className="font-mono tabular-nums">
+                          {pointsOf(member)}
+                        </TableCell>
                         <TableCell>{formatJoined(member.created_at)}</TableCell>
                         <TableCell className="text-right">
                           <Button size="sm" variant="secondary" onClick={() => openMember(id)}>
@@ -588,7 +604,7 @@ export function MembersDirectory() {
                       key={id}
                       type="button"
                       onClick={() => openMember(id)}
-                      className="flex flex-col items-center gap-2 rounded-lg border border-border p-4 text-center transition hover:bg-accent/40"
+                      className={`flex flex-col items-center gap-2 rounded-lg border border-border p-4 text-center transition-colors hover:bg-accent-subtle ${FOCUS_RING}`}
                     >
                       <Avatar className="h-14 w-14">
                         {member.avatar_url ? (
@@ -597,10 +613,10 @@ export function MembersDirectory() {
                         <AvatarFallback>{initials(name)}</AvatarFallback>
                       </Avatar>
                       <div>
-                        <p className="font-medium">{name}</p>
-                        <p className="text-xs text-muted-foreground">{primaryRoleName(member)}</p>
+                        <p className="font-semibold">{name}</p>
+                        <p className="text-[12.5px] text-muted-foreground">{primaryRoleName(member)}</p>
                       </div>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-[12.5px] text-muted-foreground">
                         {pointsOf(member)} pts · {formatJoined(member.created_at)}
                       </p>
                     </button>
@@ -663,13 +679,28 @@ function SortableHead({
   onSort: (key: SortKey) => void;
 }) {
   const isActive = active === sortKey;
+  const direction = dir === "asc" ? "ascending" : "descending";
   return (
-    <TableHead>
+    <TableHead aria-sort={isActive ? direction : "none"}>
       <button
         type="button"
         onClick={() => onSort(sortKey)}
-        className="flex items-center gap-1 font-medium transition hover:text-foreground"
-        aria-label={`Sort by ${label}`}
+        /*
+         * `FOCUS_RING_OFFSET`, not `FOCUS_RING`. The standard recipe swaps the
+         * border to accent and treats the ring as a halo — `focus.ts` is
+         * explicit that the border swap is the half that carries it, since the
+         * ring composites to ~1.3:1. This button has no border *width*
+         * (Preflight zeroes it), so `border-primary` would recolour nothing
+         * while `outline-none` removed the browser's own outline: a control
+         * with no focus indicator at all, which is a README §6 release-gate
+         * failure. The offset ring is solid accent and needs no border.
+         */
+        className={`-mx-1 flex items-center gap-1 rounded-xs px-1 font-semibold transition-colors hover:text-foreground ${FOCUS_RING_OFFSET}`}
+        aria-label={
+          isActive
+            ? `Sort by ${label}, currently ${direction}`
+            : `Sort by ${label}`
+        }
       >
         {label}
         {isActive ? (

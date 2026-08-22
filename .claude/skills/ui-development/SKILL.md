@@ -63,6 +63,23 @@ no `outline` variant either — Signet's Secondary *is* the outlined button.
 `apps/web/components/ui/focus.ts` and `apps/web/components/ui/duotone.tsx`
 are shared recipes rather than components.
 
+Three things the #920 Directory & Finance slice settled, which are easy to
+re-derive wrongly:
+
+- **`Badge` ships the §5 Semantic kind in three hues** — `success`, `warning`,
+  `destructive`. A status label takes one of them, never `default`: `default`
+  is the *chapter accent*, so a red-accented chapter renders `PAID` as its
+  danger badge. `outline` (Hairline) is for metadata that must not read as a
+  status at all.
+- **`Table`'s row hover and selection are a matched pair** — `accent-3` for
+  hover, `accent-4` plus `accent-11` text for selection. Do not re-spell either
+  at a call site, and do not collapse them into one tint: they are
+  luminance-equivalent, and only the second carries a step. The reasoning and
+  the measurements are in the file's own header.
+- **A state rendered inside a `<CardContent>` uses
+  `components/shared/nested-states.tsx`**, not `async-states.tsx`. The latter
+  paints `--card`, which is 1.00:1 inside a card.
+
 ### Adding a new ShadCN component
 
 ShadCN components are copy-pasted from the ShadCN registry, not installed via CLI. To add one:
@@ -86,7 +103,8 @@ summarize the tokens as implemented in `@repo/theme`.
 Signet**: since the #920 shell slice, `apps/web/app/globals.css` imports
 `packages/theme/src/signet.css` (dark-only, Figtree via `--font-figtree`), the shell is repainted,
 and per-screen-family truing-up lands in later #920 slices — until a family's slice lands, its
-screens render legacy classes on the Signet base tokens. **The landing site has NOT been
+screens render legacy classes on the Signet base tokens. The shell, the shared primitives, chat,
+and Directory & Finance (`components/{members,alumni,billing,points}/**`) have landed. **The landing site has NOT been
 reskinned**: it still ships the legacy chat-first **bone / bronze / ink** palette
 (`packages/theme/src/globals.css`), light-first with Geist Sans, its spec frozen at that state
 ([`spec/ui/README.md`](../../../spec/ui/README.md)) — do not restyle it toward Signet ad hoc. The

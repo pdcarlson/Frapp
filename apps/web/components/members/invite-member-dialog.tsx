@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Copy, Loader2, ShieldPlus, Trash2 } from "lucide-react";
+import { AlertTriangle, Copy, Loader2, Trash2 } from "lucide-react";
+import { InviteGlyph } from "@/components/members/directory-glyphs";
 import {
   useBatchCreateInvites,
   useCreateInvite,
@@ -232,7 +233,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
       <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ShieldPlus className="h-4 w-4" />
+            <InviteGlyph className="h-5 w-5" />
             Invite members
           </DialogTitle>
           <DialogDescription>
@@ -241,7 +242,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
         </DialogHeader>
 
         {hasLiveDataError ? (
-          <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+          <div className="flex items-start gap-3 rounded-md border border-warning/[.28] bg-warning/[.13] p-3 text-[12.5px] text-warning">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <div>
               Live invite data could not load. Resolve the underlying API error before issuing
@@ -293,16 +294,16 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
 
         {generatedInvites.length > 0 ? (
           <div className="space-y-2 rounded-md border border-accent-border bg-accent-subtle p-3">
-            <p className="text-sm font-medium">Freshly generated tokens</p>
+            <p className="text-sm font-semibold">Freshly generated tokens</p>
             <div className="space-y-2">
               {generatedInvites.map((invite) => (
                 <div
                   key={invite.id}
-                  className="flex items-center justify-between gap-2 rounded-md border border-border bg-background p-2"
+                  className="flex items-center justify-between gap-2 rounded-md border border-accent-border bg-accent-subtle-hover p-2"
                 >
                   <div className="min-w-0">
-                    <p className="truncate font-mono text-xs">{invite.token}</p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="truncate font-mono text-[12.5px]">{invite.token}</p>
+                    <p className="text-[12.5px] text-muted-foreground">
                       {invite.role} • expires {formatDate(invite.expires_at)}
                     </p>
                   </div>
@@ -317,7 +318,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
         ) : null}
 
         <div className="space-y-2">
-          <p className="text-sm font-medium">Active invite tokens</p>
+          <p className="text-sm font-semibold">Active invite tokens</p>
           {/*
             Revoke's verdict differs from Generate's — free-tier vs
             grace-blocked diverge exactly inside the grace window — so it needs
@@ -332,13 +333,13 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
             activeInviteRows.map((invite) => (
               <div
                 key={invite.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-card p-3"
+                className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-input p-3"
               >
                 <div className="space-y-1">
-                  <p className="font-mono text-xs">{invite.token}</p>
+                  <p className="font-mono text-[12.5px]">{invite.token}</p>
                   <div className="flex items-center gap-2">
                     <Badge variant="outline">{invite.role}</Badge>
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-[12.5px] text-muted-foreground">
                       Expires {formatDate(invite.expires_at)}
                     </span>
                   </div>

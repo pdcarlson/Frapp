@@ -102,6 +102,18 @@ Body text MUST NOT render below 16. Label and caption are for controls and metad
 > ships tabular-nums Figtree and this list no longer claims otherwise. Prefer
 > the same treatment for any other live-counting numeral.
 
+**Money is a figure, not a code-like string.** Amounts are stored and
+transported as integer **cents** (`financial_invoices.amount`, bounded
+1–99,999,999 per [`../../behavior/billing.md`](../../behavior/billing.md); every
+dues-config field is a `*_cents` non-negative integer). They render through one
+helper per platform — [`apps/web/lib/currency.ts`](../../../apps/web/lib/currency.ts)
+and `apps/mobile/lib/dues/invoices.ts` — as `$X,XXX.XX`, and take
+`tabular-nums` so a column of amounts is comparable down the page. They do
+**not** take mono: the reserved list above is ids, tokens, keys and points
+cells, where the string is code-like. The `$` is a literal rather than a locale
+symbol because the server mints every PaymentIntent in `usd`. This convention
+shipped on both platforms before it was written down here.
+
 Sizes MUST come from the scale above. Inventing an off-scale font size in screen code — including arithmetic on a role token, e.g. `tokens.type.section - 2` — is a defect, exactly as a raw hex value is ([`../mobile/README.md`](../mobile/README.md)).
 
 ---

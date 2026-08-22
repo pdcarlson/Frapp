@@ -1,22 +1,26 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search, Scale } from "lucide-react";
+import { AdjustGlyph, SearchGlyph } from "@/components/points/points-glyphs";
 import { useLeaderboard, useMyPoints } from "@repo/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { EmptyState, ErrorState, LoadingState, OfflineState } from "@/components/shared/async-states";
+import { ErrorState, LoadingState, OfflineState } from "@/components/shared/async-states";
+import { NestedEmpty } from "@/components/shared/nested-states";
+import { amountToneClassName } from "@/components/points/amount-tone";
 import {
+  dashboardCheckboxCellClassName,
+  dashboardCheckboxHitAreaClassName,
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
 import { useToast } from "@/hooks/use-toast";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
-import { PointsAdjustmentDialog } from "@/components/points-adjustment-dialog";
+import { PointsAdjustmentDialog } from "@/components/points/points-adjustment-dialog";
 import {
   SubscriptionNotice,
   useGatedDialog,
@@ -207,7 +211,7 @@ export default function PointsPage() {
               {...adjustGate.controlProps()}
               onClick={() => adjustDialog.setOpen(true)}
             >
-              <Scale className="h-4 w-4" />
+              <AdjustGlyph className="h-4 w-4" />
               Adjust points
             </Button>
             {windows.map((item) => (
@@ -233,7 +237,7 @@ export default function PointsPage() {
           />
           <div className="flex flex-wrap items-center gap-3">
             <Badge variant="secondary">My balance</Badge>
-            <p className="text-2xl font-semibold">
+            <p className="text-2xl font-bold tabular-nums">
               {typeof summary?.balance === "number" ? summary.balance : 0} points
             </p>
           </div>
@@ -248,16 +252,16 @@ export default function PointsPage() {
           </CardHeader>
           <CardContent>
             <div className="mb-3 relative">
-              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <SearchGlyph className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 value={leaderboardSearch}
                 onChange={(event) => setLeaderboardSearch(event.target.value)}
                 placeholder="Search by user id"
-                className="pl-9"
+                className="h-11 pl-9"
               />
             </div>
             {filteredLeaderboard.length === 0 ? (
-              <EmptyState
+              <NestedEmpty
                 title={stateMicrocopy.points.emptyLeaderboardTitle}
                 description={stateMicrocopy.points.emptyLeaderboardDescription}
               />
@@ -273,11 +277,13 @@ export default function PointsPage() {
                 <TableBody>
                   {filteredLeaderboard.map((entry, index) => (
                     <TableRow key={entry.user_id}>
-                      <TableCell>#{index + 1}</TableCell>
-                      <TableCell className="font-mono text-xs">
+                      <TableCell className="font-mono tabular-nums">#{index + 1}</TableCell>
+                      <TableCell className="font-mono text-[12.5px]">
                         {entry.user_id}
                       </TableCell>
-                      <TableCell className="font-semibold">{entry.total}</TableCell>
+                      <TableCell className="font-mono font-semibold tabular-nums">
+                        {entry.total}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -294,15 +300,16 @@ export default function PointsPage() {
           <CardContent>
             <div className="mb-3 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
               <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <SearchGlyph className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
                   value={transactionSearch}
                   onChange={(event) => setTransactionSearch(event.target.value)}
                   placeholder="Search descriptions"
-                  className="pl-9"
+                  className="h-11 pl-9"
                 />
               </div>
               <select
+                aria-label="Filter transactions by amount"
                 value={amountFilter}
                 onChange={(event) =>
                   setAmountFilter(
@@ -316,6 +323,7 @@ export default function PointsPage() {
                 <option value="negative">Amount: Negative</option>
               </select>
               <select
+                aria-label="Filter transactions by category"
                 value={categoryFilter}
                 onChange={(event) => setCategoryFilter(event.target.value)}
                 className={dashboardFilterSelectClassName}
@@ -330,7 +338,7 @@ export default function PointsPage() {
             </div>
             {selectedTransactionIds.length > 0 ? (
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-accent-border bg-accent-subtle p-3">
-                <p className="text-sm font-medium">
+                <p className="text-sm font-semibold">
                   {selectedTransactionIds.length} transaction
                   {selectedTransactionIds.length > 1 ? "s" : ""} selected
                 </p>
@@ -353,7 +361,7 @@ export default function PointsPage() {
               </div>
             ) : null}
             {filteredTransactions.length === 0 ? (
-              <EmptyState
+              <NestedEmpty
                 title={stateMicrocopy.points.emptyTransactionsTitle}
                 description={stateMicrocopy.points.emptyTransactionsDescription}
               />
@@ -361,14 +369,16 @@ export default function PointsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-10">
-                      <input
-                        type="checkbox"
-                        aria-label="Select all visible transactions"
-                        className={dashboardTableCheckboxClassName}
-                        checked={allTransactionsSelected}
-                        onChange={(event) => toggleAllTransactions(event.target.checked)}
-                      />
+                    <TableHead className={dashboardCheckboxCellClassName}>
+                      <label className={dashboardCheckboxHitAreaClassName}>
+                        <input
+                          type="checkbox"
+                          aria-label="Select all visible transactions"
+                          className={dashboardTableCheckboxClassName}
+                          checked={allTransactionsSelected}
+                          onChange={(event) => toggleAllTransactions(event.target.checked)}
+                        />
+                      </label>
                     </TableHead>
                     <TableHead>Amount</TableHead>
                     <TableHead>Category</TableHead>
@@ -378,28 +388,35 @@ export default function PointsPage() {
                 </TableHeader>
                 <TableBody>
                   {filteredTransactions.map((transaction) => (
-                    <TableRow key={transaction.id}>
-                      <TableCell className="w-10">
-                        <input
-                          type="checkbox"
-                          aria-label={`Select ${transaction.description}`}
-                          className={dashboardTableCheckboxClassName}
-                          checked={selectedTransactionIds.includes(transaction.id)}
-                          onChange={(event) => toggleTransaction(transaction.id, event.target.checked)}
-                        />
+                    <TableRow
+                      key={transaction.id}
+                      data-state={
+                        selectedTransactionIds.includes(transaction.id)
+                          ? "selected"
+                          : undefined
+                      }
+                    >
+                      <TableCell className={dashboardCheckboxCellClassName}>
+                        <label className={dashboardCheckboxHitAreaClassName}>
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${transaction.description}`}
+                            className={dashboardTableCheckboxClassName}
+                            checked={selectedTransactionIds.includes(transaction.id)}
+                            onChange={(event) =>
+                              toggleTransaction(transaction.id, event.target.checked)
+                            }
+                          />
+                        </label>
                       </TableCell>
                       <TableCell
-                        className={
-                          transaction.amount >= 0
-                            ? "font-semibold text-emerald-700"
-                            : "font-semibold text-destructive"
-                        }
+                        className={amountToneClassName(transaction.amount)}
                       >
                         {transaction.amount >= 0 ? `+${transaction.amount}` : transaction.amount}
                       </TableCell>
                       <TableCell>{transaction.category}</TableCell>
                       <TableCell>{transaction.description}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
+                      <TableCell className="text-[12.5px] text-muted-foreground">
                         {formatTimestamp(transaction.created_at)}
                       </TableCell>
                     </TableRow>

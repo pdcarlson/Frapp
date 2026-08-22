@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Shield, Trash2, UserRound } from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
+import { DirectoryGlyph, RolesGlyph } from "@/components/members/directory-glyphs";
 import {
   useCustomRoles,
   useMember,
@@ -95,14 +96,14 @@ function RoleChecklistItem({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="flex cursor-pointer items-center justify-between rounded-md border border-border p-3 transition hover:bg-accent/40">
+    <label className="flex cursor-pointer items-center justify-between rounded-md border border-border p-3 transition-colors hover:bg-accent-subtle">
       <div>
-        <p className="text-sm font-medium">{title}</p>
+        <p className="text-sm font-semibold">{title}</p>
         <p
           className={
             monoSubtitle
-              ? "font-mono text-xs text-muted-foreground"
-              : "text-xs text-muted-foreground"
+              ? "font-mono text-[12.5px] text-muted-foreground"
+              : "text-[12.5px] text-muted-foreground"
           }
         >
           {subtitle}
@@ -308,7 +309,7 @@ export function MemberDetailSheet({
       <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
-            <UserRound className="h-4 w-4" />
+            <DirectoryGlyph className="h-5 w-5" />
             {displayName}
           </SheetTitle>
           <SheetDescription>
@@ -324,34 +325,34 @@ export function MemberDetailSheet({
         ) : null}
 
         {memberQuery.isError && !usingPreviewData ? (
-          <div className="mt-6 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+          <div className="mt-6 rounded-md border border-destructive/[.28] bg-destructive/[.13] p-3 text-sm text-destructive-text">
             Could not load the latest member profile. Retry from the directory to re-open this member.
           </div>
         ) : null}
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <div className="rounded-md border border-border p-3">
-            <p className="text-xs text-muted-foreground">User ID</p>
-            <p className="mt-1 font-mono text-xs">{userId}</p>
+            <p className="text-[12.5px] text-muted-foreground">User ID</p>
+            <p className="mt-1 font-mono text-[12.5px]">{userId}</p>
           </div>
           <div className="rounded-md border border-border p-3">
-            <p className="text-xs text-muted-foreground">Onboarding</p>
+            <p className="text-[12.5px] text-muted-foreground">Onboarding</p>
             <div className="mt-1">
-              <Badge variant={hasCompletedOnboarding ? "default" : "secondary"}>
+              <Badge variant={hasCompletedOnboarding ? "success" : "warning"}>
                 {hasCompletedOnboarding ? "Complete" : "Pending"}
               </Badge>
             </div>
           </div>
           <div className="rounded-md border border-border p-3 sm:col-span-2">
-            <p className="text-xs text-muted-foreground">Email</p>
+            <p className="text-[12.5px] text-muted-foreground">Email</p>
             <p className="mt-1 text-sm">{email}</p>
           </div>
           <div className="rounded-md border border-border p-3">
-            <p className="text-xs text-muted-foreground">Joined chapter</p>
+            <p className="text-[12.5px] text-muted-foreground">Joined chapter</p>
             <p className="mt-1 text-sm">{formatDate(resolvedMember?.created_at)}</p>
           </div>
           <div className="rounded-md border border-border p-3">
-            <p className="text-xs text-muted-foreground">Points</p>
+            <p className="text-[12.5px] text-muted-foreground">Points</p>
             <p className="mt-1 text-sm">
               {typeof points === "number" ? points : "—"}
             </p>
@@ -360,11 +361,11 @@ export function MemberDetailSheet({
 
         {customFields.length > 0 ? (
           <section className="mt-6 space-y-3">
-            <p className="text-sm font-medium">Custom fields</p>
+            <p className="text-sm font-semibold">Custom fields</p>
             <div className="grid gap-3 sm:grid-cols-2">
               {customFields.map((field) => (
                 <div key={field.field_id} className="rounded-md border border-border p-3">
-                  <p className="text-xs text-muted-foreground">{field.label}</p>
+                  <p className="text-[12.5px] text-muted-foreground">{field.label}</p>
                   <p className="mt-1 text-sm">{formatCustomValue(field)}</p>
                 </div>
               ))}
@@ -374,8 +375,8 @@ export function MemberDetailSheet({
 
         <section className="mt-6 space-y-3">
           <div className="flex items-center gap-2">
-            <Shield className="h-4 w-4 text-muted-foreground" />
-            <p className="text-sm font-medium">Role access</p>
+            <RolesGlyph className="h-4 w-4 text-muted-foreground" />
+            <p className="text-sm font-semibold">Role access</p>
           </div>
           <div className="space-y-2">
             {roleOptions.length === 0 ? (
@@ -398,10 +399,10 @@ export function MemberDetailSheet({
         {customRoleOptions.length > 0 ? (
           <section className="mt-6 space-y-3">
             <div className="flex items-center gap-2">
-              <Shield className="h-4 w-4 text-muted-foreground" />
-              <p className="text-sm font-medium">Custom roles</p>
+              <RolesGlyph className="h-4 w-4 text-muted-foreground" />
+              <p className="text-sm font-semibold">Custom roles</p>
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-[12.5px] text-muted-foreground">
               Capabilities from assigned custom roles apply on the member&apos;s
               next request, alongside their live-role permissions.
             </p>

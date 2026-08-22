@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import plugin from "tailwindcss/plugin";
 import sharedConfig, { colorVar } from "@repo/theme/tailwind";
 
 /*
@@ -16,6 +17,22 @@ import sharedConfig, { colorVar } from "@repo/theme/tailwind";
  * `dark:` variants must stay inert — the Tailwind default `media` strategy
  * would re-activate them for dark-scheme users. Each screen-family slice of
  * #920 deletes its `dark:` variants as it lands.
+ *
+ * `pointer-coarse` is a **custom variant**, registered below. Tailwind did not
+ * ship one until v4 and this workspace is on v3.4, so before the Directory &
+ * Finance slice of #920 every `pointer-coarse:` class in the tree compiled to
+ * nothing at all: the chat slice's `CHIP_HIT_AREA`
+ * (`components/chat/chip.ts`) had been growing reaction chips to the §2 44px
+ * floor on touch only in the source. The shipped stylesheet contained zero
+ * occurrences of `pointer: coarse`. Unknown variants are dropped silently
+ * rather than erroring, which is why it read as working for two slices; it was
+ * caught by compiling the sheet and grepping it, not by inspection.
+ *
+ * Registering it therefore *activates* chat's chips for the first time, which
+ * is a cross-surface change riding on a config edit. Measured in Chromium at
+ * 375px before shipping it: the reaction chips go from 26px to 44px tall on a
+ * coarse pointer, keep their widths, stay on one row and do not overlap — which
+ * is exactly what `CHIP_HIT_AREA` was written to do.
  */
 const config: Config = {
   content: [
@@ -24,6 +41,17 @@ const config: Config = {
   ],
   presets: [sharedConfig],
   darkMode: "class",
+  plugins: [
+    plugin(({ addVariant }) => {
+      /*
+       * §2's touch floor applies where the pointer is coarse. This is the other
+       * half of the same media feature Tailwind's own `hover:` already consults
+       * (`(hover: hover) and (pointer: fine)`), so a control can grow for a
+       * finger without growing for a mouse.
+       */
+      addVariant("pointer-coarse", "@media (pointer: coarse)");
+    }),
+  ],
   theme: {
     extend: {
       colors: {

@@ -69,17 +69,18 @@ export const CHIP_HIT_AREA = "pointer-coarse:h-11";
  * `signet.css` used to ship this as an `.eyebrow` component class at 11px. It
  * had zero consumers (the chat renderers composed their own `font-mono
  * text-[10px]` variant instead), and 11px and 10px are both off the §7 scale,
- * so the class went with this slice and the recipe settled here at the
- * `caption` role. Twelve copies of a four-part class string is how the eleventh
- * and the twelfth quietly become different eyebrows.
+ * so the class went with this slice and the recipe settled at the `caption`
+ * role. Twelve copies of a four-part class string is how the eleventh and the
+ * twelfth quietly become different eyebrows — which is why it now lives in
+ * `components/ui/typography.ts` and is re-exported here: the Directory slice
+ * gained a second family that needs it.
  *
  * **Not `font-mono`.** foundations §7 reserves mono for numeric, status and
  * code-like strings; "EVENT" is a label. `system-audit-card.tsx` is the one
  * renderer that legitimately keeps mono, because an audit row *is* a permission
  * key and an action name.
  */
-export const EYEBROW =
-  "text-[12.5px] font-semibold uppercase tracking-[0.12em]";
+export { EYEBROW } from "@/components/ui/typography";
 
 /**
  * Rich-message card chrome, §8 at the dense radius.

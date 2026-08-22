@@ -4,12 +4,20 @@ import { Suspense, useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { useBillingStatus, useCurrentUser, useInvoices } from "@repo/hooks";
 import { Badge } from "@/components/ui/badge";
+import {
+  invoiceStatusKind,
+  subscriptionStatusKind,
+  subscriptionStatusLabel,
+} from "@/components/billing/invoice-status";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { EmptyState, LoadingState, OfflineState } from "@/components/shared/async-states";
+import { LoadingState, OfflineState } from "@/components/shared/async-states";
+import { NestedEmpty } from "@/components/shared/nested-states";
 import {
+  dashboardCheckboxCellClassName,
+  dashboardCheckboxHitAreaClassName,
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
@@ -172,7 +180,7 @@ export default function BillingPage() {
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-3">
           <div className="rounded-lg border border-border p-4">
-            <p className="text-xs text-muted-foreground">Status</p>
+            <p className="text-[12.5px] text-muted-foreground">Status</p>
             <div className="mt-2 flex items-center gap-2">
               {/*
                 The chapter record is the single source the *gates* read, so it
@@ -186,35 +194,39 @@ export default function BillingPage() {
                 only the billing and invoice queries) and no way to recover.
                 The fallback is display-only: no gate reads it.
               */}
-              <Badge className="capitalize">
-                {subscriptionStatus ??
-                  billingStatus?.subscription_status ??
-                  "unknown"}
+              <Badge
+                variant={subscriptionStatusKind(
+                  subscriptionStatus ?? billingStatus?.subscription_status,
+                )}
+              >
+                {subscriptionStatusLabel(
+                  subscriptionStatus ?? billingStatus?.subscription_status,
+                )}
               </Badge>
             </div>
           </div>
           <div className="rounded-lg border border-border p-4">
-            <p className="text-xs text-muted-foreground">Customer ID</p>
-            <p className="mt-2 text-sm font-medium">{billingStatus?.stripe_customer_id ?? "—"}</p>
+            <p className="text-[12.5px] text-muted-foreground">Customer ID</p>
+            <p className="mt-2 font-mono text-sm">{billingStatus?.stripe_customer_id ?? "—"}</p>
           </div>
           <div className="rounded-lg border border-border p-4">
-            <p className="text-xs text-muted-foreground">Subscription ID</p>
-            <p className="mt-2 text-sm font-medium">{billingStatus?.subscription_id ?? "—"}</p>
+            <p className="text-[12.5px] text-muted-foreground">Subscription ID</p>
+            <p className="mt-2 font-mono text-sm">{billingStatus?.subscription_id ?? "—"}</p>
           </div>
         </CardContent>
       </Card>
 
       {usingPreviewData ? (
-        <Card className="border-amber-200 bg-amber-50/70 dark:border-amber-800 dark:bg-amber-950/30">
-          <CardContent className="flex items-center justify-between gap-4 pt-6">
+        <Card className="border-warning/[.28] bg-warning/[.13]">
+          <CardContent className="flex items-center justify-between gap-4 pt-4">
             <div className="flex items-start gap-3">
-              <AlertTriangle className="mt-0.5 h-4 w-4 text-amber-700 dark:text-amber-300" />
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
               <div>
-                <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
-                  Billing depends on live chapter activation
+                <p className="text-sm font-semibold text-warning">
+                  {stateMicrocopy.billing.previewTitle}
                 </p>
-                <p className="text-xs text-amber-800 dark:text-amber-200">
-                  Complete chapter bootstrap and billing activation before expecting live invoice data.
+                <p className="text-[12.5px] text-warning">
+                  {stateMicrocopy.billing.previewDescription}
                 </p>
               </div>
             </div>
@@ -244,6 +256,7 @@ export default function BillingPage() {
               value={invoiceSearch}
               onChange={(event) => setInvoiceSearch(event.target.value)}
               placeholder="Search invoice or member"
+              className="h-11"
             />
             <select
               aria-label="Invoice status filter"
@@ -261,14 +274,14 @@ export default function BillingPage() {
               <option value="paid">Paid</option>
             </select>
           </div>
-          <div className="mb-4 flex flex-wrap gap-2 text-xs">
-            <Badge variant="secondary">Open: {openCount}</Badge>
-            <Badge variant="secondary">Overdue: {overdueCount}</Badge>
-            <Badge variant="secondary">Paid: {paidCount}</Badge>
+          <div className="mb-4 flex flex-wrap gap-2 text-[12.5px]">
+            <Badge variant="secondary" className="tabular-nums">Open: {openCount}</Badge>
+            <Badge variant="secondary" className="tabular-nums">Overdue: {overdueCount}</Badge>
+            <Badge variant="secondary" className="tabular-nums">Paid: {paidCount}</Badge>
           </div>
           {selectedInvoiceIds.length > 0 ? (
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-accent-border bg-accent-subtle p-3">
-              <p className="text-sm font-medium">
+              <p className="text-sm font-semibold">
                 {selectedInvoiceIds.length} invoice
                 {selectedInvoiceIds.length > 1 ? "s" : ""} selected
               </p>
@@ -291,34 +304,34 @@ export default function BillingPage() {
             </div>
           ) : null}
           {filteredInvoices.length === 0 ? (
-            <EmptyState
+            <NestedEmpty
               title={stateMicrocopy.billing.emptyTitle}
               description={stateMicrocopy.billing.emptyDescription}
-              actionLabel="Create invoice"
-              onAction={() => handleInvoiceAction("Create Invoice")}
             />
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-10">
-                    <input
-                      type="checkbox"
-                      aria-label="Select all visible invoices"
-                      className={dashboardTableCheckboxClassName}
-                      checked={allInvoicesSelected}
-                      onChange={(event) => {
-                        if (event.target.checked) {
-                          setSelectedInvoiceIds((previous) => [
-                            ...new Set([...previous, ...invoiceIds]),
-                          ]);
-                          return;
-                        }
-                        setSelectedInvoiceIds((previous) =>
-                          previous.filter((id) => !invoiceIds.includes(id)),
-                        );
-                      }}
-                    />
+                  <TableHead className={dashboardCheckboxCellClassName}>
+                    <label className={dashboardCheckboxHitAreaClassName}>
+                      <input
+                        type="checkbox"
+                        aria-label="Select all visible invoices"
+                        className={dashboardTableCheckboxClassName}
+                        checked={allInvoicesSelected}
+                        onChange={(event) => {
+                          if (event.target.checked) {
+                            setSelectedInvoiceIds((previous) => [
+                              ...new Set([...previous, ...invoiceIds]),
+                            ]);
+                            return;
+                          }
+                          setSelectedInvoiceIds((previous) =>
+                            previous.filter((id) => !invoiceIds.includes(id)),
+                          );
+                        }}
+                      />
+                    </label>
                   </TableHead>
                   <TableHead>Invoice</TableHead>
                   <TableHead>Amount</TableHead>
@@ -329,34 +342,40 @@ export default function BillingPage() {
               </TableHeader>
               <TableBody>
                 {filteredInvoices.map((invoice) => (
-                  <TableRow key={invoice.id}>
-                    <TableCell className="w-10">
-                      <input
-                        type="checkbox"
-                        aria-label={`Select ${invoice.title}`}
-                        className={dashboardTableCheckboxClassName}
-                        checked={selectedInvoiceIds.includes(invoice.id)}
-                        onChange={(event) => {
-                          if (event.target.checked) {
-                            setSelectedInvoiceIds((previous) => [
-                              ...new Set([...previous, invoice.id]),
-                            ]);
-                            return;
-                          }
-                          setSelectedInvoiceIds((previous) =>
-                            previous.filter((id) => id !== invoice.id),
-                          );
-                        }}
-                      />
+                  <TableRow
+                    key={invoice.id}
+                    data-state={
+                      selectedInvoiceIds.includes(invoice.id) ? "selected" : undefined
+                    }
+                  >
+                    <TableCell className={dashboardCheckboxCellClassName}>
+                      <label className={dashboardCheckboxHitAreaClassName}>
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${invoice.title}`}
+                          className={dashboardTableCheckboxClassName}
+                          checked={selectedInvoiceIds.includes(invoice.id)}
+                          onChange={(event) => {
+                            if (event.target.checked) {
+                              setSelectedInvoiceIds((previous) => [
+                                ...new Set([...previous, invoice.id]),
+                              ]);
+                              return;
+                            }
+                            setSelectedInvoiceIds((previous) =>
+                              previous.filter((id) => id !== invoice.id),
+                            );
+                          }}
+                        />
+                      </label>
                     </TableCell>
-                    <TableCell className="font-medium">{invoice.title}</TableCell>
-                    <TableCell>{formatCurrency(invoice.amount)}</TableCell>
+                    <TableCell className="font-semibold">{invoice.title}</TableCell>
+                    <TableCell className="tabular-nums">
+                      {formatCurrency(invoice.amount)}
+                    </TableCell>
                     <TableCell>
-                      <Badge
-                        variant={invoice.status === "PAID" ? "default" : "secondary"}
-                        className="capitalize"
-                      >
-                        {invoice.status.toLowerCase()}
+                      <Badge variant={invoiceStatusKind(invoice.status)}>
+                        {invoice.status}
                       </Badge>
                     </TableCell>
                     <TableCell>{formatDate(invoice.due_date)}</TableCell>

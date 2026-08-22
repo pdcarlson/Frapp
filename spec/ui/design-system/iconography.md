@@ -188,7 +188,9 @@ theme control.
 
 Screens whose family slice has not landed still draw Lucide, replaced per
 family as each #920 slice rebuilds its screens — the same shape as mobile's
-§6.1.1. Two picks worth pinning meanwhile:
+§6.1.1. Chat has departed (§6.2.2), and so have the four Directory & Finance
+families — members, alumni, billing and points (§6.2.3). Two picks worth
+pinning meanwhile:
 
 - Event **content** surfaces (event detail, the events screens) use
   `CalendarDays` for date rows; the nav intent is `EventsGlyph`. Chat's event
@@ -244,6 +246,64 @@ Three things this table deliberately does not contain:
   the thing the card is *about* is an intent and belongs in the table above,
   which is why the event card's location pin does and its check-in tick does
   not.
+
+### 6.2.3 Directory & Finance (Signet duotone)
+
+Since the #920 Directory & Finance slice these four families draw the duotone
+recipe (§1). The glyphs live in
+[`apps/web/components/members/directory-glyphs.tsx`](../../../apps/web/components/members/directory-glyphs.tsx)
+and [`apps/web/components/points/points-glyphs.tsx`](../../../apps/web/components/points/points-glyphs.tsx),
+both composing the shared recipe module and re-exporting the shell's
+silhouettes rather than redrawing them. Rendered at 20px in card, dialog and
+sheet titles, 16px in table cells, and 14–16px as a badge companion (§2).
+Inside a `Button` they render at 16 whatever the call site asks for, because
+`buttonVariants` pins `[&_svg]:size-4` — which is also what keeps the required
+375px floor gate unaffected by a glyph swap.
+
+Alumni draws from the Directory file rather than one of its own: `/members`
+hosts both tabs, so they are one screen with one set of intents. Billing has no
+file at all — its single in-screen intent is already the shell's Billing nav
+intent, so [`subscription-checkout-card.tsx`](../../../apps/web/components/billing/subscription-checkout-card.tsx)
+imports `BillingGlyph` directly. §1 rule 1 is about not redrawing, not about
+where an import points.
+
+| Semantic intent | Glyph | Home |
+| --- | --- | --- |
+| Invite a member | `InviteGlyph` | `directory-glyphs.tsx` |
+| Alumni | `AlumniGlyph` | `directory-glyphs.tsx` |
+| Member record (detail sheet) | `DirectoryGlyph` | re-export, shell |
+| Role access | `RolesGlyph` | re-export, shell |
+| Directory / ledger search | `SearchGlyph` | re-export, shell |
+| Adjust points | `AdjustGlyph` | `points-glyphs.tsx` |
+| Flagged transaction | `FlaggedGlyph` | `points-glyphs.tsx` |
+| Payment method / checkout | `BillingGlyph` | re-export, shell |
+
+Three things this table deliberately does not contain:
+
+- **A second invite icon.** One intent had shipped as two glyphs — `UserPlus`
+  on the directory's trigger and `ShieldPlus` inside the dialog that trigger
+  opens. The shield was also the wrong story: that dialog issues an invite
+  token, it does not grant a role.
+- **The ✦ Ask mark, again.** `points-adjustment-dialog.tsx` drew Lucide's
+  `WandSparkles` on its submit button. `components.md` §11 claims ✦ for the
+  Ask/AI affordance alone, and the chat slice deleted `Sparkles` for the same
+  reason. The button now carries no glyph: its label already names its verb.
+- **The §10 state family's own glyphs.** `AlertTriangle` (error), `FolderOpen`
+  (empty) and `WifiOff` (offline) are drawn from Lucide by
+  [`async-states.tsx`](../../../apps/web/components/shared/async-states.tsx) and
+  its nested counterpart on *every* surface, reskinned or not, and
+  `AlertCircle` names the same "needs attention" state on the billing overdue
+  card. They are listed here rather than left implicit because §6.3 requires
+  every interim pick to be in this map and these had never been written down —
+  a family slice that read the map literally would have concluded they were
+  unmigrated domain intents. They are not this family's to move: the state
+  family is shared, so its glyphs migrate with a pass over
+  `components/shared/**`, not with a screen family.
+- **Control furniture**, unchanged from §6.2.2's rule, plus this family's four:
+  `Copy` and `Plus` are verbs on buttons, and `ArrowUp`/`ArrowDown` and
+  `List`/`LayoutGrid` name a control's own action — sort direction and view
+  mode — rather than a domain object. `RefreshCcw` in the audit card was a
+  stray second spelling of §6.2.2's `RefreshCw` and is now the sanctioned one.
 
 ### 6.3 Maintenance Rule
 

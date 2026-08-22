@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, CreditCard, Loader2 } from "lucide-react";
+import { CheckCircle2, Loader2 } from "lucide-react";
+import { BillingGlyph } from "@/components/layout/nav-glyphs";
 import { useCreateCheckout, useCreatePortal, useCurrentUser } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import {
@@ -231,12 +232,13 @@ export function SubscriptionCheckoutCard() {
             >
               Check again
             </Button>
-            <a
-              href="/billing"
-              className="text-sm text-muted-foreground underline underline-offset-4"
-            >
-              I haven&apos;t paid yet
-            </a>
+            {/* `h-auto px-0` cancels the size's box classes, which `link` does
+                not reset — without them the anchor renders as a 44px padded
+                block beside the button rather than as inline text. Same pairing
+                as `service-page.tsx`'s proof link. */}
+            <Button asChild variant="link" size="sm" className="h-auto px-0">
+              <a href="/billing">I haven&apos;t paid yet</a>
+            </Button>
           </CardContent>
         ) : null}
       </Card>
@@ -244,7 +246,7 @@ export function SubscriptionCheckoutCard() {
   }
 
   return (
-    <Card className="border-primary/40">
+    <Card className="border-accent-border">
       <CardHeader>
         <CardTitle className="text-lg">
           {status === "past_due"
@@ -284,7 +286,7 @@ export function SubscriptionCheckoutCard() {
               {createPortal.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <CreditCard className="h-4 w-4" />
+                <BillingGlyph className="h-4 w-4" />
               )}
               Manage billing in Stripe
             </Button>
@@ -297,7 +299,7 @@ export function SubscriptionCheckoutCard() {
               {createCheckout.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <CreditCard className="h-4 w-4" />
+                <BillingGlyph className="h-4 w-4" />
               )}
               Complete checkout
             </Button>
