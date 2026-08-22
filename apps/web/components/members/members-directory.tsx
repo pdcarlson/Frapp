@@ -434,7 +434,7 @@ export function MembersDirectory() {
       {selectedCount > 0 ? (
         <Card className="border-accent-border bg-accent-subtle">
           <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm font-medium">
+            <p className="text-sm font-semibold">
               {selectedCount} member{selectedCount > 1 ? "s" : ""} selected
             </p>
             <div className="flex flex-wrap items-center gap-2">
@@ -547,20 +547,20 @@ export function MembersDirectory() {
                             }}
                           />
                         </TableCell>
-                        <TableCell className="font-medium">
+                        <TableCell className="font-semibold">
                           <div className="flex items-center gap-3">
                             <Avatar className="h-8 w-8">
                               {member.avatar_url ? (
                                 <AvatarImage src={member.avatar_url} alt={name} />
                               ) : null}
-                              <AvatarFallback className="text-xs">
+                              <AvatarFallback className="text-[12.5px]">
                                 {initials(name)}
                               </AvatarFallback>
                             </Avatar>
                             <div>
                               <span>{name}</span>
                               {member.email ? (
-                                <p className="text-xs text-muted-foreground">{member.email}</p>
+                                <p className="text-[12.5px] text-muted-foreground">{member.email}</p>
                               ) : null}
                             </div>
                           </div>
@@ -597,10 +597,10 @@ export function MembersDirectory() {
                         <AvatarFallback>{initials(name)}</AvatarFallback>
                       </Avatar>
                       <div>
-                        <p className="font-medium">{name}</p>
-                        <p className="text-xs text-muted-foreground">{primaryRoleName(member)}</p>
+                        <p className="font-semibold">{name}</p>
+                        <p className="text-[12.5px] text-muted-foreground">{primaryRoleName(member)}</p>
                       </div>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-[12.5px] text-muted-foreground">
                         {pointsOf(member)} pts · {formatJoined(member.created_at)}
                       </p>
                     </button>
@@ -668,7 +668,7 @@ function SortableHead({
       <button
         type="button"
         onClick={() => onSort(sortKey)}
-        className="flex items-center gap-1 font-medium transition hover:text-foreground"
+        className="flex items-center gap-1 font-semibold transition hover:text-foreground"
         aria-label={`Sort by ${label}`}
       >
         {label}

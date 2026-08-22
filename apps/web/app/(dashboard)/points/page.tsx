@@ -274,7 +274,7 @@ export default function PointsPage() {
                   {filteredLeaderboard.map((entry, index) => (
                     <TableRow key={entry.user_id}>
                       <TableCell>#{index + 1}</TableCell>
-                      <TableCell className="font-mono text-xs">
+                      <TableCell className="font-mono text-[12.5px]">
                         {entry.user_id}
                       </TableCell>
                       <TableCell className="font-semibold">{entry.total}</TableCell>
@@ -330,7 +330,7 @@ export default function PointsPage() {
             </div>
             {selectedTransactionIds.length > 0 ? (
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-accent-border bg-accent-subtle p-3">
-                <p className="text-sm font-medium">
+                <p className="text-sm font-semibold">
                   {selectedTransactionIds.length} transaction
                   {selectedTransactionIds.length > 1 ? "s" : ""} selected
                 </p>
@@ -399,7 +399,7 @@ export default function PointsPage() {
                       </TableCell>
                       <TableCell>{transaction.category}</TableCell>
                       <TableCell>{transaction.description}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
+                      <TableCell className="text-[12.5px] text-muted-foreground">
                         {formatTimestamp(transaction.created_at)}
                       </TableCell>
                     </TableRow>

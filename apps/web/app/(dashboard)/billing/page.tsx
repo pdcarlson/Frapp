@@ -172,7 +172,7 @@ export default function BillingPage() {
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-3">
           <div className="rounded-lg border border-border p-4">
-            <p className="text-xs text-muted-foreground">Status</p>
+            <p className="text-[12.5px] text-muted-foreground">Status</p>
             <div className="mt-2 flex items-center gap-2">
               {/*
                 The chapter record is the single source the *gates* read, so it
@@ -194,12 +194,12 @@ export default function BillingPage() {
             </div>
           </div>
           <div className="rounded-lg border border-border p-4">
-            <p className="text-xs text-muted-foreground">Customer ID</p>
-            <p className="mt-2 text-sm font-medium">{billingStatus?.stripe_customer_id ?? "—"}</p>
+            <p className="text-[12.5px] text-muted-foreground">Customer ID</p>
+            <p className="mt-2 text-sm font-semibold">{billingStatus?.stripe_customer_id ?? "—"}</p>
           </div>
           <div className="rounded-lg border border-border p-4">
-            <p className="text-xs text-muted-foreground">Subscription ID</p>
-            <p className="mt-2 text-sm font-medium">{billingStatus?.subscription_id ?? "—"}</p>
+            <p className="text-[12.5px] text-muted-foreground">Subscription ID</p>
+            <p className="mt-2 text-sm font-semibold">{billingStatus?.subscription_id ?? "—"}</p>
           </div>
         </CardContent>
       </Card>
@@ -210,10 +210,10 @@ export default function BillingPage() {
             <div className="flex items-start gap-3">
               <AlertTriangle className="mt-0.5 h-4 w-4 text-amber-700 dark:text-amber-300" />
               <div>
-                <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
+                <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
                   Billing depends on live chapter activation
                 </p>
-                <p className="text-xs text-amber-800 dark:text-amber-200">
+                <p className="text-[12.5px] text-amber-800 dark:text-amber-200">
                   Complete chapter bootstrap and billing activation before expecting live invoice data.
                 </p>
               </div>
@@ -261,14 +261,14 @@ export default function BillingPage() {
               <option value="paid">Paid</option>
             </select>
           </div>
-          <div className="mb-4 flex flex-wrap gap-2 text-xs">
+          <div className="mb-4 flex flex-wrap gap-2 text-[12.5px]">
             <Badge variant="secondary">Open: {openCount}</Badge>
             <Badge variant="secondary">Overdue: {overdueCount}</Badge>
             <Badge variant="secondary">Paid: {paidCount}</Badge>
           </div>
           {selectedInvoiceIds.length > 0 ? (
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-accent-border bg-accent-subtle p-3">
-              <p className="text-sm font-medium">
+              <p className="text-sm font-semibold">
                 {selectedInvoiceIds.length} invoice
                 {selectedInvoiceIds.length > 1 ? "s" : ""} selected
               </p>
@@ -349,7 +349,7 @@ export default function BillingPage() {
                         }}
                       />
                     </TableCell>
-                    <TableCell className="font-medium">{invoice.title}</TableCell>
+                    <TableCell className="font-semibold">{invoice.title}</TableCell>
                     <TableCell>{formatCurrency(invoice.amount)}</TableCell>
                     <TableCell>
                       <Badge

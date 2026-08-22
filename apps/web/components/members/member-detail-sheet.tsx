@@ -97,12 +97,12 @@ function RoleChecklistItem({
   return (
     <label className="flex cursor-pointer items-center justify-between rounded-md border border-border p-3 transition hover:bg-accent/40">
       <div>
-        <p className="text-sm font-medium">{title}</p>
+        <p className="text-sm font-semibold">{title}</p>
         <p
           className={
             monoSubtitle
-              ? "font-mono text-xs text-muted-foreground"
-              : "text-xs text-muted-foreground"
+              ? "font-mono text-[12.5px] text-muted-foreground"
+              : "text-[12.5px] text-muted-foreground"
           }
         >
           {subtitle}
@@ -331,11 +331,11 @@ export function MemberDetailSheet({
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <div className="rounded-md border border-border p-3">
-            <p className="text-xs text-muted-foreground">User ID</p>
-            <p className="mt-1 font-mono text-xs">{userId}</p>
+            <p className="text-[12.5px] text-muted-foreground">User ID</p>
+            <p className="mt-1 font-mono text-[12.5px]">{userId}</p>
           </div>
           <div className="rounded-md border border-border p-3">
-            <p className="text-xs text-muted-foreground">Onboarding</p>
+            <p className="text-[12.5px] text-muted-foreground">Onboarding</p>
             <div className="mt-1">
               <Badge variant={hasCompletedOnboarding ? "default" : "secondary"}>
                 {hasCompletedOnboarding ? "Complete" : "Pending"}
@@ -343,15 +343,15 @@ export function MemberDetailSheet({
             </div>
           </div>
           <div className="rounded-md border border-border p-3 sm:col-span-2">
-            <p className="text-xs text-muted-foreground">Email</p>
+            <p className="text-[12.5px] text-muted-foreground">Email</p>
             <p className="mt-1 text-sm">{email}</p>
           </div>
           <div className="rounded-md border border-border p-3">
-            <p className="text-xs text-muted-foreground">Joined chapter</p>
+            <p className="text-[12.5px] text-muted-foreground">Joined chapter</p>
             <p className="mt-1 text-sm">{formatDate(resolvedMember?.created_at)}</p>
           </div>
           <div className="rounded-md border border-border p-3">
-            <p className="text-xs text-muted-foreground">Points</p>
+            <p className="text-[12.5px] text-muted-foreground">Points</p>
             <p className="mt-1 text-sm">
               {typeof points === "number" ? points : "—"}
             </p>
@@ -360,11 +360,11 @@ export function MemberDetailSheet({
 
         {customFields.length > 0 ? (
           <section className="mt-6 space-y-3">
-            <p className="text-sm font-medium">Custom fields</p>
+            <p className="text-sm font-semibold">Custom fields</p>
             <div className="grid gap-3 sm:grid-cols-2">
               {customFields.map((field) => (
                 <div key={field.field_id} className="rounded-md border border-border p-3">
-                  <p className="text-xs text-muted-foreground">{field.label}</p>
+                  <p className="text-[12.5px] text-muted-foreground">{field.label}</p>
                   <p className="mt-1 text-sm">{formatCustomValue(field)}</p>
                 </div>
               ))}
@@ -375,7 +375,7 @@ export function MemberDetailSheet({
         <section className="mt-6 space-y-3">
           <div className="flex items-center gap-2">
             <Shield className="h-4 w-4 text-muted-foreground" />
-            <p className="text-sm font-medium">Role access</p>
+            <p className="text-sm font-semibold">Role access</p>
           </div>
           <div className="space-y-2">
             {roleOptions.length === 0 ? (
@@ -399,9 +399,9 @@ export function MemberDetailSheet({
           <section className="mt-6 space-y-3">
             <div className="flex items-center gap-2">
               <Shield className="h-4 w-4 text-muted-foreground" />
-              <p className="text-sm font-medium">Custom roles</p>
+              <p className="text-sm font-semibold">Custom roles</p>
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-[12.5px] text-muted-foreground">
               Capabilities from assigned custom roles apply on the member&apos;s
               next request, alongside their live-role permissions.
             </p>

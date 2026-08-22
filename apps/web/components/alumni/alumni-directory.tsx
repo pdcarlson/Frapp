@@ -119,7 +119,7 @@ export function AlumniDirectory() {
             <div className="grid gap-1">
               <label
                 htmlFor="alumni-grad-year"
-                className="text-xs uppercase tracking-wide text-muted-foreground"
+                className="text-[12.5px] uppercase tracking-wide text-muted-foreground"
               >
                 Graduation year
               </label>
@@ -134,7 +134,7 @@ export function AlumniDirectory() {
             <div className="grid gap-1">
               <label
                 htmlFor="alumni-city"
-                className="text-xs uppercase tracking-wide text-muted-foreground"
+                className="text-[12.5px] uppercase tracking-wide text-muted-foreground"
               >
                 City
               </label>
@@ -148,7 +148,7 @@ export function AlumniDirectory() {
             <div className="grid gap-1">
               <label
                 htmlFor="alumni-company"
-                className="text-xs uppercase tracking-wide text-muted-foreground"
+                className="text-[12.5px] uppercase tracking-wide text-muted-foreground"
               >
                 Company
               </label>
@@ -214,18 +214,18 @@ export function AlumniDirectory() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <p className="truncate text-sm font-semibold">{name}</p>
-                      <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                      <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[12.5px] uppercase tracking-wide text-muted-foreground">
                         <GraduationCap className="h-3 w-3" /> Alumni
                       </span>
                     </div>
-                    <p className="text-xs text-muted-foreground">{primaryLine}</p>
+                    <p className="text-[12.5px] text-muted-foreground">{primaryLine}</p>
                     {secondaryLine ? (
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-[12.5px] text-muted-foreground">
                         {secondaryLine}
                       </p>
                     ) : null}
                     {alum.bio ? (
-                      <p className="mt-2 line-clamp-3 text-xs text-foreground/80">
+                      <p className="mt-2 line-clamp-3 text-[12.5px] text-foreground/80">
                         {alum.bio}
                       </p>
                     ) : null}

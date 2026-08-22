@@ -476,12 +476,12 @@ export function InvoiceAdminCard() {
                         <p className="text-sm font-semibold">
                           {invoice.title}
                         </p>
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-[12.5px] text-muted-foreground">
                           {name} · Due{" "}
                           {new Date(invoice.due_date).toLocaleDateString()}
                         </p>
                         {invoice.description ? (
-                          <p className="truncate text-xs text-muted-foreground">
+                          <p className="truncate text-[12.5px] text-muted-foreground">
                             {invoice.description}
                           </p>
                         ) : null}
@@ -544,7 +544,7 @@ export function InvoiceAdminCard() {
               </ul>
             )}
           </CardContent>
-          <CardFooter className="text-xs text-muted-foreground">
+          <CardFooter className="text-[12.5px] text-muted-foreground">
             Stripe webhooks handle automatic PAID transitions. Manual Paid /
             Void buttons exist for corrections and cash-paid dues.
           </CardFooter>
