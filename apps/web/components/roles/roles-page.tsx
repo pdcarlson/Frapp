@@ -49,7 +49,7 @@ import {
   dashboardCheckboxHitAreaClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
-import { HOUSE_SEED } from "@repo/chapter-theme";
+import { signetDarkTokens } from "@repo/theme/signet";
 
 type Role = {
   id: string;
@@ -83,15 +83,22 @@ type MemberSummary = {
  * ("never brown-bronze, never royal blue"); `#10B981` is #916's conflicting
  * emerald, the raw Tailwind green that shipped beside `--success`.
  *
- * `HOUSE_SEED` rather than a Signet token: `roles.color` is chapter data
- * written to the database and rendered as a raw swatch, not a token reference,
- * so a `var(--…)` here would be stored as a literal string and paint nothing.
- * The house gold is the system's own default seed, which makes the picker open
- * on the product's colour instead of a stranger's blue. The column's server
- * default is `null` and stays that way — this only decides where the picker
- * starts, never what an untouched role stores.
+ * A literal hex rather than a `var(--…)`: `roles.color` is chapter data written
+ * to the database and rendered as a raw swatch, so a token reference here
+ * would be stored as the string `"var(--primary)"` and paint nothing. The
+ * house seed is the system's own default, which opens the picker on the
+ * product's colour instead of a stranger's blue.
+ *
+ * Read from `@repo/theme/signet` rather than `@repo/chapter-theme`, which also
+ * exports it as `HOUSE_SEED`: that package's `index.ts` re-exports through a
+ * `./signet.js` specifier Turbopack cannot resolve from source, so importing
+ * it here type-checks and passes vitest and then fails `next build`. It is
+ * fine in `tests/`, which is why the contrast guards use it.
+ *
+ * The column's server default is `null` and stays that way — this only decides
+ * where the picker starts, never what an untouched role stores.
  */
-const DEFAULT_ROLE_SWATCH = HOUSE_SEED;
+const DEFAULT_ROLE_SWATCH = signetDarkTokens.color.gold.seed;
 
 export function RolesAndPermissionsPage() {
   const { toast } = useToast();

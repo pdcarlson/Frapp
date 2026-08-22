@@ -44,7 +44,6 @@ import { PermissionsOfflineSurface } from "@/components/shared/async-states";
 import { BillingGlyph } from "@/components/layout/nav-glyphs";
 import { Can } from "@/components/shared/can";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
-import { HOUSE_SEED } from "@repo/chapter-theme";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -742,7 +741,7 @@ function SettingsPageContent() {
                       aria-label="Accent color hex value"
                       value={accentDraft}
                       onChange={(event) => setAccentDraft(event.target.value)}
-                      placeholder={HOUSE_SEED}
+                      placeholder={signetDarkTokens.color.gold.seed}
                       className="max-w-xs font-mono"
                     />
                     {/*
