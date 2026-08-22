@@ -38,10 +38,15 @@ import { FOCUS_RING } from "@/components/ui/focus";
  * A mouse keeps the 24px box and the 48px column; a finger gets a real 44px
  * target and the column is already wide enough to hold it.
  *
- * The cell recipe is `w-12` (48) rather than `w-11` (44) because `TableCell`
- * keeps its `p-2`: 44 of hit area plus 2x2px of cell padding is 48, and pinning
- * the column at exactly 44 would put the label's own edge against the next
- * cell's text.
+ * The cell recipe is `w-12` (48), which is the width a *pointer* gets: 24px of
+ * control plus `TableCell`'s 2x8px padding, with room to spare. It is not a
+ * clamp — `width` on a `<td>` is a minimum hint to the table layout algorithm,
+ * so on a coarse pointer the column simply grows to fit the 44px label rather
+ * than clipping it. Measured in Chromium at a 375px viewport: 48px column with
+ * a 24x24 label under `(pointer: fine)`, 60px column with a real 44x44 label
+ * and the 24px box still centred under `(pointer: coarse)`. The table sits in
+ * `Table`'s own `overflow-auto` wrapper, so those 12px scroll the table rather
+ * than the page and the 375px floor is unaffected.
  */
 export const dashboardFilterSelectClassName = [
   "h-11 rounded-md border border-input bg-surface-1 px-3.5 text-sm text-foreground transition-colors",
