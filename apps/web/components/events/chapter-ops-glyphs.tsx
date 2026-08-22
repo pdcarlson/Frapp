@@ -14,7 +14,7 @@
  * would put the same re-export in five places, which is the drift
  * `ui/typography.ts` was hoisted to stop.
  *
- * **Five of the six are re-exports, and that is the point.** `nav-glyphs.tsx`
+ * **Eight of the nine are re-exports, and that is the point.** `nav-glyphs.tsx`
  * already draws these intents for the sidebar, and a second copy of the same
  * path data is exactly the drift §1 rule 1 bans — the Directory family states
  * the same rule for its three shared silhouettes.
@@ -39,7 +39,9 @@ export {
   PointsGlyph,
   RolesGlyph,
   SearchGlyph,
+  ServiceGlyph,
   StudyZonesGlyph,
+  TasksGlyph,
 } from "@/components/layout/nav-glyphs";
 
 export type ChapterOpsGlyphProps = DuotoneGlyphProps;

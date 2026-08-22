@@ -420,8 +420,18 @@ export function StudyPage() {
    * README §4 item 4: a network-dependent async view ships an offline state.
    * This screen had none, so a disconnected member sat on the loading
    * skeleton until the query gave up. Copy is writing.md §7's row.
+   *
+   * **Not while a session is running.** This screen's own invariant, stated
+   * on the Pause/Stop controls below, is that a member is never pinned to a
+   * live timer they cannot end — which is exactly why those two writes are
+   * deliberately ungated. Replacing the whole page with an offline card would
+   * enforce the same trap by unmounting instead of disabling, and losing
+   * network mid-session (a dead zone, a lift, weak house wifi) is the likeliest
+   * way to reach it. A running session keeps its card, its badges and its Stop
+   * button; `stopSession`'s `finally` clears the session locally even when the
+   * server refuses, so ending it offline works.
    */
-  if (isOffline) {
+  if (isOffline && !activeSession) {
     return (
       <OfflineState
         title="Study hours unavailable offline"

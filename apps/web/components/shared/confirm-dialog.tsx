@@ -89,14 +89,14 @@ export function useConfirmDialog(): {
   const [pending, setPending] = React.useState<PendingRequest | null>(null);
   const [comment, setComment] = React.useState("");
   const openerRef = React.useRef<Element | null>(null);
-
-  const confirm = React.useCallback((request: ConfirmRequest) => {
-    openerRef.current = document.activeElement;
-    setComment("");
-    return new Promise<ConfirmResult | null>((resolve) => {
-      setPending({ ...request, resolve });
-    });
-  }, []);
+  /*
+   * The last request, kept after `pending` clears. Radix keeps `DialogContent`
+   * mounted through its 200ms exit transition, so reading the live `pending`
+   * for the title and the button labels blanks them mid-animation on every
+   * close. State rather than a ref because the compiler lint — correctly —
+   * forbids reading or writing a ref during render.
+   */
+  const [shown, setShown] = React.useState<ConfirmRequest | null>(null);
 
   const settle = React.useCallback((result: ConfirmResult | null) => {
     setPending((current) => {
@@ -105,10 +105,34 @@ export function useConfirmDialog(): {
     });
   }, []);
 
+  const confirm = React.useCallback((request: ConfirmRequest) => {
+    openerRef.current = document.activeElement;
+    setComment("");
+    setShown(request);
+    return new Promise<ConfirmResult | null>((resolve) => {
+      setPending((current) => {
+        /*
+         * A second confirmation before the first settles would otherwise
+         * drop the first `resolve` on the floor and hang its `await`
+         * forever. Two clicks can land in one commit — a held Enter key
+         * repeats faster than the overlay paints. The superseded request
+         * answers `null`, which every call site already treats as cancel.
+         */
+        current?.resolve(null);
+        return { ...request, resolve };
+      });
+    });
+  }, []);
+
   function handleCloseAutoFocus(event: Event) {
     const opener = openerRef.current;
     const openerUsable =
       opener instanceof HTMLElement &&
+      // `document.activeElement` is `<body>` when nothing holds focus, and
+      // `<body>` passes every check below — WebKit does not focus a button on
+      // mouse-down, so treating it as usable reproduces exactly the drop to
+      // `<body>` this function exists to prevent.
+      opener !== document.body &&
       opener.isConnected &&
       !opener.hasAttribute("disabled") &&
       opener.getAttribute("aria-disabled") !== "true";
@@ -116,8 +140,7 @@ export function useConfirmDialog(): {
     event.preventDefault();
     // The shell's own landmark, which the "Skip to main content" link already
     // targets. `tabindex="-1"` is the standard skip-link pattern: a landmark is
-    // not focusable on its own, and without it this lands on `<body>` and
-    // restarts keyboard navigation at the top of the document.
+    // not focusable on its own.
     const main = document.getElementById("main-content");
     if (main) {
       main.setAttribute("tabindex", "-1");
@@ -126,46 +149,82 @@ export function useConfirmDialog(): {
   }
 
   const confirmDialog = (
-    <Dialog
-      open={pending !== null}
-      onOpenChange={(next) => {
-        // Escape, the overlay, and the close affordance all route here, and all
-        // three mean "cancel" — never an empty confirmation.
-        if (!next) settle(null);
-      }}
-    >
+    <ConfirmDialogHost open={pending !== null} onSettle={settle}>
       <DialogContent onCloseAutoFocus={handleCloseAutoFocus}>
         <DialogHeader>
-          <DialogTitle className="break-words">{pending?.title}</DialogTitle>
-          <DialogDescription>{pending?.description}</DialogDescription>
+          <DialogTitle className="break-words">{shown?.title}</DialogTitle>
+          <DialogDescription>{shown?.description}</DialogDescription>
         </DialogHeader>
-        {pending?.comment ? (
+        {shown?.comment ? (
           <div className="space-y-1.5">
             <Label htmlFor="confirm-dialog-comment">
-              {pending.comment.label}
+              {shown.comment.label}
             </Label>
             <Textarea
               id="confirm-dialog-comment"
               value={comment}
-              placeholder={pending.comment.placeholder}
+              placeholder={shown.comment.placeholder}
               onChange={(event) => setComment(event.target.value)}
             />
           </div>
         ) : null}
         <DialogFooter>
           <Button variant="secondary" onClick={() => settle(null)}>
-            {pending?.cancelLabel ?? "Cancel"}
+            {shown?.cancelLabel ?? "Cancel"}
           </Button>
           <Button
-            variant={pending?.tone === "default" ? "default" : "destructive"}
+            variant={shown?.tone === "default" ? "default" : "destructive"}
             onClick={() => settle({ comment })}
           >
-            {pending?.confirmLabel}
+            {shown?.confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>
-    </Dialog>
+    </ConfirmDialogHost>
   );
 
   return { confirm, confirmDialog };
+}
+
+/**
+ * The `<Dialog>` root, plus the guarantee that a pending promise settles even
+ * if the caller stops rendering it.
+ *
+ * That is not hypothetical: every screen using this hook renders
+ * `{confirmDialog}` inside its main return, *after* early returns for the
+ * offline, loading and error states. Going offline with a confirmation open
+ * takes the whole subtree away — `onOpenChange` never fires for an unmount, so
+ * without this the caller's `await confirm(...)` would hang forever, holding
+ * its closure over the row and the mutation. Settling on unmount puts the
+ * guarantee in the one place that cannot be forgotten by a call site.
+ */
+function ConfirmDialogHost({
+  open,
+  onSettle,
+  children,
+}: {
+  open: boolean;
+  /**
+   * The hook's `settle`, passed directly rather than wrapped in an arrow.
+   * It is `useCallback([])`-stable, which is what makes the cleanup below fire
+   * on unmount and not on every render — an inline `() => settle(null)` would
+   * be a new identity each render, so the effect would tear down and re-run
+   * continuously and cancel every confirmation the moment it opened.
+   */
+  onSettle: (result: ConfirmResult | null) => void;
+  children: React.ReactNode;
+}) {
+  React.useEffect(() => () => onSettle(null), [onSettle]);
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        // Escape, the overlay and the close affordance all route here, and all
+        // three mean cancel — never an empty confirmation.
+        if (!next) onSettle(null);
+      }}
+    >
+      {children}
+    </Dialog>
+  );
 }

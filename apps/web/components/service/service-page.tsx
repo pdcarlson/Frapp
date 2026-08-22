@@ -38,6 +38,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { NestedEmpty } from "@/components/shared/nested-states";
+import { ServiceGlyph } from "@/components/events/chapter-ops-glyphs";
 import {
   ErrorState,
   LoadingState,
@@ -425,7 +426,10 @@ export function ServiceHoursPage() {
             </DialogTrigger>
             <DialogContent className="sm:max-w-lg" {...logDialog.contentProps}>
               <DialogHeader>
-                <DialogTitle>Log service hours</DialogTitle>
+                <DialogTitle className="flex items-center gap-2">
+                  <ServiceGlyph className="h-4 w-4" />
+                  Log service hours
+                </DialogTitle>
                 <DialogDescription>
                   Submit a service entry for admin approval. Attach a photo or
                   PDF as proof of your service.
@@ -511,7 +515,7 @@ export function ServiceHoursPage() {
                     required={receiptRequired}
                   />
                   <p className="text-[12.5px] text-muted-foreground">
-                    Photo or PDF, up to 25MB.
+                    Photo or PDF, up to {MAX_UPLOAD_LABEL}.
                   </p>
                 </div>
               </form>
@@ -686,8 +690,8 @@ export function ServiceHoursPage() {
         </CardContent>
         <CardFooter className="text-[12.5px] text-muted-foreground">
           Approved hours automatically award service points at your
-          chapter&apos;s configured rate. Withdrawing a rejected entry is
-          allowed — create a fresh one when ready.
+          chapter&apos;s configured rate. A rejected entry stays on your history
+          — submit a fresh one when ready.
         </CardFooter>
       </Card>
 

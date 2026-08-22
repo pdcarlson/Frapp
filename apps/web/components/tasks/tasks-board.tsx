@@ -44,6 +44,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { NestedEmpty } from "@/components/shared/nested-states";
+import { TasksGlyph } from "@/components/events/chapter-ops-glyphs";
 import {
   EmptyState,
   ErrorState,
@@ -91,26 +93,40 @@ type MemberSummary = {
   display_name?: string | null;
 };
 
-const COLUMNS: { status: TaskStatus; label: string; description: string }[] = [
+const COLUMNS: {
+  status: TaskStatus;
+  label: string;
+  description: string;
+  /**
+   * Per-column empty copy. §10's Empty slot wants one line that says what puts
+   * something here, and a column is not the screen — four identical "No tasks
+   * yet" cards would say less than the four the board actually needs.
+   */
+  emptyDescription: string;
+}[] = [
   {
     status: "TODO",
     label: "To do",
     description: "Assigned but not started yet.",
+    emptyDescription: "New tasks land here when an admin assigns them.",
   },
   {
     status: "IN_PROGRESS",
     label: "In progress",
     description: "Assignee is working on it.",
+    emptyDescription: "A task moves here once its assignee starts work.",
   },
   {
     status: "COMPLETED",
     label: "Awaiting confirmation",
     description: "Assignee marked done; admin confirms to award points.",
+    emptyDescription: "Tasks an assignee marked done wait here for an admin.",
   },
   {
     status: "OVERDUE",
     label: "Overdue",
     description: "Past due date and not yet complete.",
+    emptyDescription: "Nothing is past its due date — the good kind of empty.",
   },
 ];
 
@@ -255,7 +271,7 @@ export function TasksBoard() {
       });
       toast({
         title: "Status updated",
-        description: `${task.title} → ${next.replace("_", " ")}.`,
+        description: `${task.title} → ${next}.`,
       });
     } catch (error) {
       toast({
@@ -406,7 +422,10 @@ export function TasksBoard() {
               {...createDialog.contentProps}
             >
               <DialogHeader>
-                <DialogTitle>Create a task</DialogTitle>
+                <DialogTitle className="flex items-center gap-2">
+                  <TasksGlyph className="h-4 w-4" />
+                  Create a task
+                </DialogTitle>
                 <DialogDescription>
                   Assign it to a chapter member with a due date. Point rewards
                   are optional.
@@ -563,9 +582,10 @@ export function TasksBoard() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {list.length === 0 ? (
-                    <p className="text-[12.5px] text-muted-foreground">
-                      Nothing here yet.
-                    </p>
+                    <NestedEmpty
+                      title="Nothing here yet"
+                      description={column.emptyDescription}
+                    />
                   ) : (
                     list.map((task) => {
                       const assigneeName =

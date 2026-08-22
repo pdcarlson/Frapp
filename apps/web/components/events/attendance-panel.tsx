@@ -217,17 +217,34 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
     }
   }
 
-  if (attendanceQuery.isLoading || membersQuery.isLoading) {
-    return <NestedLoading message="Loading attendance..." />;
+  /*
+   * `isPending`, not `isLoading`. `isLoading` is `isPending && isFetching`, and
+   * `isFetching` is false while a query is *disabled* — `useMembers` is
+   * `enabled: !!chapterId` (`packages/hooks/src/use-members.ts`). So an
+   * unresolved chapter read as "not loading" on both flags, `membersQuery`
+   * was not errored either (merely disabled), and the panel fell through to
+   * "No attendance records yet": the same false-empty the roster branch below
+   * exists to prevent, reached by another door. README §4's warning about
+   * `isPending` on a disabled query is about spinning forever; here the roster
+   * is genuinely not available yet, and claiming nobody checked in is worse.
+   */
+  if (attendanceQuery.isPending || membersQuery.isPending) {
+    return (
+      <div role="status" aria-live="polite" aria-busy="true">
+        <NestedLoading message="Loading attendance..." />
+      </div>
+    );
   }
 
   if (attendanceQuery.isError) {
     return (
-      <NestedError
-        title="Attendance unavailable"
-        description="Couldn't load attendance for this event. Retry or confirm you have events:update or permission to view attendance."
-        onRetry={() => void attendanceQuery.refetch()}
-      />
+      <div role="status" aria-live="polite">
+        <NestedError
+          title="Attendance unavailable"
+          description="Couldn't load attendance for this event. Retry or confirm you have events:update or permission to view attendance."
+          onRetry={() => void attendanceQuery.refetch()}
+        />
+      </div>
     );
   }
 
@@ -240,20 +257,24 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
    */
   if (membersQuery.isError) {
     return (
-      <NestedError
-        title="Attendance unavailable"
-        description="Couldn't load the chapter roster, so attendance can't be shown against it. Retry in a moment."
-        onRetry={() => void membersQuery.refetch()}
-      />
+      <div role="status" aria-live="polite">
+        <NestedError
+          title="Attendance unavailable"
+          description="Couldn't load the chapter roster, so attendance can't be shown against it. Retry in a moment."
+          onRetry={() => void membersQuery.refetch()}
+        />
+      </div>
     );
   }
 
   if (rows.length === 0) {
     return (
-      <NestedEmpty
-        title="No attendance records yet"
-        description="Once members check in — or you record attendance manually — they'll show up here."
-      />
+      <div role="status" aria-live="polite">
+        <NestedEmpty
+          title="No attendance records yet"
+          description="Once members check in — or you record attendance manually — they'll show up here."
+        />
+      </div>
     );
   }
 

@@ -67,6 +67,13 @@ function Harness({
 
 const noop = () => {};
 
+const REQUEST = {
+  title: "Delete this?",
+  description: "This can't be undone.",
+  confirmLabel: "Delete study zone",
+  tone: "destructive",
+} as const;
+
 describe("cancel and an empty comment are different answers", () => {
   it("resolves null when cancelled, so the caller's `=== null` guard still returns early", async () => {
     const user = userEvent.setup();
@@ -137,6 +144,80 @@ describe("cancel and an empty comment are different answers", () => {
     await waitFor(() =>
       expect(settled).toHaveBeenLastCalledWith({ comment: "" }),
     );
+  });
+});
+
+describe("a pending confirmation always settles", () => {
+  it("resolves null when the caller stops rendering the dialog", async () => {
+    // Every screen using this hook renders {confirmDialog} in its main return,
+    // after early returns for offline/loading/error. Going offline with a
+    // confirmation open takes the subtree away, and `onOpenChange` does not
+    // fire for an unmount — so before this the caller's `await` hung forever,
+    // holding its closure over the row and the mutation.
+    const user = userEvent.setup();
+    const settled = vi.fn();
+
+    function Screen({ hidden }: { hidden: boolean }) {
+      const { confirm, confirmDialog } = useConfirmDialog();
+      if (hidden) return <p>offline</p>;
+      return (
+        <div>
+          <button
+            type="button"
+            onClick={async () => {
+              onSettleRef.current = true;
+              settled(await confirm(REQUEST));
+            }}
+          >
+            Open
+          </button>
+          {confirmDialog}
+        </div>
+      );
+    }
+    const onSettleRef = { current: false };
+
+    const { rerender } = render(<Screen hidden={false} />);
+    await user.click(screen.getByRole("button", { name: "Open" }));
+    expect(settled).not.toHaveBeenCalled();
+
+    rerender(<Screen hidden={true} />);
+
+    await waitFor(() => expect(settled).toHaveBeenCalledWith(null));
+  });
+
+  it("does not strand the first promise when a second confirmation supersedes it", async () => {
+    // Two clicks can land in one commit — a held Enter repeats faster than the
+    // overlay paints. Overwriting `pending` used to drop the first `resolve`.
+    const first = vi.fn();
+    const second = vi.fn();
+
+    function Screen() {
+      const { confirm, confirmDialog } = useConfirmDialog();
+      return (
+        <div>
+          <button
+            type="button"
+            onClick={() => {
+              void confirm(REQUEST).then(first);
+              void confirm(REQUEST).then(second);
+            }}
+          >
+            Open twice
+          </button>
+          {confirmDialog}
+        </div>
+      );
+    }
+
+    const user = userEvent.setup();
+    render(<Screen />);
+    await user.click(screen.getByRole("button", { name: "Open twice" }));
+
+    // The superseded request answers null, which every call site treats as
+    // cancel — it must not simply never settle.
+    await waitFor(() => expect(first).toHaveBeenCalledWith(null));
+    expect(second).not.toHaveBeenCalled();
   });
 });
 

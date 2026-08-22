@@ -322,8 +322,10 @@ a running session's zone and a zone row alike.
 | The attendance roster | `DirectoryGlyph` (re-export) |
 | An event's point value | `PointsGlyph` (re-export) |
 | Search, in the events toolbar | `SearchGlyph` (re-export) |
+| A task, and the dialog that creates one | `TasksGlyph` (re-export) |
+| A service entry, and the dialog that logs one | `ServiceGlyph` (re-export) |
 
-Five of the seven are re-exports from
+Eight of the nine are re-exports from
 [`apps/web/components/layout/nav-glyphs.tsx`](../../../apps/web/components/layout/nav-glyphs.tsx),
 which is the rule §1 rule 1 already sets and the Directory family already
 follows: a second copy of the same path data is the drift the rule exists to

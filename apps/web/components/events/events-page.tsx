@@ -397,6 +397,9 @@ export function EventsPage() {
                     typeof event.recurrence_rule === "string"
                       ? event.recurrence_rule
                       : "";
+                  // One derived value: the row fill and the checkbox must never
+                  // disagree about whether the row is selected.
+                  const isSelected = selectedEventIds.includes(eventId);
                   const requiredRoleIds = Array.isArray(event.required_role_ids)
                     ? event.required_role_ids.filter(
                         (id): id is string => typeof id === "string",
@@ -405,11 +408,7 @@ export function EventsPage() {
                   return (
                     <TableRow
                       key={eventId}
-                      data-state={
-                        selectedEventIds.includes(eventId)
-                          ? "selected"
-                          : undefined
-                      }
+                      data-state={isSelected ? "selected" : undefined}
                     >
                       <TableCell className={dashboardCheckboxCellClassName}>
                         <label className={dashboardCheckboxHitAreaClassName}>
@@ -417,7 +416,7 @@ export function EventsPage() {
                             type="checkbox"
                             aria-label={`Select ${eventName}`}
                             className={dashboardTableCheckboxClassName}
-                            checked={selectedEventIds.includes(eventId)}
+                            checked={isSelected}
                             onChange={(eventValue) =>
                               toggleEventSelection(
                                 eventId,
