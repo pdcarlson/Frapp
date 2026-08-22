@@ -15,6 +15,7 @@ import { formatLocaleDate as formatDate } from "@repo/formatting";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { FOCUS_RING_WITHIN } from "@/components/ui/focus";
 import {
   Sheet,
   SheetContent,
@@ -95,7 +96,9 @@ function RoleChecklistItem({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="flex cursor-pointer items-center justify-between rounded-md border border-border p-3 transition hover:bg-accent/40">
+    <label
+      className={`flex cursor-pointer items-center justify-between rounded-md border border-border p-3 transition-colors hover:bg-accent-subtle ${FOCUS_RING_WITHIN}`}
+    >
       <div>
         <p className="text-sm font-semibold">{title}</p>
         <p
@@ -324,7 +327,7 @@ export function MemberDetailSheet({
         ) : null}
 
         {memberQuery.isError && !usingPreviewData ? (
-          <div className="mt-6 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+          <div className="mt-6 rounded-md border border-destructive/[.28] bg-destructive/[.13] p-3 text-sm text-destructive-text">
             Could not load the latest member profile. Retry from the directory to re-open this member.
           </div>
         ) : null}

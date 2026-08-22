@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { GraduationCap, Search } from "lucide-react";
 import { useAlumni } from "@repo/hooks";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -119,7 +121,7 @@ export function AlumniDirectory() {
             <div className="grid gap-1">
               <label
                 htmlFor="alumni-grad-year"
-                className="text-[12.5px] uppercase tracking-wide text-muted-foreground"
+                className="text-[12.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"
               >
                 Graduation year
               </label>
@@ -134,7 +136,7 @@ export function AlumniDirectory() {
             <div className="grid gap-1">
               <label
                 htmlFor="alumni-city"
-                className="text-[12.5px] uppercase tracking-wide text-muted-foreground"
+                className="text-[12.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"
               >
                 City
               </label>
@@ -148,7 +150,7 @@ export function AlumniDirectory() {
             <div className="grid gap-1">
               <label
                 htmlFor="alumni-company"
-                className="text-[12.5px] uppercase tracking-wide text-muted-foreground"
+                className="text-[12.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"
               >
                 Company
               </label>
@@ -197,26 +199,21 @@ export function AlumniDirectory() {
               .filter((value): value is string => Boolean(value))
               .join(" • ");
             return (
-              <Card key={id} className="border-border">
-                <CardContent className="flex items-start gap-3 pt-6">
-                  <div className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+              <Card key={id}>
+                <CardContent className="flex items-start gap-3 pt-4">
+                  <Avatar className="flex-none">
                     {alum.avatar_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={alum.avatar_url}
-                        alt=""
-                        className="h-10 w-10 rounded-full object-cover"
-                      />
-                    ) : (
-                      <span aria-hidden="true">{initials(alum.display_name)}</span>
-                    )}
-                  </div>
+                      <AvatarImage src={alum.avatar_url} alt="" />
+                    ) : null}
+                    <AvatarFallback>{initials(alum.display_name)}</AvatarFallback>
+                  </Avatar>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <p className="truncate text-sm font-semibold">{name}</p>
-                      <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[12.5px] uppercase tracking-wide text-muted-foreground">
-                        <GraduationCap className="h-3 w-3" /> Alumni
-                      </span>
+                      <p className="truncate text-base font-semibold">{name}</p>
+                      <Badge variant="outline" className="gap-1 uppercase">
+                        <GraduationCap className="h-3.5 w-3.5" />
+                        Alumni
+                      </Badge>
                     </div>
                     <p className="text-[12.5px] text-muted-foreground">{primaryLine}</p>
                     {secondaryLine ? (
@@ -225,7 +222,7 @@ export function AlumniDirectory() {
                       </p>
                     ) : null}
                     {alum.bio ? (
-                      <p className="mt-2 line-clamp-3 text-[12.5px] text-foreground/80">
+                      <p className="mt-2 line-clamp-3 text-base text-muted-foreground">
                         {alum.bio}
                       </p>
                     ) : null}
