@@ -122,8 +122,14 @@ export function LoadingState({
   );
 }
 
-/** The 44px icon tile §10 gives empty and error alike, recoloured per state. */
-function StateTile({
+/**
+ * The 44px icon tile §10 gives empty and error alike, recoloured per state.
+ *
+ * Exported for `nested-states.tsx`, which composes the same §10 anatomy on a
+ * surface that already is a card. Re-declaring it there would put two spellings
+ * of one tile in the tree, which is what the cutover rule forbids.
+ */
+export function StateTile({
   children,
   tone,
 }: {
