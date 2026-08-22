@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, LayoutGrid, List, Search, UserPlus } from "lucide-react";
+import { ArrowDown, ArrowUp, LayoutGrid, List } from "lucide-react";
+import { InviteGlyph, SearchGlyph } from "@/components/members/directory-glyphs";
 import {
   useLeaderboard,
   useMemberSearch,
@@ -348,7 +349,7 @@ export function MembersDirectory() {
           <InviteMemberDialog
             trigger={
               <Button className="gap-2">
-                <UserPlus className="h-4 w-4" />
+                <InviteGlyph className="h-4 w-4" />
                 Invite Member
               </Button>
             }
@@ -357,7 +358,7 @@ export function MembersDirectory() {
         <CardContent>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="relative max-w-md flex-1">
-              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <SearchGlyph className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 aria-label="Search members by name"
                 value={query}

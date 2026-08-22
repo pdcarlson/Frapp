@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, CreditCard, Loader2 } from "lucide-react";
+import { CheckCircle2, Loader2 } from "lucide-react";
+import { BillingGlyph } from "@/components/layout/nav-glyphs";
 import { useCreateCheckout, useCreatePortal, useCurrentUser } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import {
@@ -281,7 +282,7 @@ export function SubscriptionCheckoutCard() {
               {createPortal.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <CreditCard className="h-4 w-4" />
+                <BillingGlyph className="h-4 w-4" />
               )}
               Manage billing in Stripe
             </Button>
@@ -294,7 +295,7 @@ export function SubscriptionCheckoutCard() {
               {createCheckout.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <CreditCard className="h-4 w-4" />
+                <BillingGlyph className="h-4 w-4" />
               )}
               Complete checkout
             </Button>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { GraduationCap, Search } from "lucide-react";
+import { AlumniGlyph, SearchGlyph } from "@/components/members/directory-glyphs";
 import { useAlumni } from "@repo/hooks";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -163,7 +163,7 @@ export function AlumniDirectory() {
             </div>
             <div className="flex items-end gap-2">
               <Button type="submit" className="gap-2">
-                <Search className="h-4 w-4" />
+                <SearchGlyph className="h-4 w-4" />
                 Apply filters
               </Button>
               <Button type="button" variant="secondary" onClick={clearFilters}>
@@ -211,7 +211,7 @@ export function AlumniDirectory() {
                     <div className="flex items-center gap-2">
                       <p className="truncate text-base font-semibold">{name}</p>
                       <Badge variant="outline" className="gap-1 uppercase">
-                        <GraduationCap className="h-3.5 w-3.5" />
+                        <AlumniGlyph className="h-3.5 w-3.5" />
                         Alumni
                       </Badge>
                     </div>

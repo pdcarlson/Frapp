@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, Flag, RefreshCw } from "lucide-react";
+import { AlertTriangle, RefreshCw } from "lucide-react";
+import { FlaggedGlyph } from "@/components/points/points-glyphs";
 import { useMembers, usePointsTransactions } from "@repo/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -82,7 +83,7 @@ export function PointsAuditCard() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
-              <Flag className="h-4 w-4 text-muted-foreground" />
+              <FlaggedGlyph className="h-4 w-4 text-muted-foreground" />
               Audit tab
             </CardTitle>
             <CardDescription>
@@ -99,7 +100,7 @@ export function PointsAuditCard() {
         <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <CardTitle className="flex items-center gap-2 text-lg">
-              <Flag className="h-4 w-4 text-muted-foreground" />
+              <FlaggedGlyph className="h-4 w-4 text-muted-foreground" />
               Audit tab
             </CardTitle>
             <CardDescription>

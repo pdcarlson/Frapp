@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Shield, Trash2, UserRound } from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
+import { DirectoryGlyph, RolesGlyph } from "@/components/members/directory-glyphs";
 import {
   useCustomRoles,
   useMember,
@@ -311,7 +312,7 @@ export function MemberDetailSheet({
       <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
-            <UserRound className="h-4 w-4" />
+            <DirectoryGlyph className="h-4 w-4" />
             {displayName}
           </SheetTitle>
           <SheetDescription>
@@ -377,7 +378,7 @@ export function MemberDetailSheet({
 
         <section className="mt-6 space-y-3">
           <div className="flex items-center gap-2">
-            <Shield className="h-4 w-4 text-muted-foreground" />
+            <RolesGlyph className="h-4 w-4 text-muted-foreground" />
             <p className="text-sm font-semibold">Role access</p>
           </div>
           <div className="space-y-2">
@@ -401,7 +402,7 @@ export function MemberDetailSheet({
         {customRoleOptions.length > 0 ? (
           <section className="mt-6 space-y-3">
             <div className="flex items-center gap-2">
-              <Shield className="h-4 w-4 text-muted-foreground" />
+              <RolesGlyph className="h-4 w-4 text-muted-foreground" />
               <p className="text-sm font-semibold">Custom roles</p>
             </div>
             <p className="text-[12.5px] text-muted-foreground">

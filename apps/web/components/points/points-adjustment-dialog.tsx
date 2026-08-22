@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Scale } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { AdjustGlyph } from "@/components/points/points-glyphs";
 import { useAdjustPoints, useMembers } from "@repo/hooks";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -174,7 +175,7 @@ export function PointsAdjustmentDialog({
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Scale className="h-4 w-4" />
+            <AdjustGlyph className="h-4 w-4" />
             Adjust points
           </DialogTitle>
           <DialogDescription>

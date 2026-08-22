@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Copy, Loader2, ShieldPlus, Trash2 } from "lucide-react";
+import { AlertTriangle, Copy, Loader2, Trash2 } from "lucide-react";
+import { InviteGlyph } from "@/components/members/directory-glyphs";
 import {
   useBatchCreateInvites,
   useCreateInvite,
@@ -232,7 +233,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
       <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ShieldPlus className="h-4 w-4" />
+            <InviteGlyph className="h-4 w-4" />
             Invite members
           </DialogTitle>
           <DialogDescription>
