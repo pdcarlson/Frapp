@@ -8,7 +8,10 @@
 
 All Signet-reskinned surfaces draw icons with the duotone recipe locked in the
 [design-system reference](reference/signet-design-system.dc.html) and rendered
-throughout the [Canvas screens](reference/canvas-screens.dc.html):
+throughout the [Canvas screens](reference/canvas-screens.dc.html). On web the
+recipe is one module — [`apps/web/components/ui/duotone.tsx`](../../../apps/web/components/ui/duotone.tsx)
+— which every glyph file composes, so a surface cannot drift off it while
+looking like it complies:
 
 | Layer | Spec |
 |-------|------|
@@ -87,11 +90,13 @@ The shipping apps use off-the-shelf packs until each surface is reskinned to
 duotone. Interim rules:
 
 - **Web (Lucide)** — keep the default stroke weight; do not restyle individual
-  icons. **The dashboard shell has left this interim path**: its sidebar and
-  top-bar glyphs are now duotone SVG components in
-  `apps/web/components/layout/nav-glyphs.tsx`, transcribed from the reference
-  boards. Lucide remains the interim pack for in-screen icons until each
-  screen family's #920 slice lands.
+  icons. **The dashboard shell and the chat family have left this interim
+  path**: the shell's sidebar and top-bar glyphs are duotone SVG components in
+  `apps/web/components/layout/nav-glyphs.tsx`, and chat's are in
+  `apps/web/components/chat/chat-glyphs.tsx`, both transcribed from the
+  reference boards. Lucide remains the interim pack for the screen families
+  whose #920 slice has not landed, and — on every surface, reskinned or not —
+  for control furniture (§6.2).
 - **Mobile (Ionicons)** — outline variants for navigation and neutral states;
   fill variants only for explicit active/high-emphasis affordances. **The tab
   bar has left this interim path**: its four glyphs are now duotone
@@ -185,12 +190,60 @@ Screens whose family slice has not landed still draw Lucide, replaced per
 family as each #920 slice rebuilds its screens — the same shape as mobile's
 §6.1.1. Two picks worth pinning meanwhile:
 
-- Event **content** surfaces (event cards, event detail) use `CalendarDays`
-  for date rows; the nav intent is `EventsGlyph`.
+- Event **content** surfaces (event detail, the events screens) use
+  `CalendarDays` for date rows; the nav intent is `EventsGlyph`. Chat's event
+  card has left this pick with its own slice and takes `EventsGlyph` (§6.2.2).
 - **Reserved:** `LayoutDashboard` is held for the **Overview** intent and is
   deliberately unused today — the dashboard home screen was removed in the
   chat-first redesign and the index route redirects to `/chat`. If an Overview
   surface is ever built it MUST take this glyph rather than pick a new one.
+
+### 6.2.2 Chat (Signet duotone)
+
+Since the #920 chat slice the chat family draws the duotone recipe (§1). The
+glyphs live in
+[`apps/web/components/chat/chat-glyphs.tsx`](../../../apps/web/components/chat/chat-glyphs.tsx),
+which composes the shared recipe module and re-exports the four silhouettes the
+shell already draws rather than redrawing them. Rendered at 20px in headers and
+composer controls, 16px in card eyebrows and inline metadata (§2).
+
+| Semantic intent | Glyph |
+|---|---|
+| Pinned message | `PinGlyph` |
+| Attach a file | `AttachGlyph` |
+| Send | `SendGlyph` |
+| Add a reaction | `ReactionGlyph` |
+| Slash commands | `SlashCommandGlyph` |
+| Announcement | `AnnouncementGlyph` |
+| `#chapter-audit` / audit row | `AuditGlyph` |
+| Private / role-gated channel | `LockGlyph` |
+| Direct or group message | `DirectMessageGlyph` |
+| Connection lost | `OfflineGlyph` |
+| Reply in thread | `ThreadGlyph` |
+| Event location | `LocationGlyph` |
+| Event card | `EventsGlyph` (shared with the nav intent) |
+| Task card | `TasksGlyph` (shared) |
+| Points card | `PointsGlyph` (shared) |
+| Channel search | `SearchGlyph` (shared) |
+
+Three things this table deliberately does not contain:
+
+- **The channel sigil and the DM avatar.** `canvas-screens.dc.html` s04 draws a
+  channel as a text `#` and a direct message as an initials avatar. Those are
+  type and an avatar, not icons, and the reference wins over a tidier
+  all-icons row.
+- **The ✦ Ask mark.** It is a text glyph claimed by the Ask/AI affordance
+  ([components.md](components.md) §11) and MUST NOT mark anything else — which
+  is why chat's slash-command trigger, which used to draw Lucide's `Sparkles`,
+  now takes `SlashCommandGlyph`.
+- **Control furniture**, which stays Lucide on this surface exactly as it does
+  in the shell: `Loader2` and `RefreshCw` (spinners), `X` (close), `Trash2`
+  (discard), and the three glyphs that sit *inside* an action button and name
+  the button's own verb rather than a domain object — `Check` (check in),
+  `CheckCircle2` (confirm), `Undo2` (reject). A verb on a button is furniture;
+  the thing the card is *about* is an intent and belongs in the table above,
+  which is why the event card's location pin does and its check-in tick does
+  not.
 
 ### 6.3 Maintenance Rule
 

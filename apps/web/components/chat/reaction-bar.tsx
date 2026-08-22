@@ -1,14 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { Smile } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { CHIP, CHIP_HIT_AREA } from "./chip";
+import { ReactionGlyph } from "./chat-glyphs";
 import { EmojiPicker } from "./emoji-picker";
+import { cn } from "@/lib/utils";
 import {
   actionTypeFromEmoji,
   emojiFromActionType,
@@ -22,21 +23,31 @@ interface ReactionBarProps {
   viewerId: string | null;
   onReact: (emoji: string) => void;
   onUnreact: (emoji: string) => void;
-  /** Render compact chips (existing reactions) vs the full quick-pick row. */
-  variant?: "chips" | "picker";
 }
 
 /**
- * Renders existing reaction chips with `aria-pressed` reflecting whether the
- * viewer is a member of the reaction's user set. Used by message rows for
- * both the persistent chip strip below the body and the hover quick-pick.
+ * Reaction chips attached to a bubble — `components.md` §11: 6px below it,
+ * indented 4px, 6px apart, and the reacted chip is §5's Accent badge while the
+ * add chip is the same geometry in the elevated step. Both recipes and the
+ * 44px hit area live in `./chip.ts`.
+ *
+ * The pressed paint stays a ternary off the same `mine` boolean that sets
+ * `aria-pressed`, deliberately, rather than moving to an
+ * `aria-[pressed=true]:` variant. The CSS spelling would guarantee the paint
+ * and the attribute cannot diverge, but `CHIP.neutral` already carries
+ * `disabled:` rules touching the same properties, and two variants at equal
+ * specificity are resolved by Tailwind's own sort order rather than by the
+ * order written here — the tie the primitives slice found four of. One
+ * expression feeding both the attribute and the class is the version with no
+ * tie to lose.
  */
 export function ReactionChips({
   reactions,
   viewerId,
   onReact,
   onUnreact,
-}: Omit<ReactionBarProps, "variant">) {
+  align = "start",
+}: ReactionBarProps & { align?: "start" | "end" }) {
   const entries = Object.entries(reactions)
     .map(([actionType, userIds]) => ({
       actionType,
@@ -49,7 +60,12 @@ export function ReactionChips({
     );
   if (entries.length === 0) return null;
   return (
-    <div className="mt-1 flex flex-wrap gap-1">
+    <div
+      className={cn(
+        "mx-1 mt-1.5 flex flex-wrap gap-1.5",
+        align === "end" && "justify-end",
+      )}
+    >
       {entries.map((group) => {
         const mine = viewerId ? group.userIds.includes(viewerId) : false;
         return (
@@ -63,14 +79,17 @@ export function ReactionChips({
             onClick={() =>
               mine ? onUnreact(group.emoji) : onReact(group.emoji)
             }
-            className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-xs transition ${
-              mine
-                ? "border-accent-border bg-accent-subtle text-accent-text"
-                : "border-border bg-background hover:bg-accent"
-            }`}
+            className={cn(
+              CHIP.base,
+              CHIP_HIT_AREA,
+              "gap-1",
+              mine ? CHIP.accent : CHIP.neutral,
+            )}
           >
-            <span>{group.emoji}</span>
-            <span className="tabular-nums text-[10px]">{group.userIds.length}</span>
+            <span aria-hidden="true">{group.emoji}</span>
+            <span aria-hidden="true" className="tabular-nums">
+              {group.userIds.length}
+            </span>
           </button>
         );
       })}
@@ -79,48 +98,52 @@ export function ReactionChips({
 }
 
 /**
- * Quick-pick row revealed on hover, plus the "more emoji" popover that opens
- * the full `frimousse` picker.
+ * The hover row: four quick reactions plus the full picker.
+ *
+ * These are chips, not buttons. §11 draws the add-reaction affordance as a chip
+ * at the same 26px height as the reacted ones, and a row of six 44px-tall
+ * buttons over a message would outweigh the message. The 44px *hit area* is
+ * still met — see `CHIP_HIT_AREA`.
  */
 export function ReactionQuickPick({
   reactions,
   viewerId,
   onReact,
   onUnreact,
-}: Omit<ReactionBarProps, "variant">) {
+}: ReactionBarProps) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-1.5">
       {QUICK_REACTIONS.map((emoji) => {
         const mine = viewerId
           ? (reactions[actionTypeFromEmoji(emoji)] ?? []).includes(viewerId)
           : false;
         return (
-          <Button
+          <button
             key={emoji}
             type="button"
-            size="sm"
-            variant="ghost"
-            className="h-7 px-2 text-base"
+            className={cn(
+              CHIP.base,
+              CHIP_HIT_AREA,
+              mine ? CHIP.accent : CHIP.neutral,
+            )}
             aria-pressed={mine}
             aria-label={`React with ${emoji}`}
             onClick={() => (mine ? onUnreact(emoji) : onReact(emoji))}
           >
-            {emoji}
-          </Button>
+            <span aria-hidden="true">{emoji}</span>
+          </button>
         );
       })}
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
-          <Button
+          <button
             type="button"
-            size="sm"
-            variant="ghost"
-            className="h-7 px-2"
+            className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA)}
             aria-label="Open emoji picker"
           >
-            <Smile className="h-4 w-4" />
-          </Button>
+            <ReactionGlyph className="h-4 w-4" />
+          </button>
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align="end">
           <EmojiPicker

@@ -1,6 +1,9 @@
 "use client";
 
-import { ShieldAlert } from "lucide-react";
+import { AuditGlyph } from "../chat-glyphs";
+import { EYEBROW, MESSAGE_CARD } from "../chip";
+import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
 import type { SystemAuditPayload } from "@repo/chat-integrations";
 
@@ -28,26 +31,27 @@ function summarizeDiff(diff: Record<string, unknown>): string {
 }
 
 /**
- * `#chapter-audit` system message. Mono-style card per the master plan
- * theming notes — no avatar, no actions, just actor + action + diff
- * summary. Falls back to the hot-path `content` field if the payload is
+ * `#chapter-audit` system message. Deliberately the one accent-free card, and
+ * the one that keeps `font-mono`: an audit row is a permission key and an action
+ * name, which is exactly what foundations.md §7 reserves the mono role for. No
+ * avatar, no actions, just actor + action + diff summary. Falls back to the hot-path `content` field if the payload is
  * missing or malformed (an old row from before the bridge worker landed).
  */
 export function SystemAuditCard({ message }: SystemAuditCardProps) {
   const payload = readPayload(message);
   if (!payload || !payload.action) {
     return (
-      <div className="mt-1 rounded-md border bg-secondary/40 px-3 py-2 font-mono text-[11px] text-muted-foreground">
+      <div className="mt-1 rounded-lg border border-border bg-card p-4 font-mono text-[12.5px] text-muted-foreground">
         {message.content || "audit event"}
       </div>
     );
   }
   return (
-    <div className="mt-1 rounded-md border bg-secondary/40 px-3 py-2">
-      <div className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-        <ShieldAlert className="h-3 w-3" aria-hidden="true" /> Audit
+    <Card className={cn(MESSAGE_CARD)}>
+      <div className={cn(EYEBROW, "flex items-center gap-1.5 text-muted-foreground")}>
+        <AuditGlyph className="h-4 w-4" /> Audit
       </div>
-      <div className="mt-1 font-mono text-[11px] text-foreground">
+      <div className="mt-2 font-mono text-[12.5px] text-foreground">
         <span className="font-semibold">{payload.action}</span>
         {payload.actor_user_id ? (
           <span className="ml-2 text-muted-foreground">
@@ -55,9 +59,9 @@ export function SystemAuditCard({ message }: SystemAuditCardProps) {
           </span>
         ) : null}
       </div>
-      <div className="mt-1 font-mono text-[10px] text-muted-foreground">
+      <div className="mt-2 font-mono text-[12.5px] text-muted-foreground">
         Changed: {summarizeDiff(payload.diff)}
       </div>
-    </div>
+    </Card>
   );
 }
