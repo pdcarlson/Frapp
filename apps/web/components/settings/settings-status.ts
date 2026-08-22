@@ -32,18 +32,25 @@ export type ModuleTier = "free" | "paid";
  * is §5's own division of labour between hue and word, and the same resolution
  * `study-status.ts` reached for `ACTIVE` and `COMPLETED` sharing a hue.
  *
- * The `default:` arm keeps Hairline rather than the accent, so a third tier
- * added to the catalog renders as quiet metadata instead of silently claiming
- * the chapter's colour.
+ * **One arm, not a switch.** The first cut wrote `case "free": case "paid":`
+ * over an identical `default:`, which is dead code wearing the shape of a
+ * decision — and the review caught what that costs: every other mapper here
+ * uses `default:` as a *distinct* fallback, so the next reader adding a third
+ * tier would find a `default` already handling "everything else" and
+ * reasonably leave the mapper alone. The tier would then render as Hairline by
+ * accident rather than by the argument above, and `status-kind.test.ts` would
+ * stay green, because its invariant is "never the accent, never Neutral" and
+ * Hairline satisfies it. A single unconditional return says what is true: this
+ * vocabulary has no status kinds, so no input has one, including inputs that
+ * do not exist yet.
  */
 export function moduleTierKind(tier: ModuleTier | string): BadgeKind {
-  switch (tier) {
-    case "free":
-    case "paid":
-      return "outline";
-    default:
-      return "outline";
-  }
+  // Named rather than omitted: the signature is the contract the other six
+  // mappers share, and `status-kind.test.ts` drives it with real inputs.
+  // Unread rather than switched on, for the reason above — no tier has a
+  // status kind, including one the catalog has not grown yet.
+  void tier;
+  return "outline";
 }
 
 /**

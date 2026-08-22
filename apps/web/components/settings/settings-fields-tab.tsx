@@ -1,5 +1,7 @@
 "use client";
 
+import type { ReactNode } from "react";
+
 import { useState } from "react";
 import { Loader2, Plus, Trash2, X } from "lucide-react";
 import type {
@@ -30,10 +32,12 @@ import {
   EmptyState,
   ErrorState,
   LoadingState,
+  OfflineState,
 } from "@/components/shared/async-states";
 import { useToast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
+import { useNetwork } from "@/lib/providers/network-provider";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import {
   useCustomFields,
@@ -85,24 +89,50 @@ const TYPE_LABEL: Record<CustomFieldType, string> = {
  */
 export function SettingsFieldsTab({ canManage }: Props) {
   const fieldsQuery = useCustomFields();
+  const { isOffline } = useNetwork();
+  /*
+    One confirmation for the list, not one per row.
 
-  if (fieldsQuery.isPending) {
-    return <LoadingState message="Loading custom fields..." />;
-  }
-  if (fieldsQuery.isError) {
-    return (
+    It started per-row, which reads fine — until the review pointed out that
+    `SettingsFieldsTab` early-returns its loading and error states *above* the
+    `<ul>`, so a background refetch failure with a delete confirmation open
+    unmounts every row and every dialog with them. `ConfirmDialogHost` settles
+    the pending promise `null` on the way out, so the member's click simply
+    stops existing: no toast, no error, the page just changes under them.
+    `window.confirm` could not fail this way — it blocks the thread, so no
+    re-render could land while it was open. `await confirm(...)` blocks
+    nothing, which is the cost of the conversion and has to be paid here.
+
+    So the hook lives above the branch and `confirm` is passed down. Same shape
+    `tasks-board.tsx` uses for its per-row deletes.
+  */
+  const { confirm, confirmDialog } = useConfirmDialog();
+
+  const fields = fieldsQuery.data ?? [];
+  const paused = fieldsQuery.isPending && fieldsQuery.fetchStatus === "paused";
+
+  let body: ReactNode;
+  if (isOffline && fieldsQuery.data === undefined) {
+    body = (
+      <OfflineState
+        title="Custom fields unavailable offline"
+        description="Reconnect to load this chapter's member fields and edit them."
+        onRetry={() => void fieldsQuery.refetch()}
+      />
+    );
+  } else if (fieldsQuery.isLoading || paused) {
+    body = <LoadingState message="Loading custom fields..." />;
+  } else if (fieldsQuery.isError) {
+    body = (
       <ErrorState
         title="Couldn't load custom fields"
         description="Retry to fetch this chapter's custom member fields."
         onRetry={() => void fieldsQuery.refetch()}
       />
     );
-  }
-
-  const fields = fieldsQuery.data ?? [];
-
-  return (
-    <div className="space-y-6">
+  } else {
+    body = (
+      <>
       <Card>
         <CardHeader>
           <CardTitle>Custom member fields</CardTitle>
@@ -121,7 +151,12 @@ export function SettingsFieldsTab({ canManage }: Props) {
           ) : (
             <ul className="space-y-3">
               {fields.map((field) => (
-                <FieldRow key={field.id} field={field} canManage={canManage} />
+                <FieldRow
+                  key={field.id}
+                  field={field}
+                  canManage={canManage}
+                  confirm={confirm}
+                />
               ))}
             </ul>
           )}
@@ -129,6 +164,15 @@ export function SettingsFieldsTab({ canManage }: Props) {
       </Card>
 
       <AddFieldForm canManage={canManage} />
+      </>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Above the branch: a refetch failure must not cancel an open delete. */}
+      {confirmDialog}
+      {body}
     </div>
   );
 }
@@ -136,12 +180,14 @@ export function SettingsFieldsTab({ canManage }: Props) {
 function FieldRow({
   field,
   canManage,
+  confirm,
 }: {
   field: ChapterCustomField;
   canManage: boolean;
+  /** The list's confirmation, not the row's — see `SettingsFieldsTab`. */
+  confirm: ReturnType<typeof useConfirmDialog>["confirm"];
 }) {
   const { toast } = useToast();
-  const { confirm, confirmDialog } = useConfirmDialog();
   const updateField = useUpdateCustomField();
   const deleteField = useDeleteCustomField();
 
@@ -183,14 +229,6 @@ function FieldRow({
 
   return (
     <li className="rounded-md border border-border p-4">
-      {/*
-        One confirmation per row rather than one for the list. The handler
-        lives here, so hoisting it would mean drilling `confirm` through
-        `FieldRow`'s props for no gain — and a per-row host settles its own
-        promise when a successful delete unmounts the row, which is the
-        guarantee `ConfirmDialogHost`'s unmount effect exists for.
-      */}
-      {confirmDialog}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <span className="text-sm font-medium">{field.label}</span>

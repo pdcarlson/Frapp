@@ -215,3 +215,40 @@ describe("the wildcard the API will not let the client move", () => {
     expect(wildcard).toBeDefined();
   });
 });
+
+describe("an open confirmation survives a state change", () => {
+  it("is not unmounted when a background refetch fails mid-dialog", async () => {
+    /*
+     * The invariant the whole `window.confirm` conversion rests on, and the
+     * one the review found unpinned: `{confirmDialog}` sits above the state
+     * branch so a query flipping to error or offline cannot take the dialog
+     * with it. `ConfirmDialogHost` settles a pending promise `null` on
+     * unmount, so the failure mode is silent — the member's click on "Delete
+     * role" simply stops existing, with no toast and no error.
+     *
+     * `window.confirm` could not fail this way: it blocks the thread, so no
+     * re-render could land while it was open. That is the cost the conversion
+     * introduces, which is why it needs a test rather than a comment.
+     *
+     * Verified by moving `{confirmDialog}` inside the loaded branch and
+     * watching this fail while the other nine stayed green.
+     */
+    const user = userEvent.setup();
+    const view = render(<RolesAndPermissionsPage />);
+    await user.click(
+      screen.getByRole("button", { name: /delete philanthropy chair/i }),
+    );
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    // A background refetch fails with the roster still cached — v5 keeps
+    // `data` and flips `status` to error, which is the reachable shape.
+    Object.assign(roles, { isError: true });
+    view.rerender(<RolesAndPermissionsPage />);
+
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^delete role$/i }));
+    await waitFor(() =>
+      expect(deleteRole.mutateAsync).toHaveBeenCalledWith("r2"),
+    );
+  });
+});

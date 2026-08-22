@@ -200,3 +200,44 @@ describe("SettingsRolesTab", () => {
     });
   });
 });
+
+describe("the capability matrix's marks, at the call site", () => {
+  /*
+   * `settings-contrast.test.ts` measures the tones; it cannot see which one
+   * the component reaches for. The review proved the gap: reverting the
+   * missing-permission mark to `text-muted` — the exact near-miss that file's
+   * docstring is written about, 3.568:1 and under §6 — left all of its
+   * assertions and all of this file's green. Same lesson as the accent-painted
+   * status one slice back: a value-level guard is blind to the call site.
+   */
+  it("uses the token pair the measurements clear, not the one that reads right", async () => {
+    const user = userEvent.setup();
+    mockUseCustomRoles.mockReturnValue({
+      data: [customRole({ label: "Pledge Educator" })],
+      isPending: false,
+      isError: false,
+    });
+    render(<SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG} />);
+    await user.click(screen.getByRole("tab", { name: /matrix/i }));
+
+    const marks = [
+      screen.getByLabelText("Pledge Educator has members:view"),
+      screen.getByLabelText("Pledge Educator lacks events:create"),
+    ];
+    for (const mark of marks) {
+      const { className } = mark;
+      // `--muted` is 3.568:1 on this card, and `✓`/`—` are characters, so
+      // §6's 4.5:1 text floor applies rather than the 3:1 glyph one.
+      expect(className).not.toMatch(/text-muted(?![-\w])/);
+      // The 2.184:1 opacity wash the missing mark shipped in.
+      expect(className).not.toMatch(/text-muted-foreground\/\d/);
+      // #916's raw palette green beside `--success`, and the dead variant it
+      // travelled with — Signet is dark-only, so `dark:` never applied.
+      expect(className).not.toMatch(/emerald|green-\d/);
+      expect(className).not.toMatch(/\bdark:/);
+      expect(className).toMatch(/\btext-(success|muted-foreground)\b/);
+    }
+    expect(marks[0]!.className).toContain("text-success");
+    expect(marks[1]!.className).toContain("text-muted-foreground");
+  });
+});

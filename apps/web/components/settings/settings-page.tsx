@@ -22,6 +22,7 @@ import {
   type PatchChapterConfig,
 } from "@repo/validation";
 import { resolveChapterAccentColor } from "@repo/theme/accent";
+import { parseHex, pickAccessibleColor } from "@repo/color";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,11 +40,13 @@ import {
   EmptyState,
   ErrorState,
   LoadingState,
+  OfflineState,
 } from "@/components/shared/async-states";
 import { PermissionsOfflineSurface } from "@/components/shared/async-states";
 import { BillingGlyph } from "@/components/layout/nav-glyphs";
 import { Can } from "@/components/shared/can";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import { useNetwork } from "@/lib/providers/network-provider";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -139,6 +142,7 @@ const COMING_SOON_TABS: ReadonlyArray<{
 function SettingsPageContent() {
   const { toast } = useToast();
   const { confirm, confirmDialog } = useConfirmDialog();
+  const { isOffline } = useNetwork();
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
   const chapterQuery = useCurrentChapter({
     chapterId: activeChapterId,
@@ -206,17 +210,53 @@ function SettingsPageContent() {
     );
   }
 
-  if (chapterQuery.isPending) {
-    return <LoadingState message="Loading chapter settings..." />;
-  }
+  /*
+    §4's flags, and the two things `/settings` was missing.
 
-  if (chapterQuery.isError) {
-    return (
+    `isPending` alone gated the spinner, but `useCurrentChapter` is
+    `enabled: !!chapterId` and a paused query shares that flag — the
+    no-chapter case is already handled by the card above, so what was left was
+    a query paused offline spinning forever. And the route had **no offline
+    state at all**, which is README §4 item 4 unmet on the only settings route
+    the responsive-floor gate visits.
+
+    The branches produce a value rather than returning, because
+    `{confirmDialog}` has to outlive them: a background refetch failure landing
+    while the rollover confirmation is open would otherwise unmount the dialog
+    and settle its promise `null`, so the member's click on "Start new
+    semester" would vanish with no toast and no error. `window.confirm` could
+    not fail that way — it blocks the thread — so this is a cost the
+    conversion introduces and has to pay for. Found by the pre-push review.
+  */
+  const chapterPaused =
+    chapterQuery.isPending && chapterQuery.fetchStatus === "paused";
+  let stateBanner: React.ReactNode = null;
+  if (isOffline && chapterQuery.data === undefined) {
+    stateBanner = (
+      <OfflineState
+        title="Chapter settings unavailable offline"
+        description="Reconnect to load this chapter's identity, modules, and branding."
+        onRetry={() => void chapterQuery.refetch()}
+      />
+    );
+  } else if (chapterQuery.isLoading || chapterPaused) {
+    stateBanner = <LoadingState message="Loading chapter settings..." />;
+  } else if (chapterQuery.isError) {
+    stateBanner = (
       <ErrorState
         title="Couldn't load chapter settings"
         description="Confirm your chapter access and retry. Changes here update every surface in the dashboard."
         onRetry={() => void chapterQuery.refetch()}
       />
+    );
+  }
+
+  if (stateBanner) {
+    return (
+      <div className="space-y-6">
+        {confirmDialog}
+        {stateBanner}
+      </div>
     );
   }
 
@@ -265,6 +305,23 @@ function SettingsPageContent() {
     background: signetDarkTokens.color.surface.card,
     fallbackAccent: signetDarkTokens.color.gold.house,
   });
+
+  /*
+    The on-accent tone for the *draft* colour. See the swatch below for why the
+    `--primary-foreground` token cannot answer this, and why it has to be
+    recomputed here rather than read.
+  */
+  const accentRgb = parseHex(accent.resolvedAccent);
+  const previewInk =
+    (accentRgb
+      ? pickAccessibleColor(
+          [
+            signetDarkTokens.color.gold.onHouse,
+            signetDarkTokens.color.text.foreground,
+          ],
+          accentRgb,
+        )
+      : null) ?? signetDarkTokens.color.gold.onHouse;
   const semesters = asArray<SemesterArchive>(semestersQuery.data);
   const permissionsCatalog = asArray<{ key: string; permission: string }>(
     catalogQuery.data,
@@ -747,17 +804,35 @@ function SettingsPageContent() {
                     {/*
                       The one place a raw chapter hex legitimately paints — it
                       is a preview *of* that hex, which is the carve-out
-                      README §2's ban is written around. What it must not do is
-                      hardcode the text on top: `text-white` is a guess that is
-                      wrong for every light seed the directory ships (`#FFFFFF`,
-                      `#C0C0C0`, `#C9A56F`), where white on the fill is 1.0–2.2:1
-                      and the word "Preview" disappears. `accent-contrast` is
-                      the role the engine resolves for exactly this pairing, and
-                      `resolveChapterAccentColor` has already run it here.
+                      README §2's ban is written around. The text on top is the
+                      part that has been wrong twice.
+
+                      It shipped as `text-white`: a guess, and wrong for every
+                      light seed the directory holds (`#FFFFFF`, `#C0C0C0`,
+                      `#C9A56F`), where white on the fill is 1.0–2.2:1 and the
+                      word disappears. The obvious fix — `text-primary-foreground`
+                      — is wrong in a subtler way, and the pre-push review
+                      caught it: that token is `--signet-accent-on-primary`,
+                      written once from the chapter's **saved** palette. This
+                      swatch previews the **draft**, recomputed on every
+                      keystroke, so an admin on a dark saved accent typing a
+                      light draft would watch the fill go pale while the text
+                      stayed white. `resolveChapterAccentColor` cannot help:
+                      it returns the accent's legibility *as text on a
+                      background*, and no on-accent tone at all.
+
+                      So it is computed here, from the draft, against §4's own
+                      two ends of the text ladder. `null` means neither clears
+                      AA — a mid-tone accent the engine would itself reject —
+                      and the fallback names §6's own preference for the darker
+                      of two failures rather than picking by luck.
                     */}
                     <div
-                      className="flex h-12 w-36 items-center justify-center rounded-md text-sm font-semibold text-primary-foreground"
-                      style={{ backgroundColor: accent.resolvedAccent }}
+                      className="flex h-12 w-36 items-center justify-center rounded-md text-sm font-semibold"
+                      style={{
+                        backgroundColor: accent.resolvedAccent,
+                        color: previewInk,
+                      }}
                     >
                       Preview
                     </div>

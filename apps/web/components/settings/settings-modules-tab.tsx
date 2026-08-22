@@ -15,6 +15,8 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
+import { cn } from "@/lib/utils";
 import {
   moduleTierKind,
   moduleTierLabel,
@@ -170,7 +172,21 @@ function ModuleRow({
                 ? `Collapse ${m.label} sub-features`
                 : `Expand ${m.label} sub-features`
             }
-            className="mt-0.5 rounded-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            /*
+              The last control in the family on the pre-cutover ring, missed
+              because it is furniture rather than a field. It matters more than
+              most: the button has no border, so `FOCUS_RING`'s load-bearing
+              half — the border going solid accent — has nothing to swap, and
+              the ring *is* the whole indicator. At full-opacity `--ring` that
+              indicator measures under §6's 3:1 non-text floor on 8 of the 19
+              seeded chapter accents (worst `#4B0082` at 2.69:1), so a member
+              on one of them tabbing to this chevron saw nothing at all.
+              `FOCUS_RING_OFFSET` is the recipe for exactly this case.
+            */
+            className={cn(
+              "mt-0.5 rounded-xs text-muted-foreground transition-colors hover:text-foreground",
+              FOCUS_RING_OFFSET,
+            )}
           >
             {open ? (
               <ChevronDown className="h-4 w-4" />

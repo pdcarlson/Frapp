@@ -19,7 +19,7 @@ import {
  * is #916's conflicting green beside `--success`; the `dark:` variant was the
  * last one in the tree and had been inert since the shell slice made Signet
  * dark-only, so the tone that actually shipped was the *light* one; and the
- * 40% wash measures 2.3:1, on the one mark that tells an admin a role lacks a
+ * 40% wash measures 2.184:1, on the one mark that tells an admin a role lacks a
  * capability.
  *
  * The near-miss is the reason this file exists rather than a comment. The
@@ -51,12 +51,17 @@ describe("the capability matrix states held and missing in text tones", () => {
   });
 
   it("would have caught the 40% wash the missing mark shipped in", () => {
-    // `text-muted-foreground/40`, composited the way CSS does it.
+    // `text-muted-foreground/40`, composited the way CSS does it. Pinned to
+    // the measured value, not just to "under the floor": the first write of
+    // this comment said 2.3:1 from memory and the review recomputed it at
+    // 2.184. A number in a comment is not a measurement — so the number is an
+    // assertion now, and the comment cites the assertion.
     const washed = ratio(
       mix(TEXT.mutedForeground, MATRIX_SURFACE, 0.4),
       MATRIX_SURFACE,
     );
     expect(washed).toBeLessThan(AA_TEXT);
+    expect(washed).toBeCloseTo(2.184, 2);
   });
 
   it("rules out `--muted`, which reads like the right token and is not", () => {

@@ -222,7 +222,7 @@ function MatrixView({
                           <span
                             aria-label={`${col.label} capabilities managed under Live roles`}
                             /*
-                              The same 2.3:1 wash as the held/not-held marks
+                              The same 2.184:1 wash as the held/not-held marks
                               below, on the cell that carries the most text of
                               the three. `--muted` is not the escape hatch —
                               3.568:1 on this card, under §6 — so "n/a" takes
@@ -258,7 +258,7 @@ function MatrixView({
                             so the shipped colour was the *light* one,
                             `emerald-600`, on a dark card. And
                             `text-muted-foreground/40` is `--muted-foreground`
-                            at 40% — 2.3:1 on a card, under §6's floor for the
+                            at 40% — 2.184:1 on a card, under §6's floor for the
                             one mark that tells an admin a role lacks a
                             capability.
 
