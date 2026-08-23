@@ -35,7 +35,7 @@ Frapp/
   packages/         # 13 shared workspaces
     api-sdk/        # Generated API client + TypeScript types
     brand-assets/   # Canonical SVG marks (favicon + lockup)
-    chapter-theme/  # Chapter accent palette derivation (legacy web token map until Signet reskin)
+    chapter-theme/  # Signet chapter accent engine (one seed -> `--signet-*` role tokens)
     chat-core/      # Platform-neutral chat hot path (cache, send client, realtime manager) behind injected adapters
     chat-integrations/ # Chat slash-command / integration helpers
     color/          # Shared WCAG contrast math
@@ -43,7 +43,7 @@ Frapp/
     formatting/     # Shared date/time/duration display helpers (web + mobile)
     hooks/          # Shared React hooks (use-members, use-frapp-client, etc.)
     org-archetypes/ # Greek-org directory / archetype data
-    theme/          # Tailwind config + global styles (legacy bone/bronze until web/landing reskin)
+    theme/          # Tailwind preset + stylesheets: Signet (`signet.css`) and legacy bone/bronze (`globals.css`, landing only)
     typescript-config/ # Shared tsconfig
     validation/     # Shared Zod schemas (used by API + web + mobile)
   spec/             # Product spec, behavior spec, architecture, environments
@@ -111,7 +111,7 @@ Frapp/
 | ------------------------- | ------------------------------------------------------------------------- |
 | `@repo/api-sdk`           | OpenAPI-generated TypeScript client plus a hand-written error reader (`statusOf`, `serverMessageOf`, `codeOf` in `src/api-error.ts`). Codegen overwrites only `src/types.ts`. Used by web + mobile + hooks + chat-core. |
 | `@repo/brand-assets`      | Canonical SVG marks (favicon + lockup).                                   |
-| `@repo/chapter-theme`     | Chapter accent palette derivation. Legacy 8-token CSS map until the Signet engine lands. |
+| `@repo/chapter-theme`     | The Signet chapter accent engine: one seed hex to the `--signet-*` role tokens, over a vendored Radix generator. Server code imports the barrel; browser code imports the dependency-free `./accent-vars` leaf. Canon: [`ui/design-system/accent-engine.md`](../ui/design-system/accent-engine.md). |
 | `@repo/chat-core`         | Platform-neutral chat hot path — normalized cache, optimistic send client, realtime manager, shared topic registry — behind injected `KeyValueStore` / `NetworkState` / `OutboxStore` ports. |
 | `@repo/chat-integrations` | Chat slash-command / integration helpers. `/points` reason length is `POINTS_REASON_MAX_LENGTH` from `@repo/validation`, not a local copy. |
 | `@repo/color`             | Shared WCAG contrast math. DOM-free so theme packages and the API share one implementation. |
@@ -119,7 +119,7 @@ Frapp/
 | `@repo/formatting`        | Shared date/time/duration display helpers. Generic locale formatters (`formatClock`, `formatLocaleDateTime`, `formatLocaleDate`) plus three **protected clusters** that must stay distinct: stopwatch padding (`formatPaddedStopwatch` / `formatTimer`), bare-date timezone parsing (`parseBareDateLocalMidnight` / `parseBareDateUtcNoon`), and minute-duration rounding (`formatMinutesExact` / `formatMinutesRounded`). Used by web + mobile. |
 | `@repo/hooks`             | Shared React hooks wrapping api-sdk with TanStack Query.                  |
 | `@repo/org-archetypes`    | Greek-org directory / archetype data for onboarding autofill. Consumed by the API (chapter config seed), web Settings + first-officer wizard, and `apps/mobile` (`package.json` declares the workspace dependency; the wizard reads `ARCHETYPES` directly). |
-| `@repo/theme`             | Tailwind config presets, global CSS. Legacy bone/bronze tokens until web/landing reskin; Signet tokens are specified in `spec/ui/design-system/`. |
+| `@repo/theme`             | Shared Tailwind preset plus two stylesheets: `signet.css` (dark-only Signet tokens, imported by `apps/web`) and the legacy bone/bronze `globals.css` (imported by `apps/landing` only). Typed tokens for non-Tailwind consumers; `accent.ts` holds `resolveChapterAccentColor`, the per-surface accent re-validator. |
 | `@repo/typescript-config` | Shared tsconfig presets.                                                  |
 | `@repo/validation`        | Shared Zod 4 schemas, upload MIME/size allowlists (`image` / `proof` / `document`), field-length caps, plus client gates (`can`, `isModuleEnabled`, `subscriptionWriteState`, `isAnalyticsOptedOut`) used by API + clients. `z.record` requires a key schema and a value schema. |
 
@@ -222,8 +222,8 @@ Customization is the product: every chapter runs differently, so vocabulary, rol
 - `org_archetype text not null default 'ifc'` — one of `ifc | npc | nphc | mgc | professional | service | honor | colony`. Drives the seed defaults (role pack, vocabulary, module presets).
 - `enabled_modules jsonb not null default '{"chat":true,"members":true,"announcements":true,"audit-log":true}'` — per-module on/off map. A module is enabled unless its key is explicitly `false`. The always-on free set (`chat`, `members`, `announcements`, `audit-log`, `chapter-settings`) cannot be disabled. See [`product/modules.md`](../product/modules.md).
 - `vocabulary jsonb not null default '{}'` — per-chapter term overrides (rush/recruitment/intake, pledge/aspirant/candidate, class/line/cohort), applied everywhere including channel names and slash-command labels.
-- `branding jsonb not null default '{}'` — `{ greek_letters, designation, school_short, founded_at, colors: { dark, accent } }`.
-- `theme_palette jsonb not null default '{}'` — derived token map, regenerated server-side whenever `branding.colors` changes (see *Theming Model* below).
+- `branding jsonb not null default '{}'` — `{ greek_letters, designation, school_short, founded_at, colors: { accent } }`. `colors` held a second `dark` key until the #920 slice-9 cutover; it fed only the legacy token map, and rows written before then keep an inert value that nothing reads.
+- `theme_palette jsonb not null default '{}'` — the derived accent role map, regenerated server-side whenever the accent changes (see *Theming Model* below). Unconstrained jsonb, and no backfill prunes it, so rows predating a given engine revision keep whatever keys they were written with.
 - `directory_id uuid references chapter_directory(id)` — link to the autofill source row; nullable for chapters not found in the directory.
 - `beta_config jsonb not null default '{"enabled":true,"style":"sidebar_pill"}'`.
 - `subscription_status` keeps its existing enum but **no longer gates chat / members / announcements** — only the paid ops integrations.
@@ -1018,33 +1018,42 @@ The vault ([`behavior/vault.md`](../behavior/vault.md)) stores high-sensitivity 
 
 ## 15. Theming Model
 
-Chapter theming runs deeper than an accent chip — it themes the entire experience (sidebar, headers, chat bubble accents, message highlights, mention pills, reaction highlights). A chapter picks **two colors only**: `branding.colors = { dark, accent }`. The product-facing description is in [`product/positioning.md`](../product/positioning.md); the derivation is canonical here.
+Chapter theming runs deeper than an accent chip — it themes the chrome, message accents, mention pills, links and reaction highlights. A chapter supplies **one colour**: an accent seed at `branding.colors.accent`, mirrored to `chapters.accent_color` (which of the two feeds the engine is open in #795 — new code MUST NOT add a third read path).
 
-### Palette derivation
+**The derivation is canonical in [`ui/design-system/accent-engine.md`](../ui/design-system/accent-engine.md), not here.** This section owns where the palette lives and who writes it; the pipeline, role map, default seed and contrast gate live in that one place, because the two used to disagree.
 
-`derivePalette({ dark, accent })` (in `packages/chapter-theme/`) returns the legacy CSS-variable token map. It is still generated and persisted on every save, but **no client writes it onto `:root` any more**: every token below is composited over the bone background, so the #920 shell slice moved `apps/web` to the Signet engine roles instead of carrying light-calibrated values onto a dark surface, and mobile only ever read the `--signet-*` half. The map:
+### What produces it
 
-- `--side-bg` — chapter dark tinted toward ink for legibility (mix 70% chapter-dark + 30% neutral ink).
-- `--side-accent` — the accent.
-- `--brand-band` — accent at low saturation, for header strips.
-- `--mention-bg`, `--mention-fg` — derived from the accent with contrast guarantees.
-- `--chat-self-bubble` — accent at 8% over bone.
-- `--reaction-active` — accent.
-- `--ring` — accent.
+`deriveSignetPalette(seed?)` (`packages/chapter-theme/src/signet.ts`) wraps a vendored Radix generator and emits the `--signet-*` role tokens. It never throws: an absent or unparseable seed resolves to house gold and reports `invalidSeed`. Contrast is guaranteed **by construction** for the roles that paint text, asserted at generation time rather than re-checked per surface (`accent-engine.md` §8).
 
-### WCAG validation and fallback
-
-Every derived token is WCAG-validated against **the one background it is drawn on**: sidebar tokens against the derived ink sidebar, light-mode tokens (`--ring`, `--mention-fg`, `--reaction-active`) against bone. If a token fails AA 4.5:1 there, it falls back to bronze **for that token specifically** — never the whole palette. Validation shares its contrast math with `packages/theme/src/accent.ts` through `@repo/color`.
-
-The five sidebar companions `derivePalette` does *not* write — `--side-bg-hi`, `--side-divider`, `--side-fg`, `--side-fg-hi`, `--side-muted` — kept the neutral-ink `:root` defaults on a branded sidebar, the defect filed as #1150. It is closed by removal rather than by derivation: the #920 shell slice deleted the `--side-*` family outright, and the Signet sidebar is a fixed neutral surface whose chapter identity comes from engine accent roles that are contrast-guaranteed together. The analysis is kept because it is what rules the alternative out. It is not separable from the sidebar's text ladder: `mixHex(dark, ink, 0.3)` puts a branded `--side-bg` at a median 2.7x (up to 6.6x) the stock sidebar's luminance, so the stock text tokens are already spending their headroom — `--side-muted` measures 2.43:1 at worst across the seed today, below AA-large for 9 of 50 chapters — and **2.10:1, below AA-large for 21 of 50, in dark mode**, because `.dark` declares its own darker `--side-muted` while `use-chapter-theme.ts` writes `--side-bg` as an inline `:root` style that outranks the `.dark` rule. Branding the raised surface on top of that consumes what is left, so the elevation tokens and the text ladder have to be derived together or not at all.
-
-Measure both modes when this is picked up. Quoting the light-mode figure alone understates it by more than double the affected chapters, and conflating the two is the same mistake #1149 records for `--ring`. Tracked in #1150 with #1164; the coherent version is the #920 reskin's.
-
-This is **not** validation against both light and dark, which this section claimed until #1143. `--ring` in particular is checked against bone only, yet `useChapterTheme` writes it as an inline style on `:root`, which outranks the `.dark` rule — so a chapter accent legible on bone can paint a sub-3:1 focus ring on the dark surface. Tracked in #1149.
+The **neutral ladder is not derived**. Backgrounds, borders, the sidebar and the text ladder are fixed constants; chapter identity reaches a surface only through engine accent roles. That is a deliberate reversal — see *Why the sidebar is not branded* below.
 
 ### Computation and caching
 
-The palette is rebuilt **server-side** whenever `branding.colors` changes (via `POST /chapters/:id/theme-palette`, also triggered automatically by a config PATCH that touches colors) and cached in `chapters.theme_palette`. Clients read it through `useChapterTheme()` and write the CSS variables on `:root` on each chapter switch — no client-side recomputation on read. The Theme settings tab computes a live preview from the controlled form state (not a cached value) before save.
+`buildChapterPalette` (`apps/api/src/application/services/chapter-palette.ts`) is the single writer behind all three doors: onboarding, the config PATCH / `POST /chapters/:id/theme-palette` recompute endpoint, and the Settings accent save (`PATCH /v1/chapters/current`, the only path the UI actually uses). It is rebuilt **server-side** and cached in `chapters.theme_palette` — never recomputed on read, never client-side. A colour problem is logged, never thrown: it must not fail a save an officer asked for.
+
+Delivery differs per surface, and neither client applies the column blindly:
+
+- **Web** — `apps/web/lib/hooks/use-chapter-theme.ts`, mounted once by `DashboardShell`. It reads a fixed allow-list of `--signet-*` roles and re-keys them onto the semantic names `signet.css` defines, all-or-nothing. A row missing those keys leaves the house-gold defaults standing.
+- **Native** — `apps/mobile/lib/chapter-branding.ts` reads `--signet-accent-text` (step 11, a foreground) and falls back to `resolveChapterAccentColor` against the real surface for a row that predates the Signet map.
+
+### The legacy engine, and why the stored map is not self-describing
+
+`derivePalette({ dark, accent })` produced a separate eight-token map (`--side-bg`, `--side-accent`, `--brand-band`, `--mention-*`, `--chat-self-bubble`, `--reaction-active`, `--ring`) merged into the same column. Every one of its tokens was composited over the **bone** background, so none of them could survive the move to a `#0E0D0B` surface: the #920 shell slice stopped applying them, and the slice-9 cutover deleted the engine.
+
+Nothing migrated the stored data, because nothing needed to — the column is unconstrained jsonb and both clients read by allow-list. Rows written before the cutover therefore still **hold** the eight dead keys, and the guards that keep them off `:root` are load-bearing rather than historical.
+
+The general hazard is worth naming: `theme_palette` has no version stamp, so a stored row cannot be distinguished from a current one by inspection, and each engine change silently applies only to chapters saved after it. The backfill is tracked in #1165.
+
+### Why the sidebar is not branded
+
+Kept because it is what rules the alternative out, not as live work — #1150, #1164 and #1149 are all closed, by removal rather than by derivation.
+
+The five sidebar companions `derivePalette` did *not* write — `--side-bg-hi`, `--side-divider`, `--side-fg`, `--side-fg-hi`, `--side-muted` — kept neutral-ink `:root` defaults on a branded sidebar, which read as a hole (#1150). It could not be fixed piecemeal: `mixHex(dark, ink, 0.3)` put a branded `--side-bg` at a median 2.7× (up to 6.6×) the stock sidebar's luminance, so the stock text tokens were already spending their headroom — `--side-muted` measured 2.43:1 at worst across the 50 seeded chapters, below AA-large for 9 of them, and **2.10:1, below AA-large for 21 of 50, in dark mode**, because `.dark` declared its own darker `--side-muted` while the hook wrote `--side-bg` as an inline `:root` style that outranked it. Branding the raised surface consumed what was left: the elevation tokens and the text ladder had to be derived together or not at all. Five strategies were measured and all five failed across the seed.
+
+Two lessons survive the code. **Measure both modes** — quoting the light-mode figure alone understated the affected chapters by more than double, the same conflation #1149 recorded for `--ring`, which was validated against bone only while being written as an inline `:root` style that outranked `.dark`. And **an inline style written from data outranks a stylesheet rule**, so a token validated against one background can land on another.
+
+The Signet answer is the one approach the measurements left standing — surface and text derived together from one seed against a fixed background — obtained by construction instead of by a second derivation mechanism.
 
 ### Monospace decision
 

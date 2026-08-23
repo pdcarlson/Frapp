@@ -17,8 +17,8 @@ Returns the merged chapter configuration: archetype defaults overlaid with per-c
   "archetype_meta": { "label": "IFC Fraternity", "short": "IFC", "description": "...", "council": "..." },
   "enabled_modules": { "chat": true, "events": true, "dues": false, ... },
   "vocabulary": { "recruitment": "Rush", "pledge": "New member", "class": "Pledge class" },
-  "branding": { "greek_letters": "ΣΦΕ", "designation": "California Eta", "school_short": "UCLA", "colors": { "dark": "#4B0082", "accent": "#C9A56F" } },
-  "theme_palette": { "--side-bg": "#...", "--side-accent": "#...", ... },
+  "branding": { "greek_letters": "ΣΦΕ", "designation": "California Eta", "school_short": "UCLA", "colors": { "accent": "#C9A56F" } },
+  "theme_palette": { "--signet-accent-primary": "#...", "--signet-accent-text": "#...", ... },
   "beta_config": { "enabled": true, "style": "sidebar_pill" },
   "role_pack": "ifc_standard"
 }
@@ -33,12 +33,12 @@ The customizable sub-resources surfaced through chapter config (full schema in [
 - **`chapter_custom_fields`** — per-chapter member fields. `(key, label, type, required, visibility, sensitive, options, sort)`. `visibility ∈ {self, chapter, exec, president}`.
 - **`chapter_custom_roles`** — `(key, label, rank, capabilities[], core)`. `core=false` roles can be deleted.
 - **`chapter_workflows`** — `(key, enabled, threshold, params)`. Each enabled workflow can configure its numeric threshold.
-- **`branding`** — Greek letters, designation, school short, founded year, and the two-color palette source (`colors.dark`, `colors.accent`).
+- **`branding`** — Greek letters, designation, school short, founded year, and the accent seed (`colors.accent`). A second colour, `colors.dark`, existed until the #920 slice-9 cutover; it fed only the deleted legacy token map, and a row written before then keeps an inert value that no reader looks at.
 - **`enabled_modules`** — the per-module on/off map (see [`spec/product/modules.md`](../product/modules.md)).
 
 ## POST /chapters/:id/theme-palette
 
-Recomputes the derived palette from `branding.colors` via `derivePalette()`, persists to `chapters.theme_palette`, and returns the full token map. Triggered automatically by PATCH when `branding.colors` changes. The palette derivation algorithm and token map are specified in [`spec/architecture/README.md`](../architecture/README.md).
+Recomputes the derived palette from `branding.colors.accent` via `buildChapterPalette`, persists to `chapters.theme_palette`, and returns the full token map. Triggered automatically by PATCH when `branding.colors` changes. The derivation and role map are canon in [`spec/ui/design-system/accent-engine.md`](../ui/design-system/accent-engine.md); where the palette lives and who writes it is in [`spec/architecture/README.md`](../architecture/README.md).
 
 ## Dues configuration
 

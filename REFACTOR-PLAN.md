@@ -922,8 +922,8 @@ goal runs; do not let an agent decide it silently.**
 
 ### `use-chapter-theme` probably belongs elsewhere
 
-`packages/chapter-theme` is pure palette derivation (`derivePalette` at `src/index.ts:173`, WCAG
-machinery at `:50` and `:83-96`) with no React and no DOM. `packages/theme` holds design tokens and
+`packages/chapter-theme` is pure palette derivation (`deriveSignetPalette` in `src/signet.ts`, over
+a vendored Radix generator) with no React and no DOM. `packages/theme` holds design tokens and
 `resolveChapterAccentColor`. The web hook is a **DOM side-effect applier**. Mobile has its own
 `useChapterBranding` (`apps/mobile/lib/chapter-branding.ts:42`) and will never consume it. Moving it
 as-is puts a `document`-touching effect into a package with no platform-specific code. Recommend:

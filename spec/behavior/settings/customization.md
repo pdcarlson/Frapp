@@ -4,9 +4,9 @@ Behavior rules for the customization-heavy settings tabs (Theme, Roles, Fields, 
 
 ## Theme Tab
 
-- A chapter sets two colors: **dark** (sidebar / headers) and **accent** (chat self-bubble, mentions, CTAs). Accent-color rules, brand boundaries, and logo upload (the shared `image` kind in `@repo/validation`, not a Theme-tab-specific allowlist) are canon in [`../branding.md`](../branding.md).
-- Saving recomputes the chapter's `theme_palette` **server-side** and the client refetches and re-applies CSS variables immediately — no full reload.
-- **WCAG enforcement:** a token that fails AA 4.5:1 against the background surfaces an inline warning. The save still succeeds, falling back to the safe tokens. Contrast derivation is archetype-agnostic.
+- A chapter sets **one colour**: the accent seed. Every accent role is derived from it, and the neutral ladder — backgrounds, borders, sidebar, text — is fixed rather than branded ([`../../ui/design-system/accent-engine.md`](../../ui/design-system/accent-engine.md) §1 and §5). A second **dark** colour existed until the #920 slice-9 cutover, which deleted the legacy engine it fed; #541 tracked a picker for it and is closed as obsolete. Accent-color rules, brand boundaries, and logo upload (the shared `image` kind in `@repo/validation`, not a Theme-tab-specific allowlist) are canon in [`../branding.md`](../branding.md).
+- Saving recomputes the chapter's `theme_palette` **server-side** and the client refetches and re-applies the accent roles immediately — no full reload.
+- **WCAG:** the accent roles that paint text are contrast-guaranteed at generation time rather than checked here, so there is no per-token save-time gate and no inline fallback warning ([`../../ui/design-system/accent-engine.md`](../../ui/design-system/accent-engine.md) §8). The seed itself is format-validated, not contrast-gated ([`../branding.md`](../branding.md)). Derivation is archetype-agnostic.
 
 ## Roles Tab
 
