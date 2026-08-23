@@ -76,9 +76,16 @@ export const EXPECTED_HEADER = Object.freeze([
  *
  * Hand-rolled rather than pulled from npm because both bootstrap scripts run
  * this before `npm install` is guaranteed to have happened, so it cannot
- * depend on node_modules. The grammar it needs is small and fully covered by
- * the seed: quoted fields, embedded commas, and `""` as an escaped quote —
- * `default_colors` uses all three at once.
+ * depend on node_modules. The grammar is small: quoted fields, embedded commas,
+ * and `""` as an escaped quote.
+ *
+ * **The seed no longer exercises all three.** `default_colors` used to hold
+ * `{"dark":"#…","accent":"#…"}`, whose comma was the only embedded comma in the
+ * file; #1225 dropped the `dark` half, so no quoted field in the seed contains a
+ * comma any more and that branch lost the incidental coverage it had from real
+ * data flowing through the CI gate. `scripts/ci/__tests__/chapter-directory-seed.test.mjs`
+ * covers the grammar directly now, so it does not depend on what the data happens
+ * to contain.
  *
  * Returns rows of raw string cells. Blank trailing lines are dropped; a blank
  * line in the middle is preserved as an empty row so the caller can report its
@@ -286,9 +293,18 @@ export function loadSeed(repoRoot) {
         at("default_colors", "must be a JSON object");
       } else {
         // This is the check the whole gate exists for: issue #840 shipped with
-        // 50 of 100 values missing the leading `#`, which degrades silently to
-        // the house seed inside the accent engine rather than failing.
-        for (const key of ["dark", "accent"]) {
+        // 50 of the then-100 values missing the leading `#`, which degrades
+        // silently to the house seed inside the accent engine rather than
+        // failing.
+        //
+        // `accent` is the only key now. The pair used to be `{ dark, accent }`,
+        // but #1224 (#920 slice 9) removed `branding.colors.dark` end to end and
+        // both onboarding wizards read `default_colors?.accent` alone, so the
+        // `dark` half became write-only data that a required CI gate was still
+        // validating. Dropped from the seed and from here in #1225 —
+        // `accent-engine.md` §1 says a chapter has exactly one accent input, and
+        // the directory row is where that model should be visible.
+        for (const key of ["accent"]) {
           const value = colors[key];
           if (typeof value !== "string") {
             at("default_colors", `missing "${key}"`);

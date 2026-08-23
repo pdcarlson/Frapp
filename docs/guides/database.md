@@ -64,9 +64,21 @@ Three things about it are load-bearing:
   `deriveSignetPalette` reports the substitution on `invalidSeed` and the API callers
   log it, but the log is the only signal — nothing rejects the save.
 
-  Each row's `default_colors` still carries a `dark` key alongside `accent`. Only
-  `accent` is read: the #920 slice-9 cutover removed the second brand colour from
-  chapter branding, and the onboarding wizards stopped prefilling from `dark`.
+  Each row's `default_colors` holds exactly one key, `accent` — one seed per chapter,
+  per `spec/ui/design-system/accent-engine.md` §1. It was a `{ dark, accent }` pair
+  until #1225: the #920 slice-9 cutover removed the second brand colour from chapter
+  branding and both onboarding wizards stopped prefilling from `dark`, which left a
+  required CI gate validating a field nothing read.
+
+  Deployed `chapter_directory` rows written before #1225 may still carry an inert
+  `dark`, and **nothing prunes them automatically**. The load SQL replaces
+  `default_colors` wholesale, but only for rows the seed owns — its `update` is scoped
+  `and d.source = 'seed'`, so a hand-curated or `nic_2024` row keeps its values (the
+  `insert` half matches on the natural key without `source`, so such a row is not
+  duplicated either). And that SQL only runs where someone applies it: the command
+  above prints to stdout, the local bootstrap scripts pipe it in, and the promotion
+  path does not. That is all fine — nothing reads the key. Treat it as inert data,
+  not as something a deploy will tidy up.
 
   > The job is listed in `scripts/configure-branch-protection.mjs`, but listing it is
   > not the same as enforcing it: required checks only change when someone runs

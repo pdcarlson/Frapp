@@ -107,7 +107,10 @@ const config: Partial<Config> = {
          * `tokens.ts` carries the honest names (`ink`, `bronze`, `moss`); its
          * matching deprecated aliases went with #917. These scale keys did not
          * follow, because renaming them means moving the class sites, which is
-         * landing-reskin work (#913/#914).
+         * landing-reskin work — and that reskin has no tracked issue of its own
+         * (#920 is `apps/web`, #937 is `apps/mobile`). #913/#914, cited here
+         * before, are the two `area:product` pricing decisions that *block* it,
+         * not the removal ticket.
          *
          * `emerald` is a *partial* override of a stock Tailwind colour, so any
          * step not listed below still resolves to stock Tailwind green. Reach

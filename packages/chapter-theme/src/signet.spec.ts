@@ -10,8 +10,8 @@ import {
 } from "./signet.js";
 
 /**
- * Every distinct color in `supabase/seed/chapter_directory.csv` — 50 real
- * fraternity chapters, 100 values, 18 distinct after dedupe.
+ * Every distinct color `supabase/seed/chapter_directory.csv` has carried — 50
+ * real fraternity chapters, 18 distinct after dedupe.
  *
  * Frozen here rather than read from the CSV at test time. The seed file is real
  * production data that gets edited (it was repaired wholesale in #903), and a
@@ -19,7 +19,24 @@ import {
  * failing on a data edit, or worse, silently narrowing its own coverage. The
  * point of these values is that they are *awkward* — near-black `#1F1A15`, pure
  * `#FFFFFF` and `#000000`, silver `#C0C0C0`, hot pink `#FF69B4`, and the light
- * gold `#C9A56F` that 45 of the 100 values use.
+ * gold `#C9A56F` that 45 of the 50 chapters use as their accent.
+ *
+ * **That freeze has now paid for itself, which is why the count no longer
+ * matches the file.** `default_colors` was a `{ dark, accent }` pair when this
+ * list was taken: 18 distinct across both halves, of which only 5 were accents.
+ * #1225 dropped the dead `dark` half, so the CSV holds 50 values and 5 distinct
+ * colors today — `#BF0A30`, `#C0C0C0`, `#C9A56F`, `#FF69B4`, `#FFFFFF`. Reading
+ * it at test time would therefore have silently cut this corpus from 18 seeds to
+ * those 5, which is the exact narrowing this docstring predicted.
+ *
+ * Note *which* 13 it would drop, because it is the opposite of what a skim
+ * suggests: every dark one. Pure black `#000000`, near-black `#1F1A15`, and the
+ * navies, greens and maroons. What survives is the light end alone — white,
+ * silver, hot pink and the gold — which is the worst possible corpus for a
+ * dark-appearance generator, since the black/white `on-primary` substitution
+ * below is exercised precisely by seeds near the luminance crossover. The list
+ * stays as it is: these are the stress seeds, and where they came from does not
+ * change what the engine owes them.
  */
 const REAL_CHAPTER_COLORS = [
   "#000000",

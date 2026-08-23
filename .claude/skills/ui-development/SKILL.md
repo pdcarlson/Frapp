@@ -23,7 +23,7 @@ description: >
 
 | Layer | Location | Purpose |
 |-------|----------|---------|
-| `@repo/theme` | `packages/theme/src/` | Tailwind config preset + CSS variables + global styles |
+| `@repo/theme` | `packages/theme/src/` | Tailwind preset (`./tailwind`) + stylesheets (`./signet.css` Signet, `./globals.css` legacy/landing) + typed Signet tokens (`./signet`, what mobile reads) + the chapter accent resolver (`./accent`). `./tokens` is the legacy bone/bronze/ink token set, consumed only inside the package. |
 | ShadCN components | `apps/web/components/ui/` | Dashboard primitives and Radix composites (Button, Card, Dialog, Select, Toast, etc.) |
 | App components | `apps/web/components/` | Feature-level components |
 | Pages | `apps/web/app/` | Next.js App Router pages and layouts |
@@ -50,7 +50,7 @@ These follow ShadCN conventions:
 - `cn()` utility from `@/lib/utils` (clsx + tailwind-merge)
 - Radix UI primitives for accessible behavior
 
-Available components: avatar, badge, button, card, command, dialog, dropdown-menu, duotone, focus, input, label, popover, select, sheet, switch, table, tabs, textarea, toast, toaster.
+Available components: avatar, badge, button, card, command, dialog, dropdown-menu, duotone, focus, input, label, popover, select, sheet, switch, table, tabs, textarea, toast, toaster, typography.
 
 `accordion`, `progress`, `scroll-area`, `separator`, `skeleton`, `sonner` and
 `tooltip` were **deleted** by the #920 primitives slice — each had exactly one
@@ -60,8 +60,9 @@ replacements are `components/shared/async-states.tsx` for skeletons,
 `components/ui/toast.tsx` + `hooks/use-toast.ts` for toasts, and
 `DropdownMenuSeparator`'s `-mx-1 my-1 h-px bg-border` for a rule. `Button` has
 no `outline` variant either — Signet's Secondary *is* the outlined button.
-`apps/web/components/ui/focus.ts` and `apps/web/components/ui/duotone.tsx`
-are shared recipes rather than components.
+`apps/web/components/ui/focus.ts`, `apps/web/components/ui/duotone.tsx` and
+`apps/web/components/ui/typography.ts` (the `EYEBROW` recipe) are shared
+recipes rather than components.
 
 Three things the #920 Directory & Finance slice settled, which are easy to
 re-derive wrongly:
@@ -99,24 +100,29 @@ summarize the tokens as implemented in `@repo/theme`.
 
 **Palette status (read this before styling anything):** the repo's canonical design system is
 **Signet** — dark-only, warm neutrals, gold accent seed, Figtree — specified under
-[`spec/ui/design-system/`](../../../spec/ui/design-system/README.md). **The web dashboard is now
-Signet**: since the #920 shell slice, `apps/web/app/globals.css` imports
-`packages/theme/src/signet.css` (dark-only, Figtree via `--font-figtree`), the shell is repainted,
-and per-screen-family truing-up lands in later #920 slices — until a family's slice lands, its
-screens render legacy classes on the Signet base tokens. The shell, the shared primitives, chat,
-and Directory & Finance (`components/{members,alumni,billing,points}/**`) have landed. **The landing site has NOT been
-reskinned**: it still ships the legacy chat-first **bone / bronze / ink** palette
+[`spec/ui/design-system/`](../../../spec/ui/design-system/README.md). **The web dashboard is
+Signet end to end**: `apps/web/app/globals.css` imports `packages/theme/src/signet.css` (dark-only,
+Figtree via `--font-figtree`), and all nine #920 slices have landed — the shell, the shared
+primitives, and every screen family. The migration window is closed, so a legacy class or a live
+`dark:` variant on a dashboard screen is a defect now, not a pending slice. **The landing site has
+NOT been reskinned**: it still ships the legacy chat-first **bone / bronze / ink** palette
 (`packages/theme/src/globals.css`), light-first with Geist Sans, its spec frozen at that state
 ([`spec/ui/README.md`](../../../spec/ui/README.md)) — do not restyle it toward Signet ad hoc. The
-legacy `navy` / `royal-blue` / `emerald` **preset keys survive for landing and for
-not-yet-resliced web screens** (existing utility classes keep compiling, but their values map to
-ink / bronze / bone-era colors; the rename is tracked in #917).
+legacy `navy` / `emerald` **preset keys survive for `apps/landing` alone** (existing utility
+classes keep compiling, but their values map to ink / moss / bone-era colors) and go with its
+reskin. That reskin has **no tracked issue of its own** — #920 is `apps/web`, #937 is
+`apps/mobile`, and the Chunk-12 landing issues (#447, #491) are pre-Signet copy work that
+prescribes the bone/bronze/ink palette landing already ships. Do not reach for #913/#914 either:
+they are the two `area:product` pricing decisions that *block* the reskin, not the reskin itself. `royal-blue` is **gone** — the #920 slice-9 cutover deleted it outright,
+along with `navy`'s numbered steps and the `@repo/theme` TS brand aliases (#917, closed).
 
 **`packages/theme` is the shared token package for every surface, not a web-only one.** It already
 serves `apps/web` and `apps/landing` (Tailwind preset + CSS variables) and `apps/mobile` (typed
-tokens via `@repo/theme/tokens`), and the Signet tokens live there too (`src/signet.css`,
-`src/signet.ts`) — as an **additive entrypoint**, leaving the legacy exports that landing (and
-not-yet-resliced web classes) still consume untouched. Two things are defects:
+Signet tokens via **`@repo/theme/signet`** — 58 files, plus `@repo/theme/accent` at one call site;
+mobile does not import `@repo/theme/tokens` at all, and nothing outside `packages/theme` does), and
+the Signet tokens live there too (`src/signet.css`, `src/signet.ts`) — as an **additive
+entrypoint**, leaving the legacy exports that landing still consumes untouched. Two things are
+defects:
 Signet values replacing or bleeding into those legacy exports, and Signet tokens duplicated into
 app-local files instead of extending the package. Component ownership and token-extension rules: §3
 of [`spec/ui/design-system/README.md`](../../../spec/ui/design-system/README.md).
@@ -127,14 +133,24 @@ Web dashboard work uses the token names defined in `packages/theme/src/signet.cs
 file rather than any table here. It holds the fixed foundations (surface ladder `--background` /
 `--surface-1` / `--card`, text ladder, hairline borders) plus the ShadCN-compat pairs the shared
 preset reads, and the house-default accent slot (`--primary` … `--accent-text`) that the chapter
-accent engine overrides at runtime. The Signet-only Tailwind keys (`surface-1`, `accent-subtle` /
-`accent-border` / `accent-text`, `gold.*`, `fontFamily.sans` → `var(--font-figtree)`) live
-app-locally in `apps/web/tailwind.config.ts` until landing reskins;
-`packages/theme/src/signet.css.spec.ts` asserts every key reads a defined token.
+accent engine overrides at runtime. The Signet-only Tailwind keys live app-locally in
+`apps/web/tailwind.config.ts` until landing reskins — `surface-1`, the `primary-hover` /
+`primary-pressed` and `accent-subtle` / `accent-subtle-hover` / `accent-border` / `accent-text`
+families, `disabled`, `warning`, `info`, `destructive-text`, `mention`, `gold.*`, plus the `2xl`
+border radius, the `fontFamily.sans` → `var(--font-figtree)` override and the custom
+`pointer-coarse` variant. **Read that file rather than this list** — it is the one that compiles,
+and it carries the reasoning for each. `packages/theme/src/signet.css.spec.ts` asserts every key
+reads a defined token.
 
 ### Legacy theme tokens (landing-only)
 
-The frozen landing theme (`packages/theme/src/globals.css`) uses HSL CSS variables for semantic colors:
+The frozen landing theme (`packages/theme/src/globals.css`) defines these semantic colors as CSS
+variables. Every one holds a **complete color value** (`hsl(30 45% 32%)`, `#C49A3A`,
+`rgba(255,255,255,.08)`) — not a bare HSL triple — and the preset reads them through `colorVar()`
+as a plain `var(--token)`. **Never hand-write `hsl(var(--token))` around one**: it emits
+`hsl(hsl(...))`, which the browser drops, and a `tailwind.config.spec.ts` guard fails the build on
+it (#1151). In a Tailwind arbitrary value the correct form carries the type hint —
+`text-[color:var(--foreground)]`.
 
 | Token | Usage |
 |-------|-------|
@@ -146,17 +162,32 @@ The frozen landing theme (`packages/theme/src/globals.css`) uses HSL CSS variabl
 | `border` | Borders |
 | `ring` | Focus rings |
 
-### Brand color keys (legacy names, remapped values — landing + not-yet-resliced web screens)
+### Brand color keys (legacy names, remapped values — `apps/landing` only)
 
-| Key | Maps to | Usage |
-|------|-----------|-------|
-| `navy` | ink ramp | Brand anchor, headers, dark surfaces |
-| `royal-blue` | bronze ramp | Primary action, accent, links |
-| `emerald` | moss/success ramp | Success states |
+Two keys survive in the shared preset, and **neither is a full ramp**:
 
-Never treat success-green as the global primary-action color — `primary` (bronze) is the action
-color, ink is the brand anchor. Read the current values from `packages/theme/src/globals.css`
-rather than trusting any doc's hex table.
+| Key | Steps defined | Maps to | Usage |
+|------|-----------|-----------|-------|
+| `navy` | `DEFAULT` only | ink (`#1F1A15`) | Brand anchor, headers, dark surfaces |
+| `emerald` | `DEFAULT`, `50`, `100`, `400`, `500`, `600` | moss/success ramp | Success states |
+
+`royal-blue` was **deleted** in the #920 slice-9 cutover — it had zero class sites anywhere in the
+repo. `navy` shed its numbered steps in the same pass, for the same reason: all ten surviving call
+sites are the bare `text-navy` / `bg-navy`, all of them in `apps/landing`. **A class naming a
+key or step that is not defined above compiles to nothing** — no error, no warning, an unstyled
+element (#1145, #1151). Do not reach for `bg-royal-blue-600` or `text-navy-900`.
+
+**`emerald` is a *partial* override of a stock Tailwind colour**, which is the sharper hazard: a
+step not in the list above does not fail, it silently falls through to **stock Tailwind green**.
+That was #916's root cause — `emerald-700` is absent, so a landing pricing pill rendered stock
+emerald text beside a moss `emerald-100` fill and nothing flagged it.
+
+Both keys exist only for `apps/landing` and go with its reskin, which is not itself tracked (see
+the palette-status note above — #913/#914 block it, they are not it). Never treat
+success-green as the global primary-action color — `primary` (bronze) is the action color, ink is
+the brand anchor. Read the current values from `packages/theme/src/tailwind.config.ts` (the scale
+keys) and `packages/theme/src/globals.css` (the semantic HSL variables) rather than trusting any
+doc's hex table.
 
 ### Custom animations
 
@@ -177,9 +208,11 @@ const config: Config = {
 };
 ```
 
-`apps/web` additionally layers the Signet-only color keys and the Figtree `fontFamily.sans`
-override on top (and keeps `darkMode: "class"` with nothing setting the class, so residual
-`dark:` variants stay inert) — read the real `apps/web/tailwind.config.ts`.
+`apps/web` additionally layers the Signet-only color tokens, the `2xl` border radius, the Figtree
+`fontFamily.sans` override and a custom `pointer-coarse` variant on top, and keeps
+`darkMode: "class"` with nothing setting the class — read the real `apps/web/tailwind.config.ts`.
+`pointer-coarse` is worth knowing about: Tailwind 3.4 ships no such variant, so before it was
+registered every `pointer-coarse:` class in the tree compiled to nothing at all.
 
 Each surface's global CSS imports exactly one of the two theme stylesheets — never both:
 ```css
@@ -256,7 +289,7 @@ All data fetching uses TanStack Query via shared hooks — never raw `fetch`. Im
 import { useCurrentUser, useUpdateUser, useMembers, useCurrentChapter } from "@repo/hooks";
 ```
 
-The barrel now covers hooks for members, events, attendance, points, chat, billing, invoices, backwork, notifications, service entries, tasks, study, documents, polls, semesters, reports, search, chapters, roles, invites, and users — check `packages/hooks/src/` before writing a new hook.
+The barrel re-exports 28 modules — members, events, attendance, points, chat, billing, invoices, backwork, notifications, service entries, tasks, study, documents, polls, semesters, reports, search, chapters, chapter directory, roles, custom roles, custom fields, org config, invites, and users, plus the client and query-key helpers. Check `packages/hooks/src/` before writing a new hook; that directory, not this list, is the current one.
 
 Pattern:
 - `useQuery` for reads: `queryKey` for caching, `queryFn` calls `client.GET`
@@ -312,8 +345,10 @@ Mobile is verified on a device, not in a browser — see the run-path constraint
 Signet web is **dark-only**: there is no `next-themes`, no theme provider, and nothing toggles a
 `.dark` class — the single `:root` block in `packages/theme/src/signet.css` is the theme, so there
 is no mode switch to test. `apps/web` keeps `darkMode: "class"` deliberately with nothing setting
-the class, which keeps residual `dark:` variants inert until each family slice deletes them — do
-not set the class or reintroduce a toggle. Landing is unaffected: it stays light-first on the
+the class: that was what kept residual `dark:` variants inert while the #920 slices ran, and every
+family has now deleted its own, so `apps/web` ships **zero** live `dark:` variants and the setting
+is a backstop against Tailwind's `media` default re-activating a new one. Do not set the class,
+reintroduce a toggle, or write a fresh `dark:` variant. Landing is unaffected: it stays light-first on the
 legacy `packages/theme/src/globals.css` (its `.dark` block is never toggled).
 
 ### Responsive design

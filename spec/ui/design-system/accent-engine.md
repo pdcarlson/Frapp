@@ -136,9 +136,18 @@ Because the conversion changed only the *format* of these tokens and never a val
 ### Not yet implemented
 
 - Rows persisted before the Signet map existed carry no `--signet-*` keys and render the house
-  defaults until a save or recompute refreshes them — the backfill is #1165. The same column also
-  still holds the deleted legacy engine's keys for those rows; nothing reads them, and no migration
-  prunes them.
+  defaults until a save or recompute refreshes them — the backfill is #1165. **Two separate things
+  live in that column on such a row, and only one of them is still open** (measured against the tree
+  for #1165, so the next reader does not re-derive it):
+
+  | | Status |
+  | --- | --- |
+  | The deleted legacy engine's eight keys | **Inert, permanently — no migration is needed and none ever will be.** Neither client can reach them: `use-chapter-theme.ts` gates on the seven `--signet-accent-*` roles and then applies only `signetAccentSemanticVars`' fixed output, and `chapter-branding.ts` reads `--signet-accent-text` by name. A pruning migration would be tidiness, not correctness. |
+  | The absent `--signet-*` keys | **Real but cosmetic, and self-healing.** A chapter that chose crimson renders house gold on **both** clients until something recomputes it. Web applies nothing at all, so `signet.css`'s house-gold defaults stand. Mobile falls back to `resolveChapterAccentColor`, which keeps the chapter's own `accent_color` **only when it already clears 4.5:1 on the `#1E1B17` card** and otherwise substitutes the fallback ladder, house gold first — and 14 of the 18 colours the seed directory has carried fail that check (`#8B0000` at 1.71:1, `#003087` at 1.45:1, `#000000` at 1.22:1). Do not scope a fix to web on the assumption mobile is unaffected. Neither breaks, and any save or recompute fixes the row for good. |
+
+  Bound on which rows are affected: `deriveSignetPalette` entered `buildChapterPalette` in #1147
+  (`def3efd`, 2026-08-20), so **only a chapter whose palette was last written before that date can
+  be missing the keys** — the set is closed and shrinks on its own with every accent save.
 - `resolveChapterAccentColor` survives only at the two call sites in the residual table above; the
   mobile fallback goes when every chapter has been through one save.
 
@@ -149,6 +158,6 @@ Because the conversion changed only the *format* of these tokens and never a val
 ## 8. Validation
 
 - The engine guarantees contrast **by construction** for its mapped roles: the Radix generator produces step 11 as legible text on steps 1–3 surfaces. No runtime per-token fallback (the legacy bronze-substitution pattern) applies to engine output.
-- **`on-primary` needs one correction to make that true.** The generator's own contrast color is *not* reliably legible on step 9 for light seeds in dark appearance — it returns white for `#C9A56F` (2.31:1) and `#FF69B4` (2.65:1), where black would score 9.10:1 and 7.93:1. This is not a corner case: `#C9A56F` is 45 of the 100 color values in `supabase/seed/chapter_directory.csv`. So `deriveSignetPalette` keeps the generator's choice when it clears AA — which it does for the house seed, `#2B2009` at 8.82:1 — and otherwise substitutes whichever of black or white scores higher. That substitution cannot itself fail: the two curves cross at luminance ≈0.179 where both score ≈4.58:1, so the better of the pair is always ≥4.5:1 for any color.
-- Gate: accent-derived **text** roles MUST meet WCAG AA 4.5:1 on the surfaces they are specified for — `accent-text` (step 11) on the neutral backgrounds and on `accent-subtle-bg`, and `on-primary` on `accent-primary`. This is asserted at generation time and reported on `contrastChecks`, and pinned by `packages/chapter-theme/src/signet.spec.ts` across every distinct chapter color in the seed directory. A generator upgrade is the realistic way it breaks, which is why the generator is vendored rather than floated.
+- **`on-primary` needs one correction to make that true.** The generator's own contrast color is *not* reliably legible on step 9 for light seeds in dark appearance — it returns white for `#C9A56F` (2.31:1) and `#FF69B4` (2.65:1), where black would score 9.10:1 and 7.93:1. This is not a corner case: `#C9A56F` is the accent of 45 of the 50 chapters in `supabase/seed/chapter_directory.csv`. So `deriveSignetPalette` keeps the generator's choice when it clears AA — which it does for the house seed, `#2B2009` at 8.82:1 — and otherwise substitutes whichever of black or white scores higher. That substitution cannot itself fail: the two curves cross at luminance ≈0.179 where both score ≈4.58:1, so the better of the pair is always ≥4.5:1 for any color.
+- Gate: accent-derived **text** roles MUST meet WCAG AA 4.5:1 on the surfaces they are specified for — `accent-text` (step 11) on the neutral backgrounds and on `accent-subtle-bg`, and `on-primary` on `accent-primary`. This is asserted at generation time and reported on `contrastChecks`, and pinned by `packages/chapter-theme/src/signet.spec.ts` across the 18 distinct colors the seed directory has carried, plus the house seed. That corpus is **frozen in the spec, not read from the CSV** — #1225 dropped the dead `default_colors.dark` half, which is where 13 of the 18 came from, so a list derived from the file today would cover 5. A generator upgrade is the realistic way it breaks, which is why the generator is vendored rather than floated.
 - Save-time validation of the seed itself (format, and legacy light-mode contrast checks) is behavior canon in [`../../behavior/branding.md`](../../behavior/branding.md).

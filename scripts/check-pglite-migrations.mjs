@@ -954,9 +954,13 @@ try {
 
   const badColors = (
     await db.query(
+      // `accent` is the only key in `default_colors` since #1225; the `dark`
+      // half went with #1224's removal of `branding.colors.dark`. Asserting it
+      // here would have been quietly useless anyway: `->>'dark'` on a row
+      // without the key is NULL, and `NULL !~ pattern` is NULL rather than
+      // true, so a missing key never counted.
       `select count(*)::int as n from public.chapter_directory
-       where default_colors->>'dark'   !~ '^#[0-9A-F]{6}$'
-          or default_colors->>'accent' !~ '^#[0-9A-F]{6}$'`,
+       where default_colors->>'accent' !~ '^#[0-9A-F]{6}$'`,
     )
   ).rows[0].n;
 

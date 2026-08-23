@@ -68,7 +68,9 @@ function main() {
   console.log(
     `Chapter directory seed check passed — ${rows.length} rows, ` +
       `${orgs} organisations, ${universities} universities, ` +
-      `${rows.length * 2} color values all canonical #RRGGBB.`,
+      // One colour per row since #1225 dropped `default_colors.dark`; this read
+      // `rows.length * 2` while it was a `{ dark, accent }` pair.
+      `${rows.length} color values all canonical #RRGGBB.`,
   );
 }
 
