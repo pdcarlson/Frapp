@@ -43,13 +43,16 @@ When a new member joins a chapter (via invite token), they see a guided walkthro
 3. **Events** — Check in to earn points; never miss a meeting.
 4. **Backwork** — Find study materials uploaded by chapter members.
 5. **Study Hours** — Earn points by studying at approved locations.
-6. **Profile Setup** — Set display name, upload a profile photo, write a short bio.
-7. **Done** — CTA into chat, the landing surface on both web (`/chat`) and mobile. There is no web home screen; see [`chat/README.md`](chat/README.md).
+6. **Points** — Balance, the chapter leaderboard, and the transaction log.
+7. **Profile Setup** — Set display name and write a short bio. Photo upload is **mobile-only** today; the web half is tracked separately and the web slide does not promise it.
+8. **Done** — CTA into chat, the landing surface on both web (`/chat`) and mobile. There is no web home screen; see [`chat/README.md`](chat/README.md).
+
+This list said **seven** and omitted Points until the #920 Profile & pre-auth slice. The code has carried eight slides since `STEPS` was written, so the doc was stale rather than the implementation — behavior spec wins on what the product does, and here the shipped product *is* what it does. `apps/web/components/onboarding/onboarding-tutorial.test.tsx` now asserts the eight titles in order, so the two cannot drift apart again.
 
 ### Behavior
 
 - The tutorial can be skipped at any point via a "Skip" button.
 - It can be revisited from settings (Profile > "Replay Tutorial").
-- The walkthrough adapts to the surface: **web** is a modal slideshow (`apps/web/components/onboarding/onboarding-tutorial.tsx`). **Mobile** is the s03 first-run screen (`apps/mobile/app/(auth)/welcome.tsx`): auto-joined public channels plus the push primer, then a Skip / Go to chat CTA. Canvas s03 is the drawing; the seven web slides are not restated as extra mobile cards.
+- The walkthrough adapts to the surface: **web** is a modal slideshow (`apps/web/components/onboarding/onboarding-tutorial.tsx`). **Mobile** is the s03 first-run screen (`apps/mobile/app/(auth)/welcome.tsx`): auto-joined public channels plus the push primer, then a Skip / Go to chat CTA. Canvas s03 is the drawing; the eight web slides are not restated as extra mobile cards.
 - A `has_completed_onboarding` flag on the member record controls whether the tutorial is shown. On mobile the auth gate reads it from `GET /v1/chapters` and routes to s03 when the active membership's flag is false (`apps/mobile/lib/auth-gate.ts`). Completing or skipping s03 PATCHes `PATCH /v1/members/me/onboarding`. Wizard-created memberships are written with the flag already true, so first officers skip s03.
 - An authenticated mobile session with **zero** memberships is routed to s02 (`(auth)/join.tsx`) to redeem an invite token. First-officer chapter creation is the same screen's secondary **Create a chapter** control, which opens `(auth)/create-chapter` (#1102).

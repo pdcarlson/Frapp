@@ -1,11 +1,45 @@
 # Dashboard browser suite
 
-Playwright tests that drive the dashboard routes in `apps/web/app/(dashboard)`
-against a real `next dev`. One suite today — `responsive-floor.spec.ts`, the
-375px floor gate — running in CI as the **required** `web-responsive-floor` job.
+Playwright tests that drive the app's routes against a real `next dev`. Two
+suites, both in the **required** `web-responsive-floor` job:
 
-The route list both this suite and any future one reads is `routes.ts`. Add a
-dashboard screen there and every spec in this directory picks it up.
+| Suite | Covers |
+| --- | --- |
+| `responsive-floor.spec.ts` | the fifteen `DASHBOARD_ROUTES` at 375px |
+| `pre-auth-floor.spec.ts` | the four `PRE_AUTH_ROUTES` at 375px, plus one guard |
+
+Both read `routes.ts`. Add a screen there and the matching spec picks it up.
+
+**Why two suites and not one list.** The dashboard suite asserts each route did
+*not* end up on `/sign-in` — the guard that stops a regressed
+`SUPABASE_AUTH_BYPASS` from turning all fifteen tests into green measurements
+of the sign-in card. For a pre-auth route that assertion is backwards, so those
+carry a per-route expected URL instead.
+
+**Two things here are not covered**, and both are worth naming rather than
+leaving to be discovered.
+
+`/join` is the first. It sits in `proxy.ts`'s
+protected prefixes *and* calls `getSessionUser()` itself, redirecting a
+sessionless harness to `/sign-in?redirectTo=/join` — so nothing here can
+measure it. That needs a seeded session, which is the same piece of work the
+last section of this file scopes. Measured by hand at 375px meanwhile: the
+column measures 375 with a widest child of 327, the same as `/sign-in`, which
+is expected — all five pre-auth routes compose one column.
+
+The **onboarding wizard** is the second, and it is the harder one. It is never
+a route: `ChapterWizardGate` mounts it as a full-screen overlay when
+`GET /v1/chapters` comes back empty, so no `page.goto` reaches it and neither
+suite can. `spec/ui/web-dashboard/README.md` asserted it held the floor for
+some time on nothing at all; that claim now says what is true instead.
+
+**The second suite pays for itself in a guard.** `playwright.config.ts` warns
+that with two specs in this directory, deleting or renaming the floor spec lets
+the run pass on the survivor and exit 0 with the floor silently unmeasured.
+`pre-auth-floor.spec.ts` closes that: it reads `responsive-floor.spec.ts` off
+disk and asserts both that the file exists and that `DASHBOARD_ROUTES` still
+holds fifteen entries. That is strictly stronger than the guard it replaces,
+which only fired when the directory collected no tests at all.
 
 ## There used to be a snapshot suite here
 

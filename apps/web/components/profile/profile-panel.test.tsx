@@ -5,6 +5,8 @@ import userEvent from "@testing-library/user-event";
 // Every mocked hook must return a STABLE reference. The panel's effects depend
 // on `userQuery.data` / `settingsQuery.data`, so a fresh object per render loops
 // forever ("Maximum update depth exceeded") — a test artifact, not a bug.
+const { mockOffline } = vi.hoisted(() => ({ mockOffline: { value: false } }));
+
 const mocks = vi.hoisted(() => {
   const noopMutation = {
     mutateAsync: () => Promise.resolve({}),
@@ -14,12 +16,26 @@ const mocks = vi.hoisted(() => {
     settingsData: undefined as Record<string, unknown> | undefined,
     updateSettingsMutateAsync: vi.fn(),
     toast: vi.fn(),
+    // `fetchStatus` and `isLoading` are read by the state branches the #920
+    // Profile & pre-auth slice added; the fixtures below drive them per test.
     userQuery: {
-      data: { id: "u-1", email: "member@example.com", display_name: "Member" },
+      data: { id: "u-1", email: "member@example.com", display_name: "Member" } as
+        | Record<string, unknown>
+        | undefined,
       isPending: false,
+      isLoading: false,
       isError: false,
+      fetchStatus: "idle" as string,
+      refetch: vi.fn(),
     },
-    settingsQuery: { data: undefined as Record<string, unknown> | undefined },
+    settingsQuery: {
+      data: undefined as Record<string, unknown> | undefined,
+      isPending: false,
+      isLoading: false,
+      isError: false,
+      fetchStatus: "idle" as string,
+      refetch: vi.fn(),
+    },
     noopMutation,
     updateSettings: {
       mutateAsync: () => Promise.resolve({}) as Promise<unknown>,
@@ -43,7 +59,9 @@ vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: mocks.toast }),
 }));
 vi.mock("@/lib/auth/session", () => ({ signOutCurrentSession: vi.fn() }));
+vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
 
+import { networkMock } from "@/tests/network";
 import { ProfilePanel } from "./profile-panel";
 
 /** The body the panel would PATCH, or undefined if it never submitted. */
@@ -259,5 +277,197 @@ describe("ProfilePanel — draft survives an optimistic rollback (#312)", () => 
     rerender(<ProfilePanel />);
 
     expect(screen.getByDisplayValue("21:00")).toBeTruthy();
+  });
+});
+
+/**
+ * Everything below was added by the #920 Profile & pre-auth slice.
+ *
+ * The fixtures above are shared, so each block resets what it drives — an
+ * offline flag or a paused `fetchStatus` left set leaks into every later test
+ * in the file, which is the hazard `tests/network.ts` warns about by name.
+ */
+function resetQueries() {
+  mockOffline.value = false;
+  mocks.userQuery.data = {
+    id: "u-1",
+    email: "member@example.com",
+    display_name: "Member",
+  };
+  mocks.userQuery.isPending = false;
+  mocks.userQuery.isLoading = false;
+  mocks.userQuery.isError = false;
+  mocks.userQuery.fetchStatus = "idle";
+  mocks.settingsQuery.data = undefined;
+  mocks.settingsQuery.isPending = false;
+  mocks.settingsQuery.isLoading = false;
+  mocks.settingsQuery.isError = false;
+  mocks.settingsQuery.fetchStatus = "idle";
+}
+
+describe("ProfilePanel — offline, then loading, then error, then the screen", () => {
+  beforeEach(resetQueries);
+
+  it("states the network rather than spinning, when nothing is cached", () => {
+    mockOffline.value = true;
+    mocks.userQuery.data = undefined;
+    mocks.userQuery.isPending = true;
+    mocks.userQuery.fetchStatus = "paused";
+    render(<ProfilePanel />);
+
+    expect(screen.getByText(/unavailable offline/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+  });
+
+  it("keeps a cached profile on screen while a paused refetch waits", () => {
+    /*
+     * The half a later "simplification" silently breaks, which is why it is
+     * pinned rather than left implicit — `components/shared/can-fallback.test.tsx`
+     * pins the same one for the permission query. A paused *refetch* still has
+     * `data`, so the member keeps their screen and their drafts; only a pause
+     * with nothing cached is a state worth rendering.
+     */
+    mockOffline.value = true;
+    mocks.userQuery.fetchStatus = "paused";
+    mocks.settingsQuery.data = { quiet_hours_start: "22:00" };
+    render(<ProfilePanel />);
+
+    expect(screen.getByLabelText("Display name")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/your profile is unavailable offline/i),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/loading your profile/i)).not.toBeInTheDocument();
+    // And the second query's card holds its cached values too, for the same
+    // reason — the two branches are the same rule applied at two scales.
+    expect(screen.getByDisplayValue("22:00")).toBeInTheDocument();
+  });
+
+  it("keeps the drafts when a BACKGROUND refetch fails", async () => {
+    /*
+     * The defect this branch replaces, and the reason it is not a style
+     * preference. TanStack v5 keeps `data` through a background refetch
+     * failure, so the old `if (userQuery.isError)` unmounted the whole panel —
+     * both drafts with it — when a window-focus refetch failed. On a screen
+     * whose entire purpose is holding text a member is part-way through
+     * typing, that discards their work and says nothing about it.
+     *
+     * Same shape as `<Can>`'s `isError && !data` since #1211, met on a form.
+     */
+    // `rerender`, never a second `render()`. RTL's `render` mounts a *new*
+    // tree without unmounting the first, so a second call gives you a fresh
+    // ProfilePanel whose draft seeds from `userQuery.data` — which is still
+    // "Member". The test then passes whether or not the draft survives,
+    // because it is reading a panel that was never typed into. Verified: with
+    // a second `render()`, adding `userQuery.isError` to the seeding effect's
+    // dependency array — the exact regression this test names — leaves it
+    // green.
+    const { rerender } = render(<ProfilePanel />);
+    const name = screen.getByLabelText("Display name");
+    await userEvent.clear(name);
+    await userEvent.type(name, "Half-typed name");
+
+    mocks.userQuery.isError = true;
+    mocks.userQuery.fetchStatus = "idle";
+    // The data is still there — that is what a background failure looks like.
+    rerender(<ProfilePanel />);
+
+    expect(screen.queryByText(/couldn't load your profile/i)).not.toBeInTheDocument();
+    expect(screen.getByDisplayValue("Half-typed name")).toBeInTheDocument();
+  });
+
+  it("still fails closed when the fetch failed and nothing is cached", () => {
+    mocks.userQuery.data = undefined;
+    mocks.userQuery.isError = true;
+    render(<ProfilePanel />);
+
+    expect(screen.getByText(/couldn't load your profile/i)).toBeInTheDocument();
+  });
+});
+
+describe("ProfilePanel — the Preferences card has its own states", () => {
+  beforeEach(resetQueries);
+
+  it("refuses to offer Save when the stored preferences could not be read", () => {
+    /*
+     * #1209's shape, one screen over. `settingsQuery` had no branch at all, so
+     * a failed `/v1/settings` fetch rendered empty time fields beside a live
+     * Save button — and because the submit maps an unloaded field to
+     * `undefined`, pressing it sent an empty body and toasted "Preferences
+     * saved". A failure reported as a success.
+     */
+    mocks.settingsQuery.isError = true;
+    render(<ProfilePanel />);
+
+    expect(screen.getByText(/couldn't load your preferences/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /save preferences/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("says offline rather than failed when the connection is the reason", () => {
+    // The mistake `/documents` and `/backwork` made before `NestedOffline`
+    // existed: reaching for the error variant and telling a member with a
+    // dropped connection that something had failed.
+    mockOffline.value = true;
+    mocks.settingsQuery.isPending = true;
+    mocks.settingsQuery.fetchStatus = "paused";
+    render(<ProfilePanel />);
+
+    expect(screen.getByText(/quiet hours unavailable offline/i)).toBeInTheDocument();
+    expect(screen.queryByText(/couldn't load your preferences/i)).not.toBeInTheDocument();
+  });
+
+  it("leaves the screen-scale announcement to the top-level state", () => {
+    // `sole` is deliberately not passed: the panel owns a screen-scale
+    // `LoadingState`, so the live region and the `<h2>` promotion belong to
+    // that one. This is the case `nested-states.tsx` describes as the default.
+    mocks.settingsQuery.isLoading = true;
+    render(<ProfilePanel />);
+
+    const heading = screen.queryByRole("heading", { name: /preferences/i });
+    // `CardTitle` is a `<div>`, so the card's own title is not a heading — and
+    // the nested state must not add a second one.
+    expect(heading).toBeNull();
+  });
+});
+
+describe("ProfilePanel — the theme control is gone, not hidden", () => {
+  beforeEach(resetQueries);
+
+  it("renders no theme control", () => {
+    // `next-themes` and the header toggle went in the #920 shell slice, and
+    // `spec/ui/web-dashboard/README.md` has asserted "no user-facing theme
+    // switch" ever since. Nothing on any surface reads `user_settings.theme`.
+    render(<ProfilePanel />);
+    expect(screen.queryByLabelText(/theme/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/theme controls/i)).not.toBeInTheDocument();
+  });
+
+  it("stops sending `theme` in the preferences PATCH", async () => {
+    // The write path, not just the control. `notification.service.ts` resolves
+    // an omitted field as `data.theme ?? existing?.theme ?? 'system'`, so
+    // omitting it preserves whatever is stored rather than clearing it.
+    mocks.settingsQuery.data = {
+      quiet_hours_start: "22:00",
+      quiet_hours_end: "08:00",
+      quiet_hours_tz: "America/New_York",
+      theme: "system",
+    };
+    render(<ProfilePanel />);
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("America/New_York")).toBeTruthy();
+    });
+    await savePreferences();
+
+    await waitFor(() => {
+      expect(mocks.updateSettingsMutateAsync).toHaveBeenCalled();
+    });
+    expect(lastSettingsBody()).not.toHaveProperty("theme");
+  });
+
+  it("says Signet, not Frapp", () => {
+    render(<ProfilePanel />);
+    expect(screen.queryByText(/frapp/i)).not.toBeInTheDocument();
   });
 });

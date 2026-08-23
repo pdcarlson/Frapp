@@ -391,6 +391,75 @@ confirm.
 |---|---|---|
 | Loading | — | `Loading your profile...` |
 | Error | `Couldn't load your profile` | `Sign in succeeded but we couldn't reach the API. Retry in a moment.` |
+| Offline | `Your profile is unavailable offline` | `Reconnect to load your directory entry and notification preferences.` |
+| Preferences card — loading | — | `Loading your preferences...` |
+| Preferences card — error | `Couldn't load your preferences` | `Quiet hours couldn't be read, so saving them would overwrite what's stored. Retry in a moment.` |
+| Preferences card — offline | `Quiet hours unavailable offline` | `Reconnect to load and change when notifications are silenced.` |
+
+**There is deliberately no Empty row**, and saying so is the point of the line: the viewer always exists, so `/profile` has no empty branch to write. The Resources & Reporting slice's rule is about states that exist and were never written down, not a mandate to invent one — without this sentence the next reader "completes" the table with copy no code can reach.
+
+The Preferences card is a **second query** on the same screen (`GET /v1/settings` beside `GET /v1/users/me`), which is why it has its own three rows rather than borrowing the screen's. It had no states at all until the Profile & pre-auth slice, so a failed fetch rendered empty fields beside a live Save button that then reported success.
+
+### Sign in (pre-auth)
+
+| State | Title | Description |
+|---|---|---|
+| Idle | `Signet` | `Ask your chapter anything.` — s01's wordmark and tagline are the screen's heading and body, not decoration above one. |
+| Submitting | — | The primary reads `Continue` throughout and disables; no separate copy. |
+| Auth error | `Unable to sign in` | The Supabase message, verbatim. It is deliberately non-enumerating ("Invalid login credentials" whether or not the address exists), so passing it through leaks nothing and says more than a generic line would. |
+| Magic link sent | `Magic link sent` | `Check your inbox to continue signing in.` |
+| Magic link, no email | `Email required` | `Enter your email address to request a magic link.` |
+
+### Sign up (pre-auth)
+
+| State | Title | Description |
+|---|---|---|
+| Idle | `Create your account` | `One account, then join your chapter or start one.` |
+| Created, session issued | `Account created` | `You are signed in and ready to continue.` |
+| Created, confirmation required | `Check your inbox` | `Confirm your email to finish setting up your account.` |
+| Error | `Unable to create account` | The Supabase message, verbatim, for the reason above. |
+
+### Join chapter (pre-auth)
+
+| State | Title | Description |
+|---|---|---|
+| Idle | `Join your chapter` | `Enter the invite your officer sent. Invites expire after 24 hours and work once.` |
+| Invite-link hint | — | `Got an invite link? Open it and this page fills itself in.` |
+| Checking the session | — | `Verifying your session…` (announced, not drawn) |
+| Session check failed, offline | `Can't check your session` | `Reconnect to confirm you're signed in, then redeem the invite.` |
+| Session check failed, error | `Couldn't check your session` | `We couldn't reach the API to confirm you're signed in. Retry in a moment.` |
+| Redeemed | `Chapter joined` | `You're in. Opening chat.` |
+| **410** — expired, used, or missing | — | `This invite has expired or already been used. Ask an officer for a new one.` |
+| **409** — already a member | — | `You're already a member of this chapter. Open it from your chapter list.` |
+| Any other failure | — | The server's message, else `Couldn't join that chapter. Check the invite and try again.` |
+
+The two status rows are the reason this table exists. Both are routine, both were rendering one generic toast, and they need **opposite** next actions — one says fetch a new invite, the other says you already have what you came for. `spec/behavior/onboarding.md` §Invite Token Rules fixes the codes; the strings are shared verbatim with [`apps/mobile/lib/onboarding/join-errors.ts`](../../../apps/mobile/lib/onboarding/join-errors.ts) and [`apps/web/components/auth/join-errors.ts`](../../../apps/web/components/auth/join-errors.ts), and this table is the one place they are written down, since neither app can import the other's module.
+
+410 covers three distinct server messages (`Invite not found` / `Invite already used` / `Invite expired`). They collapse to one string on purpose: a member cannot act on the difference, and naming which one it was would tell an unauthenticated caller whether a token exists.
+
+### No access (pre-auth)
+
+| State | Title | Description |
+|---|---|---|
+| Signed in, no chapter role | `You don't have access yet` | `Your account is signed in, but no chapter role has been assigned. A chapter admin needs to invite you or grant a role before you can use the dashboard.` plus the three recovery paths (ask an officer, reopen the invite link, sign out and back in). |
+
+### Onboarding wizard (dashboard overlay)
+
+| State | Title | Description |
+|---|---|---|
+| Directory search, idle | — | `Type at least 2 characters to search.` |
+| Directory search, loading | — | `Searching the directory…` |
+| Directory search, no results | — | `We couldn't find "<query>" in our directory.` with `Enter chapter details manually` |
+| Directory search, error | `Couldn't reach the directory` | `Retry the search, or enter your chapter's details by hand.` |
+| Progress | — | `Step N of 4`, stated in words beside the bars and never only by them |
+
+### App error boundary (`global-error`)
+
+| State | Title | Description |
+|---|---|---|
+| Unrecoverable render error | `The dashboard hit an unrecoverable error` | `The page couldn't finish loading, and the error has been reported. Reloading usually clears it.` with `Reload the dashboard` |
+
+This one replaces `Something went wrong` / `Try again`, which is §1's banned shape with none of §3's three parts — and it had shipped unstyled, since the boundary replaces the root layout and so loads neither the stylesheet nor the typeface unless it asks for them itself.
 
 ## 8. Mobile reliability labels
 

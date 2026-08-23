@@ -10,6 +10,7 @@ import {
   useUserSettings,
 } from "@repo/hooks";
 import { normalizeTimeZoneInput } from "@repo/validation";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -21,17 +22,20 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ErrorState, LoadingState } from "@/components/shared/async-states";
+import {
+  ErrorState,
+  LoadingState,
+  OfflineState,
+} from "@/components/shared/async-states";
+import {
+  NestedError,
+  NestedLoading,
+  NestedOffline,
+} from "@/components/shared/nested-states";
+import { useNetwork } from "@/lib/providers/network-provider";
 import { signOutCurrentSession } from "@/lib/auth/session";
-import { getErrorMessage } from "@/lib/utils";
+import { getErrorMessage, initials } from "@/lib/utils";
 
 type CurrentUser = {
   id?: string;
@@ -44,15 +48,20 @@ type CurrentUser = {
   current_company?: string | null;
 };
 
+/**
+ * The quiet-hour fields `PATCH /v1/settings` accepts and this screen edits.
+ *
+ * `theme` is deliberately absent. See the Preferences card below.
+ */
 type UserSettings = {
   quiet_hours_start?: string | null;
   quiet_hours_end?: string | null;
   quiet_hours_tz?: string | null;
-  theme?: "light" | "dark" | "system";
 };
 
 export function ProfilePanel() {
   const { toast } = useToast();
+  const { isOffline } = useNetwork();
   const userQuery = useCurrentUser();
   const settingsQuery = useUserSettings();
   const updateUser = useUpdateUser();
@@ -94,11 +103,40 @@ export function ProfilePanel() {
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [settingsQuery.data, updateSettings.isPending, updateSettings.isError]);
 
-  if (userQuery.isPending) {
+  /*
+   * Screen-scale states, in the order `spec/ui/design-system/README.md` §4
+   * fixes: offline, then loading, then error, then the screen.
+   *
+   * There is **no entitlement branch**, deliberately. `useCurrentUser`
+   * (`packages/hooks/src/use-user.ts`) sets no `enabled`, so
+   * `isPending && fetchStatus === "idle"` is unreachable here — and there is no
+   * `<Can>` either, because `/profile` is about the viewer rather than the
+   * chapter and there is no permission that could deny it.
+   *
+   * `isError && data === undefined`, not bare `isError`, and that is the
+   * defect this replaces rather than a stylistic preference. TanStack v5 keeps
+   * `data` through a *background* refetch failure, so the old `if
+   * (userQuery.isError)` unmounted the whole panel — including both draft
+   * states — when a window-focus refetch failed. On a screen whose entire
+   * purpose is holding text a member is part-way through typing, that discards
+   * their work and says nothing about it. Same shape as `<Can>`'s branch since
+   * #1211, met on a form.
+   */
+  const userPaused =
+    userQuery.isPending && userQuery.fetchStatus === "paused";
+  if (isOffline && userQuery.data === undefined) {
+    return (
+      <OfflineState
+        title="Your profile is unavailable offline"
+        description="Reconnect to load your directory entry and notification preferences."
+        onRetry={() => void userQuery.refetch()}
+      />
+    );
+  }
+  if (userQuery.isLoading || userPaused) {
     return <LoadingState message="Loading your profile..." />;
   }
-
-  if (userQuery.isError) {
+  if (userQuery.isError && userQuery.data === undefined) {
     return (
       <ErrorState
         title="Couldn't load your profile"
@@ -175,11 +213,10 @@ export function ProfilePanel() {
         quiet_hours_start: settingsDraft.quiet_hours_start ?? undefined,
         quiet_hours_end: settingsDraft.quiet_hours_end ?? undefined,
         quiet_hours_tz: tz,
-        theme: settingsDraft.theme,
       });
       toast({
         title: "Preferences saved",
-        description: "Quiet hours and theme preferences updated.",
+        description: "Quiet hours updated.",
       });
     } catch (error) {
       toast({
@@ -197,23 +234,107 @@ export function ProfilePanel() {
     setIsSigningOut(true);
     try {
       await signOutCurrentSession();
+      // Deliberately not in a `finally`: on the success path this line never
+      // returns, and resetting the flag after it would only ever run on the
+      // failure path — where the member does need the control back.
       window.location.assign("/sign-in");
-    } finally {
+    } catch (error) {
       setIsSigningOut(false);
+      toast({
+        title: "Couldn't sign out",
+        description: getErrorMessage(
+          error,
+          "Retry in a moment, or close this tab to end the session locally.",
+        ),
+        variant: "destructive",
+      });
     }
   }
 
   const profile = profileDraft;
   const settings = settingsDraft;
+  // Two different fallbacks, deliberately: the heading needs *something* to
+  // say when a member has not set a display name, but the avatar must not
+  // spell the initials of that placeholder — `initials("Your profile")` is
+  // "YP", which reads as a person who is not them.
+  const storedName = profile.display_name?.trim() ?? "";
+  const displayName = storedName || "Your profile";
+
+  /*
+   * The Preferences card is fed by a *second* query, so it needs a second set
+   * of states — it had none. A failed `/v1/settings` fetch rendered empty time
+   * fields beside a live Save button, and because the submit maps an unloaded
+   * field to `undefined` (so the PATCH omits it), pressing Save sent an empty
+   * body and toasted "Preferences saved". That is #1209's "reports a failed
+   * fetch as success", one screen over.
+   *
+   * `sole` is deliberately NOT passed. The panel already owns a screen-scale
+   * `LoadingState` above, so the live region and the `<h2>` promotion belong to
+   * that one — which is exactly the case `nested-states.tsx` describes as the
+   * default, and the reason the prop defaults off.
+   */
+  const settingsPaused =
+    settingsQuery.isPending && settingsQuery.fetchStatus === "paused";
+  let preferencesState: React.ReactNode = null;
+  if (isOffline && settingsQuery.data === undefined) {
+    preferencesState = (
+      <NestedOffline
+        title="Quiet hours unavailable offline"
+        description="Reconnect to load and change when notifications are silenced."
+        onRetry={() => void settingsQuery.refetch()}
+      />
+    );
+  } else if (settingsQuery.isLoading || settingsPaused) {
+    preferencesState = (
+      <NestedLoading message="Loading your preferences..." lines={3} />
+    );
+  } else if (settingsQuery.isError && settingsQuery.data === undefined) {
+    preferencesState = (
+      <NestedError
+        title="Couldn't load your preferences"
+        description="Quiet hours couldn't be read, so saving them would overwrite what's stored. Retry in a moment."
+        onRetry={() => void settingsQuery.refetch()}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">
-      <header>
-        <h2 className="text-2xl font-semibold tracking-tight">My profile</h2>
-        <p className="text-sm text-muted-foreground">
-          Update how your chapter sees you in the directory and how Frapp
-          notifies you.
-        </p>
+      {/*
+        s15's identity header, as far as the data goes.
+        `--accent-subtle` / `--accent-border` / `--accent-text` is the token
+        transcription of the board's `#251E0E` / `#6B5619` / `#F4CB63` — the
+        board draws one seed (its header says the demo tenant runs house gold)
+        and the engine ships nineteen, so the accent roles are what generalise.
+        Measured across all of them in `profile-contrast.test.ts`.
+
+        s15's role badge and its three stat cards (points / service hrs /
+        attendance) are deliberately NOT here: `GET /v1/users/me` carries none
+        of those fields and no query this screen holds does either, so building
+        them is new feature work rather than a repaint. Filed, not smuggled in.
+      */}
+      <header className="flex items-center gap-4">
+        <Avatar className="h-[84px] w-[84px] border border-accent-border bg-accent-subtle">
+          {profile.avatar_url ? (
+            <AvatarImage src={profile.avatar_url} alt="" />
+          ) : null}
+          {/*
+            Sized off the 84px circle rather than off foundations §7's ladder,
+            for `signet-mark.tsx`'s reason: initials in an avatar are a drawn
+            mark, not a run of text. s15 draws them at 28 in an 84px circle.
+          */}
+          <AvatarFallback className="bg-accent-subtle text-[26px] font-bold text-accent-text">
+            {initials(storedName || profile.email || "")}
+          </AvatarFallback>
+        </Avatar>
+        <div className="min-w-0">
+          <h2 className="truncate text-2xl font-semibold tracking-tight">
+            {displayName}
+          </h2>
+          <p className="truncate text-sm text-muted-foreground">
+            {profile.email ?? "Update how your chapter sees you in the directory."}
+          </p>
+        </div>
       </header>
 
       <Card>
@@ -317,97 +438,88 @@ export function ProfilePanel() {
       <Card>
         <CardHeader>
           <CardTitle>Preferences</CardTitle>
+          {/*
+            The Theme select that used to live here is gone, and the copy that
+            promised "theme controls the whole dashboard" with it.
+            `next-themes` and the header toggle were deleted in the #920 shell
+            slice — Signet is dark-only and `foundations.md` defines no light
+            values — so the control had been writing `user_settings.theme` with
+            nothing on any surface reading it. `spec/ui/web-dashboard/README.md`
+            has asserted "no user-facing theme switch" since that slice; this is
+            what makes it true. A control with no reader is deleted, not
+            restyled.
+          */}
           <CardDescription>
-            Quiet hours silence non-urgent notifications; theme controls the
-            whole dashboard.
+            Quiet hours silence non-urgent notifications.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form className="space-y-4" onSubmit={handleSettingsSubmit}>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div className="grid gap-2">
-                <Label htmlFor="quiet-start">Quiet hours start</Label>
-                <Input
-                  id="quiet-start"
-                  type="time"
-                  value={settings.quiet_hours_start ?? ""}
-                  onChange={(event) =>
-                    setSettingsDraft((prev) => ({
-                      ...prev,
-                      quiet_hours_start: event.target.value,
-                    }))
-                  }
-                />
+          {preferencesState ?? (
+            <form className="space-y-4" onSubmit={handleSettingsSubmit}>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div className="grid gap-2">
+                  <Label htmlFor="quiet-start">Quiet hours start</Label>
+                  <Input
+                    id="quiet-start"
+                    type="time"
+                    value={settings.quiet_hours_start ?? ""}
+                    onChange={(event) =>
+                      setSettingsDraft((prev) => ({
+                        ...prev,
+                        quiet_hours_start: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="quiet-end">Quiet hours end</Label>
+                  <Input
+                    id="quiet-end"
+                    type="time"
+                    value={settings.quiet_hours_end ?? ""}
+                    onChange={(event) =>
+                      setSettingsDraft((prev) => ({
+                        ...prev,
+                        quiet_hours_end: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="quiet-tz">Timezone</Label>
+                  <Input
+                    id="quiet-tz"
+                    value={settings.quiet_hours_tz ?? ""}
+                    onChange={(event) => {
+                      setTimeZoneError(null);
+                      setSettingsDraft((prev) => ({
+                        ...prev,
+                        quiet_hours_tz: event.target.value,
+                      }));
+                    }}
+                    placeholder="e.g. America/Chicago"
+                    aria-invalid={timeZoneError ? true : undefined}
+                    aria-describedby={
+                      timeZoneError ? "quiet-tz-error" : undefined
+                    }
+                  />
+                  {timeZoneError ? (
+                    <p id="quiet-tz-error" className="text-sm text-destructive">
+                      {timeZoneError}
+                    </p>
+                  ) : null}
+                </div>
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="quiet-end">Quiet hours end</Label>
-                <Input
-                  id="quiet-end"
-                  type="time"
-                  value={settings.quiet_hours_end ?? ""}
-                  onChange={(event) =>
-                    setSettingsDraft((prev) => ({
-                      ...prev,
-                      quiet_hours_end: event.target.value,
-                    }))
-                  }
-                />
+              <div className="flex items-center justify-end gap-2">
+                <Button type="submit" disabled={updateSettings.isPending}>
+                  {updateSettings.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : null}
+                  Save preferences
+                </Button>
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="quiet-tz">Timezone</Label>
-                <Input
-                  id="quiet-tz"
-                  value={settings.quiet_hours_tz ?? ""}
-                  onChange={(event) => {
-                    setTimeZoneError(null);
-                    setSettingsDraft((prev) => ({
-                      ...prev,
-                      quiet_hours_tz: event.target.value,
-                    }));
-                  }}
-                  placeholder="e.g. America/Chicago"
-                  aria-invalid={timeZoneError ? true : undefined}
-                  aria-describedby={
-                    timeZoneError ? "quiet-tz-error" : undefined
-                  }
-                />
-                {timeZoneError ? (
-                  <p id="quiet-tz-error" className="text-sm text-destructive">
-                    {timeZoneError}
-                  </p>
-                ) : null}
-              </div>
-            </div>
-            <div className="grid gap-2 sm:max-w-xs">
-              <Label htmlFor="theme">Theme</Label>
-              <Select
-                value={settings.theme ?? "system"}
-                onValueChange={(value) =>
-                  setSettingsDraft((prev) => ({
-                    ...prev,
-                    theme: value as "light" | "dark" | "system",
-                  }))
-                }
-              >
-                <SelectTrigger id="theme">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="system">System</SelectItem>
-                  <SelectItem value="light">Light</SelectItem>
-                  <SelectItem value="dark">Dark</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center justify-end gap-2">
-              <Button type="submit" disabled={updateSettings.isPending}>
-                {updateSettings.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : null}
-                Save preferences
-              </Button>
-            </div>
-          </form>
+            </form>
+          )}
         </CardContent>
       </Card>
 
