@@ -25,11 +25,18 @@ import {
  * matches the file.** `default_colors` was a `{ dark, accent }` pair when this
  * list was taken: 18 distinct across both halves, of which only 5 were accents.
  * #1225 dropped the dead `dark` half, so the CSV holds 50 values and 5 distinct
- * colors today. Reading it at test time would therefore have silently cut this
- * corpus from 18 seeds to 5 — the exact narrowing this docstring predicted — and
- * taken `#000000`, `#FFFFFF`, `#C0C0C0` and `#FF69B4` with it. The list stays as
- * it is: these are the stress seeds, and where they came from does not change
- * what the engine owes them.
+ * colors today — `#BF0A30`, `#C0C0C0`, `#C9A56F`, `#FF69B4`, `#FFFFFF`. Reading
+ * it at test time would therefore have silently cut this corpus from 18 seeds to
+ * those 5, which is the exact narrowing this docstring predicted.
+ *
+ * Note *which* 13 it would drop, because it is the opposite of what a skim
+ * suggests: every dark one. Pure black `#000000`, near-black `#1F1A15`, and the
+ * navies, greens and maroons. What survives is the light end alone — white,
+ * silver, hot pink and the gold — which is the worst possible corpus for a
+ * dark-appearance generator, since the black/white `on-primary` substitution
+ * below is exercised precisely by seeds near the luminance crossover. The list
+ * stays as it is: these are the stress seeds, and where they came from does not
+ * change what the engine owes them.
  */
 const REAL_CHAPTER_COLORS = [
   "#000000",

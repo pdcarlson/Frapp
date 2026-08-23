@@ -169,8 +169,8 @@ Two keys survive in the shared preset, and **neither is a full ramp**:
 | `emerald` | `DEFAULT`, `50`, `100`, `400`, `500`, `600` | moss/success ramp | Success states |
 
 `royal-blue` was **deleted** in the #920 slice-9 cutover — it had zero class sites anywhere in the
-repo. `navy` shed its numbered steps in the same pass, for the same reason: all eleven surviving
-call sites are the bare `text-navy` / `bg-navy`, all of them in `apps/landing`. **A class naming a
+repo. `navy` shed its numbered steps in the same pass, for the same reason: all ten surviving call
+sites are the bare `text-navy` / `bg-navy`, all of them in `apps/landing`. **A class naming a
 key or step that is not defined above compiles to nothing** — no error, no warning, an unstyled
 element (#1145, #1151). Do not reach for `bg-royal-blue-600` or `text-navy-900`.
 
