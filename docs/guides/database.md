@@ -68,9 +68,15 @@ Three things about it are load-bearing:
   per `spec/ui/design-system/accent-engine.md` §1. It was a `{ dark, accent }` pair
   until #1225: the #920 slice-9 cutover removed the second brand colour from chapter
   branding and both onboarding wizards stopped prefilling from `dark`, which left a
-  required CI gate validating a field nothing read. Deployed `chapter_directory` rows
-  written before #1225 may still carry an inert `dark` — the loader overwrites
-  `default_colors` wholesale on its next run, and nothing reads the key meanwhile.
+  required CI gate validating a field nothing read.
+
+  Deployed `chapter_directory` rows written before #1225 may still carry an inert
+  `dark`, and **nothing prunes them automatically**. `npm run load:chapter-directory`
+  rewrites `default_colors` wholesale, but only for rows it owns — its `update` is
+  scoped `and d.source = 'seed'` so a hand-curated or `nic_2024` row keeps its values
+  — and the promotion path does not run the loader at all, so even a `seed` row heals
+  only when someone runs it by hand. That is fine: nothing reads the key. Treat it as
+  inert data, not as something a deploy will tidy up.
 
   > The job is listed in `scripts/configure-branch-protection.mjs`, but listing it is
   > not the same as enforcing it: required checks only change when someone runs

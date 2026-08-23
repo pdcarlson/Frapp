@@ -110,8 +110,11 @@ NOT been reskinned**: it still ships the legacy chat-first **bone / bronze / ink
 ([`spec/ui/README.md`](../../../spec/ui/README.md)) — do not restyle it toward Signet ad hoc. The
 legacy `navy` / `emerald` **preset keys survive for `apps/landing` alone** (existing utility
 classes keep compiling, but their values map to ink / moss / bone-era colors) and go with its
-reskin, #913/#914. `royal-blue` is **gone** — the #920 slice-9 cutover deleted it outright, along
-with `navy`'s numbered steps and the `@repo/theme` TS brand aliases (#917, closed).
+reskin. That reskin has **no tracked issue of its own** — #920 is `apps/web`, #937 is
+`apps/mobile`. #913 and #914 are often cited here, including by `tailwind.config.ts`, but they are
+the two `area:product` pricing decisions that *block* it, not the reskin itself; do not read them
+as the removal ticket. `royal-blue` is **gone** — the #920 slice-9 cutover deleted it outright,
+along with `navy`'s numbered steps and the `@repo/theme` TS brand aliases (#917, closed).
 
 **`packages/theme` is the shared token package for every surface, not a web-only one.** It already
 serves `apps/web` and `apps/landing` (Tailwind preset + CSS variables) and `apps/mobile` (typed
@@ -179,7 +182,8 @@ step not in the list above does not fail, it silently falls through to **stock T
 That was #916's root cause — `emerald-700` is absent, so a landing pricing pill rendered stock
 emerald text beside a moss `emerald-100` fill and nothing flagged it.
 
-Both keys exist only for `apps/landing` and go with its reskin (#913/#914). Never treat
+Both keys exist only for `apps/landing` and go with its reskin, which is not itself tracked (see
+the palette-status note above — #913/#914 block it, they are not it). Never treat
 success-green as the global primary-action color — `primary` (bronze) is the action color, ink is
 the brand anchor. Read the current values from `packages/theme/src/tailwind.config.ts` (the scale
 keys) and `packages/theme/src/globals.css` (the semantic HSL variables) rather than trusting any
