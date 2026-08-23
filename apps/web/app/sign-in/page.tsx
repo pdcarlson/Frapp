@@ -3,16 +3,36 @@
 import Link from "next/link";
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowRight, Loader2, LogIn, ShieldCheck } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { AuthDivider, AuthScreen } from "@/components/auth/auth-screen";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SkeletonText } from "@/components/shared/async-states";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { getErrorMessage } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { resolveRedirectPath } from "@/lib/auth/redirect";
 
+/**
+ * s01 — Sign in (`spec/ui/design-system/reference/canvas-screens.dc.html`).
+ *
+ * Mark, wordmark, tagline, two fields, the primary, an "or" rule and the second
+ * method. The #920 Profile & pre-auth slice replaced a three-card staging-demo
+ * grid ("Frapp admin access" / "Sign in to manage your chapter in staging" /
+ * "What this unlocks") whose copy described the milestone rather than the
+ * product, and whose four bullets named database behaviour to a member.
+ *
+ * s01's second method is "Continue with Apple"; web ships the magic link it
+ * already had. The slot is the same and the geometry is the drawing's — this is
+ * a transcription of the screen, not of the identity providers on it.
+ *
+ * The redirect plumbing is unchanged and is a data contract
+ * (`spec/ui/web-dashboard/README.md` §Gating & routing semantics):
+ * `resolveRedirectPath` applies the open-redirect guard the proxy applies, the
+ * value survives the sign-in ↔ sign-up hop, and it is reused verbatim as the
+ * magic link's `emailRedirectTo`.
+ */
 function SignInPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -36,7 +56,7 @@ function SignInPageContent() {
 
       toast({
         title: "Signed in",
-        description: "Welcome back to Frapp.",
+        description: "Welcome back.",
       });
       router.replace(redirectTo);
       router.refresh();
@@ -88,139 +108,89 @@ function SignInPageContent() {
   }
 
   return (
-    <main className="min-h-screen bg-background px-6 py-10">
-      <div className="mx-auto flex max-w-5xl items-start justify-between gap-6">
-        <div className="max-w-2xl space-y-4">
-          <p className="text-sm uppercase tracking-[0.18em] text-primary">
-            Frapp admin access
-          </p>
-          <h1 className="text-4xl font-semibold tracking-tight text-balance">
-            Sign in to manage your chapter in staging.
-          </h1>
-          <p className="max-w-xl text-base text-muted-foreground">
-            Use your real Supabase account to open the live dashboard, select a chapter,
-            and test member administration workflows against staging data.
-          </p>
+    <AuthScreen
+      mark
+      title="Signet"
+      subtitle="Ask your chapter anything."
+      footer={
+        <>
+          New here?{" "}
+          <Link
+            href={`/sign-up?redirectTo=${encodeURIComponent(redirectTo)}`}
+            className="font-semibold text-accent-text hover:underline"
+          >
+            Create an account
+          </Link>
+        </>
+      }
+    >
+      <form className="flex flex-col gap-4" onSubmit={handlePasswordSignIn}>
+        <div className="space-y-1.5">
+          <Label htmlFor="email">Email</Label>
+          <Input
+            id="email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="you@university.edu"
+            required
+          />
         </div>
-      </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="password">Password</Label>
+          <Input
+            id="password"
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder="Your password"
+            required
+          />
+        </div>
+        <Button type="submit" className="w-full" disabled={isSubmitting}>
+          {isSubmitting ? <Loader2 className="animate-spin" /> : null}
+          Continue
+        </Button>
+      </form>
 
-      <div className="mx-auto mt-10 grid max-w-5xl gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle>What this unlocks</CardTitle>
-            <CardDescription>
-              This milestone enables real staging usage, not preview data.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm text-muted-foreground">
-            <p>• Real Supabase-authenticated sessions on the web.</p>
-            <p>• Chapter bootstrap and active chapter persistence.</p>
-            <p>• Live members directory, member detail, and invite flows.</p>
-            <p>• Billing activation handoff for invite-enabled chapters.</p>
-          </CardContent>
-        </Card>
+      <AuthDivider label="or" />
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ShieldCheck className="h-5 w-5 text-primary" />
-              New to Frapp?
-            </CardTitle>
-            <CardDescription>
-              Create your admin account, then bootstrap a chapter in staging.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4 text-sm text-muted-foreground">
-            <p>
-              After signing up, the app will guide you through chapter creation,
-              billing activation, and live member administration.
-            </p>
-            <Button asChild variant="secondary" className="w-full justify-between">
-              <Link href={`/sign-up?redirectTo=${encodeURIComponent(redirectTo)}`}>
-                Create an account
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <LogIn className="h-5 w-5 text-primary" />
-              Sign in
-            </CardTitle>
-            <CardDescription>
-              Continue to your dashboard and staging walkthrough.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form className="space-y-4" onSubmit={handlePasswordSignIn}>
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  autoComplete="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  placeholder="name@chapter.org"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder="••••••••"
-                  required
-                />
-              </div>
-              <div className="flex flex-col gap-3">
-                <Button type="submit" disabled={isSubmitting}>
-                  {isSubmitting ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : null}
-                  Sign in
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={handleMagicLink}
-                  disabled={isMagicLinkPending}
-                >
-                  {isMagicLinkPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : null}
-                  Email me a magic link
-                </Button>
-              </div>
-            </form>
-
-            <div className="mt-6 text-sm text-muted-foreground">
-              Need an account?{" "}
-              <Link
-                href={`/sign-up?redirectTo=${encodeURIComponent(redirectTo)}`}
-                className="font-medium text-primary underline-offset-4 hover:underline"
-              >
-                Create one
-              </Link>
-              .
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    </main>
+      <Button
+        type="button"
+        variant="secondary"
+        className="w-full"
+        onClick={handleMagicLink}
+        disabled={isMagicLinkPending}
+      >
+        {isMagicLinkPending ? <Loader2 className="animate-spin" /> : null}
+        Email me a magic link
+      </Button>
+    </AuthScreen>
   );
 }
 
+/**
+ * The boundary `useSearchParams` requires.
+ *
+ * It renders the column rather than a bare `<main className="min-h-screen">` —
+ * the previous fallback was a blank dark screen with nothing announced, and the
+ * mark and title do not depend on the search params, so they can be stable
+ * across the hydration boundary instead of appearing after it.
+ */
 export default function SignInPage() {
   return (
-    <Suspense fallback={<main className="min-h-screen bg-background" />}>
+    <Suspense
+      fallback={
+        <AuthScreen mark title="Signet" subtitle="Ask your chapter anything.">
+          <div role="status" aria-busy="true" aria-live="polite">
+            <span className="sr-only">Loading the sign-in form…</span>
+            <SkeletonText lines={4} />
+          </div>
+        </AuthScreen>
+      }
+    >
       <SignInPageContent />
     </Suspense>
   );

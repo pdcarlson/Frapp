@@ -11,8 +11,6 @@ import {
   Copy,
   Loader2,
   PencilLine,
-  Search,
-  Sparkles,
 } from "lucide-react";
 import {
   ARCHETYPES,
@@ -37,6 +35,10 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { dashboardTableCheckboxClassName } from "@/components/shared/table-controls";
+import { StepDots } from "@/components/onboarding/step-dots";
+import { SearchGlyph } from "@/components/profile/profile-glyphs";
+import { FOCUS_RING } from "@/components/ui/focus";
+import { EYEBROW } from "@/components/ui/typography";
 import { useToast } from "@/hooks/use-toast";
 import { useSelectChapter } from "@/lib/auth/select-chapter";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
@@ -297,8 +299,19 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
         >
           <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col px-4 py-8 sm:px-6 sm:py-12">
             <header className="mb-6">
-              <p className="flex items-center gap-2 font-mono text-xs uppercase tracking-widest text-muted-foreground">
-                <Sparkles className="h-3.5 w-3.5 text-primary" />
+              {/*
+                No glyph. This read `<Sparkles className="text-primary" />`,
+                and `components.md` §11 reserves ✦ for the Ask entry point —
+                it "MUST NOT mark anything that is not an Ask/AI entry point".
+                The label already names the intent, which is how the points
+                adjustment dialog resolved the same question
+                (`iconography.md` §6.2.3).
+
+                `EYEBROW` rather than `font-mono text-xs`: foundations §7
+                reserves mono for numeric, status and code-like strings, and 12
+                is off the type scale — the recipe is 12.5/600 tracked out.
+              */}
+              <p className={cn(EYEBROW, "text-muted-foreground")}>
                 Set up your chapter
               </p>
               <DialogPrimitive.Title asChild>
@@ -309,7 +322,11 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
                   {STEP_LABELS[step]}
                 </h1>
               </DialogPrimitive.Title>
-              <StepProgress current={stepIndex} />
+              <StepDots
+                current={stepIndex}
+                total={STEP_ORDER.length}
+                className="mt-4"
+              />
             </header>
 
             <main className="flex-1">
@@ -394,22 +411,6 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
   );
 }
 
-function StepProgress({ current }: { current: number }) {
-  return (
-    <div className="mt-4 flex items-center gap-2" aria-hidden="true">
-      {STEP_ORDER.map((s, idx) => (
-        <span
-          key={s}
-          className={cn(
-            "h-1.5 flex-1 rounded-full",
-            idx <= current ? "bg-primary" : "bg-border",
-          )}
-        />
-      ))}
-    </div>
-  );
-}
-
 function FindStep({
   rawQuery,
   onQueryChange,
@@ -442,6 +443,17 @@ function FindStep({
         school. We&apos;ll pre-fill the rest.
       </p>
 
+      {/*
+        These four states stay inline rather than taking
+        `components/shared/nested-states.tsx`, which is §4's "strong reason to
+        diverge" and is worth recording: this is a *third* container for the
+        state family, after a screen and a card. `CommandList` is a bordered
+        `max-h-72` scroll region whose own rows are two-line list items, so a
+        `min-h-40` bordered box inside it is a box in a box — the shape §10
+        already rules out one step up, met from a new direction. The states
+        take the list's row geometry instead, and the input stays mounted
+        through all four so a query is never interrupted mid-type.
+      */}
       <Command shouldFilter={false} className="rounded-lg border border-border">
         <CommandInput
           value={rawQuery}
@@ -466,8 +478,11 @@ function FindStep({
           {hasQuery && isError ? (
             <div className="flex flex-col items-center gap-3 px-4 py-6 text-center">
               <AlertTriangle className="h-5 w-5 text-destructive" />
+              <p className="text-sm font-bold text-foreground">
+                Couldn&apos;t reach the directory
+              </p>
               <p className="text-sm text-muted-foreground">
-                We couldn&apos;t reach the directory.
+                Retry the search, or enter your chapter&apos;s details by hand.
               </p>
               <Button variant="secondary" size="sm" onClick={onRetry}>
                 Retry search
@@ -477,7 +492,7 @@ function FindStep({
 
           {showEmpty ? (
             <div className="flex flex-col items-center gap-3 px-4 py-6 text-center">
-              <Search className="h-5 w-5 text-muted-foreground" />
+              <SearchGlyph className="h-5 w-5 text-muted-foreground" />
               <p className="text-sm text-muted-foreground">
                 We couldn&apos;t find{" "}
                 <span className="font-medium text-foreground">
@@ -559,14 +574,48 @@ function ArchetypeStep({
               role="radio"
               aria-checked={isActive}
               onClick={() => onSelect(archetype.key)}
+              /*
+                Three fixes in one class string.
+
+                **The selection did not render.** `bg-primary/5` is a raw
+                opacity wash of the chapter hex, which
+                `spec/ui/design-system/README.md` §2 bans outright — and at 5%
+                it measures 1.075:1 against the overlay's `--background`, so
+                the state it was expressing was invisible. The recipe is §5's
+                two card-seated accent states, which the Settings archetype
+                grid already took in the #920 Settings & Roles slice. Note the
+                measurement does **not** carry over from that guard: that grid
+                sits on `--card` and this overlay is `--background`, so
+                `profile-contrast.test.ts` measures the pair again here.
+
+                **The hover was a colour washed over itself.** `--accent` holds
+                `--popover`'s value, so `hover:bg-accent/50` was 1.000:1 —
+                invisible rather than dim, the alias
+                `components/shared/elevation-contrast.test.ts` exists to catch.
+
+                **There was no visible focus indicator**, which is a §6
+                release-gate failure rather than a repaint nit. `focus.ts`
+                records that "the ring alone does not carry the indicator" —
+                `--ring` at 25% composites to ~1.3:1 — and it is the border
+                going solid accent that makes focus visible. This had the ring
+                and not the border swap. `FOCUS_RING` is the whole recipe.
+                (Importing it is not touching the primitive #1215 is filed
+                against; that issue is about `FOCUS_RING_OFFSET`.)
+              */
               className={cn(
-                "flex flex-col gap-1 rounded-lg border p-3 text-left transition focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25",
+                "flex flex-col gap-1 rounded-lg border p-3 text-left transition",
+                FOCUS_RING,
                 isActive
-                  ? "border-primary bg-primary/5"
-                  : "border-border hover:bg-accent/50",
+                  ? "border-accent-border bg-accent-subtle-hover text-accent-text"
+                  : "border-border hover:bg-accent-subtle",
               )}
             >
-              <span className="font-mono text-[0.65rem] uppercase tracking-widest text-muted-foreground">
+              {/*
+                `font-mono text-[0.65rem]` was 10.4px and off foundations §7's
+                locked scale, on a council abbreviation that is a label rather
+                than a machine value. `EYEBROW` is the recipe.
+              */}
+              <span className={cn(EYEBROW, "text-muted-foreground")}>
                 {archetype.short}
               </span>
               <span className="text-sm font-semibold">{archetype.label}</span>
@@ -675,10 +724,14 @@ function IdentityStep({
               type="color"
               value={identity.colorDark}
               onChange={(e) => set("colorDark", e.target.value)}
-              className="h-9 w-12 cursor-pointer rounded border border-border bg-background"
+              // 36px was under §2's 44px floor on a control that is nothing but
+              // a tap target. `rounded` already maps to `--radius` (12) via the
+              // preset's `DEFAULT`; spelled `rounded-md` so the radius step is
+              // named rather than inherited.
+              className="h-11 w-14 cursor-pointer rounded-md border border-border bg-background"
               aria-label="Primary dark color"
             />
-            <span className="font-mono text-xs text-muted-foreground">
+            <span className="font-mono text-[12.5px] text-muted-foreground">
               {identity.colorDark.toUpperCase()}
             </span>
           </div>
@@ -691,10 +744,14 @@ function IdentityStep({
               type="color"
               value={identity.colorAccent}
               onChange={(e) => set("colorAccent", e.target.value)}
-              className="h-9 w-12 cursor-pointer rounded border border-border bg-background"
+              // 36px was under §2's 44px floor on a control that is nothing but
+              // a tap target. `rounded` already maps to `--radius` (12) via the
+              // preset's `DEFAULT`; spelled `rounded-md` so the radius step is
+              // named rather than inherited.
+              className="h-11 w-14 cursor-pointer rounded-md border border-border bg-background"
               aria-label="Accent color"
             />
-            <span className="font-mono text-xs text-muted-foreground">
+            <span className="font-mono text-[12.5px] text-muted-foreground">
               {identity.colorAccent.toUpperCase()}
             </span>
           </div>
@@ -709,6 +766,14 @@ function IdentityStep({
           onChange={(e) => onAcceptedChange(e.target.checked)}
           className={cn(dashboardTableCheckboxClassName, "mt-0.5")}
         />
+        {/*
+          Deliberately not wrapped in `dashboardCheckboxHitAreaClassName`.
+          That recipe is an implicit `<label>` for a row-select checkbox that
+          has no other label; this control has an explicit multi-line `<Label
+          htmlFor>` beside it, so its tappable area already far exceeds §2's
+          44px floor — and adding the wrapper would give one input two labels,
+          trading a floor it already clears for an accessibility regression.
+        */}
         <Label
           htmlFor="wiz-accept-legal"
           className="text-sm font-normal leading-snug text-muted-foreground"
@@ -772,7 +837,13 @@ function InviteStep({
         <div className="space-y-2 rounded-lg border border-border p-4">
           <Label htmlFor="wiz-invite-link">Your chapter invite link</Label>
           <div className="flex items-center gap-2">
-            <Input id="wiz-invite-link" readOnly value={inviteLink} />
+            {/* foundations §7 names invite tokens in the reserved mono list. */}
+            <Input
+              id="wiz-invite-link"
+              readOnly
+              className="font-mono"
+              value={inviteLink}
+            />
             <Button variant="secondary" onClick={onCopy} aria-label="Copy invite link">
               {copied ? (
                 <Check className="h-4 w-4 text-primary" />

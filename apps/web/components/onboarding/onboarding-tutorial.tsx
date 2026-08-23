@@ -1,21 +1,22 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import {
-  BookOpen,
-  CalendarDays,
-  CheckCircle2,
-  MapPin,
-  MessagesSquare,
-  Sparkles,
-  Star,
-  UserCircle2,
-} from "lucide-react";
+import { CheckCircle2 } from "lucide-react";
 import {
   useAccessibleChapters,
   useCurrentChapter,
   useUpdateOnboarding,
 } from "@repo/hooks";
+import { SignetMark } from "@/components/auth/signet-mark";
+import {
+  BackworkGlyph,
+  ChatGlyph,
+  EventsGlyph,
+  PointsGlyph,
+  ProfileGlyph,
+  StudyGlyph,
+} from "@/components/profile/profile-glyphs";
+import { StepDots } from "@/components/onboarding/step-dots";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -33,69 +34,79 @@ type ChapterMembership = {
   chapter?: { name?: string | null };
 };
 
+/**
+ * A slide's glyph is a pre-sized node rather than a component reference, so a
+ * slide can carry something that is not a duotone glyph — which the welcome
+ * slide does. The alternative, a `ComponentType` plus a `className` the call
+ * site supplies, cannot express a fixed-size brand mark without the two
+ * fighting over the same class.
+ */
 type Step = {
   id: string;
   title: string;
   description: string;
-  icon: React.ComponentType<{ className?: string }>;
+  glyph: React.ReactNode;
 };
+
+/** §2's inline size, matching what the shared state family draws. */
+const GLYPH = "h-5 w-5 text-accent-text";
 
 const STEPS: Step[] = [
   {
     id: "welcome",
-    title: "Welcome to Frapp",
+    title: "Welcome to Signet",
     description:
       "A quick three-minute tour of the surfaces you'll use most. You can revisit this anytime from your profile.",
-    icon: Sparkles,
+    glyph: <SignetMark size="sm" />,
   },
   {
     id: "chat",
     title: "Chat",
     description:
       "Chapter channels, DMs, and announcements live here. Realtime updates — no refresh needed.",
-    icon: MessagesSquare,
+    glyph: <ChatGlyph className={GLYPH} />,
   },
   {
     id: "events",
     title: "Events",
     description:
       "Check in during the event window to earn attendance points. Admins can mark excuses and auto-absences.",
-    icon: CalendarDays,
+    glyph: <EventsGlyph className={GLYPH} />,
   },
   {
     id: "backwork",
     title: "Backwork",
     description:
       "The chapter's academic library. Rich filters and signed-URL downloads — duplicates rejected automatically.",
-    icon: BookOpen,
+    glyph: <BackworkGlyph className={GLYPH} />,
   },
   {
     id: "study",
     title: "Study hours",
     description:
       "Tracked study sessions earn points while you're inside a study zone. On the web, closing the tab ends the session — use mobile for longer blocks.",
-    icon: MapPin,
+    glyph: <StudyGlyph className={GLYPH} />,
   },
   {
     id: "points",
     title: "Points",
     description:
       "See your balance, the chapter leaderboard, and a full transaction log. Admins can adjust with a required reason.",
-    icon: Star,
+    glyph: <PointsGlyph className={GLYPH} />,
   },
   {
     id: "profile",
     title: "Your profile",
     description:
-      "Set your display name, bio, quiet hours, and theme. Sign out from here when you're done.",
-    icon: UserCircle2,
+      "Set your display name, bio, and quiet hours. Sign out from here when you're done.",
+    glyph: <ProfileGlyph className={GLYPH} />,
   },
   {
     id: "done",
     title: "You're all set",
     description:
       "Dive into your home dashboard. We'll mark onboarding complete so this tour doesn't reappear.",
-    icon: CheckCircle2,
+    glyph: <CheckCircle2 className={GLYPH} />,
   },
 ];
 
@@ -181,32 +192,33 @@ function OnboardingTutorialDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
-            <step.icon className="h-5 w-5 text-primary" />
+            {step.glyph}
             {step.title}
           </DialogTitle>
           <DialogDescription>
             {stepIndex === 0
-              ? `Welcome to ${chapterName}'s Frapp. ${step.description}`
+              ? `Welcome to ${chapterName} on Signet. ${step.description}`
               : step.description}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex items-center justify-between rounded-md border border-border bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
-          <span>
-            Step {stepIndex + 1} of {STEPS.length}
-          </span>
-          <div className="flex gap-1">
-            {STEPS.map((_, idx) => (
-              <span
-                key={idx}
-                aria-hidden="true"
-                className={`h-1.5 w-4 rounded-full ${
-                  idx <= stepIndex ? "bg-primary" : "bg-border"
-                }`}
-              />
-            ))}
-          </div>
-        </div>
+        {/*
+          The fill is dropped, not recoloured. `--secondary` holds `--card`'s
+          value and a `DialogContent` is `--popover`, so `bg-secondary/60`
+          composited to 1.050:1 — a strip that was not there.
+
+          The obvious repair is the second defect: `bg-accent-subtle` on
+          `--popover` measures 1.001:1, which is `meter.ts`'s finding met in a
+          new place. §10's rule is that a state which cannot rise above its
+          container drops its fill and lets the hairline carry the edge, and
+          over `--popover` that hairline separates better (1.275:1) than the
+          card's own ever did. Pinned in `profile-contrast.test.ts`.
+        */}
+        <StepDots
+          current={stepIndex}
+          total={STEPS.length}
+          className="rounded-md border border-border px-3 py-2"
+        />
 
         <DialogFooter className="flex items-center justify-between gap-2 sm:justify-between">
           <Button variant="ghost" onClick={onComplete}>

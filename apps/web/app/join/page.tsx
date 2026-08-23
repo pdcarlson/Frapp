@@ -1,47 +1,93 @@
 "use client";
 
-import Link from "next/link";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowRight, CheckCircle2, Loader2, Ticket } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useRedeemInvite } from "@repo/hooks";
+import { AuthNote, AuthScreen } from "@/components/auth/auth-screen";
+import { joinErrorCopy, redeemChapterId } from "@/components/auth/join-errors";
+import { LinkGlyph } from "@/components/profile/profile-glyphs";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  ErrorState,
+  OfflineState,
+  SkeletonText,
+} from "@/components/shared/async-states";
 import { useToast } from "@/hooks/use-toast";
 import { getSessionUser } from "@/lib/auth/session";
 import { useSelectChapter } from "@/lib/auth/select-chapter";
-import { getErrorMessage } from "@/lib/utils";
+import { useNetwork } from "@/lib/providers/network-provider";
 
+/**
+ * s02 — Join chapter (`spec/ui/design-system/reference/canvas-screens.dc.html`).
+ *
+ * **Where the transcription stops, and why.** s02 draws a six-cell row for a
+ * shared chapter code. `spec/behavior/onboarding.md` §Invite Token Rules
+ * specifies single-use opaque tokens that expire after 24 hours, and
+ * `spec/ui/README.md`'s precedence rule puts behavior above UI on what the
+ * product *does* — so the chrome transfers and the input model does not. This
+ * is the same call `apps/mobile/app/(auth)/join.tsx` already records in its own
+ * docstring; both surfaces now say it in the same place so neither drifts.
+ *
+ * The #920 Profile & pre-auth slice replaced a two-card grid that explained
+ * database behaviour to a member ("Invite redemption writes directly to the
+ * chapter membership table") and carried an emerald notice reading "This route
+ * is intended for staging validation of real invite + member directory
+ * behavior" — the family's last raw-palette colour and last inert `dark:`
+ * variant, which shipped as near-black text on `#0E0D0B`.
+ *
+ * Two failure paths that had none before:
+ *
+ * - **The session check.** `getSessionUser()` is a network call, and it ran as
+ *   a bare `void ensureSession()` with no `catch`. A member who opened an
+ *   invite link on a dropped connection sat on "Verifying your session…"
+ *   forever, with no retry and nothing announced.
+ * - **Redemption.** Every failure rendered one generic toast. 410 and 409 need
+ *   opposite next actions, so the copy comes from `join-errors.ts` and is
+ *   rendered inline beside the field rather than as a toast that scrolls away.
+ */
 function JoinPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
+  const { isOffline } = useNetwork();
   const redeemInviteMutation = useRedeemInvite();
   const selectChapter = useSelectChapter();
   const initialToken = useMemo(() => searchParams.get("token") ?? "", [searchParams]);
   const [editedToken, setEditedToken] = useState<string | null>(null);
   const token = editedToken ?? initialToken;
-  const [sessionChecked, setSessionChecked] = useState(false);
+  const [sessionState, setSessionState] = useState<"checking" | "ready" | "failed">(
+    "checking",
+  );
+  const [attempt, setAttempt] = useState(0);
+  const [redeemError, setRedeemError] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
 
     async function ensureSession() {
-      const user = await getSessionUser();
-      if (!isMounted) {
-        return;
-      }
+      try {
+        const user = await getSessionUser();
+        if (!isMounted) {
+          return;
+        }
 
-      if (!user) {
-        const signInUrl = new URL("/sign-in", window.location.origin);
-        signInUrl.searchParams.set("redirectTo", `/join${window.location.search}`);
-        router.replace(signInUrl.pathname + signInUrl.search);
-        return;
-      }
+        if (!user) {
+          const signInUrl = new URL("/sign-in", window.location.origin);
+          signInUrl.searchParams.set("redirectTo", `/join${window.location.search}`);
+          router.replace(signInUrl.pathname + signInUrl.search);
+          return;
+        }
 
-      setSessionChecked(true);
+        setSessionState("ready");
+      } catch {
+        // The check itself could not be made. That is recoverable and must say
+        // so — the previous `void ensureSession()` left the member on the
+        // pending branch with no way out.
+        if (isMounted) setSessionState("failed");
+      }
     }
 
     void ensureSession();
@@ -49,18 +95,21 @@ function JoinPageContent() {
     return () => {
       isMounted = false;
     };
-  }, [router]);
+  }, [router, attempt]);
+
+  const retrySessionCheck = useCallback(() => {
+    setSessionState("checking");
+    setAttempt((current) => current + 1);
+  }, []);
 
   async function handleRedeem(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setRedeemError(null);
     try {
       const result = await redeemInviteMutation.mutateAsync({
         token: token.trim(),
       });
-      const chapterId =
-        result && typeof result === "object" && "chapterId" in result
-          ? (result as { chapterId?: string }).chapterId
-          : null;
+      const chapterId = redeemChapterId(result);
 
       if (chapterId) {
         // Persists the selection, refreshes the session so the new
@@ -70,130 +119,117 @@ function JoinPageContent() {
 
       toast({
         title: "Chapter joined",
-        description: "Your membership has been activated in staging.",
+        description: "You're in. Opening chat.",
       });
       router.replace("/chat");
       router.refresh();
     } catch (error) {
-      toast({
-        title: "Unable to redeem invite",
-        description: getErrorMessage(error, "Something went wrong. Please try again."),
-        variant: "destructive",
-      });
+      setRedeemError(joinErrorCopy(error));
     }
   }
 
-  if (!sessionChecked) {
+  if (sessionState === "checking") {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-background px-6 py-10">
-        <Card className="w-full max-w-md">
-          <CardContent className="flex items-center gap-3 pt-6 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Verifying your session before redeeming the invite...
-          </CardContent>
-        </Card>
-      </main>
+      <AuthScreen
+        title="Join your chapter"
+        subtitle="Enter the invite your officer sent. Invites expire after 24 hours and work once."
+      >
+        <div role="status" aria-busy="true" aria-live="polite">
+          <span className="sr-only">Verifying your session…</span>
+          <SkeletonText lines={3} />
+        </div>
+      </AuthScreen>
+    );
+  }
+
+  if (sessionState === "failed") {
+    return (
+      <AuthScreen
+        title="Join your chapter"
+        subtitle="Enter the invite your officer sent. Invites expire after 24 hours and work once."
+      >
+        {isOffline ? (
+          <OfflineState
+            title="Can't check your session"
+            description="Reconnect to confirm you're signed in, then redeem the invite."
+            onRetry={retrySessionCheck}
+          />
+        ) : (
+          <ErrorState
+            title="Couldn't check your session"
+            description="We couldn't reach the API to confirm you're signed in. Retry in a moment."
+            onRetry={retrySessionCheck}
+          />
+        )}
+      </AuthScreen>
     );
   }
 
   return (
-    <main className="min-h-screen bg-background px-6 py-10">
-      <div className="mx-auto flex max-w-5xl items-start justify-between gap-6">
-        <div className="max-w-2xl space-y-4">
-          <p className="text-sm uppercase tracking-[0.18em] text-primary">
-            Chapter invite
-          </p>
-          <h1 className="text-4xl font-semibold tracking-tight text-balance">
-            Redeem your invite and join the live staging chapter.
-          </h1>
-          <p className="max-w-xl text-base text-muted-foreground">
-            Enter your invite token to create a real chapter membership and continue
-            into the member workflow.
-          </p>
+    <AuthScreen
+      title="Join your chapter"
+      subtitle="Enter the invite your officer sent. Invites expire after 24 hours and work once."
+    >
+      <form className="flex flex-col gap-4" onSubmit={handleRedeem}>
+        <div className="space-y-1.5">
+          <Label htmlFor="invite-token">Invite</Label>
+          <Input
+            id="invite-token"
+            // foundations §7 names invite tokens in the reserved mono list: it
+            // is a machine value a member reads character by character.
+            className="font-mono"
+            value={token}
+            onChange={(event) => {
+              setEditedToken(event.target.value);
+              setRedeemError(null);
+            }}
+            placeholder="Paste your invite"
+            required
+            aria-invalid={redeemError ? true : undefined}
+            aria-describedby={redeemError ? "invite-error" : undefined}
+          />
+          {redeemError ? (
+            <p id="invite-error" className="text-sm text-destructive">
+              {redeemError}
+            </p>
+          ) : null}
         </div>
+        <Button
+          type="submit"
+          className="w-full"
+          disabled={redeemInviteMutation.isPending}
+        >
+          {redeemInviteMutation.isPending ? (
+            <Loader2 className="animate-spin" />
+          ) : null}
+          Join chapter
+        </Button>
+      </form>
+
+      <div className="mt-6">
+        <AuthNote glyph={<LinkGlyph className="h-5 w-5" />}>
+          Got an invite link? Open it and this page fills itself in.
+        </AuthNote>
       </div>
-
-      <div className="mx-auto mt-10 grid max-w-5xl gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle>How joining works</CardTitle>
-            <CardDescription>
-              Invite redemption writes directly to the chapter membership table.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm text-muted-foreground">
-            <p>• Invites are valid for a limited time and can only be used once.</p>
-            <p>• Your membership is scoped to the chapter linked by the token.</p>
-            <p>• After redemption, the app activates the joined chapter locally.</p>
-            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4 text-emerald-900 dark:text-emerald-100">
-              <div className="flex items-center gap-2 font-medium">
-                <CheckCircle2 className="h-4 w-4" />
-                Live chapter membership flow
-              </div>
-              <p className="mt-2 text-sm">
-                This route is intended for staging validation of real invite + member
-                directory behavior.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Ticket className="h-5 w-5 text-primary" />
-              Redeem invite token
-            </CardTitle>
-            <CardDescription>
-              Enter the token shared by your chapter admin.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form className="space-y-4" onSubmit={handleRedeem}>
-              <div className="space-y-2">
-                <Label htmlFor="invite-token">Invite token</Label>
-                <Input
-                  id="invite-token"
-                  value={token}
-                  onChange={(event) => setEditedToken(event.target.value)}
-                  placeholder="Paste your invite token"
-                  required
-                />
-              </div>
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={redeemInviteMutation.isPending}
-              >
-                {redeemInviteMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <ArrowRight className="h-4 w-4" />
-                )}
-                Join chapter
-              </Button>
-            </form>
-
-            <div className="mt-6 text-sm text-muted-foreground">
-              Need to sign in first?{" "}
-              <Link
-                href={`/sign-in?redirectTo=${encodeURIComponent(`/join?token=${encodeURIComponent(token)}`)}`}
-                className="font-medium text-primary underline-offset-4 hover:underline"
-              >
-                Return to sign in
-              </Link>
-              .
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    </main>
+    </AuthScreen>
   );
 }
 
 export default function JoinPage() {
   return (
-    <Suspense fallback={<main className="min-h-screen bg-background" />}>
+    <Suspense
+      fallback={
+        <AuthScreen
+          title="Join your chapter"
+          subtitle="Enter the invite your officer sent. Invites expire after 24 hours and work once."
+        >
+          <div role="status" aria-busy="true" aria-live="polite">
+            <span className="sr-only">Loading the invite form…</span>
+            <SkeletonText lines={3} />
+          </div>
+        </AuthScreen>
+      }
+    >
       <JoinPageContent />
     </Suspense>
   );

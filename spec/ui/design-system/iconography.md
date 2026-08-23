@@ -186,15 +186,20 @@ Lucide: control furniture, not nav intents.
 The theme rows left with the toggle: the surface is dark-only and ships no
 theme control.
 
-### 6.2.1 Web in-screen icons (Lucide, interim)
+### 6.2.1 Web in-screen icons — the interim pack, now retired
 
-Screens whose family slice has not landed still draw Lucide, replaced per
-family as each #920 slice rebuilds its screens — the same shape as mobile's
-§6.1.1. Chat has departed (§6.2.2), so have the four Directory & Finance families —
-members, alumni, billing and points (§6.2.3) — Chapter Ops —
-events, tasks, study hours, service hours and study zones (§6.2.4) — and
-Resources & Reporting — documents, backwork, polls and reports (§6.2.5). One
-pick worth pinning meanwhile:
+**Every family has now departed**, so this section records a finished
+migration rather than a live one: chat (§6.2.2), Directory & Finance —
+members, alumni, billing and points (§6.2.3) — Chapter Ops — events, tasks,
+study hours, service hours and study zones (§6.2.4) — Resources & Reporting —
+documents, backwork, polls and reports (§6.2.5) — Settings & Roles, which
+ships no family file and says why (§6.2.6) — and Profile & pre-auth (§6.2.7).
+
+What still draws Lucide on the web dashboard is **control furniture** and the
+shared §10 state family, both by the standing rule in §6.2.2 rather than as an
+interim: a verb on a button or a spinner is furniture, and
+`components/shared/**`'s glyphs move with that module, not with a screen.
+One pick worth pinning meanwhile:
 
 - **Reserved:** `LayoutDashboard` is held for the **Overview** intent and is
   deliberately unused today — the dashboard home screen was removed in the
@@ -428,6 +433,62 @@ Everything else in the family is control furniture and stays Lucide per
 `Lock`. So is `AlertTriangle` on the danger-zone card — it is the danger marker
 [`async-states.tsx`](../../../apps/web/components/shared/async-states.tsx)
 draws for the same tone, not a domain intent.
+
+### 6.2.7 Profile & pre-auth (Signet duotone)
+
+The #920 Profile & pre-auth slice — `/profile`, the onboarding wizard and
+tutorial, and the routes outside `(dashboard)`. Family file:
+[`apps/web/components/profile/profile-glyphs.tsx`](../../../apps/web/components/profile/profile-glyphs.tsx),
+homed in `profile/` because `ProfileGlyph` is the one glyph both it and
+`onboarding/` consume; §6.2.3's rule applies, so importing across a directory
+is fine and redrawing is not.
+
+| Semantic intent | Glyph |
+|---|---|
+| You — the viewer's own account (tutorial slide 7) | `ProfileGlyph`, **drawn here** |
+| An invite link (s02's hint card on `/join`) | `LinkGlyph`, **drawn here** |
+| Chat, Events, Backwork, Study hours, Points (tutorial slides 2–6) | `ChatGlyph`, `EventsGlyph`, `BackworkGlyph`, `StudyGlyph`, `PointsGlyph`, re-exported from [`nav-glyphs.tsx`](../../../apps/web/components/layout/nav-glyphs.tsx) |
+| Directory search (the wizard's no-results state) | `SearchGlyph`, same source |
+| Locked out of the chapter (`/no-access`) | `LockGlyph`, re-exported from [`chat-glyphs.tsx`](../../../apps/web/components/chat/chat-glyphs.tsx) |
+
+**Two drawn, and both were genuinely undrawn.** `ProfileGlyph` has no nav
+intent to re-export because Profile left the sidebar for the account menu in
+the Wave 0 restructure, and neither neighbour is it: `DirectoryGlyph` is *two*
+people and `InviteGlyph` is a person *plus a mark*, the officer issuing a
+token. `LinkGlyph` is transcribed from the s02 hint card, which draws a chain
+link — reusing `InviteGlyph` there would contradict the drawing, and
+[`../README.md`](../README.md)'s precedence rule puts the board first. It is
+legitimately stroke-only, the `AttachGlyph` exception: an open curve fills into
+a lens-shaped wedge across the break that makes the two halves read as links.
+
+**Deliberately not in this table:**
+
+- **The ✦.** `chapter-wizard.tsx` marked its header eyebrow with Lucide's
+  `Sparkles` and the tutorial marked its welcome slide with it. §11 reserves ✦
+  for the Ask entry point — it "MUST NOT mark anything that is not an Ask/AI
+  entry point" — so this is the third time that correction has been made,
+  after the slash-command trigger (§6.2.2) and `WandSparkles`. Neither site
+  gained a replacement: the wizard's eyebrow now carries **no glyph**, because
+  its label already names the intent, which is how the points adjustment
+  dialog resolved the same question (§6.2.3); and the tutorial's welcome slide
+  takes the **mark**, because the slide is literally a welcome to Signet.
+- **`SignetMark`.** The gold "S" tile
+  ([`components/auth/signet-mark.tsx`](../../../apps/web/components/auth/signet-mark.tsx))
+  is a brand composition governed by [`../brand-identity.md`](../brand-identity.md)
+  §2, not an icon drawn to §1's duotone recipe — the same carve-out §6.2.2
+  makes for the ✦ text glyph and s04's `#` channel sigil. It ships two sizes,
+  s01's 52px and §7's 30px app-bar chip.
+- **The §10 state family's `FolderOpen`, `AlertTriangle` and `WifiOff`**, which
+  §6.2.3 already records belong to `components/shared/**` rather than to any
+  screen family.
+- **Control furniture**, per §6.2.2: `Loader2`, `ArrowLeft`, `ArrowRight`,
+  `Check`, `CheckCircle2`, `Copy` and `PencilLine`. `CheckCircle2` on the
+  tutorial's final slide is the borderline one and stays furniture: "confirm"
+  is a state the shared family already draws, and inventing a "done" intent no
+  other surface has would be new design rather than a repaint.
+
+**The wizard's four steps stay text-only**, as Settings' ten tabs do (§6.2.6):
+adding per-step icons is new design, and the reference draws neither.
 
 ### 6.3 Maintenance Rule
 

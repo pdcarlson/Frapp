@@ -37,3 +37,32 @@ export const DASHBOARD_ROUTES = [
   "/profile",
   "/settings",
 ] as const;
+
+/**
+ * The pre-auth routes, which need their own suite rather than a place in the
+ * list above.
+ *
+ * `responsive-floor.spec.ts` asserts each route did **not** end up on
+ * `/sign-in` — the guard that stops a regressed `SUPABASE_AUTH_BYPASS` from
+ * turning all fifteen tests into green measurements of the sign-in card. For a
+ * pre-auth route that assertion is backwards, so these carry their own
+ * expected URL each.
+ *
+ * They are also the routes the sessionless harness renders **correctly**,
+ * which is the opposite of its usual limitation: roughly ten of the fifteen
+ * above render a 160–256px empty-state card because there is no active
+ * chapter, while these four are exactly what a signed-out visitor sees.
+ *
+ * **`/join` is deliberately absent and is not covered.** It is in `proxy.ts`'s
+ * protected prefixes, and the page itself calls `getSessionUser()` and
+ * redirects to `/sign-in?redirectTo=/join` when there is no session — so a
+ * sessionless harness can only ever measure the redirect target. Covering it
+ * needs a seeded session, which `README.md` in this directory already scopes
+ * as its own piece of work. Its 375px measurement is by hand for now.
+ */
+export const PRE_AUTH_ROUTES = [
+  { route: "/", expectUrl: /\/$/ },
+  { route: "/sign-in", expectUrl: /\/sign-in$/ },
+  { route: "/sign-up", expectUrl: /\/sign-up$/ },
+  { route: "/no-access", expectUrl: /\/no-access$/ },
+] as const;

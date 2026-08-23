@@ -3,17 +3,35 @@
 import Link from "next/link";
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowRight, Loader2, UserRoundPlus } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { AuthScreen } from "@/components/auth/auth-screen";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SkeletonText } from "@/components/shared/async-states";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { getErrorMessage } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
 import { resolveRedirectPath } from "@/lib/auth/redirect";
 
+/**
+ * Create an account — s01's grammar, one step along.
+ *
+ * The reference draws no sign-up screen, so this is s01's column applied rather
+ * than a transcription. It carries **no mark**, for s02's reason: the mark
+ * belongs to the entry screen, and this is reached from one.
+ *
+ * The #920 Profile & pre-auth slice replaced a two-card grid whose eyebrow read
+ * "Frapp account setup", whose heading promised "live staging walkthroughs",
+ * and whose supporting card listed four internal milestones ("Activate billing
+ * in test mode to unlock invite workflows").
+ *
+ * Both post-submit branches are unchanged: a session in the response means
+ * Supabase is not confirming email, so the member goes straight to
+ * `redirectTo`; otherwise they are told to check their inbox and bounced to
+ * sign-in with `redirectTo` intact.
+ */
 function SignUpPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -64,104 +82,71 @@ function SignUpPageContent() {
   }
 
   return (
-    <main className="min-h-screen bg-background px-6 py-10">
-      <div className="mx-auto flex max-w-5xl items-start justify-between gap-6">
-        <div className="max-w-2xl space-y-4">
-          <p className="text-sm uppercase tracking-[0.18em] text-primary">
-            Frapp account setup
-          </p>
-          <h1 className="text-4xl font-semibold tracking-tight text-balance">
-            Create an account for live staging walkthroughs.
-          </h1>
-          <p className="max-w-xl text-base text-muted-foreground">
-            New admins can create their account, bootstrap a chapter, and walk through
-            the first real member-management workflow from staging.
-          </p>
+    <AuthScreen
+      back={{ href: `/sign-in?redirectTo=${encodeURIComponent(redirectTo)}`, label: "Back" }}
+      title="Create your account"
+      subtitle="One account, then join your chapter or start one."
+      footer={
+        <>
+          Already have an account?{" "}
+          <Link
+            href={`/sign-in?redirectTo=${encodeURIComponent(redirectTo)}`}
+            className="font-semibold text-accent-text hover:underline"
+          >
+            Sign in
+          </Link>
+        </>
+      }
+    >
+      <form className="flex flex-col gap-4" onSubmit={handleSignUp}>
+        <div className="space-y-1.5">
+          <Label htmlFor="email">Email</Label>
+          <Input
+            id="email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="you@university.edu"
+            required
+          />
         </div>
-      </div>
-
-      <div className="mx-auto mt-10 grid max-w-5xl gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle>After sign-up</CardTitle>
-            <CardDescription>
-              Frapp will guide you into chapter setup and activation.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm text-muted-foreground">
-            <p>• Create your chapter if you are starting fresh.</p>
-            <p>• Activate billing in test mode to unlock invite workflows.</p>
-            <p>• Persist active chapter context across refreshes.</p>
-            <p>• Continue directly into the live members workflow.</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <UserRoundPlus className="h-5 w-5 text-primary" />
-              Create your account
-            </CardTitle>
-            <CardDescription>
-              Use a real Supabase-authenticated account for staging.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form className="space-y-4" onSubmit={handleSignUp}>
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  autoComplete="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  placeholder="president@chapter.org"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  autoComplete="new-password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder="Create a secure password"
-                  required
-                />
-              </div>
-              <Button type="submit" disabled={isSubmitting} className="w-full">
-                {isSubmitting ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <ArrowRight className="h-4 w-4" />
-                )}
-                Create account
-              </Button>
-            </form>
-
-            <div className="mt-6 text-sm text-muted-foreground">
-              Already have an account?{" "}
-              <Link
-                href={`/sign-in?redirectTo=${encodeURIComponent(redirectTo)}`}
-                className="font-medium text-primary underline-offset-4 hover:underline"
-              >
-                Sign in
-              </Link>
-              .
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    </main>
+        <div className="space-y-1.5">
+          <Label htmlFor="password">Password</Label>
+          <Input
+            id="password"
+            type="password"
+            autoComplete="new-password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder="Create a password"
+            required
+          />
+        </div>
+        <Button type="submit" className="w-full" disabled={isSubmitting}>
+          {isSubmitting ? <Loader2 className="animate-spin" /> : null}
+          Create account
+        </Button>
+      </form>
+    </AuthScreen>
   );
 }
 
 export default function SignUpPage() {
   return (
-    <Suspense fallback={<main className="min-h-screen bg-background" />}>
+    <Suspense
+      fallback={
+        <AuthScreen
+          title="Create your account"
+          subtitle="One account, then join your chapter or start one."
+        >
+          <div role="status" aria-busy="true" aria-live="polite">
+            <span className="sr-only">Loading the sign-up form…</span>
+            <SkeletonText lines={4} />
+          </div>
+        </AuthScreen>
+      }
+    >
       <SignUpPageContent />
     </Suspense>
   );
