@@ -711,7 +711,13 @@ function IdentityStep({
             placeholder="1948"
           />
         </div>
-        <div className="space-y-1.5">
+        {/*
+          Spans the pair so the grid does not end on a ragged half-row. The
+          identity step had six single-column fields — three even pairs — until
+          the #920 slice-9 cutover removed the second brand colour; five would
+          leave this one alone beside an empty cell at `sm:` and above.
+        */}
+        <div className="space-y-1.5 sm:col-span-2">
           <Label htmlFor="wiz-color-accent">Accent color</Label>
           <div className="flex items-center gap-2">
             <input

@@ -38,9 +38,11 @@ const SIGNET_KEYS = {
 
 /** What the legacy `derivePalette` engine wrote for a chapter with brand
  *  colours. The engine was deleted at the #920 slice-9 cutover, so nothing
- *  produces these any more — but every row saved before then still holds them,
- *  and all of it is composited over the bone (light) background, so none of it
- *  may be applied. This fixture is that stale row. */
+ *  produces these any more — but every row saved before then still holds them.
+ *  Six of the eight were composited over or validated against the bone (light)
+ *  background; the two `--side-*` ones were the branded sidebar's own fill and
+ *  accent. None of them may be applied to the Signet surface. This fixture is
+ *  that stale row. */
 const LEGACY_KEYS = {
   "--side-bg": "#6B0806",
   "--side-accent": "#C49A3A",
