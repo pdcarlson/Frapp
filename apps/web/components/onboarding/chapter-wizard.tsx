@@ -49,7 +49,6 @@ const CHAT_LANDING_PATH = "/chat?channel=general";
 // NEXT_PUBLIC_LANDING_URL; default to production so the links always resolve.
 const LEGAL_BASE_URL =
   process.env.NEXT_PUBLIC_LANDING_URL ?? "https://frapp.live";
-const DEFAULT_DARK = "#1F1A15";
 const DEFAULT_ACCENT = "#F2B72E";
 const HEX6 = /^#[0-9a-fA-F]{6}$/;
 const INVITE_ROLE = "Member";
@@ -70,7 +69,6 @@ type IdentityForm = {
   designation: string;
   schoolShort: string;
   foundedYear: string;
-  colorDark: string;
   colorAccent: string;
 };
 
@@ -81,7 +79,6 @@ const EMPTY_IDENTITY: IdentityForm = {
   designation: "",
   schoolShort: "",
   foundedYear: "",
-  colorDark: DEFAULT_DARK,
   colorAccent: DEFAULT_ACCENT,
 };
 
@@ -172,7 +169,6 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
       designation: row.chapter_designation ?? "",
       schoolShort: row.university_short ?? "",
       foundedYear: row.founded_year ? String(row.founded_year) : "",
-      colorDark: normalizeHex(row.default_colors?.dark, DEFAULT_DARK),
       colorAccent: normalizeHex(row.default_colors?.accent, DEFAULT_ACCENT),
     });
     // A different chapter identity invalidates any prior consent — re-affirm.
@@ -219,7 +215,6 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
           school_short: identity.schoolShort.trim() || undefined,
           founded_at: parseFoundedYear(identity.foundedYear),
           colors: {
-            dark: normalizeHex(identity.colorDark, DEFAULT_DARK),
             accent: normalizeHex(identity.colorAccent, DEFAULT_ACCENT),
           },
         },
@@ -716,27 +711,13 @@ function IdentityStep({
             placeholder="1948"
           />
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="wiz-color-dark">Primary (dark) color</Label>
-          <div className="flex items-center gap-2">
-            <input
-              id="wiz-color-dark"
-              type="color"
-              value={identity.colorDark}
-              onChange={(e) => set("colorDark", e.target.value)}
-              // 36px was under §2's 44px floor on a control that is nothing but
-              // a tap target. `rounded` already maps to `--radius` (12) via the
-              // preset's `DEFAULT`; spelled `rounded-md` so the radius step is
-              // named rather than inherited.
-              className="h-11 w-14 cursor-pointer rounded-md border border-border bg-background"
-              aria-label="Primary dark color"
-            />
-            <span className="font-mono text-[12.5px] text-muted-foreground">
-              {identity.colorDark.toUpperCase()}
-            </span>
-          </div>
-        </div>
-        <div className="space-y-1.5">
+        {/*
+          Spans the pair so the grid does not end on a ragged half-row. The
+          identity step had six single-column fields — three even pairs — until
+          the #920 slice-9 cutover removed the second brand colour; five would
+          leave this one alone beside an empty cell at `sm:` and above.
+        */}
+        <div className="space-y-1.5 sm:col-span-2">
           <Label htmlFor="wiz-color-accent">Accent color</Label>
           <div className="flex items-center gap-2">
             <input

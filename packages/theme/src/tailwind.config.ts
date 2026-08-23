@@ -9,22 +9,20 @@ const motionEasing = frappTokens.motion.easing;
  * property holds.
  *
  * Every key below reads its token through here. Tokens in `globals.css` used to
- * be bare HSL triples that the keys wrapped in
- * `hsl(...)`. That wrapper is why per-chapter theming silently did nothing on
- * every surface the preset owns (#1143): `derivePalette()` persists **hex**, so
- * an injected `--side-accent: #C49A3A` became `hsl(#C49A3A)` — invalid, dropped
- * by the browser, element keeps its default. The same tokens read raw elsewhere
- * (`border-[color:var(--side-accent)]` in the chat renderers) had the mirror-image
+ * be bare HSL triples that the keys wrapped in `hsl(...)`. That wrapper is why
+ * per-chapter theming silently did nothing on every surface the preset owns
+ * (#1143): the accent engine persists **hex**, so an injected `#C49A3A` under
+ * such a name became `hsl(#C49A3A)` — invalid, dropped by the browser, element
+ * keeps its default. The same tokens read raw elsewhere had the mirror-image
  * bug: they only resolved once a chapter overrode them, and rendered nothing on
  * the stock triples. Whichever way you looked, half the sites were broken.
  *
  * Every token this reader serves is therefore defined as a complete color value,
  * so hex from the accent engine, `hsl()` from the defaults, and the `rgba()`
  * hairlines the Signet set uses (`getSignetCssVars()`, which cannot be expressed
- * as a triple at all) are all equally valid. The `--ring` / `--side-*` keys went
- * first, in #1143, because they are the ones chapter branding actually writes;
- * the #920 groundwork moved the rest, so there is now exactly one convention and
- * no pairing rule to get wrong.
+ * as a triple at all) are all equally valid. The keys chapter branding actually
+ * writes went first, in #1143; the #920 groundwork moved the rest, so there is
+ * now exactly one convention and no pairing rule to get wrong.
  *
  * `color-mix` only appears when a class asks for one — `bg-primary/15` — so
  * the common case still compiles to a plain `var()`. Tailwind hands this
@@ -44,7 +42,7 @@ const motionEasing = frappTokens.motion.easing;
  * **Browser floor.** `color-mix` needs Chrome 111 / Safari 16.2 / Firefox 113,
  * where `hsl(var(--x) / a)` needed only Safari 12.1. It applies to every
  * utility that carries an **opacity modifier** (`bg-primary/10`,
- * `border-destructive/30`, `ring-side-accent/70`); an un-modified utility
+ * `border-destructive/30`, `ring-primary/70`); an un-modified utility
  * compiles to a plain `var()` and has no floor at all. Those degrade to no
  * fill on an older engine.
  *
@@ -95,40 +93,30 @@ const config: Partial<Config> = {
     extend: {
       colors: {
         /*
-         * Named brand colors (for direct use: text-navy, bg-royal-blue,
-         * etc.). The KEYS are preserved so existing utility classes
-         * (`text-navy-900`, `bg-royal-blue`) keep compiling, but the
-         * VALUES now map to the bone / bronze / ink palette. Mark the
-         * "navy" key as ink and "royal-blue" as bronze in your mental
-         * model — the chat-first redesign no longer ships with blue.
+         * Legacy brand scale keys, kept for `apps/landing` — the last surface
+         * on this preset's colour values. The KEYS are the pre-rebrand
+         * spellings so its existing utility classes keep compiling; the VALUES
+         * are the bone / bronze / ink palette. Read "navy" as ink.
          *
-         * The TS tokens in `tokens.ts` now carry honest names (`ink`,
-         * `bronze`, `moss`) with the old ones kept as deprecated aliases.
-         * These Tailwind scale keys deliberately did NOT follow, and adding
-         * honest aliases here would be worse than leaving them: `emerald`
-         * overrides only DEFAULT/50/100/400/500/600, so `emerald-300`,
-         * `emerald-700`, and `emerald-900` — all in live use — fall through
-         * to stock Tailwind green. A `moss` alias built from the five
-         * overridden steps would therefore render `moss-700` at a different
-         * color than `emerald-700`. Renaming these is web/landing reskin
-         * work, done when the class sites move with them.
+         * `royal-blue` (bronze) was deleted in the #920 slice-9 cutover: it had
+         * zero class sites anywhere in the repo, and a key with no consumers is
+         * deleted rather than kept "in case" (signet-cutover skill). `navy`
+         * shed its numbered steps in the same pass for the same reason — every
+         * one of its ten call sites uses the bare `text-navy` / `bg-navy`.
+         *
+         * `tokens.ts` carries the honest names (`ink`, `bronze`, `moss`); its
+         * matching deprecated aliases went with #917. These scale keys did not
+         * follow, because renaming them means moving the class sites, which is
+         * landing-reskin work (#913/#914).
+         *
+         * `emerald` is a *partial* override of a stock Tailwind colour, so any
+         * step not listed below still resolves to stock Tailwind green. Reach
+         * only for a step defined here — #916 was exactly that: `emerald-700`
+         * is absent from this block, so the landing pricing pill rendered stock
+         * emerald beside a moss `emerald-100` and nothing flagged it.
          */
         navy: {
-          DEFAULT: "#1F1A15", /* ink */
-          50: "#FAF7F2",
-          100: "#F2EEE7",
-          800: "#2A241D",
-          900: "#1F1A15",
-          950: "#0F0C09",
-        },
-        "royal-blue": {
-          DEFAULT: "#7A5A2F", /* bronze */
-          50: "#F5EFE3",
-          100: "#E5DCC6",
-          400: "#B89A6B",
-          500: "#9A7A45",
-          600: "#7A5A2F",
-          700: "#5C4423",
+          DEFAULT: "#1F1A15" /* ink */,
         },
         emerald: {
           DEFAULT: "#3D6B4A", /* moss */
@@ -143,10 +131,10 @@ const config: Partial<Config> = {
          * dashboard's always-dark-ink sidebar; the #920 Signet shell replaced
          * that sidebar with the fixed neutral ladder plus engine accent roles,
          * `apps/landing` never used a `side-*` class, and a key with zero
-         * consumers is deleted, not kept "in case" (signet-cutover skill).
-         * `derivePalette` still persists `--side-bg`/`--side-accent` into
-         * stored `theme_palette` rows until the legacy engine is removed;
-         * nothing reads them through the preset any more.
+         * consumers is deleted, not kept "in case" (signet-cutover skill). The
+         * engine that wrote those tokens into `chapters.theme_palette` was
+         * itself deleted in the slice-9 cutover; rows written before it keep
+         * them as inert jsonb that nothing reads.
          */
 
         /* ── Semantic tokens (mapped to CSS variables for ShadCN compatibility) ── */
@@ -198,7 +186,7 @@ const config: Partial<Config> = {
         },
         border: colorVar("--border"),
         input: colorVar("--input"),
-        /* Also written per chapter by `derivePalette()`. */
+        /* Also written per chapter, from `--signet-accent-ring`. */
         ring: colorVar("--ring"),
       },
       borderRadius: {

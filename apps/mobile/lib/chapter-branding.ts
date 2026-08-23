@@ -74,8 +74,10 @@ function readString(
  *
  * The legacy resolver stays as the fallback for exactly one case — a chapter
  * whose `theme_palette` predates the Signet map and has not been recomputed. It
- * goes away with `derivePalette` once every chapter has been through a save
- * (§6).
+ * outlived `derivePalette`, which the #920 slice-9 cutover deleted: the two
+ * were independent all along, since this path re-validates `accent_color` and
+ * never read that engine's token map. It retires when every chapter has been
+ * through one save or recompute (§6).
  */
 export function useChapterBranding(): ChapterBranding {
   const { data } = useCurrentChapter();

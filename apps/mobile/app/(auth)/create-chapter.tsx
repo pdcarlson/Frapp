@@ -110,7 +110,6 @@ export default function CreateChapter() {
       designation: row.chapter_designation ?? "",
       schoolShort: row.university_short ?? "",
       foundedYear: row.founded_year ? String(row.founded_year) : "",
-      colorDark: normalizeHex(row.default_colors?.dark, identity.colorDark),
       colorAccent: normalizeHex(row.default_colors?.accent, identity.colorAccent),
     });
     setAcceptedLegal(false);
@@ -151,7 +150,6 @@ export default function CreateChapter() {
           school_short: identity.schoolShort.trim() || undefined,
           founded_at: parseFoundedYear(identity.foundedYear),
           colors: {
-            dark: normalizeHex(identity.colorDark, identity.colorDark),
             accent: normalizeHex(identity.colorAccent, identity.colorAccent),
           },
         },
@@ -583,17 +581,6 @@ function IdentityStep({
         keyboardType="number-pad"
         styles={styles}
         tokens={tokens}
-      />
-      <Field
-        label="Primary (dark) color"
-        value={identity.colorDark}
-        onChangeText={(value) => set("colorDark", value)}
-        placeholder="#1F1A15"
-        autoCapitalize="characters"
-        mono
-        styles={styles}
-        tokens={tokens}
-        swatch={normalizeHex(identity.colorDark, identity.colorDark)}
       />
       <Field
         label="Accent color"

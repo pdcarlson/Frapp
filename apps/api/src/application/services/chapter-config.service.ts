@@ -496,8 +496,8 @@ export class ChapterConfigService {
     // branding colors so a partial color patch keeps the untouched channel.
     if (dto.branding?.colors) {
       const mergedColors =
-        (mergedBranding as { colors?: { dark?: string; accent?: string } })
-          ?.colors ?? dto.branding.colors;
+        (mergedBranding as { colors?: { accent?: string } })?.colors ??
+        dto.branding.colors;
       await this.recomputePalette(chapterId, mergedColors).catch((err) =>
         this.logger.warn('Failed to recompute palette', err),
       );
@@ -519,7 +519,7 @@ export class ChapterConfigService {
 
     const branding = ((chapter as Record<string, unknown>)['branding'] ??
       {}) as {
-      colors?: { dark?: string; accent?: string };
+      colors?: { accent?: string };
     };
     const colors = branding.colors ?? {};
     return this.recomputePalette(chapterId, colors);
@@ -527,7 +527,7 @@ export class ChapterConfigService {
 
   private async recomputePalette(
     chapterId: string,
-    colors: { dark?: string; accent?: string },
+    colors: { accent?: string },
   ) {
     const build = buildChapterPalette(colors);
 
@@ -535,13 +535,6 @@ export class ChapterConfigService {
     // valid, and failing a config save the officer asked for because one hex
     // was malformed is a worse outcome than a slightly wrong accent (#840).
     // Chapter id is included because these are per-tenant data problems.
-    if (build.invalidLegacyInputs.length > 0) {
-      this.logger.warn(
-        `Invalid brand color(s) for chapter ${chapterId}: ${build.invalidLegacyInputs
-          .map((key) => `${key}="${colors[key as 'dark' | 'accent']}"`)
-          .join(', ')} — substituted platform bronze. Expected #RRGGBB.`,
-      );
-    }
     if (build.invalidSeed) {
       this.logger.warn(
         `Invalid accent seed for chapter ${chapterId}: accent="${colors.accent}" — substituted house gold. Expected #RRGGBB.`,
@@ -556,12 +549,6 @@ export class ChapterConfigService {
           .join(', ')}`,
       );
     }
-    if (build.legacyFailed) {
-      this.logger.warn(
-        `Failed to derive the legacy theme palette for chapter ${chapterId}; persisted the Signet map alone.`,
-      );
-    }
-
     const patch: TablesUpdate<'chapters'> = { theme_palette: build.palette };
     const { error } = await this.supabase
       .from('chapters')

@@ -31,14 +31,21 @@ import { useChapterStore } from "@/lib/stores/chapter-store";
  *    the house-gold defaults baked into `signet.css` stand until a save or
  *    recompute refreshes the row (accent-engine.md §3, staleness tracked in
  *    #1165). Nothing here assumes the keys exist.
- *  - **No legacy token is applied at all.** `derivePalette`'s map is written
- *    for the bone surface — `--mention-bg` is the accent at 12% *over bone*,
- *    `--chat-self-bubble` at 8% over bone, `--reaction-active` is validated
- *    against bone — so carrying any of them onto a `#0E0D0B` surface paints a
- *    near-white fill on the dark feed. The chat renderers that read those
- *    three now take `--accent-subtle` / the accent badge recipe instead, and
- *    the tokens stop here. That is also why `--ring` is the engine's: nothing
- *    bone-validated writes to this element any more (#1149).
+ *  - **No legacy token is applied at all**, which is why this is an allow-list
+ *    rather than the blind key iteration it used to be. `derivePalette` was
+ *    deleted at the slice-9 cutover so nothing writes its map any more, but
+ *    rows saved before then still *hold* it, and six of its eight tokens were
+ *    composited over or validated against bone — `--mention-bg` is the accent
+ *    at 12% *over bone*, `--chat-self-bubble` at 8% over bone,
+ *    `--reaction-active`, `--mention-fg`, `--ring` and `--brand-band` all
+ *    measured against it. Carrying any of them onto a `#0E0D0B` surface paints
+ *    a near-white fill on the dark feed, so a stale row must not be able to
+ *    reach `:root` through here. (The other two, `--side-bg` and
+ *    `--side-accent`, were dark-context tokens for the branded sidebar the
+ *    Signet shell replaced outright.) The chat renderers that read those three
+ *    take `--accent-subtle` / the accent badge recipe instead. That is also why
+ *    `--ring` is the engine's: nothing bone-validated writes to this element
+ *    any more (#1149).
  *
  * Mounted once by `DashboardShell`, so branding applies shell-wide (it used
  * to mount under the chat route only, which repainted the sidebar depending

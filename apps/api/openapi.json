@@ -5355,11 +5355,6 @@
       "BrandingColorsDto": {
         "type": "object",
         "properties": {
-          "dark": {
-            "type": "string",
-            "example": "#4B2E2E",
-            "pattern": "^#[0-9A-Fa-f]{6}$"
-          },
           "accent": {
             "type": "string",
             "example": "#C9A56F",

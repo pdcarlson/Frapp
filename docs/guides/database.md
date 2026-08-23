@@ -58,11 +58,15 @@ Three things about it are load-bearing:
   from another source is never overwritten by a re-run.
 - **Colors must be canonical `#RRGGBB`.** `npm run check:chapter-directory-seed` runs
   in CI as the `chapter-directory-seed` job, because a malformed hex does not fail —
-  `derivePalette` substitutes platform bronze (`#7A5A2F`), so the chapter gets a
+  the accent engine substitutes the house seed (`#F2B72E`), so the chapter gets a
   plausible-looking wrong brand color with no error anywhere. The seed originally
   shipped with 50 of its 100 values missing a leading `#` and nothing noticed (#840).
-  `derivePalette` now reports the substitution on `DerivePaletteResult.invalidInputs`,
-  and both API callers log it.
+  `deriveSignetPalette` reports the substitution on `invalidSeed` and the API callers
+  log it, but the log is the only signal — nothing rejects the save.
+
+  Each row's `default_colors` still carries a `dark` key alongside `accent`. Only
+  `accent` is read: the #920 slice-9 cutover removed the second brand colour from
+  chapter branding, and the onboarding wizards stopped prefilling from `dark`.
 
   > The job is listed in `scripts/configure-branch-protection.mjs`, but listing it is
   > not the same as enforcing it: required checks only change when someone runs

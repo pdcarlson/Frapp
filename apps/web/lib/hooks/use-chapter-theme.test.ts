@@ -36,8 +36,13 @@ const SIGNET_KEYS = {
   "--signet-accent-on-primary": "#2B2009",
 };
 
-/** What `derivePalette` writes for a chapter with brand colours. All of it is
- *  composited over the bone (light) background, so none of it may be applied. */
+/** What the legacy `derivePalette` engine wrote for a chapter with brand
+ *  colours. The engine was deleted at the #920 slice-9 cutover, so nothing
+ *  produces these any more — but every row saved before then still holds them.
+ *  Six of the eight were composited over or validated against the bone (light)
+ *  background; the two `--side-*` ones were the branded sidebar's own fill and
+ *  accent. None of them may be applied to the Signet surface. This fixture is
+ *  that stale row. */
 const LEGACY_KEYS = {
   "--side-bg": "#6B0806",
   "--side-accent": "#C49A3A",
@@ -87,10 +92,15 @@ describe("useChapterTheme", () => {
     });
   });
 
-  it("never applies a legacy derivePalette token", () => {
+  it("never applies a legacy token left in a stale stored row", () => {
     // The whole class of #1149/#1150 defect: these values are composited over
     // the bone background, so any of them landing on the Signet surface paints
     // a near-white fill or an unvalidated ring on #0E0D0B.
+    //
+    // Deleting the writer did not retire this guard — it is what makes the
+    // deletion safe to ship without a data migration. `chapters.theme_palette`
+    // is unconstrained jsonb and no backfill prunes it, so these keys outlive
+    // the engine indefinitely and the hook stays an allow-list.
     setPalette({ ...LEGACY_KEYS, ...SIGNET_KEYS });
     renderHook(() => useChapterTheme());
 

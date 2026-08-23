@@ -264,6 +264,10 @@ export class ChapterService {
     const branding = (existing?.branding ?? {}) as {
       colors?: Record<string, string>;
     };
+    // Spread first so every other stored key survives — including a legacy
+    // `dark` written before the #920 slice-9 cutover removed the second brand
+    // colour. Those values are inert (nothing reads them) but they are the
+    // tenant's stored data, so an accent save preserves rather than prunes them.
     const colors: Record<string, string> = {
       ...(branding.colors ?? {}),
       accent: data.accent_color,
@@ -281,18 +285,10 @@ export class ChapterService {
     //
     // `buildChapterPalette` never throws and always yields at least the Signet
     // map, so this cannot turn a legitimate accent save into a failed request.
-    const build = buildChapterPalette({
-      dark: colors.dark,
-      accent: colors.accent,
-    });
+    const build = buildChapterPalette({ accent: colors.accent });
     if (build.invalidSeed) {
       this.logger.warn(
         `Invalid accent seed for chapter ${id}: accent="${data.accent_color}" — substituted house gold. Expected #RRGGBB.`,
-      );
-    }
-    if (build.legacyFailed) {
-      this.logger.warn(
-        `Failed to derive the legacy theme palette for chapter ${id}; persisted the Signet map alone.`,
       );
     }
 

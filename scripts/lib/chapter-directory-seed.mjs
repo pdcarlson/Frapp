@@ -53,7 +53,7 @@ export const VALID_ARCHETYPES = Object.freeze([
  * accepts the 3-digit shorthand and either case. That looseness is right for
  * runtime input (chapters type their own colors); it is wrong for a checked-in
  * data file, where one canonical spelling keeps diffs honest and matches what
- * derivePalette normalises to internally via `.toUpperCase()`.
+ * the loader normalises to via `.toUpperCase()`.
  */
 export const CANONICAL_HEX_RE = /^#[0-9A-F]{6}$/;
 
@@ -287,7 +287,7 @@ export function loadSeed(repoRoot) {
       } else {
         // This is the check the whole gate exists for: issue #840 shipped with
         // 50 of 100 values missing the leading `#`, which degrades silently to
-        // bronze inside derivePalette rather than failing.
+        // the house seed inside the accent engine rather than failing.
         for (const key of ["dark", "accent"]) {
           const value = colors[key];
           if (typeof value !== "string") {

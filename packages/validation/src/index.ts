@@ -56,10 +56,10 @@ export const ChapterBrandingSchema = z
     founded_at: z.number().int().min(1776).optional(),
     colors: z
       .object({
-        dark: z
-          .string()
-          .regex(/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/)
-          .optional(),
+        // One seed. The legacy second colour (`dark`) fed only the
+        // `derivePalette` token map and went with it in the #920 slice-9
+        // cutover; rows written before that keep an inert stored value, which
+        // this schema strips on read.
         accent: z
           .string()
           .regex(/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/)

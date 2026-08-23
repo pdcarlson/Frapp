@@ -4,10 +4,10 @@
 //
 // This exists because of issue #840: the seed shipped with 50 of its 100 color
 // values missing the leading `#`, and nothing noticed. It could not notice —
-// nothing loaded the file at all, and `derivePalette` degrades an unparseable
-// hex to bronze silently (`parseHex(hex) ?? parseHex(BRONZE)!`), so even once
-// loaded a bad value produces a plausible-looking wrong brand color rather than
-// an error.
+// nothing loaded the file at all, and the accent engine degrades an unparseable
+// hex to the house seed silently (it never throws — see `deriveSignetPalette`),
+// so even once loaded a bad value produces a plausible-looking wrong brand
+// color rather than an error.
 //
 // Runs in CI as the `chapter-directory-seed` job. Deliberately DB-free: no CI
 // job in this repo stands up Postgres (checked all of ci.yml), so a check that
@@ -42,10 +42,10 @@ function main() {
       "\nEvery default_colors value must be canonical #RRGGBB with uppercase hex digits.",
     );
     console.error(
-      "A malformed value does not fail loudly at runtime — derivePalette substitutes",
+      "A malformed value does not fail loudly at runtime — the accent engine substitutes",
     );
     console.error(
-      "bronze (#7A5A2F) and the chapter silently gets the wrong brand color. That is why",
+      "house gold (#F2B72E) and the chapter silently gets the wrong brand color. That is why",
     );
     console.error("this is a blocking check rather than a lint warning.");
     process.exit(1);

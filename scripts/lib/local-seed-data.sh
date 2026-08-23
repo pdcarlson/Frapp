@@ -57,7 +57,7 @@ frapp_load_chapter_directory() {
 
   # Generate first, load second. The generator refuses to emit SQL for a seed that fails
   # validation, so a malformed color can never reach the database — where it would become
-  # invisible, since derivePalette silently substitutes bronze for an unparseable hex.
+  # invisible, since the accent engine silently substitutes the house seed for a bad hex.
   #
   # `cd` is silenced rather than merely error-suppressed: with CDPATH set it echoes the
   # resolved directory to stdout, which the command substitution would splice onto the

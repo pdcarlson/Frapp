@@ -628,6 +628,9 @@ describe('ChapterService', () => {
   });
 
   it('preserves other branding keys when mirroring the accent', async () => {
+    // `dark` is deliberate: it is a legacy key written before the #920 slice-9
+    // cutover removed the second brand colour. Nothing reads it any more, but
+    // it is the tenant's stored data and an accent save must not prune it.
     mockChapterRepo.findById.mockResolvedValue({
       id: 'ch-1',
       branding: {
@@ -670,7 +673,7 @@ describe('ChapterService', () => {
     // paint the wizard's original colour forever with no way to change it.
     mockChapterRepo.findById.mockResolvedValue({
       id: 'ch-1',
-      branding: { colors: { dark: '#4B2E2E', accent: '#8B0000' } },
+      branding: { colors: { accent: '#8B0000' } },
     });
     mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
 
@@ -681,9 +684,8 @@ describe('ChapterService', () => {
       { theme_palette?: Record<string, string> },
     ];
     const palette = patch.theme_palette ?? {};
-    // Both maps, derived from the NEW accent — not the stored one.
+    // Derived from the NEW accent — not the stored one.
     expect(palette['--signet-accent-primary']).toBeDefined();
-    expect(palette['--side-bg']).toBeDefined();
     expect(palette['--signet-accent-primary']).not.toBe(
       deriveSignetPalette('#8B0000').palette['--signet-accent-primary'],
     );

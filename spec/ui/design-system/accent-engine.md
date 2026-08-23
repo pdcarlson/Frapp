@@ -61,7 +61,7 @@ The generated scale is computed once and cached on the chapter (tenant) record �
 
 | Aspect | Behavior |
 |---|---|
-| Storage | `chapters.theme_palette` (jsonb). It holds the legacy web token map and the Signet role tokens side by side, written on the same recompute. The Signet keys are namespaced `--signet-*`, which is what kept the legacy web reader — it iterated every key of the column — working while both systems shipped (§6). |
+| Storage | `chapters.theme_palette` (jsonb), holding the `--signet-*` role tokens. It held the legacy web token map alongside them until the #920 slice-9 cutover; the namespace is what let the two ship side by side, because the legacy web reader iterated every key of the column (§6). The column is unconstrained and no backfill prunes it, so a row written before the cutover still carries the dead keys — inert, and kept off `:root` by the allow-lists in the Delivery rows. |
 | Regenerate when | An admin changes the accent, through **either** door: `PATCH /chapters/:id/config` carrying `branding.colors` (the onboarding wizards), or `PATCH /v1/chapters/current` carrying `accent_color` (the Settings accent editor, and the only path that UI actually uses). Also via the manual recompute endpoint. Never on read, never client-side. |
 | Recompute endpoint | `POST /chapters/:id/theme-palette` (`apps/api/src/interface/controllers/chapter-config.controller.ts`), guarded by `CHAPTER_CONFIG_MANAGE`. See [`../../behavior/chapter-config.md`](../../behavior/chapter-config.md). |
 | Delivery | Web: CSS custom properties set from the cached tokens. Native: theme context providing the same roles. |
@@ -77,14 +77,13 @@ These are fixed regardless of chapter accent; the engine's output MUST NOT repla
 
 ## 6. Implementation status
 
-The engine is live on mobile and, since the #920 shell cutover, on the web dashboard. The legacy units below survive only for the residual consumers named in their rows; they are deleted at the end of the #920 series.
+The engine is live on mobile and, since the #920 shell cutover, on the web dashboard. The legacy `derivePalette` engine it replaced was deleted in the #920 slice-9 cutover. One legacy unit survives, for the consumers named in its row.
 
-### Residual (legacy — dies with the remaining #920 slices)
+### Residual (legacy)
 
 | Unit | Location | Behavior |
 |---|---|---|
-| `derivePalette({dark, accent})` | `packages/chapter-theme/src/index.ts` | Generates the legacy 8-token CSS map (`--side-bg` … `--ring`) from two brand colors. Per-token WCAG AA 4.5:1 check with bronze fallback; reports `invalidInputs` instead of throwing. DOM-free. Still produced on every save via `buildChapterPalette` (Persistence row below), but **nothing on web reads it any more**: every token it emits is composited over the bone background, so the #920 shell slice stopped applying all of them rather than carrying light-calibrated values onto a `#0E0D0B` surface. It is deleted once mobile's pre-Signet-map fallback retires. |
-| `resolveChapterAccentColor(accent, {background, fallbackAccent})` | `packages/theme/src/accent.ts` | Client-side re-validation of a stored accent against an actual background. Two call sites remain: the Settings accent preview (`apps/web/components/settings/settings-page.tsx`, which passes the real dark card surface and a dark-legible fallback per #1157) and mobile's pre-Signet-map fallback (`apps/mobile/lib/chapter-branding.ts`). The web shell call site is deleted — the engine never falls back, so the "Accent adjusted" notice went with it. Behavior canon: [`../../behavior/branding.md`](../../behavior/branding.md). |
+| `resolveChapterAccentColor(accent, {background, fallbackAccent})` | `packages/theme/src/accent.ts` | Client-side re-validation of a stored accent against an actual background. Two call sites remain: the Settings accent preview (`apps/web/components/settings/settings-page.tsx`, which passes the real dark card surface and a dark-legible fallback per #1157) and mobile's pre-Signet-map fallback (`apps/mobile/lib/chapter-branding.ts`). The web shell call site is deleted — the engine never falls back, so the "Accent adjusted" notice went with it. It is **independent of `derivePalette`** and outlived it: it re-validates `accent_color`, and never read that engine's token map. The mobile arm retires when every chapter has been through one save or recompute. Behavior canon: [`../../behavior/branding.md`](../../behavior/branding.md). |
 
 ### Implemented
 
@@ -92,9 +91,9 @@ The engine is live on mobile and, since the #920 shell cutover, on the web dashb
 |---|---|---|
 | `deriveSignetPalette(seed?)` | `packages/chapter-theme/src/signet.ts` | Wraps `generateRadixColors` with the §1 parameters and emits the §2 role tokens as flat `--signet-*` CSS custom properties, plus their alpha counterparts. DOM-free and CommonJS-safe. Never throws — an absent seed resolves to house gold, an unparseable one does too and sets `invalidSeed`. |
 | `signetAccentSemanticVars(palette)` | `packages/chapter-theme/src/signet.ts` | Re-keys an already-generated palette onto the semantic names [`foundations.md`](foundations.md) §6 gives the accent slot (`--primary`, `--ring`, …). Pure remap; the §8 guarantees carry through. Opt-in, and **not** what is persisted — see the storage row above and the note below. |
-| Persistence | `apps/api/src/application/services/chapter-palette.ts` (`buildChapterPalette`) | One builder behind all three writers — onboarding, the config PATCH / recompute endpoint, and the Settings accent save (`chapter.service.ts`). It merges `{...legacy, ...signet}`, so the two maps cannot drift apart. The Signet map is produced for **every** chapter, including one that supplied no colours (§3); the legacy map only when a brand colour was given, so the two are not always both present. The seed is `branding.colors.accent` — the same value `derivePalette` reads, per §7. An invalid seed and any sub-AA contrast check are logged, never thrown: a colour problem must not fail a save the officer asked for. |
+| Persistence | `apps/api/src/application/services/chapter-palette.ts` (`buildChapterPalette`) | One builder behind all three writers — onboarding, the config PATCH / recompute endpoint, and the Settings accent save (`chapter.service.ts`). It writes one map: the Signet roles, produced for **every** chapter, including one that supplied no colours (§3). Until the slice-9 cutover it merged `{...legacy, ...signet}` and the legacy half was produced only when a brand colour was given, so a palette could hold one map or both — that conditional half is gone, and with it the second brand colour (`branding.colors.dark`) that fed it. The seed is `branding.colors.accent`, per §7. An invalid seed and any sub-AA contrast check are logged, never thrown: a colour problem must not fail a save the officer asked for. |
 | Delivery (native) | `apps/mobile/lib/chapter-branding.ts` | `useChapterBranding()` reads **`--signet-accent-text`** (step 11) off the served palette. Step 11, not step 9: the hook's single value is consumed as a foreground (tab tint, glyphs, chip labels), and §8 gates only the text roles — `accent-primary` is the solid fill and is not held to 4.5:1, measuring 1.71:1 for a crimson chapter on the mobile card surface. A surface wanting a solid accent fill reads `--signet-accent-primary` with `--signet-accent-on-primary`. The legacy `resolveChapterAccentColor` remains only as the fallback for a chapter whose palette predates the Signet map. |
-| Delivery (web) | `apps/web/lib/hooks/use-chapter-theme.ts` | Mounted once by `DashboardShell`, so branding applies shell-wide. Maps the persisted `--signet-accent-*` roles onto the semantic names the Signet stylesheet defines, via `signetAccentSemanticVars` — all-or-nothing: a row persisted before the Signet map existed lacks those keys, and the house-gold defaults baked into `packages/theme/src/signet.css` stand until a save or recompute refreshes it (#1165 tracks the backfill). No per-token client-side fallback runs — contrast is guaranteed at generation time (§8). **Nothing else is applied**: every `derivePalette` token is composited over bone, so the hook drops all of them rather than painting a light-calibrated value onto the dark surface. |
+| Delivery (web) | `apps/web/lib/hooks/use-chapter-theme.ts` | Mounted once by `DashboardShell`, so branding applies shell-wide. Maps the persisted `--signet-accent-*` roles onto the semantic names the Signet stylesheet defines, via `signetAccentSemanticVars` — all-or-nothing: a row persisted before the Signet map existed lacks those keys, and the house-gold defaults baked into `packages/theme/src/signet.css` stand until a save or recompute refreshes it (#1165 tracks the backfill). No per-token client-side fallback runs — contrast is guaranteed at generation time (§8). **Nothing else is applied**, and the allow-list is why that is safe: a row written before the slice-9 cutover still holds the legacy map, six of whose eight tokens were composited over or validated against bone, so blind iteration would paint a light-calibrated value onto the dark surface. The remaining two were the branded sidebar's own fill and accent, for a sidebar that no longer exists. |
 | `generateRadixColors` | `packages/chapter-theme/src/vendor/` | Vendored from `radix-ui/website` (MIT, © 2024 WorkOS); it is not published to npm. Provenance and resync procedure in that directory's README. |
 
 Token names are flat and string-valued so the additive field could not disturb legacy readers while both systems shipped: until the #920 shell cutover, `apps/web/lib/hooks/use-chapter-theme.ts` iterated every key of `theme_palette` onto `:root`, and nothing in the legacy stylesheet referenced `--signet-*`. The hook now applies the deliberate mapping in the Delivery (web) row instead — the stored map is data, not a stylesheet.
@@ -116,8 +115,8 @@ convention left to pair against, which is the precondition the shell cutover the
 `apps/web` now imports `packages/theme/src/signet.css` — which carries the same one-format rule —
 while `globals.css` remains the landing stylesheet.
 
-The `--ring` / `--side-*` family moved first, in #1143: those are the tokens `derivePalette` rewrites,
-and it persists hex, so under the old bare-triple convention an injected `#C49A3A` became
+The `--ring` / `--side-*` family moved first, in #1143: those were the tokens chapter branding rewrote,
+and the engine persists hex, so under the old bare-triple convention an injected `#C49A3A` became
 `hsl(#C49A3A)` and the chapter's branding silently did not paint. The rest of the file followed in
 the #920 reskin's groundwork, which is what removed the mixed-format hazard entirely — Signet's
 `--border` is `rgba(255,255,255,.08)` and cannot be expressed as a triple at all, so the conversion
@@ -136,16 +135,16 @@ Because the conversion changed only the *format* of these tokens and never a val
 
 ### Not yet implemented
 
-- `derivePalette` is still generated and persisted on every save even though no web surface reads
-  it. It goes, with its half of the stored map, once mobile's pre-Signet-map fallback retires.
 - Rows persisted before the Signet map existed carry no `--signet-*` keys and render the house
-  defaults until a save or recompute refreshes them — the backfill is #1165.
+  defaults until a save or recompute refreshes them — the backfill is #1165. The same column also
+  still holds the deleted legacy engine's keys for those rows; nothing reads them, and no migration
+  prunes them.
 - `resolveChapterAccentColor` survives only at the two call sites in the residual table above; the
   mobile fallback goes when every chapter has been through one save.
 
 ## 7. Open decision
 
-**Accent source of truth** — the seed is currently readable from both `chapters.accent_color` and `branding.colors.accent`, which can disagree. Which column feeds the engine is open in issue **#795**. Until that decision lands, new code MUST NOT add a third read path.
+**Accent source of truth** — the seed is readable from both `chapters.accent_color` and `branding.colors.accent`. **#795 settled it** (closed by #911): `branding.colors.accent` is authoritative and the column mirrors it on every write path, backfilled by `supabase/migrations/20260814120000_backfill_chapter_accent_color_from_branding.sql`. Two readable copies remain, so new code MUST NOT add a third read path.
 
 ## 8. Validation
 

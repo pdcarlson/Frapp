@@ -45,10 +45,7 @@ export class ChapterOnboardingService {
     const seed = buildChapterConfigFromArchetype(archetypeKey);
 
     const branding = this.normalizeBranding(dto.branding);
-    const colors = (branding.colors ?? {}) as {
-      dark?: string;
-      accent?: string;
-    };
+    const colors = (branding.colors ?? {}) as { accent?: string };
     const themePalette = this.buildPalette(colors);
 
     const config: Partial<Chapter> = {
@@ -133,33 +130,20 @@ export class ChapterOnboardingService {
       result.founded_at = branding.founded_at;
     }
     const colors: Record<string, string> = {};
-    if (branding.colors?.dark) colors.dark = branding.colors.dark;
     if (branding.colors?.accent) colors.accent = branding.colors.accent;
     if (Object.keys(colors).length > 0) result.colors = colors;
     return result;
   }
 
-  private buildPalette(colors: { dark?: string; accent?: string }) {
+  private buildPalette(colors: { accent?: string }) {
     const build = buildChapterPalette(colors);
 
     // A substituted colour is always an upstream data or plumbing bug, and
     // without a log the chapter is simply onboarded with a plausible-looking
     // wrong brand colour and nothing anywhere records it (#840).
-    if (build.invalidLegacyInputs.length > 0) {
-      this.logger.warn(
-        `Invalid chapter brand color(s) during onboarding: ${build.invalidLegacyInputs
-          .map((key) => `${key}="${colors[key as 'dark' | 'accent']}"`)
-          .join(', ')} — substituted platform bronze. Expected #RRGGBB.`,
-      );
-    }
     if (build.invalidSeed) {
       this.logger.warn(
         `Invalid chapter accent seed during onboarding: accent="${colors.accent}" — substituted house gold. Expected #RRGGBB.`,
-      );
-    }
-    if (build.legacyFailed) {
-      this.logger.warn(
-        'Failed to derive the legacy theme palette during onboarding; persisted the Signet map alone.',
       );
     }
 

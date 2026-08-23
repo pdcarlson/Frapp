@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_ACCENT,
-  DEFAULT_DARK,
   EMPTY_IDENTITY,
   identityIsValid,
   normalizeHex,
@@ -14,13 +13,13 @@ describe("normalizeHex", () => {
   });
 
   it("accepts RRGGBB without a hash", () => {
-    expect(normalizeHex("1f1a15", DEFAULT_DARK)).toBe("#1F1A15");
+    expect(normalizeHex("1f1a15", DEFAULT_ACCENT)).toBe("#1F1A15");
   });
 
   it("falls back on junk", () => {
-    expect(normalizeHex("gold", DEFAULT_DARK)).toBe(DEFAULT_DARK);
+    expect(normalizeHex("gold", DEFAULT_ACCENT)).toBe(DEFAULT_ACCENT);
     expect(normalizeHex("#fff", DEFAULT_ACCENT)).toBe(DEFAULT_ACCENT);
-    expect(normalizeHex(undefined, DEFAULT_DARK)).toBe(DEFAULT_DARK);
+    expect(normalizeHex(undefined, DEFAULT_ACCENT)).toBe(DEFAULT_ACCENT);
   });
 });
 

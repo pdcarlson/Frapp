@@ -18,25 +18,22 @@ import type { DuesCadence } from '../../domain/entities/chapter-dues-config.enti
 const HEX_COLOR_PATTERN = /^#[0-9A-Fa-f]{6}$/;
 
 /**
- * Both fields are format-validated but NOT contrast-gated — they are the accent
- * engine's inputs, and the raw seed never paints UI. Reasoning and the measured
- * impact of gating them: `spec/behavior/branding.md`.
+ * One colour: the accent engine's seed. A chapter used to set two — a `dark`
+ * sidebar colour alongside the accent — but `dark` only ever fed the legacy
+ * `derivePalette` token map, and both went in the #920 slice-9 cutover. Signet
+ * derives every accent role from this single seed, and the neutral ladder
+ * (backgrounds, borders, sidebar) is fixed rather than branded:
+ * `spec/ui/design-system/accent-engine.md` §1 and §5.
  *
- * The format check is not cosmetic. These were bare `@IsString()`, so a value
- * like `"crimson"` reached `derivePalette`, which silently substituted bronze —
+ * Format-validated but NOT contrast-gated — the raw seed never paints UI.
+ * Reasoning and the measured impact of gating it: `spec/behavior/branding.md`.
+ *
+ * The format check is not cosmetic. This was a bare `@IsString()`, so a value
+ * like `"crimson"` reached the engine, which silently substituted a fallback —
  * the #840 failure mode, where 50 seed rows missing a leading `#` all became
- * platform bronze with nothing recording it.
+ * one platform colour with nothing recording it.
  */
 export class BrandingColorsDto {
-  @ApiPropertyOptional({
-    example: '#4B2E2E',
-    pattern: HEX_COLOR_PATTERN.source,
-  })
-  @IsOptional()
-  @IsString()
-  @Matches(HEX_COLOR_PATTERN, { message: 'dark must be a hex color (#RRGGBB)' })
-  dark?: string;
-
   @ApiPropertyOptional({
     example: '#C9A56F',
     pattern: HEX_COLOR_PATTERN.source,

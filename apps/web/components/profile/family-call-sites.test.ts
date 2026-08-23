@@ -133,10 +133,11 @@ describe("no raw Tailwind palette, and no dead `dark:` variant", () => {
     // `dark:` branch never applies and the *light* one is what ships.
     //
     // The trailing character class is load-bearing rather than tidiness: a
-    // bare `/\bdark:/` also matches `dark: normalizeHex(...)`, the branding
-    // payload key the wizard sends to `POST /v1/chapters/onboard`. A Tailwind
-    // variant is followed immediately by a utility; an object key is followed
-    // by a space.
+    // bare `/\bdark:/` also matches an object key spelled `dark:`. The wizard
+    // used to send exactly that as a branding payload key until the #920
+    // slice-9 cutover removed the second brand colour, and the same collision
+    // is one property name away from returning. A Tailwind variant is followed
+    // immediately by a utility; an object key is followed by a space.
     expect(code(file)).not.toMatch(/\bdark:[a-z[-]/);
   });
 });
@@ -161,8 +162,10 @@ describe("mono is reserved for machine values", () => {
    * `text-[0.65rem]` (10.4px), off the locked scale entirely.
    */
   const ALLOWED: Record<string, number> = {
-    // Two colour hex values and the invite link — all three machine values.
-    "components/onboarding/chapter-wizard.tsx": 3,
+    // The accent hex and the invite link — both machine values. Was three
+    // until the #920 slice-9 cutover removed the second colour picker: a
+    // chapter now supplies one seed, not a dark/accent pair.
+    "components/onboarding/chapter-wizard.tsx": 2,
     // The invite token a member reads character by character.
     "app/join/page.tsx": 1,
   };
