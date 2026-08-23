@@ -136,9 +136,18 @@ Because the conversion changed only the *format* of these tokens and never a val
 ### Not yet implemented
 
 - Rows persisted before the Signet map existed carry no `--signet-*` keys and render the house
-  defaults until a save or recompute refreshes them — the backfill is #1165. The same column also
-  still holds the deleted legacy engine's keys for those rows; nothing reads them, and no migration
-  prunes them.
+  defaults until a save or recompute refreshes them — the backfill is #1165. **Two separate things
+  live in that column on such a row, and only one of them is still open** (measured against the tree
+  for #1165, so the next reader does not re-derive it):
+
+  | | Status |
+  | --- | --- |
+  | The deleted legacy engine's eight keys | **Inert, permanently — no migration is needed and none ever will be.** Neither client can reach them: `use-chapter-theme.ts` gates on the seven `--signet-accent-*` roles and then applies only `signetAccentSemanticVars`' fixed output, and `chapter-branding.ts` reads `--signet-accent-text` by name. A pruning migration would be tidiness, not correctness. |
+  | The absent `--signet-*` keys | **Real but cosmetic, and self-healing.** Web falls back to the house-gold defaults in `signet.css`, so a chapter that chose crimson renders gold; mobile falls back to `resolveChapterAccentColor` against the real card surface, so it still renders that chapter's own colour, AA-corrected. Neither breaks. Any save or recompute fixes the row for good. |
+
+  Bound on which rows are affected: `deriveSignetPalette` entered `buildChapterPalette` in #1147
+  (`def3efd`, 2026-08-20), so **only a chapter whose palette was last written before that date can
+  be missing the keys** — the set is closed and shrinks on its own with every accent save.
 - `resolveChapterAccentColor` survives only at the two call sites in the residual table above; the
   mobile fallback goes when every chapter has been through one save.
 
