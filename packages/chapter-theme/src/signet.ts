@@ -5,19 +5,17 @@
  * with its parameters fixed, the role map in §2, the house default seed in §3,
  * and the by-construction contrast guarantee in §8.
  *
- * Coexists with `derivePalette` rather than replacing it. That one still feeds
- * the legacy web token map that `apps/web` reads from `chapters.theme_palette`;
- * this one's output is persisted into the same jsonb column alongside it, under
- * `--signet-*` keys the legacy stylesheet cannot see.
+ * The only chapter accent engine. It superseded the legacy two-colour
+ * `derivePalette` map, which the #920 slice-9 cutover deleted once every
+ * surface had stopped reading it.
  *
- * The two are produced together by `buildChapterPalette`
- * (`apps/api/src/application/services/chapter-palette.ts`), so neither can go
- * stale while the other is refreshed — but they are not always both *present*.
- * A chapter that supplied no brand colours gets the Signet map alone, because
- * §3 defines the no-accent case as the house seed run through this pipeline
- * while the legacy map has no such default. Do not infer one map from the
- * other. `derivePalette` is deleted when the web reskin stops reading its
- * tokens (`accent-engine.md` §6).
+ * Its output is persisted to `chapters.theme_palette` by `buildChapterPalette`
+ * (`apps/api/src/application/services/chapter-palette.ts`) and produced for
+ * **every** chapter, including one that supplied no colours — §3 defines the
+ * no-accent case as the house seed run through this same pipeline, not as an
+ * absent palette. Rows written before this map existed carry none of these keys
+ * and render the house defaults until a save or recompute refreshes them
+ * (the backfill is tracked separately).
  *
  * DOM-free and CommonJS-safe, because the NestJS API calls it.
  */
@@ -80,8 +78,8 @@ export interface DeriveSignetPaletteResult {
   resolvedSeed: string;
   /**
    * Set when the requested seed was not a parseable hex and the house seed was
-   * substituted. Same distinction `derivePalette` draws: this is always an
-   * upstream data or plumbing bug, never an expected outcome.
+   * substituted. Always an upstream data or plumbing bug, never an expected
+   * outcome — an absent seed is normal and does not set this.
    */
   invalidSeed: boolean;
   /**
@@ -129,8 +127,8 @@ function onPrimaryFor(generatedContrast: string, primary: string): string {
 /**
  * Generates the Signet accent role tokens for one chapter seed.
  *
- * **Never throws**, matching `derivePalette`. That is load-bearing rather than
- * stylistic: `ChapterOnboardingService.buildPalette` wraps its palette call in a
+ * **Never throws.** That is load-bearing rather than stylistic:
+ * `ChapterOnboardingService.buildPalette` wraps its palette call in a
  * try/catch that returns `null`, so a throw here would not surface as an error —
  * it would silently onboard a chapter with no palette at all. An unusable seed
  * therefore falls back to the house seed and says so on `invalidSeed`.

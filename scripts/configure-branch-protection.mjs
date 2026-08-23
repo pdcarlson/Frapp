@@ -46,8 +46,8 @@ const CI_CHECKS = [
   // Chapter directory seed gate (issue #840): validates
   // supabase/seed/chapter_directory.csv — canonical #RRGGBB colors, real archetypes,
   // no duplicate natural keys. Required because the failure it catches is silent:
-  // derivePalette answers a malformed hex with platform bronze rather than an error,
-  // so a bad value ships as a plausible wrong brand color. ROLLOUT: same caveat as
+  // the accent engine answers a malformed hex with the house seed rather than an
+  // error, so a bad value ships as a plausible wrong brand color. ROLLOUT: same caveat as
   // secret-scan — required only once the chapter-directory-seed job exists on the
   // target branch and has run green.
   "chapter-directory-seed",

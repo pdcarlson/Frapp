@@ -19,20 +19,11 @@ jest.mock('@repo/org-archetypes', () => ({
   getArchetype: jest.fn((key: string) => ({ key, label: key })),
 }));
 jest.mock('@repo/chapter-theme', () => ({
-  // Mirrors the real DerivePaletteResult shape. Returning a partial object here
-  // hid a live defect once: the service read `result.invalidInputs` unguarded,
-  // threw, and the surrounding try/catch turned that into a silently missing
-  // theme_palette. Keep this in step with packages/chapter-theme.
-  derivePalette: jest.fn(() => ({
-    palette: { '--side-bg': '#1F1A15' },
-    fallbacks: {},
-    invalidInputs: {},
-    resolvedDark: '#1F1A15',
-    resolvedAccent: '#7A5A2F',
-  })),
-  // Mirrors the real DeriveSignetPaletteResult shape, for the same reason as
-  // above: the service reads `invalidSeed` and iterates `contrastChecks`, and a
-  // partial double would either throw or silently assert nothing.
+  // Mirrors the real DeriveSignetPaletteResult shape. Returning a partial
+  // object here hid a live defect once: the service read a result field
+  // unguarded, threw, and the surrounding try/catch turned that into a silently
+  // missing theme_palette. The service reads `invalidSeed` and iterates
+  // `contrastChecks`. Keep this in step with packages/chapter-theme.
   deriveSignetPalette: jest.fn(() => ({
     palette: { '--signet-accent-primary': '#C49A3A' },
     resolvedSeed: '#F2B72E',
@@ -134,7 +125,7 @@ describe('ChapterOnboardingService', () => {
       designation: 'California Eta',
       school_short: 'UCLA',
       founded_at: 1948,
-      colors: { dark: '#4B0082', accent: '#C9A56F' },
+      colors: { accent: '#C9A56F' },
     },
   };
 
@@ -156,30 +147,35 @@ describe('ChapterOnboardingService', () => {
       greek_letters: 'ΣΦΕ',
       designation: 'California Eta',
       founded_at: 1948,
-      colors: { dark: '#4B0082', accent: '#C9A56F' },
+      colors: { accent: '#C9A56F' },
     });
     // A derived theme palette is persisted when colors are supplied.
     expect(payload.config.theme_palette).toBeDefined();
   });
 
   describe('Signet accent map', () => {
-    it('persists the legacy and Signet maps together', async () => {
+    it('persists the Signet map alone — no legacy token survives', async () => {
       await service.onboard('user-1', directoryDto);
 
       const [, payload] = chapterService.create.mock.calls[0];
-      // One jsonb column, both maps, written on the same insert. The Signet
-      // keys are namespaced so the legacy readers that iterate every key of
-      // this object cannot see them.
       expect(payload.config.theme_palette).toMatchObject({
-        '--side-bg': '#1F1A15',
         '--signet-accent-primary': '#C49A3A',
       });
+      // The #920 slice-9 cutover deleted `derivePalette`, so the column now
+      // holds one map rather than two merged together. Asserted by prefix
+      // rather than by naming the eight dead keys: a reintroduced legacy
+      // writer would not necessarily pick the same names.
+      const written = Object.keys(
+        payload.config.theme_palette as Record<string, string>,
+      );
+      expect(written.length).toBeGreaterThan(0);
+      expect(written.every((key) => key.startsWith('--signet-'))).toBe(true);
     });
 
     it('writes the Signet map even when the chapter picked no colors', async () => {
       // `accent-engine.md` §3 defines the no-accent case as the house seed run
-      // through the same pipeline, not as an absent palette — so unlike the
-      // legacy map this one is written for every chapter.
+      // through the same pipeline, not as an absent palette — so the map is
+      // written for every chapter, with no conditional half.
       const { colors: _dropped, ...brandingWithoutColors } =
         directoryDto.branding;
       await service.onboard('user-1', {
@@ -191,8 +187,6 @@ describe('ChapterOnboardingService', () => {
       expect(payload.config.theme_palette).toMatchObject({
         '--signet-accent-primary': '#C49A3A',
       });
-      // The legacy half stays absent for such a chapter, as it always was.
-      expect(payload.config.theme_palette).not.toHaveProperty('--side-bg');
     });
 
     it('seeds the engine from the branding accent, not a third read path', async () => {

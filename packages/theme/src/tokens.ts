@@ -6,9 +6,11 @@
  * variables remain the source of truth for the web app; this file is the
  * source of truth for mobile (which reads through `getFrappTokens()`).
  *
- * Per-chapter overlays (Chunk 2) will replace `brand.bronze` and
- * `sidebar.accent` at runtime via `derivePalette()`. The structure here
- * is the chrome those overlays paint into.
+ * This is the legacy Frapp palette, and `apps/landing` is its last consumer —
+ * `apps/web` and `apps/mobile` ship Signet (`./signet.ts`). Chapter branding no
+ * longer overlays these values at all: the Signet accent engine derives its
+ * roles from one seed into `--signet-*` custom properties, and the neutral
+ * ladder is fixed (`spec/ui/design-system/accent-engine.md` §5).
  */
 
 const SHARED_TOKENS = {
@@ -54,14 +56,17 @@ const SHARED_TOKENS = {
 } as const;
 
 /**
- * The three brand colors, each reachable under its real name and its legacy one.
+ * The three brand colors, under their real names.
  *
- * The legacy keys are literally wrong — `navy` has held a warm near-black since
- * the bone/bronze rebrand, `royalBlue` a deep bronze, `emerald` a moss green.
- * They stay because `royalBlue` is on a rendered path in `apps/web` (it is the
- * fallback accent in `accent.ts`, drawn by the dashboard shell and the settings
- * accent picker), and `apps/web` and `apps/landing` are frozen on the legacy
- * palette until their own reskin. Removing them is tracked as follow-up work.
+ * #911 added `navy` / `royalBlue` / `emerald` aliases holding byte-identical
+ * values, because the pre-rebrand spellings were still on call sites. #917
+ * removed them in the #920 slice-9 cutover: they were misnamed (`navy` has held
+ * a warm near-black since the bone/bronze rebrand, `royalBlue` a deep bronze,
+ * `emerald` a moss green) and by then had zero consumers anywhere in the repo.
+ *
+ * The Tailwind preset in `./tailwind.config.ts` keeps its own separate `navy`
+ * and `emerald` *scale* keys — those are class-site-bound and `apps/landing`
+ * still uses them. They are a different surface, not these aliases.
  */
 type FrappBrandPalette = {
   /** Warm near-black. The darkest neutral in the palette. */
@@ -70,24 +75,14 @@ type FrappBrandPalette = {
   bronze: string;
   /** Muted green, used for positive and success states. */
   moss: string;
-  /** @deprecated Misnamed since the bone/bronze rebrand — this is `ink`. */
-  navy: string;
-  /** @deprecated Misnamed since the bone/bronze rebrand — this is `bronze`. */
-  royalBlue: string;
-  /** @deprecated Misnamed since the bone/bronze rebrand — this is `moss`. */
-  emerald: string;
 };
 
-/**
- * Builds both spellings from one value each, so an alias cannot drift from the
- * key it aliases — the failure mode that would quietly repaint `apps/web`.
- */
 function brandPalette(
   ink: string,
   bronze: string,
   moss: string,
 ): FrappBrandPalette {
-  return { ink, bronze, moss, navy: ink, royalBlue: bronze, emerald: moss };
+  return { ink, bronze, moss };
 }
 
 type FrappColorPalette = {

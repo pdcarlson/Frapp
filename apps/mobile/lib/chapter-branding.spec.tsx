@@ -200,6 +200,12 @@ describe("useChapterBranding accent source", () => {
   });
 
   it("falls back to the legacy resolver when the palette has no Signet map", async () => {
+    // `--side-bg` is a sentinel, not a dependency: it stands for "a row exists
+    // but predates the Signet map". Rows like this are exactly what the #920
+    // slice-9 cutover left behind — it deleted the engine that wrote them
+    // without migrating the stored jsonb, so this fallback is the reason that
+    // was safe. Any non-Signet key would serve; this one is what real stale
+    // rows actually hold.
     const { result } = renderBranding(
       {
         "chapter-1": {

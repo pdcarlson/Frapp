@@ -42,7 +42,7 @@ function main() {
   // The validator (`npm run check:chapter-directory-seed`) is the friendly
   // reporter. This is the backstop: never load a file that failed validation,
   // because a malformed color reaching the database is invisible afterwards —
-  // derivePalette turns it into bronze without complaint.
+  // the accent engine turns it into the house seed without complaint.
   if (problems.length > 0) {
     console.error(
       `Refusing to emit load SQL — ${SEED_RELATIVE_PATH} has ${problems.length} validation problem(s).`,

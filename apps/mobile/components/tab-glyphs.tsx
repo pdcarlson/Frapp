@@ -48,10 +48,12 @@ const INACTIVE_FILL = "rgba(255,255,255,0.06)";
  * Active fill is the stroke hue at 16–18% (iconography.md §1); Canvas draws the
  * tab bar at .18, so that is what we use.
  *
- * The stroke itself is spec'd as "accent text (step 11)", which has no native
- * delivery yet — `chapters.theme_palette` is unimplemented, so mobile rides the
- * legacy flat accent. Approximating step 11 with the flat accent is the same
- * compromise S1 recorded for on-accent text.
+ * The stroke itself is spec'd as "accent text (step 11)". `useChapterBranding`
+ * now serves exactly that from `chapters.theme_palette`
+ * (`--signet-accent-text`), falling back to the flat accent only for a chapter
+ * whose row predates the Signet map. These glyphs are still passed a flat
+ * accent by their callers; routing them to the served step-11 value is the
+ * remaining step.
  */
 const ACTIVE_FILL_ALPHA = 0.18;
 

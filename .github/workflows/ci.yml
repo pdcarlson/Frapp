@@ -608,8 +608,8 @@ jobs:
   # archetypes that exist in the ArchetypeKey union, no duplicate natural keys.
   #
   # The colors are the reason this is blocking. The seed shipped with 50 of its
-  # 100 values missing a leading `#` (#840), and nothing caught it because
-  # derivePalette answers an unparseable hex with platform bronze rather than an
+  # 100 values missing a leading `#` (#840), and nothing caught it because the
+  # accent engine answers an unparseable hex with the house seed rather than an
   # error — so a bad value produces a plausible wrong brand color, not a failure.
   #
   # No `npm ci` step: the checker imports only node: builtins, so installing the

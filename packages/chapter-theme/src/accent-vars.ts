@@ -60,10 +60,12 @@ export interface SignetPalette {
  * invalid `hsl(#C49A3A)` and every primary-colored surface on the dashboard
  * lost its color at once.
  *
- * That hazard is gone. #1143 moved `--ring` and the whole `--side-*` family to
+ * That hazard is gone. #1143 moved `--ring` and the legacy sidebar family to
  * complete colour values read as bare `var(--token)`, and the #920 groundwork
  * moved the rest, so both stylesheets now have exactly one format — every token
- * is a complete colour (`spec/ui/design-system/accent-engine.md` §6).
+ * is a complete colour (`spec/ui/design-system/accent-engine.md` §6). That
+ * sidebar family has since been deleted outright; only `--ring` survives, and
+ * it is written from `--signet-accent-ring` by the mapping below.
  *
  * The persisted map stays namespaced anyway, because a namespaced field is
  * additive and cannot collide with anything a surface has not opted into. This

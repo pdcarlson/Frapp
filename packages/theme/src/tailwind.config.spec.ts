@@ -2,7 +2,10 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { derivePalette } from "@repo/chapter-theme";
+import {
+  deriveSignetPalette,
+  signetAccentSemanticVars,
+} from "@repo/chapter-theme";
 import { describe, expect, it } from "vitest";
 
 import config from "./tailwind.config";
@@ -17,9 +20,9 @@ import config from "./tailwind.config";
  *  - #1145: `bg-secondary` / `text-secondary-foreground` shipped in four
  *    ShadCN primitives while neither custom property was defined anywhere.
  *    The classes compiled to nothing.
- *  - #1143: per-chapter accents are persisted as **hex** by `derivePalette()`,
+ *  - #1143: per-chapter accents are persisted as **hex** by the accent engine,
  *    but the preset wrapped the same token names in `hsl(...)`, so an injected
- *    `--side-accent: #C49A3A` became the invalid `hsl(#C49A3A)`.
+ *    `#C49A3A` became the invalid `hsl(#C49A3A)`.
  *
  * Both reduce to one invariant: *every color token the preset reads must be
  * defined, and defined in the format the preset reads it in.* That is what is
@@ -60,8 +63,8 @@ type Reference = { key: string; token: string; style: "triple" | "complete" };
  *
  * A string value wrapping the property in `hsl(...)` needs a bare HSL triple on
  * the other side; a function value (`colorVar`) emits the property directly and
- * so needs a complete color. Literal colors — the `navy` / `royal-blue` /
- * `emerald` brand scales — reference no property and are skipped.
+ * so needs a complete color. Literal colors — the `navy` and `emerald` legacy
+ * brand scales — reference no property and are skipped.
  */
 function scanColors(): { references: Reference[]; unrecognised: string[] } {
   const references: Reference[] = [];
@@ -181,17 +184,26 @@ describe("the tokens chapter branding rewrites accept the accent engine's hex", 
    *
    * A hand-written list is the wrong shape for this guard: the failure it
    * exists to prevent is a token being ADDED on one side and not the other, and
-   * a literal cannot notice that. `derivePalette()` persists every key below to
-   * `chapters.theme_palette` as hex, and `use-chapter-theme.ts` writes them onto
-   * `:root` — so the moment one of them is also read by the preset, it must be
-   * read in a form that accepts hex. Deriving both halves means a new palette
-   * token, or a new preset key for an existing one, is covered on arrival.
+   * a literal cannot notice that. The engine persists hex into
+   * `chapters.theme_palette`, and `use-chapter-theme.ts` re-keys it onto the
+   * semantic names below and writes those onto `:root` — so the moment one of
+   * them is also read by the preset, it must be read in a form that accepts
+   * hex. Deriving both halves means a new engine role, or a new preset key for
+   * an existing one, is covered on arrival.
+   *
+   * Re-pointed from the legacy `derivePalette` at the #920 slice-9 cutover. The
+   * comment here used to say to delete this describe along with that engine, on
+   * the assumption the overlap would empty out. It did not empty — it moved:
+   * `deriveSignetPalette` persists hex exactly as its predecessor did, and
+   * `signetAccentSemanticVars` lands it on `--primary` and `--ring`, which the
+   * preset reads. #1143's defect is reachable through the new path, so the
+   * guard survives its subject.
    *
    * The devDependency is test-only and acyclic: `@repo/chapter-theme` does not
    * import `@repo/theme`.
    */
   const chapterTokens = Object.keys(
-    derivePalette({ dark: "#8B0000", accent: "#C9A56F" }).palette,
+    signetAccentSemanticVars(deriveSignetPalette("#C9A56F").palette),
   );
   const readByPreset = chapterTokens.filter((token) =>
     references.some((r) => r.token === token),
@@ -203,11 +215,13 @@ describe("the tokens chapter branding rewrites accept the accent engine's hex", 
     // nothing. That is the one way this guard can fail silently.
     //
     // The overlap shrank to `--ring` when the #920 shell cutover deleted the
-    // preset's `side-*` keys (zero class consumers remained). It empties
-    // entirely when `derivePalette` itself is removed at the end of the #920
-    // series — delete this whole describe with it.
+    // preset's `side-*` keys (zero class consumers remained), then widened
+    // again at slice 9 when this was re-pointed at the Signet engine, whose
+    // semantic re-key covers `--primary` and `--primary-foreground` too.
     expect(chapterTokens.length).toBeGreaterThan(0);
-    expect(readByPreset).toEqual(expect.arrayContaining(["--ring"]));
+    expect(readByPreset).toEqual(
+      expect.arrayContaining(["--ring", "--primary"]),
+    );
   });
 
   it.each(readByPreset)("%s is read in a hex-compatible form", (token) => {
@@ -217,7 +231,7 @@ describe("the tokens chapter branding rewrites accept the accent engine's hex", 
         `${key} reads ${token} as an HSL triple, but the accent engine persists ` +
           `${token} as hex — it would resolve to hsl(#RRGGBB) and be dropped by ` +
           "the browser (#1143). Either store it as a complete colour and read it " +
-          "through colorVar(), or stop writing it from derivePalette().",
+          "through colorVar(), or stop writing it from the accent engine.",
       ).toBe("complete");
     }
   });

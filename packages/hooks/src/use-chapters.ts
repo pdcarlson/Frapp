@@ -90,7 +90,7 @@ export interface OnboardChapterInput {
     designation?: string;
     school_short?: string;
     founded_at?: number;
-    colors?: { dark?: string; accent?: string };
+    colors?: { accent?: string };
   };
   /** FRA-17: admin accepted the Terms of Service + Privacy Policy. Must be true. */
   accept_terms_privacy: boolean;

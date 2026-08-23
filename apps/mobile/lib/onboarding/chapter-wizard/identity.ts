@@ -1,12 +1,15 @@
 /**
  * Identity + branding helpers for the mobile chapter wizard.
  *
- * Hex colors are **payload data** for `POST /v1/chapters/onboard` (same defaults
- * the web wizard sends). They are not Signet chrome — UI chrome still reads
- * tokens. Matching web: `apps/web/components/onboarding/chapter-wizard.tsx`.
+ * The accent hex is **payload data** for `POST /v1/chapters/onboard`. It is not
+ * Signet chrome — UI chrome still reads tokens. Matching web:
+ * `apps/web/components/onboarding/chapter-wizard.tsx`.
+ *
+ * One colour, not two: the `dark` sidebar colour a chapter used to pick fed
+ * only the legacy `derivePalette` map and went with it in the #920 slice-9
+ * cutover (`spec/ui/design-system/accent-engine.md` §1).
  */
 
-export const DEFAULT_DARK = "#1F1A15";
 export const DEFAULT_ACCENT = "#7A5A2F";
 const HEX6 = /^#[0-9a-fA-F]{6}$/;
 
@@ -17,7 +20,6 @@ export type IdentityForm = {
   designation: string;
   schoolShort: string;
   foundedYear: string;
-  colorDark: string;
   colorAccent: string;
 };
 
@@ -28,7 +30,6 @@ export const EMPTY_IDENTITY: IdentityForm = {
   designation: "",
   schoolShort: "",
   foundedYear: "",
-  colorDark: DEFAULT_DARK,
   colorAccent: DEFAULT_ACCENT,
 };
 

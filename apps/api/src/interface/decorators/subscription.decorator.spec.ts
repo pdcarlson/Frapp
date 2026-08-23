@@ -13,10 +13,14 @@ jest.mock('@repo/org-archetypes', () => ({
   getArchetype: jest.fn((key: string) => ({ key })),
 }));
 jest.mock('@repo/chapter-theme', () => ({
-  derivePalette: jest.fn(() => ({
+  // Mirrors the real DeriveSignetPaletteResult shape. `buildChapterPalette`
+  // reads `invalidSeed` and iterates `contrastChecks`, so a partial double
+  // would throw if any test here ever reached the palette path.
+  deriveSignetPalette: jest.fn(() => ({
     palette: {},
-    fallbacks: {},
-    invalidInputs: {},
+    resolvedSeed: '#F2B72E',
+    invalidSeed: false,
+    contrastChecks: [],
   })),
 }));
 

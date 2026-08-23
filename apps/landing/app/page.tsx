@@ -206,7 +206,7 @@ export default function Home() {
               </Link>
             </div>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-600" />
               <span>
                 14-day trial • No per-seat pricing • Stripe-backed billing
               </span>
@@ -220,7 +220,7 @@ export default function Home() {
               <p className="text-sm font-semibold">
                 Chapter Operations Snapshot
               </p>
-              <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+              <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-600">
                 Subscription active
               </span>
             </div>
@@ -235,7 +235,7 @@ export default function Home() {
                   key={line}
                   className="flex items-start gap-3 py-3 first:pt-0 last:pb-0"
                 >
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
                   <span className="text-sm text-foreground">{line}</span>
                 </div>
               ))}
@@ -428,7 +428,7 @@ export default function Home() {
                 "Priority implementation support",
               ].map((item) => (
                 <li key={item} className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
                   <span>{item}</span>
                 </li>
               ))}

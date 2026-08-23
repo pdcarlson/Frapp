@@ -177,8 +177,8 @@ function toHex({ r, g, b }: Rgb): string {
     // Clamping alone is not enough: `Math.min(255, NaN)` is `NaN`, whose
     // `toString(16)` is `"nan"` — three characters, so `padStart(2)` leaves it
     // — and the function would return `#NANNANNAN`. That is not a color, no
-    // caller can detect it, and `derivePalette` would write it straight into
-    // `chapters.theme_palette` for the web client to set as a custom property,
+    // caller can detect it, and the accent engine would write it straight into
+    // `chapters.theme_palette` for the clients to set as a custom property,
     // where it silently resolves to nothing. A non-finite channel means the
     // caller passed a non-finite ratio or alpha; treat it as 0 rather than
     // emitting a string that only looks like a color.
