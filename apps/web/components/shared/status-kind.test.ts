@@ -14,6 +14,10 @@ import {
   invoiceStatusKind,
   subscriptionStatusKind,
 } from "@/components/billing/invoice-status";
+import {
+  moduleTierKind,
+  moduleTierLabel,
+} from "@/components/settings/settings-status";
 
 /**
  * The defect this file exists for.
@@ -55,6 +59,7 @@ const MAPPERS = {
     fn: subscriptionStatusKind,
     inputs: ["active", "incomplete", "past_due", "canceled"],
   },
+  moduleTier: { fn: moduleTierKind, inputs: ["free", "paid"] },
 } as const;
 
 /**
@@ -152,6 +157,23 @@ describe("the mappings themselves", () => {
   it("treats a disabled study zone as the absence of a status, not a failure", () => {
     expect(geofenceStatusKind(true)).toBe("success");
     expect(geofenceStatusKind(false)).toBe("outline");
+  });
+
+  it("keeps a module's price tag out of the status channel entirely", () => {
+    // Both tiers are Hairline, which is the finding rather than a compromise:
+    // a tier is a fixed property of the module, the same for every chapter,
+    // and the module's actual state is the Switch beside it. The tab painted
+    // `Chapter Pro` in the chapter accent and `Free` in a hand-spelled success
+    // tint, so a green badge next to an off switch said the module was on.
+    expect(moduleTierKind("free")).toBe("outline");
+    expect(moduleTierKind("paid")).toBe("outline");
+  });
+
+  it("keeps the tier labels the modules tab already shipped", () => {
+    // `paid` is "Chapter Pro", not "Paid": §5 fixes `PAID` to mean a settled
+    // invoice, and the same word on a module states the opposite.
+    expect(moduleTierLabel("free")).toBe("Free");
+    expect(moduleTierLabel("paid")).toBe("Chapter Pro");
   });
 
   it("reads a closed poll the same way — an end, not a failure", () => {

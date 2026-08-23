@@ -166,3 +166,44 @@ describe("settings semester rollover subscription gating", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("the accent preview reports its own legibility", () => {
+  /*
+   * `resolveChapterAccentColor` asks whether the accent is legible *as text on
+   * the card*; a primary button needs the other question, whether text is
+   * legible *on the accent*. They diverge, and the pre-push review found the
+   * band where: `#0080FD` passes the first with `reason: "ok"` and no warning,
+   * and fails the second at 4.191:1. Before this, the swatch drew "Preview" in
+   * a tone `pickAccessibleColor` had explicitly rejected and said nothing.
+   *
+   * `settings-contrast.test.ts` measures the tones. This asserts the screen
+   * actually surfaces the verdict, which no measurement can.
+   */
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chapter.active();
+  });
+
+  it("warns when label text on the typed accent misses AA", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage />);
+    await user.click(screen.getByRole("tab", { name: /theme/i }));
+    const hex = screen.getByLabelText(/accent color hex value/i);
+    await user.clear(hex);
+    await user.type(hex, "#0080FD");
+    expect(
+      screen.getByText(/under the 4\.5:1 minimum/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/4\.2:1/)).toBeInTheDocument();
+  });
+
+  it("stays quiet for an accent whose label text is legible", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage />);
+    await user.click(screen.getByRole("tab", { name: /theme/i }));
+    const hex = screen.getByLabelText(/accent color hex value/i);
+    await user.clear(hex);
+    await user.type(hex, "#F2B72E");
+    expect(screen.queryByText(/under the 4\.5:1 minimum/i)).toBeNull();
+  });
+});

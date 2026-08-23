@@ -15,6 +15,12 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
+import { cn } from "@/lib/utils";
+import {
+  moduleTierKind,
+  moduleTierLabel,
+} from "@/components/settings/settings-status";
 
 type Props = {
   /** Merged `enabled_modules` map from the chapter config. */
@@ -166,7 +172,31 @@ function ModuleRow({
                 ? `Collapse ${m.label} sub-features`
                 : `Expand ${m.label} sub-features`
             }
-            className="mt-0.5 rounded-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            /*
+              The last control in the family on the pre-cutover ring, missed
+              because it is furniture rather than a field. It matters more than
+              most: the button has no border, so `FOCUS_RING`'s load-bearing
+              half — the border going solid accent — has nothing to swap, and
+              the ring *is* the whole indicator. `FOCUS_RING_OFFSET` is the
+              system's recipe for exactly that shape.
+
+              **It improves this control without fixing it, and the residual is
+              not this call site's to fix.** Measured across the 19 seeds: the
+              old bare ring sat straight on `--card` and missed §6's 3:1
+              non-text floor on 8 of them; the offset ring abuts `--background`
+              instead and misses on 5. Better, and still not clean — because
+              `FOCUS_RING_OFFSET` draws in `--primary` (accent-9), and against
+              `--background` that fails for `#006400`, `#1F4E79`, `#800000`,
+              `#8B0000` and `#8B4513`. `--ring` (accent-8) fails 0 of 19 on the
+              same surface, so the primitive has a one-token answer — but it is
+              a `components/ui/**` primitive with consumers across three
+              slices, which is #1211's situation exactly, so it is filed as
+              #1215 rather than changed under a family repaint.
+            */
+            className={cn(
+              "mt-0.5 rounded-xs text-muted-foreground transition-colors hover:text-foreground",
+              FOCUS_RING_OFFSET,
+            )}
           >
             {open ? (
               <ChevronDown className="h-4 w-4" />
@@ -181,15 +211,16 @@ function ModuleRow({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium">{m.label}</span>
-            {locked ? (
-              <Badge variant="outline" className="border-success/50 text-success">
-                Free
-              </Badge>
-            ) : (
-              <Badge variant="outline" className="border-primary/40 text-primary">
-                Chapter Pro
-              </Badge>
-            )}
+            {/*
+              One badge, not a ternary between two hand-spelled tints. The
+              accent half was §5's ban (#1202's defect, reached by a ternary
+              this family had no mapper for) and the success half put a price
+              tag in the status channel — a green `Free` beside an off switch
+              said the module was on. `settings-status.ts` has the reasoning.
+            */}
+            <Badge variant={moduleTierKind(m.tier)}>
+              {moduleTierLabel(m.tier)}
+            </Badge>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">{m.description}</p>
         </div>
@@ -214,7 +245,16 @@ function ModuleRow({
       </div>
 
       {open && hasSubFeatures ? (
-        <div className="border-t border-border bg-secondary/30 px-4 py-3 pl-11">
+        /*
+          No fill. `--secondary` aliases `--card` (`elevation-contrast.test.ts`
+          pins it), so `bg-secondary/30` inside this card composited to
+          1.000:1 — the strip it was meant to draw was never there. The
+          hairline above it is the load-bearing edge (§2), and it already
+          separates the expansion from the row; adding a step that cannot
+          exist is what §10 means by a state that cannot rise above its
+          container.
+        */
+        <div className="border-t border-border px-4 py-3 pl-11">
           <ul className="space-y-1.5">
             {m.subFeatures.map((sub) => (
               <li

@@ -1,5 +1,7 @@
 "use client";
 
+import type { ReactNode } from "react";
+
 import { useState } from "react";
 import { Loader2, Plus, Trash2, X } from "lucide-react";
 import type {
@@ -30,9 +32,13 @@ import {
   EmptyState,
   ErrorState,
   LoadingState,
+  OfflineState,
 } from "@/components/shared/async-states";
 import { useToast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
+import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
+import { useNetwork } from "@/lib/providers/network-provider";
+import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import {
   useCustomFields,
   useCreateCustomField,
@@ -83,24 +89,50 @@ const TYPE_LABEL: Record<CustomFieldType, string> = {
  */
 export function SettingsFieldsTab({ canManage }: Props) {
   const fieldsQuery = useCustomFields();
+  const { isOffline } = useNetwork();
+  /*
+    One confirmation for the list, not one per row.
 
-  if (fieldsQuery.isPending) {
-    return <LoadingState message="Loading custom fields..." />;
-  }
-  if (fieldsQuery.isError) {
-    return (
+    It started per-row, which reads fine — until the review pointed out that
+    `SettingsFieldsTab` early-returns its loading and error states *above* the
+    `<ul>`, so a background refetch failure with a delete confirmation open
+    unmounts every row and every dialog with them. `ConfirmDialogHost` settles
+    the pending promise `null` on the way out, so the member's click simply
+    stops existing: no toast, no error, the page just changes under them.
+    `window.confirm` could not fail this way — it blocks the thread, so no
+    re-render could land while it was open. `await confirm(...)` blocks
+    nothing, which is the cost of the conversion and has to be paid here.
+
+    So the hook lives above the branch and `confirm` is passed down. Same shape
+    `tasks-board.tsx` uses for its per-row deletes.
+  */
+  const { confirm, confirmDialog } = useConfirmDialog();
+
+  const fields = fieldsQuery.data ?? [];
+  const paused = fieldsQuery.isPending && fieldsQuery.fetchStatus === "paused";
+
+  let body: ReactNode;
+  if (isOffline && fieldsQuery.data === undefined) {
+    body = (
+      <OfflineState
+        title="Custom fields unavailable offline"
+        description="Reconnect to load this chapter's member fields and edit them."
+        onRetry={() => void fieldsQuery.refetch()}
+      />
+    );
+  } else if (fieldsQuery.isLoading || paused) {
+    body = <LoadingState message="Loading custom fields..." />;
+  } else if (fieldsQuery.isError) {
+    body = (
       <ErrorState
         title="Couldn't load custom fields"
         description="Retry to fetch this chapter's custom member fields."
         onRetry={() => void fieldsQuery.refetch()}
       />
     );
-  }
-
-  const fields = fieldsQuery.data ?? [];
-
-  return (
-    <div className="space-y-6">
+  } else {
+    body = (
+      <>
       <Card>
         <CardHeader>
           <CardTitle>Custom member fields</CardTitle>
@@ -119,7 +151,12 @@ export function SettingsFieldsTab({ canManage }: Props) {
           ) : (
             <ul className="space-y-3">
               {fields.map((field) => (
-                <FieldRow key={field.id} field={field} canManage={canManage} />
+                <FieldRow
+                  key={field.id}
+                  field={field}
+                  canManage={canManage}
+                  confirm={confirm}
+                />
               ))}
             </ul>
           )}
@@ -127,6 +164,15 @@ export function SettingsFieldsTab({ canManage }: Props) {
       </Card>
 
       <AddFieldForm canManage={canManage} />
+      </>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Above the branch: a refetch failure must not cancel an open delete. */}
+      {confirmDialog}
+      {body}
     </div>
   );
 }
@@ -134,9 +180,12 @@ export function SettingsFieldsTab({ canManage }: Props) {
 function FieldRow({
   field,
   canManage,
+  confirm,
 }: {
   field: ChapterCustomField;
   canManage: boolean;
+  /** The list's confirmation, not the row's — see `SettingsFieldsTab`. */
+  confirm: ReturnType<typeof useConfirmDialog>["confirm"];
 }) {
   const { toast } = useToast();
   const updateField = useUpdateCustomField();
@@ -157,7 +206,12 @@ function FieldRow({
   }
 
   async function handleDelete() {
-    const confirmed = window.confirm(`Delete the field "${field.label}"?`);
+    const confirmed = await confirm({
+      title: `Delete the field "${field.label}"?`,
+      description:
+        "Members lose the values they have entered for it, and the column disappears from the directory. This cannot be undone.",
+      confirmLabel: "Delete field",
+    });
     if (!confirmed) return;
     try {
       await deleteField.mutateAsync(field.id);
@@ -231,8 +285,18 @@ function FieldRow({
               void patch({ visibility: visibility as CustomFieldVisibility })
             }
           >
+            {/*
+              No height override. §4's 44 is a carve-out for *filter chrome* —
+              "secondary chrome sitting above the thing it filters" — and
+              neither visibility select filters anything: both write. Reading
+              that carve-out as "the height for a select" is the defect §4 was
+              written about, and here it ran backwards, shrinking below
+              `SelectTrigger`'s own 48 rather than up from 44. The primitive's
+              default is the field height, and it is what the two unoverridden
+              triggers in this same file already render at.
+            */}
             <SelectTrigger
-              className="h-11 w-40"
+              className="w-40"
               aria-label={`${field.label} visibility`}
             >
               <SelectValue />
@@ -427,7 +491,14 @@ function AddFieldForm({ canManage }: { canManage: boolean }) {
                       disabled={!canManage}
                       onClick={() => removeChoice(choice)}
                       aria-label={`Remove option ${choice}`}
-                      className="rounded-sm hover:bg-accent"
+                      /*
+                        `--accent` aliases `--popover`, so `hover:bg-accent`
+                        on a chip inside a card composites to 1.085:1 —
+                        `shared/table-contrast.test.ts` pins that exact
+                        measurement. The accent tint separates by hue instead
+                        of by a ladder step that is not there.
+                      */
+                      className={`rounded-sm hover:bg-accent-subtle ${FOCUS_RING_OFFSET}`}
                     >
                       <X className="h-3 w-3" />
                     </button>
@@ -517,7 +588,7 @@ function AddFieldForm({ canManage }: { canManage: boolean }) {
                   }))
                 }
               >
-                <SelectTrigger className="h-11 w-40" aria-label="Visibility">
+                <SelectTrigger className="w-40" aria-label="Visibility">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

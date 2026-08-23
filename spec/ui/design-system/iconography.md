@@ -401,6 +401,34 @@ Two of the swaps were corrections rather than a pack change, in §6.2.4's sense:
   that the state family's glyphs migrate with a pass over
   `components/shared/**`, not with a screen family.
 
+### 6.2.6 Settings & Roles (Signet duotone) — no family file, deliberately
+
+The #920 Settings & Roles slice is the one family that ships **no
+`*-glyphs.tsx` of its own**, and the reason is worth recording so the next
+reader does not file it as an omission.
+
+| Semantic intent | Glyph |
+|---|---|
+| The presidency transfer, and any card that is *about* a role rather than about editing one | `RolesGlyph`, imported from [`nav-glyphs.tsx`](../../../apps/web/components/layout/nav-glyphs.tsx) |
+| The Stripe portal the danger-zone card opens | `BillingGlyph`, same source |
+
+Two intents, and both were already drawn. A module holding nothing but two
+re-exports is a second path to the same glyphs — the thing §1 rule 1 bans and
+the cutover skill calls out by name ("do not add a parallel token set next to
+the one in use"; "a definition or `index.ts` re-export is not evidence anything
+still calls it"). The four preceding family files each earn their place by
+drawing at least one glyph no nav intent covers; this family has none to draw.
+
+**The tab rail stays text-only.** Ten triggers, no icons, and adding them would
+be new design rather than a repaint — the Canvas reference draws Settings
+(**s16**) as titled sections with no per-row glyph either.
+
+Everything else in the family is control furniture and stays Lucide per
+§6.2.2: `Loader2`, `Trash2`, `Plus`, `X`, `ChevronDown`, `ChevronRight`,
+`Lock`. So is `AlertTriangle` on the danger-zone card — it is the danger marker
+[`async-states.tsx`](../../../apps/web/components/shared/async-states.tsx)
+draws for the same tone, not a domain intent.
+
 ### 6.3 Maintenance Rule
 
 Any new icon choice — duotone glyph or interim pack pick — MUST be added to

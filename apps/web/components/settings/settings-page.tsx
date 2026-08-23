@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { AlertTriangle, CreditCard, Loader2, Trash2 } from "lucide-react";
+import { AlertTriangle, Loader2, Trash2 } from "lucide-react";
 import {
   type OrgDues,
   useCreatePortal,
@@ -22,6 +22,7 @@ import {
   type PatchChapterConfig,
 } from "@repo/validation";
 import { resolveChapterAccentColor } from "@repo/theme/accent";
+import { AA_NORMAL, contrastRatio, parseHex } from "@repo/color";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,9 +40,13 @@ import {
   EmptyState,
   ErrorState,
   LoadingState,
+  OfflineState,
 } from "@/components/shared/async-states";
 import { PermissionsOfflineSurface } from "@/components/shared/async-states";
+import { BillingGlyph } from "@/components/layout/nav-glyphs";
 import { Can } from "@/components/shared/can";
+import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import { useNetwork } from "@/lib/providers/network-provider";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -136,6 +141,8 @@ const COMING_SOON_TABS: ReadonlyArray<{
 
 function SettingsPageContent() {
   const { toast } = useToast();
+  const { confirm, confirmDialog } = useConfirmDialog();
+  const { isOffline } = useNetwork();
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
   const chapterQuery = useCurrentChapter({
     chapterId: activeChapterId,
@@ -203,17 +210,53 @@ function SettingsPageContent() {
     );
   }
 
-  if (chapterQuery.isPending) {
-    return <LoadingState message="Loading chapter settings..." />;
-  }
+  /*
+    §4's flags, and the two things `/settings` was missing.
 
-  if (chapterQuery.isError) {
-    return (
+    `isPending` alone gated the spinner, but `useCurrentChapter` is
+    `enabled: !!chapterId` and a paused query shares that flag — the
+    no-chapter case is already handled by the card above, so what was left was
+    a query paused offline spinning forever. And the route had **no offline
+    state at all**, which is README §4 item 4 unmet on the only settings route
+    the responsive-floor gate visits.
+
+    The branches produce a value rather than returning, because
+    `{confirmDialog}` has to outlive them: a background refetch failure landing
+    while the rollover confirmation is open would otherwise unmount the dialog
+    and settle its promise `null`, so the member's click on "Start new
+    semester" would vanish with no toast and no error. `window.confirm` could
+    not fail that way — it blocks the thread — so this is a cost the
+    conversion introduces and has to pay for. Found by the pre-push review.
+  */
+  const chapterPaused =
+    chapterQuery.isPending && chapterQuery.fetchStatus === "paused";
+  let stateBanner: React.ReactNode = null;
+  if (isOffline && chapterQuery.data === undefined) {
+    stateBanner = (
+      <OfflineState
+        title="Chapter settings unavailable offline"
+        description="Reconnect to load this chapter's identity, modules, and branding."
+        onRetry={() => void chapterQuery.refetch()}
+      />
+    );
+  } else if (chapterQuery.isLoading || chapterPaused) {
+    stateBanner = <LoadingState message="Loading chapter settings..." />;
+  } else if (chapterQuery.isError) {
+    stateBanner = (
       <ErrorState
         title="Couldn't load chapter settings"
         description="Confirm your chapter access and retry. Changes here update every surface in the dashboard."
         onRetry={() => void chapterQuery.refetch()}
       />
+    );
+  }
+
+  if (stateBanner) {
+    return (
+      <div className="space-y-6">
+        {confirmDialog}
+        {stateBanner}
+      </div>
     );
   }
 
@@ -262,6 +305,45 @@ function SettingsPageContent() {
     background: signetDarkTokens.color.surface.card,
     fallbackAccent: signetDarkTokens.color.gold.house,
   });
+
+  /*
+    The on-accent tone for the *draft* colour, and whether it is legible.
+
+    See the swatch below for why `--primary-foreground` cannot answer this.
+    What matters here is the `?? ` this used to end with: `pickAccessibleColor`
+    returns `null` when *neither* candidate clears AA, and falling back to
+    `gold.onHouse` reasserted a tone it had just rejected. The review typed
+    `#0080FD` — an ordinary hex, nothing exotic — and got "Preview" at 4.191:1
+    with no warning, which is the same defect one layer down from the one this
+    swatch was being fixed for.
+
+    The docstring's excuse was wrong too: `resolveChapterAccentColor` does not
+    reject that accent. It asks whether the accent is legible **as text on the
+    card**, which is a different question from whether text is legible **on
+    the accent**, and it answers `reason: "ok"`.
+
+    So: always the better of the two rather than the first that passes, which
+    is defined for every input; and when the better one still misses, the
+    screen says so instead of drawing an illegible label and calling it a
+    preview. `writing.md` §7 carries the string.
+  */
+  const accentRgb = parseHex(accent.resolvedAccent);
+  const inkCandidates = [
+    signetDarkTokens.color.gold.onHouse,
+    signetDarkTokens.color.text.foreground,
+  ] as const;
+  const previewInk = accentRgb
+    ? (inkCandidates.reduce((best, candidate) =>
+        contrastRatio(parseHex(candidate)!, accentRgb) >
+        contrastRatio(parseHex(best)!, accentRgb)
+          ? candidate
+          : best,
+      ) as string)
+    : signetDarkTokens.color.gold.onHouse;
+  const previewInkRatio = accentRgb
+    ? contrastRatio(parseHex(previewInk)!, accentRgb)
+    : 0;
+  const previewInkFailsAA = accentRgb !== null && previewInkRatio < AA_NORMAL;
   const semesters = asArray<SemesterArchive>(semestersQuery.data);
   const permissionsCatalog = asArray<{ key: string; permission: string }>(
     catalogQuery.data,
@@ -335,9 +417,16 @@ function SettingsPageContent() {
   async function startRollover(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!semesterLabel || !semesterStart || !semesterEnd) return;
-    const confirmed = window.confirm(
-      `Start a new semester labelled "${semesterLabel}"? The current leaderboard period will be archived and a new one will begin.`,
-    );
+    const confirmed = await confirm({
+      title: `Start a new semester labelled "${semesterLabel}"?`,
+      description:
+        "The current leaderboard period is archived and a new one begins. Points already awarded are kept — only the leaderboard's default window moves.",
+      confirmLabel: "Start new semester",
+      // Not destructive: a rollover archives rather than deletes, and
+      // `writing.md` §7's own copy for this flow says the history stays. A red
+      // button would state a loss the API does not perform.
+      tone: "default",
+    });
     if (!confirmed) return;
     try {
       await rollover.mutateAsync({
@@ -408,6 +497,13 @@ function SettingsPageContent() {
 
   return (
     <div className="space-y-6">
+      {/*
+        Above the tabs, so switching tab never unmounts an open confirmation
+        mid-flight — `ConfirmDialogHost` would settle it `null` and the
+        rollover would silently not run. Same reason the Chapter Ops slice
+        keeps `{confirmDialog}` out from under its screens' early returns.
+      */}
+      {confirmDialog}
       <header>
         <h2 className="text-2xl font-semibold tracking-tight">
           Chapter settings
@@ -624,7 +720,13 @@ function SettingsPageContent() {
                     {createPortal.isPending ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
-                      <CreditCard className="h-4 w-4" />
+                      // Names the destination, not the verb — §6.2 keeps
+                      // Lucide for control furniture, and the billing intent
+                      // is already a Signet duotone in `nav-glyphs.tsx`.
+                      // `AlertTriangle` above stays Lucide: it is the danger
+                      // marker `async-states.tsx` draws for the same tone, not
+                      // a domain intent.
+                      <BillingGlyph className="h-4 w-4" />
                     )}
                     Open Stripe billing portal
                   </Button>
@@ -718,12 +820,40 @@ function SettingsPageContent() {
                       aria-label="Accent color hex value"
                       value={accentDraft}
                       onChange={(event) => setAccentDraft(event.target.value)}
-                      placeholder="#7A5A2F"
+                      placeholder={signetDarkTokens.color.gold.seed}
                       className="max-w-xs font-mono"
                     />
+                    {/*
+                      The one place a raw chapter hex legitimately paints — it
+                      is a preview *of* that hex, which is the carve-out
+                      README §2's ban is written around. The text on top is the
+                      part that has been wrong twice.
+
+                      It shipped as `text-white`: a guess, and wrong for every
+                      light seed the directory holds (`#FFFFFF`, `#C0C0C0`,
+                      `#C9A56F`), where white on the fill is 1.0–2.2:1 and the
+                      word disappears. The obvious fix — `text-primary-foreground`
+                      — is wrong in a subtler way, and the pre-push review
+                      caught it: that token is `--signet-accent-on-primary`,
+                      written once from the chapter's **saved** palette. This
+                      swatch previews the **draft**, recomputed on every
+                      keystroke, so an admin on a dark saved accent typing a
+                      light draft would watch the fill go pale while the text
+                      stayed white. `resolveChapterAccentColor` cannot help:
+                      it returns the accent's legibility *as text on a
+                      background*, and no on-accent tone at all.
+
+                      So it is computed here, from the draft, against §4's own
+                      two ends of the text ladder — and where neither clears
+                      AA, the caption below says so rather than the swatch
+                      drawing an illegible word and calling it a preview.
+                    */}
                     <div
-                      className="flex h-12 w-36 items-center justify-center rounded-md text-sm font-semibold text-white"
-                      style={{ backgroundColor: accent.resolvedAccent }}
+                      className="flex h-12 w-36 items-center justify-center rounded-md text-sm font-semibold"
+                      style={{
+                        backgroundColor: accent.resolvedAccent,
+                        color: previewInk,
+                      }}
                     >
                       Preview
                     </div>
@@ -733,6 +863,24 @@ function SettingsPageContent() {
                       The color you entered didn&apos;t meet contrast
                       requirements. Using the safe fallback{" "}
                       {accent.resolvedAccent}.
+                    </p>
+                  ) : null}
+                  {/*
+                    A second, different question from the one above. That
+                    warning fires when the accent is illegible *as text on the
+                    card*; this one when text is illegible *on the accent* —
+                    which is what a primary button actually is, and what this
+                    card's own description promises the accent will be used
+                    for. `#0080FD` passes the first and fails this one, so
+                    without it an admin ships unreadable button labels having
+                    been told the colour was fine.
+                  */}
+                  {previewInkFailsAA ? (
+                    <p className="text-xs text-warning">
+                      Label text on this color reads at{" "}
+                      {previewInkRatio.toFixed(1)}:1, under the 4.5:1 minimum.
+                      Buttons and name tags using it will be hard to read —
+                      pick a lighter or darker shade.
                     </p>
                   ) : null}
                 </CardContent>
