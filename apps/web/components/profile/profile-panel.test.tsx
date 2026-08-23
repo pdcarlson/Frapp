@@ -353,7 +353,15 @@ describe("ProfilePanel — offline, then loading, then error, then the screen", 
      *
      * Same shape as `<Can>`'s `isError && !data` since #1211, met on a form.
      */
-    render(<ProfilePanel />);
+    // `rerender`, never a second `render()`. RTL's `render` mounts a *new*
+    // tree without unmounting the first, so a second call gives you a fresh
+    // ProfilePanel whose draft seeds from `userQuery.data` — which is still
+    // "Member". The test then passes whether or not the draft survives,
+    // because it is reading a panel that was never typed into. Verified: with
+    // a second `render()`, adding `userQuery.isError` to the seeding effect's
+    // dependency array — the exact regression this test names — leaves it
+    // green.
+    const { rerender } = render(<ProfilePanel />);
     const name = screen.getByLabelText("Display name");
     await userEvent.clear(name);
     await userEvent.type(name, "Half-typed name");
@@ -361,10 +369,10 @@ describe("ProfilePanel — offline, then loading, then error, then the screen", 
     mocks.userQuery.isError = true;
     mocks.userQuery.fetchStatus = "idle";
     // The data is still there — that is what a background failure looks like.
-    render(<ProfilePanel />);
+    rerender(<ProfilePanel />);
 
     expect(screen.queryByText(/couldn't load your profile/i)).not.toBeInTheDocument();
-    expect(screen.getAllByLabelText("Display name").length).toBeGreaterThan(0);
+    expect(screen.getByDisplayValue("Half-typed name")).toBeInTheDocument();
   });
 
   it("still fails closed when the fetch failed and nothing is cached", () => {

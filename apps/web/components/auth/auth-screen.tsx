@@ -31,6 +31,9 @@
  *   shell, this is the screen's only anchor (§8 item 3).
  * - s01/s02 body 15.5–16 → `body` (16) in `--muted-foreground`
  * - s01 footer 14.5 → `label` (14)
+ * - s02's "‹ Back" 15 → `label` (14), the nearest step. It is the one size the
+ *   first cut of this file transcribed literally, which left an arbitrary
+ *   `text-[15px]` in a docstring that claims to map every size onto the ladder.
  *
  * Captions the boards draw in `#78716A` take `--muted-foreground`, not
  * `--muted`: `components.md` §1 records that `--muted` "is not usable as text
@@ -72,7 +75,7 @@ export function AuthScreen({
         {back ? (
           <Link
             href={back.href}
-            className="mb-6 -ml-1 inline-flex w-fit items-center gap-1 rounded-md px-1 text-[15px] font-semibold text-accent-text hover:underline"
+            className="mb-6 -ml-1 inline-flex w-fit items-center gap-1 rounded-md px-1 text-sm font-semibold text-accent-text hover:underline"
           >
             <span aria-hidden="true">&lsaquo;</span>
             {back.label}

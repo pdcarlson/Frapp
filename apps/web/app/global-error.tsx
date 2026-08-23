@@ -2,6 +2,7 @@
 
 import "./globals.css";
 import * as Sentry from "@sentry/nextjs";
+import { AlertTriangle } from "lucide-react";
 import localFont from "next/font/local";
 import { useEffect } from "react";
 
@@ -42,6 +43,11 @@ import { useEffect } from "react";
  * fail to render the message about the failure. So the paint is token classes
  * on hand-written elements, deliberately. The obvious "cleanup" here is to
  * reach for `Button`; do not.
+ *
+ * `lucide-react` is the one import that is fine, and the distinction is the
+ * point: the constraint is about not depending on **this app's** component
+ * tree, not about avoiding third-party modules. So the tile draws the same
+ * `AlertTriangle` every other instance of this state family draws.
  */
 
 const figtree = localFont({
@@ -68,15 +74,19 @@ export default function GlobalError({
         <main className="flex min-h-screen items-center justify-center bg-background px-6 py-12">
           <div className="flex w-full max-w-[400px] flex-col items-center gap-3 rounded-xl border border-destructive/[.28] bg-card p-6 text-center">
             {/*
-              §10's error tile — 44px, radius 14, the danger hue at 13% with the
-              AA-lifted tone on it. Drawn inline rather than imported from
-              `shared/async-states.tsx` for the reason in the docstring above.
+              §10's error tile — 44px, radius 14, the danger hue at 13% with
+              the AA-lifted tone on it. Composed inline rather than imported
+              from `shared/async-states.tsx` for the reason in the docstring
+              above, but drawn with the same glyph at the same 24px box: this
+              family is required to differ in colour rather than in shape, so a
+              hand-lettered "!" at an off-scale size would make the one screen
+              nobody can preview the one that does not match.
             */}
             <span
               aria-hidden="true"
-              className="flex h-11 w-11 items-center justify-center rounded-lg bg-destructive/[.13] text-[22px] font-bold leading-none text-destructive-text"
+              className="flex h-11 w-11 items-center justify-center rounded-lg bg-destructive/[.13] text-destructive-text"
             >
-              !
+              <AlertTriangle className="h-6 w-6" />
             </span>
             <h1 className="text-base font-bold text-foreground">
               The dashboard hit an unrecoverable error

@@ -253,7 +253,12 @@ export function ProfilePanel() {
 
   const profile = profileDraft;
   const settings = settingsDraft;
-  const displayName = profile.display_name?.trim() || "Your profile";
+  // Two different fallbacks, deliberately: the heading needs *something* to
+  // say when a member has not set a display name, but the avatar must not
+  // spell the initials of that placeholder — `initials("Your profile")` is
+  // "YP", which reads as a person who is not them.
+  const storedName = profile.display_name?.trim() ?? "";
+  const displayName = storedName || "Your profile";
 
   /*
    * The Preferences card is fed by a *second* query, so it needs a second set
@@ -313,8 +318,13 @@ export function ProfilePanel() {
           {profile.avatar_url ? (
             <AvatarImage src={profile.avatar_url} alt="" />
           ) : null}
+          {/*
+            Sized off the 84px circle rather than off foundations §7's ladder,
+            for `signet-mark.tsx`'s reason: initials in an avatar are a drawn
+            mark, not a run of text. s15 draws them at 28 in an 84px circle.
+          */}
           <AvatarFallback className="bg-accent-subtle text-[26px] font-bold text-accent-text">
-            {initials(displayName)}
+            {initials(storedName || profile.email || "")}
           </AvatarFallback>
         </Avatar>
         <div className="min-w-0">

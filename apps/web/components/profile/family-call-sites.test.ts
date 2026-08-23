@@ -176,11 +176,19 @@ describe("mono is reserved for machine values", () => {
 describe("the accent slot never paints a pre-auth screen", () => {
   /**
    * `useChapterTheme()` mounts inside `DashboardShell`, and every route here
-   * renders outside it — so the engine never runs and `--primary` holds
-   * `signet.css`'s baked default seed. `Button`'s default variant is fine on
-   * that coincidence; the **mark** is not, because `brand-identity.md` §2 says
-   * the mark MUST NOT take the chapter accent ever, and a slot that happens to
-   * be unfilled is still the slot.
+   * renders outside it — so the engine never runs and the accent family
+   * resolves to `signet.css`'s baked seed.
+   *
+   * **The rule is narrower than it first reads, and the narrow version is the
+   * true one.** Ordinary chrome on these screens may take accent roles and
+   * does — the primary button, the footer links, the `/no-access` state tile —
+   * because if a chapter accent were ever applied this high they *should*
+   * follow it. What may never take the slot is the **mark**
+   * (`brand-identity.md` §2, "MUST NOT take the chapter accent — ever"), which
+   * is why the assertions below ban the bare accent-slot classes from a page
+   * body and then pin the mark's own tokens positively. Banning
+   * `accent-text`/`accent-subtle` outright here would fail four correct call
+   * sites and enforce a rule nothing states.
    */
   const PRE_AUTH = [
     "app/page.tsx",
