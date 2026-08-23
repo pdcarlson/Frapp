@@ -23,13 +23,16 @@ import { signetDarkTokens } from "@repo/theme/signet";
  */
 
 /**
- * Every distinct accent seed in the chapter directory, plus the house default.
+ * Every distinct color the chapter directory seed has carried, plus the house
+ * default.
  *
  * Frozen in code rather than read from `supabase/seed/chapter_directory.csv`.
  * `packages/chapter-theme/src/signet.spec.ts` owns the canonical copy and gives
  * the reasoning: the seed file is real production data that gets edited (it was
  * repaired wholesale in #903), and a suite that read it would change what it
- * asserts whenever that data moved.
+ * asserts whenever that data moved. #1225 is the case in point — it dropped the
+ * dead `default_colors.dark` half, which is where 13 of these 18 came from, so
+ * a list read from the CSV would now be 5 colors long.
  */
 export const SEEDS = [
   "#000000",

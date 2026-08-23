@@ -13,7 +13,12 @@ export interface ChapterDirectoryResult {
   university: string;
   university_short: string;
   founded_year: number | null;
-  default_colors: { dark?: string; accent?: string } | null;
+  /**
+   * One accent seed, not a pair — `accent-engine.md` §1. The `dark` half went
+   * with #1225; nothing had read it since #1224 removed `branding.colors.dark`.
+   * Still optional: the column is unconstrained jsonb and defaults to `{}`.
+   */
+  default_colors: { accent?: string } | null;
   website: string | null;
 }
 

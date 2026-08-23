@@ -17,7 +17,17 @@ export interface ChapterDirectoryEntry {
   university: string;
   university_short: string;
   founded_year: number | null;
-  /** `{ dark, accent }` hex pair (jsonb, defaults to `{}`). */
+  /**
+   * `{ accent }` — one `#RRGGBB` hex (jsonb, defaults to `{}`).
+   *
+   * One key, not a pair: a chapter has exactly one accent input
+   * (`spec/ui/design-system/accent-engine.md` §1). It held `{ dark, accent }`
+   * until #1225, but nothing had read the `dark` half since #1224 removed
+   * `branding.colors.dark`, and both onboarding wizards autofill from
+   * `default_colors?.accent` alone. The column stays `Record<string, unknown>`
+   * because it is unconstrained jsonb — deployed rows written before #1225 may
+   * still carry an inert `dark`.
+   */
   default_colors: Record<string, unknown>;
   website: string | null;
   /** Provenance tag for the row, e.g. `nic_2024`, `seed`, `manual`. */
