@@ -111,9 +111,9 @@ NOT been reskinned**: it still ships the legacy chat-first **bone / bronze / ink
 legacy `navy` / `emerald` **preset keys survive for `apps/landing` alone** (existing utility
 classes keep compiling, but their values map to ink / moss / bone-era colors) and go with its
 reskin. That reskin has **no tracked issue of its own** — #920 is `apps/web`, #937 is
-`apps/mobile`. #913 and #914 are often cited here, including by `tailwind.config.ts`, but they are
-the two `area:product` pricing decisions that *block* it, not the reskin itself; do not read them
-as the removal ticket. `royal-blue` is **gone** — the #920 slice-9 cutover deleted it outright,
+`apps/mobile`, and the Chunk-12 landing issues (#447, #491) are pre-Signet copy work that
+prescribes the bone/bronze/ink palette landing already ships. Do not reach for #913/#914 either:
+they are the two `area:product` pricing decisions that *block* the reskin, not the reskin itself. `royal-blue` is **gone** — the #920 slice-9 cutover deleted it outright,
 along with `navy`'s numbered steps and the `@repo/theme` TS brand aliases (#917, closed).
 
 **`packages/theme` is the shared token package for every surface, not a web-only one.** It already
