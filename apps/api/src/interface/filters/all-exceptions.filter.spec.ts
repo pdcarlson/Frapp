@@ -235,6 +235,107 @@ describe('AllExceptionsFilter', () => {
     });
   });
 
+  /**
+   * The regression behind FRAPP-API-1.
+   *
+   * `if (error) throw error` — how roughly two hundred repository methods end —
+   * throws a PLAIN OBJECT, because postgrest-js only constructs
+   * `PostgrestError` on the `.throwOnError()` path. The filter used to run that
+   * through `String()`, so both Sentry and the 5xx log recorded the literal
+   * text `[object Object]` and the actual fault was unrecoverable.
+   */
+  it('reports a thrown PostgREST object legibly, not as [object Object]', () => {
+    const postgrestError = {
+      code: 'PGRST205',
+      details: null,
+      hint: null,
+      message:
+        "Could not find the table 'public.discord_oauth_states' in the schema cache",
+    };
+
+    new AllExceptionsFilter().catch(postgrestError, host());
+
+    const [reported] = jest.mocked(Sentry.captureException).mock.calls[0] as [
+      Error,
+    ];
+    expect(reported).toBeInstanceOf(Error);
+    expect(reported.message).toContain('PGRST205');
+    expect(reported.message).toContain('discord_oauth_states');
+    expect(reported.message).not.toContain('[object Object]');
+
+    // The internal log was blinded by the same line and is fixed by the same
+    // normalization — asserting one without the other would leave half of it.
+    expect(captured.error[0]).toContain('PGRST205');
+    expect(captured.error[0]).not.toContain('[object Object]');
+  });
+
+  it('keeps the offending row values out of what Sentry receives', () => {
+    // `details` is where Postgres puts the values that broke the constraint, so
+    // it is the one field of the four that carries member data. The constraint
+    // itself is already named in `message`, which is what triage needs.
+    new AllExceptionsFilter().catch(
+      {
+        code: '23505',
+        message:
+          'duplicate key value violates unique constraint "users_email_key"',
+        details: 'Key (email)=(alice@example.com) already exists.',
+        hint: null,
+      },
+      host(),
+    );
+
+    const [reported] = jest.mocked(Sentry.captureException).mock.calls[0] as [
+      Error,
+    ];
+    expect(reported.message).toContain('23505');
+    expect(reported.message).toContain('users_email_key');
+    expect(reported.message).not.toContain('alice@example.com');
+  });
+
+  it('names a bare object throw so the missing stack is explainable', () => {
+    new AllExceptionsFilter().catch({ message: 'no stack here' }, host());
+
+    const [reported] = jest.mocked(Sentry.captureException).mock.calls[0] as [
+      Error,
+    ];
+    expect(reported.name).toBe('NonErrorThrowable');
+    expect(reported.message).toBe('no stack here');
+  });
+
+  it('serializes a thrown object carrying none of the known fields', () => {
+    new AllExceptionsFilter().catch(
+      { statusCode: 502, retryable: true },
+      host(),
+    );
+
+    const [reported] = jest.mocked(Sentry.captureException).mock.calls[0] as [
+      Error,
+    ];
+    expect(reported.message).toContain('502');
+    expect(reported.message).not.toContain('[object Object]');
+  });
+
+  it('does not let a circular throwable break reporting', () => {
+    const circular: Record<string, unknown> = { kind: 'weird' };
+    circular.self = circular;
+
+    expect(() =>
+      new AllExceptionsFilter().catch(circular, host()),
+    ).not.toThrow();
+    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+    expect(captured.status).toBe(500);
+  });
+
+  it('passes a real Error through untouched', () => {
+    const thrown = new Error('boom');
+    new AllExceptionsFilter().catch(thrown, host());
+
+    const [reported] = jest.mocked(Sentry.captureException).mock.calls[0] as [
+      Error,
+    ];
+    expect(reported).toBe(thrown);
+  });
+
   it('preserves the existing 5xx error log shape', () => {
     new AllExceptionsFilter().catch(new Error('boom'), host());
 

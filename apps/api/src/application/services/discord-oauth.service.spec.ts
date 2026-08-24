@@ -383,6 +383,30 @@ describe('DiscordOAuthService — the callback’s trust boundary', () => {
     expect(options.tags.swallowed_as).toBe('failed');
   });
 
+  it('reports the hint but never the offending row values', async () => {
+    // `hint` is the half that answers the question, so it has to survive.
+    // `details` is where Postgres puts the values that broke the constraint,
+    // and this path sends its message to Sentry — where `redactFreeText` is
+    // best-effort by its own docblock and lets a phone number through. The
+    // constraint is already named in `message`, so `details` buys nothing worth
+    // that. See `reportable-error.ts`.
+    const service = await build();
+    captureException.mockClear();
+    repo.consumeState.mockRejectedValue({
+      code: '23505',
+      message: 'duplicate key value violates unique constraint "x_phone_key"',
+      details: 'Key (phone)=(+1-555-0142) already exists.',
+      hint: 'Perhaps you meant to update the existing row',
+    });
+
+    await service.handleCallback({ code: 'c', state: STATE });
+
+    const [reported] = captureException.mock.calls[0] as [Error];
+    expect(reported.message).toContain('23505');
+    expect(reported.message).toContain('Perhaps you meant to update');
+    expect(reported.message).not.toContain('+1-555-0142');
+  });
+
   it('separating the two opens no state-existence oracle', async () => {
     // The reason `expired` collapses nonexistent, spent and out-of-time
     // together is that telling them apart would let anyone holding a callback
