@@ -198,6 +198,7 @@ All three run in `.github/workflows/docs.yml`. **Required?** below is the *inten
 | ---------------- | -------------- | ----------------------------------------------- | ---------- |
 | `docs-spec-sync` | GitHub Actions | Docs/spec sync **and** structure on PRs (`check-docs-impact.mjs` + `check-docs-structure.mjs`) | Yes |
 | `doc-paths`      | GitHub Actions | Backticked repo-path citations in docs resolve (`check-doc-paths.mjs`, whole-tree) | Yes — listed in `DOCS_CHECKS`. Whole-tree, so it can block a PR over a citation in a doc that PR never touched; that trade was taken deliberately ([`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md)) |
+| `migration-drift` | GitHub Actions | Staging holds every migration on `main` (`check-migration-drift-gate.mjs`, read-only against the Supabase Management API) | Yes — listed in `DRIFT_CHECKS`. Compares `origin/main` against staging, so a PR's own unmerged migration cannot fail it; 30-minute grace from merge time covers the `migrate-staging` apply window |
 | `doc-tables`     | GitHub Actions | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml` (`check-doc-tables.mjs`, whole-tree) | Not yet — reports only, pending the same promotion step |
 
 **Code review is a local pre-push gate, not a CI check** (ADR-14 2026-06-04 amendment). The

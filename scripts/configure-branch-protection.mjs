@@ -149,7 +149,36 @@ const DOCS_CHECKS = [
   "doc-paths",
 ];
 
-const ALL_REQUIRED_CHECKS = [...CI_CHECKS, ...DOCS_CHECKS];
+// Checks emitted by .github/workflows/migration-drift-gate.yml.
+const DRIFT_CHECKS = [
+  // Asserts that staging holds every migration on `main`. The one check here
+  // that is about a DEPLOYED DATABASE rather than about the code: everything
+  // above proves the repo is internally consistent, and all of it stays green
+  // while staging sits dozens of migrations behind. Two migrations merged to
+  // main and were never applied to staging; nothing went red.
+  //
+  // Required rather than advisory because the failure it catches is one nobody
+  // goes looking for. The sibling daily check (check-migration-drift.yml) files
+  // an issue, which is the correct shape for a watchdog and the wrong shape for
+  // a thing that must be impossible to miss.
+  //
+  // Accepted trade, the same one `doc-paths` took: this can block a PR over
+  // state that PR did not cause. That is the cheaper failure. The alternative
+  // is a schema mismatch nobody sees until something breaks on staging.
+  //
+  // It also depends on a third-party API (Supabase Management) being reachable,
+  // so a sustained Supabase outage blocks merges. Transient blips are absorbed
+  // by bounded retries in the script; a real outage is meant to be loud. If a
+  // merge genuinely cannot wait, drop this context deliberately for the
+  // duration rather than teaching the gate to pass unverified.
+  //
+  // ROLLOUT: same caveat as secret-scan — required only once the
+  // migration-drift job exists on the target branch and has run green,
+  // otherwise every PR blocks on a missing required check.
+  "migration-drift",
+];
+
+const ALL_REQUIRED_CHECKS = [...CI_CHECKS, ...DOCS_CHECKS, ...DRIFT_CHECKS];
 
 // ── CLI argument parsing ────────────────────────────────────────────────────
 
@@ -340,4 +369,10 @@ if (isDirectRun) {
   });
 }
 
-export { ALL_REQUIRED_CHECKS, CI_CHECKS, DOCS_CHECKS, buildProtectionPayload };
+export {
+  ALL_REQUIRED_CHECKS,
+  CI_CHECKS,
+  DOCS_CHECKS,
+  DRIFT_CHECKS,
+  buildProtectionPayload,
+};

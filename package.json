@@ -21,6 +21,7 @@
     "check:api-breaking": "node scripts/check-api-breaking-changes.mjs",
     "check:api-contract": "node scripts/check-api-contract-drift.mjs",
     "check:migration-safety": "node scripts/check-migration-safety.mjs",
+    "check:migration-lock-safety": "node scripts/check-migration-lock-safety.mjs",
     "check:doc-paths": "node scripts/check-doc-paths.mjs",
     "check:doc-tables": "node scripts/check-doc-tables.mjs",
     "check:pglite-migrations": "node scripts/check-pglite-migrations.mjs",
@@ -46,6 +47,7 @@
     "dependency-cruiser": "^17.4.3",
     "jscpd": "^5.0.16",
     "prettier": "^3.9.6",
+    "squawk-cli": "2.62.0",
     "turbo": "^2.10.11",
     "typescript": "npm:@typescript/typescript6@6.0.2"
   },

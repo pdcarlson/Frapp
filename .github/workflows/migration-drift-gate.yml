@@ -1,0 +1,116 @@
+name: Migration drift gate
+
+# REQUIRED check: does staging actually hold every migration on `main`?
+#
+# The incident: two migrations merged to main and were never applied to
+# staging. Every workflow stayed green, because nothing in CI has ever asserted
+# anything about a deployed database — CI proves the code compiles and the tests
+# pass, and a database dozens of migrations behind is invisible to all of it.
+#
+# `check-migration-drift.yml` already detects this, but on a daily schedule and
+# by filing an issue. That is the right shape for a slow watchdog and the wrong
+# shape for a thing that must be impossible to miss: an issue has to be opened
+# to be read. This gate turns the same fact into a red X on every open PR, which
+# is the one signal a team cannot route around.
+#
+# ── Why this is not a job in ci.yml ─────────────────────────────────────────
+# ci.yml consumes NO secrets — not one job in it touches `secrets.*`. That is a
+# property worth keeping: it means a CI run on a pull_request has nothing to
+# leak. This check needs Infisical credentials to learn the staging project ref,
+# so it lives in its own workflow rather than making ci.yml the first secret
+# consumer in the repo.
+#
+# ── Why there is no `paths:` filter ─────────────────────────────────────────
+# Deliberate, and the opposite of an oversight. A required check on a workflow
+# skipped by a workflow-level `paths:` filter never reports at all and sits
+# "Pending" forever, blocking every PR that does not touch those paths. (A
+# JOB-level `if:` is the safe form — a skipped job reports Success. The
+# fork guard below uses that form for exactly this reason.)
+# https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/collaborating-on-repositories-with-code-quality-features/troubleshooting-required-status-checks
+#
+# It is also correct on the merits: drift is a property of main and staging, not
+# of the PR's diff. A PR that touches no SQL is exactly as blocked by a
+# drifting staging as one that does — the schema its tests ran against is wrong
+# either way.
+#
+# Semantics live in scripts/ci/check-migration-drift-gate.mjs.
+# Unit tests: scripts/ci/__tests__/ (run via `npm run test:ci-scripts`).
+
+on:
+  pull_request:
+    branches: [main, production]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  # Per-ref, and cancellable: this check is a read-only assertion, so a
+  # superseded run has no cleanup to do and no reason to finish.
+  group: migration-drift-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  migration-drift:
+    runs-on: ubuntu-latest
+    # Fork PRs receive no secrets, so the Infisical step below cannot succeed.
+    # A job-level `if:` reports Success when skipped, which satisfies the
+    # required check rather than deadlocking the PR. This repo is private and
+    # takes no fork PRs today; the guard is here so that fact stopping being
+    # true does not silently wedge every PR.
+    if: |
+      github.event_name == 'push' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history: the gate dates each migration by when it landed on
+          # main, which a shallow clone cannot answer.
+          fetch-depth: 0
+
+      - name: Fetch main
+        run: git fetch --no-tags origin main:refs/remotes/origin/main
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Verify Infisical credentials are configured
+        env:
+          CLIENT_ID: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+        run: |
+          MISSING=""
+          [ -n "$CLIENT_ID" ] || MISSING="$MISSING INFISICAL_MACHINE_IDENTITY_ID"
+          [ -n "$CLIENT_SECRET" ] || MISSING="$MISSING INFISICAL_CLIENT_SECRET"
+          if [ -n "$MISSING" ]; then
+            echo "::error::Infisical credentials are not configured. Missing or empty:$MISSING. See docs/internal/environment/SECRETS_MANAGEMENT.md."
+            exit 1
+          fi
+
+      - name: Inject staging secrets from Infisical
+        uses: Infisical/secrets-action@v1.0.12
+        with:
+          method: "universal"
+          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: "frapp-live-ej-ls"
+          env-slug: "staging"
+          secret-path: "/"
+          include-imports: true
+
+      - name: Check migration drift against staging
+        env:
+          # Both injected above. SUPABASE_PROJECT_REF is the staging ref because
+          # the injection above used the `staging` env-slug.
+          DRIFT_GATE_MAIN_REF: refs/remotes/origin/main
+          DRIFT_GATE_GRACE_MINUTES: "30"
+        run: |
+          if [ -z "$SUPABASE_PROJECT_REF" ]; then
+            echo "::error::SUPABASE_PROJECT_REF is not set in the Infisical 'staging' environment. See docs/internal/environment/SECRETS_MANAGEMENT.md."
+            exit 1
+          fi
+          node scripts/ci/check-migration-drift-gate.mjs
