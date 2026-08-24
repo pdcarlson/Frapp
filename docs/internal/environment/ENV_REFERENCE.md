@@ -72,10 +72,42 @@ These are the real values you enter into Infisical. **Every cell tells you exact
 | `SUPABASE_JWT_SECRET` | The `JWT secret` field from `npx supabase status -o env` for your local stack | Copy from Supabase staging dashboard → Settings → API → JWT Settings → `JWT Secret` (⚠️ secret!) | Copy from Supabase production dashboard → Settings → API → JWT Settings → `JWT Secret` (⚠️ secret!) |
 
 | `EVENT_CHECK_IN_TOKEN_SECRET` | Any high-entropy random string, e.g. `openssl rand -base64 48`. It only has to be stable within an environment — nothing else derives from it. | Generate a **distinct** value and store it in Infisical | Generate a **distinct** value and store it in Infisical |
+| `DISCORD_BOT_TOKEN` | **Same as staging** — the one Signet bot token. Discord Developer Portal → your application → Bot → Reset Token (⚠️ shown once). | ← same token as local | Copy from the Developer Portal. A **separate application** for production is recommended so a staging mistake cannot read production chapters' servers. |
+| `DISCORD_CLIENT_ID` | **Same as staging.** Developer Portal → your application → OAuth2 → Client ID. Not secret, but it lives here so the four stay together. | ← same id as local | The production application's Client ID |
+| `DISCORD_CLIENT_SECRET` | **Same as staging.** Developer Portal → OAuth2 → Client Secret → Reset Secret (⚠️ secret!). | ← same secret as local | The production application's Client Secret |
 
 > `SUPABASE_JWT_SECRET` is **optional**. It lets the API verify access-token signatures locally so the rate limiter can key buckets per authenticated user (see `spec/architecture/README.md`, Security). When it is absent the limiter safely falls back to per-IP keying — set it in every environment to enable per-user limiting.
 
 > `EVENT_CHECK_IN_TOKEN_SECRET` is **optional** and signs the rotating event check-in codes (`spec/behavior/events.md` § Check-In). Unset, `GET /v1/events/:eventId/attendance/check-in-token` returns 503 and the mobile host screen (s22) says the feature is not configured; a supplied token is rejected rather than accepted. The mint route is **GET**, not POST — minting writes nothing (the code is derived from the event id, the clock, and this secret), and GET keeps the host screen's polling on the read throttle bucket (`attendance.controller.ts`). Plain self check-in and the check-in geofence are unaffected, so local dev, tests, and CI run without it. **Use a different value per environment** — sharing one would make a staging code redeemable in production.
+
+> The three `DISCORD_*` variables are **optional, and all-or-nothing**. They power the "Connect
+> Discord" path of the archive importer (`spec/behavior/chat/README.md` § Imported archive
+> messages). Unset, `GET /v1/discord/availability` answers `available: false`, the wizard offers
+> only the DiscordChatExporter upload flow, and every other `/v1/discord/*` route answers 503. **The
+> upload flow is a separate path, not a fallback that switches on** — it works identically whether or
+> not these are set, which is the whole point of keeping it.
+>
+> `DiscordOAuthService.isAvailable()` requires **all four** of `DISCORD_BOT_TOKEN`,
+> `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` and `API_URL`/`APP_URL` (below). Three of four is not
+> a degraded mode: without the client secret there is no server-to-server code exchange, which is
+> the step that proves the authorizing human holds Manage Server on the guild — so the flow would
+> have to trust the browser for it, which it must never do. Without `API_URL` there is no redirect
+> URI to register, and without `APP_URL` the callback has nowhere to send the browser back to.
+>
+> **`DISCORD_BOT_TOKEN` is ONE global Signet value per environment, not one per tenant.** There is
+> no per-chapter credential anywhere in this feature and no secret store that would hold one — what
+> a chapter contributes is a `guild_id` in `discord_connections`, which is a public snowflake and
+> inert without an install behind it. Do not go looking for per-chapter Discord secrets; there are
+> none by design.
+>
+> **Two things live outside Infisical and no CI check can detect either.** (1) The OAuth redirect URI
+> must be registered by hand in the Developer Portal → OAuth2 → Redirects, exactly
+> `${API_URL}/v1/discord/connect/callback` per environment — see
+> [`DEPLOYMENT.md`](../ops/DEPLOYMENT.md) § Discord application setup. (2) **Message Content Intent**
+> must be enabled under Bot → Privileged Gateway Intents. Without it Discord answers `200` with
+> `content: ""` on every message, so an import would otherwise write a chapter's whole history as
+> empty bubbles; the importer detects this and fails loudly rather than importing blanks, but only
+> the toggle makes it actually work.
 
 ### Analytics (Pseudonymous — API-only)
 
@@ -159,6 +191,11 @@ Reads these directly (no prefix needed):
 | `ANALYTICS_HMAC_SALT` | `analytics.service.ts` (analytics keying) · `infrastructure/observability/pseudonyms.ts` (Sentry user/chapter hashes + security-event `originHash`); analytics disabled and pseudonyms omitted when unset | ❌ |
 | `POSTHOG_API_KEY` | `analytics.module.ts` — `selectAnalyticsProvider()` (selects PostHog vs no-op provider; **the choice is logged at boot** under the `AnalyticsProvider` context, and a salt set with no key warns) | ❌ |
 | `POSTHOG_HOST` | `analytics.module.ts` (provider host override; default PostHog US) | ❌ |
+| `DISCORD_BOT_TOKEN` | `infrastructure/discord/discord-bot-gateway.service.ts` (the one global Signet bot token; unset → the bot import path reports itself unavailable and every `/v1/discord/*` route 503s) | ❌ |
+| `DISCORD_CLIENT_ID` | `infrastructure/discord/discord-oauth-client.service.ts` (builds the authorize URL) | ❌ |
+| `DISCORD_CLIENT_SECRET` | `infrastructure/discord/discord-oauth-client.service.ts` (HTTP Basic on the token exchange and revoke — the step that proves the authorizing human administers the guild) | ❌ |
+| `API_URL` | `application/services/discord-oauth.service.ts` — **the API reads this too, not just the web/mobile twins.** The Discord redirect URI is this value string-concatenated with `/v1/discord/connect/callback`, and it must match the Developer Portal registration exactly | ❌ |
+| `APP_URL` | `application/services/discord-oauth.service.ts` — where the OAuth callback sends the browser back to. Every return path is resolved against this origin, which is what stops the callback becoming an open redirect | ❌ |
 
 ### apps/web (Next.js — Vercel)
 

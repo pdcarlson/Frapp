@@ -27,6 +27,12 @@ import type {
  */
 const MESSAGE_BATCH_SIZE = 200;
 
+/**
+ * Manifest rows read per round trip. Below `max_rows` for the same reason
+ * everything else in this file is — see the note above.
+ */
+const FILE_PAGE_SIZE = 500;
+
 @Injectable()
 export class SupabaseDiscordImportRepository implements IDiscordImportRepository {
   constructor(
@@ -39,7 +45,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       Partial<
         Pick<
           DiscordImport,
-          'created_by' | 'guild_id' | 'guild_name' | 'storage_prefix'
+          'created_by' | 'guild_id' | 'guild_name' | 'storage_prefix' | 'source'
         >
       >,
   ): Promise<DiscordImport> {
@@ -50,6 +56,11 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       guild_id: data.guild_id ?? null,
       guild_name: data.guild_name ?? null,
       storage_prefix: data.storage_prefix ?? null,
+      // Omitted rather than defaulted in TypeScript: the column's own DEFAULT
+      // is 'upload', so a caller that says nothing gets the phase-2 behaviour
+      // from the database rather than from a constant here that could drift
+      // from it.
+      ...(data.source ? { source: data.source } : {}),
     };
     const { data: created, error } = await this.supabase
       .from('discord_imports')
@@ -157,6 +168,11 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       .select('*, discord_imports!inner(chapter_id)')
       .eq('import_id', importId)
       .eq('discord_imports.chapter_id', chapterId)
+      // `position` then name. Upload-path rows all sit at the default 0, so
+      // they keep their original name ordering; bot-path rows carry a position
+      // pinned at discovery, which is what keeps a thread listed under its
+      // parent and keeps a resumed import walking the same sequence.
+      .order('position', { ascending: true })
       .order('discord_channel_name', { ascending: true });
     if (error) throw error;
     return (data ?? []).map(stripImportEmbed);
@@ -198,14 +214,40 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
     importId: string,
     chapterId: string,
   ): Promise<DiscordImportFile[]> {
-    const { data, error } = await this.supabase
-      .from('discord_import_files')
-      .select('*')
-      .eq('import_id', importId)
-      .eq('chapter_id', chapterId)
-      .order('part_index', { ascending: true });
-    if (error) throw error;
-    return data ?? [];
+    // PAGED, and this is a correctness fix rather than a scale nicety.
+    //
+    // The note at the top of this file states the invariant: PostgREST caps a
+    // response at `max_rows` (1000) and signals truncation with a plain 200 and
+    // a null error. This read was the one that broke it — and the manifest is
+    // exactly the table that grows past 1000, because it holds a row per
+    // attachment.
+    //
+    // What truncation costs is not the same on the two import paths. On the
+    // BOT path a missing row is re-fetched from Discord, so the cost is
+    // bandwidth. On the UPLOAD path the worker never re-creates media rows —
+    // the admin's browser registered them — so a dropped row means
+    // `resolveAsset` returns null, the attachment is silently absent, and the
+    // message lands with an under-counted `attachment_count` on an import the
+    // admin was told succeeded. That is the failure this paging removes.
+    const all: DiscordImportFile[] = [];
+    for (let from = 0; ; from += FILE_PAGE_SIZE) {
+      const { data, error } = await this.supabase
+        .from('discord_import_files')
+        .select('*')
+        .eq('import_id', importId)
+        .eq('chapter_id', chapterId)
+        .order('part_index', { ascending: true })
+        // The `id` tiebreaker is load-bearing, not cosmetic. `part_index` is
+        // null on every media row, so ordering by it alone leaves one enormous
+        // tie — and `.range()` over an unstable order can serve a row on two
+        // pages or on none, which is the very failure this loop exists to fix.
+        .order('id', { ascending: true })
+        .range(from, from + FILE_PAGE_SIZE - 1);
+      if (error) throw error;
+      const page = data ?? [];
+      all.push(...page);
+      if (page.length < FILE_PAGE_SIZE) return all;
+    }
   }
 
   async markFilesUploaded(

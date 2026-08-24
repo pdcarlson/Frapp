@@ -51,7 +51,7 @@ export interface IDiscordImportRepository {
       Partial<
         Pick<
           DiscordImport,
-          'created_by' | 'guild_id' | 'guild_name' | 'storage_prefix'
+          'created_by' | 'guild_id' | 'guild_name' | 'storage_prefix' | 'source'
         >
       >,
   ): Promise<DiscordImport>;
@@ -90,6 +90,15 @@ export interface IDiscordImportRepository {
     chapterId: string,
     rows: Omit<DiscordImportChannel, 'id' | 'import_id'>[],
   ): Promise<DiscordImportChannel[]>;
+  /**
+   * This import's channels, in the order the worker must walk them.
+   *
+   * Ordered by `position` first, then name. The upload path leaves `position`
+   * at its default 0 and so keeps its original name ordering exactly; the bot
+   * path pins a position at discovery so a thread lists directly under its
+   * parent and a later change to the sort key cannot reorder a half-finished
+   * import.
+   */
   findChannels(
     importId: string,
     chapterId: string,
@@ -108,6 +117,7 @@ export interface IDiscordImportRepository {
         | 'imported_count'
         | 'status'
         | 'error'
+        | 'cursor_before_snowflake'
       >
     >,
   ): Promise<void>;

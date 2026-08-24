@@ -27,3 +27,4 @@ export * from "./use-org-config";
 export * from "./use-custom-roles";
 export * from "./use-custom-fields";
 export * from "./use-discord-import";
+export * from "./use-discord-connection";

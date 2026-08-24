@@ -2,6 +2,7 @@
 
 import type { ChannelChoice } from "./channel-mapping-step";
 import type { StagedExport } from "./upload-step";
+import type { ImportSource } from "./source-step";
 import { DEFAULT_SIGNET_ROLE } from "./role-mapping-step";
 
 const ACTION_LABEL: Record<ChannelChoice["action"], string> = {
@@ -12,10 +13,12 @@ const ACTION_LABEL: Record<ChannelChoice["action"], string> = {
 
 export function ReviewStep({
   staged,
+  source,
   channelChoices,
   roleChoices,
 }: {
   staged: StagedExport;
+  source: ImportSource;
   channelChoices: Record<string, ChannelChoice>;
   roleChoices: Record<string, string>;
 }) {
@@ -28,6 +31,9 @@ export function ReviewStep({
       <p className="text-muted-foreground">
         The import runs in the background. You can leave this page — progress is
         on the import list when you come back.
+        {source === "bot"
+          ? " Attachments are copied out of Discord as it goes, so a large server takes a while."
+          : ""}
       </p>
 
       <dl className="grid grid-cols-2 gap-3">
@@ -36,9 +42,15 @@ export function ReviewStep({
           <dd className="font-semibold">{staged.guildName ?? "Discord"}</dd>
         </div>
         <div className="rounded-lg border border-border p-3">
-          <dt className="text-xs text-muted-foreground">Files uploaded</dt>
+          <dt className="text-xs text-muted-foreground">
+            {source === "bot" ? "How" : "Files uploaded"}
+          </dt>
           <dd className="font-semibold">
-            {staged.exportCount} export · {staged.mediaCount} media
+            {/* A bot import uploads nothing, so a file count there would read
+                as "zero files" rather than "not applicable". */}
+            {source === "bot"
+              ? "Read from Discord"
+              : `${staged.exportCount} export · ${staged.mediaCount} media`}
           </dd>
         </div>
       </dl>
