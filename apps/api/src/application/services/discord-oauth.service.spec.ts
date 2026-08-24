@@ -1,5 +1,11 @@
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
+import { Logger } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
+
+// Same shape `all-exceptions.filter.spec.ts` uses.
+jest.mock('@sentry/nestjs', () => ({ captureException: jest.fn() }));
+const captureException = Sentry.captureException as jest.Mock;
 import {
   DEFAULT_RETURN_PATH,
   DiscordOAuthService,
@@ -25,6 +31,23 @@ const MANAGE_GUILD = String(1n << 5n);
 const ADMINISTRATOR = String(1n << 3n);
 /** Send Messages (1 << 11) — a real permission that is not enough. */
 const SEND_MESSAGES = String(1n << 11n);
+
+/**
+ * What the repository actually throws when the table is not there.
+ *
+ * Verbatim PostgREST, and deliberately NOT an `Error`: `postgrest-js`
+ * constructs a real `PostgrestError` only under `shouldThrowOnError`, which
+ * nothing in this codebase enables, so `if (error) throw error` rethrows the
+ * parsed response body as a plain object. This is the exact payload the
+ * deployed staging incident produced.
+ */
+const PGRST_TABLE_MISSING = {
+  code: 'PGRST205',
+  details: null,
+  hint: "Perhaps you meant the table 'public.discord_oauth_states'",
+  message:
+    "Could not find the table 'public.discord_oauth_states' in the schema cache",
+};
 
 function stateRow(
   overrides: Partial<DiscordOAuthState> = {},
@@ -240,6 +263,144 @@ describe('DiscordOAuthService — the callback’s trust boundary', () => {
     expect(outcome.ok).toBe(false);
     expect(outcome.code).toBe('expired');
     expect(repo.attachPendingConnection).not.toHaveBeenCalled();
+  });
+
+  it('REDIRECTS rather than throwing when the handshake store fails', async () => {
+    // Found on deployed staging, not here: the callback answered a raw 500 to a
+    // browser that had just completed an OAuth handshake, because
+    // `consumeState` was awaited outside the try/catch and the environment's
+    // migration had not been promoted yet — so the table it queries did not
+    // exist. Any repository failure does this: a transient PostgREST error, an
+    // exhausted pool, a schema behind the code.
+    //
+    // This method's whole contract is that it RETURNS where to send the
+    // browser. A mocked repository that always resolves never exercises the
+    // path where it rejects, which is why the suite was green while staging
+    // was not.
+    //
+    // The rejected value is the shape PostgREST ACTUALLY produces, which is the
+    // second half of the same lesson. `postgrest-js` builds a real
+    // `PostgrestError` only under `shouldThrowOnError`, which nothing here
+    // sets, so what the repository rethrows is the parsed body: a plain object,
+    // not an `Error`. Rejecting with `new Error(...)` would keep this test
+    // green while exercising a branch production never reaches.
+    const service = await build();
+    repo.consumeState.mockRejectedValue(PGRST_TABLE_MISSING);
+
+    const outcome = await service.handleCallback({ code: 'c', state: STATE });
+
+    expect(outcome.ok).toBe(false);
+    expect(outcome.code).toBe('failed');
+    // The code on the query string is the one the dashboard actually reads —
+    // the controller returns only `returnUrl` — so assert it there too, not
+    // just on the field.
+    const url = new URL(outcome.returnUrl);
+    expect(url.origin).toBe('https://app.example.test');
+    expect(url.searchParams.get('discord')).toBe('failed');
+    expect(repo.attachPendingConnection).not.toHaveBeenCalled();
+    expect(repo.upsert).not.toHaveBeenCalled();
+  });
+
+  it('LOGS the cause, which a plain PostgREST object all but hides', async () => {
+    // The redirect is only half the fix. If the browser is told nothing and the
+    // log is told nothing either, a promoted-schema regression is invisible
+    // from both ends — so this asserts the one place the cause survives.
+    //
+    // `error instanceof Error ? error.stack : undefined` passes `undefined`
+    // here, and Nest's ConsoleLogger drops a falsy stack silently. `hint` is
+    // the field that names the actual problem, so it is what the test demands.
+    const service = await build();
+    repo.consumeState.mockRejectedValue(PGRST_TABLE_MISSING);
+    const logged = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+
+    await service.handleCallback({ code: 'c', state: STATE });
+
+    expect(logged).toHaveBeenCalledTimes(1);
+    const [message, cause] = logged.mock.calls[0] as [string, string];
+    expect(message).toContain(STATE);
+    expect(cause).toContain('PGRST205');
+    expect(cause).toContain('public.discord_oauth_states');
+    logged.mockRestore();
+  });
+
+  it('does NOT tell a store failure that its link expired', async () => {
+    // These two must not collapse together, which is the opposite of what this
+    // test asserted when it was written.
+    //
+    // `expired` renders as "that link had expired or was already used — start
+    // the connection again". Under a store failure both halves are false: the
+    // conditional UPDATE never committed, so the state is neither spent nor out
+    // of time. And the prescribed recovery is the one thing that cannot work,
+    // because starting again writes a NEW state row to the same table that just
+    // refused one — so the admin loops, re-authorizing on Discord each time.
+    const service = await build();
+
+    repo.consumeState.mockResolvedValue(null);
+    const expired = await service.handleCallback({ code: 'c', state: STATE });
+
+    // A network failure rather than a schema one, and again in the shape
+    // postgrest-js really hands back: its fetch-rejection branch also produces
+    // a plain object, not a `TypeError`.
+    repo.consumeState.mockRejectedValue({
+      code: '',
+      details: 'TypeError: fetch failed',
+      hint: '',
+      message: 'connection terminated',
+    });
+    const failed = await service.handleCallback({ code: 'c', state: STATE });
+
+    expect(expired.code).toBe('expired');
+    expect(failed.code).toBe('failed');
+    expect(failed.returnUrl).not.toBe(expired.returnUrl);
+    // Both still end at the dashboard: telling the causes apart must not turn
+    // one of them into an unhandled throw or an off-site redirect.
+    expect(new URL(failed.returnUrl).origin).toBe('https://app.example.test');
+  });
+
+  it('REPORTS the failure it swallows, or nobody ever learns of it', async () => {
+    // The redirect is the fix for the admin and, by itself, a regression for
+    // the operator. `AllExceptionsFilter` is the only `captureException` in the
+    // API and it fires on `status >= 500`, so alerting was coupled to the user
+    // seeing an error page — and this change removes the error page. Without
+    // the explicit capture, every Discord connect could fail while the 5xx rate
+    // stayed flat and Sentry stayed empty.
+    const service = await build();
+    captureException.mockClear();
+    repo.consumeState.mockRejectedValue(PGRST_TABLE_MISSING);
+
+    await service.handleCallback({ code: 'c', state: STATE });
+
+    expect(captureException).toHaveBeenCalledTimes(1);
+    const [reported, options] = captureException.mock.calls[0] as [
+      Error,
+      { tags: Record<string, string> },
+    ];
+    // `new Error(String(plainObject))` would report "[object Object]" — the
+    // cause has to survive into the message.
+    expect(reported.message).toContain('PGRST205');
+    expect(options.tags.swallowed_as).toBe('failed');
+  });
+
+  it('separating the two opens no state-existence oracle', async () => {
+    // The reason `expired` collapses nonexistent, spent and out-of-time
+    // together is that telling them apart would let anyone holding a callback
+    // URL probe which state ids are real. Splitting `failed` out does not
+    // reopen that, and this pins why: the store-failure branch is a function of
+    // store HEALTH, never of whether the id resolves — so it answers the same
+    // way for a fabricated id as for a live one.
+    const service = await build();
+    repo.consumeState.mockRejectedValue(PGRST_TABLE_MISSING);
+
+    const real = await service.handleCallback({ code: 'c', state: STATE });
+    const fabricated = await service.handleCallback({
+      code: 'c',
+      state: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    });
+
+    expect(fabricated.code).toBe(real.code);
+    expect(fabricated.returnUrl).toBe(real.returnUrl);
   });
 
   it('does not even ask the repository about a non-uuid state', async () => {
