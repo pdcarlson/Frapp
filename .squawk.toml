@@ -1,0 +1,58 @@
+# Squawk — migration lock-safety linting. ADVISORY, not a merge gate.
+#
+# Run over the migrations a PR changes, by the `migration-lock-safety` job in
+# .github/workflows/ci.yml. It reports; it never blocks.
+#
+# ── Why these rules are excluded ────────────────────────────────────────────
+# Squawk out of the box reports 403 issues across 44 of this repo's 51
+# migrations. A check that loud is a check nobody reads, and every one of the
+# excluded rules below is either impossible to satisfy here or is not about lock
+# safety at all. Measured 2026-08-24 on all 51 migrations; the counts are what
+# each rule contributed to that 403.
+#
+# Turning any of these back on is a deliberate repo-wide decision, not a
+# per-migration one — each would flag the existing corpus wholesale.
+
+excluded_rules = [
+  # 88 findings / 23 files. IMPOSSIBLE HERE, not merely inconvenient: Supabase
+  # applies each migration file inside a transaction, and Postgres forbids
+  # CREATE INDEX CONCURRENTLY inside a transaction block. The repo already knows
+  # this — see the comment in
+  # supabase/migrations/20260823122000_chat_message_search_vector.sql, which
+  # explains that its GIN build is deliberately non-concurrent for exactly this
+  # reason. Leaving the rule on would advise a change that cannot be made.
+  "require-concurrent-index-creation",
+  # 1 finding. Same impossibility: DROP INDEX CONCURRENTLY is likewise banned
+  # inside a transaction block.
+  "require-concurrent-index-deletion",
+
+  # 44 findings each, in all 44 files that contain any statement — i.e. these
+  # fire on every migration this repo has ever written. They want an explicit
+  # `SET lock_timeout` / `SET statement_timeout` at the top of each file. That
+  # is a defensible convention and this repo does not have it; adopting it is a
+  # separate decision that would touch every future migration. Reported as
+  # "everything is wrong" it teaches people to ignore the whole check.
+  "require-lock-timeout",
+  "require-statement-timeout",
+
+  # 48 findings / 12 files. A schema-design opinion (int vs bigint for primary
+  # keys), not a lock-safety property. Out of scope for this gate, and the
+  # existing tables it names are already deployed — the advice is unactionable
+  # without a migration that rewrites them.
+  "prefer-bigint-over-int",
+
+  # 165 findings / 19 files — the single largest contributor. Wants every
+  # statement written defensively (`if not exists`, `if exists`, …) so a partly
+  # applied migration can be re-run. Idempotency style, not lock safety, and
+  # this repo already uses `if not exists` widely where it matters.
+  "prefer-robust-stmts",
+]
+
+# EVERYTHING ELSE STAYS ARMED, including rules that happen not to fire today —
+# ban-drop-column, ban-drop-table, renaming-column, changing-column-type and the
+# rest. They are silent because the corpus is clean of them, which is precisely
+# the state worth defending. The rules that DO still fire are the real
+# lock-safety findings: constraint-missing-not-valid (5),
+# adding-foreign-key-constraint (3), adding-field-with-default (2),
+# disallowed-unique-constraint (2), ban-drop-not-null (1) — 13 findings across
+# ~8 files, a list a human can actually read.

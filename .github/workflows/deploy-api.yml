@@ -32,38 +32,99 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
-          fetch-depth: 2
+          # Full history. The previous `fetch-depth: 2` could not resolve HEAD~1
+          # on a merge commit, and the diff below swallowed that failure — see
+          # the fail-open note in the next step.
+          fetch-depth: 0
 
+      # This filter now gates ONLY the API deploy. It deliberately no longer
+      # gates `migrate-staging`: a path filter that answers "false" for any
+      # reason silently skips a migration, which is exactly the incident this
+      # workflow is being hardened against. See `migrate-staging` below.
+      #
+      # It also no longer fails open to "nothing changed". The old form was
+      # `git diff --name-only HEAD~1 2>/dev/null || echo ""`, so ANY git failure
+      # (unresolvable HEAD~1 on a shallow merge commit being the live one)
+      # produced an empty file list, which every grep below read as "no changes"
+      # and reported as a clean skip. A deploy that silently does nothing is the
+      # worst available outcome, so an unreadable diff now assumes EVERYTHING
+      # changed and warns loudly. The cost of being wrong is a redundant deploy;
+      # the cost of the old behaviour was a change that never shipped.
       - name: Detect changed paths
         id: filter
         run: |
-          CHANGED=$(git diff --name-only HEAD~1 2>/dev/null || echo "")
+          set -euo pipefail
 
-          if echo "$CHANGED" | grep -qE '^(apps/api/|packages/validation/|packages/typescript-config/)'; then
+          if CHANGED=$(git diff --name-only HEAD~1); then
+            DIFF_OK=1
+          else
+            DIFF_OK=0
+            CHANGED=""
+            echo "::warning::Could not diff HEAD~1 for ${{ github.event.workflow_run.head_sha }}. Assuming all deploy-relevant paths changed rather than skipping the deploy."
+          fi
+
+          if [ "$DIFF_OK" -eq 0 ] || echo "$CHANGED" | grep -qE '^(apps/api/|packages/validation/|packages/typescript-config/)'; then
             echo "api-changed=true" >> "$GITHUB_OUTPUT"
-            echo "API-related files changed."
+            echo "API-related files changed (or the diff was unreadable)."
           else
             echo "api-changed=false" >> "$GITHUB_OUTPUT"
             echo "No API-related files changed."
           fi
 
-          if echo "$CHANGED" | grep -qE '^supabase/migrations/'; then
+          if [ "$DIFF_OK" -eq 0 ] || echo "$CHANGED" | grep -qE '^supabase/migrations/'; then
             echo "migrations-changed=true" >> "$GITHUB_OUTPUT"
-            echo "Migration files changed."
+            echo "Migration files changed (or the diff was unreadable)."
           else
             echo "migrations-changed=false" >> "$GITHUB_OUTPUT"
-            echo "No migration files changed."
+            echo "No migration files changed in this push (migrate-staging runs regardless)."
           fi
 
   # ── Run database migrations (staging) ──────────────────────────────────
+  # Staging auto-applies on every merge to `main`. This job is the ONLY
+  # sanctioned way migrations reach staging; DB_PROMOTION_RUNBOOK.md documents
+  # it as automatic and no longer asks a human to run `supabase db push`.
+  #
+  # It deliberately runs on EVERY successful CI run on main, NOT only when the
+  # push touched `supabase/migrations/`. Two reasons, both incident-driven:
+  #
+  #   1. The old `migrations-changed == 'true'` gate was computed from
+  #      `git diff HEAD~1` with a fail-open `|| echo ""`. Any git failure read
+  #      as "no migrations changed" and the job skipped, green and silent. Two
+  #      migrations reached main and were never applied to staging exactly this
+  #      way.
+  #   2. Even a correct filter only ever describes ONE push. If an apply is
+  #      skipped or fails, nothing retries it — the next migration-bearing push
+  #      is the next chance, which may be weeks out. Running unconditionally
+  #      makes every merge to main a retry: `supabase db push` applies whatever
+  #      is pending and is a no-op when nothing is, so the steady-state cost is
+  #      one `link` + one `migration list` per merge and the failure mode is
+  #      self-healing instead of permanent.
+  #
+  # The dry-run step is not decoration: it runs `migration list` first, so the
+  # log records what WAS pending before anything is applied. When the apply step
+  # then fails, the run itself says what it was trying to do.
   migrate-staging:
     needs: check-changes
     if: |
       needs.check-changes.result == 'success' &&
-      needs.check-changes.outputs.migrations-changed == 'true' &&
       github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     environment: staging
+    # Serialize staging applies. Two merges landing close together would
+    # otherwise run two `db push` calls against one database at once.
+    #
+    # `cancel-in-progress: false` is the important half: cancelling a run
+    # mid-`db push` is how a database ends up half-migrated. Queued runs cost
+    # a few minutes; a partially applied migration costs a manual recovery.
+    #
+    # Honest limit: this lock covers GitHub Actions runs ONLY. It cannot stop a
+    # human running `supabase db push` against staging from a laptop — nothing
+    # in GitHub can. That is why DB_PROMOTION_RUNBOOK.md now tells humans not to
+    # push to staging by hand at all, and the drift gate (ci.yml) is what
+    # catches it when someone does anyway.
+    concurrency:
+      group: db-migrate-staging
+      cancel-in-progress: false
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -118,6 +179,18 @@ jobs:
   # (private, Pro) repo this job does NOT pause for manual approval — it runs straight
   # through once CI passes. The human gate is the main->production promotion PR
   # (branch protection: CI + approving review + conversation resolution).
+  #
+  # This is the AUTOMATIC production path, and it is not the only one:
+  # `.github/workflows/migrate-production.yml` applies the same migrations from a
+  # deliberate `workflow_dispatch` with a typed confirmation. Both were kept on
+  # purpose. Keep them consistent — a change to how production migrations are
+  # applied belongs in both files, and both must stay in the
+  # `db-migrate-production` concurrency group.
+  #
+  # Unlike `migrate-staging`, this job DOES still gate on `migrations-changed`.
+  # Staging drops that gate to make every merge a retry; production is applied
+  # far less often and its retries are a human decision, which is what the
+  # dispatch workflow is for.
   migrate-production:
     needs: check-changes
     if: |
@@ -126,6 +199,15 @@ jobs:
       github.event.workflow_run.head_branch == 'production'
     runs-on: ubuntu-latest
     environment: production
+    # SHARED with the `workflow_dispatch` job in migrate-production.yml. There
+    # are two ways to apply a production migration (this one, on merge to the
+    # `production` branch, and the deliberate manual dispatch), so they must
+    # take the same lock or they can interleave two `db push` runs against one
+    # database. Same group name in both files is what makes that hold —
+    # renaming it here without renaming it there silently removes the lock.
+    concurrency:
+      group: db-migrate-production
+      cancel-in-progress: false
     steps:
       - name: Checkout
         uses: actions/checkout@v4

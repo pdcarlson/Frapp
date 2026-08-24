@@ -18,6 +18,7 @@ import {
   securityEventKind,
 } from '../../infrastructure/observability/security-events';
 import { AuthFailureSpikeDetector } from '../../infrastructure/observability/auth-failure-spike';
+import { toReportableError } from '../../infrastructure/observability/reportable-error';
 
 /**
  * The single seam for error-shaped observability (issues #846, #481).
@@ -80,8 +81,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
           method: request.method,
           path: request.url,
           statusCode: status,
-          error:
-            exception instanceof Error ? exception.stack : String(exception),
+          error: toReportableError(exception).stack,
         }),
       );
       this.reportToSentry(exception, request, status, requestId);
@@ -206,9 +206,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         const path = pathOnly(request.url);
         if (path) scope.setTag('route', path);
 
-        Sentry.captureException(
-          exception instanceof Error ? exception : new Error(String(exception)),
-        );
+        Sentry.captureException(toReportableError(exception));
       });
     } catch (error) {
       this.logger.warn(`Sentry capture failed: ${(error as Error).message}`);

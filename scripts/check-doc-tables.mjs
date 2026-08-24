@@ -10,7 +10,7 @@
 // manual procedure ("if CI job names change, update these files").
 //
 // Sources of truth:
-//   - CI_CHECKS / DOCS_CHECKS in scripts/configure-branch-protection.mjs
+//   - CI_CHECKS / DOCS_CHECKS / DRIFT_CHECKS in scripts/configure-branch-protection.mjs
 //   - job ids and `npm run test -w <workspace>` steps in .github/workflows/ci.yml
 //
 // See docs/internal/ci-cd/DOCS_CI.md for the contract.
@@ -194,16 +194,18 @@ function main() {
 
   const ciChecks = parseCheckArray(src, "CI_CHECKS");
   const docsChecks = parseCheckArray(src, "DOCS_CHECKS");
+  const driftChecks = parseCheckArray(src, "DRIFT_CHECKS");
   // An empty array is truthy and would sail past a bare null check, passing the gate with
   // every check unasserted — a silent disarm rather than a failure.
-  if (!ciChecks?.length || !docsChecks?.length) {
+  if (!ciChecks?.length || !docsChecks?.length || !driftChecks?.length) {
     console.error(
-      `check-doc-tables: could not parse CI_CHECKS/DOCS_CHECKS from ${SCRIPT_SRC} ` +
-        `(got ${ciChecks?.length ?? "none"} / ${docsChecks?.length ?? "none"}).`,
+      `check-doc-tables: could not parse CI_CHECKS/DOCS_CHECKS/DRIFT_CHECKS from ${SCRIPT_SRC} ` +
+        `(got ${ciChecks?.length ?? "none"} / ${docsChecks?.length ?? "none"} / ` +
+        `${driftChecks?.length ?? "none"}).`,
     );
     return 2;
   }
-  const required = [...ciChecks, ...docsChecks];
+  const required = [...ciChecks, ...docsChecks, ...driftChecks];
 
   // Every ci.yml/docs.yml job is a legitimate thing for a doc to have a row for, whether or
   // not it is required — advisory gates are described in these tables too.
@@ -211,6 +213,8 @@ function main() {
   for (const m of ciYml.matchAll(/^  ([a-zA-Z0-9_-]+):$/gm)) known.add(m[1]);
   const docsYml = read(".github/workflows/docs.yml");
   if (docsYml) for (const m of docsYml.matchAll(/^  ([a-zA-Z0-9_-]+):$/gm)) known.add(m[1]);
+  const driftYml = read(".github/workflows/migration-drift-gate.yml");
+  if (driftYml) for (const m of driftYml.matchAll(/^  ([a-zA-Z0-9_-]+):$/gm)) known.add(m[1]);
   known.add("branch-policy"); // production-only; appended by buildProtectionPayload, not an array.
 
   const findings = [];
@@ -248,7 +252,9 @@ function main() {
       for (const f of items) console.error(`    \`${f.id}\`: ${f.detail}`);
     }
     console.error("");
-    console.error(`Sources of truth: ${SCRIPT_SRC} (CI_CHECKS / DOCS_CHECKS) and ${CI_YML}.`);
+    console.error(
+      `Sources of truth: ${SCRIPT_SRC} (CI_CHECKS / DOCS_CHECKS / DRIFT_CHECKS) and ${CI_YML}.`,
+    );
     console.error("Fix: correct the doc — or, better, delete the copy and link to the source.");
     console.error("Run locally: `npm run check:doc-tables`.");
     return 1;

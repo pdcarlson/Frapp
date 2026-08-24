@@ -4,19 +4,104 @@
 
 Use this runbook whenever `supabase/migrations/**` changes need to be promoted.
 
-## Promotion order (never skip)
+**Staging is automatic. Only production is a human action.** If you are here
+looking for the command to push migrations to staging, there isn't one any more
+— see [How migrations reach each environment](#how-migrations-reach-each-environment).
 
-1. **Local** (`npx supabase db push --local`)
-2. **Staging** (`main` branch / staging Supabase project)
-3. **Production** (`production` branch / production Supabase project)
+## How migrations reach each environment
+
+| Environment | How migrations get applied | Who triggers it |
+| ----------- | -------------------------- | --------------- |
+| **Local** | `npx supabase db push --local` | You, while developing |
+| **Staging** | **Automatic.** The `migrate-staging` job in [`deploy-api.yml`](../../../.github/workflows/deploy-api.yml) runs on every successful CI run on `main` | Nobody — merging to `main` is the trigger |
+| **Production** | **Manual.** Either merging the `main` → `production` promotion PR (the `migrate-production` job in the same workflow), or running the [`Migrate production`](../../../.github/workflows/migrate-production.yml) workflow by hand | A human, deliberately |
+
+### Staging: do not push by hand
+
+`migrate-staging` runs on **every** merge to `main`, not only merges that touch
+`supabase/migrations/`. `supabase db push` applies whatever is pending and is a
+no-op when nothing is, so every merge is also a retry for anything an earlier
+run missed.
+
+That is deliberate, and it is the fix for a real incident: two migrations merged
+to `main` and were never applied to staging, because the job was gated on a
+path filter computed with `git diff HEAD~1 … || echo ""` — any git failure read
+as "no migrations changed" and the job skipped, green and silent.
+
+**Do not run `supabase db push` against staging from a laptop.** The workflow
+serializes its runs with a `db-migrate-staging` concurrency group, and that lock
+cannot see a run on your machine — nothing in GitHub can. A hand-applied
+migration also becomes a *foreign* migration the moment its file changes or is
+renamed before merge, and a foreign row makes `supabase db push` refuse to run
+**at all** until someone reconciles it by hand.
+
+If staging needs a migration applied out of band, re-run the `Deploy API`
+workflow against the latest commit on `main`.
+
+### Production: two paths, both human
+
+Production is applied by a person, either way:
+
+1. **Promotion PR** — merging `main` → `production` runs `migrate-production`.
+   The human gate is the PR itself (branch protection: CI + an approving
+   review + conversation resolution).
+2. **`Migrate production` workflow** — Actions → *Migrate production* → Run
+   workflow. Requires typing `APPLY TO PRODUCTION` to confirm, and offers a
+   **dry-run-only** mode that reports what would be applied and changes nothing.
+   Use this to re-run a failed apply, to apply a backlog without shipping code,
+   or to promote on a schedule no merge matches.
+
+Both share the `db-migrate-production` concurrency group, so they queue behind
+each other instead of interleaving two `db push` runs against one database.
+
+> **`environment: production` does not gate either path.** Required-reviewer
+> environment protection is GitHub Enterprise-only on private repos, and this
+> repo is private on Pro. The environment is declared for secret scoping and as
+> forward wiring; the actual gates are the promotion PR's review and the typed
+> confirmation. Do not read the environment name as an approval step.
+
+> **⚠️ Production is currently blocked.** As of 2026-08-24 production is ~49
+> migrations behind `main` and carries `20260228000000_enable_rls_on_remaining_tables`,
+> a version that exists in no branch of this repo (hand-applied in February).
+> `supabase db push` refuses to run at all in that state, so both paths above
+> will fail on the dry run until it is reconciled. Issue #832 owns that work.
+> Do not run `migration repair` to make the error go away without first reading
+> what the row did — see [`DB_ROLLBACK_PLAYBOOK.md`](./DB_ROLLBACK_PLAYBOOK.md).
+
+## What catches drift
+
+Two checks, deliberately different shapes:
+
+| Check | When | Scope | On failure |
+| ----- | ---- | ----- | ---------- |
+| `migration-drift` ([`migration-drift-gate.yml`](../../../.github/workflows/migration-drift-gate.yml)) | Every PR and every push to `main` — **required check** | Staging only | Blocks the merge |
+| [`check-migration-drift.yml`](../../../.github/workflows/check-migration-drift.yml) | Daily, 07:00 UTC | Staging **and** production | Files/updates a tracking issue |
+
+The required check compares `origin/main` against staging's applied migration
+history — **not** your PR's head, so a migration you are adding cannot fail its
+own check. A migration is tolerated for 30 minutes from the moment it landed on
+`main`, which is the window `migrate-staging` needs to apply it.
+
+Both are read-only: they call the Supabase Management API's migration-history
+endpoint and send no SQL. Neither ever repairs anything.
+
+If `migration-drift` is red on your PR and you did not cause it, that is the
+gate working as intended — staging is out of sync for everyone, and the schema
+your tests ran against is not the schema on staging. Fix the drift, don't route
+around it.
 
 ## Preflight checklist
 
 - [ ] Migration filenames pass `npm run check:migration-safety`
+- [ ] Lock-safety advisory read: `npm run check:migration-lock-safety -- --all`
+      (or the `migration-lock-safety` job's summary on your PR). **Advisory, not
+      blocking** — see [`.squawk.toml`](../../../.squawk.toml) for the rules this
+      repo excludes and why
 - [ ] PR includes migration SQL + rollback plan (`DB_ROLLBACK_PLAYBOOK.md`)
+- [ ] PR appends an entry to the promotion log at the bottom of this file
+      (`check:migration-safety` enforces that migration PRs touch this doc)
 - [ ] Query/index/policy changes reviewed by at least one backend reviewer
-- [ ] Production deploy window chosen; stakeholders notified
-- [ ] Supabase backups/snapshots confirmed for target environment
+- [ ] Supabase backups/snapshots confirmed before a **production** promotion
 
 ## Local validation
 
@@ -32,24 +117,27 @@ npm run test -w apps/api
 npm run check:api-contract
 ```
 
-## Staging promotion
+## After a staging apply
 
-```bash
-npx supabase db push --project-ref <STAGING_PROJECT_REF>
-```
+Merging to `main` applies the migration; these are the checks that it landed
+cleanly. The `Deploy API` run's `migrate-staging` job log shows what was pending
+before the apply (it always dry-runs first) and what it applied.
 
-Post-apply staging checks:
-
+- [ ] `migrate-staging` for your merge commit is green
 - [ ] `GET /health` returns `status: ok`
 - [ ] One auth-protected API route succeeds
 - [ ] Stripe staging webhook endpoint (`/v1/webhooks/stripe`) accepts signed event
 - [ ] No migration-related errors in Render logs
 
+If `migrate-staging` failed, the API deploy for that commit was **also**
+blocked (`deploy-staging` requires it to succeed) — so a red migration is never
+paired with a deployed API that expects the new schema.
+
 ## Production promotion
 
-```bash
-npx supabase db push --project-ref <PRODUCTION_PROJECT_REF>
-```
+Pick a deploy window and notify stakeholders first. Then either merge the
+`main` → `production` promotion PR, or run the `Migrate production` workflow —
+start with **dry-run-only** to read the pending list before applying it.
 
 Post-apply production checks:
 
@@ -60,7 +148,9 @@ Post-apply production checks:
 
 ## Promotion guardrails
 
-- Do not apply production migrations before staging validation.
+- Do not apply production migrations before staging validation. Staging applies
+  itself on merge to `main`, so in practice this means: let the merge land, let
+  `migrate-staging` go green, then promote.
 - Do not merge migration PRs without rollback instructions.
 - If any post-apply check fails, stop and execute `DB_ROLLBACK_PLAYBOOK.md`.
 - **Promoting migrations does not carry reference data.** `chapter_directory` is
@@ -77,6 +167,133 @@ Post-apply production checks:
   `chapters.directory_id` references `chapter_directory(id) on delete set null`, so a
   delete-and-reload would silently detach every chapter already linked to a directory
   entry. Updates are scoped to `source = 'seed'`, so hand-curated rows survive.
+
+## Promotion log
+
+Every migration below records what it does, how it was promoted, and anything a
+promoter must do by hand. `check:migration-safety` requires migration PRs to
+touch this file, which is what keeps the log complete.
+
+## 2026-08-24: Discord bot connection — two migrations
+
+The second way in: a single Signet-owned bot a chapter installs through
+Discord's ordinary "Add to Server" OAuth flow, after which the API reads the
+history itself. Promotes after `20260824120000` below, which owns the job tables
+these extend.
+
+**Promote them together, in filename order, in one window.** They are not
+independent: `20260824140000` ships the connect flow, and `20260824150000` ships
+the check that decides *which chapter* a connected guild may be read into. An
+environment left on the first alone is not a partially-migrated environment, it
+is a vulnerable one — see the emphasised bullet under the second entry before
+you plan the window.
+
+Neither migration carries the Discord app itself. See the **⚠️ Human action**
+bullet below; a promotion that skips it leaves the feature dark in a way no
+catalog query detects.
+
+### 20260824140000_discord_bot_connection.sql
+
+* **Purpose**: give a chapter somewhere to record which Discord server it
+  connected, and give the callback that writes it a safe handshake. Two new
+  tables — `discord_connections` (the chapter ↔ guild mapping) and
+  `discord_oauth_states` (the OAuth `state`, which is a row rather than a signed
+  blob so it can be single-use). Plus `discord_imports.source`, which is what
+  lets one job table serve both the phase-2 upload path and this one, and three
+  columns on `discord_import_channels` for the backwards per-channel message
+  walk.
+* **The only per-chapter value here is a guild id.** The bot token is one global
+  secret per environment; nothing in this schema stores it and no chapter ever
+  sees it. A guild id is a public snowflake and is worthless without the install
+  behind it — which is why `guild_id` is deliberately **not** globally unique.
+  Two chapters legitimately connecting one server (an umbrella org, a chapter
+  re-created in Signet) is a real case, and uniqueness would prevent nothing an
+  attacker can do: the tenant control is that the guild is read *through*
+  `chapter_id` and never supplied by a caller. Do not add a unique constraint
+  under the impression it is a tenant control.
+* **Shape**: two new tables with RLS enabled and **no policies**; one column
+  with a constant default on `discord_imports`; one CHECK added **validated**;
+  three columns on `discord_import_channels`; two new indexes.
+* **Locks**: both `add column … default` statements are catalog-only — a
+  non-volatile default has not rewritten the heap since PG11, so neither
+  `source` nor `position` scans anything. The CHECK is the one statement that
+  does: it is added validated rather than `NOT VALID` + `validate`, so it holds
+  ACCESS EXCLUSIVE on `discord_imports` for a full scan. That table holds one
+  row per import job and is small in every environment today, which is why it
+  was written the short way — confirm with `select count(*) from
+  discord_imports;` before promoting rather than assuming it stayed small. Both
+  index builds hold SHARE on their table for the duration; `discord_oauth_states`
+  is new and empty, and `discord_import_channels` is only written while an import
+  runs, so promote when no import is in flight.
+* **Checks** (after promotion):
+  - `select relrowsecurity from pg_class where relname='discord_connections';` → **`t`**
+  - `select relrowsecurity from pg_class where relname='discord_oauth_states';` → **`t`**
+  - `select count(*) from pg_policy p join pg_class c on c.oid=p.polrelid where c.relname in ('discord_connections','discord_oauth_states');` → **0**. Default-deny is the whole posture: the API reads these on the service-role key, so a policy would open a direct-PostgREST surface nothing needs. `discord_oauth_states` in particular must never be client-readable — its primary key **is** the CSRF token, so a SELECT on it is the entire attack.
+  - `select conname from pg_constraint where conname='discord_connections_chapter_unique';` → one row. One connection per chapter, because an import names no guild — it reads the chapter's connection.
+  - `select indexdef from pg_indexes where indexname='idx_discord_oauth_states_expiry';` → predicate is **`WHERE (consumed_at IS NULL)`**. This serves the hourly reaper only; the consume path is the primary key.
+  - `select column_default from information_schema.columns where table_name='discord_imports' and column_name='source';` → **`'upload'::text`**. Every pre-existing import must still read as an upload with no backfill.
+  - `select pg_get_constraintdef(oid) from pg_constraint where conname='discord_imports_source_check';` → `CHECK ((source = ANY (ARRAY['upload'::text, 'bot'::text])))`
+  - `select indexdef from pg_indexes where indexname='idx_discord_import_channels_order';` → on `(import_id, position, discord_channel_id)`
+  - Sanity: `GET /v1/discord/availability` answers `200` with `{"available":true}` once the secrets are set, and the Discord card appears as a second option in the import wizard's source step — the DiscordChatExporter upload path must still be offered alongside it, not replaced.
+* **Rollback**: see **Rollback the Discord bot connection** in
+  [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md). **Read it before
+  promoting** — dropping `discord_connections` discards every chapter's guild
+  mapping, and there is no way to rebuild one without each chapter's admin
+  re-running the OAuth flow by hand.
+
+### 20260824150000_discord_connect_confirm.sql
+
+* **Purpose**: close a confused-deputy hole in the migration above. That one
+  bound a guild to whichever chapter minted the `state`, and minting a state is
+  an ordinary permitted action for any `channels:manage` holder in **any**
+  tenant. Both facts the callback checked were real — the guild came off the
+  token exchange, Manage Server was read under the authorizing human's own token
+  — but together they prove only that *a human with Manage Server installed the
+  bot into guild G*, never that they intended *chapter X* to read it. Discord's
+  consent screen names Signet; it does not name the chapter. These columns park
+  the guild as pending and mint a second one-time token, delivered only to the
+  browser that completed the OAuth, which activation requires alongside a session
+  whose active chapter matches.
+* **⚠️ Promoting `20260824140000` without this one is the vulnerability.** They
+  were authored as one change and split only by filename. Phase-3 API code
+  running against a `discord_oauth_states` that lacks `confirm_token` cannot
+  perform the chapter check at all, and every Discord-side check still passes
+  honestly, so nothing looks wrong from either end. If a window forces you to
+  stop between them, roll `140000` back rather than leaving it live — the
+  feature dark is fine, the feature half-migrated is not.
+* **Shape**: nine nullable columns with no default (catalog-only, no rewrite)
+  and one partial unique index. No data change; nothing to backfill.
+* **Locks**: every `add column` is a catalog flag — ACCESS EXCLUSIVE held
+  momentarily, no scan. The unique index build holds SHARE on
+  `discord_oauth_states`, which holds only in-flight handshakes and is reaped
+  hourly, so the window is negligible in any environment.
+* **Checks** (after promotion):
+  - `select count(*) from information_schema.columns where table_name='discord_oauth_states' and column_name in ('pending_guild_id','pending_guild_name','pending_guild_icon','pending_discord_user_id','pending_discord_username','pending_permissions','pending_scopes','confirm_token','confirm_expires_at','confirmed_at');` → **10**. Anything less means the chapter check cannot run — stop and re-read the emphasised bullet above.
+  - `select data_type from information_schema.columns where table_name='discord_oauth_states' and column_name='confirm_token';` → `uuid`. It is minted by `gen_random_uuid()` server-side and must never be derived from anything a caller sent.
+  - `select indexdef from pg_indexes where indexname='idx_discord_oauth_states_confirm_token';` → `UNIQUE`, with predicate **`WHERE (confirm_token IS NOT NULL)`**. Unique rather than plain because two rows sharing a token would make "the pending connection this token names" ambiguous, and resolving that ambiguity would decide which chapter gets a guild.
+  - Sanity: complete a connect against a scratch Discord server, then confirm the callback lands on `…/discord-import?discord=…` and never returns a raw 500. A JSON error body here means the API is answering a top-level browser redirect with an exception — most often this migration pair not being applied at all, which is exactly how it presented on staging.
+* **Rollback**: see **Rollback the Discord connect confirmation** in
+  [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md). **Read it before
+  promoting** — rolling this back alone re-opens the confused-deputy hole
+  described above, so it is a rollback of the pair or neither.
+
+* **⚠️ Human action on the hosted projects.** Neither migration carries any of
+  this, and all of it is dashboard-only:
+  - The four Discord secrets must exist in Infisical for the environment. Names
+    and per-environment values are owned by
+    [`ENV_REFERENCE.md`](../environment/ENV_REFERENCE.md) — do not restate them
+    here. `GET /v1/discord/availability` answering `false` after a clean
+    promotion means a missing secret, not a missing table.
+  - The OAuth redirect URI must be registered in the Discord Developer Portal
+    for the environment, and it is the **API** origin, not the app origin —
+    `https://api-staging.frapp.live/v1/discord/connect/callback`, not
+    `https://app.staging.frapp.live/…`. This is the one that has actually been
+    got wrong: the app origin looks right, matches `APP_URL`, and fails only at
+    the end of a real OAuth round trip with Discord's own `invalid_redirect_uri`
+    screen, after the admin has already picked a server.
+  - The Message Content Intent must be ON for the app. Without it Discord answers
+    `200` with `content: ""` on every message, so an import would silently write
+    an archive of empty messages rather than fail.
 
 ## 2026-08-24: Discord archive importer — one migration
 

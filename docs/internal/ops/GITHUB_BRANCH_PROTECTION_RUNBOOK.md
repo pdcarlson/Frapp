@@ -112,6 +112,16 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 | `doc-paths`      | Backticked repo-path citations resolve to real files (`check-doc-paths.mjs`, whole-tree) |
 | `doc-tables`     | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml` (`check-doc-tables.mjs`) — **not required yet**, see [`DOCS_CI.md`](../ci-cd/DOCS_CI.md) |
 
+**Migration drift check (from `.github/workflows/migration-drift-gate.yml`):**
+
+| Check name         | What it validates                                                     |
+| ------------------ | --------------------------------------------------------------------- |
+| `migration-drift`  | Staging holds every migration on `main` (`check-migration-drift-gate.mjs`). The only required check about a **deployed database** rather than about the code — everything else stays green while staging sits migrations behind |
+
+This is the gate that would have caught the incident where two migrations merged to `main` and were never applied to staging. It compares `origin/main` against staging's applied migration history, **not** the PR head — a PR that adds a migration is not failed by its own unmerged file. A migration is tolerated for 30 minutes from the moment it landed on `main`, which is the window `migrate-staging` needs to apply it.
+
+Like `doc-paths`, it can block a PR over state that PR did not cause; that trade is deliberate. It also reaches the Supabase Management API, so a sustained Supabase outage blocks merges — transient blips are absorbed by bounded retries, and a real outage is meant to be loud rather than silently green. If a merge genuinely cannot wait, drop the context deliberately for the duration.
+
 ### Vercel policy (not a required check)
 
 Vercel deployments are intentionally limited to `main` and `production` branches via `git.deploymentEnabled` in each app `vercel.json`. This keeps PR traffic from consuming Vercel build quota while CI remains the merge gate.

@@ -120,6 +120,15 @@ each:
      is what lets its owner routine close it).
    - Ambiguous, under-specified, or a significant human-filed decision → **leave in triage** + a
      short comment on what's needed. Don't force-promote work a human should accept.
+   - **Comment once, not once per run.** Before leaving a hold comment, read the issue's existing
+     comments (`issue_read get_comments`). If a prior run's hold comment already states the same
+     reason and it is still accurate, **say nothing and re-hold silently** — the report is where
+     the hold gets surfaced. Only comment again when the reason has actually changed, or when the
+     hold can be narrowed into a specific question the owner can answer in one reply. Left
+     unguarded this compounds badly: #679 accumulated **three** near-identical "held — Linear is
+     retired, please close" comments (2026-08-09, -08-13, -08-18) and #821 **three** of "held —
+     gated on #826". On #679 they bury the one comment that carries real content — a five-slice
+     decomposition of #718 that nothing else records.
 
 ## Pass B — Backlog grooming (priority first; epics only when they fit)
 
