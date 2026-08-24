@@ -21,6 +21,7 @@ import {
   type IDiscordConnectionRepository,
 } from '../../domain/repositories/discord-connection.repository.interface';
 import type { DiscordOAuthState } from '../../domain/entities/discord-connection.entity';
+import { toReportableError } from '../../infrastructure/observability/reportable-error';
 
 /**
  * The callback path, fixed in code.
@@ -69,29 +70,27 @@ const ADMINISTRATOR = 1n << 3n;
 /**
  * What to hand `Logger.error` as its second argument.
  *
- * The obvious `error instanceof Error ? error.stack : undefined` is wrong
- * everywhere a repository can throw, and wrong in the worst way: it is silently
- * `undefined` for **every** error PostgREST actually produces. `postgrest-js`
- * only builds a real `PostgrestError` under `shouldThrowOnError`, which nothing
- * here sets, so the client hands back the parsed body — a plain
- * `{ code, message, details, hint }` object — and the repositories rethrow it
- * verbatim. Nest's `ConsoleLogger` then drops a falsy stack on the floor, so
- * the line that exists to record the cause records only that there was one.
+ * The reasoning that put a helper here was right and is preserved in
+ * `toReportableError`: `error instanceof Error ? error.stack : undefined` is
+ * silently `undefined` for **every** error PostgREST actually produces, because
+ * postgrest-js only builds a real `PostgrestError` under `shouldThrowOnError`
+ * — which nothing here sets — so the client hands back the parsed body and the
+ * repositories rethrow that plain object verbatim. `String(error)` is no better:
+ * on a plain object it prints `[object Object]`.
  *
- * `String(error)` is not the fix either, though it is this codebase's usual
- * fallback: on a plain object it prints `[object Object]`. Serialising is what
- * keeps `hint` — the field that says *"Perhaps you meant the table
- * public.discord_oauth_states"*, i.e. the answer.
+ * It delegates now because the same defect blinds every 5xx the API raises, not
+ * just this route, so the fix belongs at the reporting seam rather than in one
+ * service. `hint` — the field that says *"Perhaps you meant the table
+ * public.discord_oauth_states"*, i.e. the answer — still survives.
+ *
+ * The one behavior that changed in moving: `details` is no longer included.
+ * That is the field Postgres fills with the offending ROW VALUES, and it was
+ * reaching Sentry through `captureSwallowed` below. See `reportable-error.ts`
+ * for why the free-text scrubber is not a sufficient answer for it.
  */
 function describeError(error: unknown): string {
-  if (error instanceof Error) return error.stack ?? error.message;
-  try {
-    return JSON.stringify(error) ?? String(error);
-  } catch {
-    // Circular, or a BigInt somewhere in the payload. Something is better here
-    // than an exception thrown from the error path.
-    return String(error);
-  }
+  const reportable = toReportableError(error);
+  return reportable.stack ?? reportable.message;
 }
 
 /**
@@ -106,21 +105,19 @@ function describeError(error: unknown): string {
  *
  * So a swallowed failure has to report itself. `new Error(String(error))` would
  * not do — on the plain object PostgREST throws, `String` yields
- * `[object Object]` — hence `describeError` for the message too.
+ * `[object Object]` — hence the shared normalizer here too, which is the same
+ * one `AllExceptionsFilter` reports every other 5xx through.
  */
 function captureSwallowed(
   error: unknown,
   sweptUnder: DiscordConnectCode,
 ): void {
-  Sentry.captureException(
-    error instanceof Error ? error : new Error(describeError(error)),
-    {
-      tags: {
-        route: 'discord/connect/callback',
-        swallowed_as: sweptUnder,
-      },
+  Sentry.captureException(toReportableError(error), {
+    tags: {
+      route: 'discord/connect/callback',
+      swallowed_as: sweptUnder,
     },
-  );
+  });
 }
 
 export interface DiscordConnectionView {
