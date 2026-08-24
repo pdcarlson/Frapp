@@ -28,6 +28,18 @@ export interface SignedUploadOptions {
   upsert?: boolean;
 }
 
+/** Options for a streaming {@link IStorageProvider.uploadFile}. */
+export interface StreamUploadOptions {
+  /**
+   * Byte length of the body, when the source declared one.
+   *
+   * Without it a stream body is sent with chunked transfer encoding, which
+   * works but denies the storage backend the chance to reject an oversized
+   * object before it has read the whole thing.
+   */
+  contentLength?: number | null;
+}
+
 export interface IStorageProvider {
   getSignedUploadUrl(
     bucket: string,
@@ -47,14 +59,24 @@ export interface IStorageProvider {
     downloadAs?: string,
   ): Promise<string>;
   /**
-   * Upload bytes the API produced itself (as opposed to handing a client a
-   * signed upload URL) — used by server-side report rendering.
+   * Upload content the API produced or fetched itself (as opposed to handing a
+   * client a signed upload URL) — server-side report rendering, and the Discord
+   * bot importer streaming an attachment out of Discord's CDN.
+   *
+   * A `ReadableStream` body is piped through, never buffered. That is not an
+   * optimisation: the importer runs inside the API process alongside live
+   * request traffic, and the archive bucket accepts objects up to 100 MB — one
+   * buffered video is 100 MB the request path no longer has. Pass
+   * {@link StreamUploadOptions.contentLength} whenever the source declared one,
+   * so the upload sends a real `Content-Length` instead of falling back to
+   * chunked transfer encoding.
    */
   uploadFile(
     bucket: string,
     path: string,
-    body: Uint8Array,
+    body: Uint8Array | ReadableStream<Uint8Array>,
     contentType: string,
+    options?: StreamUploadOptions,
   ): Promise<void>;
   /**
    * Read an object back into memory. Returns null when the object is missing,

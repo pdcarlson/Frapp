@@ -6,6 +6,10 @@ import {
   type IDiscordImportRepository,
 } from '../../domain/repositories/discord-import.repository.interface';
 import {
+  DISCORD_CONNECTION_REPOSITORY,
+  type IDiscordConnectionRepository,
+} from '../../domain/repositories/discord-connection.repository.interface';
+import {
   STORAGE_PROVIDER,
   type IStorageProvider,
 } from '../../domain/adapters/storage.interface';
@@ -31,6 +35,7 @@ import type {
   DiscordImportFile,
   DiscordImportStatus,
 } from '../../domain/entities/discord-import.entity';
+import { DiscordExportWorkerService } from './discord-export-worker.service';
 
 /**
  * How long one tick may work before checkpointing and handing the job back.
@@ -107,7 +112,36 @@ export class DiscordImportWorkerService {
     private readonly storage: IStorageProvider,
     @Inject(CHAT_CHANNEL_REPOSITORY)
     private readonly channelRepo: IChatChannelRepository,
+    private readonly exportWorker: DiscordExportWorkerService,
+    @Inject(DISCORD_CONNECTION_REPOSITORY)
+    private readonly connectionRepo: IDiscordConnectionRepository,
   ) {}
+
+  /**
+   * Reap spent and expired OAuth handshakes.
+   *
+   * `discord_oauth_states` gains a row per "Connect Discord" click and every one
+   * of them is dead within 15 minutes, so without this the table only grows —
+   * and any officer can grow it at will, since minting is an ordinary
+   * permitted action with no cap. Hourly rather than per-minute because nothing
+   * depends on the rows being gone promptly: an expired state is already inert,
+   * `consumeState` refuses it on `expires_at` regardless of whether it is still
+   * on disk. This is housekeeping, not a control.
+   */
+  @Cron(CronExpression.EVERY_HOUR)
+  async handleOAuthStateSweep(): Promise<void> {
+    try {
+      const reaped = await this.connectionRepo.deleteExpiredStates(new Date());
+      if (reaped > 0) {
+        this.logger.log(`Reaped ${reaped} expired Discord OAuth handshakes.`);
+      }
+    } catch (error) {
+      // Same reasoning as the import sweep's catch: an unhandled rejection out
+      // of a `@Cron` takes the API process down under Node's default
+      // `--unhandled-rejections=throw`. A failed reap must cost one tick.
+      this.logger.error('Discord OAuth state sweep failed', error);
+    }
+  }
 
   /**
    * The tick.
@@ -146,6 +180,12 @@ export class DiscordImportWorkerService {
         if (job.status === 'purging') {
           return await this.runPurgeSlice(job, lockToken, now);
         }
+        // The purge is source-agnostic — it deletes rows and sweeps a storage
+        // prefix, both of which look identical whichever way the bytes arrived.
+        // Only the FETCH differs, so only the fetch branches.
+        if (job.source === 'bot') {
+          return await this.runBotExportSlice(job, lockToken, now);
+        }
         return await this.runImportSlice(job, lockToken, now);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -169,6 +209,129 @@ export class DiscordImportWorkerService {
     } finally {
       this.running = false;
     }
+  }
+
+  // ── bot export ────────────────────────────────────────────────────────────
+
+  /**
+   * Run one slice of a bot-sourced import.
+   *
+   * Everything Discord-specific lives in `DiscordExportWorkerService`; this
+   * method is the bridge that hands it the three things it must NOT reimplement
+   * — the status-guarded checkpoint, the chapter-scoped channel resolution, and
+   * the batch writer. All three are the phase-2 originals, unchanged.
+   *
+   * That is the whole point of the shape. `importBatch` is where dedupe-before-
+   * insert, the two-pass reply repair and the attachment-count bookkeeping
+   * live, and a second copy of any of them would be a second place for the
+   * same subtle bug. The bot path differs in where messages come from and
+   * nowhere else.
+   */
+  private async runBotExportSlice(
+    job: DiscordImport,
+    lockToken: string,
+    now: Date,
+  ): Promise<ImportSweepResult> {
+    const chapterId = job.chapter_id;
+    const deadline = now.getTime() + SLICE_BUDGET_MS;
+
+    if (job.status !== 'running') {
+      const started = await this.importRepo.updateIfStatus(
+        job.id,
+        chapterId,
+        WORKER_MAY_CONTINUE,
+        { status: 'running' },
+      );
+      if (!started) {
+        return { claimed: true, importId: job.id, messagesImported: 0 };
+      }
+    }
+
+    const result = await this.exportWorker.runSlice({
+      job,
+      deadline,
+      /**
+       * One checkpoint, two questions, both of which must be answered before
+       * the next page is fetched: may this job still be advanced (the admin has
+       * not cancelled), and do we still hold the lease (no other replica took
+       * it over). False to either means stop — not "finish the slice".
+       */
+      checkpoint: async (patch) => {
+        const stillRunning = await this.importRepo.updateIfStatus(
+          job.id,
+          chapterId,
+          WORKER_MAY_CONTINUE,
+          {
+            total_messages: patch.totalMessages,
+            imported_messages: patch.imported,
+            messages_skipped: patch.skipped,
+            attachments_imported: patch.attachmentsImported,
+            attachments_skipped: patch.attachmentsSkipped,
+            warnings: patch.warnings.slice(-MAX_WARNINGS),
+          },
+        );
+        if (!stillRunning) {
+          this.logger.log(
+            `Discord import ${job.id} left the running state mid-slice; stopping.`,
+          );
+          return false;
+        }
+        const held = await this.importRepo.renewLease(
+          job.id,
+          lockToken,
+          new Date(),
+          LEASE_MS,
+        );
+        if (!held) {
+          this.logger.warn(
+            `Lost the lease on Discord import ${job.id} mid-slice; yielding.`,
+          );
+        }
+        return held;
+      },
+      resolveTargetChannel: (mapping) =>
+        this.resolveTargetChannel(mapping, chapterId, job.id),
+      importBatch: (batch) =>
+        this.importBatch({
+          batch: batch.messages,
+          targetChannelId: batch.targetChannelId,
+          importId: job.id,
+          mediaByRelativePath: batch.mediaByRelativePath,
+        }),
+    });
+
+    // The closing write is status-guarded like every other one: a slice that
+    // ran alongside a cancel must not resurrect the job by writing `running`
+    // over `cancelled` on its way out.
+    //
+    // It also persists the slice's OWN totals rather than relying on the last
+    // `checkpoint`. A slice can finish having never entered a page loop — every
+    // mapped channel deleted in Discord, say, which raises a warning per
+    // channel and then completes — and `checkpoint` is the only writer inside
+    // that loop. Without this the admin gets a green "Completed · 0 messages"
+    // with an empty warning list and no statement of what went wrong.
+    await this.importRepo.updateIfStatus(
+      job.id,
+      chapterId,
+      WORKER_MAY_CONTINUE,
+      {
+        status: result.finished ? 'completed' : 'running',
+        total_messages: result.totals.totalMessages,
+        imported_messages: result.totals.imported,
+        messages_skipped: result.totals.skipped,
+        attachments_imported: result.totals.attachmentsImported,
+        attachments_skipped: result.totals.attachmentsSkipped,
+        warnings: result.totals.warnings.slice(-MAX_WARNINGS),
+        completed_at: result.finished ? new Date().toISOString() : null,
+      },
+    );
+
+    return {
+      claimed: true,
+      importId: job.id,
+      messagesImported: result.messagesImported,
+      finished: result.finished,
+    };
   }
 
   // ── import ────────────────────────────────────────────────────────────────
