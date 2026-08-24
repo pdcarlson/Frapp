@@ -131,3 +131,108 @@ export function directChannelDisplayName(
   const remaining = otherIds.length - GROUP_DM_NAMES_SHOWN;
   return remaining > 0 ? `${shown} +${remaining}` : shown;
 }
+
+/**
+ * The identity fields a chat message carries about whoever wrote it.
+ *
+ * Structural rather than an import of `@repo/chat-core`'s `ChatMessage`: this
+ * module is deliberately dependency-free (see the header), and every caller —
+ * the web timeline, the pins popover, the mobile bubble — passes a different
+ * concrete row shape.
+ */
+export interface MessageAuthor {
+  /** `users.id`, or `null` when the author is not a Signet user. */
+  sender_id: string | null;
+  /** Denormalised display name for a message with no `sender_id`. */
+  author_name?: string | null;
+  /** The author's id in the source system, for imported rows. */
+  author_external_id?: string | null;
+}
+
+/** Resolves a `users.id` to a display name, or `null`. Matches `nameFor`. */
+export type NameResolver = (userId: string) => string | null;
+
+/** Rendered when a message names nobody at all. */
+const UNKNOWN_AUTHOR = "Unknown member";
+
+/**
+ * The best available human name for a message's author, or `null`.
+ *
+ * `sender_id` is consulted first and `author_name` is the fallback, not the
+ * other way round: a roster hit is the *current* name, while `author_name` is a
+ * snapshot of whatever the source system recorded at export time. Preferring the
+ * snapshot would show a member's 2019 Discord handle on a message they wrote
+ * under their real account. Falling back to it when the roster misses is still
+ * strictly better than a truncated uuid, which is what a deleted member's
+ * historical messages would otherwise render as.
+ */
+export function resolveAuthorName(
+  author: MessageAuthor,
+  nameFor: NameResolver,
+): string | null {
+  if (author.sender_id) {
+    const resolved = nameFor(author.sender_id);
+    if (resolved) return resolved;
+  }
+  const authored = author.author_name?.trim();
+  return authored ? authored : null;
+}
+
+/**
+ * Two characters to draw in an avatar when no name resolved at all.
+ *
+ * Callers pass a resolved name through their own `initials()` when there is one
+ * — web's and mobile's differ deliberately (see `apps/mobile/lib/chat/
+ * display-name.ts`) — and reach for this only in the nameless case. Guarding on
+ * `sender_id` is the whole point: it used to be `sender_id.slice(0, 2)`
+ * unconditionally, which throws on an imported message.
+ */
+export function authorInitialsFallback(author: MessageAuthor): string {
+  if (author.sender_id) return author.sender_id.slice(0, 2).toUpperCase();
+  return "?";
+}
+
+/**
+ * The author label on a message's meta line.
+ *
+ * One definition for both platforms and all three surfaces (timeline, thread
+ * panel, pins), because the fallback chain is where the null-sender bugs lived:
+ * every one of them was a `sender_id.slice(...)` written on the assumption that
+ * a message always has a Signet user behind it.
+ *
+ * Order: the viewer is "You", then a resolved name, then a truncated id for an
+ * unresolvable member, then `UNKNOWN_AUTHOR`. The last branch is unreachable
+ * against a healthy database — `chat_messages_author_present` guarantees a null
+ * `sender_id` comes with an `author_name` — but a label has to render something,
+ * and a blank one reads as a broken layout rather than as missing data.
+ */
+export function resolveAuthorLabel(
+  author: MessageAuthor,
+  nameFor: NameResolver,
+  viewerId: string | null,
+): string {
+  if (viewerId && author.sender_id === viewerId) return "You";
+  const name = resolveAuthorName(author, nameFor);
+  if (name) return name;
+  if (author.sender_id) return `Member ${author.sender_id.slice(0, 6)}`;
+  return UNKNOWN_AUTHOR;
+}
+
+/**
+ * A stable identity key for "did the same person write both of these?".
+ *
+ * Consecutive messages from one author render as a single group with one header.
+ * Comparing `sender_id` directly used to be enough; with nullable senders it
+ * silently breaks, because `null === null` is true in JavaScript — so an
+ * imported channel where twenty different Discord members spoke in turn would
+ * collapse into one block under one name.
+ *
+ * The namespace prefixes matter: without them a Signet uuid and a Discord
+ * snowflake could in principle collide, and the two are not the same person.
+ */
+export function authorGroupingKey(author: MessageAuthor): string {
+  if (author.sender_id) return `user:${author.sender_id}`;
+  if (author.author_external_id) return `external:${author.author_external_id}`;
+  const name = author.author_name?.trim();
+  return name ? `name:${name}` : "unknown";
+}

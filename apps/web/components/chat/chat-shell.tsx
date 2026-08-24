@@ -399,7 +399,9 @@ export function ChatShell() {
             isReadOnly={!!activeChannel.is_read_only}
             draft={channel.draft}
             onChangeDraft={channel.setDraft}
-            onSend={(body) => channel.send(body)}
+            onSend={(body, attachments) =>
+              channel.send(body, { attachments })
+            }
             onSlashDispatch={(command: SlashCommand, args: string) =>
               channel.dispatchSlash(
                 command,

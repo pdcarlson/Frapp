@@ -29,6 +29,7 @@ import {
 } from "./chat-glyphs";
 import { cn } from "@/lib/utils";
 import { useRequestChatUploadUrl, useUploadSignedUrl } from "@repo/hooks";
+import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import { useToast } from "@/hooks/use-toast";
 import {
   MAX_UPLOAD_LABEL,
@@ -54,7 +55,10 @@ interface ComposerProps {
   isReadOnly: boolean;
   draft: string;
   onChangeDraft: (body: string) => void;
-  onSend: (body: string) => void | Promise<void>;
+  onSend: (
+    body: string,
+    attachments: OutboxAttachment[],
+  ) => void | Promise<void>;
   /**
    * Invoked when the user picks a slash command from the palette. Returns a
    * dispatch result so the composer can toast on failure. The args string is
@@ -158,6 +162,18 @@ export function Composer({
   const requestUploadUrl = useRequestChatUploadUrl();
   const uploadSignedUrl = useUploadSignedUrl();
   const fileInput = useRef<HTMLInputElement | null>(null);
+  /**
+   * Files uploaded and waiting to be claimed by the next send.
+   *
+   * Held here rather than in the editor document because an attachment is not
+   * text. The bytes are already in the bucket by the time a chip appears — the
+   * upload happens on pick — so removing a chip drops the claim, not the object;
+   * an unclaimed object is swept by the storage retention pass, and that is a
+   * far better failure than the old one, where the only record of the file was a
+   * string the sender could edit away.
+   */
+  const [pending, setPending] = useState<OutboxAttachment[]>([]);
+
   const [palette, setPalette] = useState<{ open: boolean; query: string }>({
     open: false,
     query: "",
@@ -225,10 +241,34 @@ export function Composer({
     });
   }, [draft, editor]);
 
+  // Staged attachments are per-channel, and nothing else resets them.
+  //
+  // The editor body is channel-scoped already — the `draft` effect above
+  // re-syncs it whenever the channel changes — but this state is not, and the
+  // paths in it are validated server-side against
+  // `chapters/{chapterId}/chat/{channelId}/`. Without this, attaching a file in
+  // #general and then switching to #announcements leaves the chip visible and
+  // the next send is rejected with "Attachment does not belong to this
+  // channel", losing the typed message and orphaning the object. Newly
+  // reachable: this state used to live in the editor document, which is scoped.
+  //
+  // Adjusted during render rather than in an effect — React's documented pattern
+  // for resetting state when a prop changes. An effect would re-render the
+  // subtree once with the stale chips still on screen, which is the cascading
+  // render the lint rule is there to catch.
+  const [pendingChannelId, setPendingChannelId] = useState(channelId);
+  if (pendingChannelId !== channelId) {
+    setPendingChannelId(channelId);
+    setPending([]);
+  }
+
   const submit = useCallback(() => {
     if (!editor) return;
     const text = editor.getText().trim();
-    if (text.length === 0) return;
+    // An attachment-only message is a real message. Returning early on empty
+    // text would have been correct while the filename WAS the text; now that a
+    // file travels beside the body it would silently swallow the send.
+    if (text.length === 0 && pending.length === 0) return;
     // If the message begins with an implemented slash command and a dispatch
     // is wired, route through dispatch instead of sending as plain text — so
     // Enter on `/poll "Q?" A B` posts a poll card, not a text bubble.
@@ -252,6 +292,18 @@ export function Composer({
           });
           return;
         }
+        // A slash command posts a card, which has nowhere to hang a file. Refuse
+        // rather than dispatch and drop the staged attachments on the floor —
+        // the same reason the offline branch above refuses instead of clearing.
+        if (pending.length > 0) {
+          toast({
+            title: `/${command.name} can't carry attachments`,
+            description:
+              "Remove the attached file, or send it as its own message first.",
+            variant: "destructive",
+          });
+          return;
+        }
         editor.commands.clearContent(true);
         void (async () => {
           const result = await onSlashDispatch(command, parsed.args);
@@ -266,10 +318,11 @@ export function Composer({
         return;
       }
     }
-    void onSend(text);
+    void onSend(text, pending);
     // Only clear when a send was actually issued.
     editor.commands.clearContent(true);
-  }, [editor, isOffline, onSend, onSlashDispatch, toast]);
+    setPending([]);
+  }, [editor, isOffline, onSend, onSlashDispatch, pending, toast]);
   useLayoutEffect(() => {
     sendRef.current = submit;
   }, [submit]);
@@ -286,7 +339,7 @@ export function Composer({
     async (event: ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
       event.target.value = "";
-      if (!file || !editor) return;
+      if (!file) return;
       const inspected = inspectUploadFile("document", file);
       if (!inspected.ok) {
         toast({
@@ -315,14 +368,22 @@ export function Composer({
           signedUrl: response.signedUrl,
           file,
         });
-        // Append the storage path as a simple text reference until Chunk 05
-        // wires rich inline-attachment renderers. The hot path stays text +
-        // metadata; the storage path is the durable handle.
-        editor
-          .chain()
-          .focus()
-          .insertContent(`\n📎 ${file.name} (${response.storagePath})`)
-          .run();
+        // A pending chip, not text spliced into the body. The old behaviour
+        // appended `📎 <name> (<storagePath>)` into the Tiptap document, which
+        // made the message body the ONLY record that the object existed: nothing
+        // linked it to the message, so it could not be rendered, listed, or
+        // cleaned up on delete, and a member could edit the sigil out and orphan
+        // the file. The path now travels beside the body and becomes a
+        // `chat_message_attachments` row server-side.
+        setPending((current) => [
+          ...current,
+          {
+            storagePath: response.storagePath,
+            filename: file.name,
+            contentType: inspected.contentType,
+            byteSize: file.size,
+          },
+        ]);
       } catch (err) {
         toast({
           title: "Couldn't upload file",
@@ -332,7 +393,7 @@ export function Composer({
         });
       }
     },
-    [channelId, editor, requestUploadUrl, toast, uploadSignedUrl],
+    [channelId, requestUploadUrl, toast, uploadSignedUrl],
   );
 
   // Cmd+/ globally inside the composer opens the palette.
@@ -406,6 +467,38 @@ export function Composer({
           FOCUS_RING_WITHIN,
         )}
       >
+        {pending.length > 0 ? (
+          <ul
+            className="mb-2 flex flex-wrap gap-1.5"
+            aria-label={`${pending.length} file${pending.length === 1 ? "" : "s"} attached`}
+          >
+            {pending.map((attachment) => (
+              <li
+                key={attachment.storagePath}
+                className="flex max-w-full items-center gap-1.5 rounded-md border border-border bg-surface-2 py-1 pl-2 pr-1 text-[12.5px]"
+              >
+                <AttachGlyph className="h-4 w-4 shrink-0" aria-hidden="true" />
+                <span className="truncate">{attachment.filename}</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-5 w-5 shrink-0"
+                  aria-label={`Remove ${attachment.filename}`}
+                  onClick={() =>
+                    setPending((current) =>
+                      current.filter(
+                        (row) => row.storagePath !== attachment.storagePath,
+                      ),
+                    )
+                  }
+                >
+                  <span aria-hidden="true">×</span>
+                </Button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
         <EditorContent editor={editor} />
         <div className="mt-2 flex items-center justify-between gap-2">
           <div className="flex items-center gap-1">
@@ -464,7 +557,9 @@ export function Composer({
           <Button
             type="button"
             onClick={submit}
-            disabled={!editor || editor.isEmpty}
+            /* An attached file is enough to send: an empty editor with a staged
+               attachment is a real message, and `submit` accepts it. */
+            disabled={!editor || (editor.isEmpty && pending.length === 0)}
           >
             <SendGlyph className="h-5 w-5" /> Send
           </Button>

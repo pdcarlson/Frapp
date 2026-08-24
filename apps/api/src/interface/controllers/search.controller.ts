@@ -40,13 +40,20 @@ export class SearchController {
     @Query('q') query: string,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { results, timedOut } = await this.searchService.searchWithinBudget(
-      chapterId,
-      userId,
-      query ?? '',
-    );
+    const { results, timedOut, timedOutSources } =
+      await this.searchService.searchWithinBudget(
+        chapterId,
+        userId,
+        query ?? '',
+      );
     if (timedOut) {
       res.setHeader('x-search-timeout', '1');
+      // Which sections are incomplete, so a client can say "still searching
+      // messages" instead of rendering an empty list as "no matches". The
+      // boolean header stays for callers that already read it; the budget is
+      // per-source now, so `1` means "at least one section is short", not
+      // "everything came back empty".
+      res.setHeader('x-search-timeout-sources', timedOutSources.join(','));
     }
     return results;
   }

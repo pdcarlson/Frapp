@@ -47,6 +47,7 @@ describe('SearchController', () => {
     searchService.searchWithinBudget.mockResolvedValue({
       results,
       timedOut: false,
+      timedOutSources: [],
     });
     const res = makeRes();
 
@@ -60,6 +61,7 @@ describe('SearchController', () => {
     searchService.searchWithinBudget.mockResolvedValue({
       results: emptyResult,
       timedOut: true,
+      timedOutSources: ['messages'],
     });
     const res = makeRes();
 
@@ -67,12 +69,19 @@ describe('SearchController', () => {
 
     expect(body).toBe(emptyResult);
     expect(res.setHeader).toHaveBeenCalledWith('x-search-timeout', '1');
+    // Which section is short, so a client can say "still searching messages"
+    // rather than rendering an empty list as "no matches".
+    expect(res.setHeader).toHaveBeenCalledWith(
+      'x-search-timeout-sources',
+      'messages',
+    );
   });
 
   it('coalesces a missing query to an empty string', async () => {
     searchService.searchWithinBudget.mockResolvedValue({
       results: emptyResult,
       timedOut: false,
+      timedOutSources: [],
     });
     const res = makeRes();
 

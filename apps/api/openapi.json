@@ -2247,6 +2247,43 @@
         ]
       }
     },
+    "/v1/channels/{id}/messages/{messageId}/attachments": {
+      "get": {
+        "operationId": "ChatController_listMessageAttachments_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Attachments on a message, with signed download URLs",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/channels/messages/{messageId}": {
       "patch": {
         "operationId": "ChatController_editMessage_v1",
@@ -6500,6 +6537,32 @@
           }
         }
       },
+      "MessageAttachmentDto": {
+        "type": "object",
+        "properties": {
+          "storage_path": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "filename": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "content_type": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "byte_size": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "storage_path",
+          "filename",
+          "content_type"
+        ]
+      },
       "SendMessageDto": {
         "type": "object",
         "properties": {
@@ -6509,8 +6572,14 @@
           },
           "content": {
             "type": "string",
-            "minLength": 1,
+            "minLength": 0,
             "maxLength": 10000
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MessageAttachmentDto"
+            }
           },
           "kind": {
             "type": "string",
@@ -6523,6 +6592,7 @@
               "points",
               "hours",
               "system_audit",
+              "imported",
               "loading",
               "announcement"
             ]

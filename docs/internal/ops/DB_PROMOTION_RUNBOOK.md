@@ -78,6 +78,192 @@ Post-apply production checks:
   delete-and-reload would silently detach every chapter already linked to a directory
   entry. Updates are scoped to `source = 'seed'`, so hand-curated rows survive.
 
+## 2026-08-24: Discord archive foundation — five migrations
+
+The schema and insert-path work that has to exist before a DiscordChatExporter
+import can be written. The importer itself is **not** in this change. Three of
+the five are also live-chat fixes that stand on their own.
+
+Promote them **in filename order**; they are ordered by dependency (the
+attachments backfill reads rows the authors migration does not touch, but the
+kind-semantics migration replaces a policy the authors migration leaves alone).
+
+### 20260823120000_chat_message_authors.sql
+
+* **Purpose**: let a message name an author who is not a Signet user. `sender_id`
+  becomes nullable and `author_name` / `author_avatar_path` /
+  `author_external_id` are added, so an imported Discord message can carry
+  attribution without minting a `users` row per Discord handle — a row there is
+  reachable from the chapter roster, the members directory, server-side mention
+  resolution and `anonymize_user`, so synthetic users would publish non-members
+  into all four to satisfy a foreign key.
+* **Shape**: additive plus one `NOT NULL` drop. Three nullable columns with no
+  default (catalog-only, no rewrite), one CHECK, one index replaced, one index
+  added.
+* **Locks**: `alter column drop not null` is a catalog flag — ACCESS EXCLUSIVE
+  held momentarily, no heap rewrite. The CHECK is added `NOT VALID` and validated
+  in a second statement, so the scan runs under SHARE UPDATE EXCLUSIVE and does
+  **not** block chat sends; adding it validated would have held ACCESS EXCLUSIVE
+  for a full table scan. `idx_chat_messages_dedupe` is dropped and recreated —
+  that is a real (brief) window with no dedupe index, so run it when send volume
+  is low; the index build holds SHARE.
+* **The `NULLS NOT DISTINCT` clause is load-bearing.** Postgres treats NULLs in a
+  unique index as distinct by default, so the moment `sender_id` can be NULL the
+  old index stops enforcing anything for exactly the rows that need it: a
+  re-run importer would insert the whole archive a second time, silently. The
+  importer writes the Discord *message* snowflake into `client_message_id`;
+  `author_external_id` is the *author's* id and is deliberately not part of the
+  key, since two messages from one author in one channel share it.
+* **Checks** (after promotion):
+  - `select is_nullable from information_schema.columns where table_name='chat_messages' and column_name='sender_id';` → `YES`
+  - `select convalidated from pg_constraint where conname='chat_messages_author_present';` → `t`
+  - `select indexdef from pg_indexes where indexname='idx_chat_messages_dedupe';` → contains `NULLS NOT DISTINCT`
+  - Sanity: an existing message still shows its sender in the web client (the
+    label now resolves through `resolveAuthorLabel` in `@repo/hooks`).
+* **Rollback**: see **Rollback the chat author fields** in
+  [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md). **Coordinated** — re-adding
+  `NOT NULL` fails while any imported row exists.
+
+### 20260823121000_chat_message_attachments.sql
+
+* **Purpose**: attachments become rows. The composer appended
+  `📎 <name> (<storagePath>)` into `chat_messages.content`, so the message body was
+  the only record the object existed — nothing linked it to the message, it could
+  not be rendered or listed, deleting the message could not clean it up, and a
+  member could edit the sigil out and orphan the file. This is a live-chat bug;
+  the Discord import needs the same model.
+* **Shape**: one new table (RLS enabled, **no policies** — default deny, matching
+  `chat_channels`), two indexes, one unique constraint, and a **data backfill**
+  that parses the legacy sigils out of existing message bodies into rows and then
+  strips them from `content`.
+* **`channel_id` is denormalised on purpose.** `chat_messages` has no
+  `chapter_id`; chapter scope is reached through `chat_channels`. Carrying
+  `message_id` alone would make this table's tenant scope a two-hop resolution
+  the repository tenant-scope harness cannot express and every read would have to
+  spell as a nested PostgREST embed. It is always derived from the message
+  server-side, never from client input.
+* **Locks**: `create table` is trivial. The backfill `UPDATE` touches only rows
+  matching the sigil pattern (`where m.content ~ …`), so on a chapter that never
+  attached a file it updates nothing.
+* **The backfill rewrites message bodies.** It is reversible by construction —
+  the filename and the storage path both survive in the new rows — but read the
+  rollback entry before promoting. The path group is anchored on
+  `chapters/<uuid>/chat/` so a member who typed that shape by hand is not matched.
+* **Checks** (after promotion):
+  - `select count(*) from chat_message_attachments;` → matches the number of
+    legacy sigils; compare against
+    `select count(*) from chat_messages where content ~ '📎 .+ \(chapters/';` → **0**
+  - `select relrowsecurity from pg_class where relname='chat_message_attachments';` → `t`
+  - `select count(*) from pg_policy p join pg_class c on c.oid=p.polrelid where c.relname='chat_message_attachments';` → **0**
+  - Spot-check one rewritten message: the body reads cleanly and its attachment
+    row carries the same filename.
+* **Rollback**: see **Rollback chat attachments** in the playbook.
+
+### 20260823122000_chat_message_search_vector.sql
+
+* **Purpose**: message search stops being an unindexed `ILIKE '%q%'`. Adds a
+  generated `content_search tsvector` and a GIN index; `SearchService` switches to
+  `websearch_to_tsquery`.
+* **Shape**: one stored generated column, one GIN index.
+* **Locks — the one to schedule.** Unlike a plain `add column` with a
+  non-volatile default, a STORED generated column **rewrites the heap** under
+  ACCESS EXCLUSIVE: chat sends block for the length of the rewrite. The GIN build
+  that follows is a plain `create index` (not `CONCURRENTLY` — Supabase
+  migrations run inside a transaction, and `CONCURRENTLY` cannot) and holds SHARE,
+  blocking writes for its duration.
+  **Both are trivial at today's row count and would not be after an import.**
+  Landing this before the archive is the entire reason it is in the foundation
+  slice. Size the window against `select count(*) from chat_messages;` — this
+  supersedes the "there is deliberately no index on `chat_messages`" note in the
+  2026-08-16 entry, which was specifically about a GIN index on `mentions` that
+  an aggregate `filter` clause could never use.
+* **No new extension.** `pg_trgm` and `unaccent` are available in the Supabase
+  image but installed nowhere, and the PGlite CI gate registers only `pgcrypto`
+  and `vector`. Plain tsvector + GIN is core Postgres. The behaviour change is
+  stemming (searching `attach` now finds `attached`) and the loss of
+  within-word substring matching.
+* **Checks** (after promotion):
+  - `select is_generated from information_schema.columns where table_name='chat_messages' and column_name='content_search';` → `ALWAYS`
+  - `explain select 1 from chat_messages where content_search @@ websearch_to_tsquery('english','budget');`
+    → **at archive scale**, a Bitmap Index Scan on `idx_chat_messages_content_search`.
+    On a small table expect a Seq Scan and do **not** treat that as a failure: GIN
+    has a high startup cost, so the planner correctly prefers a sequential scan
+    until the table is big enough to pay for it. Measured on PG 17.6 here: at 5k
+    rows it chose Seq Scan; at 60k it chose the index unprompted (1.95 ms vs
+    14.5 ms with the index paths disabled). To prove the index is *usable* on a
+    small table, `set enable_seqscan = off;` and re-run the `explain`.
+  - `GET /v1/search?q=<a phrase you know exists>` returns the hit.
+* **Rollback**: see **Rollback chat message search** in the playbook. **Coordinated**
+  — the API queries the column by name.
+
+### 20260823123000_chat_imported_kind_semantics.sql
+
+* **Purpose**: two rules that make `kind = 'imported'` safe.
+  `get_channel_unread_counts` excludes imported rows explicitly, and the
+  `chat_messages` SELECT policy excludes them so Supabase Realtime never fans an
+  archive backfill out to connected clients.
+* **Shape**: `create or replace function` plus a policy drop/recreate. No table
+  touched, no data rewritten.
+* **The unread change is a no-op today, on purpose.** The previous body joined on
+  `m.sender_id <> p_user_id`, which is NULL for a null-sender row and so excluded
+  imported messages *by accident*. That is the behaviour we want, which is exactly
+  why it now says so: the accident is invisible, it reads as a null-safety bug to
+  anyone auditing, and the obvious "fix" (`is distinct from`) would silently hand
+  every member a badge the size of the import. Both rules are now stated
+  independently.
+* **The policy change is the Realtime fan-out control.** Supabase Realtime
+  evaluates this exact policy per subscriber in `realtime.apply_rls` and emits a
+  frame only for rows that pass. **A publication row filter cannot substitute**:
+  `realtime.list_changes` builds wal2json's `add-tables` parameter from
+  `pg_publication_tables` names and never reads `prqual`, so
+  `alter publication supabase_realtime ... where (kind <> 'imported')` is silently
+  ignored. It costs nothing functionally — nothing reads `chat_messages` directly
+  through PostgREST (verified: no `from('chat_messages')` anywhere in `apps/web`,
+  `apps/mobile` or `packages/*`), so this policy exists solely as the Realtime
+  carrier.
+* **The predicate is untouched deliberately.** `can_read_chat_message` is *also*
+  the `chat_message_actions` SELECT policy, so pushing `kind` into the function
+  would break reactions and poll votes on imported messages. The rule lives in
+  the policy.
+* **Checks** (after promotion):
+  - `select pg_get_expr(polqual, polrelid) from pg_policy p join pg_class c on c.oid=p.polrelid where c.relname='chat_messages';`
+    → contains `kind <> 'imported'`
+  - `select prosrc from pg_proc where proname='get_channel_unread_counts';`
+    → contains both `kind <> 'imported'` and `sender_id is distinct from`
+  - `select grantee from information_schema.role_routine_grants where routine_name='get_channel_unread_counts';`
+    → no `anon`/`authenticated` rows
+  - **Live check, worth doing by hand**: subscribe a browser to a channel, insert
+    one `kind='text'` and one `kind='imported'` row into it, and confirm exactly
+    one frame arrives.
+* **Rollback**: see **Rollback the imported-kind semantics** in the playbook.
+
+### 20260823124000_chat_archive_bucket.sql
+
+* **Purpose**: a `chat-archive` storage bucket for media pulled out of a Discord
+  export — wider MIME list and a 100 MB cap (Discord's boosted-server per-file
+  ceiling), versus live chat's 13-type `document` list and 25 MB.
+* **Shape**: one bucket upsert, guarded on `to_regclass('storage.buckets')` so it
+  is a no-op on bare Postgres (the PGlite gate). Private, no `storage.objects`
+  policies — same posture as every other bucket.
+* **Writes are server-side.** The importer fetches each Discord CDN object and
+  writes the bytes through `IStorageProvider.uploadFile` on the service-role key,
+  not through a signed upload URL. That matters for `allowed_mime_types`: a signed
+  upload URL cannot pin a content type (the uploader sets its own on the PUT),
+  whereas a server-side upload passes the type it resolved.
+* **⚠️ Human action on the hosted projects.** `supabase/config.toml` sets a
+  **global** storage `file_size_limit`, raised to `104857600` in this change for
+  the local stack. The hosted projects have an equivalent **project-level**
+  setting that is dashboard-only and is **not** carried by promoting migrations —
+  a 100 MB object will be rejected until someone raises it under
+  Storage → Settings. Do this before running the importer, or attachments over
+  25 MB fail with a 413 that looks like a bucket misconfiguration.
+* **Checks** (after promotion):
+  - `select id, public, file_size_limit, array_length(allowed_mime_types,1) from storage.buckets where id='chat-archive';`
+    → `chat-archive | f | 104857600 | 33`
+  - Upload a >25 MB test object through the API and confirm it lands (this is what
+    catches the dashboard setting above).
+* **Rollback**: see **Rollback the chat-archive bucket** in the playbook.
+
 ## 2026-08-16: Chat unread + mention counts (C1 of #937)
 
 ### 20260816190000_chat_unread_and_mentions.sql

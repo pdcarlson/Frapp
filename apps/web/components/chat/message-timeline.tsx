@@ -9,6 +9,7 @@ import {
 } from "@/components/shared/async-states";
 import { MessageItem } from "./message-item";
 import type { ChatMessage } from "@repo/chat-core/types";
+import { authorGroupingKey } from "@repo/hooks";
 
 const GROUPING_GAP_MS = 5 * 60 * 1000;
 
@@ -122,8 +123,15 @@ export const MessageTimeline = forwardRef<
   const decorated = useMemo(() => {
     return messages.map((message, index) => {
       const prev = messages[index - 1];
+      // Keyed, not compared on `sender_id` directly: that column is nullable
+      // now, and `null === null` is true in JS — so an imported archive channel
+      // where twenty different Discord members spoke in turn would collapse into
+      // one group under one name. `authorGroupingKey` namespaces a Signet uuid
+      // apart from a source-system id.
       const sameAuthor =
-        !!prev && prev.sender_id === message.sender_id && !prev.is_deleted;
+        !!prev &&
+        authorGroupingKey(prev) === authorGroupingKey(message) &&
+        !prev.is_deleted;
       const within =
         !!prev &&
         new Date(message.created_at).getTime() -

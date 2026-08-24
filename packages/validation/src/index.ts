@@ -456,6 +456,7 @@ export const CHAT_MESSAGE_KINDS = [
   "points",
   "hours",
   "system_audit",
+  "imported",
   "loading",
   "announcement",
 ] as const;

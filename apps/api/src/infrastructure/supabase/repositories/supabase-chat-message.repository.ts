@@ -31,6 +31,21 @@ function effectivePollListLimit(requested?: number): number {
   return Math.max(LIST_QUERY_LIMIT_MIN, Math.min(n, LIST_QUERY_LIMIT_MAX));
 }
 
+/**
+ * Every `chat_messages` column a client is served — deliberately NOT `*`.
+ *
+ * `content_search` is a STORED generated tsvector (20260823122000), and
+ * PostgREST's `*` includes generated columns. A 50-message page would otherwise
+ * ship 50 serialized lexeme vectors that nothing reads: `RawChatMessage` does
+ * not declare the field and `normalizeRow` drops it. The cost scales with
+ * exactly the archive import this column was added for.
+ *
+ * Adding a column to `chat_messages` means adding it here too. That is the
+ * trade for not shipping the index payload to every reader.
+ */
+const CHAT_MESSAGE_COLUMNS =
+  'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, type, kind, payload, client_message_id, reply_to_id, metadata, mentions, is_pinned, pinned_at, edited_at, is_deleted, created_at' as const;
+
 @Injectable()
 export class SupabaseChatMessageRepository implements IChatMessageRepository {
   constructor(
@@ -41,7 +56,7 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
   async findById(id: string): Promise<ChatMessage | null> {
     const { data, error } = await this.supabase
       .from('chat_messages')
-      .select('*')
+      .select(CHAT_MESSAGE_COLUMNS)
       .eq('id', id)
       .maybeSingle();
     if (error) throw error;
@@ -54,7 +69,7 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
   ): Promise<ChatMessage[]> {
     let query = this.supabase
       .from('chat_messages')
-      .select('*')
+      .select(CHAT_MESSAGE_COLUMNS)
       .eq('channel_id', channelId)
       .order('created_at', { ascending: false })
       .limit(options?.limit ?? DEFAULT_MESSAGE_LIMIT);
@@ -88,7 +103,7 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
   async findPinnedByChannel(channelId: string): Promise<ChatMessage[]> {
     const { data, error } = await this.supabase
       .from('chat_messages')
-      .select('*')
+      .select(CHAT_MESSAGE_COLUMNS)
       .eq('channel_id', channelId)
       .eq('is_pinned', true)
       .order('pinned_at', { ascending: false });
@@ -116,7 +131,7 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
     // message columns.
     let query = this.supabase
       .from('chat_messages')
-      .select('*, chat_channels!inner(chapter_id)')
+      .select(`${CHAT_MESSAGE_COLUMNS}, chat_channels!inner(chapter_id)`)
       .eq('type', 'POLL')
       .eq('chat_channels.chapter_id', chapterId)
       .order('created_at', { ascending: false });
@@ -149,16 +164,26 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
 
   async findByClientMessageId(
     channelId: string,
-    senderId: string,
+    senderId: string | null,
     clientMessageId: string,
   ): Promise<ChatMessage | null> {
-    const { data, error } = await this.supabase
+    const query = this.supabase
       .from('chat_messages')
-      .select('*')
+      .select(CHAT_MESSAGE_COLUMNS)
       .eq('channel_id', channelId)
-      .eq('sender_id', senderId)
-      .eq('client_message_id', clientMessageId)
-      .maybeSingle();
+      .eq('client_message_id', clientMessageId);
+
+    // `.eq('sender_id', null)` renders as `sender_id=eq.null`, which PostgREST
+    // matches against nothing — SQL `= NULL` is never true. The archive
+    // importer writes rows with no sender, so the dedupe re-select has to spell
+    // that arm as `IS NULL` or it reports "no existing row" for a row that is
+    // right there and the caller re-raises the unique violation as a 5xx.
+    const scoped =
+      senderId === null
+        ? query.is('sender_id', null)
+        : query.eq('sender_id', senderId);
+
+    const { data, error } = await scoped.maybeSingle();
     if (error) throw error;
     return data;
   }
@@ -173,10 +198,16 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       // Translate the partial-unique-index hit on (channel_id, sender_id,
       // client_message_id) into a typed error so the service can re-select
       // and return the existing row instead of surfacing a 5xx.
+      //
+      // `sender_id` is checked for `undefined`, not truthiness. A null sender is
+      // a legitimate insert (an imported archive row) and the index enforces on
+      // it — `NULLS NOT DISTINCT`, see 20260823120000_chat_message_authors.sql —
+      // so a truthiness guard here would let exactly the re-run-importer
+      // collision the index exists to catch escape as a raw 23505.
       if (
         (error as { code?: string }).code === PG_UNIQUE_VIOLATION &&
         data.channel_id &&
-        data.sender_id &&
+        data.sender_id !== undefined &&
         data.client_message_id
       ) {
         throw new ChatMessageDuplicateError(

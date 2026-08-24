@@ -19,6 +19,7 @@ import {
   CHAT_CATEGORY_REPOSITORY,
   CHAT_MESSAGE_REPOSITORY,
   CHAT_MESSAGE_ACTION_REPOSITORY,
+  CHAT_MESSAGE_ATTACHMENT_REPOSITORY,
   MESSAGE_REACTION_REPOSITORY,
   CHANNEL_READ_RECEIPT_REPOSITORY,
   ChatMessageDuplicateError,
@@ -29,6 +30,7 @@ import type {
   IChatCategoryRepository,
   IChatMessageRepository,
   IChatMessageActionRepository,
+  IChatMessageAttachmentRepository,
   IMessageReactionRepository,
   IChannelReadReceiptRepository,
 } from '../../domain/repositories/chat.repository.interface';
@@ -49,6 +51,7 @@ import type {
   ChatChannelCategory,
   ChatMessage,
   ChatMessageAction,
+  ChatMessageAttachmentWithUrl,
   ChatMessageKind,
   ChannelType,
   ChannelUnreadCount,
@@ -60,6 +63,24 @@ import { ActivationService } from './activation.service';
 const MAX_PINNED_MESSAGES = 50;
 const MAX_GROUP_DM_MEMBERS = 10;
 const CHAT_BUCKET = 'chat';
+
+/**
+ * Upper bound on attachments per message.
+ *
+ * Not a product rule anybody asked for — a bound so a single send cannot fan out
+ * into an unbounded insert and an unbounded number of signed-URL mints on read.
+ * Ten is well above what the composer's one-file-at-a-time picker produces.
+ */
+const MAX_ATTACHMENTS_PER_MESSAGE = 10;
+
+/**
+ * Signed-download-URL lifetime for an attachment, in seconds.
+ *
+ * One hour, matching the report-export links — long enough that a link survives
+ * reading a channel, short enough that a URL copied out of devtools is not a
+ * durable handle on private chapter data.
+ */
+const ATTACHMENT_URL_TTL_SECONDS = 3600;
 
 // A ROLE_GATED channel that gates on nothing is denied by `canAccessChannel`
 // (FRA-321), so reject the shape at the write points rather than letting a
@@ -82,11 +103,28 @@ export interface CreateDmInput {
   member_ids: string[];
 }
 
+/**
+ * One attachment as the client claims it after uploading to the signed URL.
+ *
+ * The client is trusted for the metadata and NOT for the location: the service
+ * re-derives `channel_id` from the message and re-checks `storage_path` against
+ * the prefix it minted, so a caller cannot attach an object belonging to another
+ * chapter, another channel, or another bucket.
+ */
+export interface SendMessageAttachmentInput {
+  storage_path: string;
+  filename: string;
+  content_type: string;
+  byte_size?: number | null;
+}
+
 export interface SendMessageInput {
   chapter_id: string;
   channel_id: string;
   sender_id: string;
   content: string;
+  /** Files uploaded to the `chat` bucket that belong to this message. */
+  attachments?: SendMessageAttachmentInput[] | null;
   /** Client-generated idempotency key; reused on retry. */
   client_message_id?: string | null;
   /** Extended hot-path kind (Chunk 02); defaults to `text` when absent. */
@@ -116,6 +154,13 @@ const SERVER_ONLY_KINDS: ReadonlySet<ChatMessageKind> = new Set([
   'points',
   'task',
   'system_audit',
+  // `imported` asserts "this is archived history from another system". It is
+  // written only by the archive importer on the service-role path, and it is
+  // load-bearing in three places a client must not be able to reach: it is
+  // excluded from unread counts, it is excluded from the Realtime carrier
+  // policy, and it short-circuits the push worker. A client that could post one
+  // would have a message that never notifies and never appears live.
+  'imported',
 ]);
 
 /** Vote action UPSERTS rather than duplicates (ADR-07). */
@@ -199,6 +244,8 @@ export class ChatService {
     private readonly messageRepo: IChatMessageRepository,
     @Inject(CHAT_MESSAGE_ACTION_REPOSITORY)
     private readonly actionRepo: IChatMessageActionRepository,
+    @Inject(CHAT_MESSAGE_ATTACHMENT_REPOSITORY)
+    private readonly attachmentRepo: IChatMessageAttachmentRepository,
     @Inject(MESSAGE_REACTION_REPOSITORY)
     private readonly reactionRepo: IMessageReactionRepository,
     @Inject(CHANNEL_READ_RECEIPT_REPOSITORY)
@@ -446,8 +493,18 @@ export class ChatService {
   async sendMessage(
     input: SendMessageInput,
   ): Promise<{ message: ChatMessage; deduplicated: boolean }> {
-    if (!input.content.trim()) {
-      throw new BadRequestException('Message content cannot be empty');
+    // Validated before anything else, because the emptiness rule below depends
+    // on it: a message that is nothing but a file is a real message.
+    const attachments = this.validateAttachmentInputs(
+      input.attachments ?? [],
+      input.chapter_id,
+      input.channel_id,
+    );
+
+    if (!input.content.trim() && attachments.length === 0) {
+      throw new BadRequestException(
+        'A message needs content or at least one attachment',
+      );
     }
 
     if (
@@ -504,7 +561,19 @@ export class ChatService {
         payload: input.payload ?? null,
         client_message_id: input.client_message_id ?? null,
         reply_to_id: input.reply_to_id ?? null,
-        metadata: input.metadata ?? {},
+        // `attachment_count` is a COUNT, not a copy — `chat_message_attachments`
+        // stays the source of truth. It rides on the message row because a
+        // `postgres_changes` echo cannot carry a join, so it is the only way a
+        // client receiving a live message learns that it should ask for
+        // attachments. Without it a file-only message renders as an empty bubble
+        // for everyone except its sender.
+        metadata:
+          attachments.length > 0
+            ? {
+                ...(input.metadata ?? {}),
+                attachment_count: attachments.length,
+              }
+            : (input.metadata ?? {}),
         mentions,
       });
     } catch (error) {
@@ -520,10 +589,37 @@ export class ChatService {
         if (!existing) {
           throw error;
         }
-        return { message: existing, deduplicated: true };
+        // A retry reaches here when the FIRST attempt committed the message and
+        // then failed — which is exactly the case where the attachments were
+        // never written. Returning the existing row without them would make the
+        // failure permanent: no later retry gets past the duplicate error, so
+        // the files would stay unreachable forever. The write is idempotent on
+        // `(message_id, bucket, storage_path)`, so re-running it is safe.
+        await this.persistAttachments(
+          existing.id,
+          input.channel_id,
+          attachments,
+        );
+        if (attachments.length === 0) {
+          return { message: existing, deduplicated: true };
+        }
+        // And re-stamp the count. The failed first attempt cleared it (see
+        // `persistAttachments`), so without this the rows and the storage
+        // object exist while every client reads `attachment_count: 0` and
+        // renders nothing — the same unreachable-file end state, reached the
+        // long way round.
+        const restored = await this.messageRepo.update(existing.id, {
+          metadata: {
+            ...(existing.metadata ?? {}),
+            attachment_count: attachments.length,
+          },
+        });
+        return { message: restored, deduplicated: true };
       }
       throw error;
     }
+
+    await this.persistAttachments(message.id, input.channel_id, attachments);
 
     try {
       await this.sendMessageNotification(input, channel);
@@ -1032,5 +1128,200 @@ export class ChatService {
     );
 
     return { signedUrl, storagePath, messageId };
+  }
+
+  /**
+   * Checks the attachments a client claims for a message it is sending.
+   *
+   * The client picked the filename and the content type and uploaded the bytes
+   * through a signed URL, so those it is trusted for. The *location* it is not:
+   * without this check a caller could send a message claiming any object in the
+   * `chat` bucket — including one from another chapter's channel — and the API
+   * would happily mint them a signed download URL for it later.
+   *
+   * The prefix checked here is exactly the one `requestUploadUrl` mints, which is
+   * why the two are worth reading together.
+   */
+  private validateAttachmentInputs(
+    attachments: SendMessageAttachmentInput[],
+    chapterId: string,
+    channelId: string,
+  ): SendMessageAttachmentInput[] {
+    if (attachments.length === 0) return [];
+    if (attachments.length > MAX_ATTACHMENTS_PER_MESSAGE) {
+      throw new BadRequestException(
+        `A message can carry at most ${MAX_ATTACHMENTS_PER_MESSAGE} attachments`,
+      );
+    }
+
+    const prefix = `chapters/${chapterId}/chat/${channelId}/`;
+    const seen = new Set<string>();
+
+    for (const attachment of attachments) {
+      const storagePath = attachment.storage_path;
+      if (!storagePath.startsWith(prefix)) {
+        // Deliberately does not echo the offending path back — it is
+        // attacker-supplied and the caller already knows what it sent.
+        throw new BadRequestException(
+          'Attachment does not belong to this channel',
+        );
+      }
+      // `..` cannot climb out of the prefix in object storage the way it does on
+      // a filesystem, but a stored key containing it is still a key nothing here
+      // minted, so it is rejected rather than reasoned about.
+      if (storagePath.includes('..')) {
+        throw new BadRequestException('Invalid attachment path');
+      }
+      if (seen.has(storagePath)) {
+        throw new BadRequestException('Duplicate attachment');
+      }
+      seen.add(storagePath);
+
+      if (!isAllowedUploadMime('document', attachment.content_type)) {
+        throw new BadRequestException(
+          `Content type "${attachment.content_type}" is not allowed`,
+        );
+      }
+      if (
+        attachment.byte_size != null &&
+        (!Number.isFinite(attachment.byte_size) || attachment.byte_size < 0)
+      ) {
+        throw new BadRequestException('Invalid attachment size');
+      }
+    }
+
+    return attachments;
+  }
+
+  /**
+   * Writes the attachment rows for a message, and keeps `attachment_count`
+   * honest if it cannot.
+   *
+   * This runs AFTER the message row, because `message_id` is a foreign key —
+   * which means the message is already committed by the time this can fail.
+   * There is no transaction spanning the two: the repositories are separate
+   * PostgREST calls.
+   *
+   * So a bare `await` leaves the worst of both worlds on failure: the caller
+   * gets a 500, and a message persists claiming `attachment_count: N` with no
+   * rows behind it, which every reader renders forever as "attachment couldn't
+   * be loaded". Clearing the count first degrades it to an ordinary message — a
+   * truthful row — before the error surfaces.
+   *
+   * The error still surfaces. An attachment the sender watched upload and which
+   * never became a row is exactly the silent data loss this change exists to
+   * remove, so the send reports failure and the composer keeps its chips.
+   */
+  private async persistAttachments(
+    messageId: string,
+    channelId: string,
+    attachments: SendMessageAttachmentInput[],
+  ): Promise<void> {
+    if (attachments.length === 0) return;
+
+    try {
+      await this.attachmentRepo.createMany(
+        attachments.map((attachment) => ({
+          message_id: messageId,
+          channel_id: channelId,
+          bucket: CHAT_BUCKET,
+          storage_path: attachment.storage_path,
+          filename: attachment.filename,
+          content_type: attachment.content_type,
+          byte_size: attachment.byte_size ?? null,
+        })),
+      );
+    } catch (error) {
+      try {
+        const message = await this.messageRepo.findById(messageId);
+        const metadata = { ...(message?.metadata ?? {}) };
+        delete metadata.attachment_count;
+        await this.messageRepo.update(messageId, { metadata });
+      } catch (cleanupError) {
+        // Best effort. If even this fails the message keeps a count it cannot
+        // satisfy, so say so loudly rather than losing it inside the original
+        // error the caller is about to see.
+        this.logger.error(
+          'Failed to clear attachment_count after a failed attachment write',
+          {
+            messageId,
+            channelId,
+            error:
+              cleanupError instanceof Error
+                ? cleanupError.message
+                : String(cleanupError),
+          },
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * The attachments on one message, each with a short-lived signed download URL.
+   *
+   * Separate from the message read rather than embedded in it, for two reasons
+   * that point the same way. A download URL expires, so it has to be minted at
+   * the moment it is going to be used rather than baked into a cached message
+   * list — and the message cache on both clients is fed partly by Realtime rows,
+   * which cannot carry a join at all. `metadata.attachment_count` is what tells a
+   * client to call this.
+   *
+   * Access is the ordinary channel check, so a message in a channel the caller
+   * cannot read answers 403/404 exactly as its own read does.
+   */
+  async listMessageAttachments(
+    channelId: string,
+    chapterId: string,
+    userId: string,
+    messageId: string,
+  ): Promise<ChatMessageAttachmentWithUrl[]> {
+    await this.assertChannelAccess(channelId, chapterId, userId);
+
+    const message = await this.messageRepo.findById(messageId);
+    if (!message || message.channel_id !== channelId) {
+      throw new NotFoundException('Message not found');
+    }
+    // A deleted message does not hand out its files. Deletion is soft, so the
+    // `ON DELETE CASCADE` never fires and the rows are still there — without
+    // this check the API keeps minting fresh download URLs for content the
+    // sender believes they removed, and the rule would live only in the web
+    // renderer, which is not where a rule about who may fetch bytes belongs.
+    if (message.is_deleted) {
+      throw new NotFoundException('Message not found');
+    }
+
+    const rows = await this.attachmentRepo.findByMessage(messageId, chapterId);
+
+    // `allSettled`, not `all`: one object the signer cannot resolve — a stale
+    // path, an object removed out of band — would otherwise reject the whole
+    // response and take every intact attachment on the message down with it.
+    // The dead row is dropped and logged; the reader still gets the files that
+    // are actually there.
+    const signed = await Promise.allSettled(
+      rows.map(async (row) => ({
+        ...row,
+        download_url: await this.storageProvider.getSignedDownloadUrl(
+          row.bucket,
+          row.storage_path,
+          ATTACHMENT_URL_TTL_SECONDS,
+          row.filename,
+        ),
+      })),
+    );
+
+    return signed.flatMap((outcome, index) => {
+      if (outcome.status === 'fulfilled') return [outcome.value];
+      this.logger.warn('Could not sign a chat attachment; omitting it', {
+        messageId,
+        channelId,
+        storagePath: rows[index]?.storage_path,
+        error:
+          outcome.reason instanceof Error
+            ? outcome.reason.message
+            : String(outcome.reason),
+      });
+      return [];
+    });
   }
 }

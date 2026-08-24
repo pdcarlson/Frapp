@@ -11,6 +11,7 @@ import {
 import { FOCUS_RING } from "@/components/ui/focus";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
+import { resolveAuthorLabel } from "@repo/hooks";
 import { formatClock } from "@repo/formatting";
 
 /**
@@ -76,8 +77,10 @@ export function PinsPopover({
                   )}
                 >
                   <span className="block font-semibold text-foreground">
-                    {nameFor(message.sender_id) ||
-                      `Member ${message.sender_id.slice(0, 6)}`}
+                    {/* viewerId is deliberately null: the pins list names every
+                        author, including the viewer, rather than saying "You" —
+                        which is the behaviour this panel already had. */}
+                    {resolveAuthorLabel(message, nameFor, null)}
                   </span>
                   <span className="block text-muted-foreground">
                     {formatClock(message.pinned_at ?? message.created_at)}

@@ -6,8 +6,14 @@ import { Badge } from "@/components/ui/badge";
 import { CHIP, CHIP_HIT_AREA } from "./chip";
 import { PinGlyph, ThreadGlyph } from "./chat-glyphs";
 import { ReactionChips, ReactionQuickPick } from "./reaction-bar";
+import { MessageAttachments } from "./message-attachments";
 import { MessageRenderer, rendersAsBubble } from "./renderers";
 import type { ChatMessage } from "@repo/chat-core/types";
+import {
+  authorInitialsFallback,
+  resolveAuthorLabel,
+  resolveAuthorName,
+} from "@repo/hooks";
 import { formatClock } from "@repo/formatting";
 import { cn, initials } from "@/lib/utils";
 
@@ -70,7 +76,13 @@ export function MessageItem({
   // Resolved for every sender including the viewer: the label says "You" for its
   // own row, but the avatar still needs the initials — falling through to a uuid
   // slice there would draw `11` next to "You" beside `AC` next to "Alice Chen".
-  const authorName = nameFor(message.sender_id);
+  //
+  // Both go through `@repo/hooks` rather than `nameFor` directly, because
+  // `sender_id` is nullable now: an imported archive message names its author in
+  // `author_name` and has no roster entry at all, and the old
+  // `message.sender_id.slice(...)` fallbacks below threw on it.
+  const authorName = resolveAuthorName(message, nameFor);
+  const authorLabel = resolveAuthorLabel(message, nameFor, viewerId);
   const isPending = message._status === "pending";
   const isFailed = message._status === "failed";
   // Reactions and threads operate on the *server* id (the chat actions
@@ -82,13 +94,29 @@ export function MessageItem({
   const showActions = !message.is_deleted && isConfirmed;
 
   const renderer = (
-    <MessageRenderer
-      message={message}
-      viewerId={viewerId}
-      isSelf={isMine}
-      isConfirmed={isConfirmed}
-      onAct={onAct ?? (() => {})}
-    />
+    <>
+      <MessageRenderer
+        message={message}
+        viewerId={viewerId}
+        isSelf={isMine}
+        isConfirmed={isConfirmed}
+        onAct={onAct ?? (() => {})}
+      />
+      {/*
+        Attachments render under the body for every kind, not inside the text
+        renderer: a file is a property of the message, not of how its body is
+        drawn, and a deleted message must not offer downloads of what it used to
+        carry. The component itself no-ops on a zero count, so this costs nothing
+        for the overwhelming majority of messages.
+      */}
+      {message.is_deleted || message.attachment_count === 0 ? null : (
+        <MessageAttachments
+          channelId={message.channel_id}
+          messageId={message.id}
+          count={message.attachment_count}
+        />
+      )}
+    </>
   );
 
   const reactions = (
@@ -238,7 +266,7 @@ export function MessageItem({
             <AvatarFallback>
               {authorName
                 ? initials(authorName)
-                : message.sender_id.slice(0, 2).toUpperCase()}
+                : authorInitialsFallback(message)}
             </AvatarFallback>
           </Avatar>
         ) : null}
@@ -247,12 +275,7 @@ export function MessageItem({
         {showHeader ? (
           <div className="ml-1 flex items-baseline gap-2 text-[12.5px] text-muted-foreground">
             <span className="font-semibold text-muted-foreground">
-              {isMine
-                ? "You"
-                : // Truthy, not `??`: the resolver's contract is that an unset
-                  // name comes back null, but a stray "" must degrade to the id
-                  // rather than render a blank label next to uuid initials.
-                  authorName || `Member ${message.sender_id.slice(0, 6)}`}
+              {authorLabel}
             </span>
             <span aria-hidden="true">·</span>
             <span>{formatClock(message.created_at)}</span>

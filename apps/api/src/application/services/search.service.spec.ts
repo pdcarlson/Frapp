@@ -16,6 +16,7 @@ describe('SearchService', () => {
       eq: jest.fn().mockReturnValue(chain),
       in: jest.fn().mockReturnValue(chain),
       ilike: jest.fn().mockReturnValue(chain),
+      textSearch: jest.fn().mockReturnValue(chain),
       or: jest.fn().mockReturnValue(chain),
       limit: jest.fn().mockReturnValue(chain),
       order: jest.fn().mockReturnValue(chain),
@@ -203,6 +204,7 @@ describe('SearchService', () => {
               return chain;
             }),
             ilike: jest.fn().mockReturnValue(chain),
+            textSearch: jest.fn().mockReturnValue(chain),
             eq: jest.fn().mockReturnValue(chain),
             limit: jest.fn().mockReturnValue(chain),
             order: jest.fn().mockReturnValue(chain),
@@ -336,30 +338,118 @@ describe('SearchService', () => {
       messages: [],
     };
 
-    it('passes through results when search resolves within the budget', async () => {
-      const results = { ...emptyResult, events: [{ id: 'ev-1' }] };
-      jest.spyOn(service, 'search').mockResolvedValue(results);
+    /** A query that never settles, for driving the budget. */
+    const makeHangingChain = () => {
+      const chain: Record<string, unknown> = {};
+      Object.assign(chain, {
+        select: jest.fn().mockReturnValue(chain),
+        eq: jest.fn().mockReturnValue(chain),
+        in: jest.fn().mockReturnValue(chain),
+        ilike: jest.fn().mockReturnValue(chain),
+        textSearch: jest.fn().mockReturnValue(chain),
+        or: jest.fn().mockReturnValue(chain),
+        limit: jest.fn().mockReturnValue(chain),
+        order: jest.fn().mockReturnValue(chain),
+        then: () => new Promise(() => {}),
+        catch: () => Promise.reject().catch(() => {}),
+      });
+      return chain;
+    };
+
+    /** Wires the chapter/membership lookups the message source walks. */
+    const wireSources = (overrides: Record<string, unknown> = {}) => {
+      const defaults: Record<string, unknown> = {
+        backwork_resources: makeChain({ data: [], error: null }),
+        events: makeChain({
+          data: [
+            {
+              id: 'ev-1',
+              chapter_id: 'ch-1',
+              name: 'Chapter Meeting',
+              description: 'Weekly meeting',
+              start_time: '2026-02-26T10:00:00Z',
+              end_time: '2026-02-26T11:00:00Z',
+              point_value: 10,
+              is_mandatory: false,
+            },
+          ],
+          error: null,
+        }),
+        members: makeChain({
+          data: [
+            {
+              id: 'm-1',
+              user_id: 'user-1',
+              chapter_id: 'ch-1',
+              role_ids: ['role-1'],
+            },
+          ],
+          error: null,
+        }),
+        users: makeChain({ data: [], error: null }),
+        roles: makeChain({ data: [{ permissions: [] }], error: null }),
+        chat_channels: makeChain({
+          data: [
+            {
+              id: 'pub',
+              type: 'PUBLIC',
+              member_ids: null,
+              required_permissions: null,
+            },
+          ],
+          error: null,
+        }),
+        chat_messages: makeChain({ data: [], error: null }),
+        ...overrides,
+      };
+      (mockSupabase.from as jest.Mock).mockImplementation(
+        (table: string) =>
+          defaults[table] ?? makeChain({ data: [], error: null }),
+      );
+    };
+
+    it('returns an untouched result when every source is inside the budget', async () => {
+      wireSources();
 
       const outcome = await service.searchWithinBudget(
         'ch-1',
         'user-1',
-        'hello',
+        'meeting',
       );
 
-      expect(outcome).toEqual({ results, timedOut: false });
+      expect(outcome.timedOut).toBe(false);
+      expect(outcome.timedOutSources).toEqual([]);
+      expect(outcome.results.events).toHaveLength(1);
     });
 
-    it('returns empty results and timedOut when search exceeds the budget', async () => {
+    it('short-circuits a query below the minimum length without a budget', async () => {
+      const outcome = await service.searchWithinBudget('ch-1', 'user-1', 'ab');
+
+      expect(outcome).toEqual({
+        results: emptyResult,
+        timedOut: false,
+        timedOutSources: [],
+      });
+    });
+
+    it('degrades ONLY the slow source, and names it', async () => {
+      // This is the regression the per-source budget exists for. The budget used
+      // to wrap the whole `Promise.all`, so one slow query returned four empty
+      // arrays — the events hit below was already in hand and got thrown away,
+      // and the UI rendered it identically to a genuine miss.
       jest.useFakeTimers();
       try {
-        // A search that never settles within the budget window.
-        jest.spyOn(service, 'search').mockReturnValue(new Promise(() => {}));
+        wireSources({ chat_messages: makeHangingChain() });
 
-        const promise = service.searchWithinBudget('ch-1', 'user-1', 'hello');
+        const promise = service.searchWithinBudget('ch-1', 'user-1', 'meeting');
         await jest.advanceTimersByTimeAsync(500);
         const outcome = await promise;
 
-        expect(outcome).toEqual({ results: emptyResult, timedOut: true });
+        expect(outcome.timedOut).toBe(true);
+        expect(outcome.timedOutSources).toEqual(['messages']);
+        expect(outcome.results.messages).toEqual([]);
+        // The half that used to be lost.
+        expect(outcome.results.events).toHaveLength(1);
       } finally {
         jest.useRealTimers();
       }

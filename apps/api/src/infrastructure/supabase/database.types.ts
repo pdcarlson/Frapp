@@ -20,6 +20,7 @@ import type {
   ChatChannelCategory,
   ChatMessage,
   ChatMessageAction,
+  ChatMessageAttachment,
   ChatNotificationPreference,
   Event,
   EventAttendance,
@@ -102,6 +103,7 @@ export interface Database {
       chat_channels: TableDefinition<ChatChannel>;
       chat_messages: TableDefinition<ChatMessage>;
       chat_message_actions: TableDefinition<ChatMessageAction>;
+      chat_message_attachments: TableDefinition<ChatMessageAttachment>;
       message_reactions: TableDefinition<MessageReaction>;
       channel_read_receipts: TableDefinition<ChannelReadReceipt>;
       poll_votes: TableDefinition<PollVote>;

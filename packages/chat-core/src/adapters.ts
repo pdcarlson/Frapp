@@ -34,6 +34,14 @@ export interface NetworkState {
 
 export type OutboxStatus = "queued" | "failed";
 
+/** An uploaded file waiting to be attached to a queued message. */
+export interface OutboxAttachment {
+  storagePath: string;
+  filename: string;
+  contentType: string;
+  byteSize?: number | null;
+}
+
 export interface OutboxRow {
   clientId: string;
   channelId: string;
@@ -47,6 +55,14 @@ export interface OutboxRow {
   kind?: string;
   payload?: Record<string, unknown> | null;
   replyToId?: string | null;
+  /**
+   * Attachments already uploaded to storage and waiting to be claimed by this
+   * message. Part of the persisted intent for the same reason `kind` and
+   * `payload` are: the bytes are in the bucket the moment the picker resolves,
+   * so a send that flushes from the queue without them would leave an orphaned
+   * object and a message that has lost its file.
+   */
+  attachments?: OutboxAttachment[] | null;
   attempts: number;
   queuedAt: number;
   status: OutboxStatus;

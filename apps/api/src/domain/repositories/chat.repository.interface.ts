@@ -3,6 +3,7 @@ import {
   ChatChannelCategory,
   ChatMessage,
   ChatMessageAction,
+  ChatMessageAttachment,
   MessageReaction,
   ChannelReadReceipt,
   ChannelUnreadCount,
@@ -12,6 +13,8 @@ export const CHAT_CHANNEL_REPOSITORY = 'CHAT_CHANNEL_REPOSITORY';
 export const CHAT_CATEGORY_REPOSITORY = 'CHAT_CATEGORY_REPOSITORY';
 export const CHAT_MESSAGE_REPOSITORY = 'CHAT_MESSAGE_REPOSITORY';
 export const CHAT_MESSAGE_ACTION_REPOSITORY = 'CHAT_MESSAGE_ACTION_REPOSITORY';
+export const CHAT_MESSAGE_ATTACHMENT_REPOSITORY =
+  'CHAT_MESSAGE_ATTACHMENT_REPOSITORY';
 export const MESSAGE_REACTION_REPOSITORY = 'MESSAGE_REACTION_REPOSITORY';
 export const CHANNEL_READ_RECEIPT_REPOSITORY =
   'CHANNEL_READ_RECEIPT_REPOSITORY';
@@ -28,7 +31,7 @@ export const PG_UNIQUE_VIOLATION = '23505';
 export class ChatMessageDuplicateError extends Error {
   constructor(
     public readonly channel_id: string,
-    public readonly sender_id: string,
+    public readonly sender_id: string | null,
     public readonly client_message_id: string,
   ) {
     super('Duplicate chat_messages insert (client_message_id collision)');
@@ -105,7 +108,7 @@ export interface IChatMessageRepository {
    */
   findByClientMessageId(
     channelId: string,
-    senderId: string,
+    senderId: string | null,
     clientMessageId: string,
   ): Promise<ChatMessage | null>;
   /**
@@ -182,4 +185,54 @@ export interface IChannelReadReceiptRepository {
     chapterId: string,
     userId: string,
   ): Promise<ChannelUnreadCount[]>;
+}
+
+/**
+ * The fields an attachment is created with.
+ *
+ * Spelled out rather than `Partial<ChatMessageAttachment>` — matching
+ * `IChatMessageActionRepository.create` — because every one of these is required
+ * at insert time and a `Partial` would let a caller omit `channel_id`, which is
+ * what carries the row's tenant scope.
+ */
+export interface NewChatMessageAttachment {
+  message_id: string;
+  channel_id: string;
+  bucket: string;
+  storage_path: string;
+  filename: string;
+  content_type: string | null;
+  byte_size: number | null;
+  width?: number | null;
+  height?: number | null;
+  external_url?: string | null;
+}
+
+/**
+ * Attachment rows for chat messages.
+ *
+ * Deliberately narrow: attachments are written once with their message and read
+ * back per message. There is no update method because there is nothing to
+ * update — an attachment is an immutable fact about a message — and no delete
+ * because `ON DELETE CASCADE` from `chat_messages` already removes them, which
+ * is the only way one should ever disappear.
+ */
+export interface IChatMessageAttachmentRepository {
+  /** Bulk-insert the attachments for one message. Returns the created rows. */
+  createMany(
+    rows: NewChatMessageAttachment[],
+  ): Promise<ChatMessageAttachment[]>;
+
+  /**
+   * Attachments for one message, oldest first (the order they were attached).
+   *
+   * `chapterId` is not redundant with `messageId`: the tenant predicate belongs
+   * in the same statement as the lookup, so a message id from another chapter
+   * returns nothing rather than relying on the caller having checked first
+   * (spec/behavior/multi-tenancy.md — scope the query, don't read-then-check).
+   */
+  findByMessage(
+    messageId: string,
+    chapterId: string,
+  ): Promise<ChatMessageAttachment[]>;
 }

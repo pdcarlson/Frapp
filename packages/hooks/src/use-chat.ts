@@ -415,6 +415,52 @@ export function useRequestChatUploadUrl() {
   });
 }
 
+/** An attachment plus the short-lived signed URL that downloads it. */
+export interface MessageAttachment {
+  id: string;
+  message_id: string;
+  filename: string;
+  content_type: string | null;
+  byte_size: number | null;
+  width: number | null;
+  height: number | null;
+  download_url: string;
+}
+
+/**
+ * Attachments on one message, each with a signed download URL.
+ *
+ * Fetched on demand rather than embedded in the message list, because the URLs
+ * expire — minting them into a cache that `staleTime: Infinity` never refreshes
+ * would hand out links that are dead by the time anyone clicks. `staleTime` is
+ * therefore well inside the server's one-hour TTL.
+ *
+ * Gated on `enabled` so the common case — a message with no attachments — costs
+ * no request at all. Callers pass `message.attachment_count > 0`.
+ */
+export function useMessageAttachments(
+  channelId: string,
+  messageId: string,
+  enabled: boolean,
+) {
+  const client = useFrappClient();
+  return useQuery({
+    queryKey: ["channels", channelId, "messages", messageId, "attachments"],
+    enabled: enabled && !!channelId && !!messageId,
+    // Comfortably inside the API's 3600s signed-URL TTL, so a link handed to the
+    // DOM is still live when it is used.
+    staleTime: 10 * 60_000,
+    queryFn: async () => {
+      const { data, error } = await client.GET(
+        "/v1/channels/{id}/messages/{messageId}/attachments",
+        { params: { path: { id: channelId, messageId } } },
+      );
+      if (error) throw error;
+      return (data ?? []) as MessageAttachment[];
+    },
+  });
+}
+
 /**
  * Performs the PUT to a Supabase Storage signed URL returned by
  * `useRequestChatUploadUrl`. Wraps the raw `fetch` so every chat network

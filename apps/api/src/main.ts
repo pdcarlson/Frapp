@@ -60,6 +60,12 @@ async function bootstrap() {
       'X-Report-Truncated',
       'X-Report-Row-Limit',
       'X-Report-Truncation-Note',
+      // Same trap, second surface: spec/behavior/search.md tells clients to
+      // distinguish "no matches" from "we stopped looking" by these headers, and
+      // without them named here the dashboard reads null from both and renders a
+      // partial result as a confident empty state.
+      'X-Search-Timeout',
+      'X-Search-Timeout-Sources',
     ],
   });
 

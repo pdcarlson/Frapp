@@ -10,6 +10,7 @@ import {
   CHAT_CATEGORY_REPOSITORY,
   CHAT_MESSAGE_REPOSITORY,
   CHAT_MESSAGE_ACTION_REPOSITORY,
+  CHAT_MESSAGE_ATTACHMENT_REPOSITORY,
   ChatMessageActionDuplicateError,
   ChatMessageDuplicateError,
   MESSAGE_REACTION_REPOSITORY,
@@ -19,6 +20,7 @@ import type {
   IChatChannelRepository,
   IChatCategoryRepository,
   IChatMessageActionRepository,
+  IChatMessageAttachmentRepository,
   IChatMessageRepository,
   IMessageReactionRepository,
   IChannelReadReceiptRepository,
@@ -46,6 +48,7 @@ describe('ChatService', () => {
   let mockCategoryRepo: jest.Mocked<IChatCategoryRepository>;
   let mockMessageRepo: jest.Mocked<IChatMessageRepository>;
   let mockActionRepo: jest.Mocked<IChatMessageActionRepository>;
+  let mockAttachmentRepo: jest.Mocked<IChatMessageAttachmentRepository>;
   let mockReactionRepo: jest.Mocked<IMessageReactionRepository>;
   let mockReadReceiptRepo: jest.Mocked<IChannelReadReceiptRepository>;
   let mockStorageProvider: jest.Mocked<IStorageProvider>;
@@ -149,6 +152,11 @@ describe('ChatService', () => {
       updateForVote: jest.fn(),
     };
 
+    mockAttachmentRepo = {
+      createMany: jest.fn().mockResolvedValue([]),
+      findByMessage: jest.fn().mockResolvedValue([]),
+    };
+
     mockReactionRepo = {
       findByMessage: jest.fn(),
       findOne: jest.fn(),
@@ -227,6 +235,10 @@ describe('ChatService', () => {
         {
           provide: CHAT_MESSAGE_ACTION_REPOSITORY,
           useValue: mockActionRepo,
+        },
+        {
+          provide: CHAT_MESSAGE_ATTACHMENT_REPOSITORY,
+          useValue: mockAttachmentRepo,
         },
         { provide: MESSAGE_REACTION_REPOSITORY, useValue: mockReactionRepo },
         {
@@ -781,6 +793,70 @@ describe('ChatService', () => {
     });
   });
 
+  describe('listMessageAttachments', () => {
+    const attachmentRow = {
+      id: 'att-1',
+      message_id: 'msg-1',
+      channel_id: 'ch-chan-1',
+      bucket: 'chat',
+      storage_path: 'chapters/ch-1/chat/ch-chan-1/msg-1/minutes.pdf',
+      filename: 'minutes.pdf',
+      content_type: 'application/pdf',
+      byte_size: 2048,
+      width: null,
+      height: null,
+      external_url: null,
+      created_at: '2026-01-01T00:00:00.000Z',
+    };
+
+    it('refuses to hand out URLs for a deleted message', async () => {
+      // Deletion is soft, so the ON DELETE CASCADE never fires and the rows are
+      // still there. Without this the API keeps minting fresh download URLs for
+      // content the sender believes they removed, and the rule would live only
+      // in the web renderer — which is not where a rule about who may fetch
+      // bytes belongs.
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockMessageRepo.findById.mockResolvedValue({
+        ...baseMessage,
+        is_deleted: true,
+      });
+
+      await expect(
+        service.listMessageAttachments('ch-chan-1', 'ch-1', 'user-1', 'msg-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockStorageProvider.getSignedDownloadUrl).not.toHaveBeenCalled();
+    });
+
+    it('omits an attachment it cannot sign rather than failing the whole list', async () => {
+      // One stale path used to reject the Promise.all and take every intact
+      // attachment on the message down with it — the reader saw "attachments
+      // couldn't be loaded" for files that were perfectly fine.
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockMessageRepo.findById.mockResolvedValue(baseMessage);
+      mockAttachmentRepo.findByMessage.mockResolvedValue([
+        attachmentRow,
+        {
+          ...attachmentRow,
+          id: 'att-2',
+          storage_path: 'chapters/ch-1/chat/ch-chan-1/msg-1/gone.pdf',
+        },
+      ]);
+      mockStorageProvider.getSignedDownloadUrl
+        .mockResolvedValueOnce('https://signed/minutes.pdf')
+        .mockRejectedValueOnce(new Error('Object not found'));
+
+      const rows = await service.listMessageAttachments(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+        'msg-1',
+      );
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0].download_url).toBe('https://signed/minutes.pdf');
+    });
+  });
+
   describe('sendMessage', () => {
     it('should send a message', async () => {
       mockChannelRepo.findById.mockResolvedValue(baseChannel);
@@ -852,6 +928,160 @@ describe('ChatService', () => {
           payload: { foo: 'bar' },
         }),
       );
+    });
+
+    describe('attachments', () => {
+      const ATTACHMENT = {
+        storage_path:
+          'chapters/ch-1/chat/ch-chan-1/aaaaaaaa-0000-4000-8000-000000000001/minutes.pdf',
+        filename: 'minutes.pdf',
+        content_type: 'application/pdf',
+        byte_size: 2048,
+      };
+
+      it('accepts a message that is nothing but a file', async () => {
+        // The client stack allows this — the composer's Send button enables on a
+        // staged chip with an empty editor — so the server has to as well. It
+        // used to 400 on both the DTO's MinLength and the emptiness guard.
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+        await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: '',
+          attachments: [ATTACHMENT],
+        });
+
+        expect(mockAttachmentRepo.createMany).toHaveBeenCalledWith([
+          expect.objectContaining({ storage_path: ATTACHMENT.storage_path }),
+        ]);
+      });
+
+      it('still rejects a message with neither content nor a file', async () => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+
+        await expect(
+          service.sendMessage({
+            chapter_id: 'ch-1',
+            channel_id: 'ch-chan-1',
+            sender_id: 'user-1',
+            content: '   ',
+          }),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('refuses an attachment whose path belongs to another channel', async () => {
+        // The client uploaded through a signed URL, so it is trusted for the
+        // filename and type — never for the location. Without this a caller
+        // could claim any object in the bucket and be handed a signed download
+        // URL for it later.
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+
+        await expect(
+          service.sendMessage({
+            chapter_id: 'ch-1',
+            channel_id: 'ch-chan-1',
+            sender_id: 'user-1',
+            content: 'look',
+            attachments: [
+              {
+                ...ATTACHMENT,
+                storage_path:
+                  'chapters/other-chapter/chat/other-channel/m/secret.pdf',
+              },
+            ],
+          }),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockAttachmentRepo.createMany).not.toHaveBeenCalled();
+      });
+
+      it('stamps attachment_count so a live client knows to fetch', async () => {
+        // A postgres_changes echo cannot carry a join, so this count is the only
+        // way a recipient learns the message has files. Without it an
+        // attachment-only message renders as an empty bubble for everyone but
+        // its sender.
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+        await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'deck attached',
+          attachments: [ATTACHMENT],
+        });
+
+        expect(mockMessageRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            metadata: expect.objectContaining({ attachment_count: 1 }),
+          }),
+        );
+      });
+
+      it('clears attachment_count when the attachment write fails', async () => {
+        // The message row is already committed by the time this can fail —
+        // separate PostgREST calls, no transaction — so the alternative is a
+        // message that promises a file forever and renders as "attachment
+        // couldn't be loaded" to everyone.
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+        mockMessageRepo.findById.mockResolvedValue({
+          ...baseMessage,
+          metadata: { attachment_count: 1 },
+        });
+        mockAttachmentRepo.createMany.mockRejectedValueOnce(
+          new Error('storage write failed'),
+        );
+
+        await expect(
+          service.sendMessage({
+            chapter_id: 'ch-1',
+            channel_id: 'ch-chan-1',
+            sender_id: 'user-1',
+            content: 'deck attached',
+            attachments: [ATTACHMENT],
+          }),
+        ).rejects.toThrow('storage write failed');
+
+        expect(mockMessageRepo.update).toHaveBeenCalledWith(
+          baseMessage.id,
+          expect.objectContaining({
+            metadata: expect.not.objectContaining({ attachment_count: 1 }),
+          }),
+        );
+      });
+
+      it('writes the attachments on the dedupe retry, not just the first attempt', async () => {
+        // A retry reaches the dedupe path precisely when the first attempt
+        // committed the message and then failed writing attachments. Returning
+        // the existing row without them would make that failure permanent: no
+        // later retry ever gets past the duplicate error.
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.create.mockRejectedValue(
+          new ChatMessageDuplicateError(
+            'ch-chan-1',
+            'user-1',
+            '11111111-1111-1111-1111-111111111111',
+          ),
+        );
+        mockMessageRepo.findByClientMessageId.mockResolvedValue(baseMessage);
+
+        const result = await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'deck attached',
+          client_message_id: '11111111-1111-1111-1111-111111111111',
+          attachments: [ATTACHMENT],
+        });
+
+        expect(result.deduplicated).toBe(true);
+        expect(mockAttachmentRepo.createMany).toHaveBeenCalledWith([
+          expect.objectContaining({ message_id: baseMessage.id }),
+        ]);
+      });
     });
 
     it('rejects client posts of server-originated kinds (points, system_audit)', async () => {

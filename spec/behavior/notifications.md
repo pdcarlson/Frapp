@@ -138,9 +138,12 @@ Defaults when no row is set (see ADR-06; the `defaultLevelFor` helper encodes th
 | `#announcements`                  | `all`         |
 | `#chapter-audit`                  | `off`         |
 | `system_audit` kind (any channel) | `off`         |
+| `imported` kind (any channel)     | `off` (absolute — see below) |
 | Every other channel               | `mentions`    |
 
 Precedence in the push worker is **channel-pref ▶ kind-pref ▶ default**. A user who explicitly sets `(scope='kind', scope_kind='system_audit', level='all')` opts in to audit-bridge pushes; otherwise audit messages never page anyone.
+
+**`imported` is the one kind with no opt-in.** `decidePush` refuses it ahead of every other rule, including the presence check and the mention override, and `ChatPushWorkerService.handleMessage` exits on it before it even loads the chapter roster — an import is thousands of rows arriving as fast as Postgres can write them through a Realtime handler with no backpressure, so deciding downstream would mean thousands of roster loads. The mention carve-out is the load-bearing half: imported bodies are years of prose full of `@name` tokens, and a mention lifts a muted channel's `off`, so a kind-level default alone would not hold. "Notify me about backfilled history" is not a setting anyone wants.
 
 ## Audit-log → `#chapter-audit` bridge
 

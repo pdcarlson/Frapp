@@ -194,4 +194,79 @@ describe('decidePush', () => {
       ),
     ).toBe('skip-level');
   });
+
+  describe('imported archive messages', () => {
+    // Importing a chapter's Discord history must not page the roster once per
+    // historical message. Unlike `system_audit`, whose `off` is a default a
+    // member can opt out of, this refusal has no escape hatch.
+
+    it('never sends, whatever the channel default would be', () => {
+      expect(
+        decidePush(
+          {
+            channelName: 'announcements',
+            messageKind: 'imported',
+            recipientIsPresent: false,
+            hasMention: false,
+            preferences: [],
+          },
+          'ch-1',
+        ),
+      ).toBe('skip-level');
+    });
+
+    it('is not lifted by a mention', () => {
+      // The load-bearing case. Imported bodies are years of prose full of
+      // `@name` tokens, and a mention overrides a muted channel's `off` — so a
+      // kind-level default alone would not hold.
+      expect(
+        decidePush(
+          {
+            channelName: 'general',
+            messageKind: 'imported',
+            recipientIsPresent: false,
+            hasMention: true,
+            preferences: [],
+          },
+          'ch-1',
+        ),
+      ).toBe('skip-level');
+    });
+
+    it('is not lifted by an explicit all-level preference', () => {
+      expect(
+        decidePush(
+          {
+            channelName: 'general',
+            messageKind: 'imported',
+            recipientIsPresent: false,
+            hasMention: false,
+            preferences: [
+              {
+                user_id: 'u',
+                chapter_id: 'c',
+                scope: 'kind',
+                scope_id: null,
+                scope_kind: 'imported',
+                level: 'all',
+              },
+              {
+                user_id: 'u',
+                chapter_id: 'c',
+                scope: 'channel',
+                scope_id: 'ch-1',
+                scope_kind: null,
+                level: 'all',
+              },
+            ],
+          },
+          'ch-1',
+        ),
+      ).toBe('skip-level');
+    });
+
+    it('resolves to an off level, so anything reading a level agrees', () => {
+      expect(defaultLevelFor('announcements', 'imported')).toBe('off');
+    });
+  });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { initialsFor, senderLabel } from "./display-name";
+import { initialsFor } from "./display-name";
 
 describe("initialsFor", () => {
   it("takes one initial from each of the first two words", () => {
@@ -15,26 +15,7 @@ describe("initialsFor", () => {
   });
 });
 
-describe("senderLabel", () => {
-  it("says 'You' for the viewer's own message", () => {
-    expect(senderLabel("user-1", true, "Marcus Reid")).toBe("You");
-  });
-
-  it("renders the resolved display name for another member", () => {
-    // components.md specifies the meta line as `Name · time`; this is the half
-    // that makes the shipped row spec-compliant.
-    expect(senderLabel("user-1", false, "Marcus Reid")).toBe("Marcus Reid");
-  });
-
-  it("falls back to a truncated id only when the sender is unresolvable", () => {
-    expect(
-      senderLabel("22222222-2222-4222-8222-222222222222", false, null),
-    ).toBe("Member 222222");
-  });
-
-  it("treats an empty resolved name as unresolvable rather than blank", () => {
-    // Belt and braces over resolveDisplayName: users.display_name is
-    // NOT NULL DEFAULT '', and a blank label is worse than a truncated id.
-    expect(senderLabel("user-blank", false, "")).toBe("Member user-b");
-  });
-});
+// `senderLabel` moved to `@repo/hooks` as `resolveAuthorLabel` when
+// `chat_messages.sender_id` became nullable — its truncated-id fallback threw
+// on an imported archive message, and web had its own copy of the same rule.
+// Its cases live in `packages/hooks/src/display-names.spec.ts` now.

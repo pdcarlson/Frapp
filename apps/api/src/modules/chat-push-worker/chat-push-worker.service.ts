@@ -26,7 +26,8 @@ const CHANNEL_CACHE_TTL_MS = 30_000;
 interface ChatMessageRow {
   id: string;
   channel_id: string;
-  sender_id: string;
+  /** Null for a message with no Signet user behind it (an imported archive row). */
+  sender_id: string | null;
   content: string | null;
   kind: string;
   /**
@@ -158,6 +159,23 @@ export class ChatPushWorkerService
    */
   async handleMessage(row: ChatMessageRow): Promise<void> {
     if (!row?.id || !row.channel_id) return;
+
+    // An imported archive message never notifies anyone. Importing a chapter's
+    // #announcements history must not page the whole roster once per historical
+    // message.
+    //
+    // This exit is deliberately EARLIER than the `system_audit` one, which lives
+    // downstream in `decidePush` (push-rules.ts). The difference is volume:
+    // `system_audit` is one row per admin action, so paying for a channel
+    // resolve, a full chapter roster load and a per-recipient preference lookup
+    // before deciding costs nothing. An import is thousands of rows arriving as
+    // fast as Postgres can write them, through a Realtime handler with no
+    // backpressure — deciding downstream would mean thousands of roster loads.
+    //
+    // `decidePush` still refuses this kind too (belt and braces, and it is what
+    // a reader auditing the rules will find), but nothing should ever reach it.
+    if (row.kind === 'imported') return;
+
     try {
       const channel = await this.resolveChannel(row.channel_id);
       if (!channel) return;
@@ -214,7 +232,11 @@ export class ChatPushWorkerService
         );
         if (decision !== 'send') continue;
 
-        const bundleKey = `${row.sender_id}:${channel.id}:${recipientId}`;
+        // `sender_id` may be null; `String()` keeps the key well-formed rather than
+        // interpolating `undefined`. Imported rows never get this far (see the
+        // early exit in `handleMessage`), so the null arm is only reachable for a
+        // future null-sender kind.
+        const bundleKey = `${row.sender_id ?? 'none'}:${channel.id}:${recipientId}`;
         const burst = this.bundler.record(bundleKey);
         if (burst.action === 'skip') continue;
 

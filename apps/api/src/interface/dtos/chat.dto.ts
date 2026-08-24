@@ -1,4 +1,5 @@
 import {
+  ArrayMaxSize,
   IsArray,
   IsBoolean,
   IsIn,
@@ -10,7 +11,9 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { CHAT_MESSAGE_CONTENT_MAX_LENGTH } from '@repo/validation';
 import { CHAT_MESSAGE_KINDS } from '../../domain/entities/chat.entity';
@@ -124,6 +127,42 @@ export class UpdateCategoryDto {
   display_order?: number;
 }
 
+/**
+ * One file the client uploaded to the `chat` bucket and is attaching.
+ *
+ * `storage_path` is validated for shape here and for OWNERSHIP in
+ * `ChatService.validateAttachmentInputs`, which re-checks it against the prefix
+ * the API itself minted. A DTO cannot do that second half — it does not know
+ * which channel the request is for — and the ownership check is the one that
+ * matters, so neither stands alone.
+ */
+export class MessageAttachmentDto {
+  @ApiProperty({ maxLength: 1024 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(1024)
+  storage_path: string;
+
+  @ApiProperty({ maxLength: 255 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(255)
+  filename: string;
+
+  @ApiProperty({ maxLength: 255 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(255)
+  content_type: string;
+
+  /** Reported by the browser; advisory, and never trusted as the stored size. */
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  byte_size?: number;
+}
+
 export class SendMessageDto {
   /**
    * Client-generated idempotency key. The server dedupes on
@@ -135,11 +174,32 @@ export class SendMessageDto {
   @IsUUID()
   client_message_id: string;
 
-  @ApiProperty({ minLength: 1, maxLength: CHAT_MESSAGE_CONTENT_MAX_LENGTH })
+  /**
+   * May be empty — but only when `attachments` is not. A message that is nothing
+   * but a file is a real message, and the emptiness rule is therefore a
+   * relationship between two fields, which a per-field validator cannot express;
+   * `ChatService.sendMessage` enforces it.
+   */
+  @ApiProperty({ minLength: 0, maxLength: CHAT_MESSAGE_CONTENT_MAX_LENGTH })
   @IsString()
-  @MinLength(1)
   @MaxLength(CHAT_MESSAGE_CONTENT_MAX_LENGTH)
   content: string;
+
+  /**
+   * Files uploaded through `POST /v1/channels/{id}/upload-url` that belong to
+   * this message.
+   *
+   * Attachments are rows, not text. The composer used to append
+   * `📎 <name> (<path>)` into `content`, which left the object with no link back
+   * to the message it belonged to.
+   */
+  @ApiPropertyOptional({ type: [MessageAttachmentDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @ValidateNested({ each: true })
+  @Type(() => MessageAttachmentDto)
+  attachments?: MessageAttachmentDto[];
 
   /**
    * Extended hot-path kind (Chunk 02). Defaults to `text` server-side
