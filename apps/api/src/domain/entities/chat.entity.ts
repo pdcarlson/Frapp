@@ -163,8 +163,10 @@ export interface ChatMessageAttachment {
    * expresses. Storing a Discord CDN link instead would be a private-bucket
    * bypass with an expiry baked in.
    *
-   * It is also excluded from `CHAT_MESSAGE_ATTACHMENT_COLUMNS`, so it cannot
-   * reach a client whatever a future writer puts in it.
+   * It is also stripped by the attachment repository on the way out — see
+   * `stripAttachmentRow` there — so it cannot reach a client whatever a future
+   * writer puts in it. Declared here because the column exists on the row;
+   * treat it as write-only.
    */
   external_url: string | null;
   created_at: string;

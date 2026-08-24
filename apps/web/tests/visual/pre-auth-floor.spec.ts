@@ -6,10 +6,10 @@ import { DASHBOARD_ROUTES, PRE_AUTH_ROUTES } from "./routes";
 /**
  * The 375px floor for the routes a signed-out visitor sees.
  *
- * `responsive-floor.spec.ts` covers the fifteen dashboard routes and cannot
+ * `responsive-floor.spec.ts` covers the sixteen dashboard routes and cannot
  * cover these: it asserts each route did **not** land on `/sign-in`, which is
  * the guard that stops a regressed `SUPABASE_AUTH_BYPASS` from turning all
- * fifteen into green measurements of the sign-in card. For a pre-auth route
+ * sixteen into green measurements of the sign-in card. For a pre-auth route
  * that assertion is inverted, so these carry a per-route expected URL instead.
  *
  * The #920 Profile & pre-auth slice rebuilt `/sign-in`, `/sign-up` and `/join`
@@ -18,7 +18,7 @@ import { DASHBOARD_ROUTES, PRE_AUTH_ROUTES } from "./routes";
  *
  * **Worth stating: these four are the routes this harness renders *correctly*.**
  * Its usual limitation is that a sessionless run leaves roughly ten of the
- * fifteen dashboard routes showing an empty-state card instead of their real
+ * sixteen dashboard routes showing an empty-state card instead of their real
  * content. Signed out is not a degraded mode for a sign-in screen; it is the
  * only mode, so this suite is real coverage rather than shell coverage.
  */
@@ -107,7 +107,7 @@ test.describe("pre-auth routes hold the 375px floor", () => {
  * strictly better guard than the one it replaces, because the old one only
  * fired when the directory collected nothing at all.
  */
-test("the dashboard floor suite still exists and still measures all fifteen routes", () => {
+test("the dashboard floor suite still exists and still measures all sixteen routes", () => {
   // `new URL(..., import.meta.url)` rather than `__dirname`: Playwright loads
   // these specs as ES modules, where `__dirname` is not defined at all.
   const sibling = new URL("./responsive-floor.spec.ts", import.meta.url);
@@ -119,5 +119,5 @@ test("the dashboard floor suite still exists and still measures all fifteen rout
   expect(
     DASHBOARD_ROUTES,
     "a dashboard route was removed from the required floor gate",
-  ).toHaveLength(15);
+  ).toHaveLength(16);
 });

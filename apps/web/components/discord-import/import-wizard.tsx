@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import {
   useConfirmDiscordUploads,
   useCreateDiscordImport,
+  useDiscordImportFiles,
   useRequestDiscordUploadUrls,
   useSetDiscordChannelMapping,
   useSetDiscordRoleMapping,
@@ -71,6 +72,25 @@ export function ImportWizard({
   const setChannelMapping = useSetDiscordChannelMapping();
   const setRoleMapping = useSetDiscordRoleMapping();
   const startImport = useStartDiscordImport();
+  // Drives the resume: anything the manifest already records as landed is not
+  // re-sent when the admin re-picks the folder.
+  const importFiles = useDiscordImportFiles(importId, {
+    enabled: step === "upload",
+  });
+  const alreadyUploaded = useMemo(
+    () =>
+      new Set(
+        (
+          (importFiles.data ?? []) as {
+            relative_path: string;
+            uploaded_at: string | null;
+          }[]
+        )
+          .filter((file) => file.uploaded_at !== null)
+          .map((file) => file.relative_path),
+      ),
+    [importFiles.data],
+  );
 
   const stepIndex = STEP_ORDER.indexOf(step);
 
@@ -190,6 +210,7 @@ export function ImportWizard({
         {step === "upload" && importId ? (
           <UploadStep
             importId={importId}
+            alreadyUploaded={alreadyUploaded}
             requestUrls={requestUrls}
             confirmUploads={confirmUploads}
             onStaged={setStaged}

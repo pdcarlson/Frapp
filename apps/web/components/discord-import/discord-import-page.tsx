@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import {
+  useCancelDiscordImport,
   useDeleteDiscordImport,
   useDiscordImport,
   useDiscordImports,
@@ -104,6 +105,7 @@ function DiscordImportBody({
   const imports = useDiscordImports();
   const active = useDiscordImport(activeId);
   const deleteImport = useDeleteDiscordImport();
+  const cancelImport = useCancelDiscordImport();
   const { toast } = useToast();
 
   const ready = imports.data !== undefined;
@@ -121,6 +123,18 @@ function DiscordImportBody({
 
   const rows = (imports.data ?? []) as unknown as ImportRow[];
   const activeRow = (active.data ?? null) as ImportRow | null;
+
+  async function cancel(id: string) {
+    try {
+      await cancelImport.mutateAsync({ id });
+      toast({ description: "Stopping the import." });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        description: getErrorMessage(error, "Could not stop the import."),
+      });
+    }
+  }
 
   async function purge(id: string) {
     try {
@@ -250,7 +264,23 @@ function DiscordImportBody({
                           Watch
                         </Button>
                       ) : null}
-                      {live.status !== "purged" && live.status !== "purging" ? (
+                      {/* Delete refuses while an import is running and says to
+                          cancel first, so the cancel affordance has to exist —
+                          otherwise the recovery path the API describes is not
+                          reachable from the product. */}
+                      {live.status === "running" || live.status === "ready" ? (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => void cancel(row.id)}
+                          disabled={cancelImport.isPending}
+                        >
+                          Stop import
+                        </Button>
+                      ) : null}
+                      {live.status !== "purged" &&
+                      live.status !== "purging" &&
+                      live.status !== "running" ? (
                         <Button
                           variant="destructive"
                           size="sm"

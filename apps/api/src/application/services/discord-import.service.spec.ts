@@ -7,6 +7,7 @@ import {
 import { MAX_ARCHIVE_EXPORT_PART_BYTES } from '@repo/validation';
 import { DiscordImportService } from './discord-import.service';
 import { DISCORD_IMPORT_REPOSITORY } from '../../domain/repositories/discord-import.repository.interface';
+import { CHAT_CHANNEL_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 import type { DiscordImport } from '../../domain/entities/discord-import.entity';
 import { isUnsafeStoragePath } from '../../domain/utils/storage-path';
@@ -51,7 +52,12 @@ function job(overrides: Partial<DiscordImport> = {}): DiscordImport {
 
 let repo: Record<string, jest.Mock>;
 let storage: Record<string, jest.Mock>;
+let channelRepo: Record<string, jest.Mock>;
 let service: DiscordImportService;
+
+/** A channel that exists in this chapter, and nothing else. */
+const OWN_CHANNEL = '66666666-6666-4666-8666-666666666666';
+const FOREIGN_CHANNEL = '77777777-7777-4777-8777-777777777777';
 
 async function build(current: DiscordImport = job()) {
   repo = {
@@ -91,11 +97,21 @@ async function build(current: DiscordImport = job()) {
     listObjects: jest.fn(),
     listFolders: jest.fn(),
   };
+  channelRepo = {
+    // Chapter-scoped by construction, like the real repository.
+    findById: jest.fn(async (id: string, chapterId: string) =>
+      id === OWN_CHANNEL && chapterId === CHAPTER
+        ? { id, chapter_id: chapterId, name: 'general' }
+        : null,
+    ),
+    create: jest.fn(),
+  };
   const moduleRef = await Test.createTestingModule({
     providers: [
       DiscordImportService,
       { provide: DISCORD_IMPORT_REPOSITORY, useValue: repo },
       { provide: STORAGE_PROVIDER, useValue: storage },
+      { provide: CHAT_CHANNEL_REPOSITORY, useValue: channelRepo },
     ],
   }).compile();
   service = moduleRef.get(DiscordImportService);
@@ -294,6 +310,39 @@ describe('DiscordImportService — channel mapping', () => {
         },
       ]),
     ).rejects.toThrow(/Pick a Signet channel/);
+  });
+
+  it('refuses a target channel from another chapter', async () => {
+    // The highest-consequence input on this surface. `chat_messages` has no
+    // `chapter_id`, so its FK accepts any channel in the product — and the
+    // purge scopes its delete by the import's chapter, so history written into
+    // another chapter could never be removed.
+    await build();
+    await expect(
+      service.setChannelMapping(IMPORT_ID, CHAPTER, [
+        {
+          discord_channel_id: '1',
+          discord_channel_name: 'general',
+          mapping_action: 'use_existing',
+          target_channel_id: FOREIGN_CHANNEL,
+        },
+      ]),
+    ).rejects.toThrow(/not one of this chapter/);
+  });
+
+  it('accepts a target channel that belongs to this chapter', async () => {
+    await build();
+    const rows = await service.setChannelMapping(IMPORT_ID, CHAPTER, [
+      {
+        discord_channel_id: '1',
+        discord_channel_name: 'general',
+        mapping_action: 'use_existing',
+        target_channel_id: OWN_CHANNEL,
+      },
+    ]);
+
+    expect(rows[0].target_channel_id).toBe(OWN_CHANNEL);
+    expect(channelRepo.findById).toHaveBeenCalledWith(OWN_CHANNEL, CHAPTER);
   });
 
   it('refuses a new channel with no name', async () => {

@@ -66,6 +66,24 @@ export interface IDiscordImportRepository {
       Partial<Pick<DiscordImport, 'role_mapping' | 'storage_prefix'>>,
   ): Promise<DiscordImport>;
 
+  /**
+   * Update, but only while the import is still in one of `expectedStatuses`.
+   * Returns null when it is not — which is how the worker learns the admin
+   * cancelled it, or that another writer moved it on.
+   *
+   * The lease protects against another *worker*; it does nothing against an
+   * admin calling cancel or delete mid-slice, because that is an ordinary API
+   * write on the same row. Without this guard the slice's closing
+   * `status: 'running'` overwrites `cancelled` and the next tick picks the job
+   * straight back up — a cancel button that does nothing.
+   */
+  updateIfStatus(
+    id: string,
+    chapterId: string,
+    expectedStatuses: DiscordImportStatus[],
+    patch: DiscordImportProgressPatch,
+  ): Promise<DiscordImport | null>;
+
   // ── channels ──────────────────────────────────────────────────────────────
   replaceChannels(
     importId: string,

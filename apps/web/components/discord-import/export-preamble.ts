@@ -21,18 +21,54 @@ export interface ExportPreamble {
 }
 
 /**
- * Parse the header out of a truncated export.
+ * Find the structural `"messages"` KEY, not the first occurrence of the text.
  *
- * Cuts at the `"messages"` key and closes the object. The cut is anchored after
- * the channel object rather than on the first occurrence, because `"messages"`
- * appears legitimately inside `channel.topic` — a chapter whose #general topic
- * says "read the pinned messages" would otherwise be unparseable.
+ * `indexOf('"messages"')` is wrong in a way that only shows up on real data: a
+ * guild with a channel or category literally named `messages` puts
+ * `"name":"messages"` in the preamble, the cut lands mid-object, and the parse
+ * fails — so that channel silently disappears from the mapping grid and the
+ * worker later skips its entire history with a warning nobody reads.
+ *
+ * A key is a quoted string followed by a colon, at nesting depth 1, outside any
+ * string. Kept in step with `findMessagesKey` in
+ * `apps/api/src/domain/utils/discord-export.ts`, which is the authority — this
+ * copy only decides what the mapping grid shows.
  */
+function findMessagesKey(input: string): number {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < input.length; i += 1) {
+    const ch = input[i];
+
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+
+    if (ch === '"') {
+      if (depth === 1 && input.startsWith('"messages"', i)) {
+        if (/^\s*:/.test(input.slice(i + '"messages"'.length))) return i;
+      }
+      inString = true;
+      continue;
+    }
+
+    if (ch === "{" || ch === "[") depth += 1;
+    else if (ch === "}" || ch === "]") depth -= 1;
+  }
+  return -1;
+}
+
+/** Parse the header out of a truncated export. */
 export function parseExportPreamble(head: string): ExportPreamble | null {
   const guildStart = head.indexOf('"guild"');
   if (guildStart === -1) return null;
 
-  const messagesKey = head.indexOf('"messages"', guildStart);
+  const messagesKey = findMessagesKey(head);
   const truncated =
     messagesKey === -1
       ? head

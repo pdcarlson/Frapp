@@ -58,6 +58,31 @@ describe('parseExportPreamble', () => {
     expect(parseExportPreamble(head)?.channel.name).toBe('general');
   });
 
+  it('survives a channel literally named "messages"', () => {
+    // The failure the naive `indexOf('"messages"')` produces on real data: the
+    // cut lands inside `"name":"messages"`, the parse fails, and that channel
+    // silently vanishes from the mapping step — its entire history then skipped
+    // with a warning buried in a list.
+    const head = JSON.stringify({
+      guild: { id: '1', name: 'G' },
+      channel: { id: '800', name: 'messages', category: 'General' },
+      messages: [],
+    });
+
+    expect(parseExportPreamble(head)?.channel.name).toBe('messages');
+    expect(parseExportPreamble(head)?.channel.id).toBe('800');
+  });
+
+  it('survives a category named "messages" too', () => {
+    const head = JSON.stringify({
+      guild: { id: '1', name: 'G' },
+      channel: { id: '800', name: 'general', category: 'messages' },
+      messages: [],
+    });
+
+    expect(parseExportPreamble(head)?.channel.id).toBe('800');
+  });
+
   it('returns null for something that is not an export', () => {
     expect(parseExportPreamble('{"hello":"world"}')).toBeNull();
     expect(parseExportPreamble('not json at all')).toBeNull();

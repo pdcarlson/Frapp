@@ -175,10 +175,17 @@ no export byte passes through the API, and a background job then reads those
 files and writes the rows. The admin sees per-import progress and can delete the
 whole import afterwards.
 
-- **Re-running an import is a no-op, not a duplicate.** Every imported row
-  carries `external_message_id` — the Discord message snowflake — under a unique
-  index per channel. This is deliberately *not* `client_message_id`, which is the
-  live client's optimistic-send key (ADR-03 and its 2026-08-24 amendment).
+- **Re-running *the same import* is a no-op, not a duplicate.** Every imported
+  row carries `external_message_id` — the Discord message snowflake — under a
+  unique index per channel, so a job that resumes, retries, or is restarted
+  writes each message once. This is deliberately *not* `client_message_id`, which
+  is the live client's optimistic-send key (ADR-03 and its 2026-08-24
+  amendment). **The index is scoped per channel**, which is the important
+  qualifier: starting a *second* import of the same export into a *different*
+  channel imports the history again, by design — that is an operator choosing to
+  put it somewhere else, not a duplicate. Re-running the wizard from the start
+  therefore does not deduplicate against an earlier import; delete the first one
+  instead.
 - **Where it lands is the operator's choice, per channel**, and it is always
   asked: `chat_channels` has no unique constraint on `(chapter_id, name)`, so a
   same-named Signet channel is never treated as consent to merge into it.

@@ -11,6 +11,7 @@ import type {
   DiscordImport,
   DiscordImportChannel,
   DiscordImportFile,
+  DiscordImportStatus,
 } from '../../../domain/entities/discord-import.entity';
 import type {
   ImportedAttachmentRow,
@@ -95,6 +96,24 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       .single();
     if (error) throw error;
     return data;
+  }
+
+  async updateIfStatus(
+    id: string,
+    chapterId: string,
+    expectedStatuses: DiscordImportStatus[],
+    patch: DiscordImportProgressPatch,
+  ): Promise<DiscordImport | null> {
+    const { data, error } = await this.supabase
+      .from('discord_imports')
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .in('status', expectedStatuses)
+      .select()
+      .maybeSingle();
+    if (error) throw error;
+    return data ?? null;
   }
 
   // ── channels ──────────────────────────────────────────────────────────────
@@ -316,9 +335,33 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
     const inserted = new Map<string, string>();
     if (rows.length === 0) return inserted;
 
+    // Collapse duplicates WITHIN the batch before inserting.
+    //
+    // The caller's pre-insert existence read can only see rows already
+    // committed, so two copies of one snowflake inside the same batch both look
+    // new. A single `.insert()` of both trips `idx_chat_messages_external_dedupe`
+    // with a 23505 that fails the whole batch — and since the cursor has not
+    // advanced, the next tick replays the same batch and fails identically. The
+    // import wedges permanently on a raw Postgres error.
+    //
+    // This is not hypothetical for a real export: DCE's own `--after`/`--before`
+    // resume workflow produces partitions that overlap at the boundary, and a
+    // folder holding two export runs has them wholesale.
+    //
+    // Deduping here rather than upserting because PostgREST cannot use a PARTIAL
+    // unique index as an ON CONFLICT arbiter — `ignoreDuplicates` still answers
+    // 409, and naming the arbiter answers 42P10. Verified against the local
+    // stack; see `findExistingExternalIds`.
+    const seen = new Set<string>();
+    const deduped = rows.filter((row) => {
+      if (seen.has(row.external_message_id)) return false;
+      seen.add(row.external_message_id);
+      return true;
+    });
+
     const { data, error } = await this.supabase
       .from('chat_messages')
-      .insert(rows as unknown as TablesInsert<'chat_messages'>[])
+      .insert(deduped as unknown as TablesInsert<'chat_messages'>[])
       .select('id, external_message_id');
     if (error) throw error;
     for (const row of data ?? []) {
@@ -337,13 +380,18 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
     // reached for messages that actually reply to something in the same batch.
     let updated = 0;
     for (const pair of pairs) {
-      const { error } = await this.supabase
+      const { data, error } = await this.supabase
         .from('chat_messages')
         .update({ reply_to_id: pair.reply_to_id })
         .eq('id', pair.id)
-        .eq('kind', 'imported');
+        .eq('kind', 'imported')
+        .select('id');
       if (error) throw error;
-      updated += 1;
+      // Affected rows, not attempts. The `kind` filter can exclude a row (a
+      // moderator hard-deleted the target between the insert and this pass), and
+      // a count that says otherwise would make a future caller's retry logic
+      // silently wrong.
+      updated += (data ?? []).length;
     }
     return updated;
   }

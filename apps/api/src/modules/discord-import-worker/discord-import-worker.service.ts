@@ -9,6 +9,7 @@ import {
   STORAGE_PROVIDER,
   type IStorageProvider,
 } from '../../domain/adapters/storage.interface';
+import { MAX_ARCHIVE_EXPORT_PART_BYTES } from '@repo/validation';
 import {
   CHAT_ARCHIVE_BUCKET,
   archiveImportPrefix,
@@ -28,6 +29,7 @@ import type {
   DiscordImport,
   DiscordImportChannel,
   DiscordImportFile,
+  DiscordImportStatus,
 } from '../../domain/entities/discord-import.entity';
 
 /**
@@ -54,6 +56,16 @@ export const PURGE_BATCH_SIZE = 500;
 
 /** Most recent warnings kept on the job row. */
 export const MAX_WARNINGS = 50;
+
+/**
+ * Statuses in which a slice may keep going.
+ *
+ * Every write the worker makes to the job row is conditioned on one of these,
+ * so an admin who cancels or deletes mid-slice actually stops it. The lease
+ * cannot do this job: it arbitrates between *workers*, and a cancel is an
+ * ordinary API write on the same row.
+ */
+const WORKER_MAY_CONTINUE: DiscordImportStatus[] = ['ready', 'running'];
 
 export interface ImportSweepResult {
   claimed: boolean;
@@ -141,10 +153,12 @@ export class DiscordImportWorkerService {
           `Discord import ${job.id} failed: ${message}`,
           error instanceof Error ? error.stack : undefined,
         );
-        await this.importRepo.update(job.id, job.chapter_id, {
-          status: 'failed',
-          error: message,
-        });
+        await this.importRepo.updateIfStatus(
+          job.id,
+          job.chapter_id,
+          [...WORKER_MAY_CONTINUE, 'purging'],
+          { status: 'failed', error: message },
+        );
         return { claimed: true, importId: job.id, finished: true };
       } finally {
         await this.importRepo.releaseLease(job.id, lockToken).catch(() => {
@@ -183,10 +197,15 @@ export class DiscordImportWorkerService {
     );
 
     if (job.status !== 'running') {
-      await this.importRepo.update(job.id, chapterId, {
-        status: 'running',
-        parts_total: parts.length,
-      });
+      const started = await this.importRepo.updateIfStatus(
+        job.id,
+        chapterId,
+        WORKER_MAY_CONTINUE,
+        { status: 'running', parts_total: parts.length },
+      );
+      if (!started) {
+        return { claimed: true, importId: job.id, messagesImported: 0 };
+      }
     }
 
     const warnings = [...job.warnings];
@@ -212,6 +231,23 @@ export class DiscordImportWorkerService {
       );
       if (!bytes) {
         warnings.push(`Uploaded export part is missing: ${part.relative_path}`);
+        partIndex += 1;
+        messageIndex = 0;
+        continue;
+      }
+
+      // The size gate at mint time reads a byte count the CLIENT declared, so it
+      // is a usability check, not a control: a caller can register a part as 1
+      // byte and PUT 100 MB, which the bucket accepts (`application/json` is
+      // allowlisted at the bucket's 100 MB ceiling). This is the enforcement
+      // point, against the bytes that actually arrived — and it has to be here,
+      // before `JSON.parse`, because parsing is what would exhaust the heap.
+      // A part that trips it is skipped with a warning rather than retried, so
+      // the cursor advances and the import cannot loop on it forever.
+      if (bytes.byteLength > MAX_ARCHIVE_EXPORT_PART_BYTES) {
+        warnings.push(
+          `${part.relative_path} is ${Math.round(bytes.byteLength / 1024 / 1024)} MB, over the ${Math.round(MAX_ARCHIVE_EXPORT_PART_BYTES / 1024 / 1024)} MB limit for one export part — re-export with a smaller --partition. Skipped.`,
+        );
         partIndex += 1;
         messageIndex = 0;
         continue;
@@ -254,7 +290,23 @@ export class DiscordImportWorkerService {
       // message the whole import has written so far.
       let channelImported = 0;
 
-      if (messageIndex === 0) {
+      // Count each part's length exactly once, EVER — not once per slice.
+      //
+      // A slice can end after parsing a part and before any batch advances the
+      // cursor (an 8 MB download plus parse can outlast the remaining budget on
+      // its own). The next slice then re-opens that same part at message 0, so
+      // a naive `messageIndex === 0` test adds its length again every minute:
+      // the denominator grows without bound and the admin's progress bar walks
+      // backwards toward 0% while nothing is actually stuck.
+      //
+      // The durable test is the persisted cursor, not a per-slice set. A part is
+      // being opened for the first time iff it is past the cursor's part, or it
+      // IS the cursor's part and no length was ever recorded for it.
+      const firstOpen =
+        partIndex > job.cursor_part_index ||
+        (partIndex === job.cursor_part_index &&
+          job.cursor_part_message_count === 0);
+      if (firstOpen && messageIndex === 0) {
         totalMessages += parsed.messages.length;
       }
 
@@ -280,17 +332,36 @@ export class DiscordImportWorkerService {
         warnings.push(...outcome.warnings);
         messageIndex += batch.length;
 
-        await this.importRepo.update(job.id, chapterId, {
-          total_messages: totalMessages,
-          imported_messages: imported,
-          messages_skipped: skipped,
-          attachments_imported: attachmentsImported,
-          attachments_skipped: attachmentsSkipped,
-          cursor_part_index: partIndex,
-          cursor_message_index: messageIndex,
-          cursor_part_message_count: parsed.messages.length,
-          warnings: warnings.slice(-MAX_WARNINGS),
-        });
+        const stillRunning = await this.importRepo.updateIfStatus(
+          job.id,
+          chapterId,
+          WORKER_MAY_CONTINUE,
+          {
+            total_messages: totalMessages,
+            imported_messages: imported,
+            messages_skipped: skipped,
+            attachments_imported: attachmentsImported,
+            attachments_skipped: attachmentsSkipped,
+            cursor_part_index: partIndex,
+            cursor_message_index: messageIndex,
+            cursor_part_message_count: parsed.messages.length,
+            warnings: warnings.slice(-MAX_WARNINGS),
+          },
+        );
+        // Null means the admin cancelled (or queued a purge) while this batch
+        // was in flight. Stop here rather than finishing the slice: the
+        // messages already written stay, and the purge — or a re-start — is
+        // what decides what happens to them.
+        if (!stillRunning) {
+          this.logger.log(
+            `Discord import ${job.id} left the running state mid-slice; stopping.`,
+          );
+          return {
+            claimed: true,
+            importId: job.id,
+            messagesImported: imported,
+          };
+        }
 
         // A lost lease means another instance already took this job over.
         // Stop immediately rather than writing alongside it.
@@ -312,9 +383,14 @@ export class DiscordImportWorkerService {
         }
       }
 
+      // Accumulate onto the in-memory row as well, for the same reason
+      // `target_channel_id` is written back: the next part of this channel
+      // reuses this object, and re-reading the original base would make part 1
+      // overwrite part 0's contribution instead of adding to it.
+      mapping.imported_count += channelImported;
       await this.importRepo.updateChannel(mapping.id, job.id, {
         target_channel_id: targetChannelId,
-        imported_count: mapping.imported_count + channelImported,
+        imported_count: mapping.imported_count,
         status:
           messageIndex >= parsed.messages.length ? 'completed' : 'running',
       });
@@ -325,18 +401,23 @@ export class DiscordImportWorkerService {
     }
 
     const finished = partIndex >= parts.length;
-    await this.importRepo.update(job.id, chapterId, {
-      status: finished ? 'completed' : 'running',
-      total_messages: totalMessages,
-      cursor_part_index: partIndex,
-      cursor_message_index: messageIndex,
-      imported_messages: imported,
-      messages_skipped: skipped,
-      attachments_imported: attachmentsImported,
-      attachments_skipped: attachmentsSkipped,
-      warnings: warnings.slice(-MAX_WARNINGS),
-      completed_at: finished ? new Date().toISOString() : null,
-    });
+    await this.importRepo.updateIfStatus(
+      job.id,
+      chapterId,
+      WORKER_MAY_CONTINUE,
+      {
+        status: finished ? 'completed' : 'running',
+        total_messages: totalMessages,
+        cursor_part_index: partIndex,
+        cursor_message_index: messageIndex,
+        imported_messages: imported,
+        messages_skipped: skipped,
+        attachments_imported: attachmentsImported,
+        attachments_skipped: attachmentsSkipped,
+        warnings: warnings.slice(-MAX_WARNINGS),
+        completed_at: finished ? new Date().toISOString() : null,
+      },
+    );
 
     return {
       claimed: true,
@@ -491,7 +572,26 @@ export class DiscordImportWorkerService {
     chapterId: string,
     importId: string,
   ): Promise<string> {
-    if (mapping.target_channel_id) return mapping.target_channel_id;
+    if (mapping.target_channel_id) {
+      // Re-verified here, not trusted from the row. The service validates the
+      // target when the admin picks it, but that was a different request: the
+      // channel can be deleted and its id reused, or a future writer could
+      // reach `replaceChannels` without the check. `chat_messages` has no
+      // `chapter_id` of its own, so a channel from another chapter is a valid
+      // foreign key and nothing downstream would notice — and the purge scopes
+      // its delete by this import's chapter, so anything written elsewhere
+      // could never be removed. Two cheap reads beat one unrecoverable import.
+      const target = await this.channelRepo.findById(
+        mapping.target_channel_id,
+        chapterId,
+      );
+      if (!target) {
+        throw new Error(
+          `Channel mapping for #${mapping.discord_channel_name} points at a channel outside this chapter.`,
+        );
+      }
+      return mapping.target_channel_id;
+    }
     if (mapping.mapping_action !== 'create_new' || !mapping.new_channel_name) {
       throw new Error(
         `Channel mapping for #${mapping.discord_channel_name} has no target.`,
@@ -511,6 +611,15 @@ export class DiscordImportWorkerService {
     await this.importRepo.updateChannel(mapping.id, importId, {
       target_channel_id: created.id,
     });
+    // Write it back onto the in-memory row too, not just the database.
+    // `channelBySnowflake` hands the SAME object back for every part of a
+    // channel, and a channel split by `--partition` is several parts — so
+    // reading only the database value would leave this `null` on the next part
+    // and mint a second channel with the same name. `chat_channels` has no
+    // unique `(chapter_id, name)`, so nothing downstream would catch it: the
+    // chapter would end up with one identically-named channel per part, each
+    // holding a slice of the history.
+    mapping.target_channel_id = created.id;
     return created.id;
   }
 

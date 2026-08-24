@@ -115,6 +115,7 @@ it depends on (`chat_messages.author_name`, `chat_message_attachments`, and the
   - `select indexdef from pg_indexes where indexname='idx_chat_messages_external_dedupe';` → `UNIQUE`, on `(channel_id, external_message_id)`
   - `select is_nullable from information_schema.columns where table_name='discord_imports' and column_name='consent_acknowledged_at';` → **`NO`**. This is the compliance gate: a friction point enforced only in the web wizard is skippable by anything that calls the API directly, so the column is what guarantees no import exists that nobody acknowledged.
   - `select count(*) from pg_policy p join pg_class c on c.oid=p.polrelid where c.relname in ('discord_imports','discord_import_channels','discord_import_files');` → **0**
+  - `select indexdef from pg_indexes where indexname='idx_chat_messages_discord_import';` → predicate is **`WHERE (kind = 'imported')`**. This is load-bearing and the obvious alternative is silently broken: Postgres must prove the query's `WHERE` implies the index predicate, and it cannot derive `metadata ? 'discord_import_id'` from `metadata ->> 'discord_import_id' = $1`. With that predicate the purge does not use the index even with `enable_seqscan = off` — unreachable, not merely unattractive, and indistinguishable from working until an import gets large.
   - Sanity: `POST /v1/discord-imports` without `consent_acknowledged` answers 400.
 * **Rollback**: see **Rollback the Discord importer** in
   [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md). **Read it before

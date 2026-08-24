@@ -3103,6 +3103,8 @@ export interface components {
             storage_path: string;
             /** @description Short-lived signed URL; PUT the bytes to it. */
             upload_url: string;
+            /** @description The content type the API validated. Send exactly this on the PUT — the bucket allowlist judges what the uploader sends, and a browser reports an empty type for several formats a Discord archive carries. */
+            content_type: string;
         };
         ConfirmDiscordUploadsDto: {
             /** @description Storage paths whose PUT completed. */

@@ -19,6 +19,10 @@ import {
   type IDiscordImportRepository,
 } from '../../domain/repositories/discord-import.repository.interface';
 import {
+  CHAT_CHANNEL_REPOSITORY,
+  type IChatChannelRepository,
+} from '../../domain/repositories/chat.repository.interface';
+import {
   STORAGE_PROVIDER,
   type IStorageProvider,
 } from '../../domain/adapters/storage.interface';
@@ -45,6 +49,19 @@ export interface UploadTicket {
   relative_path: string;
   storage_path: string;
   upload_url: string;
+  /**
+   * The content type the API resolved and validated, which the browser MUST
+   * send on the PUT.
+   *
+   * Without this the two sides judge different values: the API validates a type
+   * derived from the file extension, while the browser sends `file.type`, which
+   * is empty for exactly the formats a Discord archive is full of (`.heic`,
+   * `.mkv`, `.avif`). An empty type becomes `application/octet-stream`, the
+   * bucket's allowlist rejects it with a 415, and the file's manifest row keeps
+   * `uploaded_at = null` forever — which `start()` refuses to import past, with
+   * no way to drop the row. The import becomes permanently unstartable.
+   */
+  content_type: string;
 }
 
 export interface RequestUploadInput {
@@ -86,6 +103,8 @@ export class DiscordImportService {
     private readonly importRepo: IDiscordImportRepository,
     @Inject(STORAGE_PROVIDER)
     private readonly storage: IStorageProvider,
+    @Inject(CHAT_CHANNEL_REPOSITORY)
+    private readonly channelRepo: IChatChannelRepository,
   ) {}
 
   async create(
@@ -169,6 +188,7 @@ export class DiscordImportService {
       created.map(async (row) => ({
         relative_path: row.relative_path,
         storage_path: row.storage_path,
+        content_type: row.content_type ?? 'application/octet-stream',
         upload_url: await this.storage.getSignedUploadUrl(
           row.bucket,
           row.storage_path,
@@ -214,6 +234,24 @@ export class DiscordImportService {
         throw new BadRequestException(
           `Pick a Signet channel for #${channel.discord_channel_name}, or choose to create a new one.`,
         );
+      }
+      if (channel.mapping_action === 'use_existing') {
+        // The target is a client-supplied UUID and the only thing standing
+        // between it and thousands of inserts. `chat_messages` has no
+        // `chapter_id`, so its FK to `chat_channels` accepts ANY channel in the
+        // product — nothing in the database would catch a channel from another
+        // chapter. Worse, it would be unrecoverable: the purge scopes its delete
+        // by the import's own chapter, so history injected elsewhere is
+        // permanent. Resolve it through the chapter-scoped read.
+        const target = await this.channelRepo.findById(
+          channel.target_channel_id as string,
+          chapterId,
+        );
+        if (!target) {
+          throw new BadRequestException(
+            `The channel chosen for #${channel.discord_channel_name} is not one of this chapter's channels.`,
+          );
+        }
       }
       if (
         channel.mapping_action === 'create_new' &&

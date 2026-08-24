@@ -243,11 +243,22 @@ const LANDMARKS = [
     // The purge's only handle on "which rows belong to import X". Two imports
     // can merge into one live channel, so without this the purge cannot tell
     // them apart and would take the other import's history with it.
-    name: "chat_messages carries a discord_import_id index for the purge",
+    //
+    // The PREDICATE is asserted, not just the index's existence. `kind =
+    // 'imported'` is load-bearing and the obvious alternative is silently
+    // broken: Postgres must prove the query's WHERE implies the index
+    // predicate, and it cannot derive `metadata ? 'discord_import_id'` from
+    // `metadata ->> 'discord_import_id' = $1`. Measured — with the `?`
+    // predicate the purge query does not use this index even with
+    // `enable_seqscan = off`. An index that exists but is unreachable looks
+    // exactly like one that works until an import gets large.
+    name: "the discord_import_id purge index is predicated so the purge can use it",
     sql: `select indexdef from pg_indexes
            where indexname = 'idx_chat_messages_discord_import'`,
     ok: (rows) =>
-      rows.length === 1 && /discord_import_id/.test(rows[0].indexdef ?? ""),
+      rows.length === 1 &&
+      /discord_import_id/.test(rows[0].indexdef ?? "") &&
+      /WHERE \(kind = 'imported'/i.test(rows[0].indexdef ?? ""),
   },
   {
     // Both halves matter and they are independent: the kind rule is what keeps a

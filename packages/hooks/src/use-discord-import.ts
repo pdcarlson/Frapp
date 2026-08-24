@@ -125,6 +125,68 @@ export function useDiscordImportChannels(
   });
 }
 
+/**
+ * The uploaded-file manifest for one import.
+ *
+ * Rows whose `uploaded_at` is null are what an interrupted upload still needs
+ * to send — which is what makes re-picking the folder a resume rather than a
+ * restart.
+ */
+export function useDiscordImportFiles(
+  id: string | null,
+  options?: { enabled?: boolean },
+) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+
+  return useQuery({
+    queryKey: discordImportKeys.files(chapterId, id ?? ""),
+    queryFn: async () => {
+      const { data, error } = await client.GET(
+        "/v1/discord-imports/{id}/files",
+        { params: { path: { id: id as string } } },
+      );
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: !!chapterId && !!id && (options?.enabled ?? true),
+    staleTime: 0,
+    retry: false,
+  });
+}
+
+/**
+ * Stop a queued or running import.
+ *
+ * Not optional garnish: `DELETE` refuses while an import is `running` and tells
+ * the admin to cancel first, so without this the documented recovery path has
+ * no button behind it and a misconfigured import runs to completion.
+ */
+export function useCancelDiscordImport() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+
+  return useMutation({
+    mutationFn: async (vars: { id: string }) => {
+      const { data, error } = await client.POST(
+        "/v1/discord-imports/{id}/cancel",
+        { params: { path: { id: vars.id } } },
+      );
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (_data, vars) => {
+      void queryClient.invalidateQueries({
+        queryKey: discordImportKeys.detail(chapterId, vars.id),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: discordImportKeys.list(chapterId),
+      });
+    },
+  });
+}
+
 export function useCreateDiscordImport() {
   const client = useFrappClient();
   const queryClient = useQueryClient();

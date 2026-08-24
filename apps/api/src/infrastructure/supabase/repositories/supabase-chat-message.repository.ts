@@ -209,8 +209,10 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       // This covers the *live send* retry only. The importer's collision is a
       // different index — `idx_chat_messages_external_dedupe` on
       // (channel_id, external_message_id), see 20260824120000_discord_import.sql
-      // — and a different write path: it bulk-inserts with `ignoreDuplicates`,
-      // so a re-run never reaches this translation at all.
+      // — and a different write path: it reads which snowflakes already exist
+      // and inserts only the rest, so a re-run never reaches this translation
+      // at all. (It cannot upsert: PostgREST will not use a partial unique
+      // index as an ON CONFLICT arbiter.)
       //
       // `sender_id` is still checked for `undefined` rather than truthiness. A
       // null sender is a legitimate insert (an imported archive row), and while

@@ -148,6 +148,22 @@ function makeRepo(initial: DiscordImport) {
         return current;
       },
     ),
+    updateIfStatus: jest.fn(
+      async (
+        _id: string,
+        _chapter: string,
+        expected: string[],
+        patch: Record<string, unknown>,
+      ) => {
+        // The real guard: the UPDATE matches no row unless the import is still
+        // in one of the expected statuses, which is how the worker learns an
+        // admin cancelled it mid-slice.
+        if (!expected.includes(current.status)) return null;
+        repoRef.updates.push(patch);
+        current = { ...current, ...(patch as Partial<DiscordImport>) };
+        return current;
+      },
+    ),
     updateChannel: jest.fn(
       async (
         _id: string,
@@ -215,6 +231,14 @@ async function buildWorker(
       id: 'created-channel-1',
       name: data.name,
     })),
+    // Chapter-scoped: the worker re-verifies that the mapping's target channel
+    // belongs to the import's chapter before writing a single message into it.
+    findById: jest.fn(async (id: string, chapterId: string) =>
+      chapterId === CHAPTER &&
+      (id === SIGNET_CHANNEL || id === 'created-channel-1')
+        ? { id, chapter_id: chapterId, name: 'general' }
+        : null,
+    ),
   };
   const moduleRef = await Test.createTestingModule({
     providers: [
@@ -430,6 +454,99 @@ describe('DiscordImportWorkerService — importing', () => {
     expect(repoRef.channelUpdates[0]).toMatchObject({
       target_channel_id: 'created-channel-1',
     });
+  });
+
+  it('stops when the admin cancels mid-slice, instead of resurrecting the job', async () => {
+    // The lease arbitrates between workers; it does nothing against an admin
+    // calling cancel, which is an ordinary write on the same row. Without the
+    // status guard the slice's closing `status: 'running'` overwrites
+    // `cancelled` and the next tick picks it straight back up — a cancel button
+    // that does nothing.
+    const { worker } = await buildWorker(repoRef, makeStorage(part000()));
+    repoRef.insertMessages.mockImplementationOnce(async () => {
+      // The admin cancels while the first batch is in flight.
+      repoRef.update(IMPORT_ID, CHAPTER, { status: 'cancelled' });
+      return new Map();
+    });
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.state().status).toBe('cancelled');
+  });
+
+  it('does not mark a cancelled job failed either', async () => {
+    const storage = makeStorage(part000());
+    storage.downloadFile = jest.fn(async () => {
+      repoRef.update(IMPORT_ID, CHAPTER, { status: 'cancelled' });
+      throw new Error('storage exploded');
+    });
+    const { worker } = await buildWorker(repoRef, storage);
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.state().status).toBe('cancelled');
+  });
+
+  it("refuses a mapping that points at another chapter's channel", async () => {
+    // `chat_messages` has no `chapter_id`, so its FK accepts ANY channel in the
+    // product — nothing in the database would catch history written into
+    // another chapter. Worse, it would be unremovable: the purge scopes its
+    // delete by this import's chapter.
+    repoRef.channels = [
+      channelMapping({ target_channel_id: 'a-channel-in-another-chapter' }),
+    ];
+    const { worker } = await buildWorker(repoRef, makeStorage(part000()));
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.insertMessages).not.toHaveBeenCalled();
+    expect(repoRef.state().status).toBe('failed');
+  });
+
+  it('creates a channel once across every part of that channel', async () => {
+    // `channelBySnowflake` hands the same object back for each part, so a
+    // channel split by `--partition` would otherwise mint one identically-named
+    // Signet channel per part, each holding a slice of the history.
+    repoRef.files = [
+      exportFile({ id: 'f0', part_index: 0, relative_path: 'p0.json' }),
+      exportFile({ id: 'f1', part_index: 1, relative_path: 'p1.json' }),
+      exportFile({ id: 'f2', part_index: 2, relative_path: 'p2.json' }),
+    ];
+    repoRef.channels = [
+      channelMapping({
+        mapping_action: 'create_new',
+        target_channel_id: null,
+        new_channel_name: 'discord-general',
+      }),
+    ];
+    const { worker, channelRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+
+    await worker.sweepImports(NOW);
+
+    expect(channelRepo.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts a part's messages once even if it is re-opened by a later slice", async () => {
+    // A slice can end after parsing and before any batch advances the cursor,
+    // so the next slice re-opens the same part at message 0. Counting on
+    // `messageIndex === 0` alone would inflate the denominator every minute and
+    // walk the progress bar backwards.
+    repoRef = makeRepo(
+      job({
+        cursor_part_index: 0,
+        cursor_part_message_count: 8,
+        total_messages: 8,
+      }),
+    );
+    const { worker } = await buildWorker(repoRef, makeStorage(part000()));
+
+    await worker.sweepImports(NOW);
+
+    const last = repoRef.updates.at(-1) as { total_messages: number };
+    expect(last.total_messages).toBe(8);
   });
 
   it('stops mid-slice when the lease is lost rather than writing alongside the new owner', async () => {

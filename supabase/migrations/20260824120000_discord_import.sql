@@ -34,6 +34,31 @@
 -- immutable). This header is the superseding record for the migration comment,
 -- which is already promoted and is not edited in place.
 --
+-- WHAT THIS ALSO SUPERSEDES IN 20260823124000 (the chat-archive bucket)
+--
+-- That migration's header states "WRITE PATH: SERVER-SIDE, NOT A SIGNED UPLOAD
+-- URL -- Nothing user-controlled is ever stored here. The importer fetches each
+-- Discord CDN object itself", and concludes that `allowed_mime_types` is
+-- therefore "a second belt rather than the only one". Both halves are now
+-- wrong, and the second one is a security claim, so it is corrected here rather
+-- than left to mislead whoever next trims that list:
+--
+--   * The importer never contacts Discord. The admin runs DiscordChatExporter
+--     with `--media` on their own machine and their BROWSER uploads each file
+--     through a signed URL, so the bytes are user-supplied and never pass
+--     through the API.
+--   * `allowed_mime_types` is consequently the ENFORCEMENT POINT on that
+--     bucket, not a second belt. It does enforce -- a signed-URL PUT of a type
+--     outside the list answers 415 `invalid_mime_type` from storage-api,
+--     measured against a live stack -- and the API's extension-derived
+--     pre-check exists to turn that into a readable error, not to replace it.
+--     Do not relax that list on the belief that something server-side is
+--     resolving types behind it.
+--   * The object layout there (`.../{channel_id}/{message_id}/{basename}`)
+--     assumed Signet ids exist at write time. They do not; see
+--     `archiveImportPrefix()` in apps/api/src/domain/constants/storage.ts for
+--     the import-scoped layout that shipped.
+--
 -- Every statement is guarded, so the file is re-runnable (`db push --local` is
 -- treated as idempotent -- AGENTS.md § Gotchas).
 
@@ -56,8 +81,13 @@ alter table public.chat_messages
 -- channel mappings -- that is a deliberate operator choice, not a duplicate.
 --
 -- Re-running the same import against the same mapping is what this rejects, and
--- it is the whole idempotency story: the importer inserts with
--- `ignoreDuplicates`, so a second run is a no-op rather than an error.
+-- it is the whole idempotency story. The importer does NOT upsert past it:
+-- PostgREST cannot use a PARTIAL unique index as an ON CONFLICT arbiter
+-- (`ignoreDuplicates` still answers 409, and naming the arbiter explicitly
+-- answers 42P10, because Postgres needs the index predicate restated and
+-- PostgREST has no syntax for it -- both measured against a live stack). So the
+-- importer reads which snowflakes already exist and inserts only the rest, and
+-- this index is the backstop that makes that check-then-act safe.
 --
 -- On NULLS NOT DISTINCT: it is spelled here for symmetry with
 -- `idx_chat_messages_dedupe`, but unlike there it is INERT. `channel_id` is NOT
@@ -82,9 +112,22 @@ create unique index if not exists idx_chat_messages_external_dedupe
 -- answerable and the purge would take the other import's history with it.
 --
 -- Partial, on the expression, because it only ever serves imported rows.
+--
+-- The predicate is `kind = 'imported'` and NOT `metadata ? 'discord_import_id'`,
+-- which is the obvious spelling and does not work. To use a partial index
+-- Postgres must PROVE the query's WHERE implies the index predicate, and it
+-- cannot derive `metadata ? 'discord_import_id'` from
+-- `metadata ->> 'discord_import_id' = $1` — `->>` yielding a value is not, to
+-- the proof machinery, the same claim as `?` reporting the key present.
+--
+-- Measured, not reasoned about: with the `?` predicate the purge query would not
+-- use this index even with `enable_seqscan = off` — it is unreachable, not
+-- merely unattractive. With `kind = 'imported'`, which the purge query states
+-- literally, the planner picks a bitmap index scan unprompted at 200k rows.
+-- Either way the index stays off the live insert path, which is the point.
 create index if not exists idx_chat_messages_discord_import
   on public.chat_messages ((metadata ->> 'discord_import_id'))
-  where metadata ? 'discord_import_id';
+  where kind = 'imported';
 
 -- ---------------------------------------------------------------------------
 -- 4. The import job.

@@ -41,6 +41,7 @@ vi.mock("@repo/hooks", () => ({
     isPending: false,
   }),
   useStartDiscordImport: () => ({ mutateAsync: startImport, isPending: false }),
+  useDiscordImportFiles: () => ({ data: [] }),
   useChannels: () => ({ data: [{ id: "ch-1", name: "general" }] }),
 }));
 
@@ -200,6 +201,19 @@ describe("export preamble reader", () => {
 
   it("is not fooled by the word messages inside the channel topic", () => {
     expect(parseExportPreamble(head)?.channelName).toBe("general");
+  });
+
+  it("survives a channel literally named messages", () => {
+    // The naive `indexOf('\"messages\"')` cut lands inside `\"name\":\"messages\"`,
+    // the parse fails, and the channel silently vanishes from the mapping grid.
+    const named = JSON.stringify({
+      guild: { id: "1", name: "Tau Nu" },
+      channel: { id: "801", name: "messages", category: "General" },
+      messages: [],
+    });
+
+    expect(parseExportPreamble(named)?.channelId).toBe("801");
+    expect(parseExportPreamble(named)?.channelName).toBe("messages");
   });
 
   it("returns null for a file that is not an export", () => {

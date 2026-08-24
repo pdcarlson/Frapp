@@ -62,7 +62,12 @@ export class SupabaseChatMessageAttachmentRepository implements IChatMessageAtta
       })
       .select();
     if (error) throw error;
-    return data ?? [];
+    // Stripped on this exit too, not only on the read. The comment on
+    // `external_url` promises it cannot reach a client "whatever a future writer
+    // puts in it", and a promise that holds on one of two return paths is not
+    // one — the next change that surfaces created attachments on the send
+    // response would ship the column with no compile error and no failing test.
+    return (data ?? []).map(stripAttachmentRow);
   }
 
   async findByMessage(
@@ -76,12 +81,13 @@ export class SupabaseChatMessageAttachmentRepository implements IChatMessageAtta
       .eq('chat_channels.chapter_id', chapterId)
       .order('created_at', { ascending: true });
     if (error) throw error;
-    return (data ?? []).map(stripChannelEmbed);
+    return (data ?? []).map(stripAttachmentRow);
   }
 }
 
 /**
  * Drops two things PostgREST hands back that must not leave this repository.
+ * Applied on EVERY exit from this repository, not only the read.
  *
  * **The `chat_channels` embed** carries the tenant filter and is not part of the
  * entity: leaving it on would put a second, differently-shaped `chapter_id` on a
@@ -106,7 +112,7 @@ export class SupabaseChatMessageAttachmentRepository implements IChatMessageAtta
  * asserts on the returned row rather than on the query string so it pins the
  * property that actually matters.
  */
-function stripChannelEmbed(row: ChatMessageAttachment): ChatMessageAttachment {
+function stripAttachmentRow(row: ChatMessageAttachment): ChatMessageAttachment {
   const { ...rest } = row as ChatMessageAttachment & {
     chat_channels?: unknown;
   };

@@ -102,8 +102,9 @@ export function archiveMediaPrefix(
  * importer joins on the stored string rather than re-deriving it.
  *
  * Two different source paths can flatten to the same segment (`a/b.png` and
- * `a_b.png`). The caller disambiguates — the file row's id is appended — so this
- * stays a pure, testable string function with no collision policy baked in.
+ * `a_b.png`). The caller disambiguates by prefixing a short digest of the
+ * ORIGINAL path (`hashSegment` in `discord-import.service.ts`), so this stays a
+ * pure, testable string function with no collision policy baked in.
  */
 export function flattenArchiveRelativePath(relativePath: string): string {
   return relativePath.replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 180);
