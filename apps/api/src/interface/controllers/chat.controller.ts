@@ -266,7 +266,35 @@ export class ChatController {
       payload: dto.payload,
       reply_to_id: dto.reply_to_id,
       metadata: dto.metadata,
+      attachments: dto.attachments,
     });
+  }
+
+  /**
+   * Attachments on one message, each with a signed download URL.
+   *
+   * A route of its own rather than a field on the message read: the URLs expire,
+   * so they have to be minted when they are about to be used, and the clients'
+   * message caches are fed partly by Realtime rows, which cannot carry a join at
+   * all. `metadata.attachment_count` on the message row is what tells a client
+   * this is worth calling.
+   */
+  @Get(':id/messages/:messageId/attachments')
+  @ApiOperation({
+    summary: 'Attachments on a message, with signed download URLs',
+  })
+  async listMessageAttachments(
+    @Param('id') channelId: string,
+    @Param('messageId') messageId: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.chatService.listMessageAttachments(
+      channelId,
+      chapterId,
+      userId,
+      messageId,
+    );
   }
 
   @Patch('messages/:messageId')

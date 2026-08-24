@@ -901,6 +901,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/{id}/messages/{messageId}/attachments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Attachments on a message, with signed download URLs */
+        get: operations["ChatController_listMessageAttachments_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/channels/messages/{messageId}": {
         parameters: {
             query?: never;
@@ -2528,12 +2545,19 @@ export interface components {
             name?: string;
             display_order?: number;
         };
+        MessageAttachmentDto: {
+            storage_path: string;
+            filename: string;
+            content_type: string;
+            byte_size?: number;
+        };
         SendMessageDto: {
             /** Format: uuid */
             client_message_id: string;
             content: string;
+            attachments?: components["schemas"]["MessageAttachmentDto"][];
             /** @enum {string} */
-            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "system_audit" | "loading" | "announcement";
+            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "system_audit" | "imported" | "loading" | "announcement";
             payload?: Record<string, never>;
             reply_to_id?: string;
             metadata?: Record<string, never>;
@@ -4415,6 +4439,26 @@ export interface operations {
         };
         responses: {
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChatController_listMessageAttachments_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -9,9 +9,14 @@
  * breaks `expo export` while lint, types, and the test run all stay green.
  * A pure helper in `lib/` can carry a spec safely.
  *
- * The name resolution itself is shared with web in `@repo/hooks`
- * (`packages/hooks/src/display-names.ts`); this module only turns a resolved
- * name into the two strings s04/s05 draw.
+ * The name resolution AND the author label are shared with web in `@repo/hooks`
+ * (`packages/hooks/src/display-names.ts` — `resolveAuthorName`,
+ * `resolveAuthorLabel`, `authorInitialsFallback`); this module is now only the
+ * mobile-specific initials rule, which deliberately differs from web's.
+ *
+ * `senderLabel` used to live here. It was deleted rather than kept as a wrapper
+ * when `sender_id` became nullable: its `senderId.slice(0, 6)` fallback threw on
+ * an imported message, and the fix belongs in one place both platforms read.
  */
 
 /**
@@ -33,28 +38,4 @@ export function initialsFor(name: string): string {
   if (words.length === 0) return "?";
   if (words.length === 1) return words[0]!.slice(0, 2).toUpperCase();
   return `${words[0]![0]}${words[1]![0]}`.toUpperCase();
-}
-
-/**
- * The author label on an incoming message's meta line.
- *
- * `components.md` specifies that line as `Name · time`, so a resolved name is
- * the intended rendering and the truncated id is the degraded one — reached only
- * when the sender is genuinely unresolvable, which after `anonymize_user` purges
- * a membership row includes a deleted member's historical messages.
- *
- * Takes the already-resolved name rather than a resolver, and `senderId` rather
- * than a whole `ChatMessage`. Both are deliberate: the caller resolves once and
- * feeds the same value to this label and to the avatar initials, so the two
- * cannot disagree, and a spec can exercise it without an 18-field message
- * literal. An empty resolved name degrades like a missing one — a blank label is
- * worse than a truncated id.
- */
-export function senderLabel(
-  senderId: string,
-  isMine: boolean,
-  resolvedName: string | null,
-): string {
-  if (isMine) return "You";
-  return resolvedName || `Member ${senderId.slice(0, 6)}`;
 }

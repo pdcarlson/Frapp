@@ -116,13 +116,95 @@ if (failed.length > 0) {
 
 const LANDMARKS = [
   {
-    name: "chat_messages dedupe partial UNIQUE on (channel_id, sender_id, client_message_id)",
+    // `NULLS NOT DISTINCT` is load-bearing, not decoration. `sender_id` became
+    // nullable for imported archive rows (20260823120000), and Postgres treats
+    // NULLs in a unique index as distinct by default — so without it this index
+    // silently stops enforcing anything for exactly the rows that need it, and a
+    // re-run importer inserts the whole archive a second time with no error.
+    name: "chat_messages dedupe partial UNIQUE (channel_id, sender_id, client_message_id) NULLS NOT DISTINCT",
     sql: `select indexdef from pg_indexes where indexname = 'idx_chat_messages_dedupe'`,
     ok: (rows) =>
       rows.length === 1 &&
       /UNIQUE/i.test(rows[0].indexdef) &&
       /client_message_id/.test(rows[0].indexdef) &&
+      /NULLS NOT DISTINCT/i.test(rows[0].indexdef) &&
       /WHERE/i.test(rows[0].indexdef),
+  },
+  {
+    // A nullable sender is only safe because the row still names its author.
+    // Dropping this constraint would let a message exist with no attribution at
+    // all, which every renderer would then have to invent copy for.
+    name: "chat_messages requires an author: sender_id or author_name (validated)",
+    sql: `select convalidated, pg_get_constraintdef(oid) as def
+            from pg_constraint
+           where conname = 'chat_messages_author_present'`,
+    ok: (rows) =>
+      rows.length === 1 &&
+      rows[0].convalidated === true &&
+      /sender_id IS NOT NULL/i.test(rows[0].def ?? "") &&
+      /author_name IS NOT NULL/i.test(rows[0].def ?? ""),
+  },
+  {
+    name: "chat_messages.sender_id is nullable (archive rows have no Signet user)",
+    sql: `select is_nullable from information_schema.columns
+           where table_schema = 'public' and table_name = 'chat_messages'
+             and column_name = 'sender_id'`,
+    ok: (rows) => rows.length === 1 && rows[0].is_nullable === "YES",
+  },
+  {
+    // The message search index. Without it `GET /v1/search` sequentially scans
+    // `chat_messages`, which is survivable only while the table is small — and
+    // the archive import is precisely what stops it being small.
+    name: "chat_messages full-text search: generated tsvector + GIN index",
+    sql: `select
+            (select is_generated from information_schema.columns
+              where table_schema = 'public' and table_name = 'chat_messages'
+                and column_name = 'content_search') as generated,
+            (select indexdef from pg_indexes
+              where indexname = 'idx_chat_messages_content_search') as indexdef`,
+    ok: (rows) =>
+      rows.length === 1 &&
+      rows[0].generated === "ALWAYS" &&
+      /USING gin/i.test(rows[0].indexdef ?? ""),
+  },
+  {
+    name: "chat_message_attachments exists with a message + channel FK",
+    sql: `select
+            (select count(*) from information_schema.columns
+              where table_schema = 'public' and table_name = 'chat_message_attachments'
+                and column_name in ('message_id','channel_id','bucket','storage_path','filename'))::int as cols,
+            (select count(*) from pg_constraint
+              where conrelid = 'public.chat_message_attachments'::regclass
+                and contype = 'u')::int as uniques`,
+    ok: (rows) => rows.length === 1 && rows[0].cols === 5 && rows[0].uniques >= 1,
+  },
+  {
+    // Default deny, like chat_channels. The table is not a Realtime carrier and
+    // is read only by the API on the service-role key, so a permissive policy
+    // would open a direct-PostgREST read surface nothing needs.
+    name: "RLS enabled on chat_message_attachments + default-deny (no policies)",
+    sql: `select c.relrowsecurity,
+                 (select count(*) from pg_policy p where p.polrelid = c.oid)::int as policies
+            from pg_class c join pg_namespace n on n.oid = c.relnamespace
+           where n.nspname = 'public' and c.relname = 'chat_message_attachments'`,
+    ok: (rows) =>
+      rows.length === 1 &&
+      rows[0].relrowsecurity === true &&
+      rows[0].policies === 0,
+  },
+  {
+    // Both halves matter and they are independent: the kind rule is what keeps a
+    // freshly imported archive from handing every member a five-figure badge,
+    // and `is distinct from` is what keeps the sender rule correct now that
+    // `sender_id` can be NULL. Spelling only one of them leaves the other's
+    // behaviour depending on three-valued logic nobody stated.
+    name: "get_channel_unread_counts excludes imported rows and is null-safe on sender",
+    sql: `select prosrc from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'get_channel_unread_counts'`,
+    ok: (rows) =>
+      rows.length === 1 &&
+      /kind\s*<>\s*'imported'/i.test(rows[0].prosrc ?? "") &&
+      /sender_id\s+is\s+distinct\s+from/i.test(rows[0].prosrc ?? ""),
   },
   {
     name: "chat_message_actions UNIQUE on (message_id, user_id, action_type)",
@@ -233,7 +315,14 @@ const RLS_SMOKE = [
     ok: (rows) =>
       rows.length === 1 &&
       /can_read_chat_message\((?:\w+\.)?id\)/.test(rows[0].using_expr ?? "") &&
-      /authenticated/.test(rows[0].using_expr ?? ""),
+      /authenticated/.test(rows[0].using_expr ?? "") &&
+      // The imported-row exclusion is the Realtime fan-out control, not a
+      // cosmetic filter. Supabase Realtime evaluates THIS policy per subscriber
+      // (`realtime.apply_rls`), and a publication row filter cannot do the job —
+      // `realtime.list_changes` builds wal2json's `add-tables` from table names
+      // only and never reads `prqual`. Drop this clause and a bulk archive
+      // import fans a frame per row out to every open client.
+      /kind\s*<>\s*'imported'/i.test(rows[0].using_expr ?? ""),
   },
   {
     name: "RLS enabled on chat_message_actions",
@@ -846,6 +935,7 @@ if (readSeeded) {
       create role rls_probe nologin;
       grant usage on schema public to rls_probe;
       grant select on public.chat_message_actions to rls_probe;
+      grant select on public.chat_messages to rls_probe;
       grant execute on function public.can_read_chat_message(uuid) to rls_probe;
       -- Mirrors the request context of a signed-in Supabase client. On PGlite the
       -- policy carries no TO clause (no authenticated role exists), so it
@@ -892,6 +982,121 @@ if (readSeeded) {
         console.log(`MISS  ${s.name}\n        ↳ expected ${s.expect} visible row(s), got ${got}`);
       }
     }
+
+    // ─── chat_messages: the imported-archive exclusion (Discord import) ──────
+    //
+    // This is the Realtime fan-out control, and it only works if it is enforced
+    // at the POLICY. Supabase Realtime evaluates this exact policy per subscriber
+    // in `realtime.apply_rls`, and emits a frame only for rows that pass — so an
+    // imported archive row that is invisible here is a frame that is never sent.
+    //
+    // A publication row filter cannot substitute: `realtime.list_changes` builds
+    // wal2json's `add-tables` parameter from `pg_publication_tables` NAMES and
+    // never reads `prqual`, so `alter publication ... where (kind <> 'imported')`
+    // is silently ignored.
+    //
+    // The second scenario is the one that pins WHERE the rule lives. The
+    // predicate `can_read_chat_message` must still answer true for an imported
+    // row, because it is also the `chat_message_actions` SELECT policy — pushing
+    // `kind` into the function would break reactions and votes on archived
+    // messages. So: invisible through the table, still readable through the
+    // predicate.
+    const IMPORTED_MSG = "a5a5a5a5-0000-4000-8000-00000000aaaa";
+    await db.exec(`
+      insert into chat_messages (id, channel_id, sender_id, author_name, author_external_id, kind, content)
+      values ('${IMPORTED_MSG}', '${F.chPublic}', null, 'DiscordUser', '9911', 'imported', 'a message from 2019');
+    `);
+
+    const ARCHIVE = [
+      {
+        name: "an imported archive row is invisible to a member who CAN read the channel",
+        uid: F.userAAuth,
+        sql: `select count(*)::int as n from public.chat_messages where id = '${IMPORTED_MSG}'`,
+        expect: 0,
+      },
+      {
+        name: "a live row in the same channel is still visible (the rule is `kind`, not a blanket deny)",
+        uid: F.userAAuth,
+        sql: `select count(*)::int as n from public.chat_messages where id = '${F.msgPublic}'`,
+        expect: 1,
+      },
+    ];
+
+    for (const s of ARCHIVE) {
+      await db.exec(
+        `create or replace function auth.uid() returns uuid language sql as $$ select '${s.uid}'::uuid $$;`,
+      );
+      await db.exec("set role rls_probe;");
+      let got;
+      try {
+        const res = await db.query(s.sql);
+        got = res.rows[0].n;
+      } finally {
+        await db.exec("reset role;");
+      }
+      if (got === s.expect) {
+        console.log(`OK    ${s.name}`);
+      } else {
+        missing += 1;
+        console.log(`MISS  ${s.name}\n        ↳ expected ${s.expect} visible row(s), got ${got}`);
+      }
+    }
+
+    // ─── Unread counts: the "47,000 unread" case, end to end ────────────────
+    //
+    // A member with no `channel_read_receipts` row has never opened the channel,
+    // so `get_channel_unread_counts` counts EVERYTHING (the `-infinity` cursor
+    // branch). That is correct for live chat and catastrophic for an archive:
+    // importing a chapter's Discord history would hand every member a badge the
+    // size of the import that no amount of reading could clear.
+    //
+    // Both halves are asserted because they are independent rules that happened
+    // to overlap. `sender_id is distinct from` is null-safety; `kind <>
+    // 'imported'` is the archive rule. Before this migration the archive was
+    // excluded only as a side effect of `NULL <> uuid` being NULL — invisible,
+    // and undone by the obvious null-safety "fix".
+    {
+      const name = "unread counts skip imported rows but still count a live null-sender row";
+      await db.exec(`
+        insert into chat_messages (id, channel_id, sender_id, author_name, kind, content)
+        values ('a5a5a5a5-0000-4000-8000-00000000bbbb', '${F.chPublic}', null, 'Webhook Bot', 'text', 'live, no sender');
+      `);
+      // userC is a chapter-A member with no read receipt for any channel.
+      const res = await db.query(
+        `select unread_count::int as n from public.get_channel_unread_counts(
+           '${F.chapA}'::uuid, '${F.userCId}'::uuid)
+          where channel_id = '${F.chPublic}'::uuid`,
+      );
+      // Visible to userC in #public: msgPublic (userA's) + the live null-sender
+      // row. NOT the imported row.
+      const got = res.rows[0]?.n;
+      if (got === 2) {
+        console.log(`OK    ${name}`);
+      } else {
+        missing += 1;
+        console.log(`MISS  ${name}\n        ↳ expected 2 unread, got ${got}`);
+      }
+    }
+
+    // The predicate must NOT have learned about `kind` — it is shared with the
+    // chat_message_actions policy, so narrowing it would silently kill reactions
+    // and poll votes on every imported message.
+    {
+      await db.exec(
+        `create or replace function auth.uid() returns uuid language sql as $$ select '${F.userAAuth}'::uuid $$;`,
+      );
+      const res = await db.query(
+        `select public.can_read_chat_message('${IMPORTED_MSG}'::uuid) as ok`,
+      );
+      const name =
+        "can_read_chat_message still answers true for an imported row (reactions keep working)";
+      if (res.rows[0].ok === true) {
+        console.log(`OK    ${name}`);
+      } else {
+        missing += 1;
+        console.log(`MISS  ${name}\n        ↳ the kind rule leaked into the shared predicate`);
+      }
+    }
   } catch (e) {
     missing += 1;
     console.log(
@@ -914,6 +1119,85 @@ await db.exec(`
   create or replace function auth.uid()  returns uuid language sql as $$ select null::uuid $$;
   create or replace function auth.role() returns text language sql as $$ select 'service_role'::text $$;
 `);
+
+// ─── Functional smoke: the legacy attachment-sigil backfill ─────────────────
+//
+// 20260823121000 recovers `📎 <name> (<storagePath>)` out of message bodies into
+// `chat_message_attachments`. The backfill runs during replay against an empty
+// table, so migration replay alone proves nothing about it — this tier feeds it
+// the bodies the old composer actually produced.
+//
+// The case that matters is a filename containing `)`. Storage keys end in
+// `path.basename(filename)` verbatim, so `Budget (2025).xlsx` puts a `)` inside
+// the key; an earlier draft used `[^)]*` for the path group, which cut the key
+// off at `.../Budget (2025`, wrote a row pointing at an object that does not
+// exist, and then rewrote the body around the truncation leaving `.xlsx)`
+// behind. Neither half is self-healing on a re-run.
+console.log("\n=== Functional smoke: legacy attachment backfill ===");
+{
+  const INSERT_RE =
+    "📎 ([^\\n]+?) \\((chapters/[0-9a-fA-F-]{36}/chat/[^\\n]*?\\1)\\)";
+  const STRIP_RE =
+    "[[:space:]]*📎 ([^\\n]+?) \\(chapters/[0-9a-fA-F-]{36}/chat/[^\\n]*?\\1\\)";
+  const KEY = "chapters/11111111-2222-3333-4444-555555555555/chat/c/m";
+
+  const CASES = [
+    {
+      name: "a filename containing ')' keeps its whole storage path",
+      body: `📎 Budget (2025).xlsx (${KEY}/Budget (2025).xlsx)`,
+      path: `${KEY}/Budget (2025).xlsx`,
+      stripped: "",
+    },
+    {
+      name: "two attachments on separate lines stay separate",
+      body: `both\n📎 a.png (${KEY}/a.png)\n📎 b.png (${KEY}/b.png)`,
+      path: `${KEY}/a.png`,
+      stripped: "both",
+    },
+    {
+      // The old composer inserted at the cursor and left the caret after the
+      // `)`, so a caption typed afterwards is ordinary, not exotic. An
+      // end-of-line anchor skips these messages entirely.
+      name: "a caption typed after the sigil still backfills",
+      body: `📎 minutes.pdf (${KEY}/minutes.pdf) — signed copy`,
+      path: `${KEY}/minutes.pdf`,
+      stripped: "— signed copy",
+    },
+    {
+      name: "text a member typed that merely looks like a sigil is untouched",
+      body: "lol 📎 nice (not a path)",
+      path: null,
+      stripped: "lol 📎 nice (not a path)",
+    },
+  ];
+
+  for (const c of CASES) {
+    try {
+      const res = await db.query(
+        `select (regexp_matches($1, $2, 'g'))[2] as path`,
+        [c.body, INSERT_RE],
+      );
+      const got = res.rows[0]?.path ?? null;
+      const strip = await db.query(
+        `select btrim(regexp_replace($1, $2, '', 'g')) as body`,
+        [c.body, STRIP_RE],
+      );
+      const gotBody = strip.rows[0]?.body ?? null;
+
+      if (got === c.path && gotBody === c.stripped) {
+        console.log(`OK    ${c.name}`);
+      } else {
+        missing += 1;
+        console.log(
+          `MISS  ${c.name}\n        ↳ path ${JSON.stringify(got)} (want ${JSON.stringify(c.path)}), body ${JSON.stringify(gotBody)} (want ${JSON.stringify(c.stripped)})`,
+        );
+      }
+    } catch (e) {
+      missing += 1;
+      console.log(`ERR   ${c.name}\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`);
+    }
+  }
+}
 
 // ─── Chapter directory seed load (#840) ─────────────────────────────────────
 // The loader's SQL runs against a real Postgres nowhere else in CI: no job here

@@ -3,7 +3,12 @@ import type { ChatMessage } from "@repo/chat-core/types";
 import { emojiFromActionType } from "@repo/chat-core/types";
 import { SignetTokens } from "@repo/theme/signet";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
-import { initialsFor, senderLabel } from "@/lib/chat/display-name";
+import {
+  authorInitialsFallback,
+  resolveAuthorLabel,
+  resolveAuthorName,
+} from "@repo/hooks";
+import { initialsFor } from "@/lib/chat/display-name";
 
 /**
  * One message row in the s05 thread.
@@ -101,19 +106,50 @@ export function MessageBubble({
   const isMine = !!viewerId && message.sender_id === viewerId;
   // Resolved once and used for both the meta line and the avatar initials — two
   // lookups would be two chances for them to drift apart.
-  const authorName = nameFor(message.sender_id);
+  //
+  // Both come from `@repo/hooks` rather than `nameFor` directly: `sender_id` is
+  // nullable, so an imported archive message has no roster entry and names its
+  // author in `author_name`. The label rule is shared with web so the two
+  // surfaces cannot drift, which is why the local `senderLabel` is gone.
+  const authorName = resolveAuthorName(message, nameFor);
+  const authorLabel = resolveAuthorLabel(message, nameFor, viewerId);
   // Reactions address a server id, so a message still in flight has nothing to
   // address. Web gates the same affordance on the same condition.
   const isConfirmed = message._status === "confirmed";
   const reactions = groupReactions(message, viewerId);
   const time = formatMessageTime(message.created_at);
 
+  // Mobile has no attachment picker and no attachment renderer yet, but it must
+  // still say that a message HAS files. Two things made this urgent rather than
+  // cosmetic: web can now send a message that is nothing but a file, and the
+  // backfill strips the `📎 <name> (<path>)` text out of every historical
+  // attachment message — so without this line, messages that read fine on mobile
+  // yesterday become empty bubbles indistinguishable from a rendering bug.
+  //
+  // A count, not a filename: the names live in `chat_message_attachments` and
+  // need a signed-URL round trip per message, which is the renderer's job when
+  // it lands. Saying "1 attachment" with no way to open it is honest; saying
+  // nothing is not.
+  const attachmentNote =
+    !message.is_deleted && message.attachment_count > 0 ? (
+      <Text style={isMine ? styles.attachmentMine : styles.attachmentTheirs}>
+        {message.attachment_count === 1
+          ? "1 attachment · open on web"
+          : `${message.attachment_count} attachments · open on web`}
+      </Text>
+    ) : null;
+
   const body = message.is_deleted ? (
     <Text style={styles.deleted}>Message deleted</Text>
   ) : (
-    <Text style={isMine ? styles.bodyMine : styles.bodyTheirs}>
-      {message.content}
-    </Text>
+    <>
+      {message.content.length > 0 ? (
+        <Text style={isMine ? styles.bodyMine : styles.bodyTheirs}>
+          {message.content}
+        </Text>
+      ) : null}
+      {attachmentNote}
+    </>
   );
 
   if (isMine) {
@@ -173,13 +209,13 @@ export function MessageBubble({
         <Text style={styles.avatarText}>
           {authorName
             ? initialsFor(authorName)
-            : message.sender_id.slice(0, 2).toUpperCase()}
+            : authorInitialsFallback(message)}
         </Text>
       </View>
 
       <View style={styles.theirsColumn}>
         <Text style={styles.metaText}>
-          {`${senderLabel(message.sender_id, isMine, authorName)} · ${time}`}
+          {`${authorLabel} · ${time}`}
         </Text>
         <View style={styles.bubbleTheirs}>{body}</View>
 
@@ -328,6 +364,16 @@ function createStyles(tokens: SignetTokens) {
     },
     bodyMine: {
       ...typeRole(tokens.typography.role.body),
+      color: tokens.color.gold.onHouse,
+    },
+    // Same token pair as the body, one step quieter — the note is metadata about
+    // the message, not the message.
+    attachmentTheirs: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+    },
+    attachmentMine: {
+      ...typeRole(tokens.typography.role.caption),
       color: tokens.color.gold.onHouse,
     },
     deleted: {

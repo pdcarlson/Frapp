@@ -138,8 +138,8 @@ describe('API repository tenant-scope coverage', () => {
     // every `*.repository.ts` under `apps/api/src` (33 supabase-* plus the
     // two module-local workers).
     expect({ covered, total: repositories.length }).toEqual({
-      covered: 26,
-      total: 35,
+      covered: 27,
+      total: 36,
     });
   });
 });

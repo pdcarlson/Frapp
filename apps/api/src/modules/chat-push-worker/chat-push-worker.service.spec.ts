@@ -308,4 +308,46 @@ describe('ChatPushWorkerService', () => {
 
     expect(notifyUser.mock.calls.map((c) => c[0])).toEqual(['officer']);
   });
+
+  it('exits on an imported message before loading the chapter roster', async () => {
+    // The early exit is deliberately upstream of `decidePush`, unlike the
+    // `system_audit` one. `system_audit` is a row per admin action, so paying
+    // for a channel resolve and a roster load before deciding costs nothing; an
+    // import is thousands of rows arriving as fast as Postgres can write them,
+    // through a Realtime handler with no backpressure. Asserting the roster was
+    // never touched is what pins that ordering.
+    service.__setChannelForTest(ANNOUNCEMENT_CHANNEL);
+    setMembers(['sender', 'a', 'b']);
+
+    await service.handleMessage({
+      id: 'm-import-1',
+      channel_id: ANNOUNCEMENT_CHANNEL.id,
+      sender_id: null,
+      content: 'a message from 2019',
+      kind: 'imported',
+      created_at: '2019-03-04T00:00:00.000Z',
+    });
+
+    expect(notifyUser).not.toHaveBeenCalled();
+    expect(findByChapter).not.toHaveBeenCalled();
+  });
+
+  it('does not push an imported message that mentions a member', async () => {
+    // Imported prose is full of `@name` tokens. A mention overrides a muted
+    // channel, so this is the case that would page people about 2019.
+    service.__setChannelForTest(CHANNEL);
+    setMembers(['a', 'recipient']);
+
+    await service.handleMessage({
+      id: 'm-import-2',
+      channel_id: CHANNEL.id,
+      sender_id: null,
+      content: 'hey @recipient are you coming',
+      kind: 'imported',
+      mentions: ['recipient'],
+      created_at: '2019-03-04T00:00:00.000Z',
+    });
+
+    expect(notifyUser).not.toHaveBeenCalled();
+  });
 });

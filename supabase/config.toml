@@ -38,7 +38,10 @@ enabled = false
 
 [storage]
 enabled = true
-file_size_limit = "26214400" # 25MB
+file_size_limit = "104857600" # 100MB -- the chat-archive bucket ceiling (Discord boosted-server per-file max).
+# This is a GLOBAL cap for the local stack and overrides a higher per-bucket
+# `storage.buckets.file_size_limit`; member-upload buckets stay pinned at 25MB
+# (MAX_UPLOAD_BYTES) by their own column and by `@repo/validation`.
 
 [realtime]
 enabled = true

@@ -39,6 +39,7 @@ import {
   unreact as unreactAction,
   type ToastFn,
 } from "@repo/chat-core/chat-client";
+import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import { dispatchSlashCommand, type ResolveMember } from "@repo/chat-core/dispatch";
 import type { SlashCommand } from "@repo/chat-integrations";
 import {
@@ -55,7 +56,7 @@ export interface UseChatChannelResult {
   loadError: Error | null;
   send: (
     content: string,
-    opts?: { replyToId?: string | null },
+    opts?: { replyToId?: string | null; attachments?: OutboxAttachment[] },
   ) => Promise<void>;
   react: (messageId: string, emoji: string) => Promise<void>;
   unreact: (messageId: string, emoji: string) => Promise<void>;
@@ -217,9 +218,15 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   const send = useCallback(
     async (
       content: string,
-      opts?: { replyToId?: string | null },
+      opts?: { replyToId?: string | null; attachments?: OutboxAttachment[] },
     ): Promise<void> => {
-      if (!channelId || content.trim().length === 0) return;
+      // A message may be nothing but a file. Guarding on empty text alone would
+      // silently drop an attachment-only send — the case the old
+      // "append the filename into the body" composer could not produce, and the
+      // first one a real attachment model makes possible.
+      const hasAttachments = (opts?.attachments?.length ?? 0) > 0;
+      if (!channelId) return;
+      if (content.trim().length === 0 && !hasAttachments) return;
       // Cancel any in-flight debounced save before clearing so a stale draft
       // can't be re-persisted after the send.
       cancelDraftTimer();
@@ -227,6 +234,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
         channelId,
         content: content.trim(),
         replyToId: opts?.replyToId ?? null,
+        attachments: opts?.attachments ?? null,
       });
       setDraftState("");
       await clearDraft(channelId);

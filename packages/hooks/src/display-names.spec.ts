@@ -1,8 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  authorGroupingKey,
+  authorInitialsFallback,
   directChannelDisplayName,
   isServerGeneratedDmName,
   isServerGeneratedGroupDmName,
+  resolveAuthorLabel,
+  resolveAuthorName,
   resolveDisplayName,
   type DisplayNameMap,
 } from "./display-names";
@@ -225,5 +229,145 @@ describe("directChannelDisplayName", () => {
         names,
       ),
     ).toBe("Direct message");
+  });
+});
+
+describe("resolveAuthorName", () => {
+  const roster = (names: Record<string, string>) => (id: string) =>
+    names[id] ?? null;
+
+  it("prefers the live roster name over the recorded author_name", () => {
+    // author_name is a snapshot from the source system; a roster hit is who the
+    // person is now. Preferring the snapshot would show a member's old Discord
+    // handle on a message they wrote under their real account.
+    expect(
+      resolveAuthorName(
+        { sender_id: "u1", author_name: "old_discord_handle" },
+        roster({ u1: "Marcus Reid" }),
+      ),
+    ).toBe("Marcus Reid");
+  });
+
+  it("falls back to author_name when the roster cannot resolve the sender", () => {
+    expect(
+      resolveAuthorName({ sender_id: "gone", author_name: "Marcus" }, roster({})),
+    ).toBe("Marcus");
+  });
+
+  it("reads author_name when there is no sender at all", () => {
+    expect(
+      resolveAuthorName({ sender_id: null, author_name: "DiscordUser" }, roster({})),
+    ).toBe("DiscordUser");
+  });
+
+  it("treats a blank author_name as absent", () => {
+    expect(
+      resolveAuthorName({ sender_id: null, author_name: "   " }, roster({})),
+    ).toBeNull();
+  });
+
+  it("never calls the resolver for a null sender", () => {
+    // The resolver signature takes a string; passing null through would be a
+    // runtime type error in any caller that indexes with it.
+    const nameFor = vi.fn(() => null);
+    resolveAuthorName({ sender_id: null, author_name: "X" }, nameFor);
+    expect(nameFor).not.toHaveBeenCalled();
+  });
+});
+
+describe("authorInitialsFallback", () => {
+  it("uses the first two characters of the sender id", () => {
+    expect(
+      authorInitialsFallback({ sender_id: "2f4a1c00-0000-0000-0000-000000000000" }),
+    ).toBe("2F");
+  });
+
+  it("does not throw on a message with no sender", () => {
+    // This is the crash. `message.sender_id.slice(0, 2)` was called
+    // unconditionally in both the web avatar and the mobile one.
+    expect(authorInitialsFallback({ sender_id: null })).toBe("?");
+  });
+});
+
+describe("resolveAuthorLabel", () => {
+  const roster = (names: Record<string, string>) => (id: string) =>
+    names[id] ?? null;
+
+  it("says 'You' for the viewer's own message", () => {
+    expect(
+      resolveAuthorLabel({ sender_id: "u1" }, roster({ u1: "Marcus Reid" }), "u1"),
+    ).toBe("You");
+  });
+
+  it("renders the resolved display name for another member", () => {
+    expect(
+      resolveAuthorLabel({ sender_id: "u1" }, roster({ u1: "Marcus Reid" }), "u2"),
+    ).toBe("Marcus Reid");
+  });
+
+  it("falls back to a truncated id only when the sender is unresolvable", () => {
+    expect(
+      resolveAuthorLabel(
+        { sender_id: "22222222-2222-4222-8222-222222222222" },
+        roster({}),
+        null,
+      ),
+    ).toBe("Member 222222");
+  });
+
+  it("treats an empty resolved name as unresolvable rather than blank", () => {
+    // users.display_name is NOT NULL DEFAULT '', so '' is the real "no name
+    // set" case and a blank label is worse than a truncated id.
+    expect(
+      resolveAuthorLabel({ sender_id: "user-blank" }, roster({ "user-blank": "" }), null),
+    ).toBe("Member user-b");
+  });
+
+  it("names an imported author with no Signet user behind it", () => {
+    expect(
+      resolveAuthorLabel(
+        { sender_id: null, author_name: "DiscordUser", author_external_id: "9911" },
+        roster({}),
+        "u1",
+      ),
+    ).toBe("DiscordUser");
+  });
+
+  it("degrades to a readable label rather than a blank one", () => {
+    // Unreachable against a healthy DB — chat_messages_author_present requires
+    // an author_name whenever sender_id is null — but a label must render
+    // something, and an empty string reads as a broken layout.
+    expect(resolveAuthorLabel({ sender_id: null }, roster({}), null)).toBe(
+      "Unknown member",
+    );
+  });
+});
+
+describe("authorGroupingKey", () => {
+  it("groups two messages from the same member", () => {
+    expect(authorGroupingKey({ sender_id: "u1" })).toBe(
+      authorGroupingKey({ sender_id: "u1" }),
+    );
+  });
+
+  it("does NOT group two different imported authors", () => {
+    // The regression this exists for: comparing `sender_id` directly, `null ===
+    // null` is true, so an imported channel where twenty Discord members spoke
+    // in turn collapsed into one block under one name.
+    const a = { sender_id: null, author_name: "Ada", author_external_id: "1" };
+    const b = { sender_id: null, author_name: "Grace", author_external_id: "2" };
+    expect(authorGroupingKey(a)).not.toBe(authorGroupingKey(b));
+  });
+
+  it("separates a Signet uuid from a source-system id that reads the same", () => {
+    expect(authorGroupingKey({ sender_id: "1234" })).not.toBe(
+      authorGroupingKey({ sender_id: null, author_external_id: "1234" }),
+    );
+  });
+
+  it("falls back to the name when an imported row carries no external id", () => {
+    expect(
+      authorGroupingKey({ sender_id: null, author_name: "Ada" }),
+    ).not.toBe(authorGroupingKey({ sender_id: null, author_name: "Grace" }));
   });
 });

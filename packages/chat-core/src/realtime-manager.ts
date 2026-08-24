@@ -424,6 +424,19 @@ class ChatRealtimeManager {
       },
       (payload: RealtimePostgresChangesPayload<RawChatMessage>) => {
         const next = payload.new as RawChatMessage | undefined;
+        // An archive backfill is not live traffic. The server already keeps
+        // these frames off the wire — the `chat_messages` RLS policy, which is
+        // what Realtime evaluates per subscriber, excludes `kind = 'imported'`
+        // (20260823123000_chat_imported_kind_semantics.sql) — so reaching this
+        // branch means that policy regressed.
+        //
+        // Guarding here anyway is cheap and the failure it prevents is not:
+        // there is no batching on this path, so every frame is its own
+        // `setQueryData`, full cache-object spread and Virtuoso re-render. An
+        // import targeted at a channel somebody has open would otherwise walk
+        // thousands of years-old messages into a live timeline one render at a
+        // time. History arrives through the ordinary channel read, in order.
+        if (next?.kind === "imported") return;
         if (next && next.id) {
           // INSERT / UPDATE — full row is present and authoritative.
           this.patchCache(state.channelId, (cache) =>

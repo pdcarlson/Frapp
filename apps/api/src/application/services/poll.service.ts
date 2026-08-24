@@ -35,7 +35,14 @@ export interface CreatePollInput {
 export interface PollWithResults {
   id: string;
   channel_id: string;
-  sender_id: string;
+  /**
+   * Nullable because `chat_messages.sender_id` is. In practice a poll always has
+   * one — `poll` is not a kind the archive importer writes, and `createPoll`
+   * takes the sender from the session — but the field is projected straight off
+   * the message row, so narrowing it here would be a lie the compiler could not
+   * catch at the seam where it is read.
+   */
+  sender_id: string | null;
   content: string;
   type: 'POLL';
   metadata: PollMetadata;

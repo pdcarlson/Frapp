@@ -66,6 +66,10 @@ Chat is not a module — it is the spine of the app, and every other capability 
 - Size limit: 25 MB per file (`MAX_UPLOAD_BYTES` in `@repo/validation`). Configurable per chapter (admin setting) is specified, not yet implemented.
 - Allowed file types: the `document` kind in `@repo/validation` — images (JPEG, PNG, GIF, WebP), PDFs, Open XML Office (DOCX, XLSX, PPTX), legacy Office (DOC, XLS, PPT), TXT, and CSV. Executables, scripts, and SVG are blocked. Same list as chapter documents and Backwork; see [`chapter-docs.md`](../chapter-docs.md) § Upload allowlist.
 - Upload flow: client requests signed URL from API, uploads directly to Storage, then sends message with attachment metadata.
+- **An attachment is a row, never text in the body.** It lands in `chat_message_attachments` (`message_id`, `channel_id`, `bucket`, `storage_path`, `filename`, `content_type`, `byte_size`), keyed unique on `(bucket, storage_path)` and cascading from the message. The composer sends the uploaded descriptors alongside the body; the server re-derives `channel_id` from the message and re-checks every `storage_path` against the `chapters/{chapter_id}/chat/{channel_id}/` prefix it minted, so a client can claim only objects it was given a URL for. Until #TBD this was appended into `content` as the literal string `📎 <filename> (<storagePath>)`, which left the object with no link back to the message — it could not be rendered, listed, or cleaned up on delete, and a member could edit the sigil out and orphan the file.
+- **A message may be nothing but a file.** An empty body with at least one attachment is a valid send.
+- **Attachments are fetched, not embedded in the message.** `GET /v1/channels/{id}/messages/{messageId}/attachments` returns the rows with a one-hour signed download URL each. They are a separate read for two reasons that point the same way: every bucket is private so a URL has to be minted per request and cannot be cached with the message, and the message cache is fed partly by Realtime rows, which cannot carry a join. `chat_messages.metadata.attachment_count` — a count, never a copy of the data — rides on the row so a client knows whether the call is worth making; without it a file-only message would render as an empty bubble for everyone except its sender.
+- **Sending** an attachment is web-only today: the mobile composer has no picker (`chat-composer.tsx` omits the affordance deliberately rather than shipping it inert). **Reading** one on mobile shows a count — "1 attachment · open on web" — rather than the file. That line is not decoration: web can send a message that is nothing but a file, and the backfill removed the filename text from every historical attachment message, so without it those messages would render on mobile as empty bubbles indistinguishable from a rendering bug.
 
 **Reply threads:**
 
@@ -142,6 +146,8 @@ Unread count per channel = messages created after that cursor, **excluding two c
 
 A member with no receipt for a channel has never opened it, so **every** message counts rather than none.
 
+- **`kind = 'imported'` never counts.** An archive is history the chapter imported, not messages anyone sent them, and the rule above would otherwise hand every member a badge the size of the import that no amount of reading could clear. This is stated explicitly in `get_channel_unread_counts` rather than left to fall out of the nullable-sender comparison, which excluded it only as an artefact of `NULL <> uuid` being NULL.
+
 Mention count is the subset of that same set which mentions the viewer.
 
 Both are computed server-side by `get_channel_unread_counts` and served from `GET /v1/channels/unread`, which returns one row per channel the caller can read — including channels with nothing unread, as zero. Clients MUST NOT re-derive either number locally: a second definition would disagree with this one on exactly the cases above.
@@ -151,6 +157,47 @@ Both are computed server-side by `get_channel_unread_counts` and served from `GE
 `chat_messages.mentions` holds the `users.id` of everyone mentioned in the body, resolved **server-side at send time** against the chapter roster. This is a security boundary rather than a convenience: a mention overrides a per-channel mute in the push rules, so a client-supplied list would let any member force a push to any other member in a channel they had deliberately muted.
 
 Resolution is tiered and fails closed — exact user id, exact display name, name without spaces, first word, unique prefix — and **ambiguity at any tier resolves to nobody**. If two members share a first name, `@jane` mentions neither, because silently picking one notifies the wrong person while looking correct to the sender. Unresolvable tokens are dropped silently; an `@` in prose is not an error.
+
+## Imported archive messages
+
+A chapter migrating from Discord imports its history into the **same**
+`chat_messages` / `chat_channels` tables as live chat, marked `kind = 'imported'`
+— not a parallel schema, so it is searchable, linkable and permission-checked by
+exactly the machinery everything else uses. The importer itself is a separate
+slice; what follows is the behaviour the archive has once it is in.
+
+- **Attribution without accounts.** An imported message has `sender_id = null` and
+  carries `author_name` (the display name as the export recorded it),
+  `author_avatar_path` and `author_external_id` (the author's Discord id). The
+  alternative — a `users` row per Discord handle — was rejected: a row in `users`
+  is reachable from the chapter roster, the members directory, server-side
+  mention resolution and `anonymize_user`, so it would publish non-members into
+  all four to satisfy a foreign key. A DB constraint guarantees every message
+  names its author through one column or the other.
+- **Read-only.** `imported` is in `SERVER_ONLY_KINDS`: a client cannot post one.
+  Ownership checks compare `sender_id` to the caller, and `null` matches nobody,
+  so an imported message is editable by no one and deletable only by a
+  `channels:manage` moderator.
+- **Never notifies.** The push worker exits on the kind before it loads the
+  chapter roster, and `decidePush` refuses it ahead of every other rule —
+  including the mention override, because imported prose is full of `@name`
+  tokens and a mention otherwise lifts a muted channel's `off`. There is no
+  preference that turns this back on.
+- **Never counts as unread**, per § Read Receipts above.
+- **Never arrives over Realtime.** The `chat_messages` SELECT policy excludes the
+  kind. That policy is what Supabase Realtime evaluates per subscriber, so an
+  archive backfill produces no frames — which matters because an import can be
+  targeted at a channel members currently have open, and there is no batching on
+  the client's insert path. A publication row filter cannot do this job: Realtime
+  builds its table list from `pg_publication_tables` names and never reads the
+  filter expression.
+- **Where it lands is the operator's choice, per channel**: a new read-only
+  archive channel, a new writable one, or merged into an existing live channel.
+- **Moderating an archived message is not live.** The Realtime exclusion is a
+  row rule, not an operation rule, so a soft-delete, pin or edit of an imported
+  message reaches other members on their next channel read rather than
+  immediately. Deliberate: the archive is static history and moderating it is
+  rare, while the alternative reinstates the fan-out the exclusion prevents.
 
 ## Message Kinds and Actions
 
@@ -168,6 +215,7 @@ Resolution is tiered and fails closed — exact user id, exact display name, nam
 | `audio` | Voice memo (mobile-native): recorded, uploaded to Storage, sent with waveform metadata — **specified, not yet in `CHAT_MESSAGE_KINDS`** |
 | `pulse` | Chapter-health catch-up card — see [catch-up.md](./catch-up.md) — **specified, not yet in `CHAT_MESSAGE_KINDS`** (#821) |
 | `system_audit` | System-generated audit message (posted to #chapter-audit, or to a DM on invite-accept) |
+| `imported` | A read-only archive message brought in from another system (Discord). Server-only; see *Imported archive messages* below |
 | `loading` | Client-side placeholder while NestJS RPC completes a heavy command |
 | `announcement` | Broadcast announcement |
 

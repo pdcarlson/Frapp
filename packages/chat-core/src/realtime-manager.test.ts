@@ -34,6 +34,11 @@ interface FakeChannel {
   topic: string;
   state: FakeChannelState;
   trigger: (status: SubscribeStatus) => void;
+  /** Delivers a `postgres_changes` frame to whatever the manager registered. */
+  emitPostgresChange: (payload: {
+    new?: unknown;
+    old?: unknown;
+  }) => void;
 }
 
 /**
@@ -48,20 +53,34 @@ interface FakeChannel {
  */
 function makeFakeChannel(topic: string, onTeardown: () => void): FakeChannel {
   let captured: ((status: SubscribeStatus) => void) | null = null;
+  let onChange: ((payload: { new?: unknown; old?: unknown }) => void) | null =
+    null;
   const channel: FakeChannel = {
     topic: `realtime:${topic}`,
     state: "closed",
-    on: vi.fn((type: string) => {
-      if (
-        (type === "postgres_changes" || type === "presence") &&
-        (channel.state === "joined" || channel.state === "joining")
-      ) {
-        throw new Error(
-          `cannot add \`${type}\` callbacks for ${channel.topic} after \`subscribe()\`.`,
-        );
-      }
-      return channel;
-    }),
+    on: vi.fn(
+      (
+        type: string,
+        filter: unknown,
+        handler?: (payload: { new?: unknown; old?: unknown }) => void,
+      ) => {
+        if (
+          (type === "postgres_changes" || type === "presence") &&
+          (channel.state === "joined" || channel.state === "joining")
+        ) {
+          throw new Error(
+            `cannot add \`${type}\` callbacks for ${channel.topic} after \`subscribe()\`.`,
+          );
+        }
+        if (
+          type === "postgres_changes" &&
+          (filter as { table?: string } | undefined)?.table === "chat_messages"
+        ) {
+          onChange = handler ?? null;
+        }
+        return channel;
+      },
+    ),
     subscribe: vi.fn((cb?: (status: SubscribeStatus) => void) => {
       if (cb) captured = cb;
       channel.state = "joining";
@@ -82,6 +101,10 @@ function makeFakeChannel(topic: string, onTeardown: () => void): FakeChannel {
       if (!captured) throw new Error("subscribe callback not captured");
       channel.state = status === "SUBSCRIBED" ? "joined" : "errored";
       captured(status);
+    },
+    emitPostgresChange: (payload) => {
+      if (!onChange) throw new Error("postgres_changes handler not captured");
+      onChange(payload);
     },
   };
   return channel;
@@ -173,6 +196,9 @@ describe("ChatRealtimeManager — subscribe-then-backfill gate", () => {
       id: "msg-newest",
       channel_id: "channel-1",
       sender_id: "user-1",
+      author_name: null,
+      author_avatar_path: null,
+      author_external_id: null,
       created_at: "2026-01-01T00:00:00.000Z",
       client_message_id: "client-newest",
     };
@@ -287,6 +313,9 @@ describe("ChatRealtimeManager — polling fallback (spec/ui/resilience.md §3.2)
       id: "msg-1",
       channel_id: "channel-1",
       sender_id: "user-1",
+      author_name: null,
+      author_avatar_path: null,
+      author_external_id: null,
       created_at: "2026-01-01T00:00:00.000Z",
       client_message_id: "client-1",
     };
@@ -525,5 +554,68 @@ describe("ChatRealtimeManager — channel reopen (#783)", () => {
       expect(channels.get("chat:actions:global")).not.toBe(firstActions),
     );
     expect(firstActions!.teardown).toHaveBeenCalled();
+  });
+
+  test("an imported archive row never enters the live cache", () => {
+    // The server already keeps these off the wire — the `chat_messages` RLS
+    // policy, which is what Realtime evaluates per subscriber, excludes
+    // `kind = 'imported'` — so reaching the handler at all means that policy
+    // regressed. Guarding here is cheap and the failure it prevents is not:
+    // there is no batching on this path, so every frame is its own
+    // `setQueryData`, full cache-object spread and list re-render. An import
+    // aimed at a channel somebody has open would otherwise walk thousands of
+    // years-old messages into a live timeline one render at a time.
+    chatRealtime.subscribe("channel-1");
+    const ch = current("channel-1");
+    ch.trigger("SUBSCRIBED");
+
+    ch.emitPostgresChange({
+      new: {
+        id: "msg-imported",
+        channel_id: "channel-1",
+        sender_id: null,
+        author_name: "DiscordUser",
+        author_external_id: "9911",
+        kind: "imported",
+        content: "a message from 2019",
+        created_at: "2019-03-04T00:00:00.000Z",
+      },
+    });
+
+    const cache = queryClient.getQueryData<ChannelCache>(
+      chatMessagesKey("channel-1"),
+    );
+    expect(cache?.order ?? []).not.toContain("msg-imported");
+    // And it must not advance the reconnect cursor either — an archive row is
+    // not the channel's new tail, so backfilling from it would skip live
+    // messages written before it landed.
+    expect(window.localStorage.getItem("chat:lastSeen:channel-1")).not.toBe(
+      "msg-imported",
+    );
+  });
+
+  test("a live row still enters the cache through the same handler", () => {
+    // Pins that the guard above is a `kind` check and not an accidental
+    // short-circuit of the whole INSERT path.
+    chatRealtime.subscribe("channel-1");
+    const ch = current("channel-1");
+    ch.trigger("SUBSCRIBED");
+
+    ch.emitPostgresChange({
+      new: {
+        id: "msg-live",
+        channel_id: "channel-1",
+        sender_id: "user-2",
+        kind: "text",
+        content: "hello",
+        created_at: "2026-01-01T00:00:00.000Z",
+        client_message_id: "client-live",
+      },
+    });
+
+    const cache = queryClient.getQueryData<ChannelCache>(
+      chatMessagesKey("channel-1"),
+    );
+    expect(cache?.order).toContain("msg-live");
   });
 });

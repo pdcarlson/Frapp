@@ -42,6 +42,7 @@ import {
 import {
   browserNetworkState,
   type NetworkState,
+  type OutboxAttachment,
   type OutboxRow,
   type OutboxStore,
 } from "./adapters";
@@ -176,6 +177,12 @@ export interface SendMessageArgs {
   kind?: ChatMessageKind;
   payload?: Record<string, unknown> | null;
   replyToId?: string | null;
+  /**
+   * Files already uploaded to the `chat` bucket that this message claims. The
+   * server re-checks every path against the prefix it minted, so this is a
+   * claim, not an instruction.
+   */
+  attachments?: OutboxAttachment[] | null;
   /** Reuse a previously-generated id (outbox flush, idempotent retry). */
   clientMessageId?: string;
 }
@@ -205,6 +212,7 @@ export async function sendMessage(
     kind: args.kind,
     payload: args.payload,
     replyToId: args.replyToId ?? null,
+    attachmentCount: args.attachments?.length ?? 0,
   });
 
   patchCache(ctx.queryClient, args.channelId, (cache) =>
@@ -216,6 +224,7 @@ export async function sendMessage(
     kind: args.kind ?? "text",
     payload: args.payload ?? null,
     replyToId: args.replyToId ?? null,
+    attachments: args.attachments ?? null,
   } as const;
 
   await ctx.outbox.enqueue({
@@ -242,6 +251,14 @@ export async function sendMessage(
           kind: args.kind ?? "text",
           payload: (args.payload ?? undefined) as unknown as undefined,
           reply_to_id: args.replyToId ?? undefined,
+          attachments: args.attachments?.length
+            ? args.attachments.map((attachment) => ({
+                storage_path: attachment.storagePath,
+                filename: attachment.filename,
+                content_type: attachment.contentType,
+                byte_size: attachment.byteSize ?? undefined,
+              }))
+            : undefined,
         },
       },
     );
@@ -325,6 +342,7 @@ function sendArgsFromOutbox(row: OutboxRow): SendMessageArgs {
     kind: coerceKind(row.kind),
     payload: row.payload ?? null,
     replyToId: row.replyToId ?? null,
+    attachments: row.attachments ?? null,
     clientMessageId: row.clientId,
   };
 }

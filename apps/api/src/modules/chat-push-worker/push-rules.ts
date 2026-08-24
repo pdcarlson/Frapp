@@ -58,6 +58,12 @@ export function defaultLevelFor(
   messageKind: string,
 ): ChatNotificationLevel {
   if (messageKind === 'system_audit') return 'off';
+  // An imported archive message is history, not news. Unlike `system_audit`,
+  // whose `off` is a default a member can opt out of, this one is absolute —
+  // `decidePush` refuses the kind outright before any preference is consulted.
+  // The level is still stated here so anything reading a level directly agrees
+  // with the decision the chain makes.
+  if (messageKind === 'imported') return 'off';
   if (channelName === 'announcements') return 'all';
   if (channelName === 'chapter-audit') return 'off';
   return 'mentions';
@@ -75,11 +81,22 @@ export type PushOutcome = 'send' | 'skip-level' | 'skip-presence';
  * "Per-Channel Mute"). The one exception is the `system_audit` kind — audit
  * messages never page anyone unless explicitly opted in (ADR-06), so a mention
  * does not lift their `off` default.
+ *
+ * `imported` is refused before any of that. It is checked FIRST, ahead of even
+ * the presence skip, because it is the only rule here with no escape hatch: an
+ * archived Discord message from 2019 must not page anybody, and the mention
+ * override is exactly how it otherwise would. Imported bodies are historical
+ * prose full of `@name` tokens, and a mention lifts a muted channel's `off`, so
+ * a kind-level `off` alone would not hold. There is deliberately no preference
+ * that turns this back on — "notify me about backfilled history" is not a
+ * setting anyone wants, and `ChatPushWorkerService.handleMessage` already exits
+ * before it gets here.
  */
 export function decidePush(
   input: PushDecisionInput,
   channelId: string | null,
 ): PushOutcome {
+  if (input.messageKind === 'imported') return 'skip-level';
   if (input.recipientIsPresent) return 'skip-presence';
   const level = resolveLevel(
     input.channelName,

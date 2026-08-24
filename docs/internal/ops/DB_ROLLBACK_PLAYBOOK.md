@@ -67,6 +67,171 @@ After any rollback event:
 - create/update postmortem entry with timeline and root cause
 - add preventive checks to migration or CI workflow
 
+## Rollback the chat author fields
+
+* **Migration**: `20260823120000_chat_message_authors.sql`
+* **Action**:
+  ```sql
+  -- 1. the index shape (safe any time)
+  DROP INDEX IF EXISTS public.idx_chat_messages_author_external;
+  DROP INDEX IF EXISTS public.idx_chat_messages_dedupe;
+  CREATE UNIQUE INDEX idx_chat_messages_dedupe
+    ON public.chat_messages (channel_id, sender_id, client_message_id)
+    WHERE client_message_id IS NOT NULL;
+
+  -- 2. the constraint
+  ALTER TABLE public.chat_messages DROP CONSTRAINT IF EXISTS chat_messages_author_present;
+
+  -- 3. the columns
+  ALTER TABLE public.chat_messages
+    DROP COLUMN IF EXISTS author_name,
+    DROP COLUMN IF EXISTS author_avatar_path,
+    DROP COLUMN IF EXISTS author_external_id;
+
+  -- 4. the NOT NULL — READ THE CAVEAT FIRST
+  ALTER TABLE public.chat_messages ALTER COLUMN sender_id SET NOT NULL;
+  ```
+* **Order**: **redeploy the API first.** `ChatMessage.sender_id` is `string | null`
+  on the post-change revision and both clients resolve the label through
+  `resolveAuthorLabel`; dropping the columns under a running API is survivable
+  (they are all optional reads) but re-adding `NOT NULL` under one that permits
+  nulls is not.
+* **Step 4 fails if any imported row exists**, and that is the useful behaviour:
+  `SET NOT NULL` scans the table and raises `23502` on the first null sender. If
+  it fails, the archive is still in the database and the rollback is incomplete
+  by definition — decide whether to delete the imported rows
+  (`DELETE FROM chat_messages WHERE kind = 'imported';`, which cascades to
+  `chat_message_attachments`) or to stop at step 3 and leave the column nullable.
+  **Leaving it nullable is almost always right**: a nullable column with no null
+  rows costs nothing and breaks nothing.
+* **Data caveat**: dropping `author_name` is **not recoverable by re-applying**.
+  It is the only attribution an imported message has — there is no `users` row to
+  join back to, which is the whole reason the column exists. Re-running the
+  importer from the original DiscordChatExporter export is the only way back.
+* **Do not "fix" the dedupe index by dropping `NULLS NOT DISTINCT` while imported
+  rows exist.** Without it the index stops enforcing anything for null-sender
+  rows, and the next importer run inserts the entire archive a second time with
+  no error. The recreate above is correct only *after* the imported rows are gone.
+
+## Rollback chat attachments
+
+* **Migration**: `20260823121000_chat_message_attachments.sql`
+* **Action**: `DROP TABLE IF EXISTS public.chat_message_attachments;`
+* **Order**: **redeploy the API first.** `ChatService.sendMessage` writes
+  attachment rows and `GET /v1/channels/{id}/messages/{messageId}/attachments`
+  reads them; dropping the table under a running post-change API makes any send
+  carrying a file 500 and the attachments route 500 on every call.
+* **The body rewrite is reversible, and this is how.** The migration stripped
+  `📎 <name> (<storagePath>)` out of `chat_messages.content` after copying the
+  filename and path into rows. Re-append them **before** dropping the table:
+  ```sql
+  UPDATE chat_messages m
+  SET content = btrim(m.content || E'\n' || x.sigils)
+  FROM (
+    SELECT a.message_id,
+           string_agg('📎 ' || a.filename || ' (' || a.storage_path || ')', E'\n'
+                      ORDER BY a.created_at) AS sigils
+    FROM chat_message_attachments a
+    GROUP BY a.message_id
+  ) x
+  WHERE m.id = x.message_id;
+
+  UPDATE chat_messages
+  SET metadata = metadata - 'attachment_count'
+  WHERE metadata ? 'attachment_count';
+  ```
+  Rows written *after* the migration are also restored by this — they were never
+  in the sigil format, but the pre-change composer produced exactly that format,
+  so the result is what a pre-change client would have sent.
+* **Data caveat**: dropping the table without running the restore above loses the
+  link between every message and its file. **The objects themselves are not
+  touched** — they stay in the `chat` bucket under
+  `chapters/{chapter_id}/chat/{channel_id}/{…}/{filename}` — so nothing is
+  destroyed, but nothing points at them either.
+* **Lighter option**: the table is additive and read only through one route. To
+  stop attachments being written without touching the schema, redeploy the API at
+  the pre-change revision; existing rows are then simply unread.
+
+## Rollback chat message search
+
+* **Migration**: `20260823122000_chat_message_search_vector.sql`
+* **Action**:
+  ```sql
+  DROP INDEX IF EXISTS public.idx_chat_messages_content_search;
+  ALTER TABLE public.chat_messages DROP COLUMN IF EXISTS content_search;
+  ```
+* **Order**: **redeploy the API first, then the database.** `SearchService`
+  queries the column by name via `.textSearch('content_search', …)`, so dropping
+  it under a running post-change API turns `GET /v1/search` into a 500 on every
+  request — PostgREST `42703 column "content_search" does not exist`. The
+  pre-change revision uses `ILIKE` and does not reference the column at all.
+* **Note**: **nothing is lost.** The column is `GENERATED ALWAYS ... STORED` and
+  derived entirely from `content`, so re-applying the migration reconstructs it
+  exactly. This is the cheapest rollback in this file to reverse.
+* **Locks**: dropping the column is a catalog operation and does not rewrite the
+  heap. **Re-applying is the expensive direction** — the generated column
+  materialises per row under ACCESS EXCLUSIVE. If the archive has already been
+  imported, treat a re-apply as a scheduled maintenance window, not a hotfix.
+* **Lighter option**: if the problem is search *results* rather than the schema
+  (stemming surprises, an unexpected match), revert only the service change and
+  leave the column and index in place. They cost writes on insert and nothing on
+  read, and they will be needed again.
+
+## Rollback the imported-kind semantics
+
+* **Migration**: `20260823123000_chat_imported_kind_semantics.sql`
+* **Action**: restore the previous function body and policy, both of which are
+  the versions in `20260816190000_chat_unread_and_mentions.sql` and
+  `20260816140000_realtime_carrier_repair.sql` respectively. Copy them from those
+  files rather than retyping — the grant block and the `search_path` pin matter.
+* **Order**: no coordinated redeploy needed; nothing in the API reads either the
+  function body or the policy text.
+* **⚠️ Do not roll this back while imported rows exist in a chapter people are
+  using.** Both halves are guardrails, and both fail loudly in the same
+  direction:
+  * Restoring the old unread function re-introduces `m.sender_id <> p_user_id`,
+    which excludes imported rows only as an artefact of `NULL <> uuid` being
+    NULL. That still *works*, so this half is safe — but it is the trap the
+    migration exists to remove, so re-read the promotion entry before deciding
+    the null-safety looks wrong.
+  * Restoring the old policy removes `kind <> 'imported'`, which is the Realtime
+    fan-out control. Every archived message in the database immediately becomes
+    eligible to be delivered as a `postgres_changes` frame — not retroactively
+    (Realtime reads the WAL, not the table), but any subsequent write or
+    re-import fans out per row to every connected client with no batching.
+* **Verification after rollback**:
+  `select pg_get_expr(polqual, polrelid) from pg_policy p join pg_class c on c.oid=p.polrelid where c.relname='chat_messages';`
+  should be back to two conjuncts, and
+  `npm run check:pglite-migrations` will fail its tightened landmark — which is
+  correct and is your signal that the rollback also needs the landmark relaxed.
+* **Lighter option**: to stop *only* the badge behaviour without touching the
+  policy, `create or replace` the function with just the `kind` clause removed.
+  The two rules are independent by design.
+
+## Rollback the chat-archive bucket
+
+* **Migration**: `20260823124000_chat_archive_bucket.sql`
+* **Action**:
+  ```sql
+  -- Only when the bucket is empty; Storage refuses to drop a bucket with objects.
+  DELETE FROM storage.buckets WHERE id = 'chat-archive';
+  ```
+* **Order**: no coordinated redeploy required *if the bucket is unused*. Once an
+  import has run, the objects in it are the only copy of the archive's media —
+  the Discord CDN URLs in `chat_message_attachments.external_url` expire — so
+  treat deletion as destructive.
+* **Note**: additive bucket only. Nothing else references it, and the live `chat`
+  bucket is untouched. Re-applying the migration recreates it with the same id
+  and constraints; the objects are not restored by that.
+* **Also revert `supabase/config.toml`** if you are rolling back the whole slice:
+  the global local-stack `[storage] file_size_limit` was raised from `26214400`
+  to `104857600`. Leaving it raised is harmless — every member-upload bucket is
+  still pinned to 25 MB by its own `allowed_mime_types`/`file_size_limit` columns
+  and by `MAX_UPLOAD_BYTES` in `@repo/validation`.
+* **Lighter option**: to stop new writes without deleting anything, revert the API
+  and leave the bucket in place. An unused private bucket costs storage for what
+  is in it and nothing else.
+
 ## Rollback the Realtime carrier repair
 
 * **Migration**: `20260816140000_realtime_carrier_repair.sql`
