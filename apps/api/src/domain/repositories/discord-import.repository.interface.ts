@@ -49,7 +49,10 @@ export interface IDiscordImportRepository {
   create(
     data: Pick<DiscordImport, 'chapter_id' | 'consent_acknowledged_at'> &
       Partial<
-        Pick<DiscordImport, 'created_by' | 'guild_id' | 'guild_name' | 'storage_prefix'>
+        Pick<
+          DiscordImport,
+          'created_by' | 'guild_id' | 'guild_name' | 'storage_prefix'
+        >
       >,
   ): Promise<DiscordImport>;
 
@@ -151,6 +154,18 @@ export interface IDiscordImportRepository {
 
   /** Insert imported messages, returning id keyed by external id. */
   insertMessages(rows: ImportedMessageRow[]): Promise<Map<string, string>>;
+
+  /**
+   * Point already-imported messages at their reply targets.
+   *
+   * A second pass, because a reply and the message it answers routinely arrive
+   * in the SAME batch: the pre-insert existence read cannot know an id that
+   * does not exist yet, so those replies land with a null `reply_to_id` and are
+   * repaired here once both rows have ids.
+   */
+  setReplyTargets(
+    pairs: { id: string; reply_to_id: string }[],
+  ): Promise<number>;
 
   insertAttachments(
     rows: (ImportedAttachmentRow & {

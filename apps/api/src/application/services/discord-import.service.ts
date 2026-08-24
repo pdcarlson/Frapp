@@ -158,9 +158,7 @@ export class DiscordImportService {
       );
     }
 
-    const rows = files.map((file) =>
-      this.toManifestRow(job, chapterId, file),
-    );
+    const rows = files.map((file) => this.toManifestRow(job, chapterId, file));
     const created = await this.importRepo.createFiles(rows);
 
     // Signed with `upsert`, because re-requesting a URL for a file the admin
@@ -328,7 +326,11 @@ export class DiscordImportService {
 
   /** Statuses in which the admin may still change the import's inputs. */
   private assertMutable(job: DiscordImport): void {
-    if (job.status !== 'draft' && job.status !== 'failed' && job.status !== 'ready') {
+    if (
+      job.status !== 'draft' &&
+      job.status !== 'failed' &&
+      job.status !== 'ready'
+    ) {
       throw new ConflictException(
         `This import is ${job.status} and can no longer be changed.`,
       );

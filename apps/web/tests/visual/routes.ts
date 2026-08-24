@@ -27,6 +27,7 @@ export const DASHBOARD_ROUTES = [
   "/service",
   "/documents",
   "/backwork",
+  "/discord-import",
   "/geofences",
   "/study",
   "/polls",

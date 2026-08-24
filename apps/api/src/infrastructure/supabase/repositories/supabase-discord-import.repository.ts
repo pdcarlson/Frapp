@@ -27,9 +27,7 @@ import type {
 const MESSAGE_BATCH_SIZE = 200;
 
 @Injectable()
-export class SupabaseDiscordImportRepository
-  implements IDiscordImportRepository
-{
+export class SupabaseDiscordImportRepository implements IDiscordImportRepository {
   constructor(
     @Inject(SUPABASE_CLIENT)
     private readonly supabase: FrappSupabaseClient,
@@ -248,10 +246,10 @@ export class SupabaseDiscordImportRepository
         })
         .eq('id', candidate.id);
 
-      const { data: claimed, error: claimError } = await (candidate.lock_token ===
-      null
-        ? claim.is('lock_token', null)
-        : claim.eq('lock_token', candidate.lock_token)
+      const { data: claimed, error: claimError } = await (
+        candidate.lock_token === null
+          ? claim.is('lock_token', null)
+          : claim.eq('lock_token', candidate.lock_token)
       )
         .select()
         .maybeSingle();
@@ -324,9 +322,30 @@ export class SupabaseDiscordImportRepository
       .select('id, external_message_id');
     if (error) throw error;
     for (const row of data ?? []) {
-      if (row.external_message_id) inserted.set(row.external_message_id, row.id);
+      if (row.external_message_id)
+        inserted.set(row.external_message_id, row.id);
     }
     return inserted;
+  }
+
+  async setReplyTargets(
+    pairs: { id: string; reply_to_id: string }[],
+  ): Promise<number> {
+    if (pairs.length === 0) return 0;
+    // One statement per pair: each row gets a different value, which PostgREST
+    // cannot express in a single UPDATE. Bounded by the batch size, and only
+    // reached for messages that actually reply to something in the same batch.
+    let updated = 0;
+    for (const pair of pairs) {
+      const { error } = await this.supabase
+        .from('chat_messages')
+        .update({ reply_to_id: pair.reply_to_id })
+        .eq('id', pair.id)
+        .eq('kind', 'imported');
+      if (error) throw error;
+      updated += 1;
+    }
+    return updated;
   }
 
   async insertAttachments(

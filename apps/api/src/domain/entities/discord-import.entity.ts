@@ -39,25 +39,15 @@ export const DISCORD_IMPORT_STATUSES: readonly DiscordImportStatus[] = [
 ] as const;
 
 /** Statuses from which nothing further happens without an admin acting. */
-export const DISCORD_IMPORT_TERMINAL_STATUSES: readonly DiscordImportStatus[] = [
-  'completed',
-  'failed',
-  'cancelled',
-  'purged',
-] as const;
+export const DISCORD_IMPORT_TERMINAL_STATUSES: readonly DiscordImportStatus[] =
+  ['completed', 'failed', 'cancelled', 'purged'] as const;
 
 /** What the admin chose to do with one Discord channel. */
 export type DiscordChannelMappingAction =
-  | 'create_new'
-  | 'use_existing'
-  | 'skip';
+  'create_new' | 'use_existing' | 'skip';
 
 export type DiscordImportChannelStatus =
-  | 'pending'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'skipped';
+  'pending' | 'running' | 'completed' | 'failed' | 'skipped';
 
 /**
  * One Discord role as the export recorded it, paired with the Signet role the

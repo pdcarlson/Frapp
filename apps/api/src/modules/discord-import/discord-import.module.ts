@@ -25,8 +25,14 @@ import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
   providers: [
     DiscordImportService,
     DiscordImportWorkerService,
-    { provide: DISCORD_IMPORT_REPOSITORY, useClass: SupabaseDiscordImportRepository },
-    { provide: CHAT_CHANNEL_REPOSITORY, useClass: SupabaseChatChannelRepository },
+    {
+      provide: DISCORD_IMPORT_REPOSITORY,
+      useClass: SupabaseDiscordImportRepository,
+    },
+    {
+      provide: CHAT_CHANNEL_REPOSITORY,
+      useClass: SupabaseChatChannelRepository,
+    },
     { provide: STORAGE_PROVIDER, useClass: SupabaseStorageService },
   ],
   exports: [DiscordImportService],

@@ -110,7 +110,10 @@ export class DiscordImportWorkerService {
     try {
       await this.sweepImports(new Date());
     } catch (error) {
-      this.logger.error('Discord import sweep failed; skipping this tick', error);
+      this.logger.error(
+        'Discord import sweep failed; skipping this tick',
+        error,
+      );
     }
   }
 
@@ -133,8 +136,7 @@ export class DiscordImportWorkerService {
         }
         return await this.runImportSlice(job, lockToken, now);
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : String(error);
+        const message = error instanceof Error ? error.message : String(error);
         this.logger.error(
           `Discord import ${job.id} failed: ${message}`,
           error instanceof Error ? error.stack : undefined,
@@ -194,6 +196,11 @@ export class DiscordImportWorkerService {
     let skipped = job.messages_skipped;
     let attachmentsImported = job.attachments_imported;
     let attachmentsSkipped = job.attachments_skipped;
+    // Counted as parts are opened rather than by a preflight pass over the
+    // whole export: a denominator that grows is honest about what is known, and
+    // a separate counting pass would double every import's read cost to make a
+    // percentage marginally smoother.
+    let totalMessages = job.total_messages;
 
     while (partIndex < parts.length) {
       if (Date.now() >= deadline) break;
@@ -247,6 +254,10 @@ export class DiscordImportWorkerService {
       // message the whole import has written so far.
       let channelImported = 0;
 
+      if (messageIndex === 0) {
+        totalMessages += parsed.messages.length;
+      }
+
       while (messageIndex < parsed.messages.length) {
         if (Date.now() >= deadline) break;
 
@@ -270,6 +281,7 @@ export class DiscordImportWorkerService {
         messageIndex += batch.length;
 
         await this.importRepo.update(job.id, chapterId, {
+          total_messages: totalMessages,
           imported_messages: imported,
           messages_skipped: skipped,
           attachments_imported: attachmentsImported,
@@ -292,7 +304,11 @@ export class DiscordImportWorkerService {
           this.logger.warn(
             `Lost the lease on Discord import ${job.id} mid-slice; yielding.`,
           );
-          return { claimed: true, importId: job.id, messagesImported: imported };
+          return {
+            claimed: true,
+            importId: job.id,
+            messagesImported: imported,
+          };
         }
       }
 
@@ -311,6 +327,7 @@ export class DiscordImportWorkerService {
     const finished = partIndex >= parts.length;
     await this.importRepo.update(job.id, chapterId, {
       status: finished ? 'completed' : 'running',
+      total_messages: totalMessages,
       cursor_part_index: partIndex,
       cursor_message_index: messageIndex,
       imported_messages: imported,
@@ -360,18 +377,50 @@ export class DiscordImportWorkerService {
 
     const resolveAssetPath = (relativePath: string): string | null =>
       mediaByRelativePath.get(relativePath)?.storage_path ?? null;
+    const resolveAsset = (relativePath: string) => {
+      const file = mediaByRelativePath.get(relativePath);
+      return file
+        ? {
+            bucket: file.bucket,
+            storage_path: file.storage_path,
+            content_type: file.content_type,
+          }
+        : null;
+    };
 
     const rows = [];
-    const attachmentSources = new Map<string, DiscordExportMessage>();
+    const attachmentsByExternalId = new Map<
+      string,
+      ReturnType<typeof toImportedAttachments>['rows']
+    >();
+    let attachmentsSkipped = 0;
+
     for (const message of batch) {
       if (message.id && existing.has(message.id)) continue;
+
+      // Attachments are resolved BEFORE the message row is built, because
+      // `attachment_count` has to be the number of rows that will actually
+      // exist — not the number of entries the export listed. Two references to
+      // one object collapse to a single row (the table is unique per object per
+      // message) and a reference whose file was never uploaded produces none.
+      // Counting the raw array tells every client to fetch attachments that are
+      // not there, which renders as a list that never resolves.
+      const { rows: attachments, unresolved } = toImportedAttachments(
+        message,
+        resolveAsset,
+      );
+      attachmentsSkipped += unresolved.length;
+      for (const path of unresolved) {
+        warnings.push(`No uploaded file for attachment: ${path}`);
+      }
+
       const row = toImportedMessage({
         message,
         channelId: targetChannelId,
         importId,
         resolveAssetPath,
         resolveReplyTarget: (externalId) => existing.get(externalId) ?? null,
-        attachmentCount: (message.attachments ?? []).length,
+        attachmentCount: attachments.length,
       });
       if (!row) {
         warnings.push(
@@ -380,46 +429,44 @@ export class DiscordImportWorkerService {
         continue;
       }
       rows.push(row);
-      attachmentSources.set(row.external_message_id, message);
+      attachmentsByExternalId.set(row.external_message_id, attachments);
     }
 
     const inserted = await this.importRepo.insertMessages(rows);
 
+    // Second pass for replies within this batch. The existence read above ran
+    // before the insert, so a reply whose target is in the same batch could not
+    // resolve then — and in a real export a reply usually sits a few messages
+    // after the thing it answers, which is the same batch far more often than
+    // not.
+    const known = new Map([...existing, ...inserted]);
+    const replyPairs: { id: string; reply_to_id: string }[] = [];
+    for (const row of rows) {
+      if (row.reply_to_id) continue;
+      const targetExternalId = row.payload.reply_to_external_id;
+      if (!targetExternalId) continue;
+      const target = known.get(targetExternalId);
+      const self = inserted.get(row.external_message_id);
+      if (target && self) replyPairs.push({ id: self, reply_to_id: target });
+    }
+    if (replyPairs.length > 0) {
+      await this.importRepo.setReplyTargets(replyPairs);
+    }
+
     let attachmentsImported = 0;
-    let attachmentsSkipped = 0;
     const attachmentRows = [];
     for (const [externalId, messageId] of inserted) {
-      const source = attachmentSources.get(externalId);
-      if (!source) continue;
-      const { rows: attachments, unresolved } = toImportedAttachments(
-        source,
-        (relativePath) => {
-          const file = mediaByRelativePath.get(relativePath);
-          return file
-            ? {
-                bucket: file.bucket,
-                storage_path: file.storage_path,
-                content_type: file.content_type,
-              }
-            : null;
-        },
-      );
-      attachmentsSkipped += unresolved.length;
-      for (const path of unresolved) {
-        warnings.push(`No uploaded file for attachment: ${path}`);
-      }
-      attachmentRows.push(
-        ...attachments.map((attachment) => ({
+      for (const attachment of attachmentsByExternalId.get(externalId) ?? []) {
+        attachmentRows.push({
           ...attachment,
           message_id: messageId,
           channel_id: targetChannelId,
-        })),
-      );
+        });
+      }
     }
     if (attachmentRows.length > 0) {
-      attachmentsImported = await this.importRepo.insertAttachments(
-        attachmentRows,
-      );
+      attachmentsImported =
+        await this.importRepo.insertAttachments(attachmentRows);
     }
 
     return {
@@ -500,7 +547,8 @@ export class DiscordImportWorkerService {
       if (!held) return { claimed: true, importId: job.id, finished: false };
     }
 
-    const prefix = job.storage_prefix ?? archiveImportPrefix(job.chapter_id, job.id);
+    const prefix =
+      job.storage_prefix ?? archiveImportPrefix(job.chapter_id, job.id);
     // `listFiles` does not recurse, so each level the layout uses is swept
     // explicitly. Deleting an already-gone key reports success, which is what
     // makes a resumed purge idempotent.

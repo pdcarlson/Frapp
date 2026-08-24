@@ -163,8 +163,43 @@ Resolution is tiered and fails closed — exact user id, exact display name, nam
 A chapter migrating from Discord imports its history into the **same**
 `chat_messages` / `chat_channels` tables as live chat, marked `kind = 'imported'`
 — not a parallel schema, so it is searchable, linkable and permission-checked by
-exactly the machinery everything else uses. The importer itself is a separate
-slice; what follows is the behaviour the archive has once it is in.
+exactly the machinery everything else uses.
+
+**How an import happens.** The chapter admin runs
+[DiscordChatExporter](https://github.com/Tyrrrz/DiscordChatExporter) themselves
+(`-f Json --media --utc --partition 8mb`) and uploads the export at
+`/discord-import`. **Signet never talks to Discord and never stores a Discord
+credential** — there is no bot token anywhere in the product. The browser uploads
+each file straight to the private `chat-archive` bucket through a signed URL, so
+no export byte passes through the API, and a background job then reads those
+files and writes the rows. The admin sees per-import progress and can delete the
+whole import afterwards.
+
+- **Re-running an import is a no-op, not a duplicate.** Every imported row
+  carries `external_message_id` — the Discord message snowflake — under a unique
+  index per channel. This is deliberately *not* `client_message_id`, which is the
+  live client's optimistic-send key (ADR-03 and its 2026-08-24 amendment).
+- **Where it lands is the operator's choice, per channel**, and it is always
+  asked: `chat_channels` has no unique constraint on `(chapter_id, name)`, so a
+  same-named Signet channel is never treated as consent to merge into it.
+- **The Discord → Signet role mapping grants nothing.** The wizard records which
+  Signet role each Discord role corresponds to, and shows it back to the admin as
+  a worksheet for promoting people by hand. Nothing reads it to grant a
+  permission and the importer never touches a `members` row — there are no
+  accounts behind imported messages to grant anything to.
+- **Consent is a deliberate friction point.** The admin must confirm they posted
+  an in-channel notice in their Discord server before an import can be created.
+  Signet cannot verify it, and says so — but
+  `discord_imports.consent_acknowledged_at` is NOT NULL, so no import exists
+  anywhere in the system that skipped the question.
+- **Deleting an import removes what it brought in**: its messages (cascading to
+  attachments and reactions) and its objects in the `chat-archive` bucket. Scoped
+  by `metadata->>'discord_import_id'`, so purging one import that merged into a
+  live channel leaves that channel's live messages — and any *other* import's
+  messages — untouched. This is currently the only deletion path that reaps the
+  `chat-archive` bucket; there is no chapter-deletion path in the product.
+
+What follows is the behaviour the archive has once it is in.
 
 - **Attribution without accounts.** An imported message has `sender_id = null` and
   carries `author_name` (the display name as the export recorded it),
@@ -191,8 +226,22 @@ slice; what follows is the behaviour the archive has once it is in.
   the client's insert path. A publication row filter cannot do this job: Realtime
   builds its table list from `pg_publication_tables` names and never reads the
   filter expression.
-- **Where it lands is the operator's choice, per channel**: a new read-only
-  archive channel, a new writable one, or merged into an existing live channel.
+- **Reactions survive as counts, not as people.** Discord reaction totals are
+  preserved on the message's `payload`
+  (`{"reactions": [{"emoji": "🔥", "count": 4}]}`); **per-reactor attribution is
+  not, and cannot be.** Both `message_reactions.user_id` and
+  `chat_message_actions.user_id` are NOT NULL foreign keys to `users`, and
+  minting a `users` row per Discord handle was rejected for the reasons above. No
+  count is lost and no identity is invented. Rendering the preserved summary is
+  not built yet — the data is stored ahead of the surface that will show it.
+- **Pins are recorded, not applied.** A message Discord had pinned imports with
+  `is_pinned = false` and `payload.was_pinned_at_source = true`. A channel's 50
+  live pin slots are the chapter's to spend, and an archive with 200 pins would
+  bury whatever they had chosen.
+- **Mentions are never resolved.** An imported message's `mentions` array is
+  always empty. A mention overrides a per-channel mute in the push rules, so
+  resolving `@name` tokens out of archive prose would let an import lift a mute a
+  member deliberately set.
 - **Moderating an archived message is not live.** The Realtime exclusion is a
   row rule, not an operation rule, so a soft-delete, pin or edit of an imported
   message reaches other members on their next channel read rather than

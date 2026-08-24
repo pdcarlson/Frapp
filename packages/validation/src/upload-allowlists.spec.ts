@@ -53,11 +53,7 @@ describe("GIF drift regression", () => {
     // This is the test that would have caught the live bug: Backwork's page
     // omitted gif from a private copy of the documents allowlist while the
     // Backwork API service and bucket already accepted it.
-    expect(DOCUMENT_UPLOAD_SURFACES).toEqual([
-      "documents",
-      "backwork",
-      "chat",
-    ]);
+    expect(DOCUMENT_UPLOAD_SURFACES).toEqual(["documents", "backwork", "chat"]);
     expect(isAllowedUploadMime("document", "image/gif")).toBe(true);
     expect(isAllowedUploadExtension("document", "notes.gif")).toBe(true);
     expect(isAllowedUploadExtension("document", ".gif")).toBe(true);

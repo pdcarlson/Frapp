@@ -302,8 +302,7 @@ export function mimeForUploadFile(
 }
 
 export type InspectedUpload =
-  | { ok: true; contentType: string }
-  | { ok: false; reason: "type" | "size" };
+  { ok: true; contentType: string } | { ok: false; reason: "type" | "size" };
 
 /**
  * Client-side gate used by the web upload pages and the chat composer.

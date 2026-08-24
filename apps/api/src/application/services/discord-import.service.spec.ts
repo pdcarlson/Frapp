@@ -1,5 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { MAX_ARCHIVE_EXPORT_PART_BYTES } from '@repo/validation';
 import { DiscordImportService } from './discord-import.service';
 import { DISCORD_IMPORT_REPOSITORY } from '../../domain/repositories/discord-import.repository.interface';
@@ -130,7 +134,9 @@ describe('DiscordImportService — the consent gate', () => {
       IMPORT_ID,
       CHAPTER,
       expect.objectContaining({
-        storage_prefix: expect.stringContaining(`chat-archive/imports/${IMPORT_ID}`),
+        storage_prefix: expect.stringContaining(
+          `chat-archive/imports/${IMPORT_ID}`,
+        ),
       }),
     );
   });
@@ -165,7 +171,11 @@ describe('DiscordImportService — upload URLs', () => {
     await build();
     const tickets = await service.requestUploadUrls(IMPORT_ID, CHAPTER, [
       file(),
-      file({ kind: 'media', relative_path: 'general_Files/a.png', content_type: 'image/png' }),
+      file({
+        kind: 'media',
+        relative_path: 'general_Files/a.png',
+        content_type: 'image/png',
+      }),
     ]);
 
     for (const ticket of tickets) {
@@ -201,7 +211,11 @@ describe('DiscordImportService — upload URLs', () => {
     await build();
     await expect(
       service.requestUploadUrls(IMPORT_ID, CHAPTER, [
-        file({ kind: 'media', relative_path: 'huge.mp4', byte_size: 200 * 1024 * 1024 }),
+        file({
+          kind: 'media',
+          relative_path: 'huge.mp4',
+          byte_size: 200 * 1024 * 1024,
+        }),
       ]),
     ).rejects.toThrow(/too large/);
   });
@@ -250,8 +264,16 @@ describe('DiscordImportService — upload URLs', () => {
   it('keeps two source paths that flatten alike distinct', async () => {
     await build();
     const tickets = await service.requestUploadUrls(IMPORT_ID, CHAPTER, [
-      file({ kind: 'media', relative_path: 'a/b.png', content_type: 'image/png' }),
-      file({ kind: 'media', relative_path: 'a_b.png', content_type: 'image/png' }),
+      file({
+        kind: 'media',
+        relative_path: 'a/b.png',
+        content_type: 'image/png',
+      }),
+      file({
+        kind: 'media',
+        relative_path: 'a_b.png',
+        content_type: 'image/png',
+      }),
     ]);
 
     expect(tickets[0].storage_path).not.toBe(tickets[1].storage_path);

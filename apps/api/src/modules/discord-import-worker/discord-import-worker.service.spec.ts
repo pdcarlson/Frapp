@@ -141,13 +141,19 @@ function makeRepo(initial: DiscordImport) {
     releaseLease: jest.fn(async () => undefined),
     findFiles: jest.fn(async () => repoRef.files),
     findChannels: jest.fn(async () => repoRef.channels),
-    update: jest.fn(async (_id: string, _chapter: string, patch: Record<string, unknown>) => {
-      repoRef.updates.push(patch);
-      current = { ...current, ...(patch as Partial<DiscordImport>) };
-      return current;
-    }),
+    update: jest.fn(
+      async (_id: string, _chapter: string, patch: Record<string, unknown>) => {
+        repoRef.updates.push(patch);
+        current = { ...current, ...(patch as Partial<DiscordImport>) };
+        return current;
+      },
+    ),
     updateChannel: jest.fn(
-      async (_id: string, _importId: string, patch: Record<string, unknown>) => {
+      async (
+        _id: string,
+        _importId: string,
+        patch: Record<string, unknown>,
+      ) => {
         repoRef.channelUpdates.push(patch);
       },
     ),
@@ -175,6 +181,13 @@ function makeRepo(initial: DiscordImport) {
         return out;
       },
     ),
+    replyPairs: [] as { id: string; reply_to_id: string }[],
+    setReplyTargets: jest.fn(
+      async (pairs: { id: string; reply_to_id: string }[]) => {
+        repoRef.replyPairs.push(...pairs);
+        return pairs.length;
+      },
+    ),
     insertAttachments: jest.fn(async (rows: Record<string, unknown>[]) => {
       repoRef.attachments.push(...rows);
       return rows.length;
@@ -193,7 +206,10 @@ function makeRepo(initial: DiscordImport) {
 }
 let repoRef: ReturnType<typeof makeRepo>;
 
-async function buildWorker(repo: ReturnType<typeof makeRepo>, storage: unknown) {
+async function buildWorker(
+  repo: ReturnType<typeof makeRepo>,
+  storage: unknown,
+) {
   const channelRepo = {
     create: jest.fn(async (data: { name: string }) => ({
       id: 'created-channel-1',
@@ -297,15 +313,73 @@ describe('DiscordImportWorkerService — importing', () => {
     }
   });
 
+  it('resolves a reply whose target is in the same batch', async () => {
+    // The existence read runs before the insert, so a reply to a message a few
+    // rows above it in the same batch cannot resolve on the first pass. Caught
+    // by running the importer against the live stack, not by a unit test — the
+    // fake had been resolving it for free.
+    const { worker } = await buildWorker(repoRef, makeStorage(part000()));
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.replyPairs).toHaveLength(1);
+    expect(repoRef.setReplyTargets).toHaveBeenCalled();
+  });
+
+  it('counts attachments that will exist, not entries the export listed', async () => {
+    // Message ...003 references one object twice (DCE deduplicates media), and
+    // the attachments table is unique per object per message — so it is ONE
+    // row. Stamping 2 would tell every client to fetch attachments that are not
+    // there, and the list would never resolve.
+    repoRef.files = [
+      exportFile(),
+      mediaFile('general [800000000000000001]_Files/photo-e5f6.png', {
+        content_type: 'image/png',
+      }),
+    ];
+    const { worker } = await buildWorker(repoRef, makeStorage(part000()));
+
+    await worker.sweepImports(NOW);
+
+    const rows = repoRef.insertMessages.mock.calls[0][0] as {
+      external_message_id: string;
+      metadata: { attachment_count: number };
+    }[];
+    const doubled = rows.find(
+      (r) => r.external_message_id === '900000000000000003',
+    );
+    expect(doubled?.metadata.attachment_count).toBe(1);
+
+    // ...006 references a file that was never uploaded, so it has none.
+    const unresolvable = rows.find(
+      (r) => r.external_message_id === '900000000000000006',
+    );
+    expect(unresolvable?.metadata.attachment_count).toBe(0);
+  });
+
+  it('records a message total so progress has a denominator', async () => {
+    const { worker } = await buildWorker(repoRef, makeStorage(part000()));
+
+    await worker.sweepImports(NOW);
+
+    const last = repoRef.updates.at(-1) as { total_messages: number };
+    expect(last.total_messages).toBe(8);
+  });
+
   it('reports a media reference with no uploaded file instead of dropping it silently', async () => {
     repoRef.files = [exportFile()];
     const { worker } = await buildWorker(repoRef, makeStorage(part000()));
 
     await worker.sweepImports(NOW);
 
-    const last = repoRef.updates.at(-1) as { warnings: string[]; attachments_skipped: number };
+    const last = repoRef.updates.at(-1) as {
+      warnings: string[];
+      attachments_skipped: number;
+    };
     expect(last.attachments_skipped).toBeGreaterThan(0);
-    expect(last.warnings.join('\n')).toContain('No uploaded file for attachment');
+    expect(last.warnings.join('\n')).toContain(
+      'No uploaded file for attachment',
+    );
   });
 
   it('keys the channel on the id it reads from the bytes, not on the client claim', async () => {
@@ -468,7 +542,9 @@ describe('DiscordImportWorkerService — purging', () => {
     // keep minting signed URLs for bytes that are not there.
     expect(storage.deleteFiles).toHaveBeenCalled();
     expect(repoRef.updates.at(-1)).toMatchObject({ status: 'purged' });
-    expect((repoRef.updates.at(-1) as { purged_at: string }).purged_at).toBeTruthy();
+    expect(
+      (repoRef.updates.at(-1) as { purged_at: string }).purged_at,
+    ).toBeTruthy();
   });
 
   it('sweeps both the export and media prefixes', async () => {

@@ -205,7 +205,9 @@ export function parseExportPart(bytes: Uint8Array): DiscordExportPart {
  */
 export function resolveAuthorName(author: DiscordExportUser | null): string {
   return (
-    asString(author?.nickname) ?? asString(author?.name) ?? 'Unknown Discord user'
+    asString(author?.nickname) ??
+    asString(author?.name) ??
+    'Unknown Discord user'
   );
 }
 
@@ -440,9 +442,11 @@ export interface ToImportedAttachmentsResult {
 
 export function toImportedAttachments(
   message: DiscordExportMessage,
-  resolveAsset: (
-    relativePath: string,
-  ) => { bucket: string; storage_path: string; content_type: string | null } | null,
+  resolveAsset: (relativePath: string) => {
+    bucket: string;
+    storage_path: string;
+    content_type: string | null;
+  } | null,
 ): ToImportedAttachmentsResult {
   const rows: ImportedAttachmentRow[] = [];
   const unresolved: string[] = [];

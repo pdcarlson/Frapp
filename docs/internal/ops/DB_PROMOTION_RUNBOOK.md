@@ -78,6 +78,50 @@ Post-apply production checks:
   delete-and-reload would silently detach every chapter already linked to a directory
   entry. Updates are scoped to `source = 'seed'`, so hand-curated rows survive.
 
+## 2026-08-24: Discord archive importer — one migration
+
+The importer itself. Promotes after the five foundation migrations below, which
+it depends on (`chat_messages.author_name`, `chat_message_attachments`, and the
+`chat-archive` bucket).
+
+### 20260824120000_discord_import.sql
+
+* **Purpose**: give the importer its own identity column and the three tables an
+  import needs while it runs. `chat_messages.external_message_id` holds the
+  Discord message snowflake and is the re-run dedupe key; `discord_imports`,
+  `discord_import_channels` and `discord_import_files` hold the job, the admin's
+  channel mapping, and the manifest of uploaded files.
+* **Reverses a phase-1 decision.** `20260823120000` put the snowflake in
+  `client_message_id`; that was flagged for review at the time and is undone
+  here. `client_message_id` is the *client's* optimistic-send key (ADR-03) —
+  minted by the composer, round-tripped through the offline outbox — and sharing
+  one column with a foreign system's identifier made every reader of either path
+  check which kind of value it held. See the ADR-03 amendment of the same date.
+* **Shape**: one nullable column with no default (catalog-only, no rewrite), two
+  new indexes on `chat_messages`, three new tables with RLS enabled and **no
+  policies**.
+* **Locks**: `add column` is a catalog flag. **Both index builds hold SHARE on
+  `chat_messages` for their duration**, which blocks writes — and unlike phase 1
+  this may run against a table that already holds an archive, so size the window
+  against `select count(*) from chat_messages` first and promote when send volume
+  is low. Neither is `CONCURRENTLY`: Supabase migrations run inside a
+  transaction.
+* **`NULLS NOT DISTINCT` on the new index is inert**, and the migration header
+  says so. `channel_id` is NOT NULL and the partial predicate excludes a null
+  `external_message_id`, so neither key column can be null inside the index. It
+  is spelled for symmetry with `idx_chat_messages_dedupe`; do not cite this index
+  as evidence the clause matters.
+* **Checks** (after promotion):
+  - `select indexdef from pg_indexes where indexname='idx_chat_messages_external_dedupe';` → `UNIQUE`, on `(channel_id, external_message_id)`
+  - `select is_nullable from information_schema.columns where table_name='discord_imports' and column_name='consent_acknowledged_at';` → **`NO`**. This is the compliance gate: a friction point enforced only in the web wizard is skippable by anything that calls the API directly, so the column is what guarantees no import exists that nobody acknowledged.
+  - `select count(*) from pg_policy p join pg_class c on c.oid=p.polrelid where c.relname in ('discord_imports','discord_import_channels','discord_import_files');` → **0**
+  - Sanity: `POST /v1/discord-imports` without `consent_acknowledged` answers 400.
+* **Rollback**: see **Rollback the Discord importer** in
+  [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md). **Read it before
+  promoting** — dropping `external_message_id` destroys re-run idempotency for
+  any archive already imported, so re-running the importer after that rollback
+  duplicates the whole archive.
+
 ## 2026-08-24: Discord archive foundation — five migrations
 
 The schema and insert-path work that has to exist before a DiscordChatExporter
@@ -107,17 +151,23 @@ kind-semantics migration replaces a policy the authors migration leaves alone).
   for a full table scan. `idx_chat_messages_dedupe` is dropped and recreated —
   that is a real (brief) window with no dedupe index, so run it when send volume
   is low; the index build holds SHARE.
-* **The `NULLS NOT DISTINCT` clause is load-bearing.** Postgres treats NULLs in a
-  unique index as distinct by default, so the moment `sender_id` can be NULL the
-  old index stops enforcing anything for exactly the rows that need it: a
-  re-run importer would insert the whole archive a second time, silently. The
-  importer writes the Discord *message* snowflake into `client_message_id`;
-  `author_external_id` is the *author's* id and is deliberately not part of the
-  key, since two messages from one author in one channel share it.
+* **The `NULLS NOT DISTINCT` clause — superseded, but the index is kept.** This
+  entry originally said the importer writes the Discord *message* snowflake into
+  `client_message_id`, and that the clause is what makes a re-run safe. **That is
+  no longer true.** `20260824120000_discord_import.sql` gave the importer its own
+  `external_message_id` column and its own index; `client_message_id` stayed the
+  client's optimistic-send key (ADR-03, and its 2026-08-24 amendment).
+  The clause on `idx_chat_messages_dedupe` is therefore now inert — imported rows
+  do not set `client_message_id`, and live rows always carry a sender. It is
+  deliberately **not** removed: dropping and rebuilding a unique index on the
+  product's hot insert path would open a real window with no idempotency
+  protection on live sends, to delete something that costs nothing.
+  `author_external_id` is the *author's* id and was never part of either key,
+  since two messages from one author in one channel share it.
 * **Checks** (after promotion):
   - `select is_nullable from information_schema.columns where table_name='chat_messages' and column_name='sender_id';` → `YES`
   - `select convalidated from pg_constraint where conname='chat_messages_author_present';` → `t`
-  - `select indexdef from pg_indexes where indexname='idx_chat_messages_dedupe';` → contains `NULLS NOT DISTINCT`
+  - `select indexdef from pg_indexes where indexname='idx_chat_messages_dedupe';` → contains `NULLS NOT DISTINCT` (retained, now inert — see above)
   - Sanity: an existing message still shows its sender in the web client (the
     label now resolves through `resolveAuthorLabel` in `@repo/hooks`).
 * **Rollback**: see **Rollback the chat author fields** in
@@ -245,11 +295,27 @@ kind-semantics migration replaces a policy the authors migration leaves alone).
 * **Shape**: one bucket upsert, guarded on `to_regclass('storage.buckets')` so it
   is a no-op on bare Postgres (the PGlite gate). Private, no `storage.objects`
   policies — same posture as every other bucket.
-* **Writes are server-side.** The importer fetches each Discord CDN object and
-  writes the bytes through `IStorageProvider.uploadFile` on the service-role key,
-  not through a signed upload URL. That matters for `allowed_mime_types`: a signed
-  upload URL cannot pin a content type (the uploader sets its own on the PUT),
-  whereas a server-side upload passes the type it resolved.
+* **Writes — superseded by `20260824120000`.** This entry planned for the
+  importer to fetch each Discord CDN object itself and write the bytes through
+  `IStorageProvider.uploadFile`. The importer that shipped does not: the admin
+  runs DiscordChatExporter with `--media`, which downloads the media to their own
+  machine, and their **browser** uploads each file straight to this bucket
+  through a signed URL. Signet never talks to Discord.
+  So `allowed_mime_types` is now the enforcement point rather than a second belt
+  — and it does enforce: a signed-URL PUT of a type outside the list answers
+  **415 `invalid_mime_type`** from storage-api, verified against the local stack.
+  The API additionally re-derives the expected type from the file extension
+  before minting a URL, so a rejection is a readable error rather than a failed
+  PUT. Content type still cannot be pinned at sign time (#1230).
+* **Object layout — also superseded.** The migration header declares
+  `chapters/{chapter_id}/chat-archive/{channel_id}/{message_id}/{basename}`,
+  which assumes Signet ids exist when the object is written. They do not: the
+  browser uploads before any channel or message has been created. The shipped
+  layout is import-scoped —
+  `chapters/{chapter_id}/chat-archive/imports/{import_id}/{export,media}/…` —
+  which also gives the per-import purge a single prefix to sweep. Canonical
+  definition: `archiveImportPrefix()` in
+  [`apps/api/src/domain/constants/storage.ts`](../../../apps/api/src/domain/constants/storage.ts).
 * **⚠️ Human action on the hosted projects.** `supabase/config.toml` sets a
   **global** storage `file_size_limit`, raised to `104857600` in this change for
   the local stack. The hosted projects have an equivalent **project-level**

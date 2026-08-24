@@ -79,9 +79,7 @@ describe('parseExportPart', () => {
 
   it('rejects a JSON document that is not a DCE export', () => {
     const notAnExport = Buffer.from(JSON.stringify({ messages: [] }));
-    expect(() => parseExportPart(notAnExport)).toThrow(
-      /no channel id/i,
-    );
+    expect(() => parseExportPart(notAnExport)).toThrow(/no channel id/i);
   });
 });
 
@@ -237,9 +235,9 @@ describe('buildImportPayload', () => {
     const payload = buildImportPayload(byId('900000000000000003'), null);
     expect(payload.sticker_names).toEqual(['partyparrot']);
     expect(payload.embed_count).toBeUndefined();
-    expect(buildImportPayload(byId('900000000000000002'), null).embed_count).toBe(
-      1,
-    );
+    expect(
+      buildImportPayload(byId('900000000000000002'), null).embed_count,
+    ).toBe(1);
   });
 
   it('omits optional keys rather than writing nulls', () => {
@@ -258,7 +256,11 @@ describe('toImportedAttachments', () => {
   const resolve = (p: string) =>
     p.includes('never-uploaded')
       ? null
-      : { bucket: 'chat-archive', storage_path: `stored/${p}`, content_type: 'image/png' };
+      : {
+          bucket: 'chat-archive',
+          storage_path: `stored/${p}`,
+          content_type: 'image/png',
+        };
 
   it('maps an attachment onto the stored object, never the source url', () => {
     const { rows } = toImportedAttachments(byId('900000000000000002'), resolve);

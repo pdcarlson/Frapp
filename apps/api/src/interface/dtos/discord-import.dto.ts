@@ -23,7 +23,9 @@ export class CreateDiscordImportDto {
   @IsBoolean()
   consent_acknowledged: boolean;
 
-  @ApiPropertyOptional({ description: 'Discord server name, for display only.' })
+  @ApiPropertyOptional({
+    description: 'Discord server name, for display only.',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(255)
@@ -41,7 +43,7 @@ export class DiscordImportUploadFileDto {
 
   @ApiProperty({
     description:
-      "The path as the export names it, relative to the export folder. This is the join key: the importer resolves an attachment by looking this string up, never by rebuilding a storage key.",
+      'The path as the export names it, relative to the export folder. This is the join key: the importer resolves an attachment by looking this string up, never by rebuilding a storage key.',
   })
   @IsString()
   @MaxLength(1024)
