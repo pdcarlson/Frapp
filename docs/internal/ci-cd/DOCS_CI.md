@@ -144,7 +144,10 @@ in another, and **every entry requires a `reason`** (the script exits 2 without 
 stop matching anything **fail the check**, so the allowlist shrinks as docs get fixed rather than
 accumulating stale excuses.
 
-Run locally: `npm run check:doc-paths`. Unit tests: `scripts/ci/__tests__/check-doc-paths.test.mjs`,
+Run locally: `npm run check:doc-paths` — but **`git add` your new docs first**. It enumerates via
+`git ls-files`, so an untracked file is not scanned at all and the run passes without ever reading
+it. CI checks out a commit, where everything is tracked, so a new doc that cites a dead path passes
+locally and fails on the PR. Unit tests: `scripts/ci/__tests__/check-doc-paths.test.mjs`,
 covered by the `ci-scripts-tests` job.
 
 **Rollout.** `doc-paths` was added to `DOCS_CHECKS` on **2026-08-21**, after a year of reporting
