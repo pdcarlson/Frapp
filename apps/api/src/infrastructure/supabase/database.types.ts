@@ -22,9 +22,11 @@ import type {
   ChatMessageAction,
   ChatMessageAttachment,
   ChatNotificationPreference,
+  DiscordConnection,
   DiscordImport,
   DiscordImportChannel,
   DiscordImportFile,
+  DiscordOAuthState,
   Event,
   EventAttendance,
   FinancialInvoice,
@@ -107,6 +109,8 @@ export interface Database {
       chat_messages: TableDefinition<ChatMessage>;
       chat_message_actions: TableDefinition<ChatMessageAction>;
       chat_message_attachments: TableDefinition<ChatMessageAttachment>;
+      discord_connections: TableDefinition<DiscordConnection>;
+      discord_oauth_states: TableDefinition<DiscordOAuthState>;
       discord_imports: TableDefinition<DiscordImport>;
       discord_import_channels: TableDefinition<DiscordImportChannel>;
       discord_import_files: TableDefinition<DiscordImportFile>;

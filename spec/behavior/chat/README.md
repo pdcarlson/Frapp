@@ -165,15 +165,73 @@ A chapter migrating from Discord imports its history into the **same**
 — not a parallel schema, so it is searchable, linkable and permission-checked by
 exactly the machinery everything else uses.
 
-**How an import happens.** The chapter admin runs
-[DiscordChatExporter](https://github.com/Tyrrrz/DiscordChatExporter) themselves
-(`-f Json --media --utc --partition 8mb`) and uploads the export at
-`/discord-import`. **Signet never talks to Discord and never stores a Discord
-credential** — there is no bot token anywhere in the product. The browser uploads
-each file straight to the private `chat-archive` bucket through a signed URL, so
-no export byte passes through the API, and a background job then reads those
-files and writes the rows. The admin sees per-import progress and can delete the
-whole import afterwards.
+**How an import happens — two ways, both ending in the same rows.** The admin
+chooses one at `/discord-import`; everything after the choice is identical.
+
+- **Connect Discord** (`source = 'bot'`). The chapter installs one
+  Signet-owned bot through Discord's ordinary "Add to Server" screen, and the
+  API reads the history itself over Discord's REST API. **No admin ever sees,
+  pastes or stores a credential**: the bot token is a single global Signet
+  value, and the only per-chapter thing stored is a `guild_id` — a public
+  snowflake, inert without an install behind it.
+- **Upload an export** (`source = 'upload'`). The admin runs
+  [DiscordChatExporter](https://github.com/Tyrrrz/DiscordChatExporter) themselves
+  (`-f Json --media --utc --partition 8mb`) and their browser uploads each file
+  straight to the private `chat-archive` bucket through a signed URL, so no
+  export byte passes through the API.
+
+**The upload path is not deprecated and is offered every time.** It is what
+keeps working if Discord ever throttles or refuses one shared bot across every
+chapter, and it is the only path for a chapter that cannot install apps in its
+own server. Either way a background job writes the rows, the admin sees
+per-import progress, and can delete the whole import afterwards.
+
+**What the bot path costs, stated plainly.** One bot process holds read access
+to every connected chapter's Discord server at once. That is a real cross-tenant
+surface and it is contained by two things, both re-checked on every slice rather
+than once at setup: a guild id is only ever read from `discord_connections` by
+`chapter_id` and never accepted from a caller, and Discord itself is asked to
+confirm that each channel about to be read actually lives in that guild — a
+channel that reports a different one fails the import rather than being skipped.
+
+- **Connecting proves two facts, and takes neither from the browser.** Which
+  guild the bot landed in comes back on the OAuth **token exchange**, a
+  server-to-server call keyed by a one-time code — not from the `guild_id`
+  Discord puts on the redirect. That the authorizing human actually runs that
+  server is read from `GET /users/@me/guilds` under their own access token, and
+  Manage Server (or Administrator, or being the owner) is required. The token is
+  used for those two reads and revoked; it is never stored.
+- **Those two facts are not enough on their own, so the callback binds
+  nothing.** They establish that a Manage Server human installed the bot into a
+  guild — not that they meant *this chapter* to read it, and starting a
+  handshake is an ordinary action for any officer in any chapter. Left there, an
+  officer of one chapter could send their own authorize link to an admin of
+  somebody else's Discord server and read it into their chapter, with every
+  Discord-side check passing honestly. So the callback **parks** what it learned
+  and hands the browser a second one-time token; a normal authenticated,
+  chapter-scoped request is what actually links the server, and it links it only
+  to the chapter that request is scoped to. An authorization completed by
+  somebody else, for a chapter they are not in, activates nothing. The
+  legitimate admin is asked for nothing extra — their session already matches,
+  so the dashboard confirms on arrival.
+- **The bot is installed read-only**: View Channels and Read Message History,
+  nothing else. It cannot post, edit, or remove anything. One visible
+  consequence: Discord gates listing *private* archived threads behind Manage
+  Threads, which is a permission that can also delete threads, so Signet does
+  not ask for it — private archived threads are reported as skipped, by name,
+  rather than silently omitted. Public and active threads import normally.
+- **Threads are not a separate mapping question.** A thread inherits whatever
+  destination the admin chose for the channel it lives in, because it is part of
+  that conversation. Forum channels are mappable for the same reason: every post
+  in one is a thread, and they inherit the forum's choice.
+- **A bot that cannot read message content fails loudly.** Without Discord's
+  Message Content Intent the API gets HTTP 200 with empty content on every
+  message. The import counts authored messages with nothing in them and stops
+  with an error naming the fix, rather than writing a chapter's whole history as
+  empty bubbles — which would look like success.
+- **The whole path disappears when unconfigured.** With no Discord application
+  set up for the environment, `GET /v1/discord/availability` answers
+  `available: false` and the wizard offers only the upload flow.
 
 - **Re-running *the same import* is a no-op, not a duplicate.** Every imported
   row carries `external_message_id` — the Discord message snowflake — under a

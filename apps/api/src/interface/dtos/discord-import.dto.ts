@@ -30,6 +30,44 @@ export class CreateDiscordImportDto {
   @IsString()
   @MaxLength(255)
   guild_name?: string;
+
+  @ApiPropertyOptional({
+    enum: ['upload', 'bot'],
+    default: 'upload',
+    description:
+      "`upload` (the default) imports a DiscordChatExporter export the admin uploads. `bot` reads the chapter's connected Discord server directly and requires a connection to exist first. Both run the same consent gate, the same channel mapping, and the same purge.",
+  })
+  @IsOptional()
+  @IsIn(['upload', 'bot'])
+  source?: 'upload' | 'bot';
+}
+
+export class DiscordDiscoveredRoleDto {
+  @ApiProperty()
+  discord_role_id: string;
+
+  @ApiProperty()
+  discord_role_name: string;
+}
+
+export class DiscordDiscoveryResponseDto {
+  @ApiProperty({
+    description:
+      'Every channel and thread the bot can read, all recorded as `skip` until the admin says otherwise. Threads carry `parent_discord_channel_id` and are not mapped separately — they follow their parent.',
+    type: 'array',
+    items: { type: 'object', additionalProperties: true },
+  })
+  channels: unknown[];
+
+  @ApiProperty({ type: [DiscordDiscoveredRoleDto] })
+  roles: DiscordDiscoveredRoleDto[];
+
+  @ApiProperty({
+    type: [String],
+    description:
+      'What could not be enumerated, in the admin’s words — most often private archived threads, which Discord gates behind a Manage Threads permission this read-only bot deliberately does not request.',
+  })
+  warnings: string[];
 }
 
 export class DiscordImportUploadFileDto {
