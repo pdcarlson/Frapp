@@ -78,6 +78,127 @@ Post-apply production checks:
   delete-and-reload would silently detach every chapter already linked to a directory
   entry. Updates are scoped to `source = 'seed'`, so hand-curated rows survive.
 
+## 2026-08-24: Discord bot connection — two migrations
+
+The second way in: a single Signet-owned bot a chapter installs through
+Discord's ordinary "Add to Server" OAuth flow, after which the API reads the
+history itself. Promotes after `20260824120000` below, which owns the job tables
+these extend.
+
+**Promote them together, in filename order, in one window.** They are not
+independent: `20260824140000` ships the connect flow, and `20260824150000` ships
+the check that decides *which chapter* a connected guild may be read into. An
+environment left on the first alone is not a partially-migrated environment, it
+is a vulnerable one — see the emphasised bullet under the second entry before
+you plan the window.
+
+Neither migration carries the Discord app itself. See the **⚠️ Human action**
+bullet below; a promotion that skips it leaves the feature dark in a way no
+catalog query detects.
+
+### 20260824140000_discord_bot_connection.sql
+
+* **Purpose**: give a chapter somewhere to record which Discord server it
+  connected, and give the callback that writes it a safe handshake. Two new
+  tables — `discord_connections` (the chapter ↔ guild mapping) and
+  `discord_oauth_states` (the OAuth `state`, which is a row rather than a signed
+  blob so it can be single-use). Plus `discord_imports.source`, which is what
+  lets one job table serve both the phase-2 upload path and this one, and three
+  columns on `discord_import_channels` for the backwards per-channel message
+  walk.
+* **The only per-chapter value here is a guild id.** The bot token is one global
+  secret per environment; nothing in this schema stores it and no chapter ever
+  sees it. A guild id is a public snowflake and is worthless without the install
+  behind it — which is why `guild_id` is deliberately **not** globally unique.
+  Two chapters legitimately connecting one server (an umbrella org, a chapter
+  re-created in Signet) is a real case, and uniqueness would prevent nothing an
+  attacker can do: the tenant control is that the guild is read *through*
+  `chapter_id` and never supplied by a caller. Do not add a unique constraint
+  under the impression it is a tenant control.
+* **Shape**: two new tables with RLS enabled and **no policies**; one column
+  with a constant default on `discord_imports`; one CHECK added **validated**;
+  three columns on `discord_import_channels`; two new indexes.
+* **Locks**: both `add column … default` statements are catalog-only — a
+  non-volatile default has not rewritten the heap since PG11, so neither
+  `source` nor `position` scans anything. The CHECK is the one statement that
+  does: it is added validated rather than `NOT VALID` + `validate`, so it holds
+  ACCESS EXCLUSIVE on `discord_imports` for a full scan. That table holds one
+  row per import job and is small in every environment today, which is why it
+  was written the short way — confirm with `select count(*) from
+  discord_imports;` before promoting rather than assuming it stayed small. Both
+  index builds hold SHARE on their table for the duration; `discord_oauth_states`
+  is new and empty, and `discord_import_channels` is only written while an import
+  runs, so promote when no import is in flight.
+* **Checks** (after promotion):
+  - `select relrowsecurity from pg_class where relname='discord_connections';` → **`t`**
+  - `select relrowsecurity from pg_class where relname='discord_oauth_states';` → **`t`**
+  - `select count(*) from pg_policy p join pg_class c on c.oid=p.polrelid where c.relname in ('discord_connections','discord_oauth_states');` → **0**. Default-deny is the whole posture: the API reads these on the service-role key, so a policy would open a direct-PostgREST surface nothing needs. `discord_oauth_states` in particular must never be client-readable — its primary key **is** the CSRF token, so a SELECT on it is the entire attack.
+  - `select conname from pg_constraint where conname='discord_connections_chapter_unique';` → one row. One connection per chapter, because an import names no guild — it reads the chapter's connection.
+  - `select indexdef from pg_indexes where indexname='idx_discord_oauth_states_expiry';` → predicate is **`WHERE (consumed_at IS NULL)`**. This serves the hourly reaper only; the consume path is the primary key.
+  - `select column_default from information_schema.columns where table_name='discord_imports' and column_name='source';` → **`'upload'::text`**. Every pre-existing import must still read as an upload with no backfill.
+  - `select pg_get_constraintdef(oid) from pg_constraint where conname='discord_imports_source_check';` → `CHECK ((source = ANY (ARRAY['upload'::text, 'bot'::text])))`
+  - `select indexdef from pg_indexes where indexname='idx_discord_import_channels_order';` → on `(import_id, position, discord_channel_id)`
+  - Sanity: `GET /v1/discord/availability` answers `200` with `{"available":true}` once the secrets are set, and the Discord card appears as a second option in the import wizard's source step — the DiscordChatExporter upload path must still be offered alongside it, not replaced.
+* **Rollback**: see **Rollback the Discord bot connection** in
+  [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md). **Read it before
+  promoting** — dropping `discord_connections` discards every chapter's guild
+  mapping, and there is no way to rebuild one without each chapter's admin
+  re-running the OAuth flow by hand.
+
+### 20260824150000_discord_connect_confirm.sql
+
+* **Purpose**: close a confused-deputy hole in the migration above. That one
+  bound a guild to whichever chapter minted the `state`, and minting a state is
+  an ordinary permitted action for any `channels:manage` holder in **any**
+  tenant. Both facts the callback checked were real — the guild came off the
+  token exchange, Manage Server was read under the authorizing human's own token
+  — but together they prove only that *a human with Manage Server installed the
+  bot into guild G*, never that they intended *chapter X* to read it. Discord's
+  consent screen names Signet; it does not name the chapter. These columns park
+  the guild as pending and mint a second one-time token, delivered only to the
+  browser that completed the OAuth, which activation requires alongside a session
+  whose active chapter matches.
+* **⚠️ Promoting `20260824140000` without this one is the vulnerability.** They
+  were authored as one change and split only by filename. Phase-3 API code
+  running against a `discord_oauth_states` that lacks `confirm_token` cannot
+  perform the chapter check at all, and every Discord-side check still passes
+  honestly, so nothing looks wrong from either end. If a window forces you to
+  stop between them, roll `140000` back rather than leaving it live — the
+  feature dark is fine, the feature half-migrated is not.
+* **Shape**: nine nullable columns with no default (catalog-only, no rewrite)
+  and one partial unique index. No data change; nothing to backfill.
+* **Locks**: every `add column` is a catalog flag — ACCESS EXCLUSIVE held
+  momentarily, no scan. The unique index build holds SHARE on
+  `discord_oauth_states`, which holds only in-flight handshakes and is reaped
+  hourly, so the window is negligible in any environment.
+* **Checks** (after promotion):
+  - `select count(*) from information_schema.columns where table_name='discord_oauth_states' and column_name in ('pending_guild_id','pending_guild_name','pending_guild_icon','pending_discord_user_id','pending_discord_username','pending_permissions','pending_scopes','confirm_token','confirm_expires_at','confirmed_at');` → **10**. Anything less means the chapter check cannot run — stop and re-read the emphasised bullet above.
+  - `select data_type from information_schema.columns where table_name='discord_oauth_states' and column_name='confirm_token';` → `uuid`. It is minted by `gen_random_uuid()` server-side and must never be derived from anything a caller sent.
+  - `select indexdef from pg_indexes where indexname='idx_discord_oauth_states_confirm_token';` → `UNIQUE`, with predicate **`WHERE (confirm_token IS NOT NULL)`**. Unique rather than plain because two rows sharing a token would make "the pending connection this token names" ambiguous, and resolving that ambiguity would decide which chapter gets a guild.
+  - Sanity: complete a connect against a scratch Discord server, then confirm the callback lands on `…/discord-import?discord=…` and never returns a raw 500. A JSON error body here means the API is answering a top-level browser redirect with an exception — most often this migration pair not being applied at all, which is exactly how it presented on staging.
+* **Rollback**: see **Rollback the Discord connect confirmation** in
+  [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md). **Read it before
+  promoting** — rolling this back alone re-opens the confused-deputy hole
+  described above, so it is a rollback of the pair or neither.
+
+* **⚠️ Human action on the hosted projects.** Neither migration carries any of
+  this, and all of it is dashboard-only:
+  - The four Discord secrets must exist in Infisical for the environment. Names
+    and per-environment values are owned by
+    [`ENV_REFERENCE.md`](../environment/ENV_REFERENCE.md) — do not restate them
+    here. `GET /v1/discord/availability` answering `false` after a clean
+    promotion means a missing secret, not a missing table.
+  - The OAuth redirect URI must be registered in the Discord Developer Portal
+    for the environment, and it is the **API** origin, not the app origin —
+    `https://api-staging.frapp.live/v1/discord/connect/callback`, not
+    `https://app.staging.frapp.live/…`. This is the one that has actually been
+    got wrong: the app origin looks right, matches `APP_URL`, and fails only at
+    the end of a real OAuth round trip with Discord's own `invalid_redirect_uri`
+    screen, after the admin has already picked a server.
+  - The Message Content Intent must be ON for the app. Without it Discord answers
+    `200` with `content: ""` on every message, so an import would silently write
+    an archive of empty messages rather than fail.
+
 ## 2026-08-24: Discord archive importer — one migration
 
 The importer itself. Promotes after the five foundation migrations below, which
