@@ -1,13 +1,27 @@
 /**
- * The Discord archive import (phase 2 of the migration tool).
+ * The Discord archive import.
  *
- * The admin runs DiscordChatExporter themselves and uploads the export; Signet
- * imports it. No Discord bot token is stored anywhere in the product, and no
- * part of DCE runs on our infrastructure. That is a deliberate boundary, not a
- * shortcut: the API image is Node-on-Alpine with no .NET, Render hosts only
- * web services with ephemeral disk, and there is no per-tenant credential
- * storage in this repo to hold a bot token safely.
+ * There are two ways in, and both land here.
+ *
+ * **`source: 'upload'`** (phase 2) — the admin runs DiscordChatExporter
+ * themselves and their browser uploads the export. No part of DCE runs on our
+ * infrastructure: the API image is Node-on-Alpine with no .NET, and Render
+ * hosts only web services with ephemeral disk.
+ *
+ * **`source: 'bot'`** (phase 3) — the chapter installs one Signet-owned bot
+ * through Discord's ordinary "Add to Server" OAuth flow and the API reads the
+ * history itself over the REST API. The bot token is a single global Signet
+ * secret; the only per-chapter value is a guild id, which is public and inert
+ * without an install behind it.
+ *
+ * The upload path is **not** superseded. It is the fallback for the day one
+ * shared bot gets throttled or refused across every chapter, and everything
+ * downstream of the fetch — consent, channel mapping, the role worksheet, the
+ * purge — is shared verbatim between the two.
  */
+
+/** Where an import's bytes came from. */
+export type DiscordImportSource = 'upload' | 'bot';
 
 /**
  * Where an import is in its life.
@@ -73,6 +87,21 @@ export interface DiscordImport {
   chapter_id: string;
   created_by: string | null;
   status: DiscordImportStatus;
+  /**
+   * Which way the bytes came in. Defaults to `upload` in the database, so every
+   * pre-phase-3 row keeps its meaning without a backfill.
+   */
+  source: DiscordImportSource;
+  /**
+   * The guild this import reads.
+   *
+   * Informational on an `upload` import (whatever the export's preamble said).
+   * On a `bot` import it is a **copy** of `discord_connections.guild_id`, taken
+   * when the job was created — and it is never the value the fetch trusts. The
+   * worker re-reads the connection by `chapter_id` on every slice and refuses
+   * the job if the two disagree, so a tampered job row cannot point the bot at
+   * another chapter's guild.
+   */
   guild_id: string | null;
   guild_name: string | null;
   /**
@@ -120,6 +149,31 @@ export interface DiscordImportChannel {
   imported_count: number;
   status: DiscordImportChannelStatus;
   error: string | null;
+  /**
+   * Resume point within this channel, for the `bot` path only.
+   *
+   * The bot walks a channel backwards, asking Discord for the page BEFORE a
+   * snowflake, so its cursor is a snowflake rather than an index. It lives on
+   * the channel rather than on the job because the row's own `status` is then
+   * the entire work queue — the worker takes the first channel that is not
+   * finished, and a channel list that changes between slices cannot silently
+   * re-point a job-level index at a different channel.
+   *
+   * Null on an `upload` import, which resumes on the job's part cursor instead.
+   */
+  cursor_before_snowflake: string | null;
+  /**
+   * Set when this row is a **thread**, naming the channel it lives in.
+   *
+   * A thread is its own Discord channel with its own id, message endpoint and
+   * cursor, so it needs its own row. It does **not** get its own mapping
+   * question: the wizard lists only rows where this is null, and the service
+   * copies a parent's decision across its threads. The admin chose a
+   * destination for #general; a thread inside #general is part of #general.
+   */
+  parent_discord_channel_id: string | null;
+  /** Discovery order, pinned so a thread lists directly under its parent. */
+  position: number;
 }
 
 export type DiscordImportFileKind = 'export' | 'media';
