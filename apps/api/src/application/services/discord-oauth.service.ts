@@ -19,6 +19,8 @@ import {
   DISCORD_CONNECTION_REPOSITORY,
   type IDiscordConnectionRepository,
 } from '../../domain/repositories/discord-connection.repository.interface';
+import type { DiscordOAuthState } from '../../domain/entities/discord-connection.entity';
+import { toReportableError } from '../../infrastructure/observability/reportable-error';
 
 /**
  * The callback path, fixed in code.
@@ -275,9 +277,7 @@ export class DiscordOAuthService {
     // The state is spent even when Discord reports a denial, so a cancelled
     // attempt cannot be replayed later with a code obtained some other way.
     const stateId = typeof query.state === 'string' ? query.state : '';
-    const consumed = isUuid(stateId)
-      ? await this.connectionRepo.consumeState(stateId, new Date())
-      : null;
+    let consumed: DiscordOAuthState | null = null;
 
     const finish = (
       code: DiscordConnectCode,
@@ -288,6 +288,35 @@ export class DiscordOAuthService {
       returnUrl: this.buildReturnUrl(consumed?.return_path ?? null, code),
       reason,
     });
+
+    // Inside the guard, not before it. Every other failure this method can meet
+    // — a denied consent, a missing code, a refused exchange — ends at
+    // `finish`, because the endpoint's contract is that the admin's browser
+    // always lands back on the dashboard with a code it can explain. A throw
+    // from `consumeState` used to be the one exception: it escaped to
+    // `AllExceptionsFilter` and the admin got a raw 500 JSON body at a Discord
+    // redirect URI, which is both unexplainable and unrecoverable without
+    // restarting the flow. FRAPP-API-1 was exactly that, from a PGRST205 while
+    // the API was serving ahead of its migration.
+    //
+    // `failed`, not `expired`: the handshake may well be perfectly good and
+    // still be there on a retry, and telling the admin it expired would send
+    // them to mint a new one for a fault that was never theirs.
+    try {
+      consumed = isUuid(stateId)
+        ? await this.connectionRepo.consumeState(stateId, new Date())
+        : null;
+    } catch (error) {
+      // Normalized rather than stringified: the throw here is a plain
+      // PostgREST object, `String()` on it is `[object Object]`, and a bare
+      // `JSON.stringify` would throw on a circular one — inside the very catch
+      // that exists to stop this route throwing.
+      this.logger.error(
+        'Could not read the Discord handshake state',
+        toReportableError(error).stack,
+      );
+      return finish('failed', 'Could not read the handshake.');
+    }
 
     if (!consumed) {
       return finish(

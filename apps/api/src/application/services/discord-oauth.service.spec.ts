@@ -242,6 +242,31 @@ describe('DiscordOAuthService — the callback’s trust boundary', () => {
     expect(repo.attachPendingConnection).not.toHaveBeenCalled();
   });
 
+  /**
+   * FRAPP-API-1: `consumeState` sat outside the guard, so a database fault at
+   * this one step escaped to `AllExceptionsFilter` and the admin's browser —
+   * mid-OAuth, at a redirect URI registered with Discord — was handed a raw 500
+   * JSON body instead of the dashboard.
+   */
+  it('redirects rather than throwing when the state read fails', async () => {
+    const service = await build();
+    // A plain object, exactly as a Supabase repository rethrows one.
+    repo.consumeState.mockRejectedValue({
+      code: 'PGRST205',
+      message: "Could not find the table 'public.discord_oauth_states'",
+    });
+
+    const outcome = await service.handleCallback({ code: 'c', state: STATE });
+
+    expect(outcome.ok).toBe(false);
+    // `failed`, not `expired`: the handshake may be perfectly good and still be
+    // there on a retry, so telling the admin it expired sends them to mint a
+    // new one for a fault that was never theirs.
+    expect(outcome.code).toBe('failed');
+    expect(outcome.returnUrl).toContain('discord=failed');
+    expect(repo.attachPendingConnection).not.toHaveBeenCalled();
+  });
+
   it('does not even ask the repository about a non-uuid state', async () => {
     const service = await build();
     const outcome = await service.handleCallback({
