@@ -76,10 +76,18 @@ the _screen_ is empty. `capture-screenshots.mjs` seeds the store key directly.
 the API token exclusively in `expo-secure-store`, whose web build is literally
 `export default {}` (`node_modules/expo-secure-store/build/ExpoSecureStore.web.js`).
 On web the token never persists and every authenticated call 401s. So
-`capture-mobile.mjs` captures only the pre-auth screens from the running Expo app
-and takes the signed-in screens from the committed design reference board instead
-— it keeps them in separate folders because they are not the same kind of evidence.
-Real signed-in mobile screenshots need a simulator or device.
+`capture-mobile.mjs` takes the signed-in screens from the committed design
+reference board instead, in a separate folder because it is not the same kind of
+evidence. Real signed-in mobile screenshots need a simulator or device.
+
+**And signed out, only `/sign-in` renders.** `(auth)/_layout.tsx` routes
+`/welcome`, `/join`, `/chapter-picker` and `/create-chapter` by _gate
+destination_, not by URL, so visiting any of them without a session redirects to
+`/sign-in`. They look capturable and are not — an earlier version of the capture
+script listed three of them and produced three byte-identical copies of the
+sign-in screen under three different names. `capture-mobile.mjs` now asserts the
+landed route matches the requested one and fails the route rather than saving a
+mislabelled image; keep that assertion if you add a route back.
 
 **Run Expo web on port 3002.** It is the port already in the API's CORS allowlist:
 `npx expo start --web --port 3002` from `apps/mobile`.

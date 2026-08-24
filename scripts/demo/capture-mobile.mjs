@@ -36,12 +36,19 @@ const FONT = "packages/theme/fonts/FigtreeVF.woff2";
 const PHONE = { width: 402, height: 874 };
 const SCALE = 3;
 
-/** Pre-auth routes the running app can actually render without a session. */
-const APP_ROUTES = [
-  ["01-sign-in", "/sign-in", "Sign in"],
-  ["02-welcome", "/welcome", "Welcome"],
-  ["03-join", "/join", "Join a chapter"],
-];
+/**
+ * Routes the running app can actually render without a session — which is
+ * sign-in, and only sign-in.
+ *
+ * `/welcome`, `/join`, `/chapter-picker` and `/create-chapter` all look
+ * capturable and are not: `(auth)/_layout.tsx` routes them by *gate
+ * destination*, not by URL, so a signed-out visit to any of them redirects to
+ * `/sign-in`. Listing them here previously produced three byte-identical copies
+ * of the sign-in screen under three different names. The landed-route
+ * assertion below is what makes that failure loud instead of silent — keep it
+ * if you add a route back.
+ */
+const APP_ROUTES = [["01-sign-in", "/sign-in", "Sign in"]];
 
 const FREEZE_CSS = `
   *, *::before, *::after {
@@ -167,6 +174,13 @@ async function captureRunningApp(browser) {
       });
       // Metro serves a bundle that boots the whole router before first paint.
       await page.waitForTimeout(9000);
+
+      // Never save a screenshot under a name the app did not actually render.
+      const landed = new URL(page.url()).pathname;
+      if (landed !== route) {
+        throw new Error(`redirected to ${landed} — not capturable signed out`);
+      }
+
       await page.addStyleTag({ content: FREEZE_CSS }).catch(() => {});
       const file = path.join(APP_DIR, `${slug}.png`);
       await page.screenshot({ path: file });
