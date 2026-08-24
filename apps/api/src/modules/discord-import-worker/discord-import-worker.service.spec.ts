@@ -7,6 +7,7 @@ import {
   LEASE_MS,
   PURGE_BATCH_SIZE,
 } from './discord-import-worker.service';
+import { DiscordExportWorkerService } from './discord-export-worker.service';
 import { DISCORD_IMPORT_REPOSITORY } from '../../domain/repositories/discord-import.repository.interface';
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 import { CHAT_CHANNEL_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
@@ -21,6 +22,28 @@ const CHAPTER = 'chapter-1';
 const IMPORT_ID = 'import-1';
 const SIGNET_CHANNEL = 'signet-channel-1';
 const NOW = new Date('2026-08-24T12:00:00Z');
+
+/**
+ * Pin the system clock to `NOW` for every test in this file.
+ *
+ * Without this the suite is a time bomb, and it has already gone off once: the
+ * worker takes an explicit `now` for its lease arithmetic but measures its
+ * 45-second slice budget against the REAL `Date.now()`, so
+ * `Date.now() >= now + SLICE_BUDGET_MS` is true the moment the wall clock
+ * passes `NOW` by 45 seconds. Every slice then yields before importing
+ * anything, and half this file fails with "finished: false" — on `main`, with
+ * no code change, purely because the day moved on.
+ *
+ * Faking the clock rather than deriving `NOW` from `new Date()` keeps the fixed
+ * timestamps the assertions rely on. Only the clock is faked; the worker awaits
+ * no timers, so promises still resolve on real microtasks.
+ */
+beforeAll(() => {
+  jest.useFakeTimers({ now: NOW, doNotFake: ['nextTick', 'setImmediate'] });
+});
+afterAll(() => {
+  jest.useRealTimers();
+});
 
 function job(overrides: Partial<DiscordImport> = {}): DiscordImport {
   return {
@@ -240,12 +263,23 @@ async function buildWorker(
         : null,
     ),
   };
+  const exportWorker = {
+    runSlice: jest.fn(async () => {
+      throw new Error(
+        'The bot export worker must never be reached by an upload-sourced import.',
+      );
+    }),
+  };
   const moduleRef = await Test.createTestingModule({
     providers: [
       DiscordImportWorkerService,
       { provide: DISCORD_IMPORT_REPOSITORY, useValue: repo },
       { provide: STORAGE_PROVIDER, useValue: storage },
       { provide: CHAT_CHANNEL_REPOSITORY, useValue: channelRepo },
+      // Every job in this file is `source: 'upload'`, so the sweeper never
+      // delegates here. Stubbed rather than real so a regression that DID
+      // delegate an upload job would fail loudly instead of hitting Discord.
+      { provide: DiscordExportWorkerService, useValue: exportWorker },
     ],
   }).compile();
   return {

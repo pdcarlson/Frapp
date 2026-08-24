@@ -28,4 +28,5 @@ export * from './chapter-service-config.entity';
 export * from './chat-notification-preference.entity';
 export * from './scheduled-notification-dispatch.entity';
 export * from './chapter-activation-milestone.entity';
+export * from './discord-connection.entity';
 export * from './discord-import.entity';

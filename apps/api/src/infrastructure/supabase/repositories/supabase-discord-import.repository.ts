@@ -39,7 +39,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       Partial<
         Pick<
           DiscordImport,
-          'created_by' | 'guild_id' | 'guild_name' | 'storage_prefix'
+          'created_by' | 'guild_id' | 'guild_name' | 'storage_prefix' | 'source'
         >
       >,
   ): Promise<DiscordImport> {
@@ -50,6 +50,11 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       guild_id: data.guild_id ?? null,
       guild_name: data.guild_name ?? null,
       storage_prefix: data.storage_prefix ?? null,
+      // Omitted rather than defaulted in TypeScript: the column's own DEFAULT
+      // is 'upload', so a caller that says nothing gets the phase-2 behaviour
+      // from the database rather than from a constant here that could drift
+      // from it.
+      ...(data.source ? { source: data.source } : {}),
     };
     const { data: created, error } = await this.supabase
       .from('discord_imports')
@@ -157,6 +162,11 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       .select('*, discord_imports!inner(chapter_id)')
       .eq('import_id', importId)
       .eq('discord_imports.chapter_id', chapterId)
+      // `position` then name. Upload-path rows all sit at the default 0, so
+      // they keep their original name ordering; bot-path rows carry a position
+      // pinned at discovery, which is what keeps a thread listed under its
+      // parent and keeps a resumed import walking the same sequence.
+      .order('position', { ascending: true })
       .order('discord_channel_name', { ascending: true });
     if (error) throw error;
     return (data ?? []).map(stripImportEmbed);

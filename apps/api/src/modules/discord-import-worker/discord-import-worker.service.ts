@@ -31,6 +31,7 @@ import type {
   DiscordImportFile,
   DiscordImportStatus,
 } from '../../domain/entities/discord-import.entity';
+import { DiscordExportWorkerService } from './discord-export-worker.service';
 
 /**
  * How long one tick may work before checkpointing and handing the job back.
@@ -107,6 +108,7 @@ export class DiscordImportWorkerService {
     private readonly storage: IStorageProvider,
     @Inject(CHAT_CHANNEL_REPOSITORY)
     private readonly channelRepo: IChatChannelRepository,
+    private readonly exportWorker: DiscordExportWorkerService,
   ) {}
 
   /**
@@ -146,6 +148,12 @@ export class DiscordImportWorkerService {
         if (job.status === 'purging') {
           return await this.runPurgeSlice(job, lockToken, now);
         }
+        // The purge is source-agnostic — it deletes rows and sweeps a storage
+        // prefix, both of which look identical whichever way the bytes arrived.
+        // Only the FETCH differs, so only the fetch branches.
+        if (job.source === 'bot') {
+          return await this.runBotExportSlice(job, lockToken, now);
+        }
         return await this.runImportSlice(job, lockToken, now);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -169,6 +177,116 @@ export class DiscordImportWorkerService {
     } finally {
       this.running = false;
     }
+  }
+
+  // ── bot export ────────────────────────────────────────────────────────────
+
+  /**
+   * Run one slice of a bot-sourced import.
+   *
+   * Everything Discord-specific lives in `DiscordExportWorkerService`; this
+   * method is the bridge that hands it the three things it must NOT reimplement
+   * — the status-guarded checkpoint, the chapter-scoped channel resolution, and
+   * the batch writer. All three are the phase-2 originals, unchanged.
+   *
+   * That is the whole point of the shape. `importBatch` is where dedupe-before-
+   * insert, the two-pass reply repair and the attachment-count bookkeeping
+   * live, and a second copy of any of them would be a second place for the
+   * same subtle bug. The bot path differs in where messages come from and
+   * nowhere else.
+   */
+  private async runBotExportSlice(
+    job: DiscordImport,
+    lockToken: string,
+    now: Date,
+  ): Promise<ImportSweepResult> {
+    const chapterId = job.chapter_id;
+    const deadline = now.getTime() + SLICE_BUDGET_MS;
+
+    if (job.status !== 'running') {
+      const started = await this.importRepo.updateIfStatus(
+        job.id,
+        chapterId,
+        WORKER_MAY_CONTINUE,
+        { status: 'running' },
+      );
+      if (!started) {
+        return { claimed: true, importId: job.id, messagesImported: 0 };
+      }
+    }
+
+    const result = await this.exportWorker.runSlice({
+      job,
+      deadline,
+      /**
+       * One checkpoint, two questions, both of which must be answered before
+       * the next page is fetched: may this job still be advanced (the admin has
+       * not cancelled), and do we still hold the lease (no other replica took
+       * it over). False to either means stop — not "finish the slice".
+       */
+      checkpoint: async (patch) => {
+        const stillRunning = await this.importRepo.updateIfStatus(
+          job.id,
+          chapterId,
+          WORKER_MAY_CONTINUE,
+          {
+            total_messages: patch.totalMessages,
+            imported_messages: patch.imported,
+            messages_skipped: patch.skipped,
+            attachments_imported: patch.attachmentsImported,
+            attachments_skipped: patch.attachmentsSkipped,
+            warnings: patch.warnings.slice(-MAX_WARNINGS),
+          },
+        );
+        if (!stillRunning) {
+          this.logger.log(
+            `Discord import ${job.id} left the running state mid-slice; stopping.`,
+          );
+          return false;
+        }
+        const held = await this.importRepo.renewLease(
+          job.id,
+          lockToken,
+          new Date(),
+          LEASE_MS,
+        );
+        if (!held) {
+          this.logger.warn(
+            `Lost the lease on Discord import ${job.id} mid-slice; yielding.`,
+          );
+        }
+        return held;
+      },
+      resolveTargetChannel: (mapping) =>
+        this.resolveTargetChannel(mapping, chapterId, job.id),
+      importBatch: (batch) =>
+        this.importBatch({
+          batch: batch.messages,
+          targetChannelId: batch.targetChannelId,
+          importId: job.id,
+          mediaByRelativePath: batch.mediaByRelativePath,
+        }),
+    });
+
+    // The closing write is status-guarded like every other one: a slice that
+    // ran alongside a cancel must not resurrect the job by writing `running`
+    // over `cancelled` on its way out.
+    await this.importRepo.updateIfStatus(
+      job.id,
+      chapterId,
+      WORKER_MAY_CONTINUE,
+      {
+        status: result.finished ? 'completed' : 'running',
+        completed_at: result.finished ? new Date().toISOString() : null,
+      },
+    );
+
+    return {
+      claimed: true,
+      importId: job.id,
+      messagesImported: result.messagesImported,
+      finished: result.finished,
+    };
   }
 
   // ── import ────────────────────────────────────────────────────────────────

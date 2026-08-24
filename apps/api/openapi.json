@@ -5560,6 +5560,83 @@
         ]
       }
     },
+    "/v1/discord-imports/{id}/discover": {
+      "post": {
+        "description": "Lists every channel and thread the bot can read and records them against this import, all set to `skip` until mapped. Also returns the guild’s roles for the worksheet, and any warnings about what could not be enumerated.",
+        "operationId": "DiscordImportController_discover_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordDiscoveryResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Scan the connected Discord server (bot imports only)",
+        "tags": [
+          "Discord Import"
+        ]
+      }
+    },
+    "/v1/discord-imports/{id}/discovered-channels": {
+      "put": {
+        "description": "Send a decision for each top-level channel the scan found. Threads are not addressable — each one follows its parent’s decision, because the admin was asked about the parent and a thread is part of that conversation. A channel the scan did not return is rejected rather than added.",
+        "operationId": "DiscordImportController_setDiscoveredChannelMapping_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetDiscordChannelMappingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Map the scanned Discord channels (bot imports only)",
+        "tags": [
+          "Discord Import"
+        ]
+      }
+    },
     "/v1/discord-imports/{id}/start": {
       "post": {
         "description": "The background worker picks it up within a minute and reports progress on the detail route.",
@@ -5616,6 +5693,118 @@
         "summary": "Stop a queued or running import",
         "tags": [
           "Discord Import"
+        ]
+      }
+    },
+    "/v1/discord/availability": {
+      "get": {
+        "description": "The wizard offers \"Connect Discord\" only when this is true, and always offers the export-upload path regardless.",
+        "operationId": "DiscordConnectionController_availability_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordAvailabilityDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Whether the bot path is configured in this environment",
+        "tags": [
+          "Discord Connection"
+        ]
+      }
+    },
+    "/v1/discord/connection": {
+      "get": {
+        "operationId": "DiscordConnectionController_getConnection_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordConnectionDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "This chapter’s linked Discord server, if any",
+        "tags": [
+          "Discord Connection"
+        ]
+      },
+      "delete": {
+        "description": "Forgets the guild id, so no further import can read that server. Already-imported history is untouched — deleting that is what the per-import purge is for. Remove the bot from the Discord server separately if you want its access gone as well.",
+        "operationId": "DiscordConnectionController_disconnect_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Unlink this chapter’s Discord server",
+        "tags": [
+          "Discord Connection"
+        ]
+      }
+    },
+    "/v1/discord/connect": {
+      "post": {
+        "description": "Mints a single-use state bound to this chapter and returns the Discord authorize URL to send the admin to. No credential is returned and none is ever asked for: the only thing this flow stores per chapter is a guild id.",
+        "operationId": "DiscordConnectionController_beginConnect_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BeginDiscordConnectDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BeginDiscordConnectResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Start the \"Add to Server\" handshake",
+        "tags": [
+          "Discord Connection"
         ]
       }
     }
@@ -7866,6 +8055,15 @@
           "guild_name": {
             "type": "string",
             "description": "Discord server name, for display only."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "upload",
+              "bot"
+            ],
+            "default": "upload",
+            "description": "`upload` (the default) imports a DiscordChatExporter export the admin uploads. `bot` reads the chapter's connected Discord server directly and requires a connection to exist first. Both run the same consent gate, the same channel mapping, and the same purge."
           }
         },
         "required": [
@@ -8048,6 +8246,124 @@
         },
         "required": [
           "roles"
+        ]
+      },
+      "DiscordDiscoveredRoleDto": {
+        "type": "object",
+        "properties": {
+          "discord_role_id": {
+            "type": "string"
+          },
+          "discord_role_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "discord_role_id",
+          "discord_role_name"
+        ]
+      },
+      "DiscordDiscoveryResponseDto": {
+        "type": "object",
+        "properties": {
+          "channels": {
+            "type": "array",
+            "description": "Every channel and thread the bot can read, all recorded as `skip` until the admin says otherwise. Threads carry `parent_discord_channel_id` and are not mapped separately — they follow their parent.",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscordDiscoveredRoleDto"
+            }
+          },
+          "warnings": {
+            "description": "What could not be enumerated, in the admin’s words — most often private archived threads, which Discord gates behind a Manage Threads permission this read-only bot deliberately does not request.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "channels",
+          "roles",
+          "warnings"
+        ]
+      },
+      "DiscordAvailabilityDto": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "description": "False when this environment has no Discord application configured. The DiscordChatExporter upload flow is unaffected either way — it is a separate path, not a fallback that switches on."
+          }
+        },
+        "required": [
+          "available"
+        ]
+      },
+      "DiscordConnectionDto": {
+        "type": "object",
+        "properties": {
+          "connected": {
+            "type": "boolean",
+            "description": "Whether this chapter has a Discord server linked."
+          },
+          "guild_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "The linked Discord server id. Always a string — a snowflake exceeds 2^53 and a JSON round trip through a number would name a different server."
+          },
+          "guild_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "connected_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "connected_discord_username": {
+            "type": "string",
+            "nullable": true,
+            "description": "The Discord account that authorized the install."
+          }
+        },
+        "required": [
+          "connected",
+          "guild_id",
+          "guild_name",
+          "connected_at",
+          "connected_discord_username"
+        ]
+      },
+      "BeginDiscordConnectDto": {
+        "type": "object",
+        "properties": {
+          "return_path": {
+            "type": "string",
+            "description": "Dashboard path to return the browser to once Discord is done, e.g. `/discord-import`. Must be a site-relative path; anything else is replaced with the default. It is stored with the handshake rather than read off the callback, because the callback carries no session to re-authorise against."
+          }
+        }
+      },
+      "BeginDiscordConnectResponseDto": {
+        "type": "object",
+        "properties": {
+          "authorize_url": {
+            "type": "string",
+            "description": "Send the admin here. Includes the fixed permission bitfield (View Channels + Read Message History) and a single-use state."
+          },
+          "expires_at": {
+            "type": "string",
+            "description": "When the handshake stops being redeemable."
+          }
+        },
+        "required": [
+          "authorize_url",
+          "expires_at"
         ]
       }
     }
