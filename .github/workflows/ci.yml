@@ -603,6 +603,56 @@ jobs:
         if: github.event_name == 'push'
         run: npm run check:migration-safety
 
+  # ── Migration lock safety (ADVISORY) ────────────────────────────────────
+  # Squawk over the migrations this change touches, looking for the patterns
+  # that take a heavy lock on a live table: a constraint added without
+  # NOT VALID, a column added with a volatile default, a UNIQUE constraint that
+  # builds its index under ACCESS EXCLUSIVE. Instant on an empty staging table;
+  # a write outage on a production one.
+  #
+  # ADVISORY ON PURPOSE, and `continue-on-error` is the whole mechanism.
+  # Squawk's default rules report 403 issues across 44 of this repo's 51
+  # migrations. `.squawk.toml` excludes the five rules responsible for 390 of
+  # them — two flag a fix that is IMPOSSIBLE under Supabase, which runs each
+  # migration inside a transaction where CONCURRENTLY is illegal — leaving 13
+  # real findings across 8 files. Those 13 are on already-deployed tables, so
+  # blocking today would fail PRs for findings they did not introduce.
+  # Promoting this to a gate needs a baseline of the existing 13, the same move
+  # `.dependency-cruiser-known-violations.json` makes for the architecture gate.
+  # `check-migration-lock-safety.mjs --strict` is the switch when that lands.
+  #
+  # NOT in scripts/configure-branch-protection.mjs, deliberately: an advisory
+  # job that is also a required check is just a confusing gate.
+  migration-lock-safety:
+    runs-on: ubuntu-latest
+    # Reports; never blocks. Removing this line makes it a merge gate — do not
+    # do that without the baseline described above.
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # squawk-cli is a pinned devDependency (exact version, no caret) so a new
+      # Squawk release cannot change what CI reports without a lockfile change.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint changed migrations (PR)
+        if: github.event_name == 'pull_request'
+        run: npm run check:migration-lock-safety -- --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
+
+      - name: Lint changed migrations (push)
+        if: github.event_name == 'push'
+        run: npm run check:migration-lock-safety -- --base "${{ github.event.before }}" --head "${{ github.sha }}"
+
   # ── Chapter directory seed validation ───────────────────────────────────
   # Guards supabase/seed/chapter_directory.csv: canonical #RRGGBB colors,
   # archetypes that exist in the ArchetypeKey union, no duplicate natural keys.

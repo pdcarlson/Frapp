@@ -1,0 +1,160 @@
+name: Migrate production
+
+# The deliberate production migration path: a human opens Actions, picks this
+# workflow, types a confirmation phrase, and runs it. Nothing about it fires on
+# its own.
+#
+# ── This is NOT the only way production migrations get applied ──────────────
+# `deploy-api.yml`'s `migrate-production` job still auto-applies on merge to the
+# `production` branch. That was kept on purpose. The two paths share the
+# `db-migrate-production` concurrency group so they serialize against each other
+# — if you rename the group in one file, rename it in the other or the lock
+# silently stops existing.
+#
+# Why have both: the auto path covers the ordinary promotion, where the human
+# gate is the main->production PR (branch protection: CI + approving review).
+# This path covers everything else — re-running an apply that failed, applying a
+# backlog without shipping code, or promoting on a schedule a merge does not
+# match. Before this workflow existed, all of those meant a human running
+# `supabase db push` from a laptop against production, which is untracked,
+# unlogged, and unserialized against CI.
+#
+# ── On the `production` environment ─────────────────────────────────────────
+# `environment: production` is declared for job scoping (it resolves the right
+# secrets) and as forward wiring. It does NOT gate this run: required-reviewer
+# environment protection is GitHub Enterprise-only on private repos, and this
+# repo is private on Pro. The gate here is the typed confirmation below plus the
+# fact that a person had to come here and press the button. If the repo ever
+# moves to a plan with environment reviewers, this is where that gate lands with
+# no further change.
+#
+# ── State of production as of 2026-08-24 ────────────────────────────────────
+# Production is ~49 migrations behind `main` AND carries
+# `20260228000000_enable_rls_on_remaining_tables`, a version that exists in no
+# branch of this repo (hand-applied in February). `supabase db push` REFUSES TO
+# RUN AT ALL in that state, so this workflow will fail on the dry run until that
+# row is reconciled. That is correct behaviour, not a bug in this file — see
+# issue #832, which owns the remediation, and DB_ROLLBACK_PLAYBOOK.md. Do not
+# run `migration repair` to make the error go away without first reading what
+# the row did.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type exactly: APPLY TO PRODUCTION'
+        required: true
+        type: string
+      ref:
+        description: "Git ref whose migrations to apply"
+        required: false
+        default: "production"
+        type: string
+      dry_run_only:
+        description: "Stop after the dry run (show what would be applied, change nothing)"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  # SHARED with deploy-api.yml's migrate-production job. See the note above.
+  group: db-migrate-production
+  cancel-in-progress: false
+
+jobs:
+  migrate-production:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      # First step on purpose: a mistyped confirmation must cost nothing. No
+      # checkout, no secrets injected, no CLI installed before this passes.
+      - name: Verify confirmation phrase
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [ "$CONFIRM" != "APPLY TO PRODUCTION" ]; then
+            echo "::error::Confirmation phrase did not match. Type exactly: APPLY TO PRODUCTION"
+            echo "Received: '$CONFIRM'"
+            exit 1
+          fi
+          echo "Confirmed. Applying migrations from ref '${{ inputs.ref }}' to PRODUCTION."
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Verify Infisical credentials are configured
+        env:
+          CLIENT_ID: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+        run: |
+          MISSING=""
+          [ -n "$CLIENT_ID" ] || MISSING="$MISSING INFISICAL_MACHINE_IDENTITY_ID"
+          [ -n "$CLIENT_SECRET" ] || MISSING="$MISSING INFISICAL_CLIENT_SECRET"
+          if [ -n "$MISSING" ]; then
+            echo "::error::Infisical credentials are not configured for the production environment. Missing or empty:$MISSING. See docs/internal/environment/SECRETS_MANAGEMENT.md."
+            exit 1
+          fi
+          case "$CLIENT_ID$CLIENT_SECRET" in
+            *[[:space:]]*) echo "::warning::An Infisical credential secret contains whitespace. A trailing newline picked up when pasting the value into GitHub is a common cause of 401 Invalid credentials — re-paste both secrets before concluding the credential was revoked." ;;
+          esac
+
+      # NOTE: the Infisical slug for production is `prod`, not `production`.
+      - name: Inject production secrets from Infisical
+        uses: Infisical/secrets-action@v1.0.12
+        with:
+          method: "universal"
+          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: "frapp-live-ej-ls"
+          env-slug: "prod"
+          secret-path: "/"
+          include-imports: true
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v2
+        with:
+          version: 2.77.0
+
+      # Always runs, including when dry_run_only is false: the log then records
+      # what WAS pending immediately before the apply, so a failure in the next
+      # step is readable without guessing at the prior state.
+      - name: Run migrations (dry-run)
+        run: node scripts/run-migration.mjs --env production --dry-run
+
+      - name: Stop (dry run only)
+        if: ${{ inputs.dry_run_only }}
+        run: |
+          echo "### Dry run only — nothing was applied" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Pending migrations for ref \`${{ inputs.ref }}\` are listed in the previous step's log." >> "$GITHUB_STEP_SUMMARY"
+          echo "Re-run with **Stop after the dry run** unchecked to apply them." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run migrations (apply)
+        if: ${{ !inputs.dry_run_only }}
+        run: node scripts/run-migration.mjs --env production
+
+      - name: Report outcome
+        if: ${{ always() && !inputs.dry_run_only }}
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "### Production migrations applied" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Ref: \`${{ inputs.ref }}\` · run by @${{ github.actor }}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Production migration run FAILED" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Ref: \`${{ inputs.ref }}\` · run by @${{ github.actor }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "The database may be partially migrated. Read the failing step above, then" >> "$GITHUB_STEP_SUMMARY"
+            echo "\`docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md\` before re-running." >> "$GITHUB_STEP_SUMMARY"
+          fi

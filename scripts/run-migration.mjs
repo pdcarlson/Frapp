@@ -198,6 +198,6 @@ try {
   console.error(`  Error: ${error.message}`);
   console.error("\n  The deploy pipeline will be halted.");
   console.error("  Check the migration output above for details.");
-  console.error("  Refer to docs/internal/DB_ROLLBACK_PLAYBOOK.md for recovery steps.");
+  console.error("  Refer to docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md for recovery steps.");
   process.exit(1);
 }

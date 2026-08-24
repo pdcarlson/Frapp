@@ -4,19 +4,104 @@
 
 Use this runbook whenever `supabase/migrations/**` changes need to be promoted.
 
-## Promotion order (never skip)
+**Staging is automatic. Only production is a human action.** If you are here
+looking for the command to push migrations to staging, there isn't one any more
+— see [How migrations reach each environment](#how-migrations-reach-each-environment).
 
-1. **Local** (`npx supabase db push --local`)
-2. **Staging** (`main` branch / staging Supabase project)
-3. **Production** (`production` branch / production Supabase project)
+## How migrations reach each environment
+
+| Environment | How migrations get applied | Who triggers it |
+| ----------- | -------------------------- | --------------- |
+| **Local** | `npx supabase db push --local` | You, while developing |
+| **Staging** | **Automatic.** The `migrate-staging` job in [`deploy-api.yml`](../../../.github/workflows/deploy-api.yml) runs on every successful CI run on `main` | Nobody — merging to `main` is the trigger |
+| **Production** | **Manual.** Either merging the `main` → `production` promotion PR (the `migrate-production` job in the same workflow), or running the [`Migrate production`](../../../.github/workflows/migrate-production.yml) workflow by hand | A human, deliberately |
+
+### Staging: do not push by hand
+
+`migrate-staging` runs on **every** merge to `main`, not only merges that touch
+`supabase/migrations/`. `supabase db push` applies whatever is pending and is a
+no-op when nothing is, so every merge is also a retry for anything an earlier
+run missed.
+
+That is deliberate, and it is the fix for a real incident: two migrations merged
+to `main` and were never applied to staging, because the job was gated on a
+path filter computed with `git diff HEAD~1 … || echo ""` — any git failure read
+as "no migrations changed" and the job skipped, green and silent.
+
+**Do not run `supabase db push` against staging from a laptop.** The workflow
+serializes its runs with a `db-migrate-staging` concurrency group, and that lock
+cannot see a run on your machine — nothing in GitHub can. A hand-applied
+migration also becomes a *foreign* migration the moment its file changes or is
+renamed before merge, and a foreign row makes `supabase db push` refuse to run
+**at all** until someone reconciles it by hand.
+
+If staging needs a migration applied out of band, re-run the `Deploy API`
+workflow against the latest commit on `main`.
+
+### Production: two paths, both human
+
+Production is applied by a person, either way:
+
+1. **Promotion PR** — merging `main` → `production` runs `migrate-production`.
+   The human gate is the PR itself (branch protection: CI + an approving
+   review + conversation resolution).
+2. **`Migrate production` workflow** — Actions → *Migrate production* → Run
+   workflow. Requires typing `APPLY TO PRODUCTION` to confirm, and offers a
+   **dry-run-only** mode that reports what would be applied and changes nothing.
+   Use this to re-run a failed apply, to apply a backlog without shipping code,
+   or to promote on a schedule no merge matches.
+
+Both share the `db-migrate-production` concurrency group, so they queue behind
+each other instead of interleaving two `db push` runs against one database.
+
+> **`environment: production` does not gate either path.** Required-reviewer
+> environment protection is GitHub Enterprise-only on private repos, and this
+> repo is private on Pro. The environment is declared for secret scoping and as
+> forward wiring; the actual gates are the promotion PR's review and the typed
+> confirmation. Do not read the environment name as an approval step.
+
+> **⚠️ Production is currently blocked.** As of 2026-08-24 production is ~49
+> migrations behind `main` and carries `20260228000000_enable_rls_on_remaining_tables`,
+> a version that exists in no branch of this repo (hand-applied in February).
+> `supabase db push` refuses to run at all in that state, so both paths above
+> will fail on the dry run until it is reconciled. Issue #832 owns that work.
+> Do not run `migration repair` to make the error go away without first reading
+> what the row did — see [`DB_ROLLBACK_PLAYBOOK.md`](./DB_ROLLBACK_PLAYBOOK.md).
+
+## What catches drift
+
+Two checks, deliberately different shapes:
+
+| Check | When | Scope | On failure |
+| ----- | ---- | ----- | ---------- |
+| `migration-drift` ([`migration-drift-gate.yml`](../../../.github/workflows/migration-drift-gate.yml)) | Every PR and every push to `main` — **required check** | Staging only | Blocks the merge |
+| [`check-migration-drift.yml`](../../../.github/workflows/check-migration-drift.yml) | Daily, 07:00 UTC | Staging **and** production | Files/updates a tracking issue |
+
+The required check compares `origin/main` against staging's applied migration
+history — **not** your PR's head, so a migration you are adding cannot fail its
+own check. A migration is tolerated for 30 minutes from the moment it landed on
+`main`, which is the window `migrate-staging` needs to apply it.
+
+Both are read-only: they call the Supabase Management API's migration-history
+endpoint and send no SQL. Neither ever repairs anything.
+
+If `migration-drift` is red on your PR and you did not cause it, that is the
+gate working as intended — staging is out of sync for everyone, and the schema
+your tests ran against is not the schema on staging. Fix the drift, don't route
+around it.
 
 ## Preflight checklist
 
 - [ ] Migration filenames pass `npm run check:migration-safety`
+- [ ] Lock-safety advisory read: `npm run check:migration-lock-safety -- --all`
+      (or the `migration-lock-safety` job's summary on your PR). **Advisory, not
+      blocking** — see [`.squawk.toml`](../../../.squawk.toml) for the rules this
+      repo excludes and why
 - [ ] PR includes migration SQL + rollback plan (`DB_ROLLBACK_PLAYBOOK.md`)
+- [ ] PR appends an entry to the promotion log at the bottom of this file
+      (`check:migration-safety` enforces that migration PRs touch this doc)
 - [ ] Query/index/policy changes reviewed by at least one backend reviewer
-- [ ] Production deploy window chosen; stakeholders notified
-- [ ] Supabase backups/snapshots confirmed for target environment
+- [ ] Supabase backups/snapshots confirmed before a **production** promotion
 
 ## Local validation
 
@@ -32,24 +117,27 @@ npm run test -w apps/api
 npm run check:api-contract
 ```
 
-## Staging promotion
+## After a staging apply
 
-```bash
-npx supabase db push --project-ref <STAGING_PROJECT_REF>
-```
+Merging to `main` applies the migration; these are the checks that it landed
+cleanly. The `Deploy API` run's `migrate-staging` job log shows what was pending
+before the apply (it always dry-runs first) and what it applied.
 
-Post-apply staging checks:
-
+- [ ] `migrate-staging` for your merge commit is green
 - [ ] `GET /health` returns `status: ok`
 - [ ] One auth-protected API route succeeds
 - [ ] Stripe staging webhook endpoint (`/v1/webhooks/stripe`) accepts signed event
 - [ ] No migration-related errors in Render logs
 
+If `migrate-staging` failed, the API deploy for that commit was **also**
+blocked (`deploy-staging` requires it to succeed) — so a red migration is never
+paired with a deployed API that expects the new schema.
+
 ## Production promotion
 
-```bash
-npx supabase db push --project-ref <PRODUCTION_PROJECT_REF>
-```
+Pick a deploy window and notify stakeholders first. Then either merge the
+`main` → `production` promotion PR, or run the `Migrate production` workflow —
+start with **dry-run-only** to read the pending list before applying it.
 
 Post-apply production checks:
 
@@ -60,7 +148,9 @@ Post-apply production checks:
 
 ## Promotion guardrails
 
-- Do not apply production migrations before staging validation.
+- Do not apply production migrations before staging validation. Staging applies
+  itself on merge to `main`, so in practice this means: let the merge land, let
+  `migrate-staging` go green, then promote.
 - Do not merge migration PRs without rollback instructions.
 - If any post-apply check fails, stop and execute `DB_ROLLBACK_PLAYBOOK.md`.
 - **Promoting migrations does not carry reference data.** `chapter_directory` is
@@ -77,6 +167,12 @@ Post-apply production checks:
   `chapters.directory_id` references `chapter_directory(id) on delete set null`, so a
   delete-and-reload would silently detach every chapter already linked to a directory
   entry. Updates are scoped to `source = 'seed'`, so hand-curated rows survive.
+
+## Promotion log
+
+Every migration below records what it does, how it was promoted, and anything a
+promoter must do by hand. `check:migration-safety` requires migration PRs to
+touch this file, which is what keeps the log complete.
 
 ## 2026-08-24: Discord bot connection — two migrations
 
