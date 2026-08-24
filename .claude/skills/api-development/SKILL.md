@@ -238,7 +238,7 @@ subscription-status write gating.
 
 - `/health` — no guards at all
 - `POST /v1/chapters` — `SupabaseAuthGuard` + `AuthSyncInterceptor` only (no chapter exists yet)
-- `POST /v1/billing/webhook` — `StripeWebhookGuard` (signature verification, no JWT)
+- `POST /v1/webhooks/stripe` — `StripeWebhookGuard` (signature verification, no JWT)
 
 ---
 
