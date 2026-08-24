@@ -8,7 +8,7 @@
 
 Source of truth: [`apps/web/components/layout/nav-config.ts`](../../../apps/web/components/layout/nav-config.ts). Each item declares `requirePermission` or `requireAnyOf`; the shell hides items the caller cannot access. The caller's effective permission set is loaded once via `GET /v1/users/me/permissions` and cached with TanStack Query (resolution rules: [`spec/behavior/rbac.md`](../../behavior/rbac.md)).
 
-A Chat anchor, three member sections, Finance, and a role-gated Admin group — 14 items where there were 17 across seven sections.
+A Chat anchor, three member sections, Finance, and a role-gated Admin group — 15 items where there were 17 across seven sections.
 
 | Section | Item | Route | Module | Permission |
 | --- | --- | --- | --- | --- |
@@ -26,6 +26,7 @@ A Chat anchor, three member sections, Finance, and a role-gated Admin group — 
 | Admin | Roles | `/settings?tab=roles` | — | `roles:manage` |
 | Admin | Study Zones | `/geofences` | `geofences` | `geofences:manage` |
 | Admin | Reports | `/reports` | `reports` | `reports:export` |
+| Admin | Discord Import | `/discord-import` | — | `channels:manage` |
 | Admin | Settings | `/settings` | — | `chapter-config:view` |
 
 Four structural facts the table alone does not carry:

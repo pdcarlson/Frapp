@@ -108,10 +108,55 @@ After any rollback event:
   It is the only attribution an imported message has — there is no `users` row to
   join back to, which is the whole reason the column exists. Re-running the
   importer from the original DiscordChatExporter export is the only way back.
-* **Do not "fix" the dedupe index by dropping `NULLS NOT DISTINCT` while imported
-  rows exist.** Without it the index stops enforcing anything for null-sender
-  rows, and the next importer run inserts the entire archive a second time with
-  no error. The recreate above is correct only *after* the imported rows are gone.
+* **The dedupe-index bullet that used to live here is superseded.** It said
+  dropping `NULLS NOT DISTINCT` while imported rows exist would let the next
+  importer run insert the whole archive again. That stopped being true when
+  `20260824120000_discord_import.sql` moved the importer onto its own
+  `external_message_id` column and its own index: imported rows no longer set
+  `client_message_id` at all, so this index does not govern them either way. The
+  index whose loss duplicates an archive is now
+  **`idx_chat_messages_external_dedupe`** — see *Rollback the Discord importer*
+  below. The recreate above is safe as written.
+
+## Rollback the Discord importer
+
+* **Migration**: `20260824120000_discord_import.sql`
+* **Action**:
+  ```sql
+  -- 1. the job tables (safe any time; nothing else references them)
+  DROP TABLE IF EXISTS public.discord_import_files;
+  DROP TABLE IF EXISTS public.discord_import_channels;
+  DROP TABLE IF EXISTS public.discord_imports;
+
+  -- 2. the indexes
+  DROP INDEX IF EXISTS public.idx_chat_messages_discord_import;
+  DROP INDEX IF EXISTS public.idx_chat_messages_external_dedupe;
+
+  -- 3. the column — READ BOTH CAVEATS FIRST
+  ALTER TABLE public.chat_messages DROP COLUMN IF EXISTS external_message_id;
+  ```
+* **Order**: **redeploy the API first.** The importer writes
+  `external_message_id` on every row it inserts; dropping the column under a
+  running importer fails every insert mid-archive and leaves a half-imported
+  channel behind.
+* **Step 3 destroys re-run idempotency, and this is the one that bites.** The
+  column is the *only* thing that makes a second import of the same export a
+  no-op. Drop it while an archive is in the database and the next run inserts
+  every message a second time, silently — `client_message_id` will not catch it,
+  because imported rows do not set it. If any imported row exists, stop at step
+  2 and leave the column: a nullable column costs nothing.
+* **Losing the job tables loses the purge.** `discord_imports` is what
+  `DELETE /v1/discord-imports/{id}` walks to find the messages and the storage
+  objects belonging to one import. Dropping it strands both — the rows stay
+  readable in chat, and the `chat-archive` objects are orphaned with nothing left
+  to name them (no chapter-deletion path exists, and nothing else sweeps that
+  bucket). **Purge any unwanted imports before rolling this back**, not after.
+* **Data caveat**: `metadata->>'discord_import_id'` survives on the message rows
+  independently of these tables, so a hand-written purge is still possible:
+  `DELETE FROM chat_messages WHERE kind = 'imported' AND metadata->>'discord_import_id' = '<id>';`
+  cascades to `chat_message_attachments`. The storage objects under
+  `chapters/<chapter>/chat-archive/imports/<id>/` must be deleted separately —
+  no cascade reaches storage.
 
 ## Rollback chat attachments
 
@@ -218,7 +263,7 @@ After any rollback event:
   ```
 * **Order**: no coordinated redeploy required *if the bucket is unused*. Once an
   import has run, the objects in it are the only copy of the archive's media —
-  the Discord CDN URLs in `chat_message_attachments.external_url` expire — so
+  `chat_message_attachments.external_url` is **always null** for imported rows (the importer never contacts Discord, so there is no CDN link to keep) and the only recovery handle is `discord_import_files` plus the admin's original export — so
   treat deletion as destructive.
 * **Note**: additive bucket only. Nothing else references it, and the live `chat`
   bucket is untouched. Re-applying the migration recreates it with the same id

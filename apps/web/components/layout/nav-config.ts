@@ -5,6 +5,7 @@ import {
   DirectoryGlyph,
   DocumentsGlyph,
   EventsGlyph,
+  ImportGlyph,
   PointsGlyph,
   PollsGlyph,
   ReportsGlyph,
@@ -278,6 +279,21 @@ export const DASHBOARD_NAV: NavSection[] = [
         status: "available",
         module: "reports",
         requirePermission: "reports:export",
+      },
+      {
+        id: "discord-import",
+        label: "Discord Import",
+        icon: ImportGlyph,
+        href: "/discord-import",
+        breadcrumbTitle: "Discord Import",
+        primaryActionLabel: "New import",
+        description:
+          "Bring a Discord server's history in as a read-only archive.",
+        status: "available",
+        // `channels:manage` rather than a new permission: an import creates
+        // channels, writes history into them, and can delete all of it again —
+        // exactly what this permission already authorises.
+        requirePermission: "channels:manage",
       },
       {
         id: "settings",

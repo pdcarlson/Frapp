@@ -36,7 +36,39 @@
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 export const MAX_UPLOAD_LABEL = "25 MB";
 
-export type UploadKind = "image" | "proof" | "document";
+export type UploadKind = "image" | "proof" | "document" | "archive";
+
+/**
+ * The `archive` kind is NOT a member-upload surface.
+ *
+ * It exists for one flow: a chapter admin uploading a DiscordChatExporter
+ * export into the private `chat-archive` bucket, whose own limits
+ * (`supabase/migrations/20260823124000_chat_archive_bucket.sql`) are wider than
+ * every other bucket here — 100 MB and 33 types including video and audio,
+ * because a Discord archive carries both and the live-chat 25 MB cap would drop
+ * the most valuable attachments on the floor.
+ *
+ * It is kept OFF `MAX_UPLOAD_BYTES` and off the `document` list on purpose:
+ * widening those to cover a one-off import would raise the ceiling on every
+ * member upload in the product, which is exactly the trade that migration
+ * rejected. SVG stays absent here too — an archive is not a reason to make an
+ * exception for script-bearing markup.
+ */
+export const MAX_ARCHIVE_UPLOAD_BYTES = 100 * 1024 * 1024;
+export const MAX_ARCHIVE_UPLOAD_LABEL = "100 MB";
+
+/**
+ * Ceiling on one uploaded DiscordChatExporter JSON partition.
+ *
+ * Far below the bucket cap, and deliberately: the importer parses a whole
+ * partition into memory with `JSON.parse`, on an API instance sized in hundreds
+ * of megabytes that is also serving live chat. 8 MiB of JSON is roughly 25 MB of
+ * heap and a sub-100ms synchronous parse; a 100 MB partition is neither.
+ *
+ * DiscordChatExporter's own `--partition` flag is what keeps exports under this,
+ * so the admin-facing error names that flag rather than a byte count.
+ */
+export const MAX_ARCHIVE_EXPORT_PART_BYTES = 8 * 1024 * 1024;
 
 /**
  * Surfaces that must share the `document` kind. Adding a fourth member-upload
@@ -65,6 +97,35 @@ const PDF_BINDING: MimeBinding = {
   mime: "application/pdf",
   extensions: ["pdf"],
 };
+
+/**
+ * Media Discord carries that live chat does not accept. Mirrors the
+ * `chat-archive` bucket's `allowed_mime_types`, which is the enforcement point
+ * — verified against the local stack: a signed-URL PUT of a type outside that
+ * list answers 415 `invalid_mime_type` from storage-api.
+ */
+const ARCHIVE_MEDIA_BINDINGS: readonly MimeBinding[] = [
+  { mime: "image/bmp", extensions: ["bmp"] },
+  { mime: "image/tiff", extensions: ["tif", "tiff"] },
+  { mime: "image/avif", extensions: ["avif"] },
+  { mime: "image/heic", extensions: ["heic"] },
+  { mime: "video/mp4", extensions: ["mp4"] },
+  { mime: "video/webm", extensions: ["webm"] },
+  { mime: "video/quicktime", extensions: ["mov"] },
+  { mime: "video/x-msvideo", extensions: ["avi"] },
+  { mime: "video/x-matroska", extensions: ["mkv"] },
+  { mime: "audio/mpeg", extensions: ["mp3"] },
+  { mime: "audio/ogg", extensions: ["ogg", "oga"] },
+  { mime: "audio/wav", extensions: ["wav"] },
+  { mime: "audio/webm", extensions: ["weba"] },
+  { mime: "audio/mp4", extensions: ["m4a"] },
+  { mime: "audio/flac", extensions: ["flac"] },
+  { mime: "text/markdown", extensions: ["md"] },
+  { mime: "application/json", extensions: ["json"] },
+  { mime: "application/zip", extensions: ["zip"] },
+  { mime: "application/gzip", extensions: ["gz"] },
+  { mime: "application/x-7z-compressed", extensions: ["7z"] },
+];
 
 const OFFICE_AND_TEXT_BINDINGS: readonly MimeBinding[] = [
   {
@@ -128,7 +189,25 @@ const KINDS: Record<UploadKind, KindTable> = {
     PDF_BINDING,
     ...OFFICE_AND_TEXT_BINDINGS,
   ]),
+  archive: freezeKind([
+    ...IMAGE_BINDINGS,
+    PDF_BINDING,
+    ...OFFICE_AND_TEXT_BINDINGS,
+    ...ARCHIVE_MEDIA_BINDINGS,
+  ]),
 };
+
+/**
+ * Size check for the `archive` kind. Separate from
+ * `isWithinUploadSizeLimit` so the member-upload ceiling stays where it is.
+ */
+export function isWithinArchiveUploadSizeLimit(byteLength: number): boolean {
+  return (
+    Number.isFinite(byteLength) &&
+    byteLength >= 0 &&
+    byteLength <= MAX_ARCHIVE_UPLOAD_BYTES
+  );
+}
 
 export function uploadMimeTypes(kind: UploadKind): ReadonlySet<string> {
   return KINDS[kind].mimes;
@@ -223,8 +302,7 @@ export function mimeForUploadFile(
 }
 
 export type InspectedUpload =
-  | { ok: true; contentType: string }
-  | { ok: false; reason: "type" | "size" };
+  { ok: true; contentType: string } | { ok: false; reason: "type" | "size" };
 
 /**
  * Client-side gate used by the web upload pages and the chat composer.

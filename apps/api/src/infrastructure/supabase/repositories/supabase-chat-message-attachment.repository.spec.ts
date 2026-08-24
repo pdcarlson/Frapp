@@ -127,6 +127,19 @@ describe('SupabaseChatMessageAttachmentRepository — tenant scope', () => {
     ).toContainEqual(['chat_channels.chapter_id', CHAPTER_B]);
   });
 
+  it('never returns external_url, which would leak a source-system URL', async () => {
+    // `ChatService.listMessageAttachments` spreads whatever this returns into an
+    // API response, so this is a disclosure boundary. A Discord CDN link is
+    // signed and time-limited, so shipping one would hand every chapter member a
+    // working read of the source object that bypasses the private-bucket,
+    // signed-URL-only posture — then rot into a dead link.
+    const [row] = await repo.findByMessage(MESSAGE_B, CHAPTER_B);
+
+    expect(row).toBeDefined();
+    expect(row).not.toHaveProperty('external_url');
+    expect(row.storage_path).toBeDefined();
+  });
+
   it('findByMessage returns nothing for a message in another chapter', async () => {
     // The point of carrying `chapterId` into the query rather than trusting the
     // caller: a message id that resolves in chapter A must not answer for a

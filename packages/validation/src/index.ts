@@ -959,6 +959,9 @@ export {
 export {
   MAX_UPLOAD_BYTES,
   MAX_UPLOAD_LABEL,
+  MAX_ARCHIVE_UPLOAD_BYTES,
+  MAX_ARCHIVE_UPLOAD_LABEL,
+  MAX_ARCHIVE_EXPORT_PART_BYTES,
   DOCUMENT_UPLOAD_SURFACES,
   uploadMimeTypes,
   uploadMimeList,
@@ -971,6 +974,7 @@ export {
   isAllowedUploadExtension,
   isAllowedUploadMime,
   isWithinUploadSizeLimit,
+  isWithinArchiveUploadSizeLimit,
   mimeForUploadFile,
   inspectUploadFile,
 } from "./upload-allowlists";
