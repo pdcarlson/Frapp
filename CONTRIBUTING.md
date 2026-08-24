@@ -63,6 +63,7 @@ Every PR must pass these checks before merging. Branch protection enforces this 
 | `duplicate-detection` | jscpd against a repo-wide duplication threshold — **advisory, not merge-blocking** (no clone-level baseline exists; see [`docs/internal/ci-cd/QUALITY_GATES.md`](docs/internal/ci-cd/QUALITY_GATES.md)) |
 | `docs-spec-sync`     | Docs/spec sync **and** structure on PRs (`scripts/check-docs-impact.mjs` + `scripts/check-docs-structure.mjs`; no docs app build). A change with genuinely no docs impact can be waived with the `no-doc-change-needed` label |
 | `doc-paths`          | Backticked repo-path citations in docs resolve to real files (`scripts/check-doc-paths.mjs`, whole-tree) |
+| `migration-drift`    | Staging holds every migration on `main` (`scripts/ci/check-migration-drift-gate.mjs`). Compares `origin/main` — not your PR head — against staging, so a migration you are adding cannot fail its own check. Whole-environment, so like `doc-paths` it can block a PR over state that PR did not cause |
 | `doc-tables`         | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml` (`scripts/check-doc-tables.mjs`, whole-tree) — **reports only, not yet required** (ROLLOUT‡) |
 | `branch-policy`      | `production`-targeting PRs must come from `main` (required on `production` only)                   |
 
