@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { basename } from 'node:path';
 import {
@@ -43,6 +44,8 @@ import type {
 } from '../../domain/entities/discord-import.entity';
 import {
   DISCORD_BOT_GATEWAY,
+  DiscordApiError,
+  DiscordNotConfiguredError,
   type IDiscordBotGateway,
 } from '../../domain/adapters/discord.interface';
 import { DiscordOAuthService } from './discord-oauth.service';
@@ -293,7 +296,36 @@ export class DiscordImportService {
       );
     }
 
-    const discovery = await this.bot.discoverChannels(guildId);
+    // Discord's failures here are operational, not bugs: the token can be
+    // rotated out from under a live connection, and a chapter can remove the
+    // bot from its server between connecting and scanning. Unmapped, both leave
+    // `AllExceptionsFilter` to answer 500 and page Sentry for something no
+    // engineer can fix. Translated to what they actually are.
+    let discovery: Awaited<ReturnType<IDiscordBotGateway['discoverChannels']>>;
+    try {
+      discovery = await this.bot.discoverChannels(guildId);
+    } catch (error) {
+      if (error instanceof DiscordNotConfiguredError) {
+        throw new ServiceUnavailableException(
+          'Reading Discord is not configured in this environment. The DiscordChatExporter upload flow still works.',
+        );
+      }
+      if (error instanceof DiscordApiError) {
+        throw new BadRequestException(error.message);
+      }
+      const status = (error as { status?: unknown })?.status;
+      if (status === 403 || status === 401) {
+        throw new BadRequestException(
+          'Signet could not read that Discord server. Check the bot is still in the server, then reconnect Discord.',
+        );
+      }
+      if (status === 404) {
+        throw new BadRequestException(
+          'That Discord server no longer exists, or the Signet bot was removed from it. Reconnect Discord.',
+        );
+      }
+      throw error;
+    }
 
     // Ordered parents-first, each followed by its own threads. `position` is
     // then pinned from this order, which is what lets the worker walk a parent
@@ -426,7 +458,17 @@ export class DiscordImportService {
           discord_channel_name: channel.discord_channel_name,
           discord_category: channel.discord_category,
           mapping_action: action,
-          target_channel_id: decision?.target_channel_id ?? null,
+          // Only `use_existing` names a target, and only `use_existing` is
+          // validated — `assertDecisionResolvable` checks nothing when the
+          // action is `create_new` or `skip`. Persisting a caller's UUID under
+          // an unvalidated action writes an unchecked `chat_channels` id onto
+          // this row AND onto every thread row that inherits it, and
+          // `chat_messages` has no `chapter_id`, so its FK would accept a
+          // channel from any chapter in the product. Dropped, not trusted.
+          target_channel_id:
+            action === 'use_existing'
+              ? (decision?.target_channel_id ?? null)
+              : null,
           new_channel_name: decision?.new_channel_name?.trim() || null,
           new_channel_is_read_only: decision?.new_channel_is_read_only ?? true,
           message_count: channel.message_count,
@@ -491,6 +533,19 @@ export class DiscordImportService {
   ): Promise<DiscordImportChannel[]> {
     const job = await this.get(id, chapterId);
     this.assertMutable(job);
+    // A bot import's channel set is established by discovery, and
+    // `applyDiscoveredChannelMapping` enforces that it is the ONLY set the
+    // worker reads by refusing any `discord_channel_id` the scan did not
+    // return. THIS route builds the set from whatever the caller sends, so
+    // without this guard it is the way around that invariant: a caller could
+    // point a bot import at arbitrary Discord snowflakes and read the worker's
+    // guild-mismatch error back off the job row — an oracle for which Discord
+    // servers other chapters have connected.
+    if (job.source === 'bot') {
+      throw new BadRequestException(
+        'This import reads Discord directly. Map its channels with the scanned-channel route.',
+      );
+    }
 
     // Mirrors the DB CHECK, so the admin gets a sentence instead of a
     // constraint name — and so the worker never meets an action it cannot

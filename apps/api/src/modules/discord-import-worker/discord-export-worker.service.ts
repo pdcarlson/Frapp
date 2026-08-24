@@ -66,6 +66,24 @@ export const ATTACHMENT_CONCURRENCY = 4;
 export interface ExportSliceResult {
   messagesImported: number;
   finished: boolean;
+  /**
+   * Everything the slice accumulated, for the caller's closing write.
+   *
+   * Returned rather than left to the last `checkpoint`, because a slice can
+   * legitimately finish having never entered a page loop — every channel
+   * deleted in Discord, say, which raises a warning per channel and then
+   * completes. `checkpoint` is the only writer inside the loop, so without this
+   * the admin sees "Completed, 0 messages" with an empty warning list and no
+   * indication anything went wrong.
+   */
+  totals: {
+    imported: number;
+    skipped: number;
+    attachmentsImported: number;
+    attachmentsSkipped: number;
+    totalMessages: number;
+    warnings: string[];
+  };
 }
 
 /** Everything a slice accumulates and writes back at each checkpoint. */
@@ -213,7 +231,7 @@ export class DiscordExportWorkerService {
 
     for (const mapping of channels) {
       if (Date.now() >= deadline) {
-        return { messagesImported: totals.imported, finished: false };
+        return this.sliceResult(totals, false);
       }
       // `status` is the whole work queue — see the migration's note on why the
       // cursor lives on the channel rather than as an index into this list.
@@ -239,7 +257,7 @@ export class DiscordExportWorkerService {
           this.resolveDestination(channel, byDiscordId, resolveTargetChannel),
         importBatch,
       });
-      if (!done) return { messagesImported: totals.imported, finished: false };
+      if (!done) return this.sliceResult(totals, false);
     }
 
     // Finished means every channel reached a terminal state. Re-read rather
@@ -253,7 +271,7 @@ export class DiscordExportWorkerService {
       (channel) =>
         channel.status === 'completed' || channel.status === 'skipped',
     );
-    return { messagesImported: totals.imported, finished };
+    return this.sliceResult(totals, finished);
   }
 
   /**
@@ -287,14 +305,44 @@ export class DiscordExportWorkerService {
       // safe because it mirrors what its parent's was at discovery time.
       return resolve(mapping);
     }
-    if (parent.target_channel_id) return parent.target_channel_id;
 
+    // ALWAYS through `resolve`, even when the parent row already carries a
+    // `target_channel_id`. Returning that column directly is the one shape that
+    // reaches `insertMessages` without a chapter-scoped read behind it, and
+    // `chat_messages` has no `chapter_id` of its own — its FK accepts any
+    // channel in the product, so nothing downstream would catch a foreign id.
+    //
+    // The case that made this reachable: a parent whose channel was deleted in
+    // Discord is marked skipped and RETURNS before its own resolve ever runs,
+    // so a `target_channel_id` written at mapping time was never verified —
+    // and its threads then inherited it unchecked. `resolveTargetChannel`
+    // re-reads the channel through the chapter and throws on a foreign one, so
+    // routing every inheritance through it costs one cached read and closes
+    // that path. Same class as the bug #1242's review caught.
     const targetId = await resolve(parent);
     // Cache onto the in-memory parent row as well, so the next thread of the
     // same parent in this slice reads it without another round trip — and,
     // more importantly, without a second `create_new`.
     parent.target_channel_id = targetId;
     return targetId;
+  }
+
+  private sliceResult(
+    totals: SliceTotals,
+    finished: boolean,
+  ): ExportSliceResult {
+    return {
+      messagesImported: totals.imported,
+      finished,
+      totals: {
+        imported: totals.imported,
+        skipped: totals.skipped,
+        attachmentsImported: totals.attachmentsImported,
+        attachmentsSkipped: totals.attachmentsSkipped,
+        totalMessages: totals.totalMessages,
+        warnings: totals.warnings,
+      },
+    };
   }
 
   /**
@@ -363,6 +411,21 @@ export class DiscordExportWorkerService {
     }
 
     const targetChannelId = await resolveTargetChannel(mapping);
+
+    // A forum holds no messages of its own — every post in it is a thread, and
+    // `GET /channels/{id}/messages` answers 400 on the forum itself. Its target
+    // is still resolved above, because that is what its posts inherit; only the
+    // message walk is skipped.
+    if (verified.holdsOnlyThreads) {
+      if (mapping.target_channel_id !== targetChannelId) {
+        mapping.target_channel_id = targetChannelId;
+      }
+      await this.importRepo.updateChannel(mapping.id, job.id, {
+        target_channel_id: targetChannelId,
+        status: 'completed',
+      });
+      return true;
+    }
     // Recorded immediately, before a single message is read, and both in the
     // database and on the in-memory row.
     //
@@ -418,7 +481,13 @@ export class DiscordExportWorkerService {
         mediaByRelativePath,
         totals,
       });
-      totals.attachmentsSkipped += fetched.skipped;
+      // `fetched.skipped` is deliberately NOT added to the running total.
+      //
+      // Anything this rejected — too large, a type the bucket refuses, gone
+      // from the CDN — is simply absent from `mediaByRelativePath`, so
+      // `importBatch` independently counts it as unresolved and reports it in
+      // `outcome.attachmentsSkipped` below. Adding both double-counts every
+      // skipped attachment.
 
       const outcome = await importBatch({
         messages: rawPage.map((message) => toExportShapeMessage(message)),
@@ -431,7 +500,17 @@ export class DiscordExportWorkerService {
       totals.skipped += outcome.skipped;
       totals.attachmentsImported += outcome.attachmentsImported;
       totals.attachmentsSkipped += outcome.attachmentsSkipped;
-      totals.warnings.push(...outcome.warnings);
+      // The batch writer emits a bare "No uploaded file for attachment: <key>"
+      // for every key it cannot resolve — including the ones this slice
+      // deliberately rejected a moment ago and already explained by name and
+      // reason. Both lines compete for a 50-entry buffer that keeps the tail,
+      // so leaving the generic duplicates in is what pushes the readable ones
+      // out. Dropped here, where the set of already-explained keys is in hand.
+      totals.warnings.push(
+        ...outcome.warnings.filter(
+          (warning) => !fetched.reported.some((key) => warning.includes(key)),
+        ),
+      );
 
       // The cursor is the OLDEST id on the page, because the walk runs
       // backwards. Discord returns newest-first, so that is the last entry —
@@ -495,8 +574,10 @@ export class DiscordExportWorkerService {
     page: DiscordApiMessage[];
     mediaByRelativePath: Map<string, DiscordImportFile>;
     totals: SliceTotals;
-  }): Promise<{ skipped: number }> {
+  }): Promise<{ skipped: number; reported: string[] }> {
     const { job, page, mediaByRelativePath, totals } = args;
+    /** Keys this slice already warned about, by name and reason. */
+    const reported: string[] = [];
 
     // Deduplicated within the page as well as against the manifest: one message
     // can carry the same attachment twice, and the same attachment id can
@@ -514,6 +595,7 @@ export class DiscordExportWorkerService {
           totals.warnings.push(
             `"${attachment.filename ?? key}" is larger than the archive accepts and was not imported. The message it belongs to was.`,
           );
+          reported.push(key);
           skipped += 1;
           continue;
         }
@@ -522,11 +604,20 @@ export class DiscordExportWorkerService {
         // answer 415; checking here turns that into a readable warning and
         // saves the transfer. Discord serves plenty a chapter's archive
         // contains and this bucket does not accept (`.exe`, `.zip`).
-        const contentType = attachment.content_type ?? null;
+        // Parameters stripped and lower-cased before the allowlist check.
+        // `isAllowedUploadMime` is an exact `Set.has`, and Discord reports a
+        // parameterised type for exactly the attachment a chapter's archive is
+        // full of: a message over 2000 characters is auto-converted to
+        // `message.txt` with `content_type: "text/plain; charset=utf-8"`.
+        // `text/plain` is allowlisted; the parameterised spelling is not, so
+        // without this every one of those is dropped with a warning that
+        // contradicts itself.
+        const contentType = normaliseMimeType(attachment.content_type);
         if (contentType && !isAllowedUploadMime('archive', contentType)) {
           totals.warnings.push(
             `"${attachment.filename ?? key}" is a file type the archive does not accept (${contentType}) and was not imported. The message it belongs to was.`,
           );
+          reported.push(key);
           skipped += 1;
           continue;
         }
@@ -535,7 +626,7 @@ export class DiscordExportWorkerService {
       }
     }
 
-    if (pending.size === 0) return { skipped };
+    if (pending.size === 0) return { skipped, reported };
 
     const entries = [...pending.entries()];
     const rows = entries.map(([key, attachment]) => ({
@@ -547,7 +638,9 @@ export class DiscordExportWorkerService {
       bucket: CHAT_ARCHIVE_BUCKET,
       // Shared with the upload path, so the purge's prefix sweep finds both.
       storage_path: archiveMediaObjectPath(job.chapter_id, job.id, key),
-      content_type: attachment.content_type ?? 'application/octet-stream',
+      content_type:
+        normaliseMimeType(attachment.content_type) ??
+        'application/octet-stream',
       byte_size: typeof attachment.size === 'number' ? attachment.size : null,
     }));
 
@@ -626,7 +719,7 @@ export class DiscordExportWorkerService {
       }
     }
 
-    return { skipped };
+    return { skipped, reported };
   }
 
   /**
@@ -655,4 +748,17 @@ export class DiscordExportWorkerService {
     );
     await Promise.all(runners);
   }
+}
+
+/**
+ * A Content-Type reduced to the bare type the allowlist is keyed on.
+ *
+ * `isAllowedUploadMime` is an exact `Set.has`, so `text/plain; charset=utf-8`
+ * misses an allowlist that contains `text/plain`. The upload path never hits
+ * this because it derives the type from the file extension; the bot path takes
+ * Discord's own header, which routinely carries a charset.
+ */
+function normaliseMimeType(value: string | null | undefined): string | null {
+  const bare = value?.split(';')[0]?.trim().toLowerCase();
+  return bare && bare.length > 0 ? bare : null;
 }

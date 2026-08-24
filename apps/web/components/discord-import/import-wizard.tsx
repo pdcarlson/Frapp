@@ -153,11 +153,21 @@ export function ImportWizard({
   const beginImport = useCallback(async () => {
     if (!acknowledged || !source) return;
     try {
-      const created = await createImport.mutateAsync({
-        consent_acknowledged: true,
-        source,
-      });
-      const createdId = (created as { id?: string } | undefined)?.id;
+      // Reuse the import this step already created, if it did.
+      //
+      // The scan below can fail for ordinary reasons — the bot was removed from
+      // the server, Discord is slow — and the admin is left on this step with
+      // Continue still enabled. Without this, every retry mints another
+      // `discord_imports` row (consent stamped, guild stamped) and orphans the
+      // last one in `draft` for them to delete by hand.
+      const createdId =
+        importId ??
+        (
+          (await createImport.mutateAsync({
+            consent_acknowledged: true,
+            source,
+          })) as { id?: string } | undefined
+        )?.id;
       if (!createdId) throw new Error("The API did not return an import id.");
       setImportId(createdId);
 
@@ -196,7 +206,7 @@ export function ImportWizard({
         description: getErrorMessage(error, "Could not start the import."),
       });
     }
-  }, [acknowledged, source, createImport, discoverChannels, toast]);
+  }, [acknowledged, source, importId, createImport, discoverChannels, toast]);
 
   const channelsReady = useMemo(() => {
     if (!staged) return false;

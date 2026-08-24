@@ -25,8 +25,11 @@ const {
   confirmUploads: vi.fn(),
   discoverChannels: vi.fn(),
   beginConnect: vi.fn(),
-  availability: { value: { available: true } },
-  connection: { value: { connected: false } },
+  availability: { value: { available: true } as { available: boolean } },
+  connection: { value: { connected: false } as {
+    connected: boolean;
+    guild_name?: string;
+  } },
 }));
 
 vi.mock("@repo/hooks", () => ({

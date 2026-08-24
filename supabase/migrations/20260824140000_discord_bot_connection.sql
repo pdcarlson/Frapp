@@ -117,9 +117,10 @@ create table if not exists public.discord_oauth_states (
   -- the two identities are both in the audit trail.
   created_by uuid references public.users(id) on delete set null,
   -- Where to send the browser once the callback is done. Stored rather than
-  -- taken from the callback query string, and validated against the configured
-  -- app origin before it is written, so the callback cannot be turned into an
-  -- open redirect by a crafted `state`.
+  -- taken from the callback query string, and reduced to a site-relative path
+  -- before it is written (`safeReturnPath`), so the callback cannot be turned
+  -- into an open redirect by a crafted `state`. It is resolved against the
+  -- configured app origin at redirect time; it is never compared against it.
   return_path text,
   expires_at timestamptz not null,
   -- Set when the callback consumes it. Non-null means spent: a second callback
@@ -129,8 +130,9 @@ create table if not exists public.discord_oauth_states (
 );
 
 -- The consume path is `where id = $1 and consumed_at is null and expires_at >
--- now()`, which the primary key already serves. This index is for the sweeper
--- that reaps expired rows, so it stays off the hot path.
+-- now()`, which the primary key already serves. This index serves the hourly
+-- reaper in `DiscordImportWorkerService.handleOAuthStateSweep`, which deletes
+-- on `expires_at` alone -- so it stays off the consume path entirely.
 create index if not exists idx_discord_oauth_states_expiry
   on public.discord_oauth_states (expires_at)
   where consumed_at is null;

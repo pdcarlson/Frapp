@@ -9,6 +9,7 @@ import {
 } from './discord-import-worker.service';
 import { DiscordExportWorkerService } from './discord-export-worker.service';
 import { DISCORD_IMPORT_REPOSITORY } from '../../domain/repositories/discord-import.repository.interface';
+import { DISCORD_CONNECTION_REPOSITORY } from '../../domain/repositories/discord-connection.repository.interface';
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 import { CHAT_CHANNEL_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
 import type {
@@ -263,6 +264,7 @@ async function buildWorker(
         : null,
     ),
   };
+  const connectionRepo = { deleteExpiredStates: jest.fn(async () => 0) };
   const exportWorker = {
     runSlice: jest.fn(async () => {
       throw new Error(
@@ -280,6 +282,8 @@ async function buildWorker(
       // delegates here. Stubbed rather than real so a regression that DID
       // delegate an upload job would fail loudly instead of hitting Discord.
       { provide: DiscordExportWorkerService, useValue: exportWorker },
+      // Only the hourly OAuth-state reaper touches this; no import slice does.
+      { provide: DISCORD_CONNECTION_REPOSITORY, useValue: connectionRepo },
     ],
   }).compile();
   return {

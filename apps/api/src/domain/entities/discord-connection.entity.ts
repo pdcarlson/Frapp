@@ -63,9 +63,13 @@ export interface DiscordOAuthState {
   chapter_id: string;
   created_by: string | null;
   /**
-   * Where to send the browser afterwards. Validated against the configured app
-   * origin *before* it is stored, so a crafted state cannot turn the callback
-   * into an open redirect.
+   * Where to send the browser afterwards.
+   *
+   * Reduced to a site-relative path before it is stored (`safeReturnPath` —
+   * a leading single slash, no `//` or `/\\`, no control characters), and then
+   * resolved against the CONFIGURED app origin at redirect time. Both halves
+   * matter and neither is "validation against the origin": the stored value is
+   * never compared to `APP_URL`, it is simply incapable of naming another one.
    */
   return_path: string | null;
   expires_at: string;

@@ -23,8 +23,15 @@ import {
  * callback is an unauthenticated top-level browser redirect: no session, no
  * bearer token, no `x-chapter-id`. The state row is what *establishes* the
  * chapter rather than something checked against it. Its safety is therefore not
- * a chapter predicate but three other properties, each tested below: the id is
- * an unguessable server-minted uuid, it is single-use, and it expires.
+ * a chapter predicate but three other properties: the id is an unguessable
+ * server-minted uuid, it is single-use, and it expires. **Two of the three are
+ * tested below.** The third cannot be tested here and should not be assumed
+ * covered: `createState` never sets an id, relying entirely on the migration's
+ * `default gen_random_uuid()`, and the tenant harness fabricates ids — so a
+ * change that made the id predictable (a sequence, a derivation from
+ * `chapter_id`, the repository supplying its own) would pass this file green.
+ * The state id IS the CSRF token; if you touch how it is generated, the proof
+ * is the migration, not this suite.
  */
 
 const CONN_A = '0a000000-0000-4000-8000-0000000002a0';

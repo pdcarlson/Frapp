@@ -494,18 +494,33 @@ describe('DiscordExportWorkerService — threads inherit their parent', () => {
 
     await harness.worker.runSlice(runArgs(harness, { resolveTargetChannel }));
 
-    // Resolved ONCE — for the parent. The thread reuses the answer.
-    expect(resolveTargetChannel).toHaveBeenCalledTimes(1);
+    // Always resolved for the PARENT, never for the thread — the thread has no
+    // destination of its own. `create_new` mints a channel, so resolving a
+    // thread independently would produce a second channel with the same name,
+    // which `chat_channels` has no unique `(chapter_id, name)` to reject.
     expect(resolveTargetChannel).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'mapping-parent' }),
     );
+    expect(resolveTargetChannel).not.toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'mapping-thread' }),
+    );
   });
 
-  it('reuses a parent target already persisted by an earlier slice', async () => {
+  it('re-verifies an inherited target through the chapter, never trusting the row', async () => {
+    // `target_channel_id` is a client-supplied UUID that reached the database
+    // at mapping time, and `chat_messages` has no `chapter_id` — its FK accepts
+    // ANY channel in the product. Returning this column straight to
+    // `importBatch` was the one path in a bot import where a foreign channel id
+    // could reach an insert unchecked, and the purge (scoped by the import's
+    // own chapter) could never remove what landed there.
+    //
+    // Reachable exactly as set up here: a parent whose Discord channel is gone
+    // is marked skipped and returns BEFORE resolving its own target, so a
+    // poisoned id was never verified — and its threads then inherited it.
     const parent = channel({
       id: 'mapping-parent',
       status: 'completed',
-      target_channel_id: SIGNET_CHANNEL,
+      target_channel_id: 'FOREIGN-CHANNEL-FROM-ANOTHER-CHAPTER',
       position: 0,
     });
     const thread = channel({
@@ -517,11 +532,19 @@ describe('DiscordExportWorkerService — threads inherit their parent', () => {
     });
 
     const harness = await build({ channels: [parent, thread], pages: [[]] });
-    const resolveTargetChannel = jest.fn(async () => 'WRONG-CHANNEL');
+    // Stands in for the real resolver, which re-reads the channel through the
+    // chapter and throws on one that is not this chapter's.
+    const resolveTargetChannel = jest.fn(async () => {
+      throw new Error('points at a channel outside this chapter');
+    });
 
-    await harness.worker.runSlice(runArgs(harness, { resolveTargetChannel }));
+    await expect(
+      harness.worker.runSlice(runArgs(harness, { resolveTargetChannel })),
+    ).rejects.toThrow(/outside this chapter/);
 
-    expect(resolveTargetChannel).not.toHaveBeenCalled();
+    expect(resolveTargetChannel).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'mapping-parent' }),
+    );
   });
 });
 
@@ -725,6 +748,62 @@ describe('DiscordExportWorkerService — attachments', () => {
 
     expect(harness.storage.uploadFile).toHaveBeenCalledTimes(20);
     expect(peak).toBeLessThanOrEqual(ATTACHMENT_CONCURRENCY);
+  });
+});
+
+describe('DiscordExportWorkerService — reporting what happened', () => {
+  it('returns warnings raised OUTSIDE the page loop, so they are not lost', async () => {
+    // A slice can finish having never entered the page loop — every channel
+    // deleted in Discord, say. `checkpoint` is the only writer inside the loop,
+    // so a closing write that read only from it would report
+    // "Completed, 0 messages" with an empty warning list and no sign anything
+    // went wrong.
+    const harness = await build();
+    harness.bot.verifyChannelInGuild.mockResolvedValue(null);
+
+    const args = runArgs(harness);
+    const result = await harness.worker.runSlice(args);
+
+    expect(args.checkpoint).not.toHaveBeenCalled();
+    expect(result.finished).toBe(true);
+    expect(result.totals.warnings.join(' ')).toContain('no longer readable');
+  });
+
+  it('counts a gate-rejected attachment once, not twice', async () => {
+    // The size/MIME gate skips a file AND leaves it out of the resolver map, so
+    // the batch writer independently reports it unresolved. Adding both counts
+    // doubled every skipped attachment and flooded a bounded warning list.
+    const harness = await build({
+      pages: [
+        [
+          apiMessage('1', {
+            attachments: [
+              {
+                id: 'att-big',
+                filename: 'movie.mp4',
+                size: 500 * 1024 * 1024,
+                url: 'https://cdn.discordapp.com/a/movie.mp4',
+                content_type: 'video/mp4',
+              },
+            ],
+          }),
+        ],
+      ],
+    });
+
+    const args = runArgs(harness, {
+      importBatch: jest.fn(async (batch: { messages: unknown[] }) => ({
+        imported: batch.messages.length,
+        skipped: 0,
+        attachmentsImported: 0,
+        // What the real batch writer reports for a file with no manifest row.
+        attachmentsSkipped: 1,
+        warnings: [] as string[],
+      })),
+    });
+    const result = await harness.worker.runSlice(args);
+
+    expect(result.totals.attachmentsSkipped).toBe(1);
   });
 });
 

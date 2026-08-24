@@ -2,6 +2,7 @@
 
 import { useBeginDiscordConnect, useDiscordConnection } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
+import { ErrorState, LoadingState } from "@/components/shared/async-states";
 import { useToast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 
@@ -10,8 +11,9 @@ import { getErrorMessage } from "@/lib/utils";
  *
  * Carries `wizard=bot` so the page can reopen the wizard on this step instead
  * of dropping the admin back on the import list with no idea whether it worked.
- * The API validates this against its own app origin before storing it, so it
- * cannot be turned into an off-site redirect.
+ * The API reduces this to a site-relative path before storing it and resolves
+ * it against its own configured app origin on the way back, so it cannot be
+ * turned into an off-site redirect.
  */
 export const DISCORD_CONNECT_RETURN_PATH = "/discord-import?wizard=bot";
 
@@ -58,11 +60,15 @@ export function ConnectStep({ onConnected }: { onConnected: () => void }) {
   }
 
   if (connection.isPending) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        Checking whether Discord is connected…
-      </p>
-    );
+    return <LoadingState message="Checking whether Discord is connected…" />;
+  }
+
+  // `useDiscordConnection` sets `retry: false`, so a 500 or a dropped request
+  // ends the query in `isError` rather than `isPending`. Without this branch it
+  // fell through to the "not connected" pitch — telling a chapter that IS
+  // connected to add the bot again, with no retry and no sign anything failed.
+  if (connection.isError) {
+    return <ErrorState onRetry={() => void connection.refetch()} />;
   }
 
   if (connected) {

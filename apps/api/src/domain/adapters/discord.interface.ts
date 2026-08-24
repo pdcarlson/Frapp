@@ -81,6 +81,17 @@ export interface DiscordChannelRef {
   /** Set only for threads — the channel the thread lives in. */
   parentChannelId: string | null;
   isThread: boolean;
+  /**
+   * The channel holds no messages of its own, only threads.
+   *
+   * A forum is the case: every post in it is a thread, and
+   * `GET /channels/{id}/messages` answers 400 (`50024`) on the forum itself. It
+   * is still offered as a mappable destination — `#questions` is what an admin
+   * recognises, and its posts inherit whatever they choose for it — so the
+   * export must map it and then skip its own message walk rather than skipping
+   * the channel and silently dropping every post inside it.
+   */
+  holdsOnlyThreads: boolean;
 }
 
 /** A role as the guild defines it, for the role worksheet. */

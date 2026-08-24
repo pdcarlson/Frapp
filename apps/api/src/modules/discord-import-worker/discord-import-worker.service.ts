@@ -6,6 +6,10 @@ import {
   type IDiscordImportRepository,
 } from '../../domain/repositories/discord-import.repository.interface';
 import {
+  DISCORD_CONNECTION_REPOSITORY,
+  type IDiscordConnectionRepository,
+} from '../../domain/repositories/discord-connection.repository.interface';
+import {
   STORAGE_PROVIDER,
   type IStorageProvider,
 } from '../../domain/adapters/storage.interface';
@@ -109,7 +113,35 @@ export class DiscordImportWorkerService {
     @Inject(CHAT_CHANNEL_REPOSITORY)
     private readonly channelRepo: IChatChannelRepository,
     private readonly exportWorker: DiscordExportWorkerService,
+    @Inject(DISCORD_CONNECTION_REPOSITORY)
+    private readonly connectionRepo: IDiscordConnectionRepository,
   ) {}
+
+  /**
+   * Reap spent and expired OAuth handshakes.
+   *
+   * `discord_oauth_states` gains a row per "Connect Discord" click and every one
+   * of them is dead within 15 minutes, so without this the table only grows —
+   * and any officer can grow it at will, since minting is an ordinary
+   * permitted action with no cap. Hourly rather than per-minute because nothing
+   * depends on the rows being gone promptly: an expired state is already inert,
+   * `consumeState` refuses it on `expires_at` regardless of whether it is still
+   * on disk. This is housekeeping, not a control.
+   */
+  @Cron(CronExpression.EVERY_HOUR)
+  async handleOAuthStateSweep(): Promise<void> {
+    try {
+      const reaped = await this.connectionRepo.deleteExpiredStates(new Date());
+      if (reaped > 0) {
+        this.logger.log(`Reaped ${reaped} expired Discord OAuth handshakes.`);
+      }
+    } catch (error) {
+      // Same reasoning as the import sweep's catch: an unhandled rejection out
+      // of a `@Cron` takes the API process down under Node's default
+      // `--unhandled-rejections=throw`. A failed reap must cost one tick.
+      this.logger.error('Discord OAuth state sweep failed', error);
+    }
+  }
 
   /**
    * The tick.
@@ -271,12 +303,25 @@ export class DiscordImportWorkerService {
     // The closing write is status-guarded like every other one: a slice that
     // ran alongside a cancel must not resurrect the job by writing `running`
     // over `cancelled` on its way out.
+    //
+    // It also persists the slice's OWN totals rather than relying on the last
+    // `checkpoint`. A slice can finish having never entered a page loop — every
+    // mapped channel deleted in Discord, say, which raises a warning per
+    // channel and then completes — and `checkpoint` is the only writer inside
+    // that loop. Without this the admin gets a green "Completed · 0 messages"
+    // with an empty warning list and no statement of what went wrong.
     await this.importRepo.updateIfStatus(
       job.id,
       chapterId,
       WORKER_MAY_CONTINUE,
       {
         status: result.finished ? 'completed' : 'running',
+        total_messages: result.totals.totalMessages,
+        imported_messages: result.totals.imported,
+        messages_skipped: result.totals.skipped,
+        attachments_imported: result.totals.attachmentsImported,
+        attachments_skipped: result.totals.attachmentsSkipped,
+        warnings: result.totals.warnings.slice(-MAX_WARNINGS),
         completed_at: result.finished ? new Date().toISOString() : null,
       },
     );

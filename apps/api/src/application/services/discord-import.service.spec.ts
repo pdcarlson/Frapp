@@ -769,6 +769,33 @@ describe('DiscordImportService — mapping a discovered guild', () => {
     ]);
   });
 
+  it('DROPS a target_channel_id sent under an action that does not name one', async () => {
+    // `assertDecisionResolvable` validates `target_channel_id` only for
+    // `use_existing`. Persisting it under `create_new` or `skip` would write an
+    // unchecked `chat_channels` id onto the row and onto every thread that
+    // inherits it — and `chat_messages` has no `chapter_id`, so its FK accepts
+    // a channel from any chapter in the product.
+    const svc = await build(job({ source: 'bot' }));
+    repo.findChannels.mockResolvedValue([
+      botChannel({ discord_channel_id: 'c1' }),
+    ]);
+
+    await svc.applyDiscoveredChannelMapping(IMPORT_ID, CHAPTER, [
+      {
+        discord_channel_id: 'c1',
+        discord_channel_name: 'general',
+        mapping_action: 'create_new',
+        new_channel_name: 'General',
+        target_channel_id: FOREIGN_CHANNEL,
+      },
+    ]);
+
+    const rows = repo.replaceChannels.mock.calls[0][2] as {
+      target_channel_id: string | null;
+    }[];
+    expect(rows[0]?.target_channel_id).toBeNull();
+  });
+
   it('leaves an unanswered channel — and its threads — skipped', async () => {
     const svc = await build(job({ source: 'bot' }));
     repo.findChannels.mockResolvedValue([
@@ -788,6 +815,41 @@ describe('DiscordImportService — mapping a discovered guild', () => {
     }[];
     expect(rows.every((row) => row.mapping_action === 'skip')).toBe(true);
     expect(rows.every((row) => row.status === 'skipped')).toBe(true);
+  });
+});
+
+describe('DiscordImportService — the upload mapping route refuses a bot import', () => {
+  it('REFUSES, so it cannot be used to name channels the scan never returned', async () => {
+    // `applyDiscoveredChannelMapping` enforces that discovery's set is the only
+    // set the worker reads. This route builds the set from whatever the caller
+    // sends, so without the guard it is the way around that invariant — and the
+    // worker's guild-mismatch error, read back off the job row, would become an
+    // oracle for which Discord servers other chapters have connected.
+    const svc = await build(job({ source: 'bot' }));
+
+    await expect(
+      svc.setChannelMapping(IMPORT_ID, CHAPTER, [
+        {
+          discord_channel_id: '999999999999999999',
+          discord_channel_name: 'someone-elses-channel',
+          mapping_action: 'create_new',
+          new_channel_name: 'Sneaky',
+        },
+      ]),
+    ).rejects.toThrow(/scanned-channel route/);
+    expect(repo.replaceChannels).not.toHaveBeenCalled();
+  });
+
+  it('still serves an upload import unchanged', async () => {
+    const svc = await build(job({ source: 'upload' }));
+    await svc.setChannelMapping(IMPORT_ID, CHAPTER, [
+      {
+        discord_channel_id: 'c1',
+        discord_channel_name: 'general',
+        mapping_action: 'skip',
+      },
+    ]);
+    expect(repo.replaceChannels).toHaveBeenCalled();
   });
 });
 
