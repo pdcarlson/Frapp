@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
@@ -6,7 +7,6 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { v4 as uuidv4 } from 'uuid';
 import { INVITE_REPOSITORY } from '../../domain/repositories/invite.repository.interface';
 import type { IInviteRepository } from '../../domain/repositories/invite.repository.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
@@ -37,7 +37,7 @@ export class InviteService {
     expiresAt.setHours(expiresAt.getHours() + 24);
 
     return {
-      token: uuidv4(),
+      token: randomUUID(),
       chapter_id: chapterId,
       role,
       expires_at: expiresAt.toISOString(),

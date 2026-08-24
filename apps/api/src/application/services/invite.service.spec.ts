@@ -1,4 +1,7 @@
-jest.mock('uuid', () => ({ v4: () => 'test-uuid' }));
+jest.mock('node:crypto', () => ({
+  ...jest.requireActual<typeof import('node:crypto')>('node:crypto'),
+  randomUUID: () => 'test-uuid',
+}));
 
 import { Test, TestingModule } from '@nestjs/testing';
 import {
