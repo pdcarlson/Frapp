@@ -232,6 +232,26 @@ channel that reports a different one fails the import rather than being skipped.
 - **The whole path disappears when unconfigured.** With no Discord application
   set up for the environment, `GET /v1/discord/availability` answers
   `available: false` and the wizard offers only the upload flow.
+- **The callback always answers with a redirect, never an error page.** Discord
+  returns the admin to `/v1/discord/connect/callback` as a top-level browser
+  navigation, so whatever happens there — success, a declined consent screen, a
+  spent state, a database that cannot be reached — resolves to a 302 back to the
+  dashboard carrying one `?discord=<code>` from a closed set the dashboard owns
+  the wording for. It is never a JSON error body: an admin who has just picked
+  their server has no way back from one, and it would be served from the API
+  origin rather than the app. This has failed in a deployed environment once,
+  when the migrations had not been promoted; the schema being behind the code is
+  one of the causes this contract has to cover, not an exception to it.
+- **A failure Signet caused says so, and reports itself.** `expired` means the
+  handshake really was spent or timed out and starting again will work.
+  Something broken on our side answers `failed` instead, because telling an
+  admin to "start the connection again" is a loop when the store that mints the
+  new handshake is the thing that is down. Distinguishing the two leaks nothing:
+  which one the admin sees turns on whether the store answered, never on whether
+  their particular state existed, so it cannot be used to probe for live
+  handshakes. Any such failure also raises a Sentry event on its way past —
+  swallowing an exception into a friendly redirect otherwise removes the only
+  signal an operator had, leaving a path that is 100% broken looking healthy.
 
 - **Re-running *the same import* is a no-op, not a duplicate.** Every imported
   row carries `external_message_id` — the Discord message snowflake — under a
