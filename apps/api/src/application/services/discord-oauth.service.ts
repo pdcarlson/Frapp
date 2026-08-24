@@ -19,6 +19,7 @@ import {
   DISCORD_CONNECTION_REPOSITORY,
   type IDiscordConnectionRepository,
 } from '../../domain/repositories/discord-connection.repository.interface';
+import type { DiscordOAuthState } from '../../domain/entities/discord-connection.entity';
 
 /**
  * The callback path, fixed in code.
@@ -274,10 +275,40 @@ export class DiscordOAuthService {
   }): Promise<DiscordCallbackOutcome> {
     // The state is spent even when Discord reports a denial, so a cancelled
     // attempt cannot be replayed later with a code obtained some other way.
+    //
+    // Wrapped, because this method's whole contract is that it RETURNS where to
+    // send the browser rather than throwing — the caller is a top-level
+    // redirect from Discord, and an admin mid-connect must land back in the
+    // wizard with a sentence, never on a JSON 500. Before this, the very first
+    // thing the method did could throw straight past that contract: any
+    // repository failure here — a transient PostgREST error, an exhausted pool,
+    // or a migration not yet promoted to the environment — escaped as a raw
+    // 500 to a browser that had just completed an OAuth handshake.
+    //
+    // Found on deployed staging, not in a test: every spec here mocks the
+    // repository, and a mock that resolves never exercises the path where it
+    // rejects.
     const stateId = typeof query.state === 'string' ? query.state : '';
-    const consumed = isUuid(stateId)
-      ? await this.connectionRepo.consumeState(stateId, new Date())
-      : null;
+    let consumed: DiscordOAuthState | null = null;
+    if (isUuid(stateId)) {
+      try {
+        consumed = await this.connectionRepo.consumeState(stateId, new Date());
+      } catch (error) {
+        // Deliberately indistinguishable from an expired state on the way out.
+        // The admin's recovery is the same either way — start again — and the
+        // cause is ours to read in the log, not theirs to read in a URL.
+        this.logger.error(
+          `Could not consume Discord OAuth state ${stateId}`,
+          error instanceof Error ? error.stack : undefined,
+        );
+        return {
+          ok: false,
+          code: 'expired',
+          returnUrl: this.buildReturnUrl(null, 'expired'),
+          reason: 'The handshake store could not be reached.',
+        };
+      }
+    }
 
     const finish = (
       code: DiscordConnectCode,

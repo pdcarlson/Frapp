@@ -242,6 +242,47 @@ describe('DiscordOAuthService — the callback’s trust boundary', () => {
     expect(repo.attachPendingConnection).not.toHaveBeenCalled();
   });
 
+  it('REDIRECTS rather than throwing when the handshake store fails', async () => {
+    // Found on deployed staging, not here: the callback answered a raw 500 to a
+    // browser that had just completed an OAuth handshake, because
+    // `consumeState` was awaited outside the try/catch and the environment's
+    // migration had not been promoted yet — so the table it queries did not
+    // exist. Any repository failure does this: a transient PostgREST error, an
+    // exhausted pool, a schema behind the code.
+    //
+    // This method's whole contract is that it RETURNS where to send the
+    // browser. A mocked repository that always resolves never exercises the
+    // path where it rejects, which is why the suite was green while staging
+    // was not.
+    const service = await build();
+    repo.consumeState.mockRejectedValue(
+      new Error('relation "discord_oauth_states" does not exist'),
+    );
+
+    const outcome = await service.handleCallback({ code: 'c', state: STATE });
+
+    expect(outcome.ok).toBe(false);
+    expect(outcome.code).toBe('expired');
+    expect(new URL(outcome.returnUrl).origin).toBe('https://app.example.test');
+    expect(repo.attachPendingConnection).not.toHaveBeenCalled();
+    expect(repo.upsert).not.toHaveBeenCalled();
+  });
+
+  it('gives a store failure the same answer as an expired state', async () => {
+    // The admin's recovery is identical — start again — and which of the two it
+    // was is ours to read in the log, not theirs to read in a URL.
+    const service = await build();
+
+    repo.consumeState.mockResolvedValue(null);
+    const expired = await service.handleCallback({ code: 'c', state: STATE });
+
+    repo.consumeState.mockRejectedValue(new Error('connection terminated'));
+    const failed = await service.handleCallback({ code: 'c', state: STATE });
+
+    expect(failed.code).toBe(expired.code);
+    expect(failed.returnUrl).toBe(expired.returnUrl);
+  });
+
   it('does not even ask the repository about a non-uuid state', async () => {
     const service = await build();
     const outcome = await service.handleCallback({
