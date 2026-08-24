@@ -6,6 +6,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import * as Sentry from '@sentry/nestjs';
 import { randomUUID } from 'node:crypto';
 import {
   DISCORD_BOT_GATEWAY,
@@ -20,7 +21,6 @@ import {
   type IDiscordConnectionRepository,
 } from '../../domain/repositories/discord-connection.repository.interface';
 import type { DiscordOAuthState } from '../../domain/entities/discord-connection.entity';
-import { toReportableError } from '../../infrastructure/observability/reportable-error';
 
 /**
  * The callback path, fixed in code.
@@ -65,6 +65,63 @@ export const CONFIRM_TOKEN_TTL_MS = 5 * 60_000;
  */
 const MANAGE_GUILD = 1n << 5n;
 const ADMINISTRATOR = 1n << 3n;
+
+/**
+ * What to hand `Logger.error` as its second argument.
+ *
+ * The obvious `error instanceof Error ? error.stack : undefined` is wrong
+ * everywhere a repository can throw, and wrong in the worst way: it is silently
+ * `undefined` for **every** error PostgREST actually produces. `postgrest-js`
+ * only builds a real `PostgrestError` under `shouldThrowOnError`, which nothing
+ * here sets, so the client hands back the parsed body — a plain
+ * `{ code, message, details, hint }` object — and the repositories rethrow it
+ * verbatim. Nest's `ConsoleLogger` then drops a falsy stack on the floor, so
+ * the line that exists to record the cause records only that there was one.
+ *
+ * `String(error)` is not the fix either, though it is this codebase's usual
+ * fallback: on a plain object it prints `[object Object]`. Serialising is what
+ * keeps `hint` — the field that says *"Perhaps you meant the table
+ * public.discord_oauth_states"*, i.e. the answer.
+ */
+function describeError(error: unknown): string {
+  if (error instanceof Error) return error.stack ?? error.message;
+  try {
+    return JSON.stringify(error) ?? String(error);
+  } catch {
+    // Circular, or a BigInt somewhere in the payload. Something is better here
+    // than an exception thrown from the error path.
+    return String(error);
+  }
+}
+
+/**
+ * Report a failure this method deliberately swallows.
+ *
+ * Every `Sentry.captureException` in the API today sits in
+ * `AllExceptionsFilter`, gated on `status >= 500` — so alerting is coupled to
+ * the user seeing an error page. That coupling is exactly what broke here:
+ * turning the raw 500 into a redirect is right for the admin and, on its own,
+ * silently deletes the only signal an operator had. The 5xx rate goes flat and
+ * Sentry stays empty while 100% of Discord connects fail.
+ *
+ * So a swallowed failure has to report itself. `new Error(String(error))` would
+ * not do — on the plain object PostgREST throws, `String` yields
+ * `[object Object]` — hence `describeError` for the message too.
+ */
+function captureSwallowed(
+  error: unknown,
+  sweptUnder: DiscordConnectCode,
+): void {
+  Sentry.captureException(
+    error instanceof Error ? error : new Error(describeError(error)),
+    {
+      tags: {
+        route: 'discord/connect/callback',
+        swallowed_as: sweptUnder,
+      },
+    },
+  );
+}
 
 export interface DiscordConnectionView {
   connected: boolean;
@@ -276,8 +333,60 @@ export class DiscordOAuthService {
   }): Promise<DiscordCallbackOutcome> {
     // The state is spent even when Discord reports a denial, so a cancelled
     // attempt cannot be replayed later with a code obtained some other way.
+    //
+    // Wrapped, because this method's whole contract is that it RETURNS where to
+    // send the browser rather than throwing — the caller is a top-level
+    // redirect from Discord, and an admin mid-connect must land back in the
+    // wizard with a sentence, never on a JSON 500. Before this, the very first
+    // thing the method did could throw straight past that contract: any
+    // repository failure here — a transient PostgREST error, an exhausted pool,
+    // or a migration not yet promoted to the environment — escaped as a raw
+    // 500 to a browser that had just completed an OAuth handshake.
+    //
+    // Found on deployed staging, not in a test: every spec here mocks the
+    // repository, and a mock that resolves never exercises the path where it
+    // rejects.
     const stateId = typeof query.state === 'string' ? query.state : '';
     let consumed: DiscordOAuthState | null = null;
+    if (isUuid(stateId)) {
+      try {
+        consumed = await this.connectionRepo.consumeState(stateId, new Date());
+      } catch (error) {
+        // `failed`, NOT `expired`, and the distinction is the admin's whole
+        // afternoon. `expired` renders as "that link had expired or was already
+        // used — start the connection again", which is false twice over: the
+        // consuming UPDATE never committed, so the state is neither spent nor
+        // out of time, and starting again is the one recovery that cannot work
+        // while the store is down. `failed` says "could not complete the
+        // Discord connection, please try again", which is true, and is already
+        // what an unexpected rejection from `attachPendingConnection` — the
+        // same table, forty lines down — returns. This was the odd one out.
+        //
+        // Both the code and the `buildReturnUrl` argument have to change: the
+        // controller returns only `returnUrl`, so the query-string code that
+        // the dashboard actually reads is the one stamped here.
+        //
+        // No state-existence oracle is opened by telling the two apart.
+        // `consumeState` is a primary-key conditional UPDATE read with
+        // `maybeSingle()`: a zero-row match is a SUCCESS returning null, never
+        // a rejection. So this branch is a function of store health alone and
+        // fires identically for every state id — live, spent, expired or
+        // fabricated. The collapse that does matter (nonexistent vs. spent vs.
+        // expired, all answering `expired`) lives inside `consumeState` and is
+        // untouched.
+        this.logger.error(
+          `Could not consume Discord OAuth state ${stateId}`,
+          describeError(error),
+        );
+        captureSwallowed(error, 'failed');
+        return {
+          ok: false,
+          code: 'failed',
+          returnUrl: this.buildReturnUrl(null, 'failed'),
+          reason: 'The handshake store could not be reached.',
+        };
+      }
+    }
 
     const finish = (
       code: DiscordConnectCode,
@@ -288,35 +397,6 @@ export class DiscordOAuthService {
       returnUrl: this.buildReturnUrl(consumed?.return_path ?? null, code),
       reason,
     });
-
-    // Inside the guard, not before it. Every other failure this method can meet
-    // — a denied consent, a missing code, a refused exchange — ends at
-    // `finish`, because the endpoint's contract is that the admin's browser
-    // always lands back on the dashboard with a code it can explain. A throw
-    // from `consumeState` used to be the one exception: it escaped to
-    // `AllExceptionsFilter` and the admin got a raw 500 JSON body at a Discord
-    // redirect URI, which is both unexplainable and unrecoverable without
-    // restarting the flow. FRAPP-API-1 was exactly that, from a PGRST205 while
-    // the API was serving ahead of its migration.
-    //
-    // `failed`, not `expired`: the handshake may well be perfectly good and
-    // still be there on a retry, and telling the admin it expired would send
-    // them to mint a new one for a fault that was never theirs.
-    try {
-      consumed = isUuid(stateId)
-        ? await this.connectionRepo.consumeState(stateId, new Date())
-        : null;
-    } catch (error) {
-      // Normalized rather than stringified: the throw here is a plain
-      // PostgREST object, `String()` on it is `[object Object]`, and a bare
-      // `JSON.stringify` would throw on a circular one — inside the very catch
-      // that exists to stop this route throwing.
-      this.logger.error(
-        'Could not read the Discord handshake state',
-        toReportableError(error).stack,
-      );
-      return finish('failed', 'Could not read the handshake.');
-    }
 
     if (!consumed) {
       return finish(
@@ -377,8 +457,11 @@ export class DiscordOAuthService {
       }
       this.logger.error(
         `Discord connect failed for chapter ${consumed.chapter_id}`,
-        error instanceof Error ? error.stack : undefined,
+        describeError(error),
       );
+      // Same gap, pre-dating the one above: this arm already swallowed an
+      // unexpected failure into a redirect, so it already had no alerting.
+      captureSwallowed(error, 'failed');
       return finish('failed', 'Unexpected error.');
     }
   }
