@@ -9,12 +9,15 @@ import { DiscordImportService } from './discord-import.service';
 import { DISCORD_IMPORT_REPOSITORY } from '../../domain/repositories/discord-import.repository.interface';
 import { CHAT_CHANNEL_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
+import { DISCORD_BOT_GATEWAY } from '../../domain/adapters/discord.interface';
+import { DiscordOAuthService } from './discord-oauth.service';
 import type { DiscordImport } from '../../domain/entities/discord-import.entity';
 import { isUnsafeStoragePath } from '../../domain/utils/storage-path';
 
 const CHAPTER = '11111111-1111-4111-8111-111111111111';
 const USER = '33333333-3333-4333-8333-333333333333';
 const IMPORT_ID = '44444444-4444-4444-8444-444444444444';
+const GUILD = '800000000000000001';
 
 function job(overrides: Partial<DiscordImport> = {}): DiscordImport {
   return {
@@ -22,6 +25,7 @@ function job(overrides: Partial<DiscordImport> = {}): DiscordImport {
     chapter_id: CHAPTER,
     created_by: USER,
     status: 'draft',
+    source: 'upload',
     guild_id: null,
     guild_name: null,
     consent_acknowledged_at: '2026-08-24T12:00:00Z',
@@ -53,6 +57,8 @@ function job(overrides: Partial<DiscordImport> = {}): DiscordImport {
 let repo: Record<string, jest.Mock>;
 let storage: Record<string, jest.Mock>;
 let channelRepo: Record<string, jest.Mock>;
+let bot: Record<string, jest.Mock>;
+let oauthService: Record<string, jest.Mock>;
 let service: DiscordImportService;
 
 /** A channel that exists in this chapter, and nothing else. */
@@ -97,6 +103,18 @@ async function build(current: DiscordImport = job()) {
     listObjects: jest.fn(),
     listFolders: jest.fn(),
   };
+  bot = {
+    isConfigured: jest.fn(() => true),
+    discoverChannels: jest.fn(),
+    listRoles: jest.fn(),
+    verifyChannelInGuild: jest.fn(),
+    fetchMessagePage: jest.fn(),
+    openAttachment: jest.fn(),
+  };
+  oauthService = {
+    requireGuildId: jest.fn(async () => GUILD),
+    isAvailable: jest.fn(() => true),
+  };
   channelRepo = {
     // Chapter-scoped by construction, like the real repository.
     findById: jest.fn(async (id: string, chapterId: string) =>
@@ -112,6 +130,11 @@ async function build(current: DiscordImport = job()) {
       { provide: DISCORD_IMPORT_REPOSITORY, useValue: repo },
       { provide: STORAGE_PROVIDER, useValue: storage },
       { provide: CHAT_CHANNEL_REPOSITORY, useValue: channelRepo },
+      // Phase-3 collaborators. Every test in this file exercises the UPLOAD
+      // path, which never reaches either — they are here so the container can
+      // be built, and any test that does touch them stubs them itself.
+      { provide: DISCORD_BOT_GATEWAY, useValue: bot },
+      { provide: DiscordOAuthService, useValue: oauthService },
     ],
   }).compile();
   service = moduleRef.get(DiscordImportService);
@@ -478,5 +501,397 @@ describe('DiscordImportService — lifecycle guards', () => {
         },
       ],
     });
+  });
+});
+
+// ── the bot path ────────────────────────────────────────────────────────────
+//
+// Everything above exercises the DiscordChatExporter upload flow, which this
+// phase does not change. What follows is the second way in, and the properties
+// worth pinning are the ones that keep one shared bot inside one chapter.
+
+function botChannel(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'mapping-1',
+    import_id: IMPORT_ID,
+    discord_channel_id: '900000000000000001',
+    discord_channel_name: 'general',
+    discord_category: null,
+    mapping_action: 'skip' as const,
+    target_channel_id: null,
+    new_channel_name: null,
+    new_channel_is_read_only: true,
+    message_count: 0,
+    imported_count: 0,
+    status: 'skipped' as const,
+    error: null,
+    cursor_before_snowflake: null,
+    parent_discord_channel_id: null,
+    position: 0,
+    ...overrides,
+  };
+}
+
+describe('DiscordImportService — creating a bot import', () => {
+  it('binds the guild through the chapter, never from anything the caller sent', async () => {
+    const svc = await build(job({ source: 'bot' }));
+    await svc.create(CHAPTER, USER, {
+      consent_acknowledged: true,
+      source: 'bot',
+    });
+
+    expect(oauthService.requireGuildId).toHaveBeenCalledWith(CHAPTER);
+    expect(repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ source: 'bot', guild_id: GUILD }),
+    );
+  });
+
+  it('refuses when the chapter has not connected a Discord server', async () => {
+    const svc = await build(job({ source: 'bot' }));
+    oauthService.requireGuildId.mockRejectedValue(
+      new Error('This chapter has not connected a Discord server yet.'),
+    );
+
+    await expect(
+      svc.create(CHAPTER, USER, { consent_acknowledged: true, source: 'bot' }),
+    ).rejects.toThrow(/has not connected/);
+  });
+
+  it('still demands the consent acknowledgement, exactly like the upload path', async () => {
+    const svc = await build(job({ source: 'bot' }));
+    await expect(
+      svc.create(CHAPTER, USER, { consent_acknowledged: false, source: 'bot' }),
+    ).rejects.toThrow(/posted the archive notice/);
+    expect(repo.create).not.toHaveBeenCalled();
+  });
+
+  it('defaults to the upload path when no source is given', async () => {
+    const svc = await build();
+    await svc.create(CHAPTER, USER, { consent_acknowledged: true });
+    expect(repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ source: 'upload', guild_id: null }),
+    );
+    expect(oauthService.requireGuildId).not.toHaveBeenCalled();
+  });
+});
+
+describe('DiscordImportService — discovering a guild', () => {
+  it('records every discovered channel as skip, so nothing imports unasked', async () => {
+    const svc = await build(job({ source: 'bot' }));
+    bot.discoverChannels.mockResolvedValue({
+      channels: [
+        {
+          id: '900000000000000001',
+          name: 'general',
+          guildId: GUILD,
+          categoryName: 'Text',
+          parentChannelId: null,
+          isThread: false,
+        },
+      ],
+      warnings: [],
+    });
+    bot.listRoles.mockResolvedValue([{ id: '3', name: 'Exec' }]);
+
+    const result = await svc.discoverBotChannels(IMPORT_ID, CHAPTER);
+
+    expect(bot.discoverChannels).toHaveBeenCalledWith(GUILD);
+    expect(repo.replaceChannels).toHaveBeenCalledWith(IMPORT_ID, CHAPTER, [
+      expect.objectContaining({ mapping_action: 'skip', status: 'skipped' }),
+    ]);
+    expect(result.roles).toEqual([
+      { discord_role_id: '3', discord_role_name: 'Exec' },
+    ]);
+  });
+
+  it('orders a thread directly after its parent, which the walk depends on', async () => {
+    const svc = await build(job({ source: 'bot' }));
+    bot.discoverChannels.mockResolvedValue({
+      channels: [
+        {
+          id: 'c1',
+          name: 'general',
+          guildId: GUILD,
+          categoryName: null,
+          parentChannelId: null,
+          isThread: false,
+        },
+        {
+          id: 'c2',
+          name: 'random',
+          guildId: GUILD,
+          categoryName: null,
+          parentChannelId: null,
+          isThread: false,
+        },
+        {
+          id: 't1',
+          name: 'general › planning',
+          guildId: GUILD,
+          categoryName: 'general',
+          parentChannelId: 'c1',
+          isThread: true,
+        },
+      ],
+      warnings: [],
+    });
+    bot.listRoles.mockResolvedValue([]);
+
+    await svc.discoverBotChannels(IMPORT_ID, CHAPTER);
+
+    const rows = repo.replaceChannels.mock.calls[0][2] as {
+      discord_channel_id: string;
+      position: number;
+    }[];
+    // A parent must be walked before the threads that inherit its destination.
+    expect(rows.map((row) => row.discord_channel_id)).toEqual([
+      'c1',
+      't1',
+      'c2',
+    ]);
+    expect(rows.map((row) => row.position)).toEqual([0, 1, 2]);
+  });
+
+  it('surfaces what could not be enumerated instead of dropping it silently', async () => {
+    const svc = await build(job({ source: 'bot' }));
+    bot.discoverChannels.mockResolvedValue({
+      channels: [],
+      warnings: ['Private archived threads in #general could not be read'],
+    });
+    bot.listRoles.mockResolvedValue([]);
+
+    const result = await svc.discoverBotChannels(IMPORT_ID, CHAPTER);
+
+    expect(result.warnings).toHaveLength(1);
+    expect(repo.update).toHaveBeenCalledWith(
+      IMPORT_ID,
+      CHAPTER,
+      expect.objectContaining({ guild_id: GUILD }),
+    );
+  });
+
+  it('refuses to scan on behalf of an upload import', async () => {
+    const svc = await build(job({ source: 'upload' }));
+    await expect(svc.discoverBotChannels(IMPORT_ID, CHAPTER)).rejects.toThrow(
+      /nothing to discover/,
+    );
+    expect(bot.discoverChannels).not.toHaveBeenCalled();
+  });
+
+  it('refuses when the chapter reconnected to a different server', async () => {
+    const svc = await build(job({ source: 'bot', guild_id: 'old-guild' }));
+    await expect(svc.discoverBotChannels(IMPORT_ID, CHAPTER)).rejects.toThrow(
+      /different Discord server/,
+    );
+    expect(bot.discoverChannels).not.toHaveBeenCalled();
+  });
+});
+
+describe('DiscordImportService — mapping a discovered guild', () => {
+  it('REJECTS a decision for a channel the scan never returned', async () => {
+    // The bot can see the whole server; the import may only touch what the
+    // scan recorded. A caller naming an arbitrary channel is the shape of a
+    // cross-tenant read, so it is refused rather than inserted.
+    const svc = await build(job({ source: 'bot' }));
+    repo.findChannels.mockResolvedValue([botChannel()]);
+
+    await expect(
+      svc.applyDiscoveredChannelMapping(IMPORT_ID, CHAPTER, [
+        {
+          discord_channel_id: '999999999999999999',
+          discord_channel_name: 'somebody-elses-channel',
+          mapping_action: 'create_new',
+          new_channel_name: 'Sneaky',
+        },
+      ]),
+    ).rejects.toThrow(/not one of the channels found/);
+    expect(repo.replaceChannels).not.toHaveBeenCalled();
+  });
+
+  it('REJECTS a target channel belonging to another chapter', async () => {
+    // The #1242 bug, on the new path. `chat_messages` has no `chapter_id`, so
+    // its FK accepts any channel in the product and the purge could never
+    // remove what landed elsewhere.
+    const svc = await build(job({ source: 'bot' }));
+    repo.findChannels.mockResolvedValue([botChannel()]);
+
+    await expect(
+      svc.applyDiscoveredChannelMapping(IMPORT_ID, CHAPTER, [
+        {
+          discord_channel_id: '900000000000000001',
+          discord_channel_name: 'general',
+          mapping_action: 'use_existing',
+          target_channel_id: FOREIGN_CHANNEL,
+        },
+      ]),
+    ).rejects.toThrow(/not one of this chapter's channels/);
+    expect(repo.replaceChannels).not.toHaveBeenCalled();
+  });
+
+  it('gives a thread its parent’s decision, and never its own', async () => {
+    const svc = await build(job({ source: 'bot' }));
+    repo.findChannels.mockResolvedValue([
+      botChannel({ id: 'm-parent', discord_channel_id: 'c1', position: 0 }),
+      botChannel({
+        id: 'm-thread',
+        discord_channel_id: 't1',
+        discord_channel_name: 'general › planning',
+        parent_discord_channel_id: 'c1',
+        position: 1,
+      }),
+    ]);
+
+    await svc.applyDiscoveredChannelMapping(IMPORT_ID, CHAPTER, [
+      {
+        discord_channel_id: 'c1',
+        discord_channel_name: 'general',
+        mapping_action: 'use_existing',
+        target_channel_id: OWN_CHANNEL,
+      },
+    ]);
+
+    const rows = repo.replaceChannels.mock.calls[0][2] as {
+      discord_channel_id: string;
+      mapping_action: string;
+      target_channel_id: string | null;
+    }[];
+    expect(rows).toEqual([
+      expect.objectContaining({
+        discord_channel_id: 'c1',
+        mapping_action: 'use_existing',
+        target_channel_id: OWN_CHANNEL,
+      }),
+      expect.objectContaining({
+        discord_channel_id: 't1',
+        mapping_action: 'use_existing',
+        target_channel_id: OWN_CHANNEL,
+      }),
+    ]);
+  });
+
+  it('DROPS a target_channel_id sent under an action that does not name one', async () => {
+    // `assertDecisionResolvable` validates `target_channel_id` only for
+    // `use_existing`. Persisting it under `create_new` or `skip` would write an
+    // unchecked `chat_channels` id onto the row and onto every thread that
+    // inherits it — and `chat_messages` has no `chapter_id`, so its FK accepts
+    // a channel from any chapter in the product.
+    const svc = await build(job({ source: 'bot' }));
+    repo.findChannels.mockResolvedValue([
+      botChannel({ discord_channel_id: 'c1' }),
+    ]);
+
+    await svc.applyDiscoveredChannelMapping(IMPORT_ID, CHAPTER, [
+      {
+        discord_channel_id: 'c1',
+        discord_channel_name: 'general',
+        mapping_action: 'create_new',
+        new_channel_name: 'General',
+        target_channel_id: FOREIGN_CHANNEL,
+      },
+    ]);
+
+    const rows = repo.replaceChannels.mock.calls[0][2] as {
+      target_channel_id: string | null;
+    }[];
+    expect(rows[0]?.target_channel_id).toBeNull();
+  });
+
+  it('leaves an unanswered channel — and its threads — skipped', async () => {
+    const svc = await build(job({ source: 'bot' }));
+    repo.findChannels.mockResolvedValue([
+      botChannel({ id: 'm-parent', discord_channel_id: 'c1' }),
+      botChannel({
+        id: 'm-thread',
+        discord_channel_id: 't1',
+        parent_discord_channel_id: 'c1',
+      }),
+    ]);
+
+    await svc.applyDiscoveredChannelMapping(IMPORT_ID, CHAPTER, []);
+
+    const rows = repo.replaceChannels.mock.calls[0][2] as {
+      mapping_action: string;
+      status: string;
+    }[];
+    expect(rows.every((row) => row.mapping_action === 'skip')).toBe(true);
+    expect(rows.every((row) => row.status === 'skipped')).toBe(true);
+  });
+});
+
+describe('DiscordImportService — the upload mapping route refuses a bot import', () => {
+  it('REFUSES, so it cannot be used to name channels the scan never returned', async () => {
+    // `applyDiscoveredChannelMapping` enforces that discovery's set is the only
+    // set the worker reads. This route builds the set from whatever the caller
+    // sends, so without the guard it is the way around that invariant — and the
+    // worker's guild-mismatch error, read back off the job row, would become an
+    // oracle for which Discord servers other chapters have connected.
+    const svc = await build(job({ source: 'bot' }));
+
+    await expect(
+      svc.setChannelMapping(IMPORT_ID, CHAPTER, [
+        {
+          discord_channel_id: '999999999999999999',
+          discord_channel_name: 'someone-elses-channel',
+          mapping_action: 'create_new',
+          new_channel_name: 'Sneaky',
+        },
+      ]),
+    ).rejects.toThrow(/scanned-channel route/);
+    expect(repo.replaceChannels).not.toHaveBeenCalled();
+  });
+
+  it('still serves an upload import unchanged', async () => {
+    const svc = await build(job({ source: 'upload' }));
+    await svc.setChannelMapping(IMPORT_ID, CHAPTER, [
+      {
+        discord_channel_id: 'c1',
+        discord_channel_name: 'general',
+        mapping_action: 'skip',
+      },
+    ]);
+    expect(repo.replaceChannels).toHaveBeenCalled();
+  });
+});
+
+describe('DiscordImportService — starting a bot import', () => {
+  it('does not demand uploaded files, and re-checks the connection', async () => {
+    const svc = await build(job({ source: 'bot', guild_id: GUILD }));
+    repo.findChannels.mockResolvedValue([
+      botChannel({
+        mapping_action: 'use_existing',
+        target_channel_id: OWN_CHANNEL,
+      }),
+    ]);
+
+    await svc.start(IMPORT_ID, CHAPTER);
+
+    expect(repo.findFiles).not.toHaveBeenCalled();
+    expect(oauthService.requireGuildId).toHaveBeenCalledWith(CHAPTER);
+    expect(repo.update).toHaveBeenCalledWith(
+      IMPORT_ID,
+      CHAPTER,
+      expect.objectContaining({ status: 'ready', parts_total: 0 }),
+    );
+  });
+
+  it('refuses to start an import where every channel is skipped', async () => {
+    // Reachable on the bot path in a way it never was on the upload path:
+    // discovery marks everything skip, so clicking straight through would
+    // report a successful import of nothing.
+    const svc = await build(job({ source: 'bot', guild_id: GUILD }));
+    repo.findChannels.mockResolvedValue([botChannel()]);
+
+    await expect(svc.start(IMPORT_ID, CHAPTER)).rejects.toThrow(
+      /at least one Discord channel/,
+    );
+  });
+
+  it('refuses to start against a server the chapter has since replaced', async () => {
+    const svc = await build(job({ source: 'bot', guild_id: 'old-guild' }));
+    repo.findChannels.mockResolvedValue([botChannel()]);
+
+    await expect(svc.start(IMPORT_ID, CHAPTER)).rejects.toThrow(
+      /different Discord server/,
+    );
   });
 });
