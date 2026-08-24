@@ -20,7 +20,7 @@ Status legend — **Live**: route exists and carries real content. **Routed, stu
 
 | ID | Canvas label | Route (`apps/mobile/app/`) | Status |
 | --- | ------------ | -------------------------- | ------ |
-| s01 | Sign-in | `(auth)/sign-in.tsx` | Live |
+| s01 | Sign-in | `(auth)/sign-in.tsx` | Live — the house-gold mark over the `Signet` wordmark and `Ask your chapter anything.` tagline ([`../design-system/writing.md`](../design-system/writing.md) §Idle). Password and magic-link modes share the one form. Renders the form for a frame when already authenticated rather than jumping to `(tabs)`, so the auth gate owns the next hop and s03 stays reachable |
 | s02 | Join chapter | `(auth)/join.tsx` | Live — invite-token entry plus invite-link autofill (`?token=` / `frapp://join?token=`). Canvas draws six cells for a shared code; joining is single-use invite tokens ([`../../behavior/onboarding.md`](../../behavior/onboarding.md)), so the field accepts a pasted token or URL. An authenticated session with zero memberships is routed here. Secondary control opens `(auth)/create-chapter` for first-officer creation. |
 | s03 | First-run + notification primer | `(auth)/welcome.tsx` | Live — auto-joined PUBLIC channels from `GET /v1/channels`, hosts the C7 primer card, and PATCHes `has_completed_onboarding` on Skip / Go to chat. The auth gate sends a member here when that flag is false. |
 | s04 | Chat — channels (landing) | `(tabs)/index.tsx` | Live — chat is home; real channel list on `GET /v1/channels`, with the UP NEXT strip, the ✦ Ask pill, and server unread/mention badges. DM rows resolve the other participant from `member_ids` against the roster projection, so no row shows a uuid. No PINNED section: `ChatChannel` carries no pin field |

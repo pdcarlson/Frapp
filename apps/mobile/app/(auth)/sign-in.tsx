@@ -4,29 +4,6 @@ import { SignetTokens } from "@repo/theme/signet";
 import { AuthMethod, useAuthSession } from "@/lib/auth-session";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
-type SessionReadinessRowProps = {
-  label: string;
-  value: string;
-  tone: "ready" | "warning" | "error";
-  styles: ReturnType<typeof createStyles>;
-};
-
-function SessionReadinessRow({ label, value, tone, styles }: SessionReadinessRowProps) {
-  const toneStyle =
-    tone === "ready"
-      ? styles.readyTone
-      : tone === "warning"
-        ? styles.warningTone
-        : styles.errorTone;
-
-  return (
-    <View style={styles.readinessRow}>
-      <Text style={styles.readinessLabel}>{label}</Text>
-      <Text style={[styles.readinessValue, toneStyle]}>{value}</Text>
-    </View>
-  );
-}
-
 /**
  * Supabase auth errors are safe to show verbatim — they are deliberately
  * non-enumerating ("Invalid login credentials" regardless of whether the email
@@ -99,10 +76,15 @@ export default function SignIn() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Frapp</Text>
-      <Text style={styles.subtitle}>
-        The Operating System for Greek Life
-      </Text>
+      <View
+        style={styles.mark}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      >
+        <Text style={styles.markGlyph}>S</Text>
+      </View>
+      <Text style={styles.title}>Signet</Text>
+      <Text style={styles.subtitle}>Ask your chapter anything.</Text>
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Sign in to your chapter</Text>
         <Text style={styles.cardBody}>
@@ -219,27 +201,6 @@ export default function SignIn() {
           </Text>
         </Pressable>
 
-        <View style={styles.readinessCard}>
-          <Text style={styles.readinessTitle}>Session readiness</Text>
-          <SessionReadinessRow
-            label="Auth provider"
-            value={isConfigured ? "Configured" : "Not configured"}
-            tone={isConfigured ? "ready" : "error"}
-            styles={styles}
-          />
-          <SessionReadinessRow
-            label="Session storage"
-            value="Device keychain"
-            tone="ready"
-            styles={styles}
-          />
-          <SessionReadinessRow
-            label="Chapter context"
-            value="Resolves after sign-in"
-            tone="warning"
-            styles={styles}
-          />
-        </View>
         {!isConfigured ? (
           <Text style={styles.errorText}>
             EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY are not
@@ -259,6 +220,25 @@ function createStyles(tokens: SignetTokens) {
       alignItems: "center",
       padding: tokens.spacing.xl,
       backgroundColor: tokens.color.surface.background,
+    },
+    // brand-identity.md §2: the placeholder mark is a house-gold rounded-square
+    // tile carrying a bold "S". s01 draws it at 52px on radius 14 — `radius.card`
+    // is exactly 14, so this stays token-only. House gold, never the chapter
+    // accent: the mark MUST NOT take a chapter's colour.
+    mark: {
+      width: 52,
+      height: 52,
+      borderRadius: tokens.radius.card,
+      backgroundColor: tokens.color.gold.house,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: tokens.spacing.lg,
+    },
+    markGlyph: {
+      // Sized off the tile, not the type ladder: this is a drawn mark, not text.
+      fontSize: 27,
+      fontWeight: "700",
+      color: tokens.color.gold.onHouse,
     },
     title: {
       ...typeRole(tokens.typography.role.display),
@@ -365,43 +345,6 @@ function createStyles(tokens: SignetTokens) {
     primaryButtonText: {
       color: tokens.color.gold.onHouse,
       ...typeRole(tokens.typography.role.label),
-    },
-    readinessCard: {
-      marginTop: tokens.spacing.md,
-      borderRadius: tokens.radius.card,
-      borderWidth: 1,
-      borderColor: tint(tokens.color.semantic.info, 0.3),
-      backgroundColor: tint(tokens.color.semantic.info),
-      padding: tokens.spacing.md,
-      gap: tokens.spacing.sm,
-    },
-    readinessTitle: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.foreground,
-      textTransform: "uppercase",
-      letterSpacing: 0.3,
-    },
-    readinessRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: tokens.spacing.sm,
-    },
-    readinessLabel: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-    },
-    readinessValue: {
-      ...typeRole(tokens.typography.role.caption),
-    },
-    readyTone: {
-      color: tokens.color.semantic.success,
-    },
-    warningTone: {
-      color: tokens.color.semantic.warning,
-    },
-    errorTone: {
-      color: tokens.color.semantic.destructive,
     },
   });
 }
