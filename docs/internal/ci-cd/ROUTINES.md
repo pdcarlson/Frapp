@@ -128,7 +128,9 @@ issue if anything looks off):
   routines stop reading it as a typo; its scope is the owner's to define) · `area:infra`
   (same story, rostered 2026-08-21 — in use on #1138 and #1148 for branch-protection and
   repo-settings work that is neither `area:ci` nor `area:dx`; carries no label description, and
-  its scope is likewise the owner's to define)
+  its scope is likewise the owner's to define) · `area:mobile` (same story, rostered 2026-08-24 —
+  in use on #1237 for `apps/mobile` work that is neither `area:ux` nor `area:api`; carries no label
+  description, and its scope is likewise the owner's to define)
 - **Scope:** `scope:production` — work that only becomes relevant once a production environment
   exists (owner decision 2026-08-10; see
   [`GITHUB_PM.md` → Labels and priority](GITHUB_PM.md#labels-and-priority-lean-taxonomy) and the
