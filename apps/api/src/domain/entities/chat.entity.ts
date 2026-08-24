@@ -76,16 +76,33 @@ export interface ChatMessage {
   /**
    * The author's id in the source system (a Discord snowflake). Author identity,
    * NOT message idempotency — two messages from the same author share it. The
-   * per-message idempotency key stays `client_message_id`.
+   * per-message key is `external_message_id`.
    */
   author_external_id?: string | null;
+  /**
+   * The *message's* id in the source system (a Discord message snowflake), and
+   * the importer's idempotency key: `idx_chat_messages_external_dedupe` is
+   * UNIQUE on `(channel_id, external_message_id)`, so re-running an import is a
+   * no-op rather than a second copy of the archive.
+   *
+   * Deliberately not `client_message_id`, which phase 1 originally used. That
+   * column is the *client's* optimistic-send key (ADR-03) — minted by the
+   * composer, round-tripped through the offline outbox, and compared against by
+   * both clients to swap an optimistic bubble for the confirmed row. A foreign
+   * system's identifier is a different fact, and sharing one column made every
+   * reader of either path check which kind of value it held.
+   */
+  external_message_id?: string | null;
   content: string;
   type: MessageType;
   /** Extended hot-path kind (Chunk 02). Optional for older rows; defaults to 'text'. */
   kind?: ChatMessageKind | null;
   /** Inline card payload for rich kinds (event, poll, task, …). */
   payload?: Record<string, any> | null;
-  /** Idempotency key from the client (`chat-send` / NestJS POST messages). */
+  /**
+   * Idempotency key from the client (`chat-send` / NestJS POST messages). The
+   * importer does NOT use this — see `external_message_id`.
+   */
   client_message_id?: string | null;
   reply_to_id: string | null;
   metadata: Record<string, any>;
@@ -136,7 +153,19 @@ export interface ChatMessageAttachment {
   byte_size: number | null;
   width: number | null;
   height: number | null;
-  /** Source-system URL for an imported attachment, so a failed fetch can retry. */
+  /**
+   * Source-system URL, reserved and **never populated by the Discord importer**.
+   *
+   * The idea was a retry handle for a partial media fetch. The importer does not
+   * fetch: the admin's browser uploads the export's media directly, and
+   * `discord_import_files` maps each export-relative path to the object it
+   * became — so "retry" is "re-upload and re-run", which that table already
+   * expresses. Storing a Discord CDN link instead would be a private-bucket
+   * bypass with an expiry baked in.
+   *
+   * It is also excluded from `CHAT_MESSAGE_ATTACHMENT_COLUMNS`, so it cannot
+   * reach a client whatever a future writer puts in it.
+   */
   external_url: string | null;
   created_at: string;
 }

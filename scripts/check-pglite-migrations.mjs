@@ -193,6 +193,63 @@ const LANDMARKS = [
       rows[0].policies === 0,
   },
   {
+    // The importer's idempotency key. Phase 1 put the Discord snowflake in
+    // `client_message_id`; phase 2 reversed that, and the whole re-run-safety
+    // story now rests on this index existing and being UNIQUE. A migration that
+    // dropped it would leave a re-run silently duplicating an entire archive.
+    name: "chat_messages.external_message_id has a UNIQUE per-channel dedupe index",
+    sql: `select
+            (select count(*) from information_schema.columns
+              where table_schema = 'public' and table_name = 'chat_messages'
+                and column_name = 'external_message_id')::int as col,
+            (select indexdef from pg_indexes
+              where indexname = 'idx_chat_messages_external_dedupe') as indexdef`,
+    ok: (rows) =>
+      rows.length === 1 &&
+      rows[0].col === 1 &&
+      /UNIQUE/i.test(rows[0].indexdef ?? "") &&
+      /channel_id/.test(rows[0].indexdef ?? "") &&
+      /external_message_id/.test(rows[0].indexdef ?? ""),
+  },
+  {
+    // `consent_acknowledged_at` is NOT NULL because the compliance step is the
+    // point: a friction point enforced only in the web wizard is skippable by
+    // anything that calls the API directly. If this column ever goes nullable,
+    // an import can exist that nobody acknowledged.
+    name: "discord_imports requires a consent acknowledgement",
+    sql: `select is_nullable from information_schema.columns
+           where table_schema = 'public' and table_name = 'discord_imports'
+             and column_name = 'consent_acknowledged_at'`,
+    ok: (rows) => rows.length === 1 && rows[0].is_nullable === "NO",
+  },
+  {
+    // Default deny on both import tables, same reasoning as
+    // chat_message_attachments above: the API reads them on the service-role
+    // key, so a policy would open a PostgREST surface nothing needs. These rows
+    // name a chapter's Discord guild and its channel list.
+    name: "RLS enabled on all three discord import tables + default-deny (no policies)",
+    sql: `select c.relname, c.relrowsecurity,
+                 (select count(*) from pg_policy p where p.polrelid = c.oid)::int as policies
+            from pg_class c join pg_namespace n on n.oid = c.relnamespace
+           where n.nspname = 'public'
+             and c.relname in ('discord_imports', 'discord_import_channels',
+                               'discord_import_files')
+           order by c.relname`,
+    ok: (rows) =>
+      rows.length === 3 &&
+      rows.every((r) => r.relrowsecurity === true && r.policies === 0),
+  },
+  {
+    // The purge's only handle on "which rows belong to import X". Two imports
+    // can merge into one live channel, so without this the purge cannot tell
+    // them apart and would take the other import's history with it.
+    name: "chat_messages carries a discord_import_id index for the purge",
+    sql: `select indexdef from pg_indexes
+           where indexname = 'idx_chat_messages_discord_import'`,
+    ok: (rows) =>
+      rows.length === 1 && /discord_import_id/.test(rows[0].indexdef ?? ""),
+  },
+  {
     // Both halves matter and they are independent: the kind rule is what keeps a
     // freshly imported archive from handing every member a five-figure badge,
     // and `is distinct from` is what keeps the sender rule correct now that
@@ -272,7 +329,7 @@ const LANDMARKS = [
 // enforcement as the `authenticated` role (that's #423 + the NestJS Jest tier).
 
 // Tables intentionally exempt from the "RLS enabled" invariant. Empty today —
-// all 38 tables enable RLS. Add a table here ONLY with a reviewed justification
+// all 48 tables enable RLS. Add a table here ONLY with a reviewed justification
 // (e.g. a stateless lookup view), and prefer keeping RLS on with a deny policy.
 const RLS_EXEMPT_TABLES = new Set([]);
 

@@ -5226,6 +5226,398 @@
           "Chapter Directory"
         ]
       }
+    },
+    "/v1/discord-imports": {
+      "post": {
+        "description": "Requires the consent acknowledgement. Returns the import to upload an export against.",
+        "operationId": "DiscordImportController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDiscordImportDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Start a Discord archive import",
+        "tags": [
+          "Discord Import"
+        ]
+      },
+      "get": {
+        "operationId": "DiscordImportController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List this chapter’s Discord imports",
+        "tags": [
+          "Discord Import"
+        ]
+      }
+    },
+    "/v1/discord-imports/{id}": {
+      "get": {
+        "description": "Poll this while an import is running: `imported_messages` / `total_messages` and per-channel status.",
+        "operationId": "DiscordImportController_get_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Import detail and progress",
+        "tags": [
+          "Discord Import"
+        ]
+      },
+      "delete": {
+        "description": "Removes the imported messages, their attachments, and the uploaded archive objects. The job row survives as the record that it happened.",
+        "operationId": "DiscordImportController_purge_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete an import and everything it brought in",
+        "tags": [
+          "Discord Import"
+        ]
+      }
+    },
+    "/v1/discord-imports/{id}/channels": {
+      "get": {
+        "operationId": "DiscordImportController_getChannels_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Channel mapping and per-channel progress",
+        "tags": [
+          "Discord Import"
+        ]
+      },
+      "put": {
+        "description": "Every channel needs an explicit choice — create new, merge into an existing one, or skip.",
+        "operationId": "DiscordImportController_setChannelMapping_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetDiscordChannelMappingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Map each Discord channel onto a Signet channel",
+        "tags": [
+          "Discord Import"
+        ]
+      }
+    },
+    "/v1/discord-imports/{id}/files": {
+      "get": {
+        "description": "Rows with a null `uploaded_at` are what an interrupted upload still needs to send.",
+        "operationId": "DiscordImportController_getFiles_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Uploaded file manifest",
+        "tags": [
+          "Discord Import"
+        ]
+      }
+    },
+    "/v1/discord-imports/{id}/upload-urls": {
+      "post": {
+        "description": "The browser PUTs directly to storage, so no export byte passes through the API.",
+        "operationId": "DiscordImportController_requestUploadUrls_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestDiscordUploadUrlsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DiscordUploadTicketDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Mint signed upload URLs for a batch of export files",
+        "tags": [
+          "Discord Import"
+        ]
+      }
+    },
+    "/v1/discord-imports/{id}/uploads/confirm": {
+      "post": {
+        "operationId": "DiscordImportController_confirmUploads_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmDiscordUploadsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Mark uploaded files as landed",
+        "tags": [
+          "Discord Import"
+        ]
+      }
+    },
+    "/v1/discord-imports/{id}/roles": {
+      "put": {
+        "description": "Informational only. Nothing reads this to grant a permission and the importer never assigns a role; everyone imports as a name on a message, and the admin promotes people by hand afterwards.",
+        "operationId": "DiscordImportController_setRoleMapping_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetDiscordRoleMappingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Record the Discord role → Signet role worksheet",
+        "tags": [
+          "Discord Import"
+        ]
+      }
+    },
+    "/v1/discord-imports/{id}/start": {
+      "post": {
+        "description": "The background worker picks it up within a minute and reports progress on the detail route.",
+        "operationId": "DiscordImportController_start_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Queue the import",
+        "tags": [
+          "Discord Import"
+        ]
+      }
+    },
+    "/v1/discord-imports/{id}/cancel": {
+      "post": {
+        "operationId": "DiscordImportController_cancel_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Stop a queued or running import",
+        "tags": [
+          "Discord Import"
+        ]
+      }
     }
   },
   "info": {
@@ -7463,6 +7855,195 @@
             "description": "End date (YYYY-MM-DD)"
           }
         }
+      },
+      "CreateDiscordImportDto": {
+        "type": "object",
+        "properties": {
+          "consent_acknowledged": {
+            "type": "boolean",
+            "description": "The admin confirms they have posted an in-channel notice in their Discord server telling members the history is being archived into Signet. Required — the API refuses without it, and the column is NOT NULL, so no import can exist that was not preceded by this."
+          },
+          "guild_name": {
+            "type": "string",
+            "description": "Discord server name, for display only."
+          }
+        },
+        "required": [
+          "consent_acknowledged"
+        ]
+      },
+      "DiscordImportUploadFileDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "export",
+              "media"
+            ],
+            "description": "`export` is a DiscordChatExporter JSON partition; `media` is a file from its `_Files` folder."
+          },
+          "relative_path": {
+            "type": "string",
+            "description": "The path as the export names it, relative to the export folder. This is the join key: the importer resolves an attachment by looking this string up, never by rebuilding a storage key."
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "byte_size": {
+            "type": "number"
+          },
+          "part_index": {
+            "type": "number",
+            "description": "Order of this JSON partition. Ignored for media."
+          }
+        },
+        "required": [
+          "kind",
+          "relative_path",
+          "content_type",
+          "byte_size"
+        ]
+      },
+      "RequestDiscordUploadUrlsDto": {
+        "type": "object",
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscordImportUploadFileDto"
+            }
+          }
+        },
+        "required": [
+          "files"
+        ]
+      },
+      "DiscordUploadTicketDto": {
+        "type": "object",
+        "properties": {
+          "relative_path": {
+            "type": "string"
+          },
+          "storage_path": {
+            "type": "string"
+          },
+          "upload_url": {
+            "type": "string",
+            "description": "Short-lived signed URL; PUT the bytes to it."
+          }
+        },
+        "required": [
+          "relative_path",
+          "storage_path",
+          "upload_url"
+        ]
+      },
+      "ConfirmDiscordUploadsDto": {
+        "type": "object",
+        "properties": {
+          "storage_paths": {
+            "description": "Storage paths whose PUT completed.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "storage_paths"
+        ]
+      },
+      "DiscordChannelMappingDto": {
+        "type": "object",
+        "properties": {
+          "discord_channel_id": {
+            "type": "string",
+            "description": "Discord channel snowflake."
+          },
+          "discord_channel_name": {
+            "type": "string"
+          },
+          "discord_category": {
+            "type": "string"
+          },
+          "mapping_action": {
+            "type": "string",
+            "enum": [
+              "create_new",
+              "use_existing",
+              "skip"
+            ],
+            "description": "What to do with this Discord channel. Always explicit — `chat_channels` has no unique constraint on (chapter_id, name), so a same-name match is never treated as an answer."
+          },
+          "target_channel_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "new_channel_name": {
+            "type": "string"
+          },
+          "new_channel_is_read_only": {
+            "type": "boolean",
+            "default": true
+          },
+          "message_count": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "discord_channel_id",
+          "discord_channel_name",
+          "mapping_action"
+        ]
+      },
+      "SetDiscordChannelMappingDto": {
+        "type": "object",
+        "properties": {
+          "channels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscordChannelMappingDto"
+            }
+          }
+        },
+        "required": [
+          "channels"
+        ]
+      },
+      "DiscordRoleMappingDto": {
+        "type": "object",
+        "properties": {
+          "discord_role_id": {
+            "type": "string"
+          },
+          "discord_role_name": {
+            "type": "string"
+          },
+          "signet_role_key": {
+            "type": "string",
+            "description": "Signet role key the admin intends for this Discord role. Informational only — nothing reads this to grant a permission, and the importer never assigns a role."
+          }
+        },
+        "required": [
+          "discord_role_id",
+          "discord_role_name",
+          "signet_role_key"
+        ]
+      },
+      "SetDiscordRoleMappingDto": {
+        "type": "object",
+        "properties": {
+          "roles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscordRoleMappingDto"
+            }
+          }
+        },
+        "required": [
+          "roles"
+        ]
       }
     }
   }

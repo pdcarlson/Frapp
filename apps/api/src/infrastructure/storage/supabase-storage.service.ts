@@ -3,6 +3,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase/supabase.provider';
 import type {
   IStorageProvider,
+  SignedUploadOptions,
   StorageObject,
 } from '../../domain/adapters/storage.interface';
 import { assertSafeStoragePath } from '../../domain/utils/storage-path';
@@ -78,12 +79,22 @@ export class SupabaseStorageService implements IStorageProvider {
     bucket: string,
     path: string,
     contentType: string,
+    options?: SignedUploadOptions,
   ): Promise<string> {
+    // `contentType` is deliberately unused: `createSignedUploadUrl` cannot pin
+    // a type, because the uploader sets its own on the PUT. It stays in the
+    // signature so callers keep declaring what they expect, and so the bucket's
+    // `allowed_mime_types` remains the enforcement point — which it genuinely
+    // is: a PUT of a disallowed type answers 415 `invalid_mime_type` from
+    // storage-api, verified against the local stack. See #1230.
     void contentType;
     assertSafeObjectPath(path);
     const { data, error } = await this.supabase.storage
       .from(bucket)
-      .createSignedUploadUrl(path);
+      .createSignedUploadUrl(
+        path,
+        options?.upsert ? { upsert: true } : undefined,
+      );
 
     if (error) throw error;
     return data.signedUrl;

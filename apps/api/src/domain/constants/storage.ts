@@ -43,3 +43,68 @@ export const REPORTS_ROOT_PREFIX = 'chapters';
 export function reportsFolderPrefix(chapterId: string): string {
   return `${REPORTS_ROOT_PREFIX}/${chapterId}/reports`;
 }
+
+/**
+ * Discord-archive storage layout.
+ *
+ * The `chat-archive` bucket (migration `20260823124000`) holds media pulled out
+ * of a Discord export: 100 MB per object, 33 MIME types, no SVG, private with
+ * no storage RLS policies like every other bucket here.
+ *
+ * **This layout supersedes the one that migration's header declared.** It wrote
+ * `chapters/{chapter}/chat-archive/{channel_id}/{message_id}/{basename}`, which
+ * assumed the API would fetch each object from Discord's CDN itself and place it
+ * once the Signet ids existed. It does not: the admin's browser uploads the
+ * files directly, before any Signet channel or message id has been assigned, so
+ * a message-derived key is unknowable at upload time. Keying on the import
+ * instead also gives the purge a single prefix to sweep — which matters more
+ * than it sounds, because there is no chapter-deletion path in the product and
+ * nothing else reaps this bucket, so the import is the only lifecycle it has.
+ */
+export const CHAT_ARCHIVE_BUCKET = 'chat-archive';
+
+/** Everything one import owns (no trailing slash). The purge sweeps this. */
+export function archiveImportPrefix(
+  chapterId: string,
+  importId: string,
+): string {
+  return `chapters/${chapterId}/chat-archive/imports/${importId}`;
+}
+
+/** The uploaded DiscordChatExporter JSON partitions for one import. */
+export function archiveExportPrefix(
+  chapterId: string,
+  importId: string,
+): string {
+  return `${archiveImportPrefix(chapterId, importId)}/export`;
+}
+
+/** The uploaded media (attachments, avatars) for one import. */
+export function archiveMediaPrefix(
+  chapterId: string,
+  importId: string,
+): string {
+  return `${archiveImportPrefix(chapterId, importId)}/media`;
+}
+
+/**
+ * Collapse an export-relative path into one safe storage segment.
+ *
+ * The media prefix is deliberately kept exactly one level deep, for two
+ * independent reasons. `IStorageProvider.listFiles` does not recurse, so the
+ * purge would otherwise need a directory walk to find what to delete; and a
+ * client-supplied path fragment never reaches `assertSafeObjectPath` in a shape
+ * it has to reason about, because every separator is gone before the key is
+ * built.
+ *
+ * Not reversible, and it does not need to be: `discord_import_files` stores the
+ * original `relative_path` alongside the derived `storage_path`, and the
+ * importer joins on the stored string rather than re-deriving it.
+ *
+ * Two different source paths can flatten to the same segment (`a/b.png` and
+ * `a_b.png`). The caller disambiguates — the file row's id is appended — so this
+ * stays a pure, testable string function with no collision policy baked in.
+ */
+export function flattenArchiveRelativePath(relativePath: string): string {
+  return relativePath.replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 180);
+}

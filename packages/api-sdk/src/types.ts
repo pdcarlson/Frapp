@@ -2130,6 +2130,186 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/discord-imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List this chapter’s Discord imports */
+        get: operations["DiscordImportController_list_v1"];
+        put?: never;
+        /**
+         * Start a Discord archive import
+         * @description Requires the consent acknowledgement. Returns the import to upload an export against.
+         */
+        post: operations["DiscordImportController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord-imports/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Import detail and progress
+         * @description Poll this while an import is running: `imported_messages` / `total_messages` and per-channel status.
+         */
+        get: operations["DiscordImportController_get_v1"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete an import and everything it brought in
+         * @description Removes the imported messages, their attachments, and the uploaded archive objects. The job row survives as the record that it happened.
+         */
+        delete: operations["DiscordImportController_purge_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord-imports/{id}/channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Channel mapping and per-channel progress */
+        get: operations["DiscordImportController_getChannels_v1"];
+        /**
+         * Map each Discord channel onto a Signet channel
+         * @description Every channel needs an explicit choice — create new, merge into an existing one, or skip.
+         */
+        put: operations["DiscordImportController_setChannelMapping_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord-imports/{id}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Uploaded file manifest
+         * @description Rows with a null `uploaded_at` are what an interrupted upload still needs to send.
+         */
+        get: operations["DiscordImportController_getFiles_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord-imports/{id}/upload-urls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mint signed upload URLs for a batch of export files
+         * @description The browser PUTs directly to storage, so no export byte passes through the API.
+         */
+        post: operations["DiscordImportController_requestUploadUrls_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord-imports/{id}/uploads/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark uploaded files as landed */
+        post: operations["DiscordImportController_confirmUploads_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord-imports/{id}/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Record the Discord role → Signet role worksheet
+         * @description Informational only. Nothing reads this to grant a permission and the importer never assigns a role; everyone imports as a name on a message, and the admin promotes people by hand afterwards.
+         */
+        put: operations["DiscordImportController_setRoleMapping_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord-imports/{id}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Queue the import
+         * @description The background worker picks it up within a minute and reports progress on the detail route.
+         */
+        post: operations["DiscordImportController_start_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord-imports/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop a queued or running import */
+        post: operations["DiscordImportController_cancel_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2895,6 +3075,67 @@ export interface components {
             start_date?: string;
             /** @description End date (YYYY-MM-DD) */
             end_date?: string;
+        };
+        CreateDiscordImportDto: {
+            /** @description The admin confirms they have posted an in-channel notice in their Discord server telling members the history is being archived into Signet. Required — the API refuses without it, and the column is NOT NULL, so no import can exist that was not preceded by this. */
+            consent_acknowledged: boolean;
+            /** @description Discord server name, for display only. */
+            guild_name?: string;
+        };
+        DiscordImportUploadFileDto: {
+            /**
+             * @description `export` is a DiscordChatExporter JSON partition; `media` is a file from its `_Files` folder.
+             * @enum {string}
+             */
+            kind: "export" | "media";
+            /** @description The path as the export names it, relative to the export folder. This is the join key: the importer resolves an attachment by looking this string up, never by rebuilding a storage key. */
+            relative_path: string;
+            content_type: string;
+            byte_size: number;
+            /** @description Order of this JSON partition. Ignored for media. */
+            part_index?: number;
+        };
+        RequestDiscordUploadUrlsDto: {
+            files: components["schemas"]["DiscordImportUploadFileDto"][];
+        };
+        DiscordUploadTicketDto: {
+            relative_path: string;
+            storage_path: string;
+            /** @description Short-lived signed URL; PUT the bytes to it. */
+            upload_url: string;
+        };
+        ConfirmDiscordUploadsDto: {
+            /** @description Storage paths whose PUT completed. */
+            storage_paths: string[];
+        };
+        DiscordChannelMappingDto: {
+            /** @description Discord channel snowflake. */
+            discord_channel_id: string;
+            discord_channel_name: string;
+            discord_category?: string;
+            /**
+             * @description What to do with this Discord channel. Always explicit — `chat_channels` has no unique constraint on (chapter_id, name), so a same-name match is never treated as an answer.
+             * @enum {string}
+             */
+            mapping_action: "create_new" | "use_existing" | "skip";
+            /** Format: uuid */
+            target_channel_id?: string;
+            new_channel_name?: string;
+            /** @default true */
+            new_channel_is_read_only: boolean;
+            message_count?: number;
+        };
+        SetDiscordChannelMappingDto: {
+            channels: components["schemas"]["DiscordChannelMappingDto"][];
+        };
+        DiscordRoleMappingDto: {
+            discord_role_id: string;
+            discord_role_name: string;
+            /** @description Signet role key the admin intends for this Discord role. Informational only — nothing reads this to grant a permission, and the importer never assigns a role. */
+            signet_role_key: string;
+        };
+        SetDiscordRoleMappingDto: {
+            roles: components["schemas"]["DiscordRoleMappingDto"][];
         };
     };
     responses: never;
@@ -6255,6 +6496,252 @@ export interface operations {
         requestBody?: never;
         responses: {
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DiscordImportController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DiscordImportController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDiscordImportDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DiscordImportController_get_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DiscordImportController_purge_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DiscordImportController_getChannels_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DiscordImportController_setChannelMapping_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetDiscordChannelMappingDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DiscordImportController_getFiles_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DiscordImportController_requestUploadUrls_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestDiscordUploadUrlsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordUploadTicketDto"][];
+                };
+            };
+        };
+    };
+    DiscordImportController_confirmUploads_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmDiscordUploadsDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DiscordImportController_setRoleMapping_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetDiscordRoleMappingDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DiscordImportController_start_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DiscordImportController_cancel_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };

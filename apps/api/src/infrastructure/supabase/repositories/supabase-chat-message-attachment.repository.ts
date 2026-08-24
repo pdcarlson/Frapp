@@ -81,17 +81,36 @@ export class SupabaseChatMessageAttachmentRepository implements IChatMessageAtta
 }
 
 /**
- * Drops the `chat_channels` embed PostgREST projects back alongside the row.
+ * Drops two things PostgREST hands back that must not leave this repository.
  *
- * The embed exists to carry the tenant filter, not to be returned: leaving it on
- * would put a second, differently-shaped `chapter_id` on an entity that
- * deliberately does not have one, and the first caller to read it would be
- * reading a join artefact.
+ * **The `chat_channels` embed** carries the tenant filter and is not part of the
+ * entity: leaving it on would put a second, differently-shaped `chapter_id` on a
+ * row that deliberately does not have one, and the first caller to read it would
+ * be reading a join artefact.
+ *
+ * **`external_url`** is a disclosure boundary. `ChatService.listMessageAttachments`
+ * spreads whatever this returns straight into an API response, and that column
+ * holds a source-system URL. A Discord CDN link is signed and time-limited
+ * (`?ex=&is=&hm=`), so shipping one would hand every chapter member a working
+ * read of the source object that routes around the private-bucket,
+ * signed-URL-only posture entirely — then rot into a dead link nobody can tell
+ * from a bug.
+ *
+ * Dropped HERE rather than by narrowing the `select()`, which is where it
+ * belongs and where it does not fit: `database.types.ts` declares
+ * `Relationships` as a bare stub, so `@supabase/postgrest-js` cannot resolve the
+ * `chat_channels` embed against an explicit column list and collapses the row
+ * type to a `SelectQueryError`. `*` is the only projection that keeps the embed
+ * typed. Narrowing the query is the better enforcement point and stays a
+ * follow-up; until the relation is declared, this is the boundary, and the spec
+ * asserts on the returned row rather than on the query string so it pins the
+ * property that actually matters.
  */
 function stripChannelEmbed(row: ChatMessageAttachment): ChatMessageAttachment {
   const { ...rest } = row as ChatMessageAttachment & {
     chat_channels?: unknown;
   };
   delete (rest as { chat_channels?: unknown }).chat_channels;
+  delete (rest as { external_url?: unknown }).external_url;
   return rest;
 }

@@ -13,11 +13,27 @@ export interface StorageObject {
   createdAt: Date | null;
 }
 
+/** Options for {@link IStorageProvider.getSignedUploadUrl}. */
+export interface SignedUploadOptions {
+  /**
+   * Allow the signed URL to overwrite an object that already exists.
+   *
+   * Off by default, which is the right default for a member upload: a
+   * server-minted key is unique per upload, so a collision means something is
+   * wrong. On for the Discord archive importer, where a re-signed key is a
+   * resumed upload — verified against the local stack, re-signing an existing
+   * key without this answers 409 Duplicate, which would strand an admin whose
+   * upload dropped halfway through a several-thousand-file archive.
+   */
+  upsert?: boolean;
+}
+
 export interface IStorageProvider {
   getSignedUploadUrl(
     bucket: string,
     path: string,
     contentType: string,
+    options?: SignedUploadOptions,
   ): Promise<string>;
   getSignedDownloadUrl(
     bucket: string,

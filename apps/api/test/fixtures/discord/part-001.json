@@ -1,0 +1,16 @@
+{
+  "guild": { "id": "700000000000000001", "name": "Tau Nu Chapter" },
+  "channel": { "id": "800000000000000002", "type": "GuildTextChat", "categoryId": null,
+               "category": "Executive", "name": "exec", "topic": null },
+  "dateRange": { "after": null, "before": null },
+  "exportedAt": "2026-08-24T00:00:00Z",
+  "messages": [
+    { "id": "910000000000000001", "type": "Default", "timestamp": "2020-01-15T18:00:00Z",
+      "isPinned": false, "content": "Budget review Thursday.",
+      "author": { "id": "600000000000000002", "name": "treasurer", "nickname": "Treasurer",
+                  "isBot": false, "roles": [{ "id": "500000000000000003", "name": "Exec" }],
+                  "avatarUrl": null },
+      "attachments": [], "embeds": [], "stickers": [], "reactions": [], "mentions": [] }
+  ],
+  "messageCount": 1
+}

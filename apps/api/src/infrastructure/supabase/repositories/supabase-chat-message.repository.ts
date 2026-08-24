@@ -42,6 +42,13 @@ function effectivePollListLimit(requested?: number): number {
  *
  * Adding a column to `chat_messages` means adding it here too. That is the
  * trade for not shipping the index payload to every reader.
+ *
+ * `external_message_id` is the deliberate exception, for the same reason
+ * `content_search` is: no client reads it. It is a Discord snowflake used by the
+ * importer's dedupe index and by the reply-resolution pass, both of which select
+ * it explicitly. `RawChatMessage` in `@repo/chat-core` does not declare it and
+ * `normalizeRow` would drop it, so listing it here would add bytes to every
+ * message page for a field that is discarded on arrival.
  */
 const CHAT_MESSAGE_COLUMNS =
   'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, type, kind, payload, client_message_id, reply_to_id, metadata, mentions, is_pinned, pinned_at, edited_at, is_deleted, created_at' as const;
@@ -199,11 +206,17 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       // client_message_id) into a typed error so the service can re-select
       // and return the existing row instead of surfacing a 5xx.
       //
-      // `sender_id` is checked for `undefined`, not truthiness. A null sender is
-      // a legitimate insert (an imported archive row) and the index enforces on
-      // it — `NULLS NOT DISTINCT`, see 20260823120000_chat_message_authors.sql —
-      // so a truthiness guard here would let exactly the re-run-importer
-      // collision the index exists to catch escape as a raw 23505.
+      // This covers the *live send* retry only. The importer's collision is a
+      // different index — `idx_chat_messages_external_dedupe` on
+      // (channel_id, external_message_id), see 20260824120000_discord_import.sql
+      // — and a different write path: it bulk-inserts with `ignoreDuplicates`,
+      // so a re-run never reaches this translation at all.
+      //
+      // `sender_id` is still checked for `undefined` rather than truthiness. A
+      // null sender is a legitimate insert (an imported archive row), and while
+      // the importer no longer sets `client_message_id`, a truthiness guard
+      // would silently stop translating for any future null-sender writer that
+      // does.
       if (
         (error as { code?: string }).code === PG_UNIQUE_VIOLATION &&
         data.channel_id &&
