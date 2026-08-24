@@ -75,4 +75,34 @@ export interface DiscordOAuthState {
   expires_at: string;
   consumed_at: string | null;
   created_at: string;
+
+  // ── the pending connection ────────────────────────────────────────────────
+  //
+  // Written by the callback from Discord's own answers, never from the browser.
+  // The callback does NOT create `discord_connections`; it parks what it learned
+  // here and hands the browser a confirm token, because the two facts Discord
+  // proves ("a Manage Server human installed the bot into guild G") do not
+  // include the one that matters ("that human meant chapter X to read it").
+  // See the migration `20260824150000_discord_connect_confirm.sql`.
+  pending_guild_id: string | null;
+  pending_guild_name: string | null;
+  pending_guild_icon: string | null;
+  pending_discord_user_id: string | null;
+  pending_discord_username: string | null;
+  pending_permissions: string | null;
+  pending_scopes: string | null;
+
+  /**
+   * The one-time secret that activates the pending connection.
+   *
+   * A **second** secret, not the state re-used. The state is known to whoever
+   * started the flow — which, in the attack this closes, is the attacker. This
+   * one is minted after the callback and delivered to exactly one place: the
+   * query string of the redirect the browser that completed OAuth follows.
+   */
+  confirm_token: string | null;
+  /** Much shorter than the handshake's — the browser follows the redirect at once. */
+  confirm_expires_at: string | null;
+  /** Set when activated. Non-null means spent; a replayed confirm gets nothing. */
+  confirmed_at: string | null;
 }

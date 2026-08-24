@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 
 export class BeginDiscordConnectDto {
   @ApiPropertyOptional({
@@ -10,6 +10,15 @@ export class BeginDiscordConnectDto {
   @IsString()
   @MaxLength(512)
   return_path?: string;
+}
+
+export class ConfirmDiscordConnectDto {
+  @ApiProperty({
+    description:
+      'The one-time confirmation token the OAuth callback put on the redirect. It is delivered to exactly one place — the browser that completed the authorization — and activates only against a session whose active chapter matches the one that started the handshake.',
+  })
+  @IsUUID()
+  handshake: string;
 }
 
 export class DiscordConnectionDto {

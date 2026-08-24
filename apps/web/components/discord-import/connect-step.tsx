@@ -1,6 +1,11 @@
 "use client";
 
-import { useBeginDiscordConnect, useDiscordConnection } from "@repo/hooks";
+import { useEffect, useRef, useState } from "react";
+import {
+  useBeginDiscordConnect,
+  useConfirmDiscordConnect,
+  useDiscordConnection,
+} from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import { ErrorState, LoadingState } from "@/components/shared/async-states";
 import { useToast } from "@/hooks/use-toast";
@@ -30,12 +35,52 @@ export const DISCORD_CONNECT_RETURN_PATH = "/discord-import?wizard=bot";
  * under the authorizing account's own token; it is not something the browser
  * asserts.
  */
-export function ConnectStep({ onConnected }: { onConnected: () => void }) {
+export function ConnectStep({
+  onConnected,
+  handshake = null,
+}: {
+  onConnected: () => void;
+  /**
+   * The one-time token the OAuth callback put on the redirect.
+   *
+   * Present exactly when this browser is the one that just completed the
+   * authorization. Confirming is what actually links the server — the callback
+   * parks it and links nothing, so that an authorize URL completed by somebody
+   * else's Discord admin cannot attach their server to whoever generated it.
+   */
+  handshake?: string | null;
+}) {
   const { toast } = useToast();
   const connection = useDiscordConnection();
   const beginConnect = useBeginDiscordConnect();
+  const confirmConnect = useConfirmDiscordConnect();
 
   const connected = connection.data?.connected === true;
+
+  // Confirmed automatically, and exactly once. The admin who started this in
+  // this chapter has nothing to decide — their session and the parked guild
+  // already agree, and the chapter check happens server-side either way. The
+  // ref is what stops React's double-invoke in development spending the token
+  // twice, which would leave the second attempt reporting a failure over a
+  // connection that succeeded.
+  const attempted = useRef(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!handshake || attempted.current) return;
+    attempted.current = true;
+    confirmConnect
+      .mutateAsync({ handshake })
+      .then(() => setConfirmError(null))
+      .catch((error: unknown) => {
+        setConfirmError(
+          getErrorMessage(
+            error,
+            "That Discord authorization could not be confirmed for this chapter.",
+          ),
+        );
+      });
+  }, [handshake, confirmConnect]);
 
   async function startConnect() {
     try {
@@ -57,6 +102,10 @@ export function ConnectStep({ onConnected }: { onConnected: () => void }) {
         ),
       });
     }
+  }
+
+  if (confirmConnect.isPending) {
+    return <LoadingState message="Confirming your Discord server…" />;
   }
 
   if (connection.isPending) {
@@ -108,6 +157,17 @@ export function ConnectStep({ onConnected }: { onConnected: () => void }) {
 
   return (
     <div className="space-y-4">
+      {confirmError ? (
+        // Shown rather than toasted: the admin is looking at a step that says
+        // "not connected" after having just authorized, and needs the reason
+        // in front of them — most often that they authorized while a different
+        // chapter was active.
+        <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3">
+          <p className="text-sm font-medium">Could not confirm that server</p>
+          <p className="mt-1 text-sm text-muted-foreground">{confirmError}</p>
+        </div>
+      ) : null}
+
       <p className="text-sm text-muted-foreground">
         Add the Signet bot to your Discord server. Discord will ask you which
         server, and will only allow it if you have the{" "}

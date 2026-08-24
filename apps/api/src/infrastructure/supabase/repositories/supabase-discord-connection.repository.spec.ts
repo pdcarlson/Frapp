@@ -207,6 +207,90 @@ describe('SupabaseDiscordConnectionRepository — the OAuth state', () => {
     expect(created.consumed_at ?? null).toBeNull();
   });
 
+  it('consumeConfirmToken REFUSES a token belonging to another chapter', async () => {
+    // The single most important assertion about the confirm step. The chapter
+    // lives in the UPDATE, so a token presented by a session scoped elsewhere
+    // matches zero rows — which is what stops an authorize URL completed by
+    // somebody else's Discord admin from binding their server to whoever
+    // generated it.
+    const { harness, repo } = build();
+    const token = '0a000000-0000-4000-8000-0000000002ff';
+    harness.rows('discord_oauth_states');
+
+    const seeded = createTenantHarness({
+      collisionExempt: {
+        discord_oauth_states: ['confirm_token', 'pending_guild_id'],
+      },
+      tables: {
+        discord_oauth_states: [
+          inA({
+            id: STATE_A,
+            expires_at: LATER,
+            confirm_token: token,
+            confirm_expires_at: LATER,
+            confirmed_at: null,
+            pending_guild_id: GUILD_A,
+          }),
+          inB({
+            id: STATE_B,
+            expires_at: LATER,
+            confirm_token: '0b000000-0000-4000-8000-0000000002ff',
+            confirm_expires_at: LATER,
+            confirmed_at: null,
+            pending_guild_id: GUILD_B,
+          }),
+        ],
+      },
+    });
+    const scoped = new SupabaseDiscordConnectionRepository(seeded.client);
+
+    // Chapter A's own token, presented as chapter B: refused.
+    expect(await scoped.consumeConfirmToken(token, CHAPTER_B, NOW)).toBeNull();
+    // The same token, presented as chapter A: accepted.
+    const ok = await scoped.consumeConfirmToken(token, CHAPTER_A, NOW);
+    expect(ok?.pending_guild_id).toBe(GUILD_A);
+    void repo;
+  });
+
+  it('consumeConfirmToken is SINGLE-USE and expires', async () => {
+    const token = '0a000000-0000-4000-8000-0000000002ff';
+    const seed = (confirmExpiry: string) =>
+      createTenantHarness({
+        collisionExempt: {
+          discord_oauth_states: ['confirm_token', 'confirm_expires_at'],
+        },
+        tables: {
+          discord_oauth_states: [
+            inA({
+              id: STATE_A,
+              expires_at: LATER,
+              confirm_token: token,
+              confirm_expires_at: confirmExpiry,
+              confirmed_at: null,
+              pending_guild_id: GUILD_A,
+            }),
+            inB({
+              id: STATE_B,
+              expires_at: LATER,
+              confirm_token: '0b000000-0000-4000-8000-0000000002ff',
+              confirm_expires_at: LATER,
+              confirmed_at: null,
+              pending_guild_id: GUILD_A,
+            }),
+          ],
+        },
+      });
+
+    const live = new SupabaseDiscordConnectionRepository(seed(LATER).client);
+    expect(
+      await live.consumeConfirmToken(token, CHAPTER_A, NOW),
+    ).not.toBeNull();
+    expect(await live.consumeConfirmToken(token, CHAPTER_A, NOW)).toBeNull();
+
+    const stale = new SupabaseDiscordConnectionRepository(seed(EARLIER).client);
+    expect(await stale.consumeConfirmToken(token, CHAPTER_A, NOW)).toBeNull();
+  });
+
   it('deleteExpiredStates reaps only what is past its expiry', async () => {
     const { harness, repo } = build({ a: EARLIER });
     expect(await repo.deleteExpiredStates(NOW)).toBe(1);

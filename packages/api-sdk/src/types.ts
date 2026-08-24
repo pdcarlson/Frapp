@@ -2411,6 +2411,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/discord/connect/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Activate the Discord server the callback parked
+         * @description The OAuth callback does not link anything by itself: it parks what Discord told it and hands the browser a one-time token. This route is what binds the server, and it binds it only to the chapter this request is scoped to — so an authorization completed by somebody else, for a chapter they are not in, activates nothing.
+         */
+        post: operations["DiscordConnectionController_confirmConnect_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3282,6 +3302,10 @@ export interface components {
             authorize_url: string;
             /** @description When the handshake stops being redeemable. */
             expires_at: string;
+        };
+        ConfirmDiscordConnectDto: {
+            /** @description The one-time confirmation token the OAuth callback put on the redirect. It is delivered to exactly one place — the browser that completed the authorization — and activates only against a session whose active chapter matches the one that started the handshake. */
+            handshake: string;
         };
     };
     responses: never;
@@ -7013,6 +7037,29 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BeginDiscordConnectResponseDto"];
+                };
+            };
+        };
+    };
+    DiscordConnectionController_confirmConnect_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmDiscordConnectDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordConnectionDto"];
                 };
             };
         };

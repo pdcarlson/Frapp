@@ -84,12 +84,15 @@ export function ImportWizard({
   onCancel,
   initialSource = null,
   initialStep = "source",
+  handshake = null,
 }: {
   onStarted: (importId: string) => void;
   onCancel: () => void;
   /** Preselected when the browser returns from Discord's consent screen. */
   initialSource?: ImportSource | null;
   initialStep?: WizardStep;
+  /** The callback's one-time confirmation token, when returning from Discord. */
+  handshake?: string | null;
 }) {
   const { toast } = useToast();
 
@@ -308,7 +311,10 @@ export function ImportWizard({
         ) : null}
 
         {step === "connect" ? (
-          <ConnectStep onConnected={() => setStep("consent")} />
+          <ConnectStep
+            handshake={handshake}
+            onConnected={() => setStep("consent")}
+          />
         ) : null}
 
         {step === "consent" ? (

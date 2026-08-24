@@ -6,6 +6,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'node:crypto';
 import {
   DISCORD_BOT_GATEWAY,
   DISCORD_OAUTH_CLIENT,
@@ -18,7 +19,6 @@ import {
   DISCORD_CONNECTION_REPOSITORY,
   type IDiscordConnectionRepository,
 } from '../../domain/repositories/discord-connection.repository.interface';
-import type { DiscordConnection } from '../../domain/entities/discord-connection.entity';
 
 /**
  * The callback path, fixed in code.
@@ -43,6 +43,15 @@ export const OAUTH_STATE_TTL_MS = 15 * 60_000;
 
 /** Where the browser lands when the flow ends and nothing said otherwise. */
 export const DEFAULT_RETURN_PATH = '/discord-import';
+
+/**
+ * How long the browser has to activate what the callback parked.
+ *
+ * Far shorter than the handshake's 15 minutes, because it covers a redirect the
+ * browser follows immediately rather than a human reading a consent screen.
+ * Anything longer leaves a pending guild activatable for no reason.
+ */
+export const CONFIRM_TOKEN_TTL_MS = 5 * 60_000;
 
 /**
  * Guild permissions that count as "runs this server".
@@ -75,6 +84,11 @@ export interface DiscordConnectionView {
  */
 export type DiscordConnectCode =
   | 'connected'
+  /**
+   * The callback succeeded and parked a guild; the dashboard must now confirm
+   * it from an authenticated session scoped to the right chapter.
+   */
+  | 'pending'
   /** State missing, malformed, expired, or already spent. */
   | 'expired'
   /** The admin pressed Cancel on Discord's consent screen. */
@@ -299,15 +313,23 @@ export class DiscordOAuthService {
     }
 
     try {
-      const connection = await this.completeConnection(
-        consumed.chapter_id,
-        consumed.created_by,
-        query.code,
-      );
+      const confirmToken = await this.parkConnection(consumed.id, query.code);
       this.logger.log(
-        `Chapter ${consumed.chapter_id} connected Discord guild ${connection.guild_id}.`,
+        `Chapter ${consumed.chapter_id} has a Discord guild awaiting confirmation.`,
       );
-      return finish('connected', 'Connected.');
+      // `pending`, not `connected`. Nothing is bound yet — the dashboard has to
+      // present the confirm token from a session whose chapter matches, which
+      // is the whole control.
+      return {
+        ok: true,
+        code: 'pending',
+        returnUrl: this.buildReturnUrl(
+          consumed.return_path ?? null,
+          'pending',
+          confirmToken,
+        ),
+        reason: 'Awaiting confirmation.',
+      };
     } catch (error) {
       if (error instanceof DiscordConnectFailure) {
         this.logger.log(
@@ -333,14 +355,19 @@ export class DiscordOAuthService {
   }
 
   /**
-   * Everything between "we have a valid code for a known chapter" and "the row
-   * exists", with the two authorization facts read from Discord in between.
+   * Everything between "we have a valid code for a known handshake" and "a
+   * pending guild is parked", with the two authorization facts read from
+   * Discord in between.
+   *
+   * **Deliberately does not write `discord_connections`.** What Discord proves
+   * here is that a human with Manage Server installed the bot into a guild — not
+   * that they meant THIS chapter to read it, and the chapter came from a state
+   * that any `channels:manage` holder in any tenant can mint. Binding on those
+   * two facts alone let an attacker send their own authorize URL to somebody
+   * else's Discord admin and read that server into their own chapter. See
+   * `confirmConnection`.
    */
-  private async completeConnection(
-    chapterId: string,
-    userId: string | null,
-    code: string,
-  ): Promise<DiscordConnection> {
+  private async parkConnection(stateId: string, code: string): Promise<string> {
     const token = await this.oauth.exchangeCode({
       code,
       redirectUri: this.redirectUri(),
@@ -382,23 +409,116 @@ export class DiscordOAuthService {
         );
       }
 
-      return await this.connectionRepo.upsert({
-        chapter_id: chapterId,
-        guild_id: guild.id,
-        guild_name: guild.name ?? membership.name,
-        guild_icon: guild.icon,
-        connected_by: userId,
-        connected_discord_user_id: authorizingUser.id,
-        connected_discord_username: authorizingUser.username,
-        authorizer_permissions: membership.permissions,
-        granted_scopes: token.scope,
-      });
+      const confirmToken = randomUUID();
+      const parked = await this.connectionRepo.attachPendingConnection(
+        stateId,
+        {
+          guild_id: guild.id,
+          guild_name: guild.name ?? membership.name,
+          guild_icon: guild.icon,
+          discord_user_id: authorizingUser.id,
+          discord_username: authorizingUser.username,
+          permissions: membership.permissions,
+          scopes: token.scope,
+          confirm_token: confirmToken,
+          confirm_expires_at: new Date(
+            Date.now() + CONFIRM_TOKEN_TTL_MS,
+          ).toISOString(),
+        },
+      );
+      if (!parked) {
+        throw new DiscordConnectFailure(
+          'expired',
+          `Handshake ${stateId} could not be parked; it already carries a pending connection.`,
+        );
+      }
+      return confirmToken;
     } finally {
       // The user token bought two reads and is never needed again. Not stored,
       // so this is hygiene rather than the control — but a token that outlives
       // its purpose is a token somebody eventually finds a use for.
       await this.oauth.revokeToken(token.accessToken).catch(() => undefined);
     }
+  }
+
+  /**
+   * Activate what the callback parked — the step that makes the flow safe.
+   *
+   * Three things must line up, and the third is the one that closes the hole:
+   *
+   *  1. the confirm token, which went to exactly one place — the query string
+   *     of the redirect the browser that completed the OAuth followed;
+   *  2. an authenticated caller with `channels:manage`, enforced by the guard
+   *     chain on the route; and
+   *  3. **that caller's active chapter matching the chapter the pending row
+   *     names**, enforced inside the conditional UPDATE.
+   *
+   * Replay the attack against it. The attacker mints a state for their own
+   * chapter and sends the authorize URL to an admin of somebody else's Discord
+   * server. That admin authorizes; the callback parks (attacker's chapter,
+   * victim's guild) and hands the confirm token to the VICTIM's browser. The
+   * attacker never sees it and cannot guess it. The victim's browser does
+   * present it — against the victim's own session, whose chapter is not the
+   * attacker's — so condition 3 fails and nothing is written.
+   *
+   * For a legitimate admin nothing is asked: they started the flow in their own
+   * chapter, so their session and the pending row agree, and the dashboard
+   * confirms on arrival.
+   */
+  async confirmConnection(
+    chapterId: string,
+    userId: string,
+    handshake: string,
+  ): Promise<DiscordConnectionView> {
+    this.assertAvailable();
+
+    if (!isUuid(handshake)) {
+      throw new BadRequestException(
+        'That Discord confirmation link is not valid. Start the connection again.',
+      );
+    }
+
+    const pending = await this.connectionRepo.consumeConfirmToken(
+      handshake,
+      chapterId,
+      new Date(),
+    );
+    if (!pending?.pending_guild_id) {
+      // One message for every way this fails — wrong chapter, expired, already
+      // spent, never parked. Distinguishing them would tell a caller which of
+      // those it was, and "wrong chapter" is precisely the answer an attacker
+      // probing with a stolen token wants.
+      throw new BadRequestException(
+        'That Discord confirmation has expired or does not belong to this chapter. Start the connection again.',
+      );
+    }
+
+    const connection = await this.connectionRepo.upsert({
+      chapter_id: chapterId,
+      guild_id: pending.pending_guild_id,
+      guild_name: pending.pending_guild_name,
+      guild_icon: pending.pending_guild_icon,
+      // The Signet user who CONFIRMED, which is the one we can actually
+      // attribute: `created_by` on the state is whoever started the handshake,
+      // and this step exists precisely because those need not be the same
+      // person.
+      connected_by: userId,
+      connected_discord_user_id: pending.pending_discord_user_id,
+      connected_discord_username: pending.pending_discord_username,
+      authorizer_permissions: pending.pending_permissions,
+      granted_scopes: pending.pending_scopes,
+    });
+
+    this.logger.log(
+      `Chapter ${chapterId} confirmed Discord guild ${connection.guild_id}.`,
+    );
+    return {
+      connected: true,
+      guild_id: connection.guild_id,
+      guild_name: connection.guild_name,
+      connected_at: connection.created_at,
+      connected_discord_username: connection.connected_discord_username,
+    };
   }
 
   /** Forget a chapter's connection. Imports already run keep their history. */
@@ -435,10 +555,16 @@ export class DiscordOAuthService {
   private buildReturnUrl(
     returnPath: string | null,
     code: DiscordConnectCode,
+    confirmToken?: string,
   ): string {
     const origin = this.appUrl ?? 'http://localhost';
     const url = new URL(safeReturnPath(returnPath), origin);
     url.searchParams.set('discord', code);
+    // The confirm token rides the redirect, which is the ONLY place it is ever
+    // delivered — to the browser that completed the OAuth, and to nothing else.
+    // It is safe on a URL for the same reason an OAuth code is: single-use,
+    // short-lived, and useless without a session whose chapter matches.
+    if (confirmToken) url.searchParams.set('handshake', confirmToken);
     return url.toString();
   }
 }

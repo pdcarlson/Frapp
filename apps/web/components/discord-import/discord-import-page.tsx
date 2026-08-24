@@ -70,7 +70,18 @@ export function DiscordImportPage() {
   // `?wizard=bot` is set by the Discord connect step's return path, so the
   // browser coming back from Discord lands where it left off rather than on the
   // import list with no idea whether anything happened.
-  const resumingBotWizard = searchParams.get("wizard") === "bot";
+  //
+  // Both of these are read ONCE into state, not on every render. The effect
+  // below strips the params, and Next patches `replaceState` so
+  // `useSearchParams()` re-renders without them — while the wizard is still
+  // behind the imports query's loading state and has not mounted. Read live,
+  // it would mount a moment later with both already gone: the admin who just
+  // authorized would land on "Choose how", and the one-time token that
+  // activates their server would be lost.
+  const [resumingBotWizard] = useState(
+    () => searchParams.get("wizard") === "bot",
+  );
+  const [handshake] = useState(() => searchParams.get("handshake"));
   const [wizardOpen, setWizardOpen] = useState(resumingBotWizard);
   const [activeId, setActiveId] = useState<string | null>(null);
 
@@ -91,7 +102,11 @@ export function DiscordImportPage() {
     if (announced.current || !outcome) return;
     announced.current = true;
 
-    const known = DISCORD_CONNECT_MESSAGES[outcome];
+    // `pending` is not an outcome to announce — the callback parked a guild and
+    // the connect step is about to confirm it and report what actually
+    // happened. Toasting here would tell the admin something before it is true.
+    const known =
+      outcome === "pending" ? undefined : DISCORD_CONNECT_MESSAGES[outcome];
     if (known) {
       toast({
         variant: known.variant === "error" ? "destructive" : undefined,
@@ -102,6 +117,11 @@ export function DiscordImportPage() {
     const url = new URL(window.location.href);
     url.searchParams.delete("discord");
     url.searchParams.delete("wizard");
+    // Stripped from the address bar promptly: it is a one-time credential, and
+    // a URL is the most-copied, most-shoulder-surfed place a value can sit.
+    // Spending it does not depend on it staying here — it was read into state
+    // on the first render.
+    url.searchParams.delete("handshake");
     window.history.replaceState(null, "", url.toString());
   }, [outcome, toast]);
 
@@ -127,6 +147,7 @@ export function DiscordImportPage() {
         activeId={activeId}
         setActiveId={setActiveId}
         resumingBotWizard={resumingBotWizard}
+        handshake={handshake}
       />
     </Can>
   );
@@ -138,12 +159,14 @@ function DiscordImportBody({
   activeId,
   setActiveId,
   resumingBotWizard,
+  handshake,
 }: {
   wizardOpen: boolean;
   setWizardOpen: (open: boolean) => void;
   activeId: string | null;
   setActiveId: (id: string | null) => void;
   resumingBotWizard: boolean;
+  handshake: string | null;
 }) {
   const { isOffline } = useNetwork();
   const imports = useDiscordImports();
@@ -203,6 +226,7 @@ function DiscordImportBody({
             initialStep={
               resumingBotWizard ? ("connect" as WizardStep) : undefined
             }
+            handshake={handshake}
             onCancel={() => setWizardOpen(false)}
             onStarted={(id) => {
               setWizardOpen(false);

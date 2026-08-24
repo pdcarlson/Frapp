@@ -5,6 +5,19 @@ import type {
 
 export const DISCORD_CONNECTION_REPOSITORY = 'DISCORD_CONNECTION_REPOSITORY';
 
+/** What the callback learned from Discord, parked until an admin confirms it. */
+export interface PendingDiscordConnectionInput {
+  guild_id: string;
+  guild_name: string | null;
+  guild_icon: string | null;
+  discord_user_id: string;
+  discord_username: string | null;
+  permissions: string;
+  scopes: string;
+  confirm_token: string;
+  confirm_expires_at: string;
+}
+
 export interface UpsertDiscordConnectionInput {
   chapter_id: string;
   guild_id: string;
@@ -67,6 +80,36 @@ export interface IDiscordConnectionRepository {
    * zero rows and gets null.
    */
   consumeState(id: string, now: Date): Promise<DiscordOAuthState | null>;
+
+  /**
+   * Park what the callback learned, and mint the token that activates it.
+   *
+   * The callback does not write `discord_connections`. Discord proves that a
+   * Manage Server human installed the bot into a guild; it cannot prove that
+   * they meant THIS chapter to read it, and the chapter came from a state any
+   * `channels:manage` holder in any tenant can mint. So the guild is parked and
+   * the second secret goes to the browser that completed the OAuth — which, in
+   * the attack this closes, is not the browser that started it.
+   */
+  attachPendingConnection(
+    stateId: string,
+    input: PendingDiscordConnectionInput,
+  ): Promise<DiscordOAuthState | null>;
+
+  /**
+   * Spend a confirm token **for this chapter**, or return null.
+   *
+   * Conditional UPDATE for the same reason `consumeState` is, plus the chapter
+   * predicate that is the entire point of the step: a token presented by a
+   * session whose active chapter is not the one the pending row names activates
+   * nothing. That is what stops an attacker's authorize URL, completed by
+   * somebody else's admin, binding that person's guild to the attacker.
+   */
+  consumeConfirmToken(
+    token: string,
+    chapterId: string,
+    now: Date,
+  ): Promise<DiscordOAuthState | null>;
 
   /** Reap spent and expired handshakes. Returns how many went. */
   deleteExpiredStates(before: Date): Promise<number>;

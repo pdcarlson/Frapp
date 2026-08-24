@@ -88,6 +88,35 @@ export function useBeginDiscordConnect() {
   });
 }
 
+/**
+ * Activate the Discord server the OAuth callback parked.
+ *
+ * The callback links nothing by itself. It hands the browser a one-time token,
+ * and this call — authenticated, and scoped to the active chapter — is what
+ * binds the server. That is what stops an authorize URL completed by somebody
+ * else's Discord admin from attaching their server to whoever generated it.
+ */
+export function useConfirmDiscordConnect() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+
+  return useMutation({
+    mutationFn: async (vars: { handshake: string }) => {
+      const { data, error } = await client.POST("/v1/discord/connect/confirm", {
+        body: { handshake: vars.handshake },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: discordConnectionKeys.connection(chapterId),
+      });
+    },
+  });
+}
+
 export function useDisconnectDiscord() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
@@ -211,6 +240,11 @@ export const DISCORD_CONNECT_MESSAGES: Record<
   connected: {
     variant: "success",
     message: "Discord connected. Signet can now read your server's history.",
+  },
+  pending: {
+    variant: "error",
+    message:
+      "That Discord authorization could not be confirmed for this chapter. If you were connecting a different chapter, switch to it and try again.",
   },
   expired: {
     variant: "error",

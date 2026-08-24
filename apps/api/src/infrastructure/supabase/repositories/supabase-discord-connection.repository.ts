@@ -3,6 +3,7 @@ import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type {
   IDiscordConnectionRepository,
+  PendingDiscordConnectionInput,
   UpsertDiscordConnectionInput,
 } from '../../../domain/repositories/discord-connection.repository.interface';
 import type {
@@ -100,6 +101,57 @@ export class SupabaseDiscordConnectionRepository implements IDiscordConnectionRe
       .eq('id', id)
       .is('consumed_at', null)
       .gt('expires_at', nowIso)
+      .select()
+      .maybeSingle();
+    if (error) throw error;
+    return data ?? null;
+  }
+
+  async attachPendingConnection(
+    stateId: string,
+    input: PendingDiscordConnectionInput,
+  ): Promise<DiscordOAuthState | null> {
+    const { data, error } = await this.supabase
+      .from('discord_oauth_states')
+      .update({
+        pending_guild_id: input.guild_id,
+        pending_guild_name: input.guild_name,
+        pending_guild_icon: input.guild_icon,
+        pending_discord_user_id: input.discord_user_id,
+        pending_discord_username: input.discord_username,
+        pending_permissions: input.permissions,
+        pending_scopes: input.scopes,
+        confirm_token: input.confirm_token,
+        confirm_expires_at: input.confirm_expires_at,
+      })
+      .eq('id', stateId)
+      // Only ever onto a handshake the callback just spent, and only once. A
+      // row that already carries a pending guild is one a second callback is
+      // trying to overwrite, which is not a thing that legitimately happens.
+      .is('confirm_token', null)
+      .select()
+      .maybeSingle();
+    if (error) throw error;
+    return data ?? null;
+  }
+
+  async consumeConfirmToken(
+    token: string,
+    chapterId: string,
+    now: Date,
+  ): Promise<DiscordOAuthState | null> {
+    const nowIso = now.toISOString();
+    // All four conditions live in the UPDATE. The chapter predicate is the one
+    // that closes the confused-deputy hole: a token presented against a session
+    // scoped to a different chapter matches zero rows, so somebody else's admin
+    // completing an attacker's authorize URL activates nothing.
+    const { data, error } = await this.supabase
+      .from('discord_oauth_states')
+      .update({ confirmed_at: nowIso })
+      .eq('confirm_token', token)
+      .eq('chapter_id', chapterId)
+      .is('confirmed_at', null)
+      .gt('confirm_expires_at', nowIso)
       .select()
       .maybeSingle();
     if (error) throw error;

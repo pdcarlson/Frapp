@@ -29,6 +29,7 @@ import { SystemPermissions } from '../../domain/constants/permissions';
 import {
   BeginDiscordConnectDto,
   BeginDiscordConnectResponseDto,
+  ConfirmDiscordConnectDto,
   DiscordAvailabilityDto,
   DiscordConnectionDto,
 } from '../dtos/discord-connection.dto';
@@ -98,6 +99,28 @@ export class DiscordConnectionController {
       chapterId,
       user.id,
       dto.return_path ?? null,
+    );
+  }
+
+  @Post('connect/confirm')
+  @ApiBearerAuth()
+  @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+  @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
+  @ApiOperation({
+    summary: 'Activate the Discord server the callback parked',
+    description:
+      'The OAuth callback does not link anything by itself: it parks what Discord told it and hands the browser a one-time token. This route is what binds the server, and it binds it only to the chapter this request is scoped to — so an authorization completed by somebody else, for a chapter they are not in, activates nothing.',
+  })
+  @ApiOkResponse({ type: DiscordConnectionDto })
+  confirmConnect(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser() user: { id: string },
+    @Body() dto: ConfirmDiscordConnectDto,
+  ) {
+    return this.oauthService.confirmConnection(
+      chapterId,
+      user.id,
+      dto.handshake,
     );
   }
 

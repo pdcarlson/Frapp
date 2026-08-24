@@ -493,6 +493,14 @@ portal: the bitfield in the authorize URL is what the consent screen shows a
 chapter, and a read-only archiver has no business holding a permission that can
 change anything in someone's server.
 
+**One thing the portal cannot express, so it is worth knowing here.** Discord's
+consent screen names *Signet* — it does not name the chapter the connection will
+be bound to, and it cannot. Signet closes that gap on its own side: the callback
+parks the server and links nothing, and an authenticated request scoped to the
+chapter is what activates it. So a Signet officer cannot send their authorize
+link to somebody else's Discord admin and end up reading that server. Do not
+"simplify" the flow by binding on the callback.
+
 **Verify after setup**: `GET /v1/discord/availability` (as an officer with
 `channels:manage`) must answer `{"available": true}`. If it answers `false`, one
 of the three secrets or `API_URL` / `APP_URL` is unset in that environment — see

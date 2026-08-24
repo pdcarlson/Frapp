@@ -5807,6 +5807,44 @@
           "Discord Connection"
         ]
       }
+    },
+    "/v1/discord/connect/confirm": {
+      "post": {
+        "description": "The OAuth callback does not link anything by itself: it parks what Discord told it and hands the browser a one-time token. This route is what binds the server, and it binds it only to the chapter this request is scoped to — so an authorization completed by somebody else, for a chapter they are not in, activates nothing.",
+        "operationId": "DiscordConnectionController_confirmConnect_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmDiscordConnectDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordConnectionDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Activate the Discord server the callback parked",
+        "tags": [
+          "Discord Connection"
+        ]
+      }
     }
   },
   "info": {
@@ -8364,6 +8402,18 @@
         "required": [
           "authorize_url",
           "expires_at"
+        ]
+      },
+      "ConfirmDiscordConnectDto": {
+        "type": "object",
+        "properties": {
+          "handshake": {
+            "type": "string",
+            "description": "The one-time confirmation token the OAuth callback put on the redirect. It is delivered to exactly one place — the browser that completed the authorization — and activates only against a session whose active chapter matches the one that started the handshake."
+          }
+        },
+        "required": [
+          "handshake"
         ]
       }
     }

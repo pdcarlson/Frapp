@@ -118,6 +118,46 @@ After any rollback event:
   **`idx_chat_messages_external_dedupe`** — see *Rollback the Discord importer*
   below. The recreate above is safe as written.
 
+## Rollback the Discord connect confirmation
+
+* **Migration**: `20260824150000_discord_connect_confirm.sql`
+* **Action**:
+  ```sql
+  DROP INDEX IF EXISTS public.idx_discord_oauth_states_confirm_token;
+  ALTER TABLE public.discord_oauth_states
+    DROP COLUMN IF EXISTS pending_guild_id,
+    DROP COLUMN IF EXISTS pending_guild_name,
+    DROP COLUMN IF EXISTS pending_guild_icon,
+    DROP COLUMN IF EXISTS pending_discord_user_id,
+    DROP COLUMN IF EXISTS pending_discord_username,
+    DROP COLUMN IF EXISTS pending_permissions,
+    DROP COLUMN IF EXISTS pending_scopes,
+    DROP COLUMN IF EXISTS confirm_token,
+    DROP COLUMN IF EXISTS confirm_expires_at,
+    DROP COLUMN IF EXISTS confirmed_at;
+  ```
+* **Order**: **redeploy the API first**, and understand what you are removing
+  before you do. These columns are not bookkeeping — they are the confirmation
+  step, and the confirmation step is the control that keeps one chapter from
+  reading another Discord server's history.
+* **This rollback re-opens a known cross-tenant hole.** Without the confirm
+  step, the OAuth callback binds a guild to whichever chapter minted the
+  `state` — and minting one is an ordinary action for any `channels:manage`
+  holder in any chapter. An officer can then send their own authorize link to an
+  admin of any Discord server, and if that person clicks through Discord's
+  genuine consent screen, their server is readable by the sender's chapter.
+  Every Discord-side check still passes; that is what makes it a confused-deputy
+  bug rather than a broken check. **If you roll this back, unset
+  `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` in the same change** so
+  `GET /v1/discord/availability` answers `false` and the connect flow is
+  unreachable. The DiscordChatExporter upload path is unaffected either way.
+* **Nothing already connected is lost.** `discord_connections` is a separate
+  table and is untouched — existing links keep working and imports keep running.
+  Only *new* connections are affected.
+* **In-flight handshakes are collateral, and cheap.** Any admin mid-connect
+  loses their click and retries; every row here is single-use and dead within
+  fifteen minutes anyway.
+
 ## Rollback the Discord bot connection
 
 * **Migration**: `20260824140000_discord_bot_connection.sql`

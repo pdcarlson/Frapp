@@ -201,6 +201,19 @@ channel that reports a different one fails the import rather than being skipped.
   server is read from `GET /users/@me/guilds` under their own access token, and
   Manage Server (or Administrator, or being the owner) is required. The token is
   used for those two reads and revoked; it is never stored.
+- **Those two facts are not enough on their own, so the callback binds
+  nothing.** They establish that a Manage Server human installed the bot into a
+  guild — not that they meant *this chapter* to read it, and starting a
+  handshake is an ordinary action for any officer in any chapter. Left there, an
+  officer of one chapter could send their own authorize link to an admin of
+  somebody else's Discord server and read it into their chapter, with every
+  Discord-side check passing honestly. So the callback **parks** what it learned
+  and hands the browser a second one-time token; a normal authenticated,
+  chapter-scoped request is what actually links the server, and it links it only
+  to the chapter that request is scoped to. An authorization completed by
+  somebody else, for a chapter they are not in, activates nothing. The
+  legitimate admin is asked for nothing extra — their session already matches,
+  so the dashboard confirms on arrival.
 - **The bot is installed read-only**: View Channels and Read Message History,
   nothing else. It cannot post, edit, or remove anything. One visible
   consequence: Discord gates listing *private* archived threads behind Manage

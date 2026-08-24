@@ -37,6 +37,16 @@ function stateRow(
     expires_at: new Date(NOW.getTime() + 60_000).toISOString(),
     consumed_at: null,
     created_at: NOW.toISOString(),
+    pending_guild_id: null,
+    pending_guild_name: null,
+    pending_guild_icon: null,
+    pending_discord_user_id: null,
+    pending_discord_username: null,
+    pending_permissions: null,
+    pending_scopes: null,
+    confirm_token: null,
+    confirm_expires_at: null,
+    confirmed_at: null,
     ...overrides,
   };
 }
@@ -57,6 +67,17 @@ async function build(config: Record<string, string | undefined> = {}) {
     deleteByChapter: jest.fn(async () => true),
     createState: jest.fn(async () => stateRow()),
     consumeState: jest.fn(async () => stateRow()),
+    attachPendingConnection: jest.fn(async () => stateRow()),
+    consumeConfirmToken: jest.fn(async () =>
+      stateRow({
+        pending_guild_id: GUILD,
+        pending_guild_name: 'Tau Nu',
+        pending_discord_user_id: '2000000000000000002',
+        pending_discord_username: 'Paul',
+        pending_permissions: MANAGE_GUILD,
+        pending_scopes: 'bot identify guilds',
+      }),
+    ),
     deleteExpiredStates: jest.fn(async () => 0),
   };
   oauth = {
@@ -165,26 +186,48 @@ describe('DiscordOAuthService — the callback’s trust boundary', () => {
       code: 'one-time-code',
       state: STATE,
       // A forged `guild_id` is not even a parameter this method accepts —
-      // that is the point. Assert the stored value came from the exchange.
+      // that is the point. Assert the parked value came from the exchange.
     });
 
-    expect(outcome.ok).toBe(true);
-    expect(repo.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ guild_id: GUILD, chapter_id: CHAPTER }),
+    expect(outcome.code).toBe('pending');
+    expect(repo.attachPendingConnection).toHaveBeenCalledWith(
+      STATE,
+      expect.objectContaining({ guild_id: GUILD }),
     );
   });
 
-  it('takes the chapter from the state row, which the callback cannot supply', async () => {
+  it('BINDS NOTHING — it parks, and hands the browser a confirm token', async () => {
+    // The whole confused-deputy fix. Discord proves a Manage Server human
+    // installed the bot somewhere; it does not prove they meant THIS chapter to
+    // read it, and minting a state is an ordinary action for any officer in any
+    // tenant. So the callback must not write a connection.
+    const service = await build();
+
+    const outcome = await service.handleCallback({ code: 'c', state: STATE });
+
+    expect(repo.upsert).not.toHaveBeenCalled();
+    expect(outcome.code).toBe('pending');
+    const token = new URL(outcome.returnUrl).searchParams.get('handshake');
+    expect(token).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
+    // The token is NOT the state — re-using the state would leave the hole
+    // exactly where it was, because the attacker minted the state.
+    expect(token).not.toBe(STATE);
+  });
+
+  it('parks against the state row, which the callback cannot supply', async () => {
     const service = await build();
     repo.consumeState.mockResolvedValue(
-      stateRow({ chapter_id: OTHER_CHAPTER }),
+      stateRow({ id: STATE, chapter_id: OTHER_CHAPTER }),
     );
 
     await service.handleCallback({ code: 'c', state: STATE });
 
     // No header, no session, no body — the chapter can only come from here.
-    expect(repo.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ chapter_id: OTHER_CHAPTER }),
+    expect(repo.attachPendingConnection).toHaveBeenCalledWith(
+      STATE,
+      expect.anything(),
     );
   });
 
@@ -196,7 +239,7 @@ describe('DiscordOAuthService — the callback’s trust boundary', () => {
 
     expect(outcome.ok).toBe(false);
     expect(outcome.code).toBe('expired');
-    expect(repo.upsert).not.toHaveBeenCalled();
+    expect(repo.attachPendingConnection).not.toHaveBeenCalled();
   });
 
   it('does not even ask the repository about a non-uuid state', async () => {
@@ -220,7 +263,7 @@ describe('DiscordOAuthService — the callback’s trust boundary', () => {
 
     expect(repo.consumeState).toHaveBeenCalledWith(STATE, expect.any(Date));
     expect(outcome.code).toBe('declined');
-    expect(repo.upsert).not.toHaveBeenCalled();
+    expect(repo.attachPendingConnection).not.toHaveBeenCalled();
   });
 
   it('rejects an authorization that installed the bot nowhere', async () => {
@@ -234,7 +277,7 @@ describe('DiscordOAuthService — the callback’s trust boundary', () => {
     const outcome = await service.handleCallback({ code: 'c', state: STATE });
 
     expect(outcome.code).toBe('no_guild');
-    expect(repo.upsert).not.toHaveBeenCalled();
+    expect(repo.attachPendingConnection).not.toHaveBeenCalled();
   });
 });
 
@@ -242,7 +285,7 @@ describe('DiscordOAuthService — proving the human runs the server', () => {
   it('accepts Manage Server', async () => {
     const service = await build();
     const outcome = await service.handleCallback({ code: 'c', state: STATE });
-    expect(outcome.ok).toBe(true);
+    expect(outcome.code).toBe('pending');
   });
 
   it('accepts Administrator', async () => {
@@ -251,7 +294,7 @@ describe('DiscordOAuthService — proving the human runs the server', () => {
       { id: GUILD, name: 'Tau Nu', permissions: ADMINISTRATOR, owner: false },
     ]);
     const outcome = await service.handleCallback({ code: 'c', state: STATE });
-    expect(outcome.ok).toBe(true);
+    expect(outcome.code).toBe('pending');
   });
 
   it('accepts the guild owner, whose bitfield can omit the flags', async () => {
@@ -260,7 +303,7 @@ describe('DiscordOAuthService — proving the human runs the server', () => {
       { id: GUILD, name: 'Tau Nu', permissions: '0', owner: true },
     ]);
     const outcome = await service.handleCallback({ code: 'c', state: STATE });
-    expect(outcome.ok).toBe(true);
+    expect(outcome.code).toBe('pending');
   });
 
   it('REFUSES an ordinary member of the server', async () => {
@@ -276,7 +319,7 @@ describe('DiscordOAuthService — proving the human runs the server', () => {
 
     expect(outcome.ok).toBe(false);
     expect(outcome.code).toBe('no_permission');
-    expect(repo.upsert).not.toHaveBeenCalled();
+    expect(repo.attachPendingConnection).not.toHaveBeenCalled();
   });
 
   it('REFUSES when the authorizer administers a DIFFERENT server', async () => {
@@ -295,7 +338,7 @@ describe('DiscordOAuthService — proving the human runs the server', () => {
     const outcome = await service.handleCallback({ code: 'c', state: STATE });
 
     expect(outcome.code).toBe('not_member');
-    expect(repo.upsert).not.toHaveBeenCalled();
+    expect(repo.attachPendingConnection).not.toHaveBeenCalled();
   });
 
   it('reads the bitfield as BigInt, so a past-2^53 flag is not rounded away', async () => {
@@ -308,7 +351,7 @@ describe('DiscordOAuthService — proving the human runs the server', () => {
     ]);
 
     const outcome = await service.handleCallback({ code: 'c', state: STATE });
-    expect(outcome.ok).toBe(true);
+    expect(outcome.code).toBe('pending');
   });
 
   it('treats an unparseable bitfield as no permission', async () => {
@@ -334,6 +377,107 @@ describe('DiscordOAuthService — proving the human runs the server', () => {
     ]);
     await service.handleCallback({ code: 'c', state: STATE });
     expect(oauth.revokeToken).toHaveBeenCalledWith('user-token');
+  });
+});
+
+describe('DiscordOAuthService — the confirm step (the confused-deputy fix)', () => {
+  /**
+   * The attack this closes, replayed end to end.
+   *
+   * An attacker self-serve signs up chapter A, mints a state, and sends the
+   * authorize URL to an admin of somebody else's Discord server. Discord's own
+   * checks all pass — that person really does hold Manage Server there — so
+   * before this step the callback bound (chapter A, victim's guild) and the
+   * attacker could read the whole server.
+   */
+  it('REFUSES a token presented by a session scoped to another chapter', async () => {
+    const service = await build();
+    // The repository's chapter predicate is what decides. A pending row naming
+    // chapter A does not match a confirm scoped to chapter B, so it updates
+    // zero rows and returns null.
+    repo.consumeConfirmToken.mockResolvedValue(null);
+
+    await expect(
+      service.confirmConnection(OTHER_CHAPTER, USER, STATE),
+    ).rejects.toMatchObject({ status: 400 });
+
+    expect(repo.consumeConfirmToken).toHaveBeenCalledWith(
+      STATE,
+      OTHER_CHAPTER,
+      expect.any(Date),
+    );
+    expect(repo.upsert).not.toHaveBeenCalled();
+  });
+
+  it('binds the parked guild ONLY to the chapter this request is scoped to', async () => {
+    const service = await build();
+
+    const view = await service.confirmConnection(CHAPTER, USER, STATE);
+
+    expect(repo.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ chapter_id: CHAPTER, guild_id: GUILD }),
+    );
+    expect(view.connected).toBe(true);
+  });
+
+  it('scopes the spend by chapter in the same statement, not after reading', async () => {
+    // A read-then-check would leave the window where two confirms both see the
+    // token unspent. The chapter has to be part of the UPDATE, which is what
+    // the repository asserts — here we pin that the service passes it at all.
+    const service = await build();
+    await service.confirmConnection(CHAPTER, USER, STATE);
+    expect(repo.consumeConfirmToken).toHaveBeenCalledWith(
+      STATE,
+      CHAPTER,
+      expect.any(Date),
+    );
+  });
+
+  it('attributes the connection to whoever CONFIRMED, not whoever started it', async () => {
+    // `created_by` on the state is whoever minted it. This step exists because
+    // those need not be the same person, so recording the initiator would name
+    // the attacker in the audit trail of a connection they did not complete.
+    const service = await build();
+    await service.confirmConnection(CHAPTER, 'confirming-user', STATE);
+    expect(repo.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ connected_by: 'confirming-user' }),
+    );
+  });
+
+  it('refuses a malformed token without asking the database', async () => {
+    const service = await build();
+    await expect(
+      service.confirmConnection(CHAPTER, USER, "' or 1=1--"),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(repo.consumeConfirmToken).not.toHaveBeenCalled();
+  });
+
+  it('refuses a row that carries no parked guild', async () => {
+    const service = await build();
+    repo.consumeConfirmToken.mockResolvedValue(stateRow());
+    await expect(
+      service.confirmConnection(CHAPTER, USER, STATE),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(repo.upsert).not.toHaveBeenCalled();
+  });
+
+  it('gives one message for every refusal, so it cannot be probed', async () => {
+    // Wrong chapter, expired, already spent, never parked — all the same
+    // sentence. "Wrong chapter" is precisely what an attacker holding a stolen
+    // token would want confirmed.
+    const service = await build();
+
+    repo.consumeConfirmToken.mockResolvedValue(null);
+    const wrongChapter = await service
+      .confirmConnection(OTHER_CHAPTER, USER, STATE)
+      .catch((error: Error) => error.message);
+
+    repo.consumeConfirmToken.mockResolvedValue(stateRow());
+    const notParked = await service
+      .confirmConnection(CHAPTER, USER, STATE)
+      .catch((error: Error) => error.message);
+
+    expect(wrongChapter).toBe(notParked);
   });
 });
 

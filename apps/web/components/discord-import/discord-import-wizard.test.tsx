@@ -13,6 +13,7 @@ const {
   confirmUploads,
   discoverChannels,
   beginConnect,
+  confirmConnect,
   availability,
   connection,
 } = vi.hoisted(() => ({
@@ -25,6 +26,7 @@ const {
   confirmUploads: vi.fn(),
   discoverChannels: vi.fn(),
   beginConnect: vi.fn(),
+  confirmConnect: vi.fn(),
   availability: { value: { available: true } as { available: boolean } },
   connection: { value: { connected: false } as {
     connected: boolean;
@@ -64,6 +66,10 @@ vi.mock("@repo/hooks", () => ({
   }),
   useBeginDiscordConnect: () => ({
     mutateAsync: beginConnect,
+    isPending: false,
+  }),
+  useConfirmDiscordConnect: () => ({
+    mutateAsync: confirmConnect,
     isPending: false,
   }),
   useDiscoverDiscordChannels: () => ({
@@ -507,5 +513,101 @@ describe("export preamble reader", () => {
       "general_Files/a.png",
     );
     expect(toExportRelativePath("a.png")).toBe("a.png");
+  });
+});
+
+describe("ConnectStep — confirming what the callback parked", () => {
+  beforeEach(() => {
+    availability.value = { available: true };
+    connection.value = { connected: false };
+    confirmConnect.mockReset();
+    confirmConnect.mockResolvedValue({ connected: true });
+  });
+
+  it("confirms automatically when the browser returns with a handshake", async () => {
+    // The admin who started this has nothing to decide — their session and the
+    // parked guild already agree, and the chapter check happens server-side
+    // regardless. Asking them to click again would be friction with no answer.
+    render(
+      <ImportWizard
+        onStarted={() => {}}
+        onCancel={() => {}}
+        initialSource="bot"
+        initialStep="connect"
+        handshake="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+      />,
+    );
+
+    await waitFor(() =>
+      expect(confirmConnect).toHaveBeenCalledWith({
+        handshake: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      }),
+    );
+  });
+
+  it("confirms exactly once, so a double render cannot spend the token twice", async () => {
+    // React double-invokes effects in development. Spending the one-time token
+    // twice would leave the second attempt reporting a failure over a
+    // connection that actually succeeded.
+    const { rerender } = render(
+      <ImportWizard
+        onStarted={() => {}}
+        onCancel={() => {}}
+        initialSource="bot"
+        initialStep="connect"
+        handshake="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+      />,
+    );
+    rerender(
+      <ImportWizard
+        onStarted={() => {}}
+        onCancel={() => {}}
+        initialSource="bot"
+        initialStep="connect"
+        handshake="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+      />,
+    );
+
+    await waitFor(() => expect(confirmConnect).toHaveBeenCalledTimes(1));
+  });
+
+  it("does NOT confirm when there is no handshake — a plain visit binds nothing", async () => {
+    render(
+      <ImportWizard
+        onStarted={() => {}}
+        onCancel={() => {}}
+        initialSource="bot"
+        initialStep="connect"
+      />,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Add to Server/ }),
+      ).toBeInTheDocument(),
+    );
+    expect(confirmConnect).not.toHaveBeenCalled();
+  });
+
+  it("shows the reason in place when the confirmation is refused", async () => {
+    // The commonest refusal is authorizing while a different chapter is active.
+    // The admin is looking at a step that says "not connected" right after
+    // authorizing, so the reason has to be in front of them, not in a toast.
+    confirmConnect.mockRejectedValue(
+      new Error("That Discord confirmation does not belong to this chapter."),
+    );
+
+    render(
+      <ImportWizard
+        onStarted={() => {}}
+        onCancel={() => {}}
+        initialSource="bot"
+        initialStep="connect"
+        handshake="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+      />,
+    );
+
+    expect(
+      await screen.findByText(/Could not confirm that server/),
+    ).toBeInTheDocument();
   });
 });
