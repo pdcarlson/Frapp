@@ -294,6 +294,31 @@ export async function runDriftGate({
   const main = readMigrationsAtRef({ ref: mainRef, runGit });
   log(`  ${main.length} migration(s) on ${mainRef}.`);
 
+  // Zero migrations on main is not a legitimate state for this repo, and
+  // treating it as one produces actively misleading output: every migration
+  // staging holds would be reported as FOREIGN, i.e. "51 hand-applied
+  // migrations, db push is blocked", when the truth is a bad ref or a checkout
+  // without the migrations directory. `git ls-tree` answers a path that does
+  // not exist with an empty list and exit 0, so this cannot be caught by
+  // checking git's exit code.
+  if (main.length === 0) {
+    error(
+      `::error::No migrations found at ${mainRef}. That is a broken checkout or a bad ref, not drift — the gate refuses to interpret it as "staging has N foreign migrations". Ensure the workflow fetches main with fetch-depth: 0.`,
+    );
+    onSummary(
+      [
+        "## Migration drift gate — staging",
+        "",
+        `**No migrations found at \`${mainRef}\`.**`,
+        "",
+        "This is a checkout problem, not a database problem. `supabase/migrations/`",
+        "is never empty on `main`, so the gate stops here rather than reporting every",
+        "migration on staging as foreign.",
+      ].join("\n"),
+    );
+    return 1;
+  }
+
   const applied = await fetchAppliedWithRetry({
     accessToken,
     projectRef,

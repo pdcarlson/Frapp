@@ -246,7 +246,7 @@ function gateArgs(overrides = {}) {
   });
   return {
     accessToken: "t",
-    projectRef: "hnoyzpidbmizhbqaiity",
+    projectRef: "examplestagingref01",
     mainRef: "origin/main",
     nowMs: NOW,
     runGit,
@@ -270,6 +270,40 @@ test("exit 1 when main has unapplied migrations", async () => {
     { method: "GET", path: "/database/migrations", body: applied(MAIN.slice(0, 1)) },
   ]);
   assert.equal(await runDriftGate(gateArgs({ fetchImpl })), 1);
+});
+
+test("zero migrations at the ref is a checkout error, not 51 foreign migrations", async () => {
+  // `git ls-tree` answers a path that does not exist with an empty list and
+  // exit 0. Without the guard, every migration on staging would be classified
+  // foreign and the operator would be told `db push` is blocked by hand-applied
+  // rows — a wrong and expensive thing to be told.
+  const { fetchImpl } = makeFetchMock([
+    { method: "GET", path: "/database/migrations", body: applied(MAIN) },
+  ]);
+
+  const summaries = [];
+  const code = await runDriftGate(
+    gateArgs({
+      fetchImpl,
+      runGit: makeGit({ paths: [], times: {} }),
+      onSummary: (s) => summaries.push(s),
+    }),
+  );
+
+  assert.equal(code, 1);
+  assert.match(summaries[0], /checkout problem, not a database problem/);
+  // The point is that it does not ANNOUNCE drift it never observed. (The text
+  // may still use the word "foreign" while explaining what it is not doing.)
+  assert.doesNotMatch(
+    summaries[0],
+    /\*\*Drift detected/,
+    "must not announce drift it did not observe",
+  );
+  assert.doesNotMatch(
+    summaries[0],
+    /migration\(s\) on staging that do not exist/,
+    "must not list staging's migrations as foreign",
+  );
 });
 
 test("an unreadable staging is a FAILURE, never a silent pass", async () => {
@@ -306,7 +340,7 @@ test("the summary explains a foreign migration blocks db push", () => {
   const summary = buildGateSummary({
     result,
     graceMinutes: DEFAULT_GRACE_MINUTES,
-    projectRef: "hnoyzpidbmizhbqaiity",
+    projectRef: "examplestagingref01",
     mainRef: "origin/main",
   });
 
