@@ -39,14 +39,14 @@
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.5",
     "@electric-sql/pglite-pgvector": "^0.0.6",
-    "@infisical/cli": "0.43.122",
+    "@infisical/cli": "0.43.124",
     "@typescript/native": "npm:typescript@7.0.2",
-    "@vitest/coverage-v8": "4.1.10",
+    "@vitest/coverage-v8": "4.1.11",
     "concurrently": "^10.0.5",
     "dependency-cruiser": "^17.4.3",
     "jscpd": "^5.0.16",
     "prettier": "^3.9.6",
-    "turbo": "^2.10.10",
+    "turbo": "^2.10.11",
     "typescript": "npm:@typescript/typescript6@6.0.2"
   },
   "overrides": {
