@@ -109,3 +109,50 @@ export function archiveMediaPrefix(
 export function flattenArchiveRelativePath(relativePath: string): string {
   return relativePath.replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 180);
 }
+
+/**
+ * Short, stable, filename-safe digest of an original relative path.
+ *
+ * Disambiguates two source paths that flatten to the same segment
+ * (`a/b.png` and `a_b.png`). Not a security control — the path is already
+ * server-owned by the time it is used — so a cheap non-cryptographic hash is
+ * the right tool.
+ */
+function hashSegment(input: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36).padStart(7, '0');
+}
+
+/**
+ * The storage key one piece of imported media lives at.
+ *
+ * Shared by both import paths on purpose, and it is worth saying why rather
+ * than treating it as tidiness: the purge sweeps `archiveImportPrefix` and
+ * treats an empty prefix as success. If the DiscordChatExporter upload path and
+ * the bot path derived keys differently, one of them would be writing media the
+ * purge does not look for, and the purge would report success over surviving
+ * chapter content. One function means that cannot drift.
+ *
+ * `relativePath` is whatever the source calls the file — an export-relative
+ * path on the upload path, `{attachment_id}/{filename}` on the bot path. Either
+ * way it is the manifest's join key, stored verbatim in
+ * `discord_import_files.relative_path`, and this derivation is never reversed:
+ * resolution is always a lookup on the stored string.
+ */
+export function archiveMediaObjectPath(
+  chapterId: string,
+  importId: string,
+  relativePath: string,
+): string {
+  // The manifest's own uniqueness is (import_id, relative_path), and two
+  // distinct relative paths can flatten to the same segment — so the flattened
+  // name alone is not a key. The digest of the ORIGINAL path is what keeps
+  // distinct sources distinct.
+  return `${archiveMediaPrefix(chapterId, importId)}/${hashSegment(
+    relativePath,
+  )}-${flattenArchiveRelativePath(relativePath)}`;
+}

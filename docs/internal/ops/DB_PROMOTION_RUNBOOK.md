@@ -301,7 +301,12 @@ kind-semantics migration replaces a policy the authors migration leaves alone).
   `IStorageProvider.uploadFile`. The importer that shipped does not: the admin
   runs DiscordChatExporter with `--media`, which downloads the media to their own
   machine, and their **browser** uploads each file straight to this bucket
-  through a signed URL. Signet never talks to Discord.
+  through a signed URL on that path. **This is no longer the only writer.** The
+  phase-3 bot path (`20260824140000_discord_bot_connection.sql`) has the API
+  stream attachments out of Discord's CDN into the same bucket through
+  `IStorageProvider` on the service-role key — a different code path, with the
+  MIME check performed in the worker before the transfer rather than by the
+  bucket alone. Do not scope an incident on this bucket to signed-URL uploads.
   So `allowed_mime_types` is now the enforcement point rather than a second belt
   — and it does enforce: a signed-URL PUT of a type outside the list answers
   **415 `invalid_mime_type`** from storage-api, verified against the local stack.

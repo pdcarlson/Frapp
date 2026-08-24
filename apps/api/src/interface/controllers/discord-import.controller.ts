@@ -28,6 +28,7 @@ import { SystemPermissions } from '../../domain/constants/permissions';
 import {
   ConfirmDiscordUploadsDto,
   CreateDiscordImportDto,
+  DiscordDiscoveryResponseDto,
   DiscordUploadTicketDto,
   RequestDiscordUploadUrlsDto,
   SetDiscordChannelMappingDto,
@@ -44,10 +45,13 @@ import {
  * Minting a new permission string would have meant touching every seeded role's
  * permission set for no additional containment.
  *
- * No route here takes or returns a Discord credential. The admin runs
+ * No route here takes or returns a Discord credential, on either path. The
+ * upload path never touches Discord at all — the admin runs
  * DiscordChatExporter themselves and the browser uploads the result straight to
- * storage; see `20260824120000_discord_import.sql` for why storing a bot token
- * was rejected.
+ * storage. The bot path authenticates with one GLOBAL Signet token that no
+ * chapter ever sees; what a chapter contributes is a guild id, established by
+ * the OAuth flow in `DiscordConnectionController` and read here only through
+ * `chapter_id`.
  */
 @ApiTags('Discord Import')
 @ApiBearerAuth()
@@ -72,6 +76,7 @@ export class DiscordImportController {
     return this.importService.create(chapterId, user.id, {
       consent_acknowledged: dto.consent_acknowledged,
       guild_name: dto.guild_name ?? null,
+      source: dto.source ?? 'upload',
     });
   }
 
@@ -183,6 +188,42 @@ export class DiscordImportController {
     @Body() dto: SetDiscordRoleMappingDto,
   ) {
     return this.importService.setRoleMapping(id, chapterId, dto.roles);
+  }
+
+  @Post(':id/discover')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
+  @ApiOperation({
+    summary: 'Scan the connected Discord server (bot imports only)',
+    description:
+      'Lists every channel and thread the bot can read and records them against this import, all set to `skip` until mapped. Also returns the guild’s roles for the worksheet, and any warnings about what could not be enumerated.',
+  })
+  @ApiOkResponse({ type: DiscordDiscoveryResponseDto })
+  discover(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentChapterId() chapterId: string,
+  ) {
+    return this.importService.discoverBotChannels(id, chapterId);
+  }
+
+  @Put(':id/discovered-channels')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
+  @ApiOperation({
+    summary: 'Map the scanned Discord channels (bot imports only)',
+    description:
+      'Send a decision for each top-level channel the scan found. Threads are not addressable — each one follows its parent’s decision, because the admin was asked about the parent and a thread is part of that conversation. A channel the scan did not return is rejected rather than added.',
+  })
+  setDiscoveredChannelMapping(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentChapterId() chapterId: string,
+    @Body() dto: SetDiscordChannelMappingDto,
+  ) {
+    return this.importService.applyDiscoveredChannelMapping(
+      id,
+      chapterId,
+      dto.channels,
+    );
   }
 
   @Post(':id/start')

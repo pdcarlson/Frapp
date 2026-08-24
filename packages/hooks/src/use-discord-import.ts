@@ -193,12 +193,22 @@ export function useCreateDiscordImport() {
   const chapterId = useActiveChapterId();
 
   return useMutation({
-    mutationFn: async (body: {
+    mutationFn: async (vars: {
       consent_acknowledged: boolean;
       guild_name?: string;
+      /**
+       * Which way in. `upload` is the DiscordChatExporter flow and stays the
+       * default; `bot` reads the chapter's connected server directly.
+       *
+       * Required in the contract, not optional: the DTO declares a default, so
+       * the generated type makes it non-optional — the same reason
+       * `new_channel_is_read_only` is stated explicitly below. Defaulted here so
+       * every existing caller keeps the phase-2 behaviour untouched.
+       */
+      source?: "upload" | "bot";
     }) => {
       const { data, error } = await client.POST("/v1/discord-imports", {
-        body,
+        body: { ...vars, source: vars.source ?? "upload" },
       });
       if (error) throw error;
       return data;

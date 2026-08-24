@@ -5,6 +5,7 @@ import type {
   IStorageProvider,
   SignedUploadOptions,
   StorageObject,
+  StreamUploadOptions,
 } from '../../domain/adapters/storage.interface';
 import { assertSafeStoragePath } from '../../domain/utils/storage-path';
 import type { FrappSupabaseClient } from '../supabase/database.types';
@@ -122,16 +123,35 @@ export class SupabaseStorageService implements IStorageProvider {
   async uploadFile(
     bucket: string,
     path: string,
-    body: Uint8Array,
+    body: Uint8Array | ReadableStream<Uint8Array>,
     contentType: string,
+    options?: StreamUploadOptions,
   ): Promise<void> {
     assertSafeObjectPath(path);
+
+    // A stream body is passed straight through to `fetch`. storage-js detects
+    // it and sets `duplex: 'half'` itself (undici requires that for a stream
+    // body and throws without it), so nothing here reads the stream — the bytes
+    // go CDN → socket without ever being a Buffer in this process.
+    //
+    // `Content-Length` is set explicitly when the source declared one. Without
+    // it undici falls back to chunked transfer encoding, which works but hands
+    // the storage backend no size until the body is done — so an object over
+    // the bucket's ceiling is only rejected after it has all been sent.
+    const contentLength = options?.contentLength;
+    const headers =
+      typeof contentLength === 'number' && Number.isFinite(contentLength)
+        ? { 'content-length': String(contentLength) }
+        : undefined;
+
     const { error } = await this.supabase.storage
       .from(bucket)
       // upsert so a caller that derives a deterministic key can refresh it in
       // place rather than failing on a duplicate. Report exports do not rely on
-      // this — they mint a fresh uuid per call, so they never collide.
-      .upload(path, body, { contentType, upsert: true });
+      // this — they mint a fresh uuid per call, so they never collide. The
+      // Discord bot importer does: an attachment key is derived from the
+      // attachment's own snowflake, so a resumed import re-sends the same key.
+      .upload(path, body, { contentType, upsert: true, headers });
 
     if (error) throw error;
   }

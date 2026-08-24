@@ -20,6 +20,26 @@ const REQUIRED_ENV_VARS = [
 // supplied token is rejected; plain self check-in and the geofence are
 // unaffected, so no test or local flow depends on it being present.
 //   - EVENT_CHECK_IN_TOKEN_SECRET  per-environment HMAC key for check-in codes
+//
+// Also optional, same reasoning (#1243): the Discord bot import path. Unset,
+// `GET /v1/discord/availability` answers `available: false`, the wizard offers
+// only the DiscordChatExporter upload flow, and every other Discord route
+// answers 503. The upload flow is a SEPARATE path, not a fallback that switches
+// on — it works identically whether or not any of these are set.
+//
+// All four are needed together; three of the four are not enough to run the
+// flow, which is why `DiscordOAuthService.isAvailable()` checks all of them
+// rather than degrading:
+//   - DISCORD_BOT_TOKEN      ONE global Signet bot token (not per-tenant — the
+//                            per-chapter value is a guild id, in the database).
+//   - DISCORD_CLIENT_ID      the Discord application's client id, for the
+//                            authorize URL.
+//   - DISCORD_CLIENT_SECRET  for the server-to-server code exchange, which is
+//                            what proves the authorizing human runs the server.
+//   - API_URL / APP_URL      the redirect URI must be registered in the Discord
+//                            Developer Portal EXACTLY as
+//                            `${API_URL}/v1/discord/connect/callback`, and the
+//                            callback sends the browser back to `APP_URL`.
 
 type EnvVar = (typeof REQUIRED_ENV_VARS)[number];
 
