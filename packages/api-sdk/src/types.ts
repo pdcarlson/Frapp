@@ -2273,6 +2273,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/discord-imports/{id}/discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Scan the connected Discord server (bot imports only)
+         * @description Lists every channel and thread the bot can read and records them against this import, all set to `skip` until mapped. Also returns the guild’s roles for the worksheet, and any warnings about what could not be enumerated.
+         */
+        post: operations["DiscordImportController_discover_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord-imports/{id}/discovered-channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Map the scanned Discord channels (bot imports only)
+         * @description Send a decision for each top-level channel the scan found. Threads are not addressable — each one follows its parent’s decision, because the admin was asked about the parent and a thread is part of that conversation. A channel the scan did not return is rejected rather than added.
+         */
+        put: operations["DiscordImportController_setDiscoveredChannelMapping_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/discord-imports/{id}/start": {
         parameters: {
             query?: never;
@@ -2304,6 +2344,87 @@ export interface paths {
         put?: never;
         /** Stop a queued or running import */
         post: operations["DiscordImportController_cancel_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whether the bot path is configured in this environment
+         * @description The wizard offers "Connect Discord" only when this is true, and always offers the export-upload path regardless.
+         */
+        get: operations["DiscordConnectionController_availability_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord/connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** This chapter’s linked Discord server, if any */
+        get: operations["DiscordConnectionController_getConnection_v1"];
+        put?: never;
+        post?: never;
+        /**
+         * Unlink this chapter’s Discord server
+         * @description Forgets the guild id, so no further import can read that server. Already-imported history is untouched — deleting that is what the per-import purge is for. Remove the bot from the Discord server separately if you want its access gone as well.
+         */
+        delete: operations["DiscordConnectionController_disconnect_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start the "Add to Server" handshake
+         * @description Mints a single-use state bound to this chapter and returns the Discord authorize URL to send the admin to. No credential is returned and none is ever asked for: the only thing this flow stores per chapter is a guild id.
+         */
+        post: operations["DiscordConnectionController_beginConnect_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord/connect/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Activate the Discord server the callback parked
+         * @description The OAuth callback does not link anything by itself: it parks what Discord told it and hands the browser a one-time token. This route is what binds the server, and it binds it only to the chapter this request is scoped to — so an authorization completed by somebody else, for a chapter they are not in, activates nothing.
+         */
+        post: operations["DiscordConnectionController_confirmConnect_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3081,6 +3202,12 @@ export interface components {
             consent_acknowledged: boolean;
             /** @description Discord server name, for display only. */
             guild_name?: string;
+            /**
+             * @description `upload` (the default) imports a DiscordChatExporter export the admin uploads. `bot` reads the chapter's connected Discord server directly and requires a connection to exist first. Both run the same consent gate, the same channel mapping, and the same purge.
+             * @default upload
+             * @enum {string}
+             */
+            source: "upload" | "bot";
         };
         DiscordImportUploadFileDto: {
             /**
@@ -3138,6 +3265,47 @@ export interface components {
         };
         SetDiscordRoleMappingDto: {
             roles: components["schemas"]["DiscordRoleMappingDto"][];
+        };
+        DiscordDiscoveredRoleDto: {
+            discord_role_id: string;
+            discord_role_name: string;
+        };
+        DiscordDiscoveryResponseDto: {
+            /** @description Every channel and thread the bot can read, all recorded as `skip` until the admin says otherwise. Threads carry `parent_discord_channel_id` and are not mapped separately — they follow their parent. */
+            channels: {
+                [key: string]: unknown;
+            }[];
+            roles: components["schemas"]["DiscordDiscoveredRoleDto"][];
+            /** @description What could not be enumerated, in the admin’s words — most often private archived threads, which Discord gates behind a Manage Threads permission this read-only bot deliberately does not request. */
+            warnings: string[];
+        };
+        DiscordAvailabilityDto: {
+            /** @description False when this environment has no Discord application configured. The DiscordChatExporter upload flow is unaffected either way — it is a separate path, not a fallback that switches on. */
+            available: boolean;
+        };
+        DiscordConnectionDto: {
+            /** @description Whether this chapter has a Discord server linked. */
+            connected: boolean;
+            /** @description The linked Discord server id. Always a string — a snowflake exceeds 2^53 and a JSON round trip through a number would name a different server. */
+            guild_id: string | null;
+            guild_name: string | null;
+            connected_at: string | null;
+            /** @description The Discord account that authorized the install. */
+            connected_discord_username: string | null;
+        };
+        BeginDiscordConnectDto: {
+            /** @description Dashboard path to return the browser to once Discord is done, e.g. `/discord-import`. Must be a site-relative path; anything else is replaced with the default. It is stored with the handshake rather than read off the callback, because the callback carries no session to re-authorise against. */
+            return_path?: string;
+        };
+        BeginDiscordConnectResponseDto: {
+            /** @description Send the admin here. Includes the fixed permission bitfield (View Channels + Read Message History) and a single-use state. */
+            authorize_url: string;
+            /** @description When the handshake stops being redeemable. */
+            expires_at: string;
+        };
+        ConfirmDiscordConnectDto: {
+            /** @description The one-time confirmation token the OAuth callback put on the redirect. It is delivered to exactly one place — the browser that completed the authorization — and activates only against a session whose active chapter matches the one that started the handshake. */
+            handshake: string;
         };
     };
     responses: never;
@@ -6713,6 +6881,50 @@ export interface operations {
             };
         };
     };
+    DiscordImportController_discover_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordDiscoveryResponseDto"];
+                };
+            };
+        };
+    };
+    DiscordImportController_setDiscoveredChannelMapping_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetDiscordChannelMappingDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     DiscordImportController_start_v1: {
         parameters: {
             query?: never;
@@ -6748,6 +6960,107 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    DiscordConnectionController_availability_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordAvailabilityDto"];
+                };
+            };
+        };
+    };
+    DiscordConnectionController_getConnection_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordConnectionDto"];
+                };
+            };
+        };
+    };
+    DiscordConnectionController_disconnect_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DiscordConnectionController_beginConnect_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BeginDiscordConnectDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BeginDiscordConnectResponseDto"];
+                };
+            };
+        };
+    };
+    DiscordConnectionController_confirmConnect_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmDiscordConnectDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordConnectionDto"];
+                };
             };
         };
     };

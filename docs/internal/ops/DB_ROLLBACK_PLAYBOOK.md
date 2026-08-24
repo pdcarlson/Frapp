@@ -118,6 +118,104 @@ After any rollback event:
   **`idx_chat_messages_external_dedupe`** — see *Rollback the Discord importer*
   below. The recreate above is safe as written.
 
+## Rollback the Discord connect confirmation
+
+* **Migration**: `20260824150000_discord_connect_confirm.sql`
+* **Action**:
+  ```sql
+  DROP INDEX IF EXISTS public.idx_discord_oauth_states_confirm_token;
+  ALTER TABLE public.discord_oauth_states
+    DROP COLUMN IF EXISTS pending_guild_id,
+    DROP COLUMN IF EXISTS pending_guild_name,
+    DROP COLUMN IF EXISTS pending_guild_icon,
+    DROP COLUMN IF EXISTS pending_discord_user_id,
+    DROP COLUMN IF EXISTS pending_discord_username,
+    DROP COLUMN IF EXISTS pending_permissions,
+    DROP COLUMN IF EXISTS pending_scopes,
+    DROP COLUMN IF EXISTS confirm_token,
+    DROP COLUMN IF EXISTS confirm_expires_at,
+    DROP COLUMN IF EXISTS confirmed_at;
+  ```
+* **Order**: **redeploy the API first**, and understand what you are removing
+  before you do. These columns are not bookkeeping — they are the confirmation
+  step, and the confirmation step is the control that keeps one chapter from
+  reading another Discord server's history.
+* **This rollback re-opens a known cross-tenant hole.** Without the confirm
+  step, the OAuth callback binds a guild to whichever chapter minted the
+  `state` — and minting one is an ordinary action for any `channels:manage`
+  holder in any chapter. An officer can then send their own authorize link to an
+  admin of any Discord server, and if that person clicks through Discord's
+  genuine consent screen, their server is readable by the sender's chapter.
+  Every Discord-side check still passes; that is what makes it a confused-deputy
+  bug rather than a broken check. **If you roll this back, unset
+  `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` in the same change** so
+  `GET /v1/discord/availability` answers `false` and the connect flow is
+  unreachable. The DiscordChatExporter upload path is unaffected either way.
+* **Nothing already connected is lost.** `discord_connections` is a separate
+  table and is untouched — existing links keep working and imports keep running.
+  Only *new* connections are affected.
+* **In-flight handshakes are collateral, and cheap.** Any admin mid-connect
+  loses their click and retries; every row here is single-use and dead within
+  fifteen minutes anyway.
+
+## Rollback the Discord bot connection
+
+* **Migration**: `20260824140000_discord_bot_connection.sql`
+* **Action**:
+  ```sql
+  -- 1. the connection tables (safe any time; nothing else references them)
+  DROP TABLE IF EXISTS public.discord_oauth_states;
+  DROP TABLE IF EXISTS public.discord_connections;
+
+  -- 2. the per-channel bot columns
+  DROP INDEX IF EXISTS public.idx_discord_import_channels_order;
+  ALTER TABLE public.discord_import_channels
+    DROP COLUMN IF EXISTS cursor_before_snowflake,
+    DROP COLUMN IF EXISTS parent_discord_channel_id,
+    DROP COLUMN IF EXISTS position;
+
+  -- 3. the source discriminator — READ THE CAVEAT FIRST
+  ALTER TABLE public.discord_imports
+    DROP CONSTRAINT IF EXISTS discord_imports_source_check;
+  ALTER TABLE public.discord_imports DROP COLUMN IF EXISTS source;
+  ```
+* **Order**: **redeploy the API first.** `DiscordImportWorkerService.sweepImports`
+  reads `job.source` on every tick to decide which slice runs, and
+  `DiscordExportWorkerService` reads `discord_connections` on every slice.
+  Dropping either under a running worker fails the sweep once a minute, forever.
+* **Step 3 is the one that bites, and it is worse than it looks.** `source` is
+  what tells the sweeper a job reads Discord rather than an uploaded export.
+  Drop it while a bot import is `ready` or `running` and the column's absence
+  does not stop the job — it makes every remaining tick hand that job to
+  `runImportSlice`, which looks for uploaded export parts, finds none, and marks
+  the import `completed` having imported nothing further. A half-imported
+  channel is then indistinguishable from a finished one. **Cancel or purge every
+  `source = 'bot'` import before rolling this back**:
+  `SELECT id, status FROM discord_imports WHERE source = 'bot' AND status IN ('ready','running');`
+* **Losing `discord_connections` does not lose imported history.** It only
+  forgets which Discord server a chapter linked, so no *further* bot import can
+  start. Messages already imported are ordinary `kind = 'imported'` rows and are
+  purged the same way as any other import — see *Rollback the Discord importer*
+  below. Reconnecting is one pass through the wizard, so this table is cheap to
+  lose and is deliberately not backed up separately.
+* **`discord_oauth_states` is disposable by construction.** Every row is
+  single-use and expires within 15 minutes; dropping it mid-flight costs at most
+  one admin an in-progress "Connect Discord" click, which they retry.
+* **Data caveat**: dropping `cursor_before_snowflake` loses per-channel resume
+  position, not data. A resumed import re-reads the channel from its newest
+  message; `idx_chat_messages_external_dedupe` makes the replayed rows a no-op,
+  so the cost is Discord API calls and wall-clock, never duplicate messages.
+  Dropping `parent_discord_channel_id` is worse in kind: thread rows then have
+  no parent to inherit a destination from, and a re-run resolves each thread
+  independently — which, under `create_new`, mints one identically-named channel
+  per thread (`chat_channels` has no unique `(chapter_id, name)`). **Do not drop
+  it while a bot import is mid-flight.**
+* **The bot itself is not rolled back by any of this.** The Signet Discord
+  application stays installed in every chapter's server until someone removes it
+  there, and `DISCORD_BOT_TOKEN` keeps working. If the rollback is a response to
+  a security incident, rotate the token in Infisical — that is what actually
+  revokes access, not this migration.
+
 ## Rollback the Discord importer
 
 * **Migration**: `20260824120000_discord_import.sql`

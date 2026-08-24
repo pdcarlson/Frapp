@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { basename } from 'node:path';
 import {
@@ -30,19 +31,36 @@ import {
   CHAT_ARCHIVE_BUCKET,
   archiveExportPrefix,
   archiveImportPrefix,
-  archiveMediaPrefix,
+  archiveMediaObjectPath,
   flattenArchiveRelativePath,
 } from '../../domain/constants/storage';
 import type {
   DiscordImport,
   DiscordImportChannel,
-  DiscordImportFile,
   DiscordImportFileKind,
+  DiscordImportFile,
+  DiscordImportSource,
   DiscordRoleMapping,
 } from '../../domain/entities/discord-import.entity';
+import {
+  DISCORD_BOT_GATEWAY,
+  DiscordApiError,
+  DiscordNotConfiguredError,
+  type IDiscordBotGateway,
+} from '../../domain/adapters/discord.interface';
+import { DiscordOAuthService } from './discord-oauth.service';
 
 /** How many files one mint request may register. */
 export const MAX_UPLOAD_URL_BATCH = 100;
+
+/**
+ * Discovery warnings kept on the job row.
+ *
+ * Matches the worker's own `MAX_WARNINGS`. A guild with hundreds of channels
+ * the bot cannot read would otherwise grow this row without limit, and the
+ * admin reads the first few and acts on them either way.
+ */
+const MAX_WARNINGS_ON_DISCOVERY = 50;
 
 /** Signed upload URLs are short-lived by default in Supabase Storage. */
 export interface UploadTicket {
@@ -105,12 +123,19 @@ export class DiscordImportService {
     private readonly storage: IStorageProvider,
     @Inject(CHAT_CHANNEL_REPOSITORY)
     private readonly channelRepo: IChatChannelRepository,
+    @Inject(DISCORD_BOT_GATEWAY)
+    private readonly bot: IDiscordBotGateway,
+    private readonly oauthService: DiscordOAuthService,
   ) {}
 
   async create(
     chapterId: string,
     userId: string,
-    input: { consent_acknowledged: boolean; guild_name?: string | null },
+    input: {
+      consent_acknowledged: boolean;
+      guild_name?: string | null;
+      source?: DiscordImportSource;
+    },
   ): Promise<DiscordImport> {
     // The compliance gate. Deliberately a friction point rather than a
     // technical control — but one that lives in the database, not the wizard:
@@ -123,11 +148,25 @@ export class DiscordImportService {
       );
     }
 
+    const source = input.source ?? 'upload';
+
+    // A bot import is bound to the chapter's connected guild AT CREATION, and
+    // the id is read through `requireGuildId` — which resolves it by
+    // `chapter_id`, not from anything the caller sent. The worker re-reads the
+    // connection on every slice and refuses if the two have diverged, so this
+    // copy is a record of what was consented to rather than an authority.
+    const guildId =
+      source === 'bot'
+        ? await this.oauthService.requireGuildId(chapterId)
+        : null;
+
     const created = await this.importRepo.create({
       chapter_id: chapterId,
       created_by: userId,
       consent_acknowledged_at: new Date().toISOString(),
       guild_name: input.guild_name ?? null,
+      guild_id: guildId,
+      source,
     });
 
     // The prefix depends on the id, so it is stamped in a second write rather
@@ -215,6 +254,278 @@ export class DiscordImportService {
     return { confirmed };
   }
 
+  /**
+   * Ask Discord what this chapter's server contains, and record it.
+   *
+   * The bot path's answer to the upload path's client-side export scan. It has
+   * to run server-side — only the bot can enumerate the guild — which also
+   * makes it the point where the tenant boundary is established for the whole
+   * import: the guild comes from `requireGuildId(chapterId)`, every channel
+   * comes back from Discord carrying that guild, and the rows written here are
+   * the only channels the worker will ever read.
+   *
+   * Threads are recorded as their own rows with `parent_discord_channel_id`
+   * set. They are not separate mapping questions — see
+   * `applyDiscoveredChannelMapping` — but they need their own row because they
+   * have their own message endpoint and their own resume cursor.
+   *
+   * Re-runnable: it replaces the channel set wholesale, which is right while
+   * the import is still mutable (nothing has been read yet, so there is no
+   * cursor to lose) and is refused afterwards by `assertMutable`.
+   */
+  async discoverBotChannels(
+    id: string,
+    chapterId: string,
+  ): Promise<{
+    channels: DiscordImportChannel[];
+    roles: { discord_role_id: string; discord_role_name: string }[];
+    warnings: string[];
+  }> {
+    const job = await this.get(id, chapterId);
+    this.assertMutable(job);
+    if (job.source !== 'bot') {
+      throw new BadRequestException(
+        'This import reads an uploaded export, so there is nothing to discover from Discord.',
+      );
+    }
+
+    const guildId = await this.oauthService.requireGuildId(chapterId);
+    if (job.guild_id && job.guild_id !== guildId) {
+      throw new ConflictException(
+        'This chapter is now connected to a different Discord server. Start a new import.',
+      );
+    }
+
+    // Discord's failures here are operational, not bugs: the token can be
+    // rotated out from under a live connection, and a chapter can remove the
+    // bot from its server between connecting and scanning. Unmapped, both leave
+    // `AllExceptionsFilter` to answer 500 and page Sentry for something no
+    // engineer can fix. Translated to what they actually are.
+    let discovery: Awaited<ReturnType<IDiscordBotGateway['discoverChannels']>>;
+    try {
+      discovery = await this.bot.discoverChannels(guildId);
+    } catch (error) {
+      if (error instanceof DiscordNotConfiguredError) {
+        throw new ServiceUnavailableException(
+          'Reading Discord is not configured in this environment. The DiscordChatExporter upload flow still works.',
+        );
+      }
+      if (error instanceof DiscordApiError) {
+        throw new BadRequestException(error.message);
+      }
+      const status = (error as { status?: unknown })?.status;
+      if (status === 403 || status === 401) {
+        throw new BadRequestException(
+          'Signet could not read that Discord server. Check the bot is still in the server, then reconnect Discord.',
+        );
+      }
+      if (status === 404) {
+        throw new BadRequestException(
+          'That Discord server no longer exists, or the Signet bot was removed from it. Reconnect Discord.',
+        );
+      }
+      throw error;
+    }
+
+    // Ordered parents-first, each followed by its own threads. `position` is
+    // then pinned from this order, which is what lets the worker walk a parent
+    // before the threads that inherit its destination — and what keeps a
+    // resumed import walking the same sequence a later sort change would
+    // otherwise alter.
+    const parents = discovery.channels.filter((channel) => !channel.isThread);
+    const threadsByParent = new Map<string, typeof discovery.channels>();
+    for (const channel of discovery.channels) {
+      if (!channel.isThread || !channel.parentChannelId) continue;
+      const siblings = threadsByParent.get(channel.parentChannelId) ?? [];
+      siblings.push(channel);
+      threadsByParent.set(channel.parentChannelId, siblings);
+    }
+
+    const ordered = parents.flatMap((parent) => [
+      parent,
+      ...(threadsByParent.get(parent.id) ?? []),
+    ]);
+
+    const rows = ordered.map((channel, index) => ({
+      discord_channel_id: channel.id,
+      discord_channel_name: channel.name,
+      discord_category: channel.categoryName,
+      // Everything starts skipped. "Ask, never infer" is the rule the upload
+      // path already follows, and it matters more here: the bot can see the
+      // whole server, so a default of anything other than "do nothing" would
+      // mean a chapter that clicked through the wizard imported channels it was
+      // never asked about.
+      mapping_action: 'skip' as const,
+      target_channel_id: null,
+      new_channel_name: null,
+      new_channel_is_read_only: true,
+      message_count: 0,
+      imported_count: 0,
+      status: 'skipped' as const,
+      error: null,
+      cursor_before_snowflake: null,
+      parent_discord_channel_id: channel.parentChannelId,
+      position: index,
+    }));
+
+    const channels = await this.importRepo.replaceChannels(id, chapterId, rows);
+
+    // Roles come from the guild, not from message authors: the API names roles
+    // on the guild and puts only ids on a message, so this is the only place
+    // the worksheet can get readable names from.
+    const roles = await this.bot.listRoles(guildId);
+
+    await this.importRepo.update(id, chapterId, {
+      guild_id: guildId,
+      warnings: discovery.warnings.slice(-MAX_WARNINGS_ON_DISCOVERY),
+    });
+
+    return {
+      channels,
+      roles: roles.map((role) => ({
+        discord_role_id: role.id,
+        discord_role_name: role.name,
+      })),
+      warnings: discovery.warnings,
+    };
+  }
+
+  /**
+   * Record the admin's per-channel decisions on a discovered (bot) import.
+   *
+   * Separate from `setChannelMapping` — which the upload path uses to CREATE
+   * the channel set from what the browser parsed — because here the set already
+   * exists and is authoritative. A caller cannot add a channel: a decision for
+   * a `discord_channel_id` that discovery did not return is rejected rather
+   * than inserted, which is what stops a client naming a channel the bot was
+   * never shown.
+   *
+   * Threads inherit their parent's decision and are not addressable. The admin
+   * answered for #general; every thread inside #general goes wherever #general
+   * went. Letting a caller aim a thread somewhere else would create a second
+   * destination nobody was asked about — and, for `create_new`, would mint a
+   * second identically-named channel, which `chat_channels` has no unique
+   * constraint to catch.
+   */
+  async applyDiscoveredChannelMapping(
+    id: string,
+    chapterId: string,
+    decisions: ChannelMappingInput[],
+  ): Promise<DiscordImportChannel[]> {
+    const job = await this.get(id, chapterId);
+    this.assertMutable(job);
+    if (job.source !== 'bot') {
+      throw new BadRequestException(
+        'This import reads an uploaded export; map its channels with the upload flow.',
+      );
+    }
+
+    const existing = await this.importRepo.findChannels(id, chapterId);
+    if (existing.length === 0) {
+      throw new BadRequestException(
+        'Scan the Discord server before mapping its channels.',
+      );
+    }
+    const known = new Set(
+      existing
+        .filter((channel) => !channel.parent_discord_channel_id)
+        .map((channel) => channel.discord_channel_id),
+    );
+
+    const byId = new Map<string, ChannelMappingInput>();
+    for (const decision of decisions) {
+      if (!known.has(decision.discord_channel_id)) {
+        throw new BadRequestException(
+          `#${decision.discord_channel_name} is not one of the channels found in this Discord server.`,
+        );
+      }
+      await this.assertDecisionResolvable(decision, chapterId);
+      byId.set(decision.discord_channel_id, decision);
+    }
+
+    // Return type annotated rather than cast inline: `status` and
+    // `mapping_action` are string unions, and an object literal in a `.map`
+    // widens both to `string` without it.
+    const rows = existing.map(
+      (channel): Omit<DiscordImportChannel, 'id' | 'import_id'> => {
+        // A thread reads its parent's answer; a top-level channel reads its own.
+        const key =
+          channel.parent_discord_channel_id ?? channel.discord_channel_id;
+        const decision = byId.get(key);
+        const action = decision?.mapping_action ?? 'skip';
+        return {
+          discord_channel_id: channel.discord_channel_id,
+          discord_channel_name: channel.discord_channel_name,
+          discord_category: channel.discord_category,
+          mapping_action: action,
+          // Only `use_existing` names a target, and only `use_existing` is
+          // validated — `assertDecisionResolvable` checks nothing when the
+          // action is `create_new` or `skip`. Persisting a caller's UUID under
+          // an unvalidated action writes an unchecked `chat_channels` id onto
+          // this row AND onto every thread row that inherits it, and
+          // `chat_messages` has no `chapter_id`, so its FK would accept a
+          // channel from any chapter in the product. Dropped, not trusted.
+          target_channel_id:
+            action === 'use_existing'
+              ? (decision?.target_channel_id ?? null)
+              : null,
+          new_channel_name: decision?.new_channel_name?.trim() || null,
+          new_channel_is_read_only: decision?.new_channel_is_read_only ?? true,
+          message_count: channel.message_count,
+          imported_count: 0,
+          status: action === 'skip' ? 'skipped' : 'pending',
+          error: null,
+          cursor_before_snowflake: null,
+          parent_discord_channel_id: channel.parent_discord_channel_id,
+          position: channel.position,
+        };
+      },
+    );
+
+    return this.importRepo.replaceChannels(id, chapterId, rows);
+  }
+
+  /**
+   * The same validation `setChannelMapping` applies, factored out so both
+   * paths cannot drift.
+   *
+   * The `use_existing` check is the important one and is the exact bug #1242's
+   * review caught: `target_channel_id` is a client-supplied UUID, `chat_messages`
+   * has no `chapter_id` of its own, and its FK to `chat_channels` accepts ANY
+   * channel in the product. Nothing in the database would catch a channel from
+   * another chapter — and it would be unrecoverable, because the purge scopes
+   * its delete by the import's own chapter.
+   */
+  private async assertDecisionResolvable(
+    channel: ChannelMappingInput,
+    chapterId: string,
+  ): Promise<void> {
+    if (channel.mapping_action === 'use_existing') {
+      if (!channel.target_channel_id) {
+        throw new BadRequestException(
+          `Pick a Signet channel for #${channel.discord_channel_name}, or choose to create a new one.`,
+        );
+      }
+      const target = await this.channelRepo.findById(
+        channel.target_channel_id,
+        chapterId,
+      );
+      if (!target) {
+        throw new BadRequestException(
+          `The channel chosen for #${channel.discord_channel_name} is not one of this chapter's channels.`,
+        );
+      }
+    }
+    if (
+      channel.mapping_action === 'create_new' &&
+      !channel.new_channel_name?.trim()
+    ) {
+      throw new BadRequestException(
+        `Name the new channel for #${channel.discord_channel_name}.`,
+      );
+    }
+  }
+
   async setChannelMapping(
     id: string,
     chapterId: string,
@@ -222,45 +533,27 @@ export class DiscordImportService {
   ): Promise<DiscordImportChannel[]> {
     const job = await this.get(id, chapterId);
     this.assertMutable(job);
+    // A bot import's channel set is established by discovery, and
+    // `applyDiscoveredChannelMapping` enforces that it is the ONLY set the
+    // worker reads by refusing any `discord_channel_id` the scan did not
+    // return. THIS route builds the set from whatever the caller sends, so
+    // without this guard it is the way around that invariant: a caller could
+    // point a bot import at arbitrary Discord snowflakes and read the worker's
+    // guild-mismatch error back off the job row — an oracle for which Discord
+    // servers other chapters have connected.
+    if (job.source === 'bot') {
+      throw new BadRequestException(
+        'This import reads Discord directly. Map its channels with the scanned-channel route.',
+      );
+    }
 
+    // Mirrors the DB CHECK, so the admin gets a sentence instead of a
+    // constraint name — and so the worker never meets an action it cannot
+    // resolve thousands of rows into an import. Shared with the bot path's
+    // `applyDiscoveredChannelMapping`: the `use_existing` cross-chapter check
+    // is the one that must never differ between the two.
     for (const channel of channels) {
-      // Mirrors the DB CHECK, so the admin gets a sentence instead of a
-      // constraint name — and so the worker never meets an action it cannot
-      // resolve thousands of rows into an import.
-      if (
-        channel.mapping_action === 'use_existing' &&
-        !channel.target_channel_id
-      ) {
-        throw new BadRequestException(
-          `Pick a Signet channel for #${channel.discord_channel_name}, or choose to create a new one.`,
-        );
-      }
-      if (channel.mapping_action === 'use_existing') {
-        // The target is a client-supplied UUID and the only thing standing
-        // between it and thousands of inserts. `chat_messages` has no
-        // `chapter_id`, so its FK to `chat_channels` accepts ANY channel in the
-        // product — nothing in the database would catch a channel from another
-        // chapter. Worse, it would be unrecoverable: the purge scopes its delete
-        // by the import's own chapter, so history injected elsewhere is
-        // permanent. Resolve it through the chapter-scoped read.
-        const target = await this.channelRepo.findById(
-          channel.target_channel_id as string,
-          chapterId,
-        );
-        if (!target) {
-          throw new BadRequestException(
-            `The channel chosen for #${channel.discord_channel_name} is not one of this chapter's channels.`,
-          );
-        }
-      }
-      if (
-        channel.mapping_action === 'create_new' &&
-        !channel.new_channel_name?.trim()
-      ) {
-        throw new BadRequestException(
-          `Name the new channel for #${channel.discord_channel_name}.`,
-        );
-      }
+      await this.assertDecisionResolvable(channel, chapterId);
     }
 
     return this.importRepo.replaceChannels(
@@ -278,6 +571,12 @@ export class DiscordImportService {
         imported_count: 0,
         status: channel.mapping_action === 'skip' ? 'skipped' : 'pending',
         error: null,
+        // Bot-path columns, inert here. An uploaded export resumes on the job's
+        // part cursor, has no threads to parent, and keeps the default position
+        // so `findChannels` returns it in the same name order it always did.
+        cursor_before_snowflake: null,
+        parent_discord_channel_id: null,
+        position: 0,
       })),
     );
   }
@@ -305,18 +604,33 @@ export class DiscordImportService {
     const job = await this.get(id, chapterId);
     this.assertMutable(job);
 
-    const files = await this.importRepo.findFiles(id, chapterId);
-    const parts = files.filter((file) => file.kind === 'export');
-    if (parts.length === 0) {
-      throw new BadRequestException(
-        'Upload the exported JSON before starting the import.',
-      );
-    }
-    const pending = files.filter((file) => file.uploaded_at === null);
-    if (pending.length > 0) {
-      throw new BadRequestException(
-        `${pending.length} file(s) have not finished uploading yet.`,
-      );
+    // A bot import has nothing uploaded — it fetches. What it needs instead is
+    // a live connection, re-resolved here rather than trusted from the job row,
+    // so an import cannot be started against a server the chapter has since
+    // disconnected or replaced.
+    let partsTotal = 0;
+    if (job.source === 'bot') {
+      const guildId = await this.oauthService.requireGuildId(chapterId);
+      if (job.guild_id && job.guild_id !== guildId) {
+        throw new ConflictException(
+          'This chapter is now connected to a different Discord server. Start a new import.',
+        );
+      }
+    } else {
+      const files = await this.importRepo.findFiles(id, chapterId);
+      const parts = files.filter((file) => file.kind === 'export');
+      if (parts.length === 0) {
+        throw new BadRequestException(
+          'Upload the exported JSON before starting the import.',
+        );
+      }
+      const pending = files.filter((file) => file.uploaded_at === null);
+      if (pending.length > 0) {
+        throw new BadRequestException(
+          `${pending.length} file(s) have not finished uploading yet.`,
+        );
+      }
+      partsTotal = parts.length;
     }
 
     const channels = await this.importRepo.findChannels(id, chapterId);
@@ -325,10 +639,22 @@ export class DiscordImportService {
         'Map the exported channels before starting the import.',
       );
     }
+    // Every channel skipped is a no-op import that reports success, which reads
+    // as "Signet lost my history". The upload path cannot hit this (its rows
+    // only exist once the admin answered), but the bot path discovers every
+    // channel as skipped by default, so clicking straight through is reachable.
+    if (
+      job.source === 'bot' &&
+      channels.every((channel) => channel.mapping_action === 'skip')
+    ) {
+      throw new BadRequestException(
+        'Choose at least one Discord channel to import.',
+      );
+    }
 
     return this.importRepo.update(id, chapterId, {
       status: 'ready',
-      parts_total: parts.length,
+      parts_total: partsTotal,
       error: null,
     });
   }
@@ -417,19 +743,15 @@ export class DiscordImportService {
       );
     }
 
-    const flattened = flattenArchiveRelativePath(relativePath);
     const storagePath =
       file.kind === 'export'
         ? `${archiveExportPrefix(chapterId, job.id)}/${String(
             file.part_index ?? 0,
-          ).padStart(4, '0')}-${flattened}`
-        : // The file row's own uniqueness is (import_id, relative_path); two
-          // different relative paths can flatten to the same segment, so the
-          // flattened name alone is not a key. Prefixing with the part index or
-          // a hash of the original keeps distinct sources distinct.
-          `${archiveMediaPrefix(chapterId, job.id)}/${hashSegment(
-            relativePath,
-          )}-${flattened}`;
+          ).padStart(4, '0')}-${flattenArchiveRelativePath(relativePath)}`
+        : // Shared with the bot import path — see `archiveMediaObjectPath` for
+          // why one derivation matters more than it looks (the purge sweeps by
+          // prefix and treats empty as success).
+          archiveMediaObjectPath(chapterId, job.id, relativePath);
 
     return {
       import_id: job.id,
@@ -443,21 +765,4 @@ export class DiscordImportService {
       byte_size: file.byte_size,
     };
   }
-}
-
-/**
- * Short, stable, filename-safe digest of the original relative path.
- *
- * Disambiguates two source paths that flatten to the same segment
- * (`a/b.png` and `a_b.png`). Not a security control — the path is already
- * server-owned by the time it is used — so a cheap non-cryptographic hash is
- * the right tool.
- */
-function hashSegment(input: string): string {
-  let hash = 2166136261;
-  for (let i = 0; i < input.length; i += 1) {
-    hash ^= input.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(36).padStart(7, '0');
 }
