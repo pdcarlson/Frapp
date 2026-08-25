@@ -136,15 +136,24 @@ spec, the UX, and the runtime — not just whatever prompted the run.
 ### Lens 1 — Engineering gaps
 
 Run the audit playbook ([`/audit`](../audit/SKILL.md)): `npm run check-types`, `npm run lint`,
-`npm audit`, `npm run check:api-contract`, `npm run check:migration-safety`. All five run on a fresh
-sandbox with no manual package build, but for three different reasons — do not collapse them:
+`npm run check:npm-audit`, `npm run check:api-contract`, `npm run check:migration-safety`. All five run
+on a fresh sandbox with no manual package build, but for three different reasons — do not collapse them:
 `check-types` and `lint` are turbo tasks wired to `^build` in `turbo.json`; `check:api-contract` is a
-root node script that builds `./packages/*` itself before regenerating; `npm audit` and
+root node script that builds `./packages/*` itself before regenerating; `check:npm-audit` and
 `check:migration-safety` need no build at all. `^build` covers **only** the turbo tasks. Plus: weak tests
 on complex logic, N+1/in-memory aggregation, large unsplit modules, auth-guard/RLS gaps, secret
 exposure, CI holes. `npm run lint` is read-only and never edits files, but `npm run check:api-contract`
 regenerates the contract artifacts when API-related files changed — treat those edits as throwaway
 (`git checkout -- .`); never commit them.
+
+**Use `check:npm-audit`, not bare `npm audit`.** The CI `dependency-audit` job gates on
+`npm run check:npm-audit` (`scripts/check-npm-audit.mjs`), which blocks a high/critical advisory
+*unless* it carries a time-boxed, issue-tracked entry in `scripts/npm-audit-allowlist.json` — that
+gate, not the raw report, is what this repo treats as a vulnerability finding. The raw report counts
+*package* findings, so it inflates: on 2026-08-25 `npm audit` reported **17 findings (12 moderate, 5
+high)**, which the gate resolved to **3 unique advisories**, of which the two high ones are
+allowlisted `image-size` CVEs **already tracked by #923** (expiring 2026-11-15) — so the gate passed.
+File from the gate's output; a suggestion raised off the raw report would have duplicated #923.
 
 ### Lens 2 — Product & behavior gaps (grounded in `spec/`)
 
