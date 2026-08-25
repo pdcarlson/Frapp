@@ -1,5 +1,5 @@
+import { randomUUID } from 'node:crypto';
 import type { NextFunction, Response } from 'express';
-import { v4 as uuidv4 } from 'uuid';
 import { getHeaderValue, RequestContext } from '../types/request-context.types';
 
 /**
@@ -26,7 +26,7 @@ export function requestIdMiddleware(
   next: NextFunction,
 ): void {
   const inbound = getHeaderValue(request.headers, 'x-request-id');
-  const requestId = inbound ?? `req_${uuidv4()}`;
+  const requestId = inbound ?? `req_${randomUUID()}`;
   request.requestId = requestId;
   response.setHeader('x-request-id', requestId);
   next();

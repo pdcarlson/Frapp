@@ -74,6 +74,38 @@ describe("ChapterService", () => {
 });
 ```
 
+## 2a. ESM-only dependencies break the unit suite (and only the unit suite)
+
+`apps/api` has no `"type": "module"`, so it compiles and runs as **CommonJS**. An ESM-only
+dependency — one published `"type": "module"` with no CJS build — cannot be loaded by Jest, which
+resolves through its own module registry rather than Node's loader and, by default, does not
+transform anything under `node_modules`. Every suite that transitively imports such a package fails
+with `SyntaxError: Unexpected token 'export'` before a single test runs.
+
+The trap is that **nothing else goes red**. Node 20.19+ and 22.12+ can `require()` an ES module, and
+TypeScript allows the import under `module: nodenext`, so `check-types`, `nest build`, and
+`api-docker-build` all stay green — the API really would boot. `api-tests` is the only check that
+sees it, and it reports suites that *failed to run*, not tests that failed. Dependabot's
+`uuid` 11 → 14 bump ([#1248](https://github.com/pdcarlson/Frapp/pull/1248)) is the worked example:
+`uuid` dropped its CommonJS build in v12, and the bump produced 5 failed suites and 0 failed tests.
+
+When a major bump red-lights `api-tests` this way, check the package's `"type"` and `exports` before
+assuming the code is at fault:
+
+```bash
+node -e "const p=require('./node_modules/<pkg>/package.json');console.log(p.type,JSON.stringify(p.exports))"
+```
+
+Then, in order of preference:
+
+1. **Drop the dependency** if Node has a built-in for it. This is usually the real answer for the
+   small single-purpose packages that go ESM-only first — `uuid`'s `v4()` is `randomUUID()` from
+   `node:crypto`, which the rest of the API already uses. Prefer the built-in in new code.
+2. **Add the package to `transformIgnorePatterns`** in the relevant Jest config, so ts-jest
+   transforms it down to CJS. This is the escape hatch when the dependency is genuinely needed.
+
+Pinning the dependency below its ESM release only defers the problem to the next bump.
+
 ## 3. Service tests
 
 For each Phase 1 service (`auth`, `user`, `chapter`, `member`, `rbac`, `invite`) we aim to cover:
