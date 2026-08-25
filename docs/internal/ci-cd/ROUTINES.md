@@ -336,4 +336,12 @@ per rule 3 of the [ownership boundary](#shared-ownership-boundary-all-routines).
   prompt if the prompt block itself changes.
 - Keep the label roster above current if the taxonomy changes (self-maintenance automates the
   check).
+- **Keep a routine's lens commands pointed at the command CI actually gates on**, not at the
+  underlying tool. A routine reads a check's output as evidence for filing an issue, so a command
+  that reports more than the gate blocks on turns accepted decisions back into new issues. The
+  standing case is `npm run check:npm-audit` (the `dependency-audit` job's gate, which honours
+  `scripts/npm-audit-allowlist.json`) versus bare `npm audit`, which re-reports every allowlisted
+  advisory; the curator's Lens 1 named the latter until 2026-08-25. Self-maintenance's "dead
+  commands" check covers commands that no longer *exist* — this one is about commands that still
+  run but no longer mean what the routine assumes.
 - Environment notes: [`spec/environments/README.md`](../../../spec/environments/README.md#claude-code-routines-environment).
