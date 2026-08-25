@@ -23,15 +23,23 @@ Change SUPABASE_URL → both references update instantly.
 
 ## Infisical Environments
 
-| Environment | When it's used | Maps to |
-|---|---|---|
-| `local` | Running the app on your machine against local Docker Supabase | `npm run dev:stack` (API + web + landing); per-app: see [`LOCAL_DEV.md`](./LOCAL_DEV.md) |
-| `staging` | Deployed to staging infra when code merges to `main` branch | Vercel Preview, Render staging, Supabase staging project |
-| `production` | Deployed to production infra when code merges to `production` branch | Vercel Production, Render production, Supabase production project |
+| UI name | **Slug** | When it's used | Maps to |
+|---|---|---|---|
+| Development | **`dev`** | Running the app on your machine against local Docker Supabase | `npm run dev:stack` (API + web + landing); per-app: see [`LOCAL_DEV.md`](./LOCAL_DEV.md) |
+| Staging | **`staging`** | Deployed to staging infra when code merges to `main` branch | Vercel Preview, Render staging, Supabase staging project |
+| Production | **`prod`** | Deployed to production infra when code merges to `production` branch | Vercel Production, Render production, Supabase production project |
 
-> **Infisical API note:** the Production environment is named “Production” in the UI, but its API/runtime slug is currently `prod`. GitHub Actions and provider automation should use the real slug returned by the Infisical API.
+> **Always use the slug, never the UI name.** Two of the three differ: the environment shown as
+> “Development” is `dev`, and the one shown as “Production” is `prod`. Every
+> `infisical run --env=`, every workflow `env-slug:`, and `.infisical.json` takes the slug.
+>
+> This table used to claim `local` and `production`. Neither slug exists, so all five
+> `npm run dev:*` scripts failed to resolve an environment — a bug that survived because the
+> deploy workflows hardcode `staging`/`prod` correctly and the cloud sandbox writes
+> `apps/*/.env.local` directly, so nothing in CI exercised the broken path.
+> `npm run check:env-slugs` now enforces this column.
 
-**Local uses local Supabase (Docker) but real staging Stripe/Sentry keys.** This lets you test billing flows, webhook handling, and error tracking during local development without pushing to main. Supabase stays local because the database schema and seed data are managed by your local Docker instance.
+**`dev` uses local Supabase (Docker) but real staging Stripe/Sentry keys.** This lets you test billing flows, webhook handling, and error tracking during local development without pushing to main. Supabase stays local because the database schema and seed data are managed by your local Docker instance.
 
 ---
 
@@ -41,7 +49,7 @@ These are the real values you enter into Infisical. **Every cell tells you exact
 
 ### Core App Secrets
 
-| Variable | `local` | `staging` | `production` |
+| Variable | `dev` | `staging` | `prod` |
 |---|---|---|---|
 | `SUPABASE_URL` | `http://127.0.0.1:54321` | `https://YOUR_STAGING_REF.supabase.co` ← copy from Supabase staging dashboard → Settings → API → Project URL | `https://YOUR_PROD_REF.supabase.co` ← copy from Supabase production dashboard → Settings → API → Project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | Output of `npx supabase status -o env` for your local stack (`SUPABASE_SERVICE_ROLE_KEY`) | Copy from Supabase staging dashboard → Settings → API → `service_role` key (⚠️ secret!) | Copy from Supabase production dashboard → Settings → API → `service_role` key (⚠️ secret!) |
@@ -63,7 +71,7 @@ These are the real values you enter into Infisical. **Every cell tells you exact
 
 ### API-Only Settings
 
-| Variable | `local` | `staging` | `production` |
+| Variable | `dev` | `staging` | `prod` |
 |---|---|---|---|
 | `PORT` | `3001` | `3001` | `3001` |
 | `NODE_ENV` | `development` | `production` | `production` |
@@ -113,7 +121,7 @@ These are the real values you enter into Infisical. **Every cell tells you exact
 
 Product analytics is pseudonymous by construction: the API keys every event by `hmac_sha256(salt, user_id)` and the raw user id never reaches the provider (`spec/behavior/data-retention.md` #analytics-events-pseudonymous). **The salt is API-only on purpose** — it must never be exposed to a client bundle (no `NEXT_PUBLIC_`/`EXPO_PUBLIC_` reference), or the dataset could be rainbow-tabled back to user ids. Clients fetch their pseudonymous id from `GET /v1/analytics/identity` and post events through `POST /v1/analytics/events`; the API does the keying.
 
-| Variable | `local` | `staging` | `production` |
+| Variable | `dev` | `staging` | `prod` |
 |---|---|---|---|
 | `ANALYTICS_HMAC_SALT` | _(optional locally)_ a random 32+ char hex string — generate with `openssl rand -hex 32`. When empty, server analytics is disabled. | A **distinct** random per-environment salt (`openssl rand -hex 32`). Held only here, never in the analytics provider. | A **distinct** random per-environment salt (`openssl rand -hex 32`). Held only here, never in the analytics provider. |
 | `POSTHOG_API_KEY` | _(leave empty → no-op provider, events logged at debug only)_ | PostHog project API key (`phc_...`) for the staging project | PostHog project API key (`phc_...`) for the production project |
@@ -132,9 +140,9 @@ Product analytics is pseudonymous by construction: the API keys every event by `
 
 ### CD Secrets (Deploy Workflows Only)
 
-These are only used by GitHub Actions. Leave them empty in the `local` environment — they're not needed for local development.
+These are only used by GitHub Actions. Leave them empty in the `dev` environment — they're not needed for local development.
 
-| Variable | `local` | `staging` | `production` |
+| Variable | `dev` | `staging` | `prod` |
 |---|---|---|---|
 | `RENDER_DEPLOY_HOOK_URL` | _(leave empty)_ | Copy from Render dashboard → frapp-api-staging → Settings → Deploy Hook → copy URL | Copy from Render dashboard → frapp-api-prod → Settings → Deploy Hook → copy URL |
 | `API_HEALTHCHECK_URL` | _(leave empty)_ | `https://api-staging.frapp.live/health` | `https://api.frapp.live/health` |

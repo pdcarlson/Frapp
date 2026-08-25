@@ -3,7 +3,7 @@
 ## What runs
 
 On pull requests to `main` and `production`, `.github/workflows/docs.yml` (workflow display name
-**Docs spec sync**) runs **three jobs** covering **four** checks. They are separate on purpose: each
+**Docs spec sync**) runs **three jobs** covering **five** checks. They are separate on purpose: each
 asserts one thing, and each fails with a different fix.
 
 | Check | Script | Asserts | Scope | Job | Required? |
@@ -12,6 +12,7 @@ asserts one thing, and each fails with a different fix.
 | Structure | [`check-docs-structure.mjs`](../../../scripts/check-docs-structure.mjs) | Newly **added** paths sit in allowed locations | Added/renamed paths in the diff | `docs-spec-sync` | **Yes** (same job) |
 | Citations | [`check-doc-paths.mjs`](../../../scripts/check-doc-paths.mjs) | Backticked repo-path citations resolve to real files | Whole tree | `doc-paths` | **Yes** — in `DOCS_CHECKS` |
 | Rosters | [`check-doc-tables.mjs`](../../../scripts/check-doc-tables.mjs) | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml` | Whole tree | `doc-tables` | Not yet — see rollout below |
+| Env slugs | [`check-env-slugs.mjs`](../../../scripts/check-env-slugs.mjs) | Every Infisical environment named anywhere is one that exists | Whole tree | `doc-tables` (same job) | Not yet — inherits `doc-tables` |
 
 `docs-spec-sync` is a required check under `enforce_admins: true`, registered via the `DOCS_CHECKS`
 array in [`scripts/configure-branch-protection.mjs`](../../../scripts/configure-branch-protection.mjs)
@@ -190,9 +191,38 @@ Run locally: `npm run check:doc-tables`. Unit tests:
 `DOCS_CHECKS` and re-running `npm run configure:branch-protection` once it has run green on the
 target branch.
 
+### Env slugs (`check-env-slugs.mjs`)
+
+Asserts that every Infisical environment named in the repo is one that exists: `dev`, `staging`,
+`prod`. It scans `package.json` (`infisical run --env=`), `.infisical.json`
+(`defaultEnvironment` and every branch mapping), the workflows (`env-slug:`), every `--env=` in a
+`docs/` or `spec/` code sample, and the canonical table in
+[`ENV_REFERENCE.md`](../environment/ENV_REFERENCE.md) § Infisical Environments.
+
+**The bug it exists to catch already happened.** Infisical environments carry a display *name* and a
+separate *slug*, and two of our three differ — "Development" is `dev`, "Production" is `prod`. Six
+docs asserted a `local` environment, and `package.json` followed them: all five `npm run dev:*`
+scripts passed a `--env=` value of `local` and could never resolve an environment. Nothing caught it, because the
+deploy workflows hardcode `staging`/`prod` correctly and the cloud sandbox writes
+`apps/*/.env.local` directly — so no CI path ever exercised the broken flag. A wrong slug does not
+warn; it fails to resolve.
+
+The slug list lives in exactly one place, `INFISICAL_ENV_SLUGS` in the script, mirrored from
+**Infisical → Project Settings → Environments**. If an environment is genuinely renamed, update that
+constant and `ENV_REFERENCE.md` — do **not** widen the list to silence a failing reference.
+
+Pure helpers (`unknownSlugsIn`, `infisicalConfigSlugs`, `canonicalSection`, `lineOf`) are exported
+for `scripts/ci/__tests__/check-env-slugs.test.mjs`, run by the `ci-scripts-tests` job; importing
+the module has no side effects, so the gate can be tested without running it.
+
+**What it cannot do:** notice a rename in the Infisical dashboard. It proves internal consistency
+only. A rename surfaces as a loud failure on the next deploy workflow run, and the constant above is
+the single place to fix.
+
 ### What none of these check
 
-Whether a doc's **claims** are still true. All four are structural — they check that files exist,
+Whether a doc's **claims** are still true — with the one narrow exception of env slugs above.
+The rest are structural: they check that files exist,
 that edits happened, and that two lists match, not that a sentence is accurate. A doc can pass every gate here and still
 be confidently wrong, or be accurate and still mislead (two correct tables on one topic, far apart,
 with no cross-reference). That judgement half is the

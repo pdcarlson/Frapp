@@ -11,13 +11,13 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 
 ## Key Design Principles
 
-1. **Canonical values stored once.** Each secret (e.g., `SUPABASE_URL`) is stored once per Infisical environment. The value changes per environment (local/staging/production), but the name stays the same.
+1. **Canonical values stored once.** Each secret (e.g., `SUPABASE_URL`) is stored once per Infisical environment. The value changes per environment (`dev`/`staging`/`prod`), but the name stays the same.
 
 2. **References eliminate duplication.** Framework-specific names (`NEXT_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_URL`) are Infisical **secret references** that resolve to the canonical value. Change `SUPABASE_URL` → all references update.
 
 3. **No environment suffixes.** There's no `RENDER_DEPLOY_HOOK_URL_STAGING` — just `RENDER_DEPLOY_HOOK_URL` with different values per environment. GitHub's `environment:` feature and Infisical's environment scoping handle the routing.
 
-4. **No `.env.local` files (primary path).** Default local run is **`npm run dev:stack`** from the repo root (API + web + landing + docs; secrets from Infisical `local` via the CLI). Requires `npx infisical login` on the machine. Per-app `dev:*` and fallbacks: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
+4. **No `.env.local` files (primary path).** Default local run is **`npm run dev:stack`** from the repo root (API + web + landing + docs; secrets from Infisical `dev` via the CLI). Requires `npx infisical login` on the machine. Per-app `dev:*` and fallbacks: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 
 ## Architecture
 
@@ -62,11 +62,15 @@ billing/usage view is authoritative if you need the number for a plan decision.
 
 ### 2. Create Environments
 
-| Environment | Slug         | Maps to                               |
-| ----------- | ------------ | ------------------------------------- |
-| Local       | `local`      | Local development via `infisical run` |
-| Staging     | `staging`    | `main` branch deploys                 |
-| Production  | `production` | `production` branch deploys           |
+| UI name     | Slug        | Maps to                               |
+| ----------- | ----------- | ------------------------------------- |
+| Development | `dev`       | Local development via `infisical run` |
+| Staging     | `staging`   | `main` branch deploys                 |
+| Production  | `prod`      | `production` branch deploys           |
+
+The **slug** is what every tool takes — `infisical run --env=`, the workflows' `env-slug:`, and
+`.infisical.json`. Two of the three differ from the UI name. Verify against
+**Project Settings → Environments**, which lists Name and Slug side by side.
 
 ### 3. Add Canonical Values
 
@@ -88,7 +92,7 @@ For each environment, add the canonical values from the table in [`ENV_REFERENCE
 | `SUPABASE_ACCESS_TOKEN`     | From https://supabase.com/dashboard/account/tokens |
 | `SUPABASE_DB_PASSWORD`      | Staging database password (per-project — production differs). **Required for migrations**; see [`ENV_REFERENCE.md`](./ENV_REFERENCE.md#cd-secrets-deploy-workflows-only) |
 
-Repeat for `production` with production values, and `local` with local values.
+Repeat for `prod` with production values, and `dev` with local-development values.
 
 ### 4. Add References
 
