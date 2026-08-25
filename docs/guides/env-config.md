@@ -28,11 +28,11 @@ Key principles:
 **Recommended:** use the **Infisical CLI** as the primary local flow so secrets stay centralized (same source as staging/prod). Authenticate once with `npx infisical login`, then run apps with secrets injected:
 
 ```bash
-npx infisical run --env=local -- npm run start:dev -w apps/api
-npx infisical run --env=local -- npm run dev -w apps/web
+npx infisical run --env=dev -- npm run start:dev -w apps/api
+npx infisical run --env=dev -- npm run dev -w apps/web
 ```
 
-For all three apps in one terminal, use `npm run dev:stack` from the repo root (it wraps the same Infisical pattern). Populate the Infisical **`local`** environment using values from `npx supabase status -o env` plus the app-specific keys listed in [`docs/internal/environment/ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md).
+For all three apps in one terminal, use `npm run dev:stack` from the repo root (it wraps the same Infisical pattern). Populate the Infisical **`dev`** environment using values from `npx supabase status -o env` plus the app-specific keys listed in [`docs/internal/environment/ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md).
 
 ### Fallback: Supabase CLI + `.env.local`
 

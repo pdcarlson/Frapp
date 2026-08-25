@@ -86,7 +86,7 @@ See **[`docs/internal/environment/ENV_REFERENCE.md`](../../docs/internal/environ
 **Alternative (Infisical CLI):** Skip `.env.local` files entirely by injecting from Infisical:
 
 ```bash
-npx infisical run --env=local -- npm run start:dev -w apps/api
+npx infisical run --env=dev -- npm run start:dev -w apps/api
 ```
 
 ### Accessing Services

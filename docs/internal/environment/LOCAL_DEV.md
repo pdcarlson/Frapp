@@ -16,12 +16,12 @@ Bootstrap Supabase + deps: [`scripts/local-dev-setup.sh`](../../../scripts/local
 
 ## Infisical (primary path)
 
-Root scripts wrap apps with `npx infisical run --env=local --path=/` so secrets come from Infisical’s **`local`** environment — no committed `.env.local` files.
+Root scripts wrap apps with `npx infisical run --env=dev --path=/` so secrets come from Infisical’s **`dev`** environment (shown as “Development” in the UI) — no committed `.env.local` files.
 
 1. **One-time CLI auth:** `npx infisical login` (from repo root is fine).
-2. **Populate `local` in Infisical** with values that match local Supabase (`npx supabase status -o env`) plus Stripe/Sentry and other keys listed in [`ENV_REFERENCE.md`](./ENV_REFERENCE.md). Full setup: [`SECRETS_MANAGEMENT.md`](./SECRETS_MANAGEMENT.md).
+2. **Populate `dev` in Infisical** with values that match local Supabase (`npx supabase status -o env`) plus Stripe/Sentry and other keys listed in [`ENV_REFERENCE.md`](./ENV_REFERENCE.md). Full setup: [`SECRETS_MANAGEMENT.md`](./SECRETS_MANAGEMENT.md).
 
-If `infisical run` fails (no session, wrong project, or API key without `local` access), use the **fallback** below.
+If `infisical run` fails (no session, wrong project, or API key without `dev` access), use the **fallback** below.
 
 ## Ports and URLs
 

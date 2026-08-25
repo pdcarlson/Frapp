@@ -20,7 +20,7 @@ APIs before proposing changes. Usage policy for `GITHUB_PAT` lives in
 | ------- | ----------- |
 | `GITHUB_PAT` | GitHub PAT — branch-protection script, agent-owned PRs/issues; export as `GH_TOKEN` for `gh` |
 | `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN` | Supabase CLI / management |
-| `INFISICAL_API_KEY` | Infisical API (may lack the `local` env) |
+| `INFISICAL_API_KEY` | Infisical API (may lack the `dev` env) |
 | `RENDER_API_KEY` | Render API |
 | `VERCEL_API_KEY` | Vercel API |
 | `SUPABASE_API_KEY` | Supabase Management API |

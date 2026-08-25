@@ -94,9 +94,9 @@ You can open Supabase Studio at:
 **Recommended:** use **Infisical** so you do not maintain `.env.local` copies for every app.
 
 1. From the repo root, authenticate once: `npx infisical login`.
-2. Ensure the Infisical **`local`** environment is populated (Supabase values from `npx supabase status -o env`, plus keys per [`docs/internal/environment/ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md)). See [`docs/internal/environment/SECRETS_MANAGEMENT.md`](../internal/environment/SECRETS_MANAGEMENT.md) for project setup and syncs.
+2. Ensure the Infisical **`dev`** environment (“Development” in the UI) is populated (Supabase values from `npx supabase status -o env`, plus keys per [`docs/internal/environment/ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md)). See [`docs/internal/environment/SECRETS_MANAGEMENT.md`](../internal/environment/SECRETS_MANAGEMENT.md) for project setup and syncs.
 
-When `supabase start` finishes, it prints the local project URL and keys (`API URL`, `anon key`, `service_role key`) — use those when filling Infisical `local` or when building `.env.local` manually.
+When `supabase start` finishes, it prints the local project URL and keys (`API URL`, `anon key`, `service_role key`) — use those when filling Infisical `dev` or when building `.env.local` manually.
 
 **Fallback:** create `.env.local` per app from those values and `docs/internal/environment/ENV_REFERENCE.md`, then run the non-Infisical commands in [`docs/internal/environment/LOCAL_DEV.md`](../internal/environment/LOCAL_DEV.md).
 
@@ -104,7 +104,7 @@ When `supabase start` finishes, it prints the local project URL and keys (`API U
 
 ## 5. Run the dev servers
 
-**Default:** from the **repo root**, with Infisical injecting secrets (`--env=local` on each `dev:*` script):
+**Default:** from the **repo root**, with Infisical injecting secrets (`--env=dev` on each `dev:*` script):
 
 ```bash
 npm run dev:stack

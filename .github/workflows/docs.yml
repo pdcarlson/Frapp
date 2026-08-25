@@ -104,3 +104,6 @@ jobs:
 
       - name: Enforce doc table rosters
         run: node scripts/check-doc-tables.mjs
+
+      - name: Enforce Infisical env slugs
+        run: node scripts/check-env-slugs.mjs
