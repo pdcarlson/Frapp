@@ -139,6 +139,26 @@ Pick a deploy window and notify stakeholders first. Then either merge the
 `main` → `production` promotion PR, or run the `Migrate production` workflow —
 start with **dry-run-only** to read the pending list before applying it.
 
+Before you promote — the API does not boot without these:
+
+- [ ] Every name in `REQUIRED_ENV_VARS`
+      ([`apps/api/src/config/env.validation.ts`](../../../apps/api/src/config/env.validation.ts))
+      is set **and non-empty** in the target environment's Infisical folder:
+      `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`,
+      `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`.
+
+`validateEnv` rejects an **empty string** exactly as it rejects an absent key
+(`typeof value !== 'string' || value.trim().length === 0`), so a name that is
+present in Infisical with a blank value still throws
+`Missing required environment variables: ...` at boot. Nothing upstream catches
+it: the Infisical sync succeeds, the image builds, and the container then
+crash-loops until Render gives up and marks the deploy `update_failed`.
+
+Check the values rather than the key list. A masked `***` in a workflow log
+means present and non-empty; a name printed with nothing after the colon is the
+blank that fails. The order matters here — migrations apply *before* the API
+deploys, so a blank secret fails **after** the schema has already moved.
+
 Post-apply production checks:
 
 - [ ] `GET /health` succeeds
