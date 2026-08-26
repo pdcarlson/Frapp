@@ -72,6 +72,15 @@ this block. Policy detail: [`GITHUB_PM.md` → Ownership boundary](GITHUB_PM.md#
    block its sweep. It stops and reports if **git push** fails.
 5. **`issue_write` labels replace the whole set.** Always send the union of existing labels plus
    the change.
+6. **Comment once, not once per run.** Before commenting on an issue, read its existing comments
+   (`issue_read get_comments`). If a prior run already said the same thing and it is still
+   accurate, stay silent and surface it in the run report instead. The MCP cannot edit comments,
+   so the only choices are post-again or stay-silent — and a standing comment is already in force
+   for `/next`, which reads it. Re-stating it adds no signal and inflates `updated_at`, which is
+   the field the "oldest-groomed first" ordering depends on. This bit the routines twice before it
+   was written down: #679 and #821 accumulated three duplicate *hold* comments each (fixed for
+   holds by #1206), and #1220 then accumulated two duplicate *Agent-brief corrections*, because
+   that first fix was scoped to holds alone. It binds **every** comment a routine writes.
 
 Triage (only) may *organize* any `triage` item (priority, `Blocked by`, promote). That exception
 is spelled in the triage skill; it does not widen destructive writes.

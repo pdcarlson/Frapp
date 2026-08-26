@@ -98,7 +98,9 @@ each:
    fix a brief that is obviously mis-calibrated (a schema-touching change marked `skim`). **Err
    deeper**: when unsure between two depths, pick the deeper one. **Deliver it as a comment**, not
    as a body edit — per the read-fidelity block above, adding a section to an existing body means
-   round-tripping that body through a lossy read. `/next` reads the brief either way.
+   round-tripping that body through a lossy read. `/next` reads the brief either way — including a
+   correction a previous run already commented, so check for one first
+   ([comment once](#comment-once-not-once-per-run)).
 4. **Blocked-by.** Record `Blocked by #N` where a dependency is obvious. **Deliver it as a
    comment**, not as a body edit, for exactly the reason step 3 does: adding a line to an existing
    body means round-tripping that body through a lossy read, and most `triage` items were authored
@@ -120,15 +122,8 @@ each:
      is what lets its owner routine close it).
    - Ambiguous, under-specified, or a significant human-filed decision → **leave in triage** + a
      short comment on what's needed. Don't force-promote work a human should accept.
-   - **Comment once, not once per run.** Before leaving a hold comment, read the issue's existing
-     comments (`issue_read get_comments`). If a prior run's hold comment already states the same
-     reason and it is still accurate, **say nothing and re-hold silently** — the report is where
-     the hold gets surfaced. Only comment again when the reason has actually changed, or when the
-     hold can be narrowed into a specific question the owner can answer in one reply. Left
-     unguarded this compounds badly: #679 accumulated **three** near-identical "held — Linear is
-     retired, please close" comments (2026-08-09, -08-13, -08-18) and #821 **three** of "held —
-     gated on #826". On #679 they bury the one comment that carries real content — a five-slice
-     decomposition of #718 that nothing else records.
+   - **Comment once, not once per run** — see [the rule below](#comment-once-not-once-per-run),
+     which binds every comment this routine writes, holds included.
 
 ## Pass B — Backlog grooming (priority first; epics only when they fit)
 
@@ -144,7 +139,10 @@ runs walk the whole Backlog):
   flows). Correct priority is what protects real work in `/next`.
 - **Agent briefs:** within the same batch, backfill missing briefs on `suggestion`-owned issues
   and correct mis-calibrated ones — same rules as Pass A step 3, **including delivering them as
-  comments rather than body edits**.
+  comments rather than body edits** and **not re-stating a correction a prior run already
+  commented** ([comment once](#comment-once-not-once-per-run)). An out-of-roster value
+  (`depth:shallow`/`medium`, `model:sonnet`) is worth one correcting comment, never a second;
+  the systemic fix is tracked in #1205.
 - **Epic-attach ONLY clear fits:** attach a suggestion as an epic's sub-issue **only when it
   unambiguously belongs** to that epic's scope. **Leave general, cross-cutting, infra, or
   speculative suggestions standalone — most suggestions stay standalone, and that's correct.**
@@ -160,6 +158,32 @@ runs walk the whole Backlog):
 
 Goal: a Backlog where every item has a **sane priority label** and an **Agent brief** (on
 `suggestion`-owned issues), and **only genuinely-scoped** suggestions sit under epics.
+
+## Comment once, not once per run
+
+**Binds every comment this routine writes** — Pass A holds, Agent-brief corrections, Blocked-by
+lines, and the Pass B equivalents. Before commenting, read the issue's existing comments
+(`issue_read get_comments`). If a prior run's comment already says the same thing and it is still
+accurate, **say nothing and re-handle it silently** — the [report](#board-health-report) is where a
+silent action gets surfaced. Comment again only when the substance has actually changed, or when
+the point can be narrowed into a specific question the owner can answer in one reply.
+
+The MCP **cannot edit comments**, so "update the existing one" is not available: the only choices
+are post-again or stay-silent. Stay silent.
+
+Left unguarded this compounds badly, and it has now done so on both paths:
+
+- **Holds** — #679 accumulated **three** near-identical "held — Linear is retired, please close"
+  comments (2026-08-09, -08-13, -08-18) and #821 **three** of "held — gated on #826". On #679 they
+  bury the one comment that carries real content — a five-slice decomposition of #718 that nothing
+  else records.
+- **Brief corrections** — #1220 carries **two** near-identical "Agent brief corrected"
+  comments (2026-08-23, -08-25), each mapping the same `depth:medium`→`standard`,
+  `model:sonnet`→`any`. The rule was written for holds only (#1206) and did not reach this path.
+
+A correction already stated on the issue is **already in force** — `/next` reads the standing
+comment. Restating it adds no signal and costs the same `updated_at` inflation that makes Pass B's
+"oldest-groomed first" ordering misleading.
 
 ## Board-health report
 
