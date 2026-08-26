@@ -161,6 +161,11 @@ Goal: a Backlog where every item has a **sane priority label** and an **Agent br
 
 ## Comment once, not once per run
 
+Canonical statement:
+[`ROUTINES.md` → Shared ownership boundary, rule 6](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines),
+which binds all routines. This section is the triage-specific procedure and the evidence behind it;
+where the two disagree, `ROUTINES.md` wins.
+
 **Binds every comment this routine writes** — Pass A holds, Agent-brief corrections, Blocked-by
 lines, and the Pass B equivalents. Before commenting, read the issue's existing comments
 (`issue_read get_comments`). If a prior run's comment already says the same thing and it is still
@@ -177,13 +182,22 @@ Left unguarded this compounds badly, and it has now done so on both paths:
   comments (2026-08-09, -08-13, -08-18) and #821 **three** of "held — gated on #826". On #679 they
   bury the one comment that carries real content — a five-slice decomposition of #718 that nothing
   else records.
-- **Brief corrections** — #1220 carries **two** near-identical "Agent brief corrected"
-  comments (2026-08-23, -08-25), each mapping the same `depth:medium`→`standard`,
-  `model:sonnet`→`any`. The rule was written for holds only (#1206) and did not reach this path.
+- **Brief corrections** — #1220 carries **two** comments re-deriving the *same* correction
+  (2026-08-23, -08-25), each mapping `depth:medium`→`standard` and `model:sonnet`→`any` from
+  scratch. The second posted a day *after* the hold rule landed (#1258), because that rule was
+  written for holds only (#1206) and did not reach this path.
 
-A correction already stated on the issue is **already in force** — `/next` reads the standing
-comment. Restating it adds no signal and costs the same `updated_at` inflation that makes Pass B's
-"oldest-groomed first" ordering misleading.
+Note what #1220's second comment gets **right**, because it is the distinction the rule turns on:
+it also carried real news — that #1270 is blocked by #1220, and a fourth call site at
+`ui/toast.tsx:82`. That comment was worth posting. What it should not have done is re-derive the
+brief correction already standing above it.
+
+So the rule is **don't restate what stands**, not *don't comment again*. When you have something
+new, lead with the new thing and reference the standing comment rather than repeating it. A
+correction already on the issue is **already in force** — `/next` reads the standing comment.
+Re-deriving it adds no signal and costs the `updated_at` inflation that makes Pass B's
+"oldest-groomed first" ordering misleading. Suppressing a genuinely new blocker to avoid a second
+comment is the worse failure of the two.
 
 ## Board-health report
 

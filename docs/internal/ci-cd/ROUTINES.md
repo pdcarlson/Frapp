@@ -75,12 +75,12 @@ this block. Policy detail: [`GITHUB_PM.md` → Ownership boundary](GITHUB_PM.md#
 6. **Comment once, not once per run.** Before commenting on an issue, read its existing comments
    (`issue_read get_comments`). If a prior run already said the same thing and it is still
    accurate, stay silent and surface it in the run report instead. The MCP cannot edit comments,
-   so the only choices are post-again or stay-silent — and a standing comment is already in force
-   for `/next`, which reads it. Re-stating it adds no signal and inflates `updated_at`, which is
-   the field the "oldest-groomed first" ordering depends on. This bit the routines twice before it
-   was written down: #679 and #821 accumulated three duplicate *hold* comments each (fixed for
-   holds by #1206), and #1220 then accumulated two duplicate *Agent-brief corrections*, because
-   that first fix was scoped to holds alone. It binds **every** comment a routine writes.
+   so the only choices are post-again or stay-silent, and a standing comment is already in force
+   for `/next`, which reads it. The rule is **don't restate what stands** — not *don't comment
+   again*: when you have genuinely new information, post it, leading with the new part and
+   referencing the standing comment rather than re-deriving it. It binds **every** comment a
+   routine writes. Worked example, evidence, and the triage-specific procedure:
+   [`issue-triage` → Comment once](../../../.claude/skills/issue-triage/SKILL.md#comment-once-not-once-per-run).
 
 Triage (only) may *organize* any `triage` item (priority, `Blocked by`, promote). That exception
 is spelled in the triage skill; it does not widen destructive writes.
