@@ -9,7 +9,12 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiTags,
+  ApiOperation,
+  ApiOkResponse,
+} from '@nestjs/swagger';
 import { ChapterService } from '../../application/services/chapter.service';
 import { ChapterOnboardingService } from '../../application/services/chapter-onboarding.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
@@ -33,6 +38,8 @@ import {
   ConfirmLogoDto,
 } from '../dtos/chapter.dto';
 import { ChapterOnboardingDto } from '../dtos/chapter-onboarding.dto';
+import { CurrentChapterResponseDto } from '../dtos/chapter-response.dto';
+import { toChapterMemberView } from '../../application/services/chapter-member-view';
 import { SystemPermissions } from '../../domain/constants/permissions';
 
 @ApiTags('Chapters')
@@ -102,6 +109,9 @@ export class ChapterController {
   @ApiOperation({
     summary: 'Get current chapter (includes a signed logo_url when one is set)',
   })
+  // Guarded by `members:view`, i.e. every member — so the payload is the
+  // member-safe projection, never the raw row (#930).
+  @ApiOkResponse({ type: CurrentChapterResponseDto })
   async getCurrent(@CurrentChapterId() chapterId: string) {
     return this.chapterService.findByIdWithLogoUrl(chapterId);
   }
@@ -117,7 +127,15 @@ export class ChapterController {
     @CurrentChapterId() chapterId: string,
     @Body() dto: UpdateChapterDto,
   ) {
-    return this.chapterService.update(chapterId, dto);
+    // Projected for the same reason `getCurrent` is (#930), and not only for
+    // symmetry: this route admits `roles:manage` **or** `billing:manage`, so a
+    // custom role carrying `roles:manage` without `billing:view` would
+    // otherwise read the billing identifiers straight out of the write
+    // response. The client discards this body and refetches, so narrowing it
+    // costs nothing.
+    return toChapterMemberView(
+      await this.chapterService.update(chapterId, dto),
+    );
   }
 
   @Post('current/logo-url')

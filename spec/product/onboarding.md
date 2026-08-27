@@ -15,7 +15,7 @@ Payment is **not** part of chapter creation. Nothing in the onboarding path touc
 8. User completes payment on Stripe and is returned to `/billing?checkout=success`.
 9. Stripe webhook (`checkout.session.completed`) fires; API activates chapter (`subscription_status: active`). The redirect does **not** activate the chapter — the client polls for the webhook rather than assuming it has landed.
 
-Checkout is offered only while the chapter is `incomplete`. A chapter that has lapsed to `past_due` or `canceled` already has a subscription, and recovery for those states is the Customer Portal — see [`spec/behavior/billing.md`](../behavior/billing.md) §Edge cases for why a second checkout is not a safe recovery path.
+Checkout is offered at `incomplete` and again at `canceled`; `past_due` recovers through the Customer Portal instead, because its subscription is still live and a second checkout would bill the chapter twice. A `canceled` subscription is terminal at Stripe and the Portal cannot resume it, so checkout is that chapter's only way back — safely, because the server reuses the stored `stripe_customer_id`. See [`spec/behavior/billing.md`](../behavior/billing.md) §Duplicate checkout.
 
 ## Chapter Lifecycle
 
