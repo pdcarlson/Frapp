@@ -93,12 +93,6 @@ export interface CreateChannelInput {
   required_permissions?: string[] | null;
   category_id?: string | null;
   is_read_only?: boolean;
-  /**
-   * The caller creating the channel. Required, because a PRIVATE channel seeds
-   * its `member_ids` with exactly this user — without it the row is readable by
-   * nobody at all (#1008).
-   */
-  created_by_user_id: string;
 }
 
 export interface CreateDmInput {
@@ -316,7 +310,16 @@ export class ChatService {
     return channel;
   }
 
-  async createChannel(input: CreateChannelInput): Promise<ChatChannel> {
+  /**
+   * @param userId the caller, passed positionally like every other policy input
+   *   on this service (`getChannels`, `getChannel`, `createGroupDm`) rather than
+   *   as a field on `input`, whose members are all `chat_channels` columns.
+   *   A PRIVATE channel seeds its `member_ids` with exactly this user (#1008).
+   */
+  async createChannel(
+    input: CreateChannelInput,
+    userId: string,
+  ): Promise<ChatChannel> {
     if (input.type === 'DM' || input.type === 'GROUP_DM') {
       throw new BadRequestException(
         'Use the DM endpoint to create direct messages',
@@ -352,7 +355,7 @@ export class ChatService {
       // so populating it there would imply a membership that means nothing.
       // DM and GROUP_DM cannot reach here — they are rejected above and set
       // their own membership in `getOrCreateDm` / `createGroupDm`.
-      member_ids: input.type === 'PRIVATE' ? [input.created_by_user_id] : null,
+      member_ids: input.type === 'PRIVATE' ? [userId] : null,
     });
   }
 
@@ -744,7 +747,20 @@ export class ChatService {
     input: SendMessageInput,
     channel: ChatChannel,
   ): Promise<void> {
-    const isAnnouncement = channel.name.toLowerCase().includes('announcements');
+    // The announcement fan-out pushes the message body to **every member of the
+    // chapter**, so it is only sound for a channel every member can read — which
+    // is PUBLIC, and is what `spec/behavior/chat/README.md` describes
+    // (`#announcements` is all-read, exec-write via `announcements:post`).
+    //
+    // Matching on the name alone made the fan-out reachable from channels most
+    // of the chapter cannot read. That was already true of ROLE_GATED — the
+    // seeded `#alumni` channel is one rename away — and seeding `member_ids`
+    // (#1008) newly made PRIVATE channels postable at all, which would have put
+    // a one-member private channel named `exec-announcements` one send away
+    // from broadcasting its contents chapter-wide. Gate on the type as well.
+    const isAnnouncement =
+      channel.type === 'PUBLIC' &&
+      channel.name.toLowerCase().includes('announcements');
 
     if (isAnnouncement) {
       await this.notificationService.notifyChapter(channel.chapter_id, {

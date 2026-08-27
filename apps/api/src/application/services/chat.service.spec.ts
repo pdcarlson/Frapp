@@ -265,12 +265,14 @@ describe('ChatService', () => {
     it('should create a PUBLIC channel', async () => {
       mockChannelRepo.create.mockResolvedValue(baseChannel);
 
-      const result = await service.createChannel({
-        chapter_id: 'ch-1',
-        name: 'general',
-        type: 'PUBLIC',
-        created_by_user_id: 'u-creator',
-      });
+      const result = await service.createChannel(
+        {
+          chapter_id: 'ch-1',
+          name: 'general',
+          type: 'PUBLIC',
+        },
+        'u-creator',
+      );
 
       expect(result).toEqual(baseChannel);
       expect(mockChannelRepo.create).toHaveBeenCalledWith(
@@ -284,12 +286,14 @@ describe('ChatService', () => {
 
     it('should reject DM/GROUP_DM through createChannel', async () => {
       await expect(
-        service.createChannel({
-          chapter_id: 'ch-1',
-          name: 'dm',
-          type: 'DM',
-          created_by_user_id: 'u-creator',
-        }),
+        service.createChannel(
+          {
+            chapter_id: 'ch-1',
+            name: 'dm',
+            type: 'DM',
+          },
+          'u-creator',
+        ),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -299,13 +303,15 @@ describe('ChatService', () => {
       'should reject a ROLE_GATED channel with required_permissions %p',
       async (required) => {
         await expect(
-          service.createChannel({
-            chapter_id: 'ch-1',
-            name: 'exec-board',
-            type: 'ROLE_GATED',
-            required_permissions: required,
-            created_by_user_id: 'u-creator',
-          }),
+          service.createChannel(
+            {
+              chapter_id: 'ch-1',
+              name: 'exec-board',
+              type: 'ROLE_GATED',
+              required_permissions: required,
+            },
+            'u-creator',
+          ),
         ).rejects.toThrow(BadRequestException);
 
         expect(mockChannelRepo.create).not.toHaveBeenCalled();
@@ -318,12 +324,14 @@ describe('ChatService', () => {
     it('should seed a PRIVATE channel with its creator', async () => {
       mockChannelRepo.create.mockResolvedValue(baseChannel);
 
-      await service.createChannel({
-        chapter_id: 'ch-1',
-        name: 'exec-private',
-        type: 'PRIVATE',
-        created_by_user_id: 'u-creator',
-      });
+      await service.createChannel(
+        {
+          chapter_id: 'ch-1',
+          name: 'exec-private',
+          type: 'PRIVATE',
+        },
+        'u-creator',
+      );
 
       expect(mockChannelRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -340,12 +348,14 @@ describe('ChatService', () => {
         Promise.resolve({ ...baseChannel, ...data } as ChatChannel),
       );
 
-      const created = await service.createChannel({
-        chapter_id: 'ch-1',
-        name: 'exec-private',
-        type: 'PRIVATE',
-        created_by_user_id: 'u-creator',
-      });
+      const created = await service.createChannel(
+        {
+          chapter_id: 'ch-1',
+          name: 'exec-private',
+          type: 'PRIVATE',
+        },
+        'u-creator',
+      );
 
       expect(
         canAccessChannel({
@@ -364,12 +374,14 @@ describe('ChatService', () => {
         Promise.resolve({ ...baseChannel, ...data } as ChatChannel),
       );
 
-      const created = await service.createChannel({
-        chapter_id: 'ch-1',
-        name: 'exec-private',
-        type: 'PRIVATE',
-        created_by_user_id: 'u-creator',
-      });
+      const created = await service.createChannel(
+        {
+          chapter_id: 'ch-1',
+          name: 'exec-private',
+          type: 'PRIVATE',
+        },
+        'u-creator',
+      );
 
       expect(
         canAccessChannel({
@@ -390,14 +402,16 @@ describe('ChatService', () => {
       async (type) => {
         mockChannelRepo.create.mockResolvedValue(baseChannel);
 
-        await service.createChannel({
-          chapter_id: 'ch-1',
-          name: 'general',
-          type,
-          required_permissions:
-            type === 'ROLE_GATED' ? ['roles:manage'] : undefined,
-          created_by_user_id: 'u-creator',
-        });
+        await service.createChannel(
+          {
+            chapter_id: 'ch-1',
+            name: 'general',
+            type,
+            required_permissions:
+              type === 'ROLE_GATED' ? ['roles:manage'] : undefined,
+          },
+          'u-creator',
+        );
 
         expect(mockChannelRepo.create).toHaveBeenCalledWith(
           expect.objectContaining({ member_ids: null }),
@@ -408,13 +422,15 @@ describe('ChatService', () => {
     it('should create a ROLE_GATED channel that specifies requirements', async () => {
       mockChannelRepo.create.mockResolvedValue(baseChannel);
 
-      await service.createChannel({
-        chapter_id: 'ch-1',
-        name: 'exec-board',
-        type: 'ROLE_GATED',
-        required_permissions: ['roles:manage'],
-        created_by_user_id: 'u-creator',
-      });
+      await service.createChannel(
+        {
+          chapter_id: 'ch-1',
+          name: 'exec-board',
+          type: 'ROLE_GATED',
+          required_permissions: ['roles:manage'],
+        },
+        'u-creator',
+      );
 
       expect(mockChannelRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -505,12 +521,26 @@ describe('ChatService', () => {
       type: 'ROLE_GATED',
       required_permissions: ['roles:manage'],
     };
+    // The row shape #1008 was about: a PRIVATE channel whose membership is
+    // NULL. `privMine`/`privTheirs` both carry explicit lists, so they encode a
+    // shape the API could produce only *after* the creator seed — this one
+    // covers the orphan. It is unreachable through create now, but #1302's
+    // remove-member route can reproduce it by removing the last member, which
+    // is the hazard that issue's own criteria call out.
+    const privOrphan: ChatChannel = {
+      ...baseChannel,
+      id: 'ch-priv-orphan',
+      name: 'orphaned-committee',
+      type: 'PRIVATE',
+      member_ids: null,
+    };
     const everything = [
       baseChannel,
       dmMine,
       dmTheirs,
       privMine,
       privTheirs,
+      privOrphan,
       roleGated,
     ];
 
@@ -525,6 +555,17 @@ describe('ChatService', () => {
           'ch-dm-mine',
           'ch-priv-mine',
         ]);
+      });
+
+      it('hides a PRIVATE channel whose member_ids is NULL from everyone', async () => {
+        mockChannelRepo.findByChapter.mockResolvedValue(everything);
+
+        for (const userId of ['user-1', 'user-2', 'user-3']) {
+          const result = await service.getChannels('ch-1', userId);
+          expect(result.map((channel) => channel.id)).not.toContain(
+            'ch-priv-orphan',
+          );
+        }
       });
 
       it('does not return a DM between two other members', async () => {
@@ -1938,6 +1979,38 @@ describe('ChatService', () => {
         }),
       );
     });
+
+    // #1008: the fan-out pushes the message body to EVERY chapter member, so it
+    // is only sound where every member can read the channel. Matching on the
+    // name alone, a PRIVATE channel named `exec-announcements` — newly postable
+    // once its creator is seeded — would have broadcast its contents chapter-wide.
+    it.each(['PRIVATE', 'ROLE_GATED'] as const)(
+      'should not fan an announcement-named %s channel out to the chapter',
+      async (type) => {
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+        mockChannelRepo.findById.mockResolvedValue({
+          ...baseChannel,
+          name: 'exec-announcements',
+          type,
+          member_ids: type === 'PRIVATE' ? ['user-1'] : null,
+          required_permissions: type === 'ROLE_GATED' ? ['roles:manage'] : null,
+        });
+        // The sender must be able to POST for the notification to be reached at
+        // all; the point of the test is what happens after that, not the gate.
+        if (type === 'ROLE_GATED') {
+          mockRbac.getEffectivePermissions.mockResolvedValue(['roles:manage']);
+        }
+
+        await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'Private exec discussion',
+        });
+
+        expect(mockNotificationService.notifyChapter).not.toHaveBeenCalled();
+      },
+    );
 
     it('should not fail if notification throws on sendMessage', async () => {
       const dmChannel: ChatChannel = {

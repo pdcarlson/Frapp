@@ -110,11 +110,8 @@ describe('ChatController', () => {
       });
 
       expect(service.createChannel).toHaveBeenCalledWith(
-        expect.objectContaining({
-          chapter_id: 'ch-1',
-          created_by_user_id: 'user-1',
-          type: 'PRIVATE',
-        }),
+        expect.objectContaining({ chapter_id: 'ch-1', type: 'PRIVATE' }),
+        'user-1',
       );
     });
   });

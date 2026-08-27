@@ -571,6 +571,19 @@ describe('ChapterService', () => {
     );
   });
 
+  // #1008: the chapter seeder inserts DEFAULT_CHANNELS straight into
+  // `chat_channels`, bypassing `ChatService.createChannel` — so the creator seed
+  // that makes a PRIVATE channel readable does not run on this path, and there
+  // is no DB default, CHECK or trigger behind it either. A PRIVATE entry added
+  // here would give every newly created chapter a channel readable by nobody,
+  // with no repair path, which is #1008 verbatim. Assert the invariant that
+  // makes the omission safe rather than the seed itself.
+  it('should not seed a PRIVATE default channel, which the seeder cannot make readable', () => {
+    expect(
+      DEFAULT_CHANNELS.filter((channelDef) => channelDef.type === 'PRIVATE'),
+    ).toEqual([]);
+  });
+
   // FRA-321: the seeder used to drop `required_permissions` entirely, leaving
   // #alumni ROLE_GATED but gating on nothing — which `canAccessChannel` then
   // read as "any chapter member". Asserted against the persisted payload rather
