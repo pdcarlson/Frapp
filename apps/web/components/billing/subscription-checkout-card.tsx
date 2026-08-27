@@ -86,6 +86,12 @@ export function SubscriptionCheckoutCard() {
   // the returned-from-portal banner below; only `past_due` is actually routed
   // to the Portal (#929) — see the split in the block comment above.
   const usesPortal = status === "past_due";
+  // The statuses that recover *through* checkout. `canceled` joined this set
+  // with #929, and it has to be named here as well as on the button: the
+  // post-checkout poll below keys on it, and a canceled chapter that had just
+  // paid would otherwise fall through to the lapsed card and be told to start
+  // another subscription seconds after starting one.
+  const usesCheckout = status === "incomplete" || status === "canceled";
 
   // Two ways to be waiting on Stripe: a first activation via Checkout, or a
   // lapsed chapter that just fixed its payment in the Portal. Both confirm over
@@ -96,7 +102,7 @@ export function SubscriptionCheckoutCard() {
   // a stale `/billing?checkout=success` bookmark hijack the screen of a chapter
   // that had since lapsed, hiding its recovery path.
   const awaiting =
-    (outcome === "success" && status === "incomplete") ||
+    (outcome === "success" && usesCheckout) ||
     (outcome === "returned" && lapsed);
 
   // Each tick schedules the next by advancing `attempt`, so the effect stops
@@ -231,10 +237,13 @@ export function SubscriptionCheckoutCard() {
           <CardContent className="flex flex-wrap items-center gap-3">
             {/*
               Deliberately NOT a checkout button. This branch is reached by a
-              chapter that has just paid, and `POST /v1/billing/checkout` would
-              mint a second subscription rather than reject the duplicate (see
-              the docblock above). Re-checking is the safe recovery; someone who
-              never actually paid can clear the stale return marker instead.
+              chapter that has just paid and whose webhook has not landed yet,
+              so its stored status is still `incomplete` or `canceled` — the
+              two the server accepts for checkout (#929). The duplicate guard
+              therefore cannot catch a second attempt from here; only the
+              absence of the button can. Re-checking is the safe recovery;
+              someone who never actually paid can clear the stale return marker
+              instead.
             */}
             <Button
               variant="secondary"

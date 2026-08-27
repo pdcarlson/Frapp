@@ -187,6 +187,24 @@ describe("SubscriptionCheckoutCard", () => {
     expect(screen.getByText(/subscription active/i)).toBeInTheDocument();
   });
 
+  it("shows the activating state to a canceled chapter that just paid (#929)", () => {
+    // A canceled chapter now recovers through checkout, and returns to
+    // ?checkout=success with its status still `canceled` because the webhook
+    // has not landed. If the poll does not cover that status, this chapter
+    // falls through to the lapsed card and is told to start a subscription
+    // seconds after starting one — an invitation to pay twice.
+    setChapter("canceled");
+    setParam("success");
+    renderCard();
+
+    expect(
+      screen.getByText(/payment received — activating your chapter/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /complete checkout/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("does not let a stale ?checkout=success hide a lapsed chapter's way out", () => {
     // A bookmarked success URL revisited months later, after the chapter has
     // lapsed, must not replace the recovery control with a spinner —
