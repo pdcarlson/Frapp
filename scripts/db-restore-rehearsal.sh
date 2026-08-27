@@ -19,13 +19,25 @@
 set -euo pipefail
 
 DB_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
-WORK="$(mktemp -d)"
 KEEP=""
-[ "${1:-}" = "--keep" ] && KEEP="${2:-}"
+if [ "${1:-}" = "--keep" ]; then
+  KEEP="${2:-}"
+  [ -n "$KEEP" ] || { echo "Error: --keep needs a directory" >&2; exit 2; }
+fi
 
-cleanup() { [ -n "$KEEP" ] || rm -rf "$WORK"; }
+# Resolve WORK once. The earlier form created a mktemp dir and then reassigned
+# WORK when --keep was passed, which leaked the temp dir on every kept run, and
+# leaned on `a && b && c` under `set -e` where a false first test is easy to
+# misread as an early exit.
+if [ -n "$KEEP" ]; then
+  WORK="$KEEP"
+  mkdir -p "$WORK"
+  cleanup() { :; }
+else
+  WORK="$(mktemp -d)"
+  cleanup() { rm -rf "$WORK"; }
+fi
 trap cleanup EXIT
-[ -n "$KEEP" ] && WORK="$KEEP" && mkdir -p "$WORK"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"

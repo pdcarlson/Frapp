@@ -33,7 +33,7 @@ while [ $# -gt 0 ]; do
     --backup-dir) BACKUP_DIR="${2:-}"; shift 2 ;;
     --db-url)     DB_URL="${2:-}"; shift 2 ;;
     --force)      FORCE=1; shift ;;
-    -h|--help)    sed -n '2,25p' "$0"; exit 0 ;;
+    -h|--help)    sed -n '2,/^set -euo/p' "$0" | sed '$d;s/^# \?//'; exit 0 ;;
     *) echo "Error: unknown argument '$1'" >&2; exit 2 ;;
   esac
 done
@@ -97,10 +97,17 @@ fi
 # Supabase's own restore guide) or a reset local stack. Checking up front turns
 # an obscure mid-replay failure into a precondition you can act on.
 echo "==> Preflight: checking the target is a Supabase-provisioned database"
-MISSING_SCHEMAS="$(psql --dbname "$DB_URL" -tAc "
+# Not `|| true`: swallowing a connection failure here would report a clean
+# preflight for a database we never reached, and the restore would then fail
+# later with a far less obvious error.
+if ! MISSING_SCHEMAS="$(psql --dbname "$DB_URL" -tAc "
   SELECT string_agg(s, ', ')
   FROM unnest(ARRAY['auth','storage','extensions']) AS s
-  WHERE s NOT IN (SELECT nspname FROM pg_namespace);" 2>/dev/null || true)"
+  WHERE s NOT IN (SELECT nspname FROM pg_namespace);" 2>&1)"; then
+  echo "Error: could not connect to the target database to run preflight checks:" >&2
+  echo "  $MISSING_SCHEMAS" >&2
+  exit 1
+fi
 if [ -n "${MISSING_SCHEMAS// /}" ]; then
   cat >&2 <<GUARD
 Error: the target database is missing Supabase-managed schema(s): $MISSING_SCHEMAS

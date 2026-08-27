@@ -66,7 +66,7 @@ while [ $# -gt 0 ]; do
     --linked)  LINKED=1; shift ;;
     --out-dir) OUT_DIR="${2:-}"; shift 2 ;;
     --label)   LABEL="${2:-}"; shift 2 ;;
-    -h|--help) sed -n '2,45p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d;s/^# \?//'; exit 0 ;;
     *) echo "Error: unknown argument '$1'" >&2; exit 2 ;;
   esac
 done
@@ -91,7 +91,18 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
-SUPABASE="npx --yes supabase@2.116.0"
+# Prefer a `supabase` already on PATH — in CI that is the binary supabase/setup-cli
+# installed at the repo-wide pin, and using it keeps ONE CLI version across `link`
+# and `dump`. They share the linked-project state under supabase/.temp, so running
+# them on different versions is asking for a skew bug in the only backup this
+# project has. Falls back to a pinned npx for local runs, where nothing is
+# installed. Override with SUPABASE_CLI_VERSION to test another version.
+SUPABASE_CLI_VERSION="${SUPABASE_CLI_VERSION:-2.77.0}"
+if command -v supabase >/dev/null 2>&1; then
+  SUPABASE="supabase"
+else
+  SUPABASE="npx --yes supabase@${SUPABASE_CLI_VERSION}"
+fi
 
 DEST="$OUT_DIR/$LABEL"
 mkdir -p "$DEST"
@@ -173,7 +184,7 @@ gzip -9 -f "$DEST/roles.sql" "$DEST/schema.sql" "$DEST/data.sql"
   printf '{\n'
   printf '  "label": "%s",\n' "$LABEL"
   printf '  "created_at": "%s",\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  printf '  "supabase_cli": "2.116.0",\n'
+  printf '  "supabase_cli": "%s",\n' "$($SUPABASE --version 2>/dev/null | tail -1 | tr -d '\\n' || echo unknown)"
   printf '  "files": {\n'
   printf '    "roles": "%s",\n'  "$(sha256sum "$DEST/roles.sql.gz"  | cut -d' ' -f1)"
   printf '    "schema": "%s",\n' "$(sha256sum "$DEST/schema.sql.gz" | cut -d' ' -f1)"
