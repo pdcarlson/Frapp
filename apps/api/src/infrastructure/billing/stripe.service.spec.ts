@@ -72,7 +72,7 @@ describe('StripeBillingService', () => {
     it('should create a checkout session and return the url', async () => {
       const params = {
         chapterId: 'chap_123',
-        customerEmail: 'test@example.com',
+        customerId: 'cus_existing',
         successUrl: 'https://example.com/success',
         cancelUrl: 'https://example.com/cancel',
         grantTrial: true,
@@ -90,7 +90,11 @@ describe('StripeBillingService', () => {
       expect(result).toBe(expectedUrl);
       expect(stripeMock.checkout.sessions.create).toHaveBeenCalledWith({
         mode: 'subscription',
-        customer_email: params.customerEmail,
+        // The chapter's own customer, never an email (#929). Passing an email
+        // made Stripe mint a fresh Customer per checkout, so a repeat checkout
+        // could not be recognised as the same chapter and the previous
+        // subscription was orphaned.
+        customer: params.customerId,
         line_items: [{ price: 'test_price_id', quantity: 1 }],
         subscription_data: { trial_period_days: 14 },
         success_url: params.successUrl,
@@ -101,7 +105,7 @@ describe('StripeBillingService', () => {
 
     const checkoutParams = (grantTrial: boolean) => ({
       chapterId: 'chapter-123',
-      customerEmail: 'treasurer@example.com',
+      customerId: 'cus_existing',
       successUrl: 'https://example.com/success',
       cancelUrl: 'https://example.com/cancel',
       grantTrial,
@@ -143,6 +147,19 @@ describe('StripeBillingService', () => {
       // unambiguous way to say "no trial", so a repeat checkout is an ordinary
       // immediate charge without depending on how Stripe treats a zero.
       expect(capturedSessionArgs()).not.toHaveProperty('subscription_data');
+    });
+
+    it('never sends customer_email, so Stripe cannot mint a second customer (#929)', async () => {
+      // The regression guard for this issue's root cause. `customer` and
+      // `customer_email` are mutually exclusive at Stripe, and an email always
+      // creates a new Customer — which is how one chapter ended up with two
+      // customer records and two live subscriptions.
+      mockCheckout();
+
+      await service.createCheckoutSession(checkoutParams(false));
+
+      expect(capturedSessionArgs()).not.toHaveProperty('customer_email');
+      expect(capturedSessionArgs()).toHaveProperty('customer', 'cus_existing');
     });
   });
 

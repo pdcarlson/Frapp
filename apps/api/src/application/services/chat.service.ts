@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import {
   allowsInThreadReplies,
+  extractMentionTokens,
   isAllowedUploadExtension,
   isAllowedUploadMime,
   resolveMentions,
@@ -38,10 +39,6 @@ import {
   MEMBER_REPOSITORY,
   type IMemberRepository,
 } from '../../domain/repositories/member.repository.interface';
-import {
-  USER_REPOSITORY,
-  type IUserRepository,
-} from '../../domain/repositories/user.repository.interface';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
@@ -252,8 +249,6 @@ export class ChatService {
     private readonly readReceiptRepo: IChannelReadReceiptRepository,
     @Inject(MEMBER_REPOSITORY)
     private readonly memberRepo: IMemberRepository,
-    @Inject(USER_REPOSITORY)
-    private readonly userRepo: IUserRepository,
     @Inject(STORAGE_PROVIDER)
     private readonly storageProvider: IStorageProvider,
     @Inject(SUPABASE_CLIENT)
@@ -699,22 +694,22 @@ export class ChatService {
     chapterId: string,
     content: string,
   ): Promise<string[]> {
-    if (!content.includes('@')) return [];
+    // Parse before querying. `content.includes('@')` admits every email
+    // address, every `@here`, and every `user@host` in a pasted log — all of
+    // which used to buy a full roster fetch on the send hot path. The parser is
+    // the same one that resolves the tokens a moment later, so "has a token" and
+    // "resolves a token" cannot disagree about what an `@` means.
+    if (extractMentionTokens(content).length === 0) return [];
 
     try {
-      const members = await this.memberRepo.findByChapter(chapterId);
-      if (members.length === 0) return [];
+      // One query, `user_id, display_name` only — see
+      // `findChapterMemberIdentities`. The rows are structurally
+      // `MentionCandidate`, so they pass to the resolver unmapped.
+      const candidates =
+        await this.memberRepo.findChapterMemberIdentities(chapterId);
+      if (candidates.length === 0) return [];
 
-      const users = await this.userRepo.findByIds(
-        members.map((member) => member.user_id),
-      );
-      return resolveMentions(
-        content,
-        users.map((user) => ({
-          user_id: user.id,
-          display_name: user.display_name,
-        })),
-      );
+      return resolveMentions(content, candidates);
     } catch (error) {
       this.logger.warn('Failed to resolve mentions; sending without them', {
         chapterId,

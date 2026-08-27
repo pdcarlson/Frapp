@@ -96,7 +96,7 @@ The interesting half. Each takes either **no** chapter id, or a client-supplied 
 | `GET /analytics/identity` | A | **D** — returns the caller's own pseudonymous id |
 | `POST /analytics/events` | A | Body carries `chapter_id`; `trackFromClient` resolves `members.findByUserAndChapter(userId, chapterId)` and **403s a non-member**; a DB error fails closed (`analytics.service.ts:157-170`) |
 | `POST /chapters`, `POST /chapters/onboard` | A | Creates a new chapter for the caller; no existing row is addressed |
-| `GET /chapters` | A | **D** — lists only the caller's own memberships |
+| `GET /chapters` | A | **D** — lists only the caller's own memberships. Each embedded chapter is the member-safe projection (`toChapterMemberView`), not the raw row: this route carries no billing permission, and before #930 it shipped `stripe_customer_id` / `subscription_id` for every chapter the caller belongs to |
 | `POST /chapters/:id/activate` | A | Client-supplied `:id`, but `setActiveChapter` requires a membership row and throws `403` otherwise (`chapter.service.ts:81-87`) |
 | `POST /invites/redeem` | A | Redeems by opaque invite code; the code *is* the capability. Chapter comes from the invite row, not the caller |
 | `GET/PATCH /users/me`, `DELETE /users/me` | A | **D** |
@@ -174,6 +174,29 @@ enforcing layer out of the API. Topics are authorised by `realtime_messages_scop
 | `chapter_audit_log` | `_no_update`, `_no_delete` | `using (false)` — append-only, tightens rather than widens |
 | `member_custom_field_values` | `_service_role` | `auth.role() = 'service_role'` — explicit rather than implicit; no non-service access |
 | `users`, `members` | `auth_admin_can_read_*` | `to supabase_auth_admin` only — lets the custom-access-token hook read the `active_chapter_id` claim. Not reachable by `anon`/`authenticated` |
+
+#### `SECURITY DEFINER` predicates must pin `pg_temp` last
+
+Every function in the table above runs `SECURITY DEFINER`, so it evaluates with the definer's
+privileges rather than the caller's. That makes its `search_path` part of the authorization
+boundary, not a style detail.
+
+Postgres searches the temporary schema **first** for unqualified relation names unless `pg_temp` is
+itself listed. A predicate declared `set search_path = public` therefore reads a caller-created temp
+table in place of the real one — so `create temp table chat_messages (...)` could answer
+`can_read_chat_message` instead of the actual row. Every such function must be declared:
+
+```sql
+set search_path = public, pg_temp
+```
+
+`pg_temp` **last** is the whole mechanism: naming it explicitly moves the temp schema to the end of
+resolution order instead of its implicit position at the front. `search_path = pg_temp, public` is
+not a partial fix — it is the original defect spelled out.
+
+This is enforced, not conventional: `scripts/check-pglite-migrations.mjs` applies every migration and
+fails the `pglite-migrations` job if any `SECURITY DEFINER` function in `public` does not pin
+`pg_temp` last. Fixed repo-wide in #985 (#983 fixed the first instance).
 
 ### Storage buckets
 
