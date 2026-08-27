@@ -351,6 +351,7 @@ Per-app commands and fallbacks: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 | Stripe secret key         | On suspected compromise | Regenerate in Stripe → update canonical value in Infisical   |
 | Render deploy hook URLs   | On service recreation   | Copy from Render → update canonical value in Infisical       |
 | Supabase access token     | Every 90 days           | Regenerate in Supabase account → update in Infisical         |
+| R2 backup-bucket token    | On suspected compromise | Roll the scoped API token in Cloudflare R2 → update `BACKUP_S3_ACCESS_KEY_ID` + `BACKUP_S3_SECRET_ACCESS_KEY` in Infisical (`staging`). `db-backup.yml` pulls at job time, but the path-`/` staging syncs (§5) also push copies to the Render staging service and both Vercel Preview envs — count those in any blast-radius assessment (#834 tracks narrowing that) |
 
 **All rotations happen in one place (Infisical).** Syncs propagate changes to all providers automatically.
 
