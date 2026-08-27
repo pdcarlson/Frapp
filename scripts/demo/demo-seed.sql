@@ -143,6 +143,21 @@ FROM (VALUES
  ('c0ffee00-0000-4000-8000-3000000000f5','Blood Drive','Co-hosted with the Red Cross.','Westfield Union — Room 210',                             -22, 11, 360, 20, false, 50)
 ) AS e(id, name, descr, loc, day_offset, start_hour, mins, pts, mandatory, created_days_ago);
 
+-- The upcoming Chapter Meeting carries a check-in zone; the rest do not.
+--
+-- `events.check_in_zone` is opt-in per event, and the mobile scanner (s18)
+-- binds its "your location is the real check" line to `hasCheckInZone` rather
+-- than drawing it unconditionally — a zone-less event would otherwise make a
+-- security claim about a check that is not running. Seeding exactly one zoned
+-- event keeps both branches of that screen reachable in a demo stack.
+--
+-- The polygon sits beside the Chapter House study geofence below, so the whole
+-- fictional chapter stays in one invented place.
+UPDATE events
+   SET check_in_zone = '[{"lat":41.0788,"lng":-81.5232},{"lat":41.0794,"lng":-81.5232},{"lat":41.0794,"lng":-81.5226},{"lat":41.0788,"lng":-81.5226}]'::jsonb,
+       check_in_zone_name = 'Great Room'
+ WHERE id = 'c0ffee00-0000-4000-8000-3000000000e1';
+
 -- Attendance on past events: most present, a few excused/absent.
 INSERT INTO event_attendance (event_id, user_id, status, check_in_time, marked_by, created_at)
 SELECT e.id, u.id,
@@ -154,6 +169,20 @@ SELECT e.id, u.id,
        e.start_time
 FROM events e CROSS JOIN u
 WHERE e.chapter_id = :cid AND e.start_time < now() AND u.n <= 23;
+
+-- A check-in already in progress on the one upcoming zoned event.
+--
+-- The host screen (s22) reads its "N checked in" from `countCheckedIn`, which
+-- counts PRESENT and LATE rows only. With attendance seeded on past events
+-- alone that tile reads a permanent "0 checked in", which is a real state but
+-- not a representative one — it is the frame before anybody has scanned. These
+-- rows put the screen mid-meeting instead, which is when an officer is actually
+-- looking at it.
+INSERT INTO event_attendance (event_id, user_id, status, check_in_time, marked_by, created_at)
+SELECT e.id, u.id, 'PRESENT', now() - (u.n * interval '20 seconds'),
+       (SELECT id FROM u WHERE n = 1), now()
+FROM events e CROSS JOIN u
+WHERE e.id = 'c0ffee00-0000-4000-8000-3000000000e1' AND u.n <= 14;
 
 -- ── Tasks ────────────────────────────────────────────────────────────────────
 INSERT INTO tasks (chapter_id, title, description, assignee_id, created_by, due_date,
