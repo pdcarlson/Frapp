@@ -51,6 +51,35 @@ export function useDocumentFolders() {
   });
 }
 
+/**
+ * The signed URL off a single-document read.
+ *
+ * There is no separate download endpoint: `GET /v1/documents/{id}` returns the
+ * document *with* a freshly signed URL, so opening a document means fetching it
+ * by id and following that.
+ *
+ * **`downloadUrl`, not `download_url`.** `ChapterDocumentService.getWithDownloadUrl`
+ * returns a camelCase key and there is no case-transforming interceptor anywhere
+ * in the stack. Nothing typed catches the wrong spelling either: the endpoint has
+ * no OpenAPI response schema, so the SDK infers the body as `never` and *any*
+ * property access type-checks — which is how web read `download_url` at two call
+ * sites and silently opened `undefined` (#1040).
+ *
+ * Both spellings are accepted so a future server-side rename cannot break a
+ * working client, and neither is guessed at the call site. This lives beside the
+ * hook that returns the data rather than in either app, so web and mobile cannot
+ * drift apart on it.
+ */
+export function selectDownloadUrl(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const record = data as Record<string, unknown>;
+  for (const key of ["downloadUrl", "download_url"]) {
+    const value = record[key];
+    if (typeof value === "string" && value !== "") return value;
+  }
+  return null;
+}
+
 export function useDocument(id: string) {
   const client = useFrappClient();
   return useQuery({

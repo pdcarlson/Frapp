@@ -52,9 +52,11 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * *mutation* (`useDocumentDownloadUrl`) rather than a query, so a tap that
  * failed once reaches the network again on the next tap instead of replaying a
  * cached error — and the expiring URL never enters the cache. Note the key is
- * **`downloadUrl`**: web reads `download_url` at two call sites and there is no
- * case-transforming interceptor, so those are broken; `selectDownloadUrl`
- * accepts both and is the only place that spelling appears.
+ * **`downloadUrl`**: there is no case-transforming interceptor anywhere in the
+ * stack, and reading `download_url` is what left the two web call sites opening
+ * `undefined` until #1040. `selectDownloadUrl` (now in `@repo/hooks`, beside the
+ * query that returns the payload) accepts both spellings and is the only place
+ * either appears.
  */
 export default function DocumentsScreen() {
   const { tokens } = useFrappTheme();

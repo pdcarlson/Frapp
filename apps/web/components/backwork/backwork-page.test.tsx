@@ -14,6 +14,7 @@ const {
   mockCurrentChapter,
   mockRequestUpload,
   mockConfirmUpload,
+  mockResourceRefetch,
   mockChapterId,
   mockToast,
   mockOffline,
@@ -24,6 +25,7 @@ const {
   mockConfirmUpload: vi.fn().mockResolvedValue({}),
   mockChapterId: { value: "chap-1" as string | null },
   mockToast: vi.fn(),
+  mockResourceRefetch: vi.fn(),
   mockOffline: { value: false },
   resourcesQuery: {
     data: [] as unknown[],
@@ -54,10 +56,11 @@ const RESOURCE = {
   created_at: "2026-08-01T00:00:00Z",
 };
 
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/hooks")>()),
   useCurrentChapter: () => mockCurrentChapter(),
   useBackworkResources: () => resourcesQuery,
-  useBackworkResource: () => ({ refetch: vi.fn() }),
+  useBackworkResource: () => ({ refetch: mockResourceRefetch }),
   useDepartments: () => ({ data: [] }),
   useProfessors: () => ({ data: [] }),
   useRequestBackworkUploadUrl: () => ({
@@ -335,6 +338,30 @@ describe("BackworkPage subscription gating", () => {
     expect(
       within(dialog).getByRole("button", { name: /cancel/i }),
     ).toBeEnabled();
+  });
+
+  // #1040: the call site read `download_url` while the API returns
+  // `downloadUrl`, so this opened `undefined`. The SDK types this body as
+  // `never` (no OpenAPI response schema), so no type catches the wrong key.
+  it("opens the signed URL the API actually returns", async () => {
+    const user = userEvent.setup();
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    mockResourceRefetch.mockResolvedValue({
+      data: { downloadUrl: "https://signed/exam.pdf" },
+    });
+    chapter.active();
+    render(<BackworkPage />);
+
+    await user.click(screen.getByRole("button", { name: /download/i }));
+
+    await waitFor(() =>
+      expect(open).toHaveBeenCalledWith(
+        "https://signed/exam.pdf",
+        "_blank",
+        "noopener",
+      ),
+    );
+    open.mockRestore();
   });
 
   it("never gates the reads", () => {

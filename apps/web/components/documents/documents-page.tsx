@@ -5,6 +5,7 @@ import { Download, Loader2, Trash2, Upload } from "lucide-react";
 import {
   useConfirmDocumentUpload,
   useDeleteDocument,
+  selectDownloadUrl,
   useDocument,
   useDocuments,
   useRequestDocumentUploadUrl,
@@ -89,12 +90,7 @@ function DownloadButton({ id }: { id: string }) {
     setIsFetching(true);
     try {
       const result = await query.refetch();
-      const url =
-        result.data &&
-        typeof result.data === "object" &&
-        "download_url" in result.data
-          ? (result.data as { download_url?: string }).download_url
-          : null;
+      const url = selectDownloadUrl(result.data);
       if (!url) throw new Error("No download URL returned.");
       window.open(url, "_blank", "noopener");
     } catch (error) {
