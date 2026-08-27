@@ -71,7 +71,7 @@ describe("with the flag unset — every shipped build", () => {
     expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("k");
   });
 
-  it("opens for the exact string \"1\" and nothing else", async () => {
+  it('opens for the exact string "1" and nothing else', async () => {
     stubLocalStorage();
 
     for (const off of ["", " ", "0", "true", "TRUE", "yes", "01", " 1 "]) {

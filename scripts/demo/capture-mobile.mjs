@@ -169,7 +169,8 @@ async function waitFor(page, label, read, timeoutMs = 30_000) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     if (await page.evaluate(read).catch(() => false)) return;
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${label}`);
+    if (Date.now() > deadline)
+      throw new Error(`timed out waiting for ${label}`);
     await page.waitForTimeout(400);
   }
 }
@@ -301,7 +302,8 @@ async function captureRunningApp(browser) {
 
       // Never save a screenshot under a name the app did not actually render.
       const landed = new URL(page.url()).pathname;
-      const expected = screen.expectRoute ?? new URL(route, MOBILE_URL).pathname;
+      const expected =
+        screen.expectRoute ?? new URL(route, MOBILE_URL).pathname;
       if (landed !== expected) {
         throw new Error(`landed on ${landed}, expected ${expected}`);
       }
@@ -421,7 +423,8 @@ async function main() {
   await browser.close();
   console.log(`\n${app.length} app screens -> ${APP_DIR}`);
   for (const { slug, label } of app) console.log(`  ${slug}.png  ${label}`);
-  if (ref.length) console.log(`${ref.length} reference artboards -> ${REF_DIR}`);
+  if (ref.length)
+    console.log(`${ref.length} reference artboards -> ${REF_DIR}`);
 
   if (failures.length) {
     console.log("\nFailed:");
