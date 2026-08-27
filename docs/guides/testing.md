@@ -327,8 +327,8 @@ spec that sets these up itself is testing a serialisation the product does not s
 That is not hypothetical. Each spec used to hand-roll its own copy and none installed the exception
 filter, so the suite ran under Nest's *default* filter, which serialises an exception's response
 object verbatim while production ships four fixed keys. `cross-tenant-isolation.e2e-spec.ts` asserted
-a structured `code` on an error body and passed in CI for months against a shape `main.ts` cannot
-emit (#1020). Three different bootstrap shapes had drifted across the twelve specs before they were
+a structured `code` on an error body and passed in CI every run until it was fixed, against a shape
+`main.ts` cannot emit (#1020). Three different bootstrap shapes had drifted across the twelve specs before they were
 consolidated.
 
 E2E specs build the Nest app from `AppModule` but **mock external dependencies** rather than hitting a

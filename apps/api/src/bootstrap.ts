@@ -18,8 +18,8 @@ import { LoggingInterceptor } from './interface/interceptors/logging.interceptor
  * while production ships four fixed keys and drops everything else.
  *
  * That gap is not theoretical: `cross-tenant-isolation.e2e-spec.ts` asserted a
- * structured `code` on an error body and passed in CI for months, against a
- * shape `main.ts` cannot emit (#1020). A test that green-lights behaviour
+ * structured `code` on an error body and passed in CI every run until this
+ * change, against a shape `main.ts` cannot emit (#1020). A test that green-lights behaviour
  * production cannot produce is worse than no test, because it is counted.
  *
  * So the fix is not "remember to add the filter in tests" — it is having one

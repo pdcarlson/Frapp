@@ -20,10 +20,7 @@
  * The layers under test are documented in
  * `docs/internal/security/AUTHORIZATION_MODEL.md` §1.
  */
-import {
-  CanActivate,
-  INestApplication,
-} from '@nestjs/common';
+import { CanActivate, INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
@@ -146,7 +143,7 @@ function seed(): SeededTables {
  * Assert a denial against the response shape the API *actually ships*.
  *
  * These assertions used to read `res.body.message?.code ?? res.body.code` and
- * passed in CI for months — but only because no e2e spec installed
+ * passed on every CI run until this change — but only because no e2e spec installed
  * `AllExceptionsFilter`, so the suite ran under Nest's default filter, which
  * serialises the thrown `{ code, message }` object verbatim. Against the filter
  * `main.ts` actually installs, both branches are `undefined`: the body is four
