@@ -164,10 +164,42 @@ enforcing layer out of the API. Topics are authorised by `realtime_messages_scop
 
 ### The policies that do exist (11 statements)
 
+**Counting convention.** `11` counts individual policy *statements* — rows in `pg_policies` — not
+rows in the table below, several of which name two policies each. That ambiguity is what let the
+number drift unnoticed before, so it is now stated rather than derived.
+
+Reconciled against hosted `frapp-staging` on 2026-08-27
+(`select schemaname, count(*) from pg_policies group by schemaname`):
+**10 in `public` + 1 in `realtime` = 11.** The table below is correct.
+
+The PGlite CI substrate sees **8**, and all three absences are role- or schema-gated rather than
+drift: `auth_admin_can_read_users` and `auth_admin_can_read_members` are created only inside
+`if exists (select 1 from pg_roles where rolname = 'supabase_auth_admin')`
+(`20260802120000_active_chapter_jwt_claim.sql:137`), and `realtime.messages` needs a `realtime`
+schema PGlite does not have. `scripts/check-pglite-migrations.mjs` pins the `public` set **by name and command**, so adding or
+dropping one of those 8 — or flipping one from `SELECT` to `ALL` — fails CI. Because a name-and-command
+set still cannot see a policy *rewritten in place*, it additionally rejects any permissive policy whose
+qualifier is a bare tautology — checking **both `qual` and `with_check`**. Reading only `qual` would
+miss the write path entirely: a `FOR INSERT` policy such as `chat_message_actions_insert` has a NULL
+`qual` and carries its whole predicate in `with_check`, and on a `FOR ALL` policy it is `with_check`
+that gates writes. So `using (auth.role() = 'service_role') with check (true)` — name, command and
+qualifier all unchanged — would otherwise have passed clean while letting any client insert arbitrary
+rows. That matters most for `member_custom_field_values_service_role`, which is `FOR ALL` and, like
+`chat_notification_preferences_select_own`, has no other coverage anywhere in the repo.
+
+This is a tripwire for the obvious rewrite, not a proof: it catches the literal spellings
+(`true`, `(true)`, `1=1`), and an adversarial `using (id = id)` would still pass.
+
+Note the limit of the guard: the three policies PGlite cannot see are **not** covered, so dropping
+`auth_admin_can_read_users`, `auth_admin_can_read_members`, or `realtime_messages_scoped_select`
+would leave the inventory printing its clean `(8 here, 11 hosted)` — and the `11` is derived from
+the pinned list plus those three, so it would then be reporting a hosted figure that is itself wrong. Those three stay doc-only, and changes to them have
+to be caught in review.
+
 | Table | Policy | Effect |
 | --- | --- | --- |
 | `chat_message_actions` | `_select` | `auth.role() = 'authenticated' AND can_read_chat_message(message_id)` — per-row channel-membership check via a `SECURITY DEFINER` function mirroring `canAccessChannel`. RLS is the only gate here: the web reads it directly (`packages/chat-core/src/realtime-manager.ts`, 2 call sites) |
-| `chat_messages` | `_select` | `auth.role() = 'authenticated' AND can_read_chat_message(id)` — the same predicate applied to the message row itself. Added by `20260816140000_realtime_carrier_repair.sql` so the chat `postgres_changes` subscription can receive rows; RLS is the only gate, as above |
+| `chat_messages` | `_select` | `auth.role() = 'authenticated' AND can_read_chat_message(id) AND kind <> 'imported'` — the same predicate applied to the message row itself, plus the imported-archive exclusion. Introduced by `20260816140000_realtime_carrier_repair.sql` so the chat `postgres_changes` subscription can receive rows, then **superseded by `20260823123000_chat_imported_kind_semantics.sql`**, which added the third conjunct: Realtime evaluates this policy per subscriber, so it is what stops a bulk archive import fanning a frame per row to every open client. RLS is the only gate, as above |
 | `realtime.messages` | `realtime_messages_scoped_select` | Authorises the three private change-ping topics by prefix (`notif:` / `events:` / `attendance:`), each behind a `SECURITY DEFINER` scope predicate (own user, chapter membership, event's chapter membership). Purely additive: `realtime.messages` had RLS on with **no** policy, which denied every private channel. Chat's typing/presence channels are *public* and bypass this table entirely |
 | `chat_message_actions` | `_insert`, `_delete` | `user_id in (select id from users where supabase_auth_id = auth.uid())` — own rows only |
 | `chat_notification_preferences` | `_select_own` | Own rows only |
@@ -197,6 +229,38 @@ not a partial fix — it is the original defect spelled out.
 This is enforced, not conventional: `scripts/check-pglite-migrations.mjs` applies every migration and
 fails the `pglite-migrations` job if any `SECURITY DEFINER` function in `public` does not pin
 `pg_temp` last. Fixed repo-wide in #985 (#983 fixed the first instance).
+
+### The `chat_messages` read surface — accepted, with the bound named
+
+`chat_messages` is the largest table in the schema, and since
+`20260816140000_realtime_carrier_repair.sql` it is readable directly by an `authenticated` client so
+the chat `postgres_changes` subscription can receive rows. Its policy calls
+`can_read_chat_message(id)`, which is `SECURITY DEFINER` and therefore **can never be inlined**: the
+planner calls it once per candidate row, and each call joins
+`chat_messages` / `chat_channels` / `users` / `members`.
+
+A filter matching nothing is the worst case, because no `LIMIT` short-circuits it:
+
+```
+GET /rest/v1/chat_messages?content=ilike.*zzzz*
+```
+
+The two things that bound this *through the API* — `assertChannelAccess` narrowing to a single
+`channel_id`, and `DEFAULT_MESSAGE_LIMIT` — do not apply to a direct PostgREST read.
+
+**This cost is accepted rather than mitigated, and the bound of record is the per-role
+`statement_timeout`: `authenticated = 8s`, `anon = 3s`** (read from hosted `frapp-staging`,
+2026-08-27). The two alternatives were considered and rejected on the merits:
+
+- **An index does not help.** The planner cannot use one to avoid a non-inlinable `SECURITY DEFINER`
+  call — that call *is* the cost.
+- **Narrowing the policy is ruled out** by what Realtime needs: the row has to stay readable by the
+  subscriber, which is the entire point of #974.
+
+> ⚠️ The bound is a **Supabase platform default this repo does not set or pin.** `statement_timeout`
+> appears nowhere under `supabase/`, so raising it from the dashboard would weaken this mitigation
+> with no diff, no failing check, and no signal in the repo. Tracked as
+> [#1291](https://github.com/pdcarlson/Frapp/issues/1291).
 
 ### Storage buckets
 
@@ -279,3 +343,67 @@ so a fake that simply failed every lookup could not make the suite pass vacuousl
 managing permission) *on top of* chapter scoping, so their fixtures are owned by the caller.
 
 The rest of the e2e suite stubs `ChapterGuard`; this spec must not, or it tests nothing.
+
+### RLS enforcement (`scripts/check-pglite-migrations.mjs`)
+
+The two tables where **RLS is the only gate** are covered black-box, by reading them as an
+unprivileged `rls_probe` role rather than by pattern-matching the policy expression:
+
+| Table | Coverage |
+| --- | --- |
+| `chat_message_actions` | membership/tenancy matrix (read path) |
+| `chat_messages` | membership/tenancy matrix (#977) + the imported-archive exclusion (#974) + a post-archive tenancy re-check (#977) |
+
+`rls_probe` is granted `SELECT` only, so this tier proves the **read** path by execution. The
+own-row `INSERT`/`DELETE` policies on `chat_message_actions` are covered by shape assertions over
+`polqual` / `polwithcheck`, not by attempting a write as a non-owner — a policy whose `with check`
+still mentions `user_id` and `auth.uid()` without restricting them would pass. That gap is real and
+is not claimed to be closed here.
+
+Each reader's **exact visible set** is asserted, not a row count — a total is satisfied by the right
+*number* of wrong rows, so a policy swapping one PRIVATE row for one cross-chapter row would keep a
+count green. Two details carry most of the weight:
+
+- **The cross-chapter reader has a positive control.** It is a real member of chapter B and is
+  asserted to see chapter B's own `PUBLIC` message *and* none of chapter A's six. Without that
+  half, "sees zero rows of chapter A" is satisfied equally well by a UUID belonging to nobody, and
+  the tenant boundary is never actually exercised.
+- **The matrix includes a `*` wildcard holder**, pinning permission and membership as independent
+  axes: the wildcard opens both `ROLE_GATED` channels and must still not open a DM.
+
+The membership matrix deliberately runs while the table holds only its own fixtures, which keeps its
+expectations readable but means no assertion in it can see a policy that special-cases *imported*
+rows. So the two readers that must see nothing of another tenant are re-checked after the archive
+row is inserted. That gap was reachable: a policy of the form
+
+```sql
+using ((auth.role() = 'authenticated' and kind <> 'imported' and can_read_chat_message(id))
+       or (auth.uid() is null and kind = 'imported'))
+```
+
+hands every archived message in every chapter to an unauthenticated client while satisfying all
+three shape regexes and every membership expectation. Verified 2026-08-27: with that policy applied,
+the shape assertion, the policy inventory, and all five membership assertions still report `OK`, and
+the **only** failure in the whole suite is the null-uid post-archive re-check.
+
+Why black-box rather than a shape assertion: the smoke-tier check on the policy *expression* is
+substring-shaped and defeatable by construction. It tests three substrings —
+`can_read_chat_message(id)`, `authenticated`, and `kind <> 'imported'` — so a defeating rewrite has
+to keep all three and only needs to neuter the one that does the work:
+
+```sql
+using (
+  auth.role() = 'authenticated'
+  and (public.can_read_chat_message(id) or true)   -- neutered, still matches the regex
+  and kind <> 'imported'
+)
+```
+
+That satisfies **all three** substring checks *and* the single-policy inventory, while making every
+message in every chapter's private channels and DMs readable by any authenticated caller.
+
+Verified 2026-08-27 by applying exactly that edit to
+`20260823123000_chat_imported_kind_semantics.sql` locally and running the suite: the shape assertion
+and the policy inventory both still reported `OK`, and the black-box tier failed 7 assertions — the
+cross-chapter reader and the no-JWT reader each seeing all seven seeded messages. The migration was
+then reverted.
