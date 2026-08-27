@@ -1,0 +1,13 @@
+# Research: model-access decision for AI chat agent (#1303)
+
+**Recommendation: call Anthropic directly, no router, for S1.** Wrap in a thin internal function you own so a gateway can be added later without leaking Anthropic specifics everywhere.
+
+**Why not a router:** every router path that actually preserves Anthropic's native citation object only works by speaking Anthropic's own protocol to an Anthropic model (OpenRouter's separate `/messages` endpoint, LiteLLM's `provider_specific_fields["citations"]`, Portkey's passthrough mode). The moment you route to a different provider "for flexibility," citations change shape or vanish. So a router doesn't actually buy multi-provider flexibility here — it buys an extra hop to reach the one provider you need anyway. OpenRouter's default (and most routers') OpenAI-compatible chat completion shape has no field for structured citations at all and silently drops them.
+
+**Why Anthropic specifically:** its Citations API returns a real structured object — char/page/block indices plus the cited text and source document index — which is exactly what an eval harness needs to verify a citation is real, not just plausible prose. OpenAI's file citations only carry file identity, no character range. Perplexity's citation model is prose-marker-based, the exact anti-pattern the spec rejects. Gemini and Cohere both have genuine span-based citations and are technically viable alternatives if ever needed.
+
+**One real design conflict to resolve before building S1, unrelated to routing:** Anthropic citations and strict structured JSON outputs cannot be used in the same request (hard 400 error). If S1's answer card wants a strict JSON envelope AND native citations, that needs two calls or a looser output format — settle this in the S1 spec, not discovered mid-build.
+
+**Scale check:** at a few hundred users, direct API rate limits aren't a real constraint (limits are ~1000 RPM at Signet's model tier — would need roughly 1000 requests/minute sustained to hit it). The real risk of going direct is single-provider outage exposure, but Anthropic's own uptime is ~99.46% over 90 days, and the standard mitigation is a retry/backoff wrapper plus a graceful "temporarily unavailable" state — not a routing layer. Practitioner rule of thumb: a gateway is worth it past ~5k requests/day or 2+ engineers; Signet is below both.
+
+**If/when a real need for redundancy emerges later:** the safe upgrade path is multi-surface Anthropic access (direct API + Bedrock + Vertex) behind self-hosted LiteLLM or Portkey passthrough — both proven to preserve citations — not cross-provider routing.
