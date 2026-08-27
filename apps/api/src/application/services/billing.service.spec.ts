@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import {
+  Logger,
   NotFoundException,
   BadRequestException,
   ServiceUnavailableException,
@@ -263,9 +264,12 @@ describe('BillingService', () => {
       });
 
       expect(result).toBe('https://checkout.stripe.com/session123');
+      // The chapter's stored customer reaches Stripe, and no email does (#929).
+      // This assertion previously pinned the bug: it asserted `customerEmail`
+      // while `cus_123` sat unused on the chapter row.
       expect(mockBillingProvider.createCheckoutSession).toHaveBeenCalledWith({
         chapterId: 'ch-1',
-        customerEmail: 'admin@example.com',
+        customerId: 'cus_123',
         successUrl: 'http://localhost:3000/success',
         cancelUrl: 'http://localhost:3000/cancel',
         grantTrial: true,
@@ -350,6 +354,92 @@ describe('BillingService', () => {
       expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
         stripe_customer_id: 'cus_new',
       });
+      // ...and the customer just minted is the one the session is opened
+      // against (#929). Before the fix it was persisted and then dropped, so
+      // Stripe created a second customer from the email — orphaning this one
+      // immediately, and permanently if the treasurer abandoned checkout,
+      // which left `POST /v1/billing/portal` opening a portal for a customer
+      // that owned no subscription.
+      expect(mockBillingProvider.createCheckoutSession).toHaveBeenCalledWith(
+        expect.objectContaining({ customerId: 'cus_new' }),
+      );
+    });
+
+    it('refuses checkout for a past_due chapter and points at the portal (#929)', async () => {
+      // The double-subscription hole. `past_due` is a *live* subscription in
+      // dunning, so a second checkout bills the chapter twice and orphans the
+      // first subscription where nothing in the app can surface or cancel it.
+      // The portal updates the existing subscription instead.
+      mockChapterRepo.findById.mockResolvedValue({
+        ...baseChapter,
+        subscription_status: 'past_due' as const,
+        subscription_id: 'sub_live',
+      });
+
+      await expect(
+        service.createCheckoutSession({
+          chapterId: 'ch-1',
+          customerEmail: 'admin@example.com',
+          successUrl: 'http://localhost:3000/success',
+          cancelUrl: 'http://localhost:3000/cancel',
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      // The refusal has to be a boundary, not just a message: nothing may reach
+      // Stripe on this path.
+      expect(mockBillingProvider.createCheckoutSession).not.toHaveBeenCalled();
+      expect(mockBillingProvider.createCustomer).not.toHaveBeenCalled();
+    });
+
+    it('carries the portal in the past_due refusal message (#929, #1020)', async () => {
+      // AllExceptionsFilter drops `code` from every response (#1020), so the
+      // message is the only channel a client can map on. Asserted explicitly so
+      // that rewording it is a deliberate act rather than a silent break of the
+      // web client's routing.
+      mockChapterRepo.findById.mockResolvedValue({
+        ...baseChapter,
+        subscription_status: 'past_due' as const,
+        subscription_id: 'sub_live',
+      });
+
+      await expect(
+        service.createCheckoutSession({
+          chapterId: 'ch-1',
+          customerEmail: 'admin@example.com',
+          successUrl: 'http://localhost:3000/success',
+          cancelUrl: 'http://localhost:3000/cancel',
+        }),
+      ).rejects.toThrow(/billing portal/i);
+    });
+
+    it('still allows a canceled chapter to check out, reusing its customer (#929)', async () => {
+      // `refuse-new` refuses a *live* subscription. A canceled one is terminal
+      // at Stripe — mapStripeStatus folds `canceled` and `incomplete_expired`
+      // into it — so the portal cannot resume it and checkout is the only way
+      // back. Nothing live is left to orphan. Reusing the stored customer is
+      // what keeps the returning chapter on one continuous billing history
+      // rather than forking a second customer record.
+      mockChapterRepo.findById.mockResolvedValue({
+        ...baseChapter,
+        subscription_status: 'canceled' as const,
+        subscription_id: 'sub_previous',
+      });
+      mockBillingProvider.createCheckoutSession.mockResolvedValue(
+        'https://checkout.stripe.com/session789',
+      );
+
+      await service.createCheckoutSession({
+        chapterId: 'ch-1',
+        customerEmail: 'admin@example.com',
+        successUrl: 'http://localhost:3000/success',
+        cancelUrl: 'http://localhost:3000/cancel',
+      });
+
+      expect(mockBillingProvider.createCheckoutSession).toHaveBeenCalledWith(
+        expect.objectContaining({ customerId: 'cus_123' }),
+      );
+      // No second customer record for a chapter that already has one.
+      expect(mockBillingProvider.createCustomer).not.toHaveBeenCalled();
     });
 
     it('should reject checkout for already-active chapters', async () => {
@@ -367,6 +457,8 @@ describe('BillingService', () => {
           cancelUrl: 'http://localhost:3000/cancel',
         }),
       ).rejects.toThrow(BadRequestException);
+
+      expect(mockBillingProvider.createCheckoutSession).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException for non-existent chapter', async () => {
@@ -973,6 +1065,93 @@ describe('BillingService', () => {
         CHECKOUT_CHAPTER_ID,
         'activation-checkout-completed',
       );
+    });
+
+    it('logs loudly when a checkout replaces a different stored subscription (AC-3, #929)', async () => {
+      // AC-3: the reference may be replaced, but never *silently*. The new
+      // subscription is the one now billing the chapter, so storing it is
+      // correct — refusing the write would leave the chapter paying for a
+      // subscription the app cannot see, which is the worse failure. The log is
+      // the reconciliation signal for the case the checkout guard cannot cover
+      // (a caller that raced it, or a canceled chapter resubscribing).
+      const logSpy = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      const event: WebhookEvent = {
+        id: 'evt_conflicting_sub',
+        type: 'checkout.session.completed',
+        created: Date.now(),
+        data: {
+          object: {
+            metadata: { chapter_id: CHECKOUT_CHAPTER_ID },
+            subscription: 'sub_new',
+            customer: 'cus_123',
+          },
+        },
+      };
+
+      mockChapterRepo.findById.mockResolvedValue({
+        ...checkoutChapter,
+        subscription_id: 'sub_old',
+      });
+      mockChapterRepo.update.mockResolvedValue({
+        ...checkoutChapter,
+        subscription_status: 'active',
+        subscription_id: 'sub_new',
+      });
+
+      await service.handleWebhookEvent(event);
+
+      const logged = logSpy.mock.calls
+        .map((call) => String(call[0]))
+        .join('\n');
+      expect(logged).toContain('sub_old');
+      expect(logged).toContain('sub_new');
+
+      // Still applied — the live subscription is the one that must be stored.
+      expect(mockChapterRepo.update).toHaveBeenCalledWith(
+        CHECKOUT_CHAPTER_ID,
+        expect.objectContaining({ subscription_id: 'sub_new' }),
+      );
+
+      logSpy.mockRestore();
+    });
+
+    it('stays quiet when the checkout confirms the subscription already stored (#929)', async () => {
+      // A Stripe redelivery of the same session must not read as a
+      // reconciliation event, or the signal above is worthless.
+      const logSpy = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      const event: WebhookEvent = {
+        id: 'evt_same_sub',
+        type: 'checkout.session.completed',
+        created: Date.now(),
+        data: {
+          object: {
+            metadata: { chapter_id: CHECKOUT_CHAPTER_ID },
+            subscription: 'sub_same',
+            customer: 'cus_123',
+          },
+        },
+      };
+
+      mockChapterRepo.findById.mockResolvedValue({
+        ...checkoutChapter,
+        subscription_id: 'sub_same',
+      });
+      mockChapterRepo.update.mockResolvedValue({
+        ...checkoutChapter,
+        subscription_status: 'active',
+        subscription_id: 'sub_same',
+      });
+
+      await service.handleWebhookEvent(event);
+
+      expect(logSpy).not.toHaveBeenCalled();
+      logSpy.mockRestore();
     });
 
     it('does not record a conversion for a checkout on a non-existent chapter (#267)', async () => {
