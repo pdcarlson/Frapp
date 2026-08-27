@@ -757,9 +757,20 @@ export class ChatService {
     // seeded `#alumni` channel is one rename away — and seeding `member_ids`
     // (#1008) newly made PRIVATE channels postable at all, which would have put
     // a one-member private channel named `exec-announcements` one send away
-    // from broadcasting its contents chapter-wide. Gate on the type as well.
+    // from broadcasting its contents chapter-wide.
+    //
+    // `is_read_only` gates the *write* side for the same reason. Without it any
+    // member could post to a PUBLIC, non-read-only channel merely named
+    // `intramural-announcements` and fan an URGENT notification — which
+    // `NotificationService` exempts from the quiet-hours downgrade — to the
+    // whole roster. That contradicts this section of the chat spec, which says
+    // `announcements:post` governs who may author an announcement, and it is
+    // the same name-keying that `allowsInThreadReplies` deliberately avoids.
+    // Together the two flags are the structural shape of an announcements
+    // channel: everyone reads, only the permitted write.
     const isAnnouncement =
       channel.type === 'PUBLIC' &&
+      channel.is_read_only &&
       channel.name.toLowerCase().includes('announcements');
 
     if (isAnnouncement) {

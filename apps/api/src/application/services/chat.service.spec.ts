@@ -1959,9 +1959,16 @@ describe('ChatService', () => {
         ...baseChannel,
         name: 'announcements',
         type: 'PUBLIC',
+        // The seeded shape: everyone reads, only `announcements:post` writes.
+        is_read_only: true,
       };
       mockMessageRepo.create.mockResolvedValue(baseMessage);
       mockChannelRepo.findById.mockResolvedValue(announcementChannel);
+      // A read-only channel is postable only with the permission — which is the
+      // point: `announcements:post` is what authorizes an announcement.
+      mockRbac.getEffectivePermissions.mockResolvedValue([
+        'announcements:post',
+      ]);
 
       await service.sendMessage({
         chapter_id: 'ch-1',
@@ -2011,6 +2018,28 @@ describe('ChatService', () => {
         expect(mockNotificationService.notifyChapter).not.toHaveBeenCalled();
       },
     );
+
+    // A PUBLIC channel anyone can post to must not be able to fan an URGENT,
+    // quiet-hours-exempt push to the whole roster just because it is named
+    // `*-announcements`. `announcements:post` is what governs authorship.
+    it('should not fan out from a PUBLIC channel that is not read-only', async () => {
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        name: 'intramural-announcements',
+        type: 'PUBLIC',
+        is_read_only: false,
+      });
+
+      await service.sendMessage({
+        chapter_id: 'ch-1',
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'anyone can post this',
+      });
+
+      expect(mockNotificationService.notifyChapter).not.toHaveBeenCalled();
+    });
 
     it('should not fail if notification throws on sendMessage', async () => {
       const dmChannel: ChatChannel = {
