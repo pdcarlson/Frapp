@@ -40,9 +40,103 @@ Use when:
 
 Action:
 1. Freeze writes (maintenance mode if needed).
-2. Restore latest verified backup/snapshot in Supabase.
+2. Restore the most recent offsite dump — see [Restoring from an offsite dump](#restoring-from-an-offsite-dump). **There is no Supabase snapshot to restore instead**; see Backup reality below.
 3. Re-deploy API once DB state is consistent.
 4. Execute incident postmortem.
+
+## Backup reality
+
+Established from the Supabase Management API and Supabase's own documentation on
+2026-08-27 (#852), not assumed:
+
+| Fact | Value |
+| --- | --- |
+| Org | `Frapp Live` (`iouzvaszrnjlndtmookt`) |
+| **Plan** | **`free`** — holds *both* `frapp-staging` and `frapp-prod` |
+| `frapp-staging` | `hnoyzpidbmizhbqaiity`, `us-east-1`, Postgres 17.6.1.063 |
+| `frapp-prod` | `unttyvyfezddlyafcydh`, `us-east-2`, Postgres 17.6.1.063 |
+| Supabase daily backups | **None available.** [Pro/Team/Enterprise only](https://supabase.com/docs/guides/platform/backups) |
+| Point-in-Time Recovery | **Not available.** Paid add-on, Pro and above |
+
+Supabase's guidance for the free tier is to do exactly what this repo now does:
+
+> We recommend that free tier plan projects regularly export their data using the
+> Supabase CLI `db dump` command and maintain off-site backups.
+
+Two consequences worth stating plainly:
+
+- **The nightly offsite dump is not defence-in-depth. It is the only restorable
+  backup either project has.** If it is not running, there is no recovery path
+  from data loss beyond replaying migrations into an empty database.
+- Free-tier projects may have up to 7 daily backups taken internally, but
+  Supabase makes them accessible **only on upgrade**, and states it "might no
+  longer make daily backups for free projects in the future". That is not
+  something a recovery plan can depend on. Upgrading the org to Pro is the
+  single change that would most improve this posture.
+
+## Backups: what exists
+
+| | |
+| --- | --- |
+| Producer | [`.github/workflows/db-backup.yml`](../../../.github/workflows/db-backup.yml) — nightly 07:00 UTC, plus `workflow_dispatch` |
+| Script | [`scripts/db-backup.sh`](../../../scripts/db-backup.sh) |
+| Contents | three gzipped SQL files — roles, schema, data — plus a manifest carrying a SHA-256 per file |
+| Scope | `frapp-staging` only. Production is deferred by choice (#814 / `scope:production`) |
+| Destination | S3-compatible bucket outside Supabase — **provisioning tracked in #1287** |
+| Retention | `BACKUP_RETENTION_DAYS`, default 30, pruned by the same workflow |
+
+Until #1287 is done the workflow **fails every night on purpose**. A backup job
+that reports success while writing no backup is the failure mode this whole
+runbook exists to prevent.
+
+### What this backup does not cover
+
+- **Storage objects.** Per Supabase, "Database backups do not include objects you
+  store via the Storage API, as the database only includes metadata about these
+  objects." Five buckets hold real content, `chat-archive` in particular. A
+  restore therefore yields rows referencing objects that were never captured.
+  Backing up Storage is separate, unfiled work.
+- **The `storage` schema itself**, deliberately: bucket rows are provisioned by
+  this repo's own `supabase/migrations/*_bucket.sql`, so they come back when
+  migrations run. Including them made the restore abort on `buckets_pkey`.
+- **`auth.schema_migrations`**, deliberately: GoTrue's own ledger, populated on
+  every project, so restoring it aborts on `schema_migrations_pkey`.
+- **Custom role passwords.** Supabase excludes them from `--role-only` dumps.
+  Reset them by hand after a restore if any exist.
+
+## Restoring from an offsite dump
+
+```bash
+# 1. Fetch the dump you want (labels are UTC and sort chronologically).
+aws s3 cp "s3://$BACKUP_S3_BUCKET/staging/<label>/" ./restore/ \
+  --endpoint-url "$BACKUP_S3_ENDPOINT" --recursive
+
+# 2. Restore. Verifies checksums and preconditions before touching the target.
+scripts/db-restore.sh --backup-dir ./restore --db-url "<target-url>" --force
+```
+
+**The target must be a Supabase-provisioned database** — a freshly created
+project, or a reset local stack. These dumps are *not* self-contained:
+`supabase db dump` excludes Supabase-managed schemas, so the schema dump references
+`auth`, `storage` and `extensions` without creating them, and restoring into a
+bare `CREATE DATABASE` dies partway through. The restore script checks this up front
+rather than letting you discover it mid-replay.
+
+`--force` is required for any non-local target. That is not ceremony: the script
+replaces the contents of the database it is pointed at, and the difference
+between a rehearsal and an outage is one mistyped host.
+
+## Rehearsal log
+
+A backup you have never restored is a rumor. Re-run
+[`scripts/db-restore-rehearsal.sh`](../../../scripts/db-restore-rehearsal.sh)
+after changing any dump flag or the restore order — it backs up the local stack,
+drops the application schema, restores from the dump alone, and diffs row counts
+table-by-table, exiting non-zero on any drift.
+
+| Date | Result | Notes |
+| --- | --- | --- |
+| 2026-08-27 | **PASS** | 24 tables identical row-for-row. `auth.users` restored with `encrypted_password` intact. Took five iterations; each failure was a real defect in the recipe (see #852). Local stack, Postgres 17.6 — same major/minor as staging. Not yet rehearsed against a real Supabase project, which needs #1287. |
 
 ## Immediate response steps
 
