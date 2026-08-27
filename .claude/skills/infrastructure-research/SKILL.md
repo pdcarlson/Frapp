@@ -135,18 +135,20 @@ curl -s -H "Authorization: Bearer $VERCEL_API_KEY" \
 
 ## Infisical: Secret configuration
 
-> **These recipes cannot run in a Claude Code cloud sandbox today**
-> ([#1279](https://github.com/pdcarlson/Frapp/issues/1279)): the environment network policy
-> rejects `app.infisical.com` (the proxy answers 403 to CONNECT), and unlike Render / Vercel /
-> Sentry / PostHog there is no Infisical MCP connector to fall back on — the official
-> `@infisical/mcp` is stdio-only, so it would run *inside* the sandbox under the same
-> allowlist (canonical statement: [`CLOUD_SANDBOX.md`](../../../docs/internal/environment/CLOUD_SANDBOX.md)
-> § "What this does not unlock"). From a sandbox, report Infisical state as **unverified**.
-> The recipes need network reach plus `INFISICAL_SERVICE_TOKEN` in the shell — in practice a
+> **Sandbox reach depends on the environment allowlist.** Per
+> [#1279](https://github.com/pdcarlson/Frapp/issues/1279)'s decision, `app.infisical.com`
+> belongs on the environment's Allowed domains (canonical statement:
+> [`CLOUD_SANDBOX.md`](../../../docs/internal/environment/CLOUD_SANDBOX.md)
+> § "What this does not unlock"). There is no MCP fallback — unlike Render / Vercel / Sentry /
+> PostHog, no Infisical MCP connector can read secrets (the official `@infisical/mcp` is
+> stdio-only, so it runs *inside* the sandbox under the same allowlist). In an environment
+> missing the allowlist line, the proxy answers 403 to CONNECT and Infisical state is
+> **unverified** from that sandbox — check first with
+> `curl -sS https://app.infisical.com/api/status`
+> (keep the `-S` — with `-s` alone, the proxy's CONNECT 403 produces silent empty output).
+> The recipes need that reach plus `INFISICAL_SERVICE_TOKEN` in the shell — a sandbox or a
 > laptop; CI authenticates differently (machine-identity universal auth in the workflows) and
 > does not carry the service token.
-> Re-check reachability first: `curl -sS https://app.infisical.com/api/status`
-> (keep the `-S` — with `-s` alone, the proxy's CONNECT 403 produces silent empty output).
 
 The credential is a **service token** (`INFISICAL_SERVICE_TOKEN`, `st.*` format), scoped at mint
 time to specific environment(s)+path(s) — a 401/403 on one environment means the token isn't
@@ -155,7 +157,8 @@ a token with exactly one (non-glob) scope makes the raw-secrets endpoint *silent
 scoped environment/path* for whatever the query named, returning 200 with that env's keys — so a
 successful listing proves which env the token is scoped to, not that you read the env you asked
 for. Trust the dashboard's scope display (or a freshly minted single-purpose token) over probing.
-The CLI reads the same value as `INFISICAL_TOKEN` (full token). **Do not use `infisical secrets`
+The project's token is minted `dev` + `staging` read-only per #1279 — `prod` requests fail by
+design. The CLI reads the same value as `INFISICAL_TOKEN` (full token). **Do not use `infisical secrets`
 or `infisical export` in agent sessions — both print secret values.** Use the names-only recipes
 below.
 
@@ -179,7 +182,10 @@ still live — if it ever 404s, switch to the v4 form.
 ### Compare environments
 
 Check that staging and production have the same secret keys — this needs a token scoped to
-**both** environments: with a *single*-scope token the override described above returns the same
+**both** environments, which the ambient `INFISICAL_SERVICE_TOKEN` (dev+staging, never prod)
+deliberately is not: its `prod` iteration fails by design, so this comparison takes a
+purpose-minted staging+prod read token, used from a laptop and never stored in the agent env.
+Also: with a *single*-scope token the override described above returns the same
 scoped env's keys for every iteration, so identical lists across envs would be the override, not
 parity. Mind the name/slug trap: the
 Infisical **slugs** are `dev` / `staging` / `prod` (canonical constant: `INFISICAL_ENV_SLUGS` in
