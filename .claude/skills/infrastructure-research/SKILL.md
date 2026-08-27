@@ -151,14 +151,33 @@ curl -s -H "Authorization: Bearer $VERCEL_API_KEY" \
 > does not carry the service token.
 
 The credential is a **service token** (`INFISICAL_SERVICE_TOKEN`, `st.*` format), scoped at mint
-time to specific environment(s)+path(s) — a 401/403 on one environment means the token isn't
-scoped to it, not that the token is dead. **The converse does not hold**: per Infisical's backend,
-a token with exactly one (non-glob) scope makes the raw-secrets endpoint *silently substitute its
-scoped environment/path* for whatever the query named, returning 200 with that env's keys — so a
-successful listing proves which env the token is scoped to, not that you read the env you asked
-for. Trust the dashboard's scope display (or a freshly minted single-purpose token) over probing.
-The project's token is minted `dev` + `staging` read-only per #1279 — `prod` requests fail by
-design. The CLI reads the same value as `INFISICAL_TOKEN` (full token). **Do not use `infisical secrets`
+time to specific environment(s)+path(s).
+
+> **An out-of-scope environment does not error — it returns `200` with an empty `secrets` array.**
+> Verified 2026-08-27 from a cloud sandbox with the live `dev`+`staging` token: `environment=prod`
+> answered `200` and zero names on **both** `/api/v3/secrets/raw` and `/api/v4/secrets`, while a
+> slug that does not exist (`production`, `bogus-slug-xyz`) answered `404`. Two consequences:
+> `curl -f` cannot tell "not scoped to this env" from "this env is empty", and **a zero-name
+> listing is not evidence that an environment is unconfigured.** A second silent-wrong-answer mode
+> compounds it: a token with exactly one (non-glob) scope makes the raw-secrets endpoint *silently
+> substitute its scoped environment/path* for whatever the query named, returning 200 with that
+> env's keys. (That second mode is upstream-documented behaviour and was **not** re-tested on
+> 2026-08-27 — the ambient token has two scopes, so it cannot trigger it. Treat it as a live
+> hazard for any single-scope token you mint.)
+
+**Never infer a token's scope from a listing — ask the API.** `GET /api/v2/service-token`,
+authenticated with the token itself, returns its own `scopes[]` and `permissions[]`:
+
+```bash
+tok="$INFISICAL_SERVICE_TOKEN"; case "$tok" in st.*.*.*) tok="${tok%.*}";; esac
+curl -fsS -H "Authorization: Bearer $tok" https://app.infisical.com/api/v2/service-token \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['name'], d['permissions'], [s['environment'] for s in d['scopes']])"
+```
+
+That response also embeds the owning user's email and device/IP history, so extract the fields
+above rather than dumping it. The project's token is `claude-sandbox-read`, scoped `dev` +
+`staging` with `read` permission per #1279 — confirmed against that endpoint, not inferred from a
+listing. The CLI reads the same value as `INFISICAL_TOKEN` (full token). **Do not use `infisical secrets`
 or `infisical export` in agent sessions — both print secret values.** Use the names-only recipes
 below.
 
@@ -166,11 +185,13 @@ below.
 
 ```bash
 # INFISICAL_PROJECT_ID is exported in agent sessions; same value as workspaceId in .infisical.json
-# Newly minted service tokens are 3 dot-segments (st.<id>.<secret>) and are sent whole; LEGACY
-# 4-segment tokens carry a client-side decryption key as the 4th segment, which is NOT part of
-# the Bearer credential. The case-strip handles both (the CLI always wants the full token).
-# -f makes a 401/403 (token not scoped to this env) fail loudly instead of piping an error body
-# into python and printing zero names, which would misread as "environment is empty"
+# Service tokens arrive as 3 dot-segments (st.<id>.<secret>) or 4 (a trailing client-side key).
+# Segment count does NOT track token age, and BOTH forms authenticate as-is: verified 2026-08-27
+# against a same-day mint that was 4 segments, where the full and the stripped form each returned
+# 200 and the same names. The case-strip below is harmless defence rather than a requirement --
+# keep it anyway (the CLI always wants the FULL token).
+# -f catches a dead or blocked token (404/403). It does NOT catch an out-of-scope environment,
+# which returns 200 with zero names -- confirm scope via /api/v2/service-token above.
 tok="$INFISICAL_SERVICE_TOKEN"; case "$tok" in st.*.*.*) tok="${tok%.*}";; esac
 curl -fsS -H "Authorization: Bearer $tok" \
   "https://app.infisical.com/api/v3/secrets/raw?workspaceId=${INFISICAL_PROJECT_ID}&environment=dev&secretPath=/" \
@@ -185,9 +206,13 @@ still live — if it ever 404s, switch to the v4 form.
 
 Check that staging and production have the same secret keys — this needs a token scoped to
 **both** environments, which the ambient `INFISICAL_SERVICE_TOKEN` (dev+staging, never prod)
-deliberately is not: its `prod` iteration fails by design, so this comparison takes a
-purpose-minted staging+prod read token, used from a laptop and never stored in the agent env.
-Also: with a *single*-scope token the override described above returns the same
+deliberately is not. **Run with the ambient token, the `prod` iteration prints an empty list
+rather than failing** — out-of-scope environments answer `200` with zero secrets (see above), and
+`-f` does not fire — so the loop reports what looks like "production holds no keys" when it
+actually means "this token cannot read production". That is a wrong answer, not a missing one.
+The comparison therefore takes a purpose-minted staging+prod read token, used from a laptop and
+never stored in the agent env; check what you hold with `/api/v2/service-token` before trusting
+either column. Also: with a *single*-scope token the override described above returns the same
 scoped env's keys for every iteration, so identical lists across envs would be the override, not
 parity. Mind the name/slug trap: the
 Infisical **slugs** are `dev` / `staging` / `prod` (canonical constant: `INFISICAL_ENV_SLUGS` in
