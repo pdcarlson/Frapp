@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import type { components } from "@repo/api-sdk";
 
 export function useEvents() {
   const client = useFrappClient();
@@ -68,6 +69,11 @@ export function useCreateEvent() {
       recurrence_rule?: string;
       required_role_ids?: string[];
       notes?: string;
+      // Mirrors CreateEventDto: at least 3 vertices, and the field is omitted
+      // rather than sent empty when the event has no geofence (@ArrayMinSize(3)
+      // makes [] a 400 here, unlike on update).
+      check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
+      check_in_zone_name?: string;
     }) => {
       const { data, error } = await client.POST("/v1/events", { body });
       if (error) throw error;
@@ -100,6 +106,10 @@ export function useUpdateEvent() {
         recurrence_rule?: string;
         required_role_ids?: string[];
         notes?: string;
+        // Mirrors UpdateEventDto, which deliberately drops @ArrayMinSize so an
+        // empty array clears a stored zone.
+        check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
+        check_in_zone_name?: string;
       };
     }) => {
       const { data, error } = await client.PATCH("/v1/events/{id}", {

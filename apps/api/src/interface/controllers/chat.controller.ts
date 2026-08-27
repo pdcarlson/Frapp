@@ -100,17 +100,21 @@ export class ChatController {
   @ApiOperation({ summary: 'Create a channel' })
   async createChannel(
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
     @Body() dto: CreateChannelDto,
   ) {
-    return this.chatService.createChannel({
-      chapter_id: chapterId,
-      name: dto.name,
-      description: dto.description,
-      type: dto.type as ChannelType,
-      required_permissions: dto.required_permissions,
-      category_id: dto.category_id,
-      is_read_only: dto.is_read_only,
-    });
+    return this.chatService.createChannel(
+      {
+        chapter_id: chapterId,
+        name: dto.name,
+        description: dto.description,
+        type: dto.type as ChannelType,
+        required_permissions: dto.required_permissions,
+        category_id: dto.category_id,
+        is_read_only: dto.is_read_only,
+      },
+      userId,
+    );
   }
 
   @Patch(':id')

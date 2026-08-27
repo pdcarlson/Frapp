@@ -319,6 +319,18 @@ JSON module via `with { type: 'json' }`. The mapper points at
 (Node 20.19+ and 22.12+ both load it); the unit suite already `jest.mock`s it. E2E never sends
 push, so the stub only has to construct when `AppModule` boots.
 
+**Boot through `configureApp()`, never by hand.** `apps/api/src/bootstrap.ts` holds the wiring that
+shapes a request or a response — versioning, the validation pipe, `requestIdMiddleware`, the logging
+interceptor and `AllExceptionsFilter` — and `main.ts` and every E2E spec call the same function. A
+spec that sets these up itself is testing a serialisation the product does not ship.
+
+That is not hypothetical. Each spec used to hand-roll its own copy and none installed the exception
+filter, so the suite ran under Nest's *default* filter, which serialises an exception's response
+object verbatim while production ships four fixed keys. `cross-tenant-isolation.e2e-spec.ts` asserted
+a structured `code` on an error body and passed in CI every run until it was fixed, against a shape
+`main.ts` cannot emit (#1020). Three different bootstrap shapes had drifted across the twelve specs before they were
+consolidated.
+
 E2E specs build the Nest app from `AppModule` but **mock external dependencies** rather than hitting a
 live backend: the Supabase client is overridden via the `SUPABASE_CLIENT` provider token (see
 `apps/api/test/helpers/supabase-mock.factory.ts` / `createSupabaseMock()`), and auth/chapter/permission

@@ -4,6 +4,7 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
+import { canAccessChannel } from '@repo/validation';
 import { ChatService } from './chat.service';
 import {
   CHAT_CHANNEL_REPOSITORY,
@@ -264,11 +265,14 @@ describe('ChatService', () => {
     it('should create a PUBLIC channel', async () => {
       mockChannelRepo.create.mockResolvedValue(baseChannel);
 
-      const result = await service.createChannel({
-        chapter_id: 'ch-1',
-        name: 'general',
-        type: 'PUBLIC',
-      });
+      const result = await service.createChannel(
+        {
+          chapter_id: 'ch-1',
+          name: 'general',
+          type: 'PUBLIC',
+        },
+        'u-creator',
+      );
 
       expect(result).toEqual(baseChannel);
       expect(mockChannelRepo.create).toHaveBeenCalledWith(
@@ -282,11 +286,14 @@ describe('ChatService', () => {
 
     it('should reject DM/GROUP_DM through createChannel', async () => {
       await expect(
-        service.createChannel({
-          chapter_id: 'ch-1',
-          name: 'dm',
-          type: 'DM',
-        }),
+        service.createChannel(
+          {
+            chapter_id: 'ch-1',
+            name: 'dm',
+            type: 'DM',
+          },
+          'u-creator',
+        ),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -296,27 +303,134 @@ describe('ChatService', () => {
       'should reject a ROLE_GATED channel with required_permissions %p',
       async (required) => {
         await expect(
-          service.createChannel({
-            chapter_id: 'ch-1',
-            name: 'exec-board',
-            type: 'ROLE_GATED',
-            required_permissions: required,
-          }),
+          service.createChannel(
+            {
+              chapter_id: 'ch-1',
+              name: 'exec-board',
+              type: 'ROLE_GATED',
+              required_permissions: required,
+            },
+            'u-creator',
+          ),
         ).rejects.toThrow(BadRequestException);
 
         expect(mockChannelRepo.create).not.toHaveBeenCalled();
       },
     );
 
+    // #1008: `member_ids` NULL makes a PRIVATE channel unreadable by everyone
+    // including its creator, with no repair path — `updateChannel` cannot write
+    // the column. The row is only reachable from the create response's id.
+    it('should seed a PRIVATE channel with its creator', async () => {
+      mockChannelRepo.create.mockResolvedValue(baseChannel);
+
+      await service.createChannel(
+        {
+          chapter_id: 'ch-1',
+          name: 'exec-private',
+          type: 'PRIVATE',
+        },
+        'u-creator',
+      );
+
+      expect(mockChannelRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'PRIVATE',
+          member_ids: ['u-creator'],
+        }),
+      );
+    });
+
+    // The seeded row must actually satisfy the predicate that reads it —
+    // asserting the insert shape alone would not prove the channel is readable.
+    it('should produce a PRIVATE row its creator can actually read', async () => {
+      mockChannelRepo.create.mockImplementation((data) =>
+        Promise.resolve({ ...baseChannel, ...data } as ChatChannel),
+      );
+
+      const created = await service.createChannel(
+        {
+          chapter_id: 'ch-1',
+          name: 'exec-private',
+          type: 'PRIVATE',
+        },
+        'u-creator',
+      );
+
+      expect(
+        canAccessChannel({
+          channel: created,
+          userId: 'u-creator',
+          isChapterMember: true,
+          permissions: [],
+        }),
+      ).toBe(true);
+    });
+
+    // A PRIVATE channel is not a public one: seeding the creator must not make
+    // it readable by another chapter member.
+    it('should not make a seeded PRIVATE channel readable by anyone else', async () => {
+      mockChannelRepo.create.mockImplementation((data) =>
+        Promise.resolve({ ...baseChannel, ...data } as ChatChannel),
+      );
+
+      const created = await service.createChannel(
+        {
+          chapter_id: 'ch-1',
+          name: 'exec-private',
+          type: 'PRIVATE',
+        },
+        'u-creator',
+      );
+
+      expect(
+        canAccessChannel({
+          channel: created,
+          userId: 'u-other',
+          isChapterMember: true,
+          // Even `*` must not open it: the PRIVATE branch has no wildcard bypass.
+          permissions: ['*'],
+        }),
+      ).toBe(false);
+    });
+
+    // PUBLIC and ROLE_GATED resolve access by chapter membership and by
+    // permissions; a membership list there would imply something that is never
+    // consulted.
+    it.each(['PUBLIC', 'ROLE_GATED'] as const)(
+      'should not seed member_ids on a %s channel',
+      async (type) => {
+        mockChannelRepo.create.mockResolvedValue(baseChannel);
+
+        await service.createChannel(
+          {
+            chapter_id: 'ch-1',
+            name: 'general',
+            type,
+            required_permissions:
+              type === 'ROLE_GATED' ? ['roles:manage'] : undefined,
+          },
+          'u-creator',
+        );
+
+        expect(mockChannelRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ member_ids: null }),
+        );
+      },
+    );
+
     it('should create a ROLE_GATED channel that specifies requirements', async () => {
       mockChannelRepo.create.mockResolvedValue(baseChannel);
 
-      await service.createChannel({
-        chapter_id: 'ch-1',
-        name: 'exec-board',
-        type: 'ROLE_GATED',
-        required_permissions: ['roles:manage'],
-      });
+      await service.createChannel(
+        {
+          chapter_id: 'ch-1',
+          name: 'exec-board',
+          type: 'ROLE_GATED',
+          required_permissions: ['roles:manage'],
+        },
+        'u-creator',
+      );
 
       expect(mockChannelRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -407,12 +521,26 @@ describe('ChatService', () => {
       type: 'ROLE_GATED',
       required_permissions: ['roles:manage'],
     };
+    // The row shape #1008 was about: a PRIVATE channel whose membership is
+    // NULL. `privMine`/`privTheirs` both carry explicit lists, so they encode a
+    // shape the API could produce only *after* the creator seed — this one
+    // covers the orphan. It is unreachable through create now, but #1302's
+    // remove-member route can reproduce it by removing the last member, which
+    // is the hazard that issue's own criteria call out.
+    const privOrphan: ChatChannel = {
+      ...baseChannel,
+      id: 'ch-priv-orphan',
+      name: 'orphaned-committee',
+      type: 'PRIVATE',
+      member_ids: null,
+    };
     const everything = [
       baseChannel,
       dmMine,
       dmTheirs,
       privMine,
       privTheirs,
+      privOrphan,
       roleGated,
     ];
 
@@ -427,6 +555,17 @@ describe('ChatService', () => {
           'ch-dm-mine',
           'ch-priv-mine',
         ]);
+      });
+
+      it('hides a PRIVATE channel whose member_ids is NULL from everyone', async () => {
+        mockChannelRepo.findByChapter.mockResolvedValue(everything);
+
+        for (const userId of ['user-1', 'user-2', 'user-3']) {
+          const result = await service.getChannels('ch-1', userId);
+          expect(result.map((channel) => channel.id)).not.toContain(
+            'ch-priv-orphan',
+          );
+        }
       });
 
       it('does not return a DM between two other members', async () => {
@@ -1820,9 +1959,16 @@ describe('ChatService', () => {
         ...baseChannel,
         name: 'announcements',
         type: 'PUBLIC',
+        // The seeded shape: everyone reads, only `announcements:post` writes.
+        is_read_only: true,
       };
       mockMessageRepo.create.mockResolvedValue(baseMessage);
       mockChannelRepo.findById.mockResolvedValue(announcementChannel);
+      // A read-only channel is postable only with the permission — which is the
+      // point: `announcements:post` is what authorizes an announcement.
+      mockRbac.getEffectivePermissions.mockResolvedValue([
+        'announcements:post',
+      ]);
 
       await service.sendMessage({
         chapter_id: 'ch-1',
@@ -1839,6 +1985,60 @@ describe('ChatService', () => {
           category: 'announcements',
         }),
       );
+    });
+
+    // #1008: the fan-out pushes the message body to EVERY chapter member, so it
+    // is only sound where every member can read the channel. Matching on the
+    // name alone, a PRIVATE channel named `exec-announcements` — newly postable
+    // once its creator is seeded — would have broadcast its contents chapter-wide.
+    it.each(['PRIVATE', 'ROLE_GATED'] as const)(
+      'should not fan an announcement-named %s channel out to the chapter',
+      async (type) => {
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+        mockChannelRepo.findById.mockResolvedValue({
+          ...baseChannel,
+          name: 'exec-announcements',
+          type,
+          member_ids: type === 'PRIVATE' ? ['user-1'] : null,
+          required_permissions: type === 'ROLE_GATED' ? ['roles:manage'] : null,
+        });
+        // The sender must be able to POST for the notification to be reached at
+        // all; the point of the test is what happens after that, not the gate.
+        if (type === 'ROLE_GATED') {
+          mockRbac.getEffectivePermissions.mockResolvedValue(['roles:manage']);
+        }
+
+        await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'Private exec discussion',
+        });
+
+        expect(mockNotificationService.notifyChapter).not.toHaveBeenCalled();
+      },
+    );
+
+    // A PUBLIC channel anyone can post to must not be able to fan an URGENT,
+    // quiet-hours-exempt push to the whole roster just because it is named
+    // `*-announcements`. `announcements:post` is what governs authorship.
+    it('should not fan out from a PUBLIC channel that is not read-only', async () => {
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        name: 'intramural-announcements',
+        type: 'PUBLIC',
+        is_read_only: false,
+      });
+
+      await service.sendMessage({
+        chapter_id: 'ch-1',
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'anyone can post this',
+      });
+
+      expect(mockNotificationService.notifyChapter).not.toHaveBeenCalled();
     });
 
     it('should not fail if notification throws on sendMessage', async () => {

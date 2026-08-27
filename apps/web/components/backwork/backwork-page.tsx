@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Download, Loader2, Upload } from "lucide-react";
 import {
+  selectDownloadUrl,
   useBackworkResource,
   useBackworkResources,
   useConfirmBackworkUpload,
@@ -111,12 +112,7 @@ function InlineDownloadCell({ id }: { id: string }) {
     setIsFetching(true);
     try {
       const fresh = await query.refetch();
-      const url =
-        fresh.data &&
-        typeof fresh.data === "object" &&
-        "download_url" in fresh.data
-          ? ((fresh.data as { download_url?: string }).download_url ?? null)
-          : null;
+      const url = selectDownloadUrl(fresh.data);
       if (!url) throw new Error("No download URL returned.");
       window.open(url, "_blank", "noopener");
     } catch (error) {

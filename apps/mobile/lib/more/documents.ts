@@ -7,7 +7,7 @@
  * to fill the slot would dress an arbitrary choice up as a chapter decision.
  * Filed separately.
  */
-import { metaLine, num, records, str, isRecord } from "./narrow";
+import { metaLine, num, records, str } from "./narrow";
 
 export interface DocumentRow {
   id: string;
@@ -76,17 +76,13 @@ export function selectDocumentFolders(data: unknown): DocumentFolder[] {
 /**
  * The signed URL off a single-document read.
  *
- * There is no separate download endpoint: `GET /v1/documents/{id}` returns the
- * document *with* a freshly signed `downloadUrl`, so opening a document means
- * fetching it by id and following that.
+ * Re-exported from `@repo/hooks`, which is where it now lives — beside the
+ * `useDocument` query that returns the payload it reads, so web and mobile
+ * cannot drift apart on the key. It stayed exported from here so this module
+ * remains the one import site for the s12 narrowing.
  *
- * **`downloadUrl`, not `download_url`.** The service returns a camelCase key and
- * there is no case-transforming interceptor anywhere in the stack; web reads the
- * snake_case form at two call sites and gets `undefined` for its trouble. Both
- * spellings are accepted here so a future server-side rename cannot break the
- * only client that currently works, and neither is guessed at the call site.
+ * The web call sites that read `download_url` and opened `undefined` are fixed
+ * (#1040); both spellings are still accepted so a future server-side rename
+ * cannot break either client.
  */
-export function selectDownloadUrl(data: unknown): string | null {
-  if (!isRecord(data)) return null;
-  return str(data, "downloadUrl") ?? str(data, "download_url");
-}
+export { selectDownloadUrl } from "@repo/hooks";

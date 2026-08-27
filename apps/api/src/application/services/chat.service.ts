@@ -310,7 +310,16 @@ export class ChatService {
     return channel;
   }
 
-  async createChannel(input: CreateChannelInput): Promise<ChatChannel> {
+  /**
+   * @param userId the caller, passed positionally like every other policy input
+   *   on this service (`getChannels`, `getChannel`, `createGroupDm`) rather than
+   *   as a field on `input`, whose members are all `chat_channels` columns.
+   *   A PRIVATE channel seeds its `member_ids` with exactly this user (#1008).
+   */
+  async createChannel(
+    input: CreateChannelInput,
+    userId: string,
+  ): Promise<ChatChannel> {
     if (input.type === 'DM' || input.type === 'GROUP_DM') {
       throw new BadRequestException(
         'Use the DM endpoint to create direct messages',
@@ -332,6 +341,21 @@ export class ChatService {
       required_permissions: input.required_permissions ?? null,
       category_id: input.category_id ?? null,
       is_read_only: input.is_read_only ?? false,
+      // Seed the creator so a PRIVATE channel is readable by at least one
+      // person. `canAccessChannel` resolves PRIVATE as membership of this list
+      // with **no `"*"` wildcard bypass**, so a row landing with `member_ids`
+      // NULL is invisible to every user including its creator and a President —
+      // and there is no repair path, since `updateChannel` cannot write this
+      // column. That made the channel unreachable from every read surface once
+      // #1001 filtered the list, recoverable only from the create response's
+      // id or direct DB access (#1008).
+      //
+      // Only PRIVATE. PUBLIC and ROLE_GATED resolve access by chapter
+      // membership and permissions respectively and never consult this column,
+      // so populating it there would imply a membership that means nothing.
+      // DM and GROUP_DM cannot reach here — they are rejected above and set
+      // their own membership in `getOrCreateDm` / `createGroupDm`.
+      member_ids: input.type === 'PRIVATE' ? [userId] : null,
     });
   }
 
@@ -723,7 +747,31 @@ export class ChatService {
     input: SendMessageInput,
     channel: ChatChannel,
   ): Promise<void> {
-    const isAnnouncement = channel.name.toLowerCase().includes('announcements');
+    // The announcement fan-out pushes the message body to **every member of the
+    // chapter**, so it is only sound for a channel every member can read — which
+    // is PUBLIC, and is what `spec/behavior/chat/README.md` describes
+    // (`#announcements` is all-read, exec-write via `announcements:post`).
+    //
+    // Matching on the name alone made the fan-out reachable from channels most
+    // of the chapter cannot read. That was already true of ROLE_GATED — the
+    // seeded `#alumni` channel is one rename away — and seeding `member_ids`
+    // (#1008) newly made PRIVATE channels postable at all, which would have put
+    // a one-member private channel named `exec-announcements` one send away
+    // from broadcasting its contents chapter-wide.
+    //
+    // `is_read_only` gates the *write* side for the same reason. Without it any
+    // member could post to a PUBLIC, non-read-only channel merely named
+    // `intramural-announcements` and fan an URGENT notification — which
+    // `NotificationService` exempts from the quiet-hours downgrade — to the
+    // whole roster. That contradicts this section of the chat spec, which says
+    // `announcements:post` governs who may author an announcement, and it is
+    // the same name-keying that `allowsInThreadReplies` deliberately avoids.
+    // Together the two flags are the structural shape of an announcements
+    // channel: everyone reads, only the permitted write.
+    const isAnnouncement =
+      channel.type === 'PUBLIC' &&
+      channel.is_read_only &&
+      channel.name.toLowerCase().includes('announcements');
 
     if (isAnnouncement) {
       await this.notificationService.notifyChapter(channel.chapter_id, {

@@ -1,12 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import {
-  INestApplication,
-  ValidationPipe,
-  VersioningType,
-} from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
-import { VALIDATION_PIPE_OPTIONS } from '../src/interface/pipes/validation-pipe.options';
+import { configureApp } from '../src/bootstrap';
 
 const V1 = '/v1';
 
@@ -36,8 +32,7 @@ describe('Attendance & Points (e2e)', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
-    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-    app.useGlobalPipes(new ValidationPipe(VALIDATION_PIPE_OPTIONS));
+    configureApp(app);
     await app.init();
   });
 

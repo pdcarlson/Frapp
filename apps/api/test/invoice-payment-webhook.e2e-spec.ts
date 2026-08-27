@@ -1,9 +1,10 @@
-import { INestApplication, VersioningType } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { BILLING_PROVIDER } from '../src/domain/adapters/billing.interface';
 import { createSupabaseMock } from './helpers/supabase-mock.factory';
+import { configureApp } from '../src/bootstrap';
 
 const V1 = '/v1';
 
@@ -87,7 +88,7 @@ describe('Invoice payment webhook (e2e)', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
-    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
+    configureApp(app);
     app.use(
       (
         req: { body?: unknown; rawBody?: Buffer },
