@@ -353,3 +353,73 @@ Two of those reads are redundant rather than merely additive: `ChapterGuard` has
 
 ### Prevention
 Any chapter-wide list endpoint over a per-user-visible resource must go through `ChannelAccessService`. A route-level permission gate scopes the **tenant**; it never scopes the **row**. When a handler cannot filter because it has no caller identity, that is the bug — thread the id rather than assuming the guard covered it. And treat metadata as content: names, membership arrays and server-generated identifiers can disclose a relationship as completely as the messages inside it.
+
+## Chapter payload over-exposure on the member-facing reads (issue #930)
+
+### Overview
+`GET /v1/chapters/current` returned the entire `chapters` row to any caller holding `members:view` — which is every member of the chapter, not just officers. `SupabaseChapterRepository.findById` is `select('*')`, `ChapterService.findByIdWithLogoUrl` spread the result, and no response DTO stood between the row and the wire. Members could read `stripe_customer_id`, `subscription_id`, `past_due_since`, `last_stripe_webhook_at`, the three `legal_accepted_*` columns, and `beta_config`.
+
+`GET /v1/chapters` leaked the same columns from the same root cause: `mapMembershipSummary` embedded the raw chapter object, so the chapter-picker payload carried them **for every chapter the caller belongs to**, on a route with no billing permission at all. `packages/hooks/src/use-chapters.ts` already typed `stripe_customer_id` and `subscription_id` on that response, so this was live rather than theoretical.
+
+This is over-exposure **inside** a tenant, not a cross-tenant leak. `ChapterGuard.resolveChapterContext` still hard-403s a JWT/header mismatch (`chapter.context.mismatch`), so no caller could read another chapter's row through either route.
+
+A third surface leaked the same columns through the *write* path. `PATCH /v1/chapters/current` admits `roles:manage` **or** `billing:manage`, and returned the updated row verbatim — so a custom role carrying `roles:manage` without `billing:view` read the identifiers straight out of the write response. Custom roles take arbitrary permission sets (`chapter_custom_roles`), so that combination is constructible, not hypothetical. Found while verifying the two read routes against a running instance.
+
+### Details
+All three exits now go through `toChapterMemberView` (`apps/api/src/application/services/chapter-member-view.ts`), a single allowlist projection.
+
+The projection **iterates the allowlist** rather than spreading the row and deleting sensitive keys. That distinction is the fix, not a style choice: the delete-based form fails open, so the next migration that adds a private column publishes it by default and nothing reports it. Iterating means a new column is withheld until someone adds it to the allowlist deliberately.
+
+`stripe_customer_id` and `subscription_id` needed no new home — `GET /v1/billing/status` already returns exactly those two, and `BillingController` requires `billing:view` at class level. The web billing page was already reading them from there, so removing them from the chapter payload had no client half.
+
+Two fields stay in the payload deliberately, and the tests say so loudly. `subscription_status` and `past_due_since` are what the client subscription mirror reads (`useSubscriptionWriteState`), and `isWithinSubscriptionGrace(null)` **fails open** — so dropping either would throw nothing, break no type, and leave every client rendering grace-window affordances while the server hard-locked the same writes. The narrowing that fixes a leak is one edit away from causing that, which is why it is pinned at both the projection and the service layer.
+
+The write route keeps its `Chapter` return type on `ChapterService.update` — the projection happens at the controller, so internal callers are untouched. `CurrentChapterResponseDto` also replaced a contract that declared `content: never` for this operation — the SDK typed the response as nothing at all (the slice of #1049 that applies here). The DTO and the runtime allowlist are tied together by compile-time guards, so adding a field to one without the other fails the build by name. `oasdiff` reports the change as non-breaking, since the operation previously declared no response body.
+
+### Verification
+`chapter-member-view.spec.ts` asserts the identifiers are absent both by key and by a serialized scan of the whole payload — a future field that embeds them (a `billing` blob, a debug echo) would pass a `toHaveProperty` check and fail this one. AC #4 is covered by injecting a column the projection has never heard of and asserting it does not appear, which passes without editing the test file — that is the property under test.
+
+At the service layer, both endpoints are covered directly. The `listForUser` test previously asserted `chapter: chapters[0]` — the whole row — which **pinned the leak**; it now asserts the projection plus explicit negative assertions on the three identifier columns, so a regression fails here even if the projection helper's own contract changed.
+
+Full suite green at the time of the fix: 131 API suites / 2343 tests, 72 web files / 821 tests, and `check-types` clean for api, web and mobile.
+
+### Residual, not closed by this fix
+The repositories still issue `select('*')`; the projection is at the service boundary, so every internal caller (billing, report export, the Stripe webhook path) keeps the full row it legitimately needs. Narrowing the repository read is a larger change with many callers and is not required to close the exposure.
+
+`GET /v1/chapters` still declares no response schema in the contract, so its payload shape remains untyped for clients even though it is now projected. That is #1049's scope, not this fix's.
+
+The issue's own impact table lists `past_due_since` as a column that should not be member-readable, while its acceptance criteria require it to keep reaching the client. The criteria won here. If the intent was to move the grace signal behind a permission, that is a separate change with a client half, since the mirror would need another source.
+
+### Prevention
+A route whose permission gate admits every member is not a projection. Any handler returning a row read with `select('*')` needs an explicit allowlist between the row and the response, and that allowlist must be **iterated, not subtracted from**, so new columns are private by default. When you narrow a payload, first enumerate the consumers of every field you are dropping across `apps/web`, `apps/mobile` and `packages/` — and be most careful with fields whose absence is *absorbed* rather than thrown, because those degrade silently and no test will tell you.
+
+## `search_path` shadowing in `SECURITY DEFINER` functions (#985)
+
+### Overview
+Seven `SECURITY DEFINER` functions in `public` were declared `set search_path = public`. Postgres
+resolves unqualified relation names against `pg_temp` **first** when `pg_temp` is not itself listed,
+so a caller-created temp table shadowed the real table inside those functions while they ran with the
+definer's privileges. Four are authorization code: `can_read_chat_message` backs chat RLS, and
+`realtime_can_read_chapter_scope` / `_event_scope` / `_user_scope` gate realtime topic delivery — a
+shadowed read there is an authorization decision made against attacker-supplied rows.
+
+### Details
+Fixed in `supabase/migrations/20260827190000_secdef_search_path_pg_temp.sql`, which redefines all
+seven with `set search_path = public, pg_temp`. Bodies are unchanged. `20260816190000` had already
+applied the same fix to `get_channel_unread_counts` (#983); this completed the sweep.
+
+Reachability, stated plainly: there is no known path to this from the app surface today — PostgREST
+exposes no arbitrary SQL and the Supabase client can only invoke defined RPCs, so triggering it
+requires a session that can execute DDL. It becomes live the moment anything grants broader SQL
+access (a direct connection string, a psql-capable admin tool, or an RPC that runs caller-supplied
+SQL). Treated as defense-in-depth on authorization-critical code rather than an active incident, which
+is why it was P2 and not P1. This is also what Supabase's advisor reports as "Function Search Path
+Mutable".
+
+### Prevention
+Declare every `SECURITY DEFINER` function `set search_path = public, pg_temp`, with `pg_temp` **last**
+— listing it first reinstates the defect. `scripts/check-pglite-migrations.mjs` enforces this against
+the applied catalog (the `security definer search_path` tier) and fails the `pglite-migrations` job on
+any function that does not, so the eighth one cannot land silently. The check reads the catalog rather
+than scanning migration SQL, because migrations are immutable — the three files that introduced the
+bare setting keep it in their text permanently, and only the end state is meaningful.
