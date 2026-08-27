@@ -657,7 +657,8 @@ for (const lm of RLS_SMOKE) await runOne(lm);
   // to ALL widens it to writes while the name set is unchanged.
   const res = await db.query(
     `select tablename, policyname, cmd, permissive,
-            coalesce(qual, '') as qual
+            coalesce(qual, '') as qual,
+            coalesce(with_check, '') as with_check
        from pg_policies
       where schemaname = 'public'
       order by tablename, policyname`,
@@ -673,20 +674,40 @@ for (const lm of RLS_SMOKE) await runOne(lm);
   // `using (true)` under the same name would keep the set identical and hand
   // every row to any authenticated PostgREST client. None of the eight is
   // unconditional today, so assert that directly.
+  // BOTH halves, deliberately. `qual` governs reads (and the row a write may
+  // target); `with_check` governs what a write may create. A FOR INSERT policy
+  // like `chat_message_actions_insert` has a NULL `qual` and carries its entire
+  // predicate in `with_check`, so a qual-only check can never fire for it — and
+  // on the FOR ALL policy it is `with_check` that gates the write path. Reading
+  // only `qual` would leave the write side of both entirely unpinned.
+  //
+  // This is a tripwire for the obvious rewrite, not a proof: it catches the
+  // literal tautologies, and an adversarial `using (id = id)` would still pass.
+  // It exists because two of these eight have no other coverage anywhere in the
+  // repo (`chat_notification_preferences_select_own`,
+  // `member_custom_field_values_service_role`).
+  const TAUTOLOGY = /^\s*\(*\s*(true|1\s*=\s*1)\s*\)*\s*$/i;
   const unconditional = res.rows
-    .filter((r) => r.permissive === "PERMISSIVE" && /^\s*true\s*$/i.test(r.qual))
-    .map((r) => `${r.tablename}.${r.policyname}`);
+    .filter(
+      (r) =>
+        r.permissive === "PERMISSIVE" &&
+        (TAUTOLOGY.test(r.qual) || TAUTOLOGY.test(r.with_check)),
+    )
+    .map(
+      (r) =>
+        `${r.tablename}.${r.policyname}` +
+        (TAUTOLOGY.test(r.with_check) && !TAUTOLOGY.test(r.qual)
+          ? " (with check)"
+          : ""),
+    );
 
-  if (added.length === 0 && removed.length === 0 && unconditional.length === 0) {
-    console.log(
-      `OK    public policy inventory matches AUTHORIZATION_MODEL.md §4 (${got.length} here, ${EXPECTED_PUBLIC_POLICIES.length + 3} hosted)`,
-    );
-  } else if (unconditional.length > 0) {
-    missing += 1;
-    console.log(
-      `MISS  a permissive public policy is unconditional (\`using (true)\`)\n        ↳ ${unconditional.join(", ")}`,
-    );
-  } else {
+  // Independent, not mutually exclusive: a migration that both drops a policy
+  // and neuters another must report — and count — both. Reporting only one
+  // hides "a silently removed policy", which this block's header calls the
+  // failure mode that matters.
+  let drifted = false;
+  if (added.length > 0 || removed.length > 0) {
+    drifted = true;
     missing += 1;
     console.log(
       "MISS  public policy inventory drifted from AUTHORIZATION_MODEL.md §4" +
@@ -694,6 +715,18 @@ for (const lm of RLS_SMOKE) await runOne(lm);
           ? `\n        ↳ ADDED (a new policy widens access — update §4): ${added.join(", ")}`
           : "") +
         (removed.length ? `\n        ↳ REMOVED: ${removed.join(", ")}` : ""),
+    );
+  }
+  if (unconditional.length > 0) {
+    drifted = true;
+    missing += 1;
+    console.log(
+      `MISS  a permissive public policy is unconditional (\`true\`)\n        ↳ ${unconditional.join(", ")}`,
+    );
+  }
+  if (!drifted) {
+    console.log(
+      `OK    public policy inventory matches AUTHORIZATION_MODEL.md §4 (${got.length} here, ${EXPECTED_PUBLIC_POLICIES.length + 3} hosted)`,
     );
   }
 }
@@ -1089,7 +1122,12 @@ if (readSeeded) {
         ('${F.msgDM}',            '${F.userAId}', 'reaction'),
         ('${F.msgRoleGated}',     '${F.userAId}', 'reaction'),
         ('${F.msgRoleGatedOpen}', '${F.userAId}', 'reaction'),
-        ('${F.msgGroupDM}',       '${F.userAId}', 'reaction');
+        ('${F.msgGroupDM}',       '${F.userAId}', 'reaction'),
+        -- userB's own reaction in their own chapter. Without it the
+        -- cross-chapter expectation below is a negative control with no
+        -- positive half: a predicate that denied every chapter-B member
+        -- outright, rather than scoping by tenant, would still satisfy it.
+        ('${F.msgPublicB}',       '${F.userBId}', 'reaction');
 
       drop role if exists rls_probe;
       create role rls_probe nologin;
@@ -1114,7 +1152,7 @@ if (readSeeded) {
     // ask for, and neither user holds the wildcard).
     const BLACKBOX = [
       { name: "member sees every action row in channels they can read (all but the empty-gated one)", uid: F.userAAuth, expect: 5 },
-      { name: "cross-chapter reader sees none of them (tenant boundary holds at the table)", uid: F.userBAuth, expect: 0 },
+      { name: "cross-chapter reader sees only their own chapter's row (tenant boundary holds at the table)", uid: F.userBAuth, expect: 1 },
       { name: "chapter member sees only PUBLIC, not PRIVATE/DM/gated (incl. empty-gated)", uid: F.userCAuth, expect: 1 },
       { name: "no JWT (null auth.uid()) sees nothing", uid: null, expect: 0 },
     ];
@@ -1133,7 +1171,13 @@ if (readSeeded) {
         );
         got = res.rows[0].n;
       } finally {
-        await db.exec("reset role;");
+        // See the note on the chat_messages tier: never let this replace a
+        // pending exception by raising 25P02 on an aborted transaction.
+        try {
+          await db.exec("reset role;");
+        } catch {
+          /* keep the original error */
+        }
       }
       if (got === s.expect) {
         console.log(`OK    ${s.name}`);
@@ -1333,7 +1377,13 @@ if (readSeeded) {
         const res = await db.query(s.sql);
         got = res.rows[0].n;
       } finally {
-        await db.exec("reset role;");
+        // See the note on the chat_messages tier: never let this replace a
+        // pending exception by raising 25P02 on an aborted transaction.
+        try {
+          await db.exec("reset role;");
+        } catch {
+          /* keep the original error */
+        }
       }
       if (got === s.expect) {
         console.log(`OK    ${s.name}`);
@@ -1358,14 +1408,18 @@ if (readSeeded) {
     // permissive policy, and passes every membership expectation — because the
     // row it leaks does not exist yet when those run. So re-check the two
     // readers that must see nothing of another tenant, now that it does.
+    // Exact sets over the WHOLE table, matching the membership tier — a count
+    // can be right for the wrong reason (a policy hiding chapterB/PUBLIC from
+    // userB while exposing one imported row keeps the total at 1).
     const POST_ARCHIVE = [
-      { who: "no JWT (null auth.uid())", uid: null, expect: 0 },
+      { who: "no JWT (null auth.uid())", uid: null, visible: [] },
       {
         who: "cross-chapter member",
         uid: F.userBAuth,
-        expect: 1, // their own chapter's PUBLIC message, and nothing else
+        visible: [F.msgPublicB], // their own chapter's PUBLIC message, nothing else
       },
     ];
+    const postLabel = (id) => (id === IMPORTED_MSG ? "IMPORTED" : label(id));
     for (const s of POST_ARCHIVE) {
       await db.exec(
         s.uid === null
@@ -1373,12 +1427,12 @@ if (readSeeded) {
           : `create or replace function auth.uid() returns uuid language sql as $$ select '${s.uid}'::uuid $$;`,
       );
       await db.exec("set role rls_probe;");
-      let got;
+      let seen;
       try {
         const res = await db.query(
-          `select count(*)::int as n from public.chat_messages`,
+          `select id::text as id from public.chat_messages`,
         );
-        got = res.rows[0].n;
+        seen = res.rows.map((r) => r.id);
       } finally {
         try {
           await db.exec("reset role;");
@@ -1386,12 +1440,20 @@ if (readSeeded) {
           /* keep the original error */
         }
       }
-      const name = `${s.who} still sees ${s.expect} row(s) once an imported archive row exists`;
-      if (got === s.expect) {
+      const want = [...s.visible].sort();
+      const got = [...seen].sort();
+      const leaked = got.filter((g) => !want.includes(g));
+      const absent = want.filter((w) => !got.includes(w));
+      const name = `${s.who} still reads exactly ${want.length} row(s) once an imported archive row exists`;
+      if (leaked.length === 0 && absent.length === 0) {
         console.log(`OK    ${name}`);
       } else {
         missing += 1;
-        console.log(`MISS  ${name}\n        ↳ expected ${s.expect}, got ${got}`);
+        console.log(
+          `MISS  ${name}` +
+            (leaked.length ? `\n        ↳ LEAKED: ${leaked.map(postLabel).join(", ")}` : "") +
+            (absent.length ? `\n        ↳ wrongly hidden: ${absent.map(postLabel).join(", ")}` : ""),
+        );
       }
     }
 
