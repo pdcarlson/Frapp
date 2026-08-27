@@ -445,7 +445,12 @@ configuration change apart. Staging is the blast radius we accept. **Enumerate.*
   line is part of the standard configuration above); in an environment not yet carrying it,
   the host is blocked and Infisical is unverifiable from that sandbox. The network is
   not the secrecy boundary there — the service token is, scoped `dev` + `staging`
-  read-only, never `prod`. Only raw-`fetch` scripts
+  read-only, never `prod`. **Both halves were verified live on 2026-08-27** from a fresh
+  sandbox: `app.infisical.com/api/status` answered `Ok`, the token listed `dev` and `staging`
+  secret names, and `GET /api/v2/service-token` reported exactly those two scopes with `read`
+  permission. Note the boundary is quiet about itself — an out-of-scope environment returns
+  `200` with **zero** secrets rather than a 403, so never read scope off a listing
+  (see [`AGENT_CREDENTIALS.md`](./AGENT_CREDENTIALS.md)). Only raw-`fetch` scripts
   like `staging-conformance.mjs` notice the difference for the other four, and those run in
   CI, where the allowlist does not apply.
 - **Per-deployment Vercel URLs.** Only the aliased staging hostnames are allowlisted, not
