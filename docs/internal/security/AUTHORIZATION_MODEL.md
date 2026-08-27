@@ -192,7 +192,8 @@ This is a tripwire for the obvious rewrite, not a proof: it catches the literal 
 
 Note the limit of the guard: the three policies PGlite cannot see are **not** covered, so dropping
 `auth_admin_can_read_users`, `auth_admin_can_read_members`, or `realtime_messages_scoped_select`
-would leave the inventory printing a clean `8/8`. Those three stay doc-only, and changes to them have
+would leave the inventory printing its clean `(8 here, 11 hosted)` — and the `11` is derived from
+the pinned list plus those three, so it would then be reporting a hosted figure that is itself wrong. Those three stay doc-only, and changes to them have
 to be caught in review.
 
 | Table | Policy | Effect |
@@ -327,11 +328,18 @@ unprivileged `rls_probe` role rather than by pattern-matching the policy express
 
 | Table | Coverage |
 | --- | --- |
-| `chat_message_actions` | membership/tenancy matrix + own-row INSERT/DELETE |
+| `chat_message_actions` | membership/tenancy matrix (read path) |
 | `chat_messages` | membership/tenancy matrix (#977) + the imported-archive exclusion (#974) + a post-archive tenancy re-check (#977) |
 
-Each reader's **exact visible set** is asserted, not a row count — a total can be right for the
-wrong reason. Two details carry most of the weight:
+`rls_probe` is granted `SELECT` only, so this tier proves the **read** path by execution. The
+own-row `INSERT`/`DELETE` policies on `chat_message_actions` are covered by shape assertions over
+`polqual` / `polwithcheck`, not by attempting a write as a non-owner — a policy whose `with check`
+still mentions `user_id` and `auth.uid()` without restricting them would pass. That gap is real and
+is not claimed to be closed here.
+
+Each reader's **exact visible set** is asserted, not a row count — a total is satisfied by the right
+*number* of wrong rows, so a policy swapping one PRIVATE row for one cross-chapter row would keep a
+count green. Two details carry most of the weight:
 
 - **The cross-chapter reader has a positive control.** It is a real member of chapter B and is
   asserted to see chapter B's own `PUBLIC` message *and* none of chapter A's six. Without that

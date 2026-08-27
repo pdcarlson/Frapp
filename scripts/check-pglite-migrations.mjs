@@ -1150,11 +1150,30 @@ if (readSeeded) {
     // It used to be readable by every chapter member; it is now readable by
     // none of them (userA holds chat:secret, which the open channel does not
     // ask for, and neither user holds the wildcard).
+    const MSG_LABEL = {
+      [F.msgPublic]: "PUBLIC",
+      [F.msgPrivate]: "PRIVATE",
+      [F.msgDM]: "DM",
+      [F.msgRoleGated]: "ROLE_GATED(chat:secret)",
+      [F.msgRoleGatedOpen]: "ROLE_GATED(empty-req)",
+      [F.msgGroupDM]: "GROUP_DM",
+      [F.msgPublicB]: "chapterB/PUBLIC",
+    };
+    const ALL_MSG_IDS = Object.keys(MSG_LABEL);
+    const label = (id) => MSG_LABEL[id] ?? id;
+
+    // Exact sets, not counts. A count is satisfied by the right NUMBER of wrong
+    // rows — a policy that swapped one PRIVATE row for one cross-chapter row
+    // would still total 5 here and stay green, which is the whole failure this
+    // tier exists to catch.
     const BLACKBOX = [
-      { name: "member sees every action row in channels they can read (all but the empty-gated one)", uid: F.userAAuth, expect: 5 },
-      { name: "cross-chapter reader sees only their own chapter's row (tenant boundary holds at the table)", uid: F.userBAuth, expect: 1 },
-      { name: "chapter member sees only PUBLIC, not PRIVATE/DM/gated (incl. empty-gated)", uid: F.userCAuth, expect: 1 },
-      { name: "no JWT (null auth.uid()) sees nothing", uid: null, expect: 0 },
+      { name: "member sees every action row in channels they can read (all but the empty-gated one)", uid: F.userAAuth,
+        visible: [F.msgPublic, F.msgPrivate, F.msgDM, F.msgRoleGated, F.msgGroupDM] },
+      { name: "cross-chapter reader sees only their own chapter's row (tenant boundary holds at the table)", uid: F.userBAuth,
+        visible: [F.msgPublicB] },
+      { name: "chapter member sees only PUBLIC, not PRIVATE/DM/gated (incl. empty-gated)", uid: F.userCAuth,
+        visible: [F.msgPublic] },
+      { name: "no JWT (null auth.uid()) sees nothing", uid: null, visible: [] },
     ];
 
     for (const s of BLACKBOX) {
@@ -1164,26 +1183,34 @@ if (readSeeded) {
           : `create or replace function auth.uid() returns uuid language sql as $$ select '${s.uid}'::uuid $$;`,
       );
       await db.exec("set role rls_probe;");
-      let got;
+      let seen;
       try {
         const res = await db.query(
-          `select count(*)::int as n from public.chat_message_actions`,
+          `select message_id::text as id from public.chat_message_actions`,
         );
-        got = res.rows[0].n;
+        seen = res.rows.map((r) => r.id);
       } finally {
-        // See the note on the chat_messages tier: never let this replace a
-        // pending exception by raising 25P02 on an aborted transaction.
+        // Never let this replace a pending exception by raising 25P02 on an
+        // aborted transaction.
         try {
           await db.exec("reset role;");
         } catch {
           /* keep the original error */
         }
       }
-      if (got === s.expect) {
+      const want = [...s.visible].sort();
+      const got = [...seen].sort();
+      const leaked = got.filter((g) => !want.includes(g));
+      const absent = want.filter((w) => !got.includes(w));
+      if (leaked.length === 0 && absent.length === 0) {
         console.log(`OK    ${s.name}`);
       } else {
         missing += 1;
-        console.log(`MISS  ${s.name}\n        ↳ expected ${s.expect} visible row(s), got ${got}`);
+        console.log(
+          `MISS  ${s.name}` +
+            (leaked.length ? `\n        ↳ LEAKED: ${leaked.map(label).join(", ")}` : "") +
+            (absent.length ? `\n        ↳ wrongly hidden: ${absent.map(label).join(", ")}` : ""),
+        );
       }
     }
 
@@ -1211,17 +1238,6 @@ if (readSeeded) {
     // Asserted as an exact SET per reader, not a count. A total can be right for
     // the wrong reason — userD sees three rows, but *which* three is the whole
     // question: '*' opens both ROLE_GATED channels and must still not open a DM.
-    const MSG_LABEL = {
-      [F.msgPublic]: "PUBLIC",
-      [F.msgPrivate]: "PRIVATE",
-      [F.msgDM]: "DM",
-      [F.msgRoleGated]: "ROLE_GATED(chat:secret)",
-      [F.msgRoleGatedOpen]: "ROLE_GATED(empty-req)",
-      [F.msgGroupDM]: "GROUP_DM",
-      [F.msgPublicB]: "chapterB/PUBLIC",
-    };
-    const ALL_MSG_IDS = Object.keys(MSG_LABEL);
-    const label = (id) => MSG_LABEL[id] ?? id;
 
     const MSG_BLACKBOX = [
       {
