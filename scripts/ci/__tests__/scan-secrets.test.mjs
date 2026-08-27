@@ -8,7 +8,9 @@ import {
   buildGitleaksArgs,
   coveragePercent,
   evaluateRefCompleteness,
+  fullModeIsFallback,
   gatherRefState,
+  gitSpawnOptions,
   refCompletenessOutcome,
   shortHeadNames,
 } from "../../scan-secrets.mjs";
@@ -282,4 +284,68 @@ test("an unreachable origin yields remoteRefs null, not an empty list", () => {
     return null;
   };
   assert.equal(gatherRefState(fakeGit).remoteRefs, null);
+});
+
+// ── The wiring behind the severity split, not just the policy ────────────────
+
+// `refCompletenessOutcome` is only as safe as the flag main() feeds it, so pin
+// the derivation too. Inverting this is what would red-light the required
+// `secret-scan` check on every force-push.
+test("full mode reached with --base/--head is recognised as a fallback", () => {
+  assert.equal(fullModeIsFallback(["node", "scan-secrets.mjs", "--base", "0000", "--head", "abc"]), true);
+  // CI's push step passes only --base when the range collapses.
+  assert.equal(fullModeIsFallback(["node", "scan-secrets.mjs", "--base", "0000"]), true);
+});
+
+test("a bare `npm run check:secrets` is NOT a fallback — it is an audit", () => {
+  assert.equal(fullModeIsFallback(["node", "scan-secrets.mjs"]), false);
+  assert.equal(fullModeIsFallback(["node", "scan-secrets.mjs", "--soft-missing"]), false);
+});
+
+// ── git invocation hardening ────────────────────────────────────────────────
+
+test("git never gets to prompt for credentials", () => {
+  assert.equal(gitSpawnOptions().env.GIT_TERMINAL_PROMPT, "0");
+});
+
+// The prompt guard must survive a caller passing its own env, or a future
+// caller could silently reintroduce the hang.
+test("a caller-supplied env cannot clobber the prompt guard", () => {
+  const options = gitSpawnOptions({ env: { GIT_TERMINAL_PROMPT: "1", FOO: "bar" } });
+  assert.equal(options.env.GIT_TERMINAL_PROMPT, "0");
+  assert.equal(options.env.FOO, "bar");
+});
+
+test("a caller-supplied timeout is threaded through", () => {
+  assert.equal(gitSpawnOptions({ timeout: 15_000 }).timeout, 15_000);
+});
+
+// ── Remaining gaps the mutation pass surfaced ───────────────────────────────
+
+// Offline, the refspec is the only signal left that can prove a narrow clone
+// incomplete; dropping it would let a --single-branch clone pass unverified.
+test("offline, a narrow refspec still proves the clone incomplete", () => {
+  const result = evaluateRefCompleteness({
+    isShallow: false,
+    fetchSpecs: ["+refs/heads/main:refs/remotes/origin/main"],
+    localRefs: ["main"],
+    remoteRefs: null,
+  });
+  assert.equal(result.status, "incomplete");
+});
+
+// A git that cannot answer must not be assumed to be the more permissive shape.
+test("an unanswerable --is-bare-repository does not read as bare", () => {
+  const fakeGit = (args) => {
+    if (args[1] === "--is-bare-repository") return null;
+    if (args[1] === "--is-shallow-repository") return "false\n";
+    if (args[0] === "config") return "+refs/heads/*:refs/remotes/origin/*\n";
+    if (args[0] === "for-each-ref") {
+      // Answers only for the non-bare namespace; a bare reading would find nothing.
+      return args[2].startsWith("refs/remotes/origin/") ? "refs/remotes/origin/main\n" : "";
+    }
+    if (args[0] === "ls-remote") return "a\trefs/heads/main\n";
+    return null;
+  };
+  assert.deepEqual(gatherRefState(fakeGit).localRefs, ["main"]);
 });

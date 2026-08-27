@@ -215,6 +215,18 @@ export function coveragePercent(present, total) {
 }
 
 /**
+ * Was full mode *fallen back to* from range mode, rather than requested (pure —
+ * unit-tested)? `--base`/`--head` are only ever passed by an incremental caller,
+ * so their presence alongside full mode means the fallback at the bottom of
+ * `main()` fired. Extracted so the wiring, and not merely the policy it feeds,
+ * is pinned by a test: inverting this is what would red-light the required
+ * `secret-scan` check on every force-push.
+ */
+export function fullModeIsFallback(argv) {
+  return argv.includes("--base") || argv.includes("--head");
+}
+
+/**
  * Map a completeness verdict onto what the run should do (pure — unit-tested).
  *
  * Split out from the IO below because this is the CI-safety-critical decision:
@@ -269,19 +281,30 @@ function isReachable(rev) {
 const LS_REMOTE_TIMEOUT_MS = 15_000;
 
 /**
- * Run git for stdout; null when git itself failed (not installed, no repo, offline).
+ * spawnSync options for a git call (pure — unit-tested).
+ *
+ * `GIT_TERMINAL_PROMPT` is applied *last*, after any caller-supplied `env`, so it
+ * cannot be clobbered: without it a private origin with no cached credentials
+ * turns `npm run check:secrets` into a hang on a username prompt, where the
+ * intended behavior is to fall through to "origin unreachable" and warn.
+ */
+export function gitSpawnOptions(options = {}) {
+  const { env, ...rest } = options;
+  return {
+    cwd: ROOT,
+    encoding: "utf8",
+    ...rest,
+    env: { ...process.env, ...env, GIT_TERMINAL_PROMPT: "0" },
+  };
+}
+
+/**
+ * Run git for stdout; null when git itself failed (not installed, no repo, offline,
+ * or timed out — spawnSync reports a timeout kill as `error`).
  * Exported as the DI seam the tests drive, matching `scripts/ci/check-migration-drift-gate.mjs`.
  */
 export function defaultRunGit(args, options = {}) {
-  const result = spawnSync("git", args, {
-    cwd: ROOT,
-    encoding: "utf8",
-    // Without this a private origin with no cached credentials turns
-    // `npm run check:secrets` into a hang on a username prompt. An
-    // unauthenticated origin must fall through to "unknown", never block.
-    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
-    ...options,
-  });
+  const result = spawnSync("git", args, gitSpawnOptions(options));
   if (result.error || result.status !== 0) return null;
   return result.stdout;
 }
@@ -425,7 +448,7 @@ function main() {
   // `staged` and `range` legitimately run in shallow checkouts — they only ever
   // scan a diff — so neither is gated.
   const coverageNote =
-    mode === "full" ? checkRefCompleteness(hasFlag("--base") || hasFlag("--head")) : "";
+    mode === "full" ? checkRefCompleteness(fullModeIsFallback(process.argv)) : "";
 
   const bin = resolveBinary();
   if (!bin) {
