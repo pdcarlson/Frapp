@@ -22,9 +22,19 @@ export GH_TOKEN="$GITHUB_PAT"   # gh/git read GH_TOKEN, not GITHUB_PAT
 
 > **Which env var the script reads.** `scripts/configure-branch-protection.mjs` resolves the token from,
 > in order: `GITHUB_PAT` → `GITHUB_TOKEN` → `GH_PAT` → `GH_TOKEN` (or `--token-env <NAME>` to name a
-> custom var). `GITHUB_PAT` is the canonical name and is what the Claude Code hosted environment injects,
-> so `npm run configure:branch-protection` works there without extra setup. The repo slug comes from
-> `--repo owner/repo`, `GITHUB_REPOSITORY`, or the `origin` remote.
+> custom var). `GITHUB_PAT` is the canonical name. The repo slug comes from `--repo owner/repo`,
+> `GITHUB_REPOSITORY`, or the `origin` remote.
+
+> **This script cannot be run from a Claude Code hosted session — it is a human step.** The hosted
+> environment does inject `GITHUB_PAT`, which is why this runbook used to claim the script "works there
+> without extra setup". It does not. That token authenticates (`GET /user` → 200) but **every
+> repo-scoped REST path is refused by the session gateway with 403** — the body reads
+> `GitHub access is not enabled for this session` — and the script talks to `api.github.com` directly
+> via `fetch` rather than through the GitHub MCP server that agent sessions use. Verified 2026-08-27 against
+> `GET /repos/pdcarlson/Frapp/branches/main/protection` → 403. So an agent can prepare and verify a
+> rollout — confirm each new context has reported green on the target branch, check the job names match
+> — but **applying it requires a human running the script locally with an admin PAT**. That is why
+> promoting a check to required is filed as a `[human]` issue rather than picked up by `/next`.
 
 ## Step 1: Dry Run (Review Before Applying)
 
