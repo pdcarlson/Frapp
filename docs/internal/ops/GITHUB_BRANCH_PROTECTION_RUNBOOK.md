@@ -22,9 +22,29 @@ export GH_TOKEN="$GITHUB_PAT"   # gh/git read GH_TOKEN, not GITHUB_PAT
 
 > **Which env var the script reads.** `scripts/configure-branch-protection.mjs` resolves the token from,
 > in order: `GITHUB_PAT` → `GITHUB_TOKEN` → `GH_PAT` → `GH_TOKEN` (or `--token-env <NAME>` to name a
-> custom var). `GITHUB_PAT` is the canonical name and is what the Claude Code hosted environment injects,
-> so `npm run configure:branch-protection` works there without extra setup. The repo slug comes from
-> `--repo owner/repo`, `GITHUB_REPOSITORY`, or the `origin` remote.
+> custom var). `GITHUB_PAT` is the canonical name. The repo slug comes from `--repo owner/repo`,
+> `GITHUB_REPOSITORY`, or the `origin` remote.
+
+> **This script cannot be run from a Claude Code hosted session — it is a human step.** The hosted
+> environment does inject `GITHUB_PAT`, which is why this runbook used to claim the script "works there
+> without extra setup". It does not. That token authenticates (`GET /user` → 200) but **every
+> repo-scoped REST path is refused by the session gateway with 403** — the body reads
+> `GitHub access is not enabled for this session` — and the script talks to `api.github.com` directly
+> via `fetch` rather than through the GitHub MCP server that agent sessions use. Verified 2026-08-27 against
+> `GET /repos/pdcarlson/Frapp/branches/main/protection` → 403.
+>
+> **The refusal happens at the session's egress gateway, not at GitHub — so do not go regenerate the PAT
+> with broader scopes.** The 403 carries no `Server: github.com` and no `X-Github-Request-Id`, while
+> `GET /user` from the same session returns both; the repo-scoped request never reaches GitHub at all.
+> The GitHub MCP server does hold repo write access — it is how agent sessions push branches, open PRs
+> and comment — but it exposes no branch-protection tool, so there is no sanctioned agent path to this
+> setting at all.
+>
+> What this leaves an agent is the preparation: confirm every intended context has reported green on the
+> target branch, and confirm the job names match the array strings exactly. Both are the preconditions
+> that make an apply safe, and both are checkable through the MCP server. But **applying it requires a
+> human running the script locally with an admin PAT**. That is why
+> promoting a check to required is filed as a `[human]` issue rather than picked up by `/next`.
 
 ## Step 1: Dry Run (Review Before Applying)
 
@@ -96,7 +116,7 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 
 > **`web-visual-regression` is gone — don't re-add it to any roster.** It ran Playwright **snapshots** and was advisory, because baselines pinned to CI's Chromium build drift with it. Until #1152 the 375px floor gate ran inside it and inherited that posture by sharing a directory, so a breached floor was a red mark a PR could merge past; #1152 split the floor into its own **required** `web-responsive-floor` job, and the snapshot job has since been deleted outright along with its spec and baselines ([`QUALITY_GATES.md`](../ci-cd/QUALITY_GATES.md)). If a stale live branch-protection config still lists it, a `npm run configure:branch-protection` run clears it — the script's arrays are the intent.
 
-> **Script vs live drift — check before you assume.** The arrays in the script are the *intended* state; the live config is whatever the last manual run applied, and the two drift apart silently because only a human re-run closes the gap. It has happened before: `main` sat at 12 contexts against 17 intended until a run on **2026-08-21** closed the gap. Any count written here is a dated observation, not a source of truth — the arrays are the intent, and only a re-run makes it live. Read live state from the API:
+> **Script vs live drift — check before you assume.** The arrays in the script are the *intended* state; the live config is whatever the last manual run applied, and the two drift apart silently because only a human re-run closes the gap. It has happened before: `main` sat at 12 contexts against 17 intended until a run on **2026-08-21** closed the gap. Verified again **2026-08-27**: `main` carries all **19** intended contexts with nothing extra — script and live agree, `web-responsive-floor` and `migration-drift` included. Any count written here is a dated observation, not a source of truth — the arrays are the intent, and only a re-run makes it live. Read live state from the API:
 >
 > ```sh
 > gh api repos/pdcarlson/Frapp/branches/main/protection/required_status_checks --jq '.contexts'

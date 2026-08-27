@@ -155,6 +155,29 @@ These are only used by GitHub Actions. Leave them empty in the `dev` environment
 
 > **`SUPABASE_DB_PASSWORD` is required, not optional.** The Supabase CLI pinned in `deploy-api.yml` cannot initialise its `cli_login_postgres` login role — it issues that role's password with an already-expired validity window and fails with `permission denied to alter role`, which reads like a permissions problem but is a CLI bug ([supabase/cli#5091](https://github.com/supabase/cli/issues/5091), tracked here as #835). With `SUPABASE_DB_PASSWORD` set, `supabase link` / `db push` connect directly and skip login-role initialisation. Without it, **every** migration job fails. Unlike `SUPABASE_ACCESS_TOKEN`, this value is per-project — staging and production have different passwords.
 
+### Offsite Backup Secrets (`db-backup.yml` only)
+
+Read at job time by the nightly DB backup workflow, which dumps `frapp-staging`
+into a private Cloudflare R2 bucket (#852 / #1287). Provisioned in `staging`
+2026-08-27. The bucket name, account endpoint, and key values are deliberately
+not written into this public repo — read them from Infisical or the Cloudflare
+dashboard. They do not live *only* there, though: the path-`/` staging syncs
+([`SECRETS_MANAGEMENT.md`](./SECRETS_MANAGEMENT.md) §5) push every Staging
+secret onward, so copies also sit in the Render staging service env and both
+Vercel projects' Preview envs — the #834 blast radius. Count those three
+destinations in any compromise assessment of this credential.
+
+| Variable                      | `dev`           | `staging`                                                                                                                                                                          | `prod`                                                                                                             |
+| ----------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `BACKUP_S3_ENDPOINT`          | _(leave empty)_ | `https://<ACCOUNT_ID>.r2.cloudflarestorage.com` — Cloudflare dashboard → R2 Object Storage → Account Details → S3 API. No trailing slash, no bucket name.                            | _(same value as staging when the prod job is added — see #814 `scope:production`)_                                 |
+| `BACKUP_S3_BUCKET`            | _(leave empty)_ | The R2 backup bucket's name (Cloudflare dashboard → R2 Object Storage → the private bucket created for #1287). Just the name, no `s3://`.                                            | _(same bucket planned — but today the workflow hardcodes its `staging/` object prefix, so the prod job (#814 `scope:production`) must parameterize that prefix to `production/`, not just duplicate the job)_ |
+| `BACKUP_S3_ACCESS_KEY_ID`     | _(leave empty)_ | From the R2 API token scoped **Object Read & Write on that one bucket only** (R2 → `{} API` → Manage API tokens). Not an account-wide key.                                            | _(same token as staging — it is bucket-scoped, not environment-scoped)_                                            |
+| `BACKUP_S3_SECRET_ACCESS_KEY` | _(leave empty)_ | The same R2 API token's secret. Shown once at token creation; rotate the token if lost.                                                                                              | _(same token as staging)_                                                                                          |
+
+Optional, not currently set: `BACKUP_S3_REGION` (defaults to `auto`, which is
+correct for R2 — set it only for a provider that pins a real region) and
+`BACKUP_RETENTION_DAYS` (defaults to 30).
+
 ---
 
 ## References — Framework-Specific Names

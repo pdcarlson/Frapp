@@ -82,12 +82,14 @@ Two consequences worth stating plainly:
 | Script | [`scripts/db-backup.sh`](../../../scripts/db-backup.sh) |
 | Contents | three gzipped SQL files — roles, schema, data — plus a manifest carrying a SHA-256 per file |
 | Scope | `frapp-staging` only. Production is deferred by choice (#814 / `scope:production`) |
-| Destination | S3-compatible bucket outside Supabase — **provisioning tracked in #1287** |
+| Destination | A private Cloudflare R2 bucket, outside Supabase on purpose — Supabase deletes its own backups with the project. Provisioned 2026-08-27 (#1287): scoped API token (object read/write on that one bucket), `BACKUP_S3_*` secrets in Infisical `staging` at `/` — see [`ENV_REFERENCE.md`](../environment/ENV_REFERENCE.md) § Offsite Backup Secrets |
 | Retention | `BACKUP_RETENTION_DAYS`, default 30, pruned by the same workflow |
+| First verified run | [2026-08-27, run 1](https://github.com/pdcarlson/Frapp/actions/runs/33116113194) — upload plus independent read-back listing all 4 objects |
 
-Until #1287 is done the workflow **fails every night on purpose**. A backup job
-that reports success while writing no backup is the failure mode this whole
-runbook exists to prevent.
+If the `BACKUP_S3_*` secrets ever go missing the workflow still **fails loudly
+before dumping** rather than going green. A backup job that reports success
+while writing no backup is the failure mode this whole runbook exists to
+prevent.
 
 ### What this backup does not cover
 
@@ -95,7 +97,9 @@ runbook exists to prevent.
   store via the Storage API, as the database only includes metadata about these
   objects." Five buckets hold real content, `chat-archive` in particular. A
   restore therefore yields rows referencing objects that were never captured.
-  Backing up Storage is separate, unfiled work.
+  Backing up Storage is separate work, tracked in #1290 (unblocked now that the
+  offsite bucket exists — it is meant to write to the same bucket under a
+  `storage/` prefix).
 - **The `storage` schema itself**, deliberately: bucket rows are provisioned by
   this repo's own `supabase/migrations/*_bucket.sql`, so they come back when
   migrations run. Including them made the restore abort on `buckets_pkey`.
@@ -136,7 +140,7 @@ table-by-table, exiting non-zero on any drift.
 
 | Date | Result | Notes |
 | --- | --- | --- |
-| 2026-08-27 | **PASS** | 24 tables identical row-for-row. `auth.users` restored with `encrypted_password` intact. Took five iterations; each failure was a real defect in the recipe (see #852). Local stack, Postgres 17.6 — same major/minor as staging. Not yet rehearsed against a real Supabase project, which needs #1287. |
+| 2026-08-27 | **PASS** | 24 tables identical row-for-row. `auth.users` restored with `encrypted_password` intact. Took five iterations; each failure was a real defect in the recipe (see #852). Local stack, Postgres 17.6 — same major/minor as staging. Not yet rehearsed against a real Supabase project — unblocked since 2026-08-27, when #1287 provisioned the offsite bucket. |
 
 ## Immediate response steps
 
