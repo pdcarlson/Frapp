@@ -680,7 +680,7 @@ export function EventEditorDialog({
                     key={vertex.id}
                     className="flex flex-wrap items-end gap-2 rounded-md border border-border p-3"
                   >
-                    <div className="grid gap-1">
+                    <div className="grid min-w-[9rem] flex-1 gap-1">
                       <Label htmlFor={`${vertex.id}-lat`}>
                         Point {index + 1} latitude
                       </Label>
@@ -699,7 +699,7 @@ export function EventEditorDialog({
                         placeholder="42.7298"
                       />
                     </div>
-                    <div className="grid gap-1">
+                    <div className="grid min-w-[9rem] flex-1 gap-1">
                       <Label htmlFor={`${vertex.id}-lng`}>
                         Point {index + 1} longitude
                       </Label>
