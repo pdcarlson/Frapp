@@ -64,7 +64,7 @@ committing them.
 Prefer a production build (`npm run build -w apps/web && npm run start -w apps/web`)
 over `next dev` — the dev overlay badge otherwise sits in the corner of every shot.
 
-### Six things that will waste your afternoon
+### Seven things that will waste your afternoon
 
 **Browse `localhost`, never `127.0.0.1`.** The API's CORS allowlist
 (`apps/api/src/main.ts`) names `http://localhost:3000` and `http://localhost:3002`.
@@ -108,6 +108,19 @@ mislabelled image; keep that assertion if you add a route back.
 
 **Run Expo web on port 3002.** It is the port already in the API's CORS allowlist:
 `npx expo start --web --port 3002` from `apps/mobile`.
+
+**Running Expo web breaks `check-types` afterwards, but only locally.** Starting
+the web build generates an `expo-env.d.ts` and a `.expo/types/` directory in the
+app root. Both are gitignored, so CI never has them — but
+[`apps/mobile/tsconfig.json`](../../apps/mobile/tsconfig.json) `include`s both,
+and the generated `expo-env.d.ts` is a `/// <reference types="expo/types" />`
+that pulls the web type surface in, where `cursor` is a plain CSS `string`
+rather than React Native's `CursorValue`. From then on `npm run check-types -w apps/mobile`
+reports overload errors on `<View>`s whose style array carries a `typeRole()`
+spread (`components/tasks/new-task-sheet.tsx` is the one that trips first), and
+`npm ci` does not clear them because the files are not dependencies. Delete the
+two generated paths and the errors go with them. They are an artifact of the
+capture, not a defect — do not "fix" the flagged component.
 
 **Capture from a freshly seeded chapter.** Opening a channel marks it read, and
 `ChannelRow` drops both the unread badge and the elevated card treatment for a
