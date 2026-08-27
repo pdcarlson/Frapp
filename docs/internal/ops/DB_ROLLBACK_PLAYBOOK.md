@@ -67,6 +67,46 @@ After any rollback event:
 - create/update postmortem entry with timeline and root cause
 - add preventive checks to migration or CI workflow
 
+## Rollback the `security definer` search_path pin
+
+* **Migration**: `20260827190000_secdef_search_path_pg_temp.sql`
+* **Read this first**: rolling this back **reintroduces a security defect** (#985). The
+  migration adds nothing and changes no function body — it only appends `pg_temp` to
+  the `search_path` of seven `security definer` functions, four of which are
+  authorization code (`can_read_chat_message` backs chat RLS; the three
+  `realtime_can_read_*_scope` functions gate realtime delivery). Reverting restores the
+  state where a caller-created temp table shadows the real table inside those functions
+  while they run with the definer's privileges. There is almost never a reason to do
+  this; prefer a forward fix.
+* **Action**: no function body is needed. `ALTER FUNCTION` changes the setting alone,
+  which is why this rollback is trivial and total:
+  ```sql
+  ALTER FUNCTION public.can_read_chat_message(uuid)            SET search_path TO 'public';
+  ALTER FUNCTION public.realtime_can_read_chapter_scope(uuid)  SET search_path TO 'public';
+  ALTER FUNCTION public.realtime_can_read_event_scope(uuid)    SET search_path TO 'public';
+  ALTER FUNCTION public.realtime_can_read_user_scope(uuid)     SET search_path TO 'public';
+  ALTER FUNCTION public.realtime_notify_event_attendance()     SET search_path TO 'public';
+  ALTER FUNCTION public.realtime_notify_events()               SET search_path TO 'public';
+  ALTER FUNCTION public.realtime_notify_notifications()        SET search_path TO 'public';
+  ```
+  Re-applying is the same statements with `TO 'public', 'pg_temp'`. Both directions were
+  exercised on the local stack.
+* **Order**: **no coordination required — deploy in either order.** This is the rare
+  purely-additive-to-a-setting change: signatures, return types, and bodies are all
+  untouched, so `create or replace` kept every dependent RLS policy and trigger
+  resolving, and no API revision can observe the difference. There is no window in which
+  a running API sees a shape it does not expect, in either direction.
+* **Data caveat**: none. Nothing is written, dropped, or backfilled.
+* **CI will stop you.** `scripts/check-pglite-migrations.mjs` asserts every
+  `security definer` function in `public` pins `pg_temp` **last** (the
+  `=== security definer search_path ===` tier), so a rollback committed as a *migration*
+  fails the `pglite-migrations` job by design. An emergency `ALTER` applied directly to a
+  hosted database is not caught by CI — if you do that, file the follow-up immediately,
+  because the next `db reset` silently re-applies the fix and the two environments drift.
+* **Note on order within the pin**: `pg_temp` must be **last**. `search_path = pg_temp,
+  public` is not a partial fix, it is the original bug spelled explicitly — the guard
+  rejects it for that reason.
+
 ## Rollback the chat author fields
 
 * **Migration**: `20260823120000_chat_message_authors.sql`
