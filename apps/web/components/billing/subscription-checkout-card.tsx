@@ -5,7 +5,11 @@ import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import { BillingGlyph } from "@/components/layout/nav-glyphs";
-import { useCreateCheckout, useCreatePortal, useCurrentUser } from "@repo/hooks";
+import {
+  useCreateCheckout,
+  useCreatePortal,
+  useCurrentUser,
+} from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -46,16 +50,22 @@ function readOutcome(value: string | null): CheckoutOutcome {
  * this card existed the API kept that door open and the client never built it,
  * so a chapter could complete onboarding and never reach `active`.
  *
- * **Checkout is offered for `incomplete` only.** A chapter that has lapsed to
- * `past_due` or `canceled` already has a Stripe customer and a subscription,
- * and `POST /v1/billing/checkout` rejects only `active`
- * (`billing.service.ts:112`) while `StripeService.createCheckoutSession` passes
- * `customer_email` rather than the stored `stripe_customer_id` — so a second
- * checkout mints a second customer and a second live subscription while Stripe
- * keeps dunning the first. `spec/behavior/billing.md` promises those are
- * deduplicated; they are not. Lapsed chapters therefore go to the Customer
- * Portal, which is both the correct recovery (update the card on the existing
- * subscription) and incapable of double-subscribing.
+ * **Recovery splits by status, and the split is load-bearing (#929).**
+ *
+ * - `past_due` → **Customer Portal.** The subscription is live and in dunning,
+ *   so updating the payment method resolves it in place. `POST
+ *   /v1/billing/checkout` now refuses this status outright: a second checkout
+ *   would bill the chapter twice and orphan the first subscription.
+ * - `canceled` → **checkout.** A canceled subscription is terminal at Stripe,
+ *   and the Portal cannot resume one — it only reactivates a subscription still
+ *   scheduled to cancel at period end, which our status map reports as
+ *   `active`. Checkout is the chapter's only way back. It is safe because the
+ *   server reuses the chapter's stored `stripe_customer_id`, so the returning
+ *   chapter keeps one continuous customer instead of forking a second, and
+ *   there is no live subscription left to orphan.
+ *
+ * This card previously sent both lapsed statuses to the Portal and told a
+ * `canceled` chapter to "reopen the subscription" there — a dead end.
  */
 export function SubscriptionCheckoutCard() {
   const { toast } = useToast();
@@ -72,6 +82,16 @@ export function SubscriptionCheckoutCard() {
   const createPortal = useCreatePortal();
 
   const lapsed = status === "past_due" || status === "canceled";
+  // Which recovery this chapter gets. `lapsed` still covers both statuses for
+  // the returned-from-portal banner below; only `past_due` is actually routed
+  // to the Portal (#929) — see the split in the block comment above.
+  const usesPortal = status === "past_due";
+  // The statuses that recover *through* checkout. `canceled` joined this set
+  // with #929, and it has to be named here as well as on the button: the
+  // post-checkout poll below keys on it, and a canceled chapter that had just
+  // paid would otherwise fall through to the lapsed card and be told to start
+  // another subscription seconds after starting one.
+  const usesCheckout = status === "incomplete" || status === "canceled";
 
   // Two ways to be waiting on Stripe: a first activation via Checkout, or a
   // lapsed chapter that just fixed its payment in the Portal. Both confirm over
@@ -82,7 +102,7 @@ export function SubscriptionCheckoutCard() {
   // a stale `/billing?checkout=success` bookmark hijack the screen of a chapter
   // that had since lapsed, hiding its recovery path.
   const awaiting =
-    (outcome === "success" && status === "incomplete") ||
+    (outcome === "success" && usesCheckout) ||
     (outcome === "returned" && lapsed);
 
   // Each tick schedules the next by advancing `attempt`, so the effect stops
@@ -217,10 +237,13 @@ export function SubscriptionCheckoutCard() {
           <CardContent className="flex flex-wrap items-center gap-3">
             {/*
               Deliberately NOT a checkout button. This branch is reached by a
-              chapter that has just paid, and `POST /v1/billing/checkout` would
-              mint a second subscription rather than reject the duplicate (see
-              the docblock above). Re-checking is the safe recovery; someone who
-              never actually paid can clear the stale return marker instead.
+              chapter that has just paid and whose webhook has not landed yet,
+              so its stored status is still `incomplete` or `canceled` — the
+              two the server accepts for checkout (#929). The duplicate guard
+              therefore cannot catch a second attempt from here; only the
+              absence of the button can. Re-checking is the safe recovery;
+              someone who never actually paid can clear the stale return marker
+              instead.
             */}
             <Button
               variant="secondary"
@@ -259,9 +282,9 @@ export function SubscriptionCheckoutCard() {
           {status === "past_due"
             ? "Chapter subscription is past due; write actions are blocked until payment is resolved. Update your payment method to restore them."
             : status === "canceled"
-              ? "This chapter is read-only. Reopen the subscription from the billing portal to unlock dues, invoices, and the paid modules."
+              ? "This chapter is read-only. Start a new subscription to unlock dues, invoices, and the paid modules again — your billing history is preserved."
               : "Chapter subscription is not active; complete checkout to use this feature. Dues, invoices, and the paid modules unlock as soon as payment clears."}
-          {outcome === "cancelled" && !lapsed
+          {outcome === "cancelled" && !usesPortal
             ? " Your last checkout was cancelled — no charge was made."
             : null}
         </CardDescription>
@@ -272,12 +295,12 @@ export function SubscriptionCheckoutCard() {
           deniedFallback={
             <p className="text-sm text-muted-foreground">
               A chapter officer with <code>billing:manage</code> can{" "}
-              {lapsed ? "resolve this" : "complete checkout"} and unlock these
-              features.
+              {usesPortal ? "resolve this" : "complete checkout"} and unlock
+              these features.
             </p>
           }
         >
-          {lapsed ? (
+          {usesPortal ? (
             <Button
               onClick={() => void openPortal()}
               disabled={createPortal.isPending}
