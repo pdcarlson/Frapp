@@ -5,6 +5,13 @@ export interface CreateCheckoutParams {
   customerEmail: string;
   successUrl: string;
   cancelUrl: string;
+  /**
+   * Whether this checkout may open a free trial. Decided by the caller, which
+   * is the only layer that can see the chapter's billing history — the trial is
+   * once per chapter, not once per checkout session, and nothing downstream can
+   * tell a first subscription from a fifth.
+   */
+  grantTrial: boolean;
 }
 
 export interface CreateCustomerPortalParams {

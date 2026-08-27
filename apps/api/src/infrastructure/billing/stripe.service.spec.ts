@@ -75,6 +75,7 @@ describe('StripeBillingService', () => {
         customerEmail: 'test@example.com',
         successUrl: 'https://example.com/success',
         cancelUrl: 'https://example.com/cancel',
+        grantTrial: true,
       };
       const expectedUrl = 'https://checkout.stripe.com/c/pay/cs_test_123';
 
@@ -91,10 +92,57 @@ describe('StripeBillingService', () => {
         mode: 'subscription',
         customer_email: params.customerEmail,
         line_items: [{ price: 'test_price_id', quantity: 1 }],
+        subscription_data: { trial_period_days: 14 },
         success_url: params.successUrl,
         cancel_url: params.cancelUrl,
         metadata: { chapter_id: params.chapterId },
       });
+    });
+
+    const checkoutParams = (grantTrial: boolean) => ({
+      chapterId: 'chapter-123',
+      customerEmail: 'treasurer@example.com',
+      successUrl: 'https://example.com/success',
+      cancelUrl: 'https://example.com/cancel',
+      grantTrial,
+    });
+
+    const capturedSessionArgs = () =>
+      (stripeMock.checkout.sessions.create as jest.Mock).mock.calls[0][0];
+
+    const mockCheckout = () => {
+      stripeMock.checkout = {
+        sessions: {
+          create: jest
+            .fn()
+            .mockResolvedValue({ url: 'https://checkout.stripe.com/c/pay/x' }),
+        },
+      } as any;
+    };
+
+    it('opens the 14-day trial the landing page sells when grantTrial (#913)', async () => {
+      mockCheckout();
+
+      await service.createCheckoutSession(checkoutParams(true));
+
+      // Asserted on its own because the trial cannot be carried by the Price:
+      // Stripe exposes no writable trial field there, so if this argument is
+      // dropped, swapping STRIPE_PRICE_ID cannot restore it and every chapter
+      // is charged on day zero while the site still advertises a free trial.
+      expect(capturedSessionArgs().subscription_data).toEqual({
+        trial_period_days: 14,
+      });
+    });
+
+    it('omits the trial entirely when grantTrial is false', async () => {
+      mockCheckout();
+
+      await service.createCheckoutSession(checkoutParams(false));
+
+      // Absent, not `trial_period_days: 0`. Omitting the key is the
+      // unambiguous way to say "no trial", so a repeat checkout is an ordinary
+      // immediate charge without depending on how Stripe treats a zero.
+      expect(capturedSessionArgs()).not.toHaveProperty('subscription_data');
     });
   });
 
