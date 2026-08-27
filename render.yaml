@@ -39,7 +39,12 @@ services:
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
-        value: production
+        # Deployed staging runs NODE_ENV=staging (its Sentry events carry
+        # environment=staging, checked 2026-08-27) and Infisical staging holds
+        # the same value; this placeholder is aligned to match. Blueprint edits
+        # do not reach the already-created service (DEPLOYMENT.md records the
+        # blueprint as not applied to the live services).
+        value: staging
       - key: PORT
         value: "3001"
       - key: SUPABASE_URL
