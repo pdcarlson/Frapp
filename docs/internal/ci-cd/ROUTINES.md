@@ -257,7 +257,10 @@ the "found but not fixable" list.
 
 1. Open **claude.ai/code** → the Frapp environment → **Routines** → **New routine** → name it
    **"Issue Curator"**.
-2. Schedule daily **08:00 ET**; model **Fable**; environment `pdcarlson/Frapp` (`main`).
+2. Schedule daily **08:00 ET**; environment `pdcarlson/Frapp` (`main`). Take the model — and every
+   other per-routine setting — from the [Settings table](#settings-per-routine-set-in-the-routines-ui)
+   above, which is the single source of truth for them. **Cadence sets the tier**, so the two
+   dailies and the two weeklies do not get the same model.
 3. Paste the **Curator** prompt from [Routine prompts](#routine-prompts-copy-paste) above.
 4. Repeat for **"Issue Triage"**, scheduled **09:00 ET**, with the **Triage** prompt.
 5. Repeat for **"PR Follow-ups"**, scheduled **weekly Mon 07:00 ET**, with the **PR Follow-ups**
