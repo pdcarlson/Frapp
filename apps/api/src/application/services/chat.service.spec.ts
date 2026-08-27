@@ -28,7 +28,6 @@ import type {
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 import type { IStorageProvider } from '../../domain/adapters/storage.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
-import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type {
   ChatChannel,
@@ -58,8 +57,8 @@ describe('ChatService', () => {
   let mockMemberRepo: {
     findByUserAndChapter: jest.Mock;
     findByChapter: jest.Mock;
+    findChapterMemberIdentities: jest.Mock;
   };
-  let mockUserRepo: { findByIds: jest.Mock };
   let mockActivation: jest.Mocked<Pick<ActivationService, 'record'>>;
   let mockRbac: {
     getEffectivePermissions: jest.Mock;
@@ -189,14 +188,11 @@ describe('ChatService', () => {
 
     mockMemberRepo = {
       findByUserAndChapter: jest.fn(),
-      // Mention resolution walks the chapter roster. Empty by default so the
-      // existing send tests resolve to no mentions; the mention tests below
-      // populate it alongside `mockUserRepo`.
       findByChapter: jest.fn().mockResolvedValue([]),
-    };
-
-    mockUserRepo = {
-      findByIds: jest.fn().mockResolvedValue([]),
+      // Mention resolution reads the chapter roster through this one narrow
+      // join (#986). Empty by default so the existing send tests resolve to no
+      // mentions; the mention tests below seed it.
+      findChapterMemberIdentities: jest.fn().mockResolvedValue([]),
     };
 
     mockActivation = { record: jest.fn().mockResolvedValue(true) };
@@ -247,7 +243,6 @@ describe('ChatService', () => {
         },
         { provide: STORAGE_PROVIDER, useValue: mockStorageProvider },
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
-        { provide: USER_REPOSITORY, useValue: mockUserRepo },
         { provide: SUPABASE_CLIENT, useValue: mockSupabase },
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: RbacService, useValue: mockRbac },
@@ -2122,16 +2117,13 @@ describe('ChatService', () => {
 
   describe('sendMessage — mention resolution', () => {
     const roster = [
-      { id: 'user-1', display_name: 'Sender One' },
-      { id: 'user-2', display_name: 'Jane Doe' },
-      { id: 'user-3', display_name: 'Janet Roe' },
+      { user_id: 'user-1', display_name: 'Sender One' },
+      { user_id: 'user-2', display_name: 'Jane Doe' },
+      { user_id: 'user-3', display_name: 'Janet Roe' },
     ];
 
     function seedRoster() {
-      mockMemberRepo.findByChapter.mockResolvedValue(
-        roster.map((u, i) => ({ ...baseMember, id: `m${i}`, user_id: u.id })),
-      );
-      mockUserRepo.findByIds.mockResolvedValue(roster);
+      mockMemberRepo.findChapterMemberIdentities.mockResolvedValue(roster);
     }
 
     it('resolves a mention server-side and stores users.id', async () => {
@@ -2230,7 +2222,7 @@ describe('ChatService', () => {
 
     it('still sends when the directory lookup fails', async () => {
       // Losing a highlight is acceptable; losing the message is not.
-      mockMemberRepo.findByChapter.mockRejectedValue(
+      mockMemberRepo.findChapterMemberIdentities.mockRejectedValue(
         new Error('directory down'),
       );
       mockMessageRepo.create.mockResolvedValue(baseMessage);
@@ -2245,6 +2237,101 @@ describe('ChatService', () => {
       ).resolves.toBeDefined();
 
       expect(mockMessageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ mentions: [] }),
+      );
+    });
+
+    // ── #986: the roster fetch is no longer paid per `@` ──────────────────
+
+    it.each([
+      ['an email address', 'ping me at paul@example.com'],
+      ['a bare @ in prose', 'email me @ noon'],
+      ['a leading-@ handle with no letter', 'weird @123 token'],
+    ])('issues no roster query for %s', async (_label, content) => {
+      // The old gate was `content.includes('@')`, so each of these bought a
+      // full chapter roster fetch — plus a second query for every user row —
+      // on the send hot path. None of them can resolve to a member.
+      seedRoster();
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      await service.sendMessage({
+        channel_id: 'ch-chan-1',
+        chapter_id: 'ch-1',
+        sender_id: 'user-1',
+        content,
+      });
+
+      expect(mockMemberRepo.findChapterMemberIdentities).not.toHaveBeenCalled();
+      expect(mockMessageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ mentions: [] }),
+      );
+    });
+
+    it('resolves a mention in exactly one query', async () => {
+      // AC #2. Pinned as a count, not just a shape: the regression this guards
+      // is someone reintroducing a roster-then-hydrate pair, which resolves the
+      // same mentions and would pass every other test in this block.
+      seedRoster();
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      await service.sendMessage({
+        channel_id: 'ch-chan-1',
+        chapter_id: 'ch-1',
+        sender_id: 'user-1',
+        content: 'hey @janedoe can you cover?',
+      });
+
+      expect(mockMemberRepo.findChapterMemberIdentities).toHaveBeenCalledTimes(
+        1,
+      );
+      expect(mockMemberRepo.findChapterMemberIdentities).toHaveBeenCalledWith(
+        'ch-1',
+      );
+      // The wide roster read is gone from this path entirely.
+      expect(mockMemberRepo.findByChapter).not.toHaveBeenCalled();
+    });
+
+    it('scopes candidates to the sending chapter', async () => {
+      // AC #3. The chapter predicate lives in the repository join now, so the
+      // guarantee this pins is that the service still passes the *sending*
+      // chapter and never a wider set — a member must not be able to mention
+      // someone outside their chapter, since a mention overrides a mute.
+      mockMemberRepo.findChapterMemberIdentities.mockResolvedValue([]);
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      await service.sendMessage({
+        channel_id: 'ch-chan-1',
+        chapter_id: 'ch-1',
+        sender_id: 'user-1',
+        content: 'hey @janedoe',
+      });
+
+      expect(mockMemberRepo.findChapterMemberIdentities).toHaveBeenCalledWith(
+        'ch-1',
+      );
+      expect(mockMessageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ mentions: [] }),
+      );
+    });
+
+    it('issues no roster query when an edit removes the last mention', async () => {
+      // The edit path re-resolves against the new body, so it inherits the same
+      // early return. The new body deliberately still contains an `@` — under
+      // the old `content.includes('@')` gate this edit bought a full roster
+      // fetch, so a body without one would let this pass either way.
+      seedRoster();
+      mockMessageRepo.update.mockResolvedValue(baseMessage);
+
+      await service.editMessage(
+        'msg-1',
+        'ch-1',
+        'user-1',
+        'never mind, reach me @ 5pm',
+      );
+
+      expect(mockMemberRepo.findChapterMemberIdentities).not.toHaveBeenCalled();
+      expect(mockMessageRepo.update).toHaveBeenCalledWith(
+        'msg-1',
         expect.objectContaining({ mentions: [] }),
       );
     });

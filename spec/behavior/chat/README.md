@@ -158,6 +158,13 @@ Both are computed server-side by `get_channel_unread_counts` and served from `GE
 
 Resolution is tiered and fails closed — exact user id, exact display name, name without spaces, first word, unique prefix — and **ambiguity at any tier resolves to nobody**. If two members share a first name, `@jane` mentions neither, because silently picking one notifies the wrong person while looking correct to the sender. Unresolvable tokens are dropped silently; an `@` in prose is not an error.
 
+Two properties of *how* the roster is read are load-bearing, because both are easy to undo without any test noticing:
+
+- **The body is parsed before the roster is fetched.** A message containing an `@` that yields no mention token — an email address, a bare `@` in prose, `@here` — issues **no roster query at all**. The gate is the same parser that resolves the tokens a moment later, so "has a mention" and "resolves a mention" cannot disagree.
+- **The roster arrives as `user_id, display_name` in one query**, joined against chapter membership. Resolution never sees a full `users` row, so `email`, `bio` and `graduation_year` are not marshalled on the send hot path — the same boundary the chat *display* path draws. The chapter scope lives in that join rather than in the caller, which is what makes it impossible to resolve a mention against a wider set than the sending chapter.
+
+Ambiguity detection is why the roster is read whole rather than narrowed to the parsed handles: knowing that `@jan` matches two members requires seeing every member a tier matches, and the folding the tiers compare against is defined in application code, not in SQL.
+
 ## Imported archive messages
 
 A chapter migrating from Discord imports its history into the **same**
