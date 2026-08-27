@@ -81,9 +81,11 @@ without a plausible failure scenario is not a finding; drop it.
 These encode invariants this codebase cannot enforce for itself. Each is a real, previously observed
 failure mode, not a hypothetical.
 
-- **Tenant isolation.** RLS is enabled on every base table with **no permissive policies**, and the
-  API holds the `service_role` key, which bypasses RLS entirely. Isolation is therefore
-  *application-layer only*. Flag any new query missing `.eq('chapter_id', chapterId)`, and any role
+- **Tenant isolation.** RLS is enabled on every base table with **no permissive policies** (the
+  chat hot path's narrow client-read policies are the audited exception — see
+  `docs/internal/security/AUTHORIZATION_MODEL.md`), and the
+  API holds the `service_role` key, which bypasses RLS entirely. Isolation for API queries is
+  therefore *application-layer only*. Flag any new query missing `.eq('chapter_id', chapterId)`, and any role
   or permission lookup not re-scoped by `chapter_id` — a stray cross-chapter `role_id` otherwise
   leaks permissions. `apps/api/src/application/services/search.service.ts` is the reference pattern:
   it filters candidates through `canAccessChannel` and re-scopes roles by chapter.

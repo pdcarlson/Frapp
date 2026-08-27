@@ -146,7 +146,8 @@ In CI, we also run:
 - `npm run lint`
 - `npm run check-types`
 - `npm run build`
-- API unit tests and (eventually) E2E against a fresh Supabase instance
+- API unit **and E2E** tests (the `api-tests` job runs both; the E2E suite boots the app with a
+  mocked Supabase client — no live services)
 
 ## 6. Documentation obligations
 

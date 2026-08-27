@@ -158,7 +158,11 @@ local `webServer` entirely. No code change needed:
 PLAYWRIGHT_BASE_URL=https://app.staging.frapp.live npm run test:floor -w apps/web
 ```
 
-**Unauthenticated, this run measures nothing — all fifteen abort before the floor is read.**
+**Unauthenticated, this run measures no dashboard route — every `responsive-floor.spec.ts` test
+aborts before the floor is read.** (That spec is one test per `DASHBOARD_ROUTES` entry in
+`apps/web/tests/visual/routes.ts`; count them there, not here. `test:floor` runs the whole
+`tests/visual/` directory, so the pre-auth suite's handful of tests still run and pass —
+a partially-green run is not evidence any dashboard route was measured.)
 With an external `PLAYWRIGHT_BASE_URL` the config skips `webServer`, so `SUPABASE_AUTH_BYPASS`
 is never applied. Every dashboard route is in `PROTECTED_ROUTE_PREFIXES`, so each redirects to
 `/sign-in?redirectTo=%2F…` (`URLSearchParams.set` percent-encodes the slash, so the spec's
@@ -166,11 +170,11 @@ is never applied. Every dashboard route is in `PROTECTED_ROUTE_PREFIXES`, so eac
 `responsive-floor.spec.ts`, ahead of the `<main>` visibility check and the `scrollWidth`
 evaluate — so every test stops there and not one route is measured.
 
-That guard is doing its job: the sign-in card holds 375px unconditionally, so without it all
-fifteen would go *green* having never rendered the dashboard shell. Never "fix" that assertion
+That guard is doing its job: the sign-in card holds 375px unconditionally, so without it the
+whole suite would go *green* having never rendered the dashboard shell. Never "fix" that assertion
 to make a run pass — converting a false green into an honest red is the whole reason it exists.
 
-**But do not invert it into a verification.** Fifteen red `toHaveURL` failures tell you only
+**But do not invert it into a verification.** A wall of red `toHaveURL` failures tells you only
 that you did not reach the dashboard. That is exactly what an unauthenticated run looks like,
 and also what a genuinely regressed staging redirect, an expired session, or a Vercel SSO wall
 looks like — so the result distinguishes none of them, and it is never evidence the deployed

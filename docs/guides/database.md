@@ -96,7 +96,9 @@ the full dataset is tracked in #232.
 - Primary keys: `uuid` generated via `gen_random_uuid()`
 - Timestamps: `created_at TIMESTAMPTZ DEFAULT now()`
 - Tenant scoping: nearly every table includes `chapter_id`
-- Row-Level Security (RLS): policies scope by `chapter_id` and authenticated user
+- Row-Level Security (RLS): enabled on every table, almost always with **no policies** — default
+  deny, with the API (service role) as the enforcing layer. Per-table postures:
+  [`docs/internal/security/AUTHORIZATION_MODEL.md`](../internal/security/AUTHORIZATION_MODEL.md)
 - **Atomic multi-row writes:** operations that must be all-or-nothing across tables live in a
   `plpgsql` function migration and are invoked via `supabase.rpc(...)` from a repository (a function
   body runs in a single implicit transaction). Example: `confirm_task_completion` (migration
@@ -168,15 +170,23 @@ npx supabase db reset
 
 ## 5. RLS and security
 
-We rely on Supabase RLS for defense in depth:
+We rely on Supabase RLS for defense in depth, but **not** in the "write a policy per table" shape.
+The design (canonical: [`docs/internal/security/AUTHORIZATION_MODEL.md`](../internal/security/AUTHORIZATION_MODEL.md)):
 
-- Policies restrict access by `chapter_id` and membership.
-- The API still enforces its own RBAC permissions (roles + permissions catalog).
+- Almost every table is **RLS on, no policies** — default deny for `anon`/`authenticated`
+  clients. The API enforces authorization (guards + RBAC) and reaches the database through the
+  service-role client, which bypasses RLS; tenant isolation is therefore **application-layer**:
+  every API query must filter on `chapter_id`.
+- Client-reachable policies exist only where the browser deliberately reads Postgres directly
+  (the chat hot path); `AUTHORIZATION_MODEL.md` holds the per-table inventory and the policy
+  details. Do not add a permissive policy for a new table unless you are deliberately opening a
+  client-direct path; enable RLS and stop.
 
 When adding tables:
 
-- Add appropriate RLS policies in the migration.
-- Ensure every query from the API filters on `chapter_id` and respects RLS expectations.
+- `ALTER TABLE … ENABLE ROW LEVEL SECURITY;` in the migration — with no policies, unless the
+  table is genuinely client-read, in which case follow `AUTHORIZATION_MODEL.md`.
+- Ensure every query from the API filters on `chapter_id`.
 
 > **Warning:** Never disable RLS in production. Local testing may temporarily relax policies, but staging and prod must always run with RLS enabled.
 

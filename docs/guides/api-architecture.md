@@ -98,7 +98,10 @@ Interceptors:
 
 - **RequestIdInterceptor** — attaches/propagates `x-request-id`.
 - **LoggingInterceptor** — structured JSON logging with latency and status code.
-- **(Future) AuthSyncInterceptor** — syncs Supabase Auth metadata into our `users` table.
+- **AuthSyncInterceptor** — auto-creates/syncs the `users` row from Supabase Auth on first
+  authenticated request. Not global: applied per-controller/per-route via `@UseInterceptors` —
+  see [`.claude/skills/api-development/SKILL.md`](../../.claude/skills/api-development/SKILL.md)
+  § "Auth and guard chain" for where.
 
 ### Rate limiting
 

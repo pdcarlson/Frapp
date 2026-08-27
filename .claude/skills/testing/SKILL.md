@@ -249,7 +249,13 @@ Before pushing, verify these pass locally (mirrors the CI pipeline):
    `packages/**` — the job's path filter covers that glob, so a change there
    exercises those suites. `web-tests` is a required check (ADR-15 2026-08-19
    amendment).
-7. `npm run test -w @repo/validation` and `npm run test -w @repo/formatting` → `CI / lint-and-typecheck` (Vitest; validation is consumed by the API, web, and mobile; formatting by web and mobile). Not covered by items 1–2: the root has no `test` script and `turbo.json` declares no `test` task, so nothing else runs them.
+7. The shared-package and landing unit suites → `CI / lint-and-typecheck`. The job runs
+   `npm run test -w apps/landing` plus `-w @repo/validation`, `@repo/color`, `@repo/formatting`,
+   `@repo/chapter-theme`, `@repo/theme`, and `@repo/api-sdk` — the gate-validated roster is the
+   `lint-and-typecheck` row in `CONTRIBUTING.md` (checked by `npm run check:doc-tables`, which
+   does **not** scan this file — trust that row over this one). Run the suites for whatever you
+   touched. Not covered by items 1–2: the root has no `test` script and `turbo.json` declares no
+   `test` task, so nothing else runs them.
 8. `npm run test -w apps/mobile` → `CI / mobile-validate` (Vitest; likewise not
    reached by the mobile lint or typecheck steps)
 9. `npm run check:api-contract` → `CI / api-contract-check`

@@ -84,7 +84,7 @@ human ever reads it", and the same reasoning applies to a wrong claim. Get it wi
 git ls-files 'docs/*.md' 'spec/*.md' '.claude/skills/*.md' '*AGENTS.md' CONTRIBUTING.md README.md
 ```
 
-134 tracked files as of 2026-08-21, and the count `check-doc-paths` reports — if the two disagree,
+136 tracked files as of 2026-08-27, and the count `check-doc-paths` reports — if the two disagree,
 one of them has drifted and that is itself a finding. Tracked files only; never `find`, which would
 sweep untracked scratch no gate will ever see. `.buildpad/`, `spec/ui/design-system/reference/`
 (no markdown in it) and the `REFACTOR-*.md` scratch files fall outside the include set already —
@@ -95,7 +95,7 @@ tracker memory here, so derive the slice from the calendar and the corpus alone:
 
 1. Take the command's output **in its own order** (that is byte-order already — do not re-sort).
 2. Number the files `0 … n-1`. File `i` is in group `floor(i * 5 / n)`, so groups are numbered
-   **0–4** and come out within one file of each other (27/27/27/27/26 at n=134).
+   **0–4** and come out within one file of each other (28/27/27/27/27 at n=136).
 3. Sweep the group whose index is `$(date -u +%V) mod 5`.
 
 Each step is exact on purpose. `%V` is **ISO** week — `%W` and `%U` differ from it for most of the
@@ -107,8 +107,9 @@ zero-padded, so parse it base 10 (`10#$V` in bash) or `08` and `09` throw.
 
 - **The cycle skews at New Year.** `mod 5` does not divide a 52- or 53-week year, so at each
   rollover one group waits up to **eight** weeks and two get swept twice a few weeks apart. Accepted.
-- **Groups differ by up to ~3× in reading weight**, not in file count — group 0 carries `AGENTS.md`
-  and `AGENT_INFRA.md`. Budget for it, and say in the report if you ran out of run. **Do not
+- **Groups differ by up to ~3× in reading weight**, not in file count — group 0 carries every
+  `.claude/skills/` file plus `AGENTS.md`, and which group holds a heavy file like `AGENT_INFRA.md`
+  shifts as the corpus grows. Budget for it, and say in the report if you ran out of run. **Do not
   re-scope the slice to balance it** — a slice that depends on judgement is not reproducible, and
   `ROUTINES.md` § Verify asserts that two runs in one week take the same one.
 

@@ -289,7 +289,7 @@ All data fetching uses TanStack Query via shared hooks — never raw `fetch`. Im
 import { useCurrentUser, useUpdateUser, useMembers, useCurrentChapter } from "@repo/hooks";
 ```
 
-The barrel re-exports 28 modules — members, events, attendance, points, chat, billing, invoices, backwork, notifications, service entries, tasks, study, documents, polls, semesters, reports, search, chapters, chapter directory, roles, custom roles, custom fields, org config, invites, and users, plus the client and query-key helpers. Check `packages/hooks/src/` before writing a new hook; that directory, not this list, is the current one.
+The barrel re-exports every module under `packages/hooks/src/` — one per feature domain (members, events, chat, billing, …) plus the client and query-key helpers. Check that directory before writing a new hook; it, not any list here, is the current inventory (a hand-copied list drifted here before — it had already missed three modules when it was removed).
 
 Pattern:
 - `useQuery` for reads: `queryKey` for caching, `queryFn` calls `client.GET`

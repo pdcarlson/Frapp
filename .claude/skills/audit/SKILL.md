@@ -101,7 +101,7 @@ The API has strict lint rules. Warnings are tracked but currently tolerated — 
 
 ### RLS coverage
 
-All tables in `supabase/migrations/` must have `ENABLE ROW LEVEL SECURITY`. The current design uses no permissive policies (default deny) — all data access goes through the `service_role` client in the API.
+All tables in `supabase/migrations/` must have `ENABLE ROW LEVEL SECURITY`. Almost every table then carries **no permissive policies** (default deny) — data access goes through the `service_role` client in the API. The deliberate exceptions are the chat hot path's client-read policies (`chat_message_actions`, membership-scoped `chat_messages` reads); the per-table posture inventory is [`docs/internal/security/AUTHORIZATION_MODEL.md`](../../../docs/internal/security/AUTHORIZATION_MODEL.md) — audit a new permissive policy against it, not against "no policies exist".
 
 To verify (per migration file, each `CREATE TABLE` must have a matching `ALTER TABLE … ENABLE ROW LEVEL SECURITY` in the same file):
 
