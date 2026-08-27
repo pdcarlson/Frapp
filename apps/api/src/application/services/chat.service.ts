@@ -93,6 +93,12 @@ export interface CreateChannelInput {
   required_permissions?: string[] | null;
   category_id?: string | null;
   is_read_only?: boolean;
+  /**
+   * The caller creating the channel. Required, because a PRIVATE channel seeds
+   * its `member_ids` with exactly this user — without it the row is readable by
+   * nobody at all (#1008).
+   */
+  created_by_user_id: string;
 }
 
 export interface CreateDmInput {
@@ -332,6 +338,21 @@ export class ChatService {
       required_permissions: input.required_permissions ?? null,
       category_id: input.category_id ?? null,
       is_read_only: input.is_read_only ?? false,
+      // Seed the creator so a PRIVATE channel is readable by at least one
+      // person. `canAccessChannel` resolves PRIVATE as membership of this list
+      // with **no `"*"` wildcard bypass**, so a row landing with `member_ids`
+      // NULL is invisible to every user including its creator and a President —
+      // and there is no repair path, since `updateChannel` cannot write this
+      // column. That made the channel unreachable from every read surface once
+      // #1001 filtered the list, recoverable only from the create response's
+      // id or direct DB access (#1008).
+      //
+      // Only PRIVATE. PUBLIC and ROLE_GATED resolve access by chapter
+      // membership and permissions respectively and never consult this column,
+      // so populating it there would imply a membership that means nothing.
+      // DM and GROUP_DM cannot reach here — they are rejected above and set
+      // their own membership in `getOrCreateDm` / `createGroupDm`.
+      member_ids: input.type === 'PRIVATE' ? [input.created_by_user_id] : null,
     });
   }
 

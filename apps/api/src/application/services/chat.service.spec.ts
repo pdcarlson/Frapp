@@ -4,6 +4,7 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
+import { canAccessChannel } from '@repo/validation';
 import { ChatService } from './chat.service';
 import {
   CHAT_CHANNEL_REPOSITORY,
@@ -268,6 +269,7 @@ describe('ChatService', () => {
         chapter_id: 'ch-1',
         name: 'general',
         type: 'PUBLIC',
+        created_by_user_id: 'u-creator',
       });
 
       expect(result).toEqual(baseChannel);
@@ -286,6 +288,7 @@ describe('ChatService', () => {
           chapter_id: 'ch-1',
           name: 'dm',
           type: 'DM',
+          created_by_user_id: 'u-creator',
         }),
       ).rejects.toThrow(BadRequestException);
     });
@@ -301,10 +304,104 @@ describe('ChatService', () => {
             name: 'exec-board',
             type: 'ROLE_GATED',
             required_permissions: required,
+            created_by_user_id: 'u-creator',
           }),
         ).rejects.toThrow(BadRequestException);
 
         expect(mockChannelRepo.create).not.toHaveBeenCalled();
+      },
+    );
+
+    // #1008: `member_ids` NULL makes a PRIVATE channel unreadable by everyone
+    // including its creator, with no repair path — `updateChannel` cannot write
+    // the column. The row is only reachable from the create response's id.
+    it('should seed a PRIVATE channel with its creator', async () => {
+      mockChannelRepo.create.mockResolvedValue(baseChannel);
+
+      await service.createChannel({
+        chapter_id: 'ch-1',
+        name: 'exec-private',
+        type: 'PRIVATE',
+        created_by_user_id: 'u-creator',
+      });
+
+      expect(mockChannelRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'PRIVATE',
+          member_ids: ['u-creator'],
+        }),
+      );
+    });
+
+    // The seeded row must actually satisfy the predicate that reads it —
+    // asserting the insert shape alone would not prove the channel is readable.
+    it('should produce a PRIVATE row its creator can actually read', async () => {
+      mockChannelRepo.create.mockImplementation((data) =>
+        Promise.resolve({ ...baseChannel, ...data } as ChatChannel),
+      );
+
+      const created = await service.createChannel({
+        chapter_id: 'ch-1',
+        name: 'exec-private',
+        type: 'PRIVATE',
+        created_by_user_id: 'u-creator',
+      });
+
+      expect(
+        canAccessChannel({
+          channel: created,
+          userId: 'u-creator',
+          isChapterMember: true,
+          permissions: [],
+        }),
+      ).toBe(true);
+    });
+
+    // A PRIVATE channel is not a public one: seeding the creator must not make
+    // it readable by another chapter member.
+    it('should not make a seeded PRIVATE channel readable by anyone else', async () => {
+      mockChannelRepo.create.mockImplementation((data) =>
+        Promise.resolve({ ...baseChannel, ...data } as ChatChannel),
+      );
+
+      const created = await service.createChannel({
+        chapter_id: 'ch-1',
+        name: 'exec-private',
+        type: 'PRIVATE',
+        created_by_user_id: 'u-creator',
+      });
+
+      expect(
+        canAccessChannel({
+          channel: created,
+          userId: 'u-other',
+          isChapterMember: true,
+          // Even `*` must not open it: the PRIVATE branch has no wildcard bypass.
+          permissions: ['*'],
+        }),
+      ).toBe(false);
+    });
+
+    // PUBLIC and ROLE_GATED resolve access by chapter membership and by
+    // permissions; a membership list there would imply something that is never
+    // consulted.
+    it.each(['PUBLIC', 'ROLE_GATED'] as const)(
+      'should not seed member_ids on a %s channel',
+      async (type) => {
+        mockChannelRepo.create.mockResolvedValue(baseChannel);
+
+        await service.createChannel({
+          chapter_id: 'ch-1',
+          name: 'general',
+          type,
+          required_permissions:
+            type === 'ROLE_GATED' ? ['roles:manage'] : undefined,
+          created_by_user_id: 'u-creator',
+        });
+
+        expect(mockChannelRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ member_ids: null }),
+        );
       },
     );
 
@@ -316,6 +413,7 @@ describe('ChatService', () => {
         name: 'exec-board',
         type: 'ROLE_GATED',
         required_permissions: ['roles:manage'],
+        created_by_user_id: 'u-creator',
       });
 
       expect(mockChannelRepo.create).toHaveBeenCalledWith(

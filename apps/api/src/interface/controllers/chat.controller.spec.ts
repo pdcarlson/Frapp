@@ -23,6 +23,7 @@ describe('ChatController', () => {
       deleteCategory: jest.fn(),
       getChannels: jest.fn(),
       getChannel: jest.fn(),
+      createChannel: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -96,6 +97,24 @@ describe('ChatController', () => {
         'chan-1',
         'ch-1',
         'user-1',
+      );
+    });
+
+    // #1008 is the same shape one route over: the create handler took no user
+    // id, so the service had nobody to seed a PRIVATE channel's `member_ids`
+    // with and the row landed readable by no one.
+    it('passes the caller’s user id to createChannel', async () => {
+      await controller.createChannel('ch-1', 'user-1', {
+        name: 'exec-private',
+        type: 'PRIVATE',
+      });
+
+      expect(service.createChannel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chapter_id: 'ch-1',
+          created_by_user_id: 'user-1',
+          type: 'PRIVATE',
+        }),
       );
     });
   });
