@@ -381,7 +381,7 @@ The write route keeps its `Chapter` return type on `ChapterService.update` — t
 
 At the service layer, both endpoints are covered directly. The `listForUser` test previously asserted `chapter: chapters[0]` — the whole row — which **pinned the leak**; it now asserts the projection plus explicit negative assertions on the three identifier columns, so a regression fails here even if the projection helper's own contract changed.
 
-Full suite green at the time of the fix: 131 API suites / 2342 tests, 72 web files / 821 tests, and `check-types` clean for api, web and mobile.
+Full suite green at the time of the fix: 131 API suites / 2343 tests, 72 web files / 821 tests, and `check-types` clean for api, web and mobile.
 
 ### Residual, not closed by this fix
 The repositories still issue `select('*')`; the projection is at the service boundary, so every internal caller (billing, report export, the Stripe webhook path) keeps the full row it legitimately needs. Narrowing the repository read is a larger change with many callers and is not required to close the exposure.
