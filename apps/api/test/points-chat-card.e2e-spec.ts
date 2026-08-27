@@ -2,8 +2,6 @@ import {
   CanActivate,
   ExecutionContext,
   INestApplication,
-  ValidationPipe,
-  VersioningType,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
@@ -13,7 +11,7 @@ import { SupabaseAuthGuard } from '../src/interface/guards/supabase-auth.guard';
 import { ChapterGuard } from '../src/interface/guards/chapter.guard';
 import { PermissionsGuard } from '../src/interface/guards/permissions.guard';
 import { createSupabaseMock } from './helpers/supabase-mock.factory';
-import { VALIDATION_PIPE_OPTIONS } from '../src/interface/pipes/validation-pipe.options';
+import { configureApp } from '../src/bootstrap';
 
 const V1 = '/v1';
 const CHANNEL_ID = '11111111-1111-4111-8111-111111111111';
@@ -87,8 +85,7 @@ describe('Points chat card — adjust endpoint wiring (e2e)', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
-    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-    app.useGlobalPipes(new ValidationPipe(VALIDATION_PIPE_OPTIONS));
+    configureApp(app);
     await app.init();
   });
 

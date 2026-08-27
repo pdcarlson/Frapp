@@ -2,8 +2,6 @@ import {
   CanActivate,
   ExecutionContext,
   INestApplication,
-  ValidationPipe,
-  VersioningType,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
@@ -14,8 +12,8 @@ import { FinancialInvoiceService } from '../src/application/services/financial-i
 import { SupabaseAuthGuard } from '../src/interface/guards/supabase-auth.guard';
 import { ChapterGuard } from '../src/interface/guards/chapter.guard';
 import { PermissionsGuard } from '../src/interface/guards/permissions.guard';
-import { VALIDATION_PIPE_OPTIONS } from '../src/interface/pipes/validation-pipe.options';
 import { createSupabaseMock } from './helpers/supabase-mock.factory';
+import { configureApp } from '../src/bootstrap';
 
 const V1 = '/v1';
 
@@ -71,9 +69,11 @@ class PermissionsGuardStub implements CanActivate {
  * unexpected property is rejected outright rather than reaching a DB write.
  * That is a config flag, and a config flag is exactly the thing that gets
  * loosened during an unrelated debugging session with nothing to catch it.
- * This suite imports `VALIDATION_PIPE_OPTIONS` from the same module `main.ts`
- * uses, so loosening a flag there fails these tests rather than sailing past
- * a local copy of the config.
+ * This suite boots through `configureApp()` — the same function `main.ts`
+ * calls — so loosening a flag there fails these tests rather than sailing past
+ * a local copy of the config. It previously imported `VALIDATION_PIPE_OPTIONS`
+ * directly, which pinned the options but not the wiring: the pipe was
+ * constructed here, so the suite could not have noticed `main.ts` dropping it.
  *
  * Scope, stated plainly so nobody over-reads a green run: every assertion here
  * is about the pipe and the payload the controller hands the service. The
@@ -124,9 +124,7 @@ describe('Mass assignment — privileged fields never come from the client (e2e)
       .compile();
 
     app = moduleFixture.createNestApplication();
-    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-    // Production's own options object, not a copy of its values.
-    app.useGlobalPipes(new ValidationPipe(VALIDATION_PIPE_OPTIONS));
+    configureApp(app);
     await app.init();
   });
 

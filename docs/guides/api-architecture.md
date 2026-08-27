@@ -166,6 +166,11 @@ We use a global `AllExceptionsFilter` to normalize error responses:
 - Shape: `{ statusCode, error, message, requestId }` (`message` is a string, or a string array from the validation pipe)
 - All unhandled exceptions are logged with the request ID.
 - 5xx errors are reported to Sentry with full context.
+- **Those four keys are the whole body.** A structured `code` thrown alongside the message — as
+  `chapter.guard.ts` does for all eight of its `chapter.*` codes — is **not** serialised, so
+  `codeOf` from `@repo/api-sdk` returns `null` for every response the API currently emits. Do not
+  build client branching on it until **#1020** settles whether `code` joins the contract; branch on
+  `statusCode` plus `message`, or keep the decision server-side.
 
 Clients must not use `instanceof Error` to read this body. `openapi-fetch` throws the parsed JSON, which is a plain object, so `instanceof Error` always misses and the UI shows a generic fallback. Two helpers own that read:
 
