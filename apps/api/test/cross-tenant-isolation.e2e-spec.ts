@@ -23,14 +23,12 @@
 import {
   CanActivate,
   INestApplication,
-  ValidationPipe,
-  VersioningType,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PermissionsGuard } from '../src/interface/guards/permissions.guard';
-import { VALIDATION_PIPE_OPTIONS } from '../src/interface/pipes/validation-pipe.options';
+import { configureApp } from '../src/bootstrap';
 import {
   createTableAwareSupabaseMock,
   type SeededTables,
@@ -144,6 +142,40 @@ function seed(): SeededTables {
   };
 }
 
+/**
+ * Assert a denial against the response shape the API *actually ships*.
+ *
+ * These assertions used to read `res.body.message?.code ?? res.body.code` and
+ * passed in CI for months — but only because no e2e spec installed
+ * `AllExceptionsFilter`, so the suite ran under Nest's default filter, which
+ * serialises the thrown `{ code, message }` object verbatim. Against the filter
+ * `main.ts` actually installs, both branches are `undefined`: the body is four
+ * fixed keys and `code` is not one of them (#1020).
+ *
+ * `code` being absent is asserted rather than assumed, so if #1020 is resolved
+ * by exposing it, this fails and whoever makes that call updates it knowingly.
+ *
+ * The denial's *reason* is therefore pinned by its English message — which is
+ * exactly the brittle workaround #1020 exists to remove. Doing it here in the
+ * open is the point: it is what a real client is currently forced to do, and it
+ * keeps this suite able to tell one tenancy denial from another until the
+ * contract question is settled.
+ */
+function expectDeniedBody(body: Record<string, unknown>, reason: string): void {
+  expect(Object.keys(body).sort()).toEqual([
+    'error',
+    'message',
+    'requestId',
+    'statusCode',
+  ]);
+  expect(body.code).toBeUndefined();
+  expect(body.statusCode).toBe(403);
+  expect(body.message).toBe(reason);
+  // A real id, not the 'unknown' placeholder a missing requestIdMiddleware
+  // leaves behind on a guard denial — see request-id.middleware.ts.
+  expect(body.requestId).toMatch(/^req_/);
+}
+
 describe('Cross-tenant isolation (e2e)', () => {
   let app: INestApplication;
 
@@ -165,11 +197,7 @@ describe('Cross-tenant isolation (e2e)', () => {
       .compile();
 
     const instance = moduleFixture.createNestApplication();
-    instance.enableVersioning({
-      type: VersioningType.URI,
-      defaultVersion: '1',
-    });
-    instance.useGlobalPipes(new ValidationPipe(VALIDATION_PIPE_OPTIONS));
+    configureApp(instance);
     await instance.init();
     return instance;
   }
@@ -191,8 +219,9 @@ describe('Cross-tenant isolation (e2e)', () => {
       );
 
       expect(res.status).toBe(403);
-      expect(res.body.message?.code ?? res.body.code).toBe(
-        'chapter.context.invalid',
+      expectDeniedBody(
+        res.body,
+        'You are not a member of the requested chapter.',
       );
     });
 
@@ -207,8 +236,9 @@ describe('Cross-tenant isolation (e2e)', () => {
       );
 
       expect(res.status).toBe(403);
-      expect(res.body.message?.code ?? res.body.code).toBe(
-        'chapter.context.mismatch',
+      expectDeniedBody(
+        res.body,
+        'The x-chapter-id header disagrees with the active chapter in your token.',
       );
     });
 

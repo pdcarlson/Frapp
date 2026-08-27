@@ -40,6 +40,45 @@ import { toReportableError } from '../../infrastructure/observability/reportable
  *    PII scrubbing; the scope set here carries only pre-pseudonymized ids.
  *  - Everything else → response only, as before.
  */
+/**
+ * The message a client should see, preserving whatever Nest actually built.
+ *
+ * `HttpException.message` is a *string* by construction: `initMessage()` uses
+ * the response's `message` only when it is itself a string, and otherwise falls
+ * back to the humanized class name. `ValidationPipe` builds its response with
+ * `message` as an **array** of per-field failures, so every validation error
+ * reaching this filter used to be flattened to the literal string
+ * "Bad Request Exception" — the field detail was assembled, attached to the
+ * exception, and then dropped one line before serialisation.
+ *
+ * That is why `apps/web/lib/utils.ts`'s `getErrorMessage`, which reads
+ * `message`, can only ever show a user "Bad Request Exception" for a rejected
+ * form. Reading the response object first keeps the array intact.
+ *
+ * Structured throws are unaffected: `ForbiddenException({ code, message })`
+ * carries a string `message`, so it serialises exactly as before. Whether the
+ * sibling `code` key should also be exposed is a separate contract decision —
+ * see #1020 — and is deliberately not settled here.
+ */
+function extractMessage(exception: HttpException): string | string[] {
+  const response = exception.getResponse();
+
+  if (typeof response === 'string') return response;
+
+  if (response && typeof response === 'object' && 'message' in response) {
+    const { message } = response as { message?: unknown };
+    if (typeof message === 'string') return message;
+    if (
+      Array.isArray(message) &&
+      message.every((entry) => typeof entry === 'string')
+    ) {
+      return message;
+    }
+  }
+
+  return exception.message;
+}
+
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger('ExceptionFilter');
@@ -67,7 +106,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     const message =
       exception instanceof HttpException
-        ? exception.message
+        ? extractMessage(exception)
         : 'Internal server error';
 
     const requestId = request.requestId ?? 'unknown';

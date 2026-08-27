@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   HttpException,
   HttpStatus,
@@ -349,5 +350,64 @@ describe('AllExceptionsFilter', () => {
       statusCode: 500,
     });
     expect(String(logged.error)).toContain('boom');
+  });
+
+  describe('response body contract (#1020)', () => {
+    it('serialises exactly four keys, and `code` is not one of them', () => {
+      // The guard vocabulary in chapter.guard.ts throws `{ code, message }`.
+      // Only the message survives today. This pins that, so exposing `code`
+      // becomes a deliberate edit here rather than a silent contract change.
+      new AllExceptionsFilter().catch(
+        new ForbiddenException({
+          code: 'chapter.context.mismatch',
+          message: 'The x-chapter-id header disagrees with your token.',
+        }),
+        host(),
+      );
+
+      const body = captured.json as Record<string, unknown>;
+      expect(Object.keys(body).sort()).toEqual([
+        'error',
+        'message',
+        'requestId',
+        'statusCode',
+      ]);
+      expect(body.code).toBeUndefined();
+      expect(body.message).toBe(
+        'The x-chapter-id header disagrees with your token.',
+      );
+    });
+
+    it('preserves a ValidationPipe message array instead of flattening it', () => {
+      // ValidationPipe builds `message` as an array, which makes Nest's own
+      // `initMessage()` fall back to the humanized class name. Reading
+      // `exception.message` therefore turned every field error in the product
+      // into the literal string "Bad Request Exception".
+      new AllExceptionsFilter().catch(
+        new BadRequestException({
+          statusCode: 400,
+          message: ['chapter_id should not exist', 'points must be a number'],
+          error: 'Bad Request',
+        }),
+        host(),
+      );
+
+      const body = captured.json as Record<string, unknown>;
+      expect(body.message).toEqual([
+        'chapter_id should not exist',
+        'points must be a number',
+      ]);
+    });
+
+    it('passes a plain string message through unchanged', () => {
+      new AllExceptionsFilter().catch(
+        new NotFoundException('No such chapter'),
+        host(),
+      );
+
+      expect((captured.json as Record<string, unknown>).message).toBe(
+        'No such chapter',
+      );
+    });
   });
 });

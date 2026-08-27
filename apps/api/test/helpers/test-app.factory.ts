@@ -1,12 +1,8 @@
-import {
-  INestApplication,
-  ValidationPipe,
-  VersioningType,
-} from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AppModule } from '../../src/app.module';
 import { createSupabaseMock } from './supabase-mock.factory';
-import { VALIDATION_PIPE_OPTIONS } from '../../src/interface/pipes/validation-pipe.options';
+import { configureApp } from '../../src/bootstrap';
 
 export async function createTestApp(options?: {
   supabaseAuthUser?: { id: string; email?: string | null } | null;
@@ -24,8 +20,7 @@ export async function createTestApp(options?: {
     .compile();
 
   const app = moduleFixture.createNestApplication();
-  app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-  app.useGlobalPipes(new ValidationPipe(VALIDATION_PIPE_OPTIONS));
+  configureApp(app);
 
   options?.configureApp?.(app);
   await app.init();

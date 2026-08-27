@@ -1,12 +1,9 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe, VersioningType, Logger } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import * as Sentry from '@sentry/nestjs';
 import { AppModule } from './app.module';
-import { AllExceptionsFilter } from './interface/filters/all-exceptions.filter';
-import { requestIdMiddleware } from './interface/middleware/request-id.middleware';
-import { VALIDATION_PIPE_OPTIONS } from './interface/pipes/validation-pipe.options';
-import { LoggingInterceptor } from './interface/interceptors/logging.interceptor';
+import { configureApp } from './bootstrap';
 import { buildSentryOptions } from './infrastructure/observability/sentry-options';
 import { pseudonymsAvailable } from './infrastructure/observability/pseudonyms';
 
@@ -69,17 +66,9 @@ async function bootstrap() {
     ],
   });
 
-  app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-
-  app.useGlobalPipes(new ValidationPipe(VALIDATION_PIPE_OPTIONS));
-
-  // Before the Nest pipeline, so guard rejections carry a request id too — see
-  // the middleware's own note on why this cannot be an interceptor.
-  app.use(requestIdMiddleware);
-
-  app.useGlobalInterceptors(new LoggingInterceptor());
-
-  app.useGlobalFilters(new AllExceptionsFilter());
+  // Shared with the e2e harness so the suite tests the response shape that
+  // actually ships — see bootstrap.ts.
+  configureApp(app);
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Frapp API')
