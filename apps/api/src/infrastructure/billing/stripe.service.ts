@@ -11,6 +11,31 @@ import {
   type WebhookEvent,
 } from '../../domain/adapters/billing.interface';
 
+/**
+ * The trial the public site sells (#913). `apps/landing/app/page.tsx` labels the
+ * CTA "Start free trial" (`:440`), promises "every new chapter starts with a
+ * 14-day trial" (`:99`), and repeats it in the hero trust line (`:211`) — so a
+ * checkout session that charges on day zero breaks a commercial promise, not
+ * just a spec.
+ *
+ * It has to live here rather than on the Price: Stripe's Price object has no
+ * writable trial field, so `subscription_data.trial_period_days` on the
+ * Checkout Session is the only place a trial can be set. Swapping in a
+ * different Price ID cannot change it.
+ *
+ * No database change rides along. Stripe reports a trialing subscription as
+ * `trialing`, which `BillingService.mapStripeStatus` already folds into
+ * `active` (`billing.service.ts:596`), and `active` is already one of the four
+ * values the `subscription_status` CHECK allows. A trialing chapter is
+ * therefore a fully active chapter to every permission gate — which is the
+ * intent: the trial is a free window, not a degraded tier.
+ *
+ * Whether a given checkout may open one is `params.grantTrial`, decided by the
+ * caller: this layer cannot see billing history, and the trial is once per
+ * chapter rather than once per checkout session.
+ */
+const TRIAL_PERIOD_DAYS = 14;
+
 @Injectable()
 export class StripeBillingService implements IBillingProvider {
   private readonly logger = new Logger(StripeBillingService.name);
@@ -35,6 +60,9 @@ export class StripeBillingService implements IBillingProvider {
       mode: 'subscription',
       customer_email: params.customerEmail,
       line_items: [{ price: this.priceId, quantity: 1 }],
+      ...(params.grantTrial
+        ? { subscription_data: { trial_period_days: TRIAL_PERIOD_DAYS } }
+        : {}),
       success_url: params.successUrl,
       cancel_url: params.cancelUrl,
       metadata: { chapter_id: params.chapterId },

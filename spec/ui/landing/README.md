@@ -51,7 +51,11 @@ The only two `next/image` calls are the below-fold showcase mockups in [`apps/la
 
 What ships: a **single** pricing card at **$149 per chapter / month** with a "Start free trial" CTA, backed by FAQ copy stating one flat monthly chapter plan, no per-seat pricing, no feature gating, and a 14-day trial for every new chapter. The same $149 is duplicated in the page's JSON-LD offer.
 
-[`spec/product/positioning.md`](../../product/positioning.md) is canonical for pricing and describes a different model — a real free tier (unlimited chat, members, chapters) plus a paid Chapter Pro that gates ops and AI modules, with the trial starting on first paid-module activation. **The shipped page renders neither a free tier nor two tiers, and its "no feature gating" claim contradicts the gating model.** This page does not own pricing truth; the divergence is a product question for the surface owner, not something to reconcile by editing this table.
+[`spec/product/positioning.md`](../../product/positioning.md) is canonical for pricing. **Two of the three divergences it used to carry are now closed, and one is not.**
+
+Closed: **$149/chapter/month** is now stated in `positioning.md` as the committed amount, so the card and the spec agree rather than the card being an unbacked number. And the **14-day trial is implemented** (#913) — `subscription_data.trial_period_days` on the Checkout Session — so the "Start free trial" CTA no longer charges on day zero.
+
+Still open: **the page renders no free tier, and its "no feature gating" claim contradicts the gating model.** `positioning.md` makes the free tier the wedge (unlimited chat, members, chapters) with ops and AI modules gated behind Chapter Pro; the page shows a single paid card. That also makes "every new chapter starts with a 14-day trial" (`:99`) imprecise under the canonical model — a new chapter starts on the **free tier**, and the trial opens when it subscribes. This page does not own pricing truth; that remainder is a product/copy question for the surface owner, and the page is [visual-change frozen](#future-reskin) until its Signet reskin, so it is not something to reconcile by editing this table.
 
 ## Future reskin
 

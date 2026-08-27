@@ -268,11 +268,38 @@ describe('BillingService', () => {
         customerEmail: 'admin@example.com',
         successUrl: 'http://localhost:3000/success',
         cancelUrl: 'http://localhost:3000/cancel',
+        grantTrial: true,
       });
       // Activation funnel step 6 (#267).
       expect(mockActivation.record).toHaveBeenCalledWith(
         'ch-1',
         'activation-checkout-started',
+      );
+    });
+
+    it('withholds the trial from a chapter that has already held a subscription (#913)', async () => {
+      // A canceled chapter still reaches checkout — the guard rejects only
+      // `active` — and StripeService passes `customer_email`, so Stripe mints a
+      // fresh Customer with no trial history. Without this, every such call
+      // would hand out another 14 free days, indefinitely.
+      mockChapterRepo.findById.mockResolvedValue({
+        ...baseChapter,
+        subscription_status: 'canceled',
+        subscription_id: 'sub_previous',
+      });
+      mockBillingProvider.createCheckoutSession.mockResolvedValue(
+        'https://checkout.stripe.com/session456',
+      );
+
+      await service.createCheckoutSession({
+        chapterId: 'ch-1',
+        customerEmail: 'admin@example.com',
+        successUrl: 'http://localhost:3000/success',
+        cancelUrl: 'http://localhost:3000/cancel',
+      });
+
+      expect(mockBillingProvider.createCheckoutSession).toHaveBeenCalledWith(
+        expect.objectContaining({ grantTrial: false }),
       );
     });
 
