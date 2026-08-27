@@ -1,10 +1,19 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Loader2, Save } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  Loader2,
+  Plus,
+  Save,
+  Trash2,
+} from "lucide-react";
 import {
   EventsGlyph,
   RolesGlyph,
+  StudyZonesGlyph,
 } from "@/components/events/chapter-ops-glyphs";
 import { useCreateEvent, useRoles, useUpdateEvent } from "@repo/hooks";
 import { useToast } from "@/hooks/use-toast";
@@ -45,6 +54,95 @@ function localInputToIso(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   return date.toISOString();
+}
+
+/**
+ * One editable polygon corner.
+ *
+ * `lat`/`lng` stay strings so a half-typed value ("-", "42.") survives a
+ * controlled re-render instead of being coerced to NaN on every keystroke; they
+ * are parsed once, in `parseZoneDrafts`, on submit. `id` is a stable React key
+ * so reordering rows moves the values rather than the focus.
+ */
+type ZoneVertexDraft = { id: string; lat: string; lng: string };
+
+let vertexKeySequence = 0;
+function nextVertexKey(): string {
+  vertexKeySequence += 1;
+  return `zone-vertex-${vertexKeySequence}`;
+}
+
+/**
+ * Hydrate a stored polygon into editable rows.
+ *
+ * `check_in_zone` is `jsonb`, so a malformed row is possible in principle. Drop
+ * anything that is not a finite `{lat,lng}` pair rather than rendering it as an
+ * uneditable blank — the same fail-closed stance `isValidZone` takes on the
+ * server (`apps/api/src/domain/utils/geofence.ts`).
+ */
+function zoneToDrafts(value: unknown): ZoneVertexDraft[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((point) => {
+    if (!point || typeof point !== "object") return [];
+    const { lat, lng } = point as { lat?: unknown; lng?: unknown };
+    if (typeof lat !== "number" || !Number.isFinite(lat)) return [];
+    if (typeof lng !== "number" || !Number.isFinite(lng)) return [];
+    return [{ id: nextVertexKey(), lat: String(lat), lng: String(lng) }];
+  });
+}
+
+type ZoneParseResult =
+  | { ok: true; zone: { lat: number; lng: number }[] }
+  | { ok: false; message: string };
+
+/**
+ * Turn the draft rows into the wire polygon, or explain why they are not one.
+ *
+ * Wholly blank rows are ignored, so an accidental empty row does not become a
+ * validation error. The under-3 message deliberately echoes the server's own
+ * wording in `normalizeCheckInZone` (`event.service.ts`) so the client message
+ * and the API 400 cannot drift apart.
+ */
+function parseZoneDrafts(drafts: ZoneVertexDraft[]): ZoneParseResult {
+  const rows = drafts.filter(
+    (row) => row.lat.trim().length > 0 || row.lng.trim().length > 0,
+  );
+  if (rows.length === 0) return { ok: true, zone: [] };
+
+  const zone: { lat: number; lng: number }[] = [];
+  for (const [index, row] of rows.entries()) {
+    const label = `Point ${index + 1}`;
+    const lat = Number(row.lat.trim());
+    const lng = Number(row.lng.trim());
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return {
+        ok: false,
+        message: `${label} needs a numeric latitude and longitude.`,
+      };
+    }
+    if (lat < -90 || lat > 90) {
+      return {
+        ok: false,
+        message: `${label}: latitude must be between -90 and 90.`,
+      };
+    }
+    if (lng < -180 || lng > 180) {
+      return {
+        ok: false,
+        message: `${label}: longitude must be between -180 and 180.`,
+      };
+    }
+    zone.push({ lat, lng });
+  }
+
+  if (zone.length < 3) {
+    return {
+      ok: false,
+      message:
+        "A check-in zone must have at least 3 points, or be empty to clear it.",
+    };
+  }
+  return { ok: true, zone };
 }
 
 type EventEditorDialogProps = {
@@ -89,6 +187,8 @@ export function EventEditorDialog({
   const [recurrenceRule, setRecurrenceRule] = useState("NONE");
   const [notes, setNotes] = useState("");
   const [requiredRoleIds, setRequiredRoleIds] = useState<string[]>([]);
+  const [checkInZone, setCheckInZone] = useState<ZoneVertexDraft[]>([]);
+  const [checkInZoneName, setCheckInZoneName] = useState("");
   const rolesQuery = useRoles();
 
   const eventId = typeof event?.id === "string" ? event.id : "";
@@ -146,6 +246,12 @@ export function EventEditorDialog({
             )
           : [],
       );
+      setCheckInZone(zoneToDrafts(event.check_in_zone));
+      setCheckInZoneName(
+        typeof event.check_in_zone_name === "string"
+          ? event.check_in_zone_name
+          : "",
+      );
       return;
     }
 
@@ -159,6 +265,8 @@ export function EventEditorDialog({
     setRecurrenceRule("NONE");
     setNotes("");
     setRequiredRoleIds([]);
+    setCheckInZone([]);
+    setCheckInZoneName("");
   }, [event, mode, open]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -183,6 +291,43 @@ export function EventEditorDialog({
       return;
     }
     setRequiredRoleIds((previous) => previous.filter((id) => id !== roleId));
+  }
+
+  function handleAddVertex() {
+    setCheckInZone((previous) => [
+      ...previous,
+      { id: nextVertexKey(), lat: "", lng: "" },
+    ]);
+  }
+
+  function handleRemoveVertex(id: string) {
+    setCheckInZone((previous) => previous.filter((row) => row.id !== id));
+  }
+
+  function handleVertexChange(
+    id: string,
+    axis: "lat" | "lng",
+    value: string,
+  ) {
+    setCheckInZone((previous) =>
+      previous.map((row) => (row.id === id ? { ...row, [axis]: value } : row)),
+    );
+  }
+
+  // Vertex order defines the polygon's edges, so reordering is a real edit, not
+  // a display preference: swapping two corners of a quadrilateral turns it into
+  // a bow-tie covering different ground.
+  function handleMoveVertex(index: number, direction: -1 | 1) {
+    setCheckInZone((previous) => {
+      const target = index + direction;
+      const moved = previous[index];
+      const displaced = previous[target];
+      if (!moved || !displaced) return previous;
+      const next = [...previous];
+      next[index] = displaced;
+      next[target] = moved;
+      return next;
+    });
   }
 
   async function handleSubmit() {
@@ -213,6 +358,18 @@ export function EventEditorDialog({
       return;
     }
 
+    const parsedZone = parseZoneDrafts(checkInZone);
+    if (!parsedZone.ok) {
+      toast({
+        title: "Check-in zone is incomplete",
+        description: parsedZone.message,
+        variant: "destructive",
+      });
+      return;
+    }
+    const zone = parsedZone.zone;
+    const zoneName = checkInZoneName.trim();
+
     const payload = {
       name: name.trim(),
       description: description.trim() || undefined,
@@ -230,11 +387,23 @@ export function EventEditorDialog({
         // Omit required_role_ids when empty so a new event defaults to all
         // members; on update (below) we always send it, so an empty array
         // clears targeting. See spec/behavior/events.md.
-        await createEventMutation.mutateAsync(
-          requiredRoleIds.length > 0
-            ? { ...payload, required_role_ids: requiredRoleIds }
-            : payload,
-        );
+        //
+        // check_in_zone follows the same omit-on-create rule, but for a harder
+        // reason: CreateEventDto carries @ArrayMinSize(3), so sending [] here is
+        // a 400 rather than "no zone". Update deliberately omits that decorator
+        // so [] can clear — see the update branch below.
+        await createEventMutation.mutateAsync({
+          ...payload,
+          ...(requiredRoleIds.length > 0
+            ? { required_role_ids: requiredRoleIds }
+            : {}),
+          ...(zone.length > 0
+            ? {
+                check_in_zone: zone,
+                ...(zoneName ? { check_in_zone_name: zoneName } : {}),
+              }
+            : {}),
+        });
         toast({
           title: "Event created",
           description: `${payload.name} was added to the chapter calendar.`,
@@ -243,7 +412,16 @@ export function EventEditorDialog({
         if (!eventId) return;
         await updateEventMutation.mutateAsync({
           id: eventId,
-          body: { ...payload, required_role_ids: requiredRoleIds },
+          body: {
+            ...payload,
+            required_role_ids: requiredRoleIds,
+            // Always sent, so emptying the editor clears the stored zone:
+            // UpdateEventDto omits @ArrayMinSize and normalizeCheckInZone maps
+            // [] to null. The name is cleared alongside it — a leftover name on
+            // a zone-less event is inert but misleading in the editor.
+            check_in_zone: zone,
+            check_in_zone_name: zone.length > 0 ? zoneName : "",
+          },
         });
         toast({
           title: "Event updated",
@@ -448,6 +626,128 @@ export function EventEditorDialog({
                 ))}
               </div>
             )}
+          </div>
+
+          <div className="space-y-2 text-sm">
+            <div className="flex items-center gap-2">
+              <StudyZonesGlyph className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">Check-in zone</span>
+            </div>
+            <p className="text-[12.5px] text-muted-foreground">
+              Optional. When set, members must be inside this area to check in.
+              Enter at least 3 corner points; the shape closes itself, so
+              don&apos;t repeat the first point. Remove every point to clear the
+              zone.
+            </p>
+
+            <div className="grid gap-1">
+              <Label htmlFor="event-zone-name">Zone name</Label>
+              <Input
+                id="event-zone-name"
+                value={checkInZoneName}
+                maxLength={120}
+                disabled={usingPreviewData}
+                onChange={(eventValue) =>
+                  setCheckInZoneName(eventValue.target.value)
+                }
+                placeholder="Great Hall"
+              />
+            </div>
+
+            {checkInZone.length === 0 ? (
+              <div className="rounded-md border border-dashed border-border p-3 text-[12.5px] text-muted-foreground">
+                No check-in zone. Members can check in from anywhere.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {checkInZone.map((vertex, index) => (
+                  <div
+                    key={vertex.id}
+                    className="flex flex-wrap items-end gap-2 rounded-md border border-border p-3"
+                  >
+                    <div className="grid gap-1">
+                      <Label htmlFor={`${vertex.id}-lat`}>
+                        Point {index + 1} latitude
+                      </Label>
+                      <Input
+                        id={`${vertex.id}-lat`}
+                        value={vertex.lat}
+                        inputMode="decimal"
+                        disabled={usingPreviewData}
+                        onChange={(eventValue) =>
+                          handleVertexChange(
+                            vertex.id,
+                            "lat",
+                            eventValue.target.value,
+                          )
+                        }
+                        placeholder="42.7298"
+                      />
+                    </div>
+                    <div className="grid gap-1">
+                      <Label htmlFor={`${vertex.id}-lng`}>
+                        Point {index + 1} longitude
+                      </Label>
+                      <Input
+                        id={`${vertex.id}-lng`}
+                        value={vertex.lng}
+                        inputMode="decimal"
+                        disabled={usingPreviewData}
+                        onChange={(eventValue) =>
+                          handleVertexChange(
+                            vertex.id,
+                            "lng",
+                            eventValue.target.value,
+                          )
+                        }
+                        placeholder="-73.6789"
+                      />
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        aria-label={`Move point ${index + 1} up`}
+                        disabled={usingPreviewData || index === 0}
+                        onClick={() => handleMoveVertex(index, -1)}
+                      >
+                        <ArrowUp className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        aria-label={`Move point ${index + 1} down`}
+                        disabled={
+                          usingPreviewData || index === checkInZone.length - 1
+                        }
+                        onClick={() => handleMoveVertex(index, 1)}
+                      >
+                        <ArrowDown className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        aria-label={`Remove point ${index + 1}`}
+                        disabled={usingPreviewData}
+                        onClick={() => handleRemoveVertex(vertex.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={usingPreviewData}
+              onClick={handleAddVertex}
+            >
+              <Plus className="h-4 w-4" />
+              Add point
+            </Button>
           </div>
 
           <div className="grid gap-1">

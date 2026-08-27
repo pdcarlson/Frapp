@@ -89,6 +89,33 @@ export function EventDetailSheet({
       : "";
   const notes =
     typeof resolvedEvent?.notes === "string" ? resolvedEvent.notes : "";
+  // Three distinct states, not two. A non-empty polygon with fewer than 3 valid
+  // points is not "no zone": `isValidZone` fails closed on the server, so
+  // check-in is rejected outright. Rendering that as "check in from anywhere"
+  // would tell an officer the opposite of what members experience.
+  const rawCheckInZone = resolvedEvent?.check_in_zone;
+  const checkInZonePoints = Array.isArray(rawCheckInZone)
+    ? rawCheckInZone.filter((point) => {
+        if (!point || typeof point !== "object") return false;
+        const { lat, lng } = point as { lat?: unknown; lng?: unknown };
+        return (
+          typeof lat === "number" &&
+          Number.isFinite(lat) &&
+          typeof lng === "number" &&
+          Number.isFinite(lng)
+        );
+      }).length
+    : 0;
+  const hasCheckInZone = checkInZonePoints >= 3;
+  const checkInZoneIsMalformed =
+    Array.isArray(rawCheckInZone) &&
+    rawCheckInZone.length > 0 &&
+    !hasCheckInZone;
+  const checkInZoneName =
+    typeof resolvedEvent?.check_in_zone_name === "string"
+      ? resolvedEvent.check_in_zone_name.trim()
+      : "";
+
   const rawRequiredRoleIds = resolvedEvent?.required_role_ids;
   const requiredRoleIds = Array.isArray(rawRequiredRoleIds)
     ? rawRequiredRoleIds.filter((id): id is string => typeof id === "string")
@@ -227,6 +254,35 @@ export function EventDetailSheet({
                     </Badge>
                   ))}
                 </div>
+              )}
+            </div>
+            <div className="mt-3">
+              <p className="mb-1 flex items-center gap-1 text-[12.5px] text-muted-foreground">
+                <StudyZonesGlyph className="h-3.5 w-3.5" />
+                Check-in zone
+              </p>
+              {hasCheckInZone ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="default">
+                    {checkInZoneName ? checkInZoneName : "Zone set"}
+                  </Badge>
+                  <span className="text-sm text-muted-foreground">
+                    {checkInZonePoints} points — members must be inside to check
+                    in
+                  </span>
+                </div>
+              ) : checkInZoneIsMalformed ? (
+                <div className="flex items-start gap-2 rounded-md border border-warning/45 bg-warning/[.13] p-3 text-[12.5px] text-warning">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <div>
+                    This event&apos;s zone is incomplete, so every check-in is
+                    rejected. Edit the event to finish or clear it.
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No zone — members can check in from anywhere
+                </p>
               )}
             </div>
           </div>
