@@ -143,6 +143,65 @@ describe('NotificationService', () => {
       expect(mockPushProvider.sendToUser).not.toHaveBeenCalled();
     });
 
+    // #1041: the category gate used to run *before* the priority check, so
+    // switching a category off also muted URGENT traffic in it — chapter
+    // emergency announcements and the president's subscription-status alert
+    // among them. A member must not be able to mute an emergency from a
+    // settings screen.
+    it('should deliver URGENT even when the category preference is disabled', async () => {
+      mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue({
+        ...basePreference,
+        category: 'announcements',
+        is_enabled: false,
+      });
+      mockSettingsRepo.findByUser.mockResolvedValue(null);
+      mockNotificationRepo.create.mockResolvedValue(baseNotification);
+      mockPushTokenRepo.findByUser.mockResolvedValue([basePushToken]);
+
+      await service.notifyUser('u-1', 'ch-1', {
+        title: 'New Announcement',
+        body: 'Chapter meeting moved to 6pm',
+        priority: 'URGENT',
+        category: 'announcements',
+      });
+
+      // The in-app row as well as the push: suppressing the row would leave a
+      // member who muted the category with no trace of the broadcast anywhere.
+      expect(mockNotificationRepo.create).toHaveBeenCalledWith({
+        chapter_id: 'ch-1',
+        user_id: 'u-1',
+        title: 'New Announcement',
+        body: 'Chapter meeting moved to 6pm',
+        data: {},
+      });
+      expect(mockPushProvider.sendToUser).toHaveBeenCalledWith(
+        [basePushToken.token],
+        expect.objectContaining({ priority: 'URGENT' }),
+      );
+    });
+
+    // The exemption is implemented by gating the lookup rather than reordering
+    // it, so an URGENT payload never reads the preference at all. Pinned
+    // because a later refactor back to "read, then check priority" would be
+    // behaviourally identical but cost every emergency broadcast one query per
+    // recipient — `notifyChapter` fans this out across the whole chapter.
+    it('should not read the category preference at all for URGENT', async () => {
+      mockSettingsRepo.findByUser.mockResolvedValue(null);
+      mockNotificationRepo.create.mockResolvedValue(baseNotification);
+      mockPushTokenRepo.findByUser.mockResolvedValue([basePushToken]);
+
+      await service.notifyUser('u-1', 'ch-1', {
+        title: 'New Announcement',
+        body: 'Body',
+        priority: 'URGENT',
+        category: 'announcements',
+      });
+
+      expect(
+        mockPreferenceRepo.findByUserChapterCategory,
+      ).not.toHaveBeenCalled();
+    });
+
     it('should deliver when preference is enabled', async () => {
       mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue(
         basePreference,
