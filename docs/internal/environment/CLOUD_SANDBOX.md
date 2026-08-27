@@ -45,14 +45,19 @@ staging.frapp.live
 *.staging.frapp.live
 api-staging.frapp.live
 hnoyzpidbmizhbqaiity.supabase.co
+app.infisical.com
 ```
 
-The first two are what makes `supabase start` work. The last four are the **live staging
+The first two are what makes `supabase start` work. The middle four are the **live staging
 egress** described in [Live staging egress](#live-staging-egress) below; omit them and the
 sandbox is still fully functional for local-stack work, it just cannot reach the deployed
-environment.
+environment. The last is the **Infisical API**
+([#1279](https://github.com/pdcarlson/Frapp/issues/1279)): secrets access for agents, bounded
+by the service token — scoped `dev` + `staging` **read-only**, never `prod` — not by the
+network. Omit it and secrets stay unreadable from the sandbox
+(credential details: [`AGENT_CREDENTIALS.md`](./AGENT_CREDENTIALS.md)).
 
-**Three of those four are literal hosts on purpose.** Both wildcards a reader reaches for —
+**Three of the staging four are literal hosts on purpose.** Both wildcards a reader reaches for —
 `*.frapp.live` and `*.supabase.co` — silently include **production**, because prod and
 staging share an apex on both. The fourth line, `*.staging.frapp.live`, is a wildcard only
 because its parent is staging-only; it is kept on sufferance rather than as a pattern to
@@ -428,11 +433,21 @@ configuration change apart. Staging is the blast radius we accept. **Enumerate.*
   a staging user; `scripts/ci/staging-conformance.mjs` already defines the convention
   (`STAGING_SMOKE_USER_EMAIL` / `STAGING_SMOKE_USER_PASSWORD`). Use a dedicated smoke
   account, never a real member's.
-- **Provider APIs.** Render, Vercel, Infisical, Sentry, and PostHog stay blocked to direct
-  `fetch`. Agents reach them through **MCP**, which does not go through this allowlist at
-  all — so the MCP-based [`infrastructure-research`](../../../.claude/skills/infrastructure-research/SKILL.md)
-  workflow is unaffected either way. Only raw-`fetch` scripts like `staging-conformance.mjs`
-  notice the difference, and those run in CI, where the allowlist does not apply.
+- **Provider APIs.** Render, Vercel, Sentry, and PostHog stay blocked to direct `fetch`;
+  agents fall back to **MCP connectors**, which do not go through this allowlist at all —
+  those parts of the MCP-based
+  [`infrastructure-research`](../../../.claude/skills/infrastructure-research/SKILL.md)
+  workflow are unaffected either way. **Infisical is the exception: it has no MCP connector
+  that can read secrets** — its only hosted MCP is a docs assistant, and the official secrets
+  server `@infisical/mcp` is stdio-only, so it would run *inside* the sandbox under this same
+  allowlist. The sanctioned path is therefore direct `fetch`, with `app.infisical.com` on the
+  Allowed domains ([#1279](https://github.com/pdcarlson/Frapp/issues/1279)'s decision — the
+  line is part of the standard configuration above); in an environment not yet carrying it,
+  the host is blocked and Infisical is unverifiable from that sandbox. The network is
+  not the secrecy boundary there — the service token is, scoped `dev` + `staging`
+  read-only, never `prod`. Only raw-`fetch` scripts
+  like `staging-conformance.mjs` notice the difference for the other four, and those run in
+  CI, where the allowlist does not apply.
 - **Per-deployment Vercel URLs.** Only the aliased staging hostnames are allowlisted, not
   the unique `*.vercel.app` URL each deployment also gets. When the alias lags behind the
   latest `main` build — the known Vercel behaviour described in
