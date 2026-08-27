@@ -49,6 +49,12 @@ node scripts/demo/capture-screenshots.mjs   # web dashboard  -> screenshots/web/
 node scripts/demo/capture-mobile.mjs        # mobile         -> screenshots/mobile-*/
 ```
 
+`capture-mobile.mjs` drives the running Expo web build, so start it first
+(`npx expo start --web --port 3002` from `apps/mobile`) with the environment in
+[Mobile setup](#mobile-setup). It signs in as the demo president and shoots the
+signed-in screens at 3x into `screenshots/mobile-app/`; `SKIP_REFERENCE=1` skips
+the design-board pass into `screenshots/mobile-reference/`.
+
 Output lands in `screenshots/`, which is **gitignored**. There is no sanctioned
 home for generated marketing binaries
 ([`DOCUMENTATION_CONVENTIONS.md`](../internal/DOCUMENTATION_CONVENTIONS.md) hard
@@ -58,7 +64,7 @@ committing them.
 Prefer a production build (`npm run build -w apps/web && npm run start -w apps/web`)
 over `next dev` — the dev overlay badge otherwise sits in the corner of every shot.
 
-### Four things that will waste your afternoon
+### Seven things that will waste your afternoon
 
 **Browse `localhost`, never `127.0.0.1`.** The API's CORS allowlist
 (`apps/api/src/main.ts`) names `http://localhost:3000` and `http://localhost:3002`.
@@ -72,13 +78,24 @@ leaves it `null` and every chapter-scoped query stays `enabled: false`. The API
 auto-resolves single-chapter users from the JWT claim, so the _server_ is fine and
 the _screen_ is empty. `capture-screenshots.mjs` seeds the store key directly.
 
-**Mobile web cannot sign in.** `apps/mobile` stores both the Supabase session and
-the API token exclusively in `expo-secure-store`, whose web build is literally
-`export default {}` (`node_modules/expo-secure-store/build/ExpoSecureStore.web.js`).
-On web the token never persists and every authenticated call 401s. So
-`capture-mobile.mjs` takes the signed-in screens from the committed design
-reference board instead, in a separate folder because it is not the same kind of
-evidence. Real signed-in mobile screenshots need a simulator or device.
+**Mobile web needs one flag before it can sign in.** `apps/mobile` stores both
+the Supabase session and the API token exclusively in `expo-secure-store`, whose
+web build is literally `export default {}`
+(`node_modules/expo-secure-store/build/ExpoSecureStore.web.js`). Left alone the
+token never persists on web and every authenticated call 401s, which is why
+these screens used to come from the design board instead of the app.
+[`apps/mobile/lib/secure-store.web.ts`](../../apps/mobile/lib/secure-store.web.ts)
+swaps in a `localStorage` adapter, but only when
+`EXPO_PUBLIC_WEB_SECURE_STORE=1` — see [Mobile setup](#mobile-setup) below.
+Without it every route redirects to `/sign-in`, and the capture script's
+landed-route assertion fails the screen rather than saving a mislabelled image.
+
+That flag must never be set for a hosted build: `localStorage` is readable by
+any script on the origin, so it is a demo-stack affordance and not a web
+credential store. Nothing ships mobile-web today — [`apps/mobile/eas.json`](../../apps/mobile/eas.json)
+builds native only, [`render.yaml`](../../render.yaml) serves just the API, and
+`apps/mobile` has no Vercel project — so it has no deployed surface to be
+switched on for.
 
 **And signed out, only `/sign-in` renders.** `(auth)/_layout.tsx` routes
 `/welcome`, `/join`, `/chapter-picker` and `/create-chapter` by _gate
@@ -91,6 +108,58 @@ mislabelled image; keep that assertion if you add a route back.
 
 **Run Expo web on port 3002.** It is the port already in the API's CORS allowlist:
 `npx expo start --web --port 3002` from `apps/mobile`.
+
+**Running Expo web breaks `check-types` afterwards, but only locally.** Starting
+the web build generates an `expo-env.d.ts` and a `.expo/types/` directory in the
+app root. Both are gitignored, so CI never has them — but
+[`apps/mobile/tsconfig.json`](../../apps/mobile/tsconfig.json) `include`s both,
+and the generated `expo-env.d.ts` is a `/// <reference types="expo/types" />`
+that pulls the web type surface in, where `cursor` is a plain CSS `string`
+rather than React Native's `CursorValue`. From then on `npm run check-types -w apps/mobile`
+reports overload errors on `<View>`s whose style array carries a `typeRole()`
+spread (`components/tasks/new-task-sheet.tsx` is the one that trips first), and
+`npm ci` does not clear them because the files are not dependencies. Delete the
+two generated paths and the errors go with them. They are an artifact of the
+capture, not a defect — do not "fix" the flagged component.
+
+**Capture from a freshly seeded chapter.** Opening a channel marks it read, and
+`ChannelRow` drops both the unread badge and the elevated card treatment for a
+read row — so a second capture run photographs a chat home whose `#general` has
+gone flat and empty. `capture-mobile.mjs` shoots s04 before it opens the thread,
+which keeps a single run self-consistent; across runs, re-run `setup-demo.sh`
+first.
+
+<a id="mobile-setup"></a>
+
+### Mobile setup
+
+`scripts/cloud-sandbox-up.sh` writes `apps/api/.env.local` and
+`apps/web/.env.local` but not `apps/mobile/.env.local`. Write that one by hand
+(it is gitignored), taking the anon key from `apps/api/.env.local`:
+
+```bash
+EXPO_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
+EXPO_PUBLIC_SUPABASE_ANON_KEY=<SUPABASE_ANON_KEY from apps/api/.env.local>
+EXPO_PUBLIC_API_URL=http://localhost:3001
+EXPO_PUBLIC_ASK_ENABLED=1
+EXPO_PUBLIC_WEB_SECURE_STORE=1
+```
+
+`EXPO_PUBLIC_ASK_ENABLED` turns on Ask (s17). Its answers come from the
+synthetic keyword table in `lib/ask/corpus.ts`, not from a model or the API —
+the screen is real, the answers are demo copy. `lib/ask/flag.ts` explains why
+that is acceptable behind a flag no shipped build sets.
+
+Two API-side values matter for the check-in screens:
+
+- `EVENT_CHECK_IN_TOKEN_SECRET` in `apps/api/.env.local`. Unset, the mint route
+  503s and s22 renders "Code unavailable" instead of a QR. Any non-empty string
+  works locally.
+- The demo seed marks exactly one event (`Chapter Meeting`) with a
+  `check_in_zone`, which is what makes the scanner's geofence line render. The
+  other events deliberately have none, so both branches of
+  [`apps/mobile/app/(tabs)/check-in.tsx`](<../../apps/mobile/app/(tabs)/check-in.tsx>)
+  stay reachable.
 
 ### Sandbox Chromium
 
