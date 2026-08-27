@@ -410,6 +410,49 @@ were checked that way, against `report.service.ts`:
 The last one is why the fixture seeds 123 members. At the 3 members it originally had, the chunking
 test passed under that mutation — it asserted a real property against data too small to exhibit it.
 
+## 6b. Workers driven by a Realtime subscription (#987)
+
+A worker whose only production entry point is a Supabase `postgres_changes` callback has a span no
+ordinary unit test reaches: `onApplicationBootstrap` → the registered handler → `payload.new`.
+Calling the handler method directly with a hand-built row tests the logic and skips the wiring.
+
+That gap is not theoretical. The chat push worker's realtime carrier contained no tables on either
+project until #974 repaired it, so the path went undelivered for its entire life with every test
+green; and before #937 C1, `hasMention` was always false because the worker read a column that did
+not exist, again with every test green.
+
+**Test through the subscription, not around it, and stay in the unit tier.** The integration tier
+(§6a) is deliberately not run by CI, so a recipient-filter proof placed there defends nothing while
+reading in the tracker as though it does. The pattern
+(`apps/api/src/modules/chat-push-worker/chat-push-worker.realtime.spec.ts`):
+
+- Provide a Supabase stand-in whose `channel().on()` **captures** the callback the worker registers,
+  asserting the event and table it registered for. Emit every case through that captured callback.
+- If the worker registers no matching listener, the emit helper throws — so a broken subscription
+  fails every case rather than silently passing them all.
+- The handler `void`s its promise, so drain the microtask queue
+  (`await new Promise((r) => setImmediate(r))`) before asserting.
+- **Pin the row shape to the canonical entity**, e.g.
+  `Pick<ChatMessage, 'id' | 'channel_id' | 'mentions' | …>`. A `RealtimePostgresInsertPayload<Row>`
+  type parameter is erased at runtime — Postgres sends whatever it sends — so a renamed column
+  otherwise goes silent in production while `tsc` stays quiet. `Pick` turns that into a
+  `check-types` failure, and CI does run `check-types`.
+
+Teeth, verified against `apps/api/src/modules/chat-push-worker/chat-push-worker.service.ts` the same
+way §6a's table was:
+
+| Mutation | Tests that fail |
+| --- | --- |
+| Skip `filterCanReadChannel` (push to every chapter member) | 5 |
+| Stop excluding `row.sender_id` from candidates | 2 |
+| `row.mentions ?? []` → `row.mentions as string[]` | 1 |
+| Fail **open** when the permission lookup throws | 1 |
+| Mention no longer overrides the level in `decidePush` | 1 |
+| Subscribe to the wrong table | 12 (all) |
+
+The last row is what proves the payload path is load-bearing rather than decorative: a spec that
+called the handler method directly would still pass with the subscription broken.
+
 ## 7. Coverage expectations
 
 For the API we aim for:
