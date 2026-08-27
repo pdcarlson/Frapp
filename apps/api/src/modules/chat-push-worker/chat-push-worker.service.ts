@@ -426,25 +426,41 @@ export class ChatPushWorkerService
         },
       };
     }
-    const title = this.titleFor(channel.name, row.kind);
-    const priority =
-      channel.name === 'announcements' || row.kind === 'announcement'
-        ? ('URGENT' as const)
-        : ('NORMAL' as const);
+    const isAnnouncement = this.isAnnouncementPush(channel.name, row.kind);
     return {
-      title,
+      title: this.titleFor(channel.name, row.kind),
       body: preview,
-      category: row.kind === 'announcement' ? 'announcements' : 'chat',
-      priority,
+      category: isAnnouncement ? 'announcements' : 'chat',
+      priority: isAnnouncement ? ('URGENT' as const) : ('NORMAL' as const),
       data: { target: { screen: 'chat', channelId: channel.id } },
     };
   }
 
+  /**
+   * Whether this push is an announcement, for the title, the priority *and*
+   * the category alike.
+   *
+   * One predicate because the three used to be written out separately and the
+   * category disagreed with the other two: it keyed on `kind` alone, while the
+   * title and priority also treated any channel *named* `announcements` as one.
+   * So an ordinary message there was titled "New Announcement" and sent URGENT
+   * while labelled `category: 'chat'`. That was merely untidy until URGENT
+   * became exempt from the category preference gate (#1041) — after which the
+   * mismatch let those pushes escape the member's coarse Chat switch, the one
+   * control meant to silence them, with no switch of their own to replace it.
+   *
+   * Note this makes the channel *name* load-bearing for whether a member can
+   * mute a push at all. Narrowing that heuristic is part of #1323, which
+   * decides how routine announcements are separated from emergency ones.
+   */
+  private isAnnouncementPush(channelName: string, kind: string): boolean {
+    return kind === 'announcement' || channelName === 'announcements';
+  }
+
   private titleFor(channelName: string, kind: string): string {
-    if (kind === 'announcement' || channelName === 'announcements') {
-      return 'New Announcement';
-    }
-    return `New message in #${channelName}`;
+    return this.isAnnouncementPush(channelName, kind)
+      ? 'New Announcement'
+      : `New message in #${channelName}`;
   }
 
   // ── Internal test helpers ─────────────────────────────────────────────
