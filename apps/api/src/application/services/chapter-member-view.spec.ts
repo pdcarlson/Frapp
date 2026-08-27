@@ -41,14 +41,11 @@ function fullChapterRow(): Chapter {
 
 describe('toChapterMemberView', () => {
   describe('AC #2 — billing identifiers never reach a member-permissioned route', () => {
-    it.each(['stripe_customer_id', 'subscription_id'])(
-      'omits %s',
-      (field) => {
-        const view = toChapterMemberView(fullChapterRow());
+    it.each(['stripe_customer_id', 'subscription_id'])('omits %s', (field) => {
+      const view = toChapterMemberView(fullChapterRow());
 
-        expect(view).not.toHaveProperty(field);
-      },
-    );
+      expect(view).not.toHaveProperty(field);
+    });
 
     it('leaves no trace of the identifiers anywhere in the payload', () => {
       // Guards against a future field that embeds them (a `billing` blob, a

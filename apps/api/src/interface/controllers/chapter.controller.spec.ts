@@ -175,6 +175,42 @@ describe('ChapterController', () => {
       expect(chapterService.update).toHaveBeenCalledWith(chapterId, dto);
       expect(result).toEqual(expectedResult);
     });
+
+    it('projects the write response onto the member-safe view (#930)', async () => {
+      // This route admits `roles:manage` OR `billing:manage`, so a custom role
+      // carrying `roles:manage` without `billing:view` would otherwise read the
+      // billing identifiers out of the *write* response — the same leak as
+      // `getCurrent`, one verb over. The client discards this body and
+      // refetches, so nothing depends on it being the full row.
+      const chapterId = 'chapter-1';
+      const dto: UpdateChapterDto = { name: 'Updated Chapter' };
+      chapterService.update.mockResolvedValue({
+        id: chapterId,
+        name: 'Updated Chapter',
+        university: 'State U',
+        subscription_status: 'active',
+        past_due_since: null,
+        stripe_customer_id: 'cus_SENSITIVE',
+        subscription_id: 'sub_SENSITIVE',
+        last_stripe_webhook_at: '2026-08-02T00:00:00.000Z',
+        legal_accepted_by: 'user-legal-signer',
+        accent_color: null,
+        logo_path: null,
+        donation_url: null,
+        created_at: '2026-01-01T00:00:00.000Z',
+        updated_at: '2026-01-01T00:00:00.000Z',
+      });
+
+      const result = await controller.update(chapterId, dto);
+
+      expect(result).not.toHaveProperty('stripe_customer_id');
+      expect(result).not.toHaveProperty('subscription_id');
+      expect(result).not.toHaveProperty('last_stripe_webhook_at');
+      expect(result).not.toHaveProperty('legal_accepted_by');
+      expect(JSON.stringify(result)).not.toContain('SENSITIVE');
+      // The entitlement mirror still round-trips on a write.
+      expect(result.subscription_status).toBe('active');
+    });
   });
 
   describe('requestLogoUploadUrl', () => {

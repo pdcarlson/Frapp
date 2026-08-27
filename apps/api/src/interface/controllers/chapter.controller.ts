@@ -39,6 +39,7 @@ import {
 } from '../dtos/chapter.dto';
 import { ChapterOnboardingDto } from '../dtos/chapter-onboarding.dto';
 import { CurrentChapterResponseDto } from '../dtos/chapter-response.dto';
+import { toChapterMemberView } from '../../application/services/chapter-member-view';
 import { SystemPermissions } from '../../domain/constants/permissions';
 
 @ApiTags('Chapters')
@@ -126,7 +127,15 @@ export class ChapterController {
     @CurrentChapterId() chapterId: string,
     @Body() dto: UpdateChapterDto,
   ) {
-    return this.chapterService.update(chapterId, dto);
+    // Projected for the same reason `getCurrent` is (#930), and not only for
+    // symmetry: this route admits `roles:manage` **or** `billing:manage`, so a
+    // custom role carrying `roles:manage` without `billing:view` would
+    // otherwise read the billing identifiers straight out of the write
+    // response. The client discards this body and refetches, so narrowing it
+    // costs nothing.
+    return toChapterMemberView(
+      await this.chapterService.update(chapterId, dto),
+    );
   }
 
   @Post('current/logo-url')
