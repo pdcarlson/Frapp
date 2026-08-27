@@ -58,7 +58,11 @@ npm run check-types
 Requires Docker + Supabase. See the "Starting the dev environment" section in
 [`AGENTS.md`](../../../AGENTS.md).
 
-Prefer Infisical-injected envs as the primary method:
+Prefer Infisical-injected envs as the primary method — **except in a cloud sandbox**: there,
+bringup already writes `.env.local`, so skip straight to the fallback below (see
+[`CLOUD_SANDBOX.md`](../../../docs/internal/environment/CLOUD_SANDBOX.md) § "Booting the API";
+Infisical reach from a sandbox also depends on the environment allowlist,
+[#1279](https://github.com/pdcarlson/Frapp/issues/1279)):
 ```bash
 sudo dockerd &>/tmp/dockerd.log &
 sleep 3
