@@ -93,11 +93,19 @@ node scripts/scan-secrets.mjs --base <sha> --head <sha>  # a commit range
 > normal state of any long-lived working copy of this repo, where hundreds of short-lived `claude/*`
 > and `bolt/*` branches are created and deleted continuously.
 >
-> It compares ref **sets, not counts**. Git never prunes remote-tracking refs on its own
-> (`fetch.prune` defaults to false), so under a count comparison one ref for a branch deleted
-> upstream silently pays for one head that was never fetched — and the clone reports full coverage it
-> does not have. Verified: a clone holding `{main, feat/one, deleted-upstream}` against an origin
-> offering `{main, feat/one, brand-new}` has equal counts and is genuinely missing a branch.
+> Concretely, it asks the only question that settles it: **does this clone hold the commit each
+> remote ref points at?** Three cheaper formulations were each tried and each let a real gap through:
+>
+> | Compared | Misses |
+> | --- | --- |
+> | Ref **counts** | git never prunes remote-tracking refs (`fetch.prune` defaults to false), so one ref for a branch deleted upstream pays for one head never fetched — equal counts, missing branch |
+> | Ref **names** | a clone merely *behind* holds every branch name and none of the new commits — this is the middle row above |
+> | Refs in **one namespace** | heads sit under `refs/heads/*` in a mirror and `refs/remotes/origin/*` in a working clone; a bare repo with a remote uses the latter, and a linked worktree of a bare repo reports non-bare |
+>
+> Comparing **object ids across `refs/**`** sidesteps all three, and is the honest denominator
+> because `gitleaks git` walks `--all` — a remote commit present under any local ref really is
+> scanned. **PR refs are part of the verdict too**, for the reason given below: they are the one
+> place a secret can hide that no branch fetch will ever reach.
 >
 > To fix a clone the guard rejects, widen the refspec, then fetch everything:
 >
@@ -106,7 +114,9 @@ node scripts/scan-secrets.mjs --base <sha> --head <sha>  # a commit range
 > git fetch --unshallow 2>/dev/null || true   # only needed for a shallow clone
 > git fetch --prune origin '+refs/heads/*:refs/remotes/origin/*' '+refs/pull/*/head:refs/remotes/pr/*'
 > # local refs vs what the remote actually has — these two should agree
-> git for-each-ref --format='%(refname)' 'refs/remotes/**' | wc -l
+> # `grep -v` drops the symbolic origin/HEAD, which ls-remote never lists — without it
+> # the left side reads one higher than the right on any ordinary clone.
+> git for-each-ref --format='%(refname)' 'refs/remotes/**' | grep -v '/HEAD$' | wc -l
 > { git ls-remote --heads origin; git ls-remote origin 'refs/pull/*/head'; } | wc -l
 > ```
 >
