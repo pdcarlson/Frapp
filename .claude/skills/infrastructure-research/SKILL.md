@@ -146,10 +146,13 @@ curl -s -H "Authorization: Bearer $INFISICAL_API_KEY" \
 
 ### Compare environments
 
-Check that staging and production have the same secret keys:
+Check that staging and production have the same secret keys. Mind the name/slug trap: the
+Infisical **slugs** are `dev` / `staging` / `prod` (canonical constant: `INFISICAL_ENV_SLUGS` in
+`scripts/check-env-slugs.mjs`) — the UI display name "Production" is not the slug, and
+`environment=production` returns an error, not an empty list:
 
 ```bash
-for env in staging production; do
+for env in staging prod; do
   echo "=== $env ==="
   curl -s -H "Authorization: Bearer $INFISICAL_API_KEY" \
     "https://app.infisical.com/api/v3/secrets/raw?workspaceId=${INFISICAL_PROJECT_ID}&environment=$env&secretPath=/" \

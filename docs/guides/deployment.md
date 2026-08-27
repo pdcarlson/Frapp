@@ -22,10 +22,10 @@ Feature branches (`feature/*`) merge into `main` first, then `main` is promoted 
 - Vercel projects are active for:
   - landing (`frapp.live`)
   - web dashboard (`app.frapp.live`)
-- **Last verified: 2026-03-22** — Preview deployments for the web and landing apps are produced when changes are **merged** into `main` (not from direct pushes; protected branches require PR merge).
-- **Last verified: 2026-03-22** — On Vercel, **automatic production deployments** for web and landing run from the **`production`** branch only. **Merges to `main`** produce **preview / staging** deployments (not production). Feature/PR branches are not promoted to production hosting automatically.
-- **Last verified: 2026-03-22** — API deployment (Render) is still being finalized; confirm hooks and health checks in `docs/internal/ops/DEPLOYMENT.md` before relying on automation.
-- **Last verified: 2026-03-22** — Mobile App Store / Play Store deployment is still being finalized (EAS); treat store releases as manual until the release runbook is complete.
+- **Last verified: 2026-08-27** (Vercel API: every `main` commit produced a deployment with no production target) — Preview/staging deployments for the web and landing apps are produced when changes are **merged** into `main` (not from direct pushes; protected branches require PR merge).
+- **Last verified: 2026-08-27** (`git.deploymentEnabled` in each app's `vercel.json`: only `main` and `production` auto-deploy) — On Vercel, **automatic production deployments** for web and landing run from the **`production`** branch only. **Merges to `main`** produce **preview / staging** deployments (not production). Feature/PR branches are not promoted to production hosting automatically.
+- **Last verified: 2026-08-27** (Render API: `frapp-api-staging` auto-deploys `main` and was live at the latest `main` commit; `frapp-api-prod` tracks `production`) — API deployment (Render) is **automated**: `.github/workflows/deploy-api.yml` gates staging deploys on green CI and applies staging migrations on every `main` run. Production deploys track the `production` branch; production **migrations** are gated separately — see `docs/internal/ops/DEPLOYMENT.md` and `docs/internal/ops/DB_PROMOTION_RUNBOOK.md` for current production state.
+- **Last verified: 2026-03-22** (unverified since — no EAS access from agent sessions) — Mobile App Store / Play Store deployment is still being finalized (EAS); treat store releases as manual until the release runbook is complete.
 
 ## Deployment sources of truth
 
