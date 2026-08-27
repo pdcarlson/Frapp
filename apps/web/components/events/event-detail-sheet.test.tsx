@@ -208,3 +208,35 @@ describe("EventDetailSheet check-in zone", () => {
     expect(screen.queryByText(/can check in from anywhere/)).toBeNull();
   });
 });
+
+describe("EventDetailSheet zone validity mirrors the server", () => {
+  // isValidZone requires EVERY entry to be a finite pair, not just three of
+  // them. Counting only the good points would report a working zone for a
+  // polygon the server rejects outright.
+  it("warns on a zone with three good points and two malformed ones", () => {
+    render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        event={{
+          ...baseEvent,
+          check_in_zone: [
+            { lat: 1, lng: 2 },
+            { lat: 3, lng: 4 },
+            { lat: 5, lng: 6 },
+            { lat: "nope", lng: 8 },
+            { lat: 9 },
+          ],
+          check_in_zone_name: "Great Hall",
+        }}
+        onRequestEdit={() => {}}
+        onEventDeleted={async () => {}}
+      />,
+    );
+
+    expect(screen.getByText(/zone is incomplete/)).toBeInTheDocument();
+    expect(screen.queryByText(/3 points/)).toBeNull();
+    expect(screen.queryByText(/can check in from anywhere/)).toBeNull();
+  });
+});

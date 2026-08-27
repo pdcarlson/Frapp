@@ -348,6 +348,79 @@ describe("EventEditorDialog check-in zone", () => {
     expect(createMutate).not.toHaveBeenCalled();
   });
 
+  // Number("") is 0, not NaN, so a row with one field filled would otherwise
+  // pass the finite check and save a coordinate on the prime meridian.
+  it("rejects a vertex row with only one of latitude and longitude filled", async () => {
+    render(
+      <EventEditorDialog
+        open
+        mode="create"
+        event={null}
+        usingPreviewData={false}
+        onOpenChange={() => {}}
+        onSaved={async () => {}}
+      />,
+    );
+
+    fillRequiredFields();
+    addPoints(TRIANGLE);
+    fireEvent.change(screen.getByLabelText("Point 2 longitude"), {
+      target: { value: "" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    await waitFor(() => expect(mockToast).toHaveBeenCalled());
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: expect.stringContaining(
+          "Point 2 needs both a latitude and a longitude",
+        ),
+      }),
+    );
+    expect(createMutate).not.toHaveBeenCalled();
+  });
+
+  // Blank rows are skipped, but skipping them must not renumber the rows the
+  // officer is looking at.
+  it("names the on-screen row number when a blank row precedes the bad one", async () => {
+    render(
+      <EventEditorDialog
+        open
+        mode="create"
+        event={null}
+        usingPreviewData={false}
+        onOpenChange={() => {}}
+        onSaved={async () => {}}
+      />,
+    );
+
+    fillRequiredFields();
+    addPoints(TRIANGLE);
+    // Row 2 goes entirely blank; row 4 carries the out-of-range latitude.
+    fireEvent.change(screen.getByLabelText("Point 2 latitude"), {
+      target: { value: "" },
+    });
+    fireEvent.change(screen.getByLabelText("Point 2 longitude"), {
+      target: { value: "" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add point" }));
+    fireEvent.change(screen.getByLabelText("Point 4 latitude"), {
+      target: { value: "91" },
+    });
+    fireEvent.change(screen.getByLabelText("Point 4 longitude"), {
+      target: { value: "0" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    await waitFor(() => expect(mockToast).toHaveBeenCalled());
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: expect.stringContaining("Point 4"),
+      }),
+    );
+    expect(createMutate).not.toHaveBeenCalled();
+  });
+
   it("seeds a stored zone on edit and clears it to an empty array", async () => {
     render(
       <EventEditorDialog

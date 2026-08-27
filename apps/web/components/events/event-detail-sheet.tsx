@@ -93,24 +93,29 @@ export function EventDetailSheet({
   // points is not "no zone": `isValidZone` fails closed on the server, so
   // check-in is rejected outright. Rendering that as "check in from anywhere"
   // would tell an officer the opposite of what members experience.
-  const rawCheckInZone = resolvedEvent?.check_in_zone;
-  const checkInZonePoints = Array.isArray(rawCheckInZone)
-    ? rawCheckInZone.filter((point) => {
-        if (!point || typeof point !== "object") return false;
-        const { lat, lng } = point as { lat?: unknown; lng?: unknown };
-        return (
-          typeof lat === "number" &&
-          Number.isFinite(lat) &&
-          typeof lng === "number" &&
-          Number.isFinite(lng)
-        );
-      }).length
-    : 0;
-  const hasCheckInZone = checkInZonePoints >= 3;
+  const checkInZoneEntries = Array.isArray(resolvedEvent?.check_in_zone)
+    ? resolvedEvent.check_in_zone
+    : [];
+  const checkInZonePoints = checkInZoneEntries.filter((point) => {
+    if (!point || typeof point !== "object") return false;
+    const { lat, lng } = point as { lat?: unknown; lng?: unknown };
+    return (
+      typeof lat === "number" &&
+      Number.isFinite(lat) &&
+      typeof lng === "number" &&
+      Number.isFinite(lng)
+    );
+  }).length;
+  // Mirrors `isValidZone` on the server, which requires **every** entry to be a
+  // finite pair — not merely three of them. A 5-entry zone with 2 bad points
+  // fails there and rejects every check-in, so reporting the 3 good ones as a
+  // working zone would recreate the exact misdirection this block exists to
+  // prevent.
+  const hasCheckInZone =
+    checkInZoneEntries.length >= 3 &&
+    checkInZonePoints === checkInZoneEntries.length;
   const checkInZoneIsMalformed =
-    Array.isArray(rawCheckInZone) &&
-    rawCheckInZone.length > 0 &&
-    !hasCheckInZone;
+    checkInZoneEntries.length > 0 && !hasCheckInZone;
   const checkInZoneName =
     typeof resolvedEvent?.check_in_zone_name === "string"
       ? resolvedEvent.check_in_zone_name.trim()

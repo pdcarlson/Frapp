@@ -104,16 +104,31 @@ type ZoneParseResult =
  * and the API 400 cannot drift apart.
  */
 function parseZoneDrafts(drafts: ZoneVertexDraft[]): ZoneParseResult {
-  const rows = drafts.filter(
-    (row) => row.lat.trim().length > 0 || row.lng.trim().length > 0,
-  );
+  // Carry each row's original position through the filter: the label below has
+  // to name the row the officer sees, and dropping blank rows renumbers them.
+  const rows = drafts
+    .map((row, index) => ({ row, index }))
+    .filter(
+      ({ row }) => row.lat.trim().length > 0 || row.lng.trim().length > 0,
+    );
   if (rows.length === 0) return { ok: true, zone: [] };
 
   const zone: { lat: number; lng: number }[] = [];
-  for (const [index, row] of rows.entries()) {
+  for (const { row, index } of rows) {
     const label = `Point ${index + 1}`;
-    const lat = Number(row.lat.trim());
-    const lng = Number(row.lng.trim());
+    const latText = row.lat.trim();
+    const lngText = row.lng.trim();
+    // `Number("")` is 0, not NaN, so a row with one field filled would sail
+    // through the finite check below and persist the blank half as a real
+    // coordinate on the equator or the prime meridian.
+    if (latText.length === 0 || lngText.length === 0) {
+      return {
+        ok: false,
+        message: `${label} needs both a latitude and a longitude.`,
+      };
+    }
+    const lat = Number(latText);
+    const lng = Number(lngText);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
       return {
         ok: false,
