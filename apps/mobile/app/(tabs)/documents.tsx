@@ -54,9 +54,10 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * cached error — and the expiring URL never enters the cache. Note the key is
  * **`downloadUrl`**: there is no case-transforming interceptor anywhere in the
  * stack, and reading `download_url` is what left the two web call sites opening
- * `undefined` until #1040. `selectDownloadUrl` (now in `@repo/hooks`, beside the
- * query that returns the payload) accepts both spellings and is the only place
- * either appears.
+ * `undefined` until #1040. `selectDownloadUrl` (`@repo/hooks`) accepts both
+ * spellings and is the only place either appears *for a document download*.
+ * Chat attachments are a different endpoint whose key genuinely is
+ * `download_url` — do not converge them.
  */
 export default function DocumentsScreen() {
   const { tokens } = useFrappTheme();

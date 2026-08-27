@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { selectDownloadUrl } from "./use-documents";
+import { selectDownloadUrl } from "./document-download";
 
 // #1040: web read `download_url` at two call sites and opened `undefined`,
-// because `ChapterDocumentService.getWithDownloadUrl` returns `downloadUrl` and
+// because `ChapterDocumentService.findById` returns `downloadUrl` and
 // nothing in the stack transforms case. The endpoint has no OpenAPI response
 // schema, so the SDK types the body as `never` and any property access
 // type-checks — a test is the only thing that can catch the wrong spelling.
@@ -32,6 +32,21 @@ describe("selectDownloadUrl", () => {
     expect(selectDownloadUrl({ id: "d-1" })).toBeNull();
     expect(selectDownloadUrl({ downloadUrl: "" })).toBeNull();
     expect(selectDownloadUrl({ downloadUrl: 42 })).toBeNull();
+  });
+
+  // Blank-is-absent, matching the `str` helper this was lifted from. A
+  // whitespace-only URL must reach the caller's `if (!url) throw` and show the
+  // error toast, not open a blank tab.
+  it("treats a whitespace-only url as absent", () => {
+    expect(selectDownloadUrl({ downloadUrl: "   " })).toBeNull();
+    expect(selectDownloadUrl({ downloadUrl: "\n\t" })).toBeNull();
+  });
+
+  // A blank camelCase value must not shadow a usable snake_case one.
+  it("falls through to snake_case when the camelCase value is blank", () => {
+    expect(
+      selectDownloadUrl({ downloadUrl: "   ", download_url: "https://signed/url" }),
+    ).toBe("https://signed/url");
   });
 
   it("returns null for a non-object, so a failed fetch cannot throw here", () => {

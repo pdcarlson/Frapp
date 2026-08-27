@@ -346,22 +346,28 @@ describe("BackworkPage subscription gating", () => {
   it("opens the signed URL the API actually returns", async () => {
     const user = userEvent.setup();
     const open = vi.spyOn(window, "open").mockReturnValue(null);
+    // The real payload: `BackworkService.findById` returns `{ ...resource, downloadUrl }`.
+    // A bare `{ downloadUrl }` fixture would pass even if the selector picked
+    // some other string field off the row, so spread a realistic resource.
     mockResourceRefetch.mockResolvedValue({
-      data: { downloadUrl: "https://signed/exam.pdf" },
+      data: { ...RESOURCE, downloadUrl: "https://signed/exam.pdf" },
     });
     chapter.active();
     render(<BackworkPage />);
 
-    await user.click(screen.getByRole("button", { name: /download/i }));
+    try {
+      await user.click(screen.getByRole("button", { name: /download/i }));
 
-    await waitFor(() =>
-      expect(open).toHaveBeenCalledWith(
-        "https://signed/exam.pdf",
-        "_blank",
-        "noopener",
-      ),
-    );
-    open.mockRestore();
+      await waitFor(() =>
+        expect(open).toHaveBeenCalledWith(
+          "https://signed/exam.pdf",
+          "_blank",
+          "noopener",
+        ),
+      );
+    } finally {
+      open.mockRestore();
+    }
   });
 
   it("never gates the reads", () => {

@@ -150,16 +150,21 @@ describe("DocumentsPage subscription gating", () => {
     chapter.active();
     render(<DocumentsPage />);
 
-    await user.click(downloadButton());
+    // `finally`, so a failed assertion cannot leak the spy into later tests —
+    // vitest.config.ts sets no `restoreMocks`.
+    try {
+      await user.click(downloadButton());
 
-    await waitFor(() =>
-      expect(open).toHaveBeenCalledWith(
-        "https://signed/bylaws.pdf",
-        "_blank",
-        "noopener",
-      ),
-    );
-    open.mockRestore();
+      await waitFor(() =>
+        expect(open).toHaveBeenCalledWith(
+          "https://signed/bylaws.pdf",
+          "_blank",
+          "noopener",
+        ),
+      );
+    } finally {
+      open.mockRestore();
+    }
   });
 
   it("never gates reading the library", () => {
