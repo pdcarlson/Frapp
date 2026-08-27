@@ -17,7 +17,7 @@ description: >
 
 Before making infrastructure-related changes, gather runtime truth from the available APIs. This prevents stale assumptions and wasted effort.
 
-**Available credentials:** the canonical list of provider/research env vars available in cloud agent sessions (`GITHUB_PAT`, `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN`, `INFISICAL_API_KEY`, `RENDER_API_KEY`, `VERCEL_API_KEY`, `SUPABASE_API_KEY`), including the full canonical-name/alias discussion, lives in [`docs/internal/environment/AGENT_CREDENTIALS.md`](../../../docs/internal/environment/AGENT_CREDENTIALS.md).
+**Available credentials:** the canonical list of provider/research env vars available in cloud agent sessions (`GITHUB_PAT`, `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN`, `INFISICAL_SERVICE_TOKEN` + `INFISICAL_PROJECT_ID`, `RENDER_API_KEY`, `VERCEL_API_KEY`, `SUPABASE_API_KEY`), including the full canonical-name/alias discussion, lives in [`docs/internal/environment/AGENT_CREDENTIALS.md`](../../../docs/internal/environment/AGENT_CREDENTIALS.md).
 
 Notes needed by the recipes below:
 
@@ -135,18 +135,53 @@ curl -s -H "Authorization: Bearer $VERCEL_API_KEY" \
 
 ## Infisical: Secret configuration
 
+> **These recipes cannot run in a Claude Code cloud sandbox today**
+> ([#1279](https://github.com/pdcarlson/Frapp/issues/1279)): the environment network policy
+> rejects `app.infisical.com` (the proxy answers 403 to CONNECT), and unlike Render / Vercel /
+> Sentry / PostHog there is no Infisical MCP connector to fall back on — the official
+> `@infisical/mcp` is stdio-only, so it would run *inside* the sandbox under the same
+> allowlist (canonical statement: [`CLOUD_SANDBOX.md`](../../../docs/internal/environment/CLOUD_SANDBOX.md)
+> § "What this does not unlock"). From a sandbox, report Infisical state as **unverified**.
+> The recipes need network reach plus `INFISICAL_SERVICE_TOKEN` in the shell — in practice a
+> laptop; CI authenticates differently (machine-identity universal auth in the workflows) and
+> does not carry the service token.
+> Re-check reachability first: `curl -sS https://app.infisical.com/api/status`
+> (keep the `-S` — with `-s` alone, the proxy's CONNECT 403 produces silent empty output).
+
+The credential is a **service token** (`INFISICAL_SERVICE_TOKEN`, `st.*` format), scoped at mint
+time to specific environment(s)+path(s) — a 401/403 on one environment means the token isn't
+scoped to it, not that the token is dead. **The converse does not hold**: per Infisical's backend,
+a token with exactly one (non-glob) scope makes the raw-secrets endpoint *silently substitute its
+scoped environment/path* for whatever the query named, returning 200 with that env's keys — so a
+successful listing proves which env the token is scoped to, not that you read the env you asked
+for. Trust the dashboard's scope display (or a freshly minted single-purpose token) over probing.
+The CLI reads the same value as `INFISICAL_TOKEN` (full token). **Do not use `infisical secrets`
+or `infisical export` in agent sessions — both print secret values.** Use the names-only recipes
+below.
+
 ### Check secret presence (no values)
 
 ```bash
-# workspaceId: export INFISICAL_PROJECT_ID from Infisical Project Settings, or read workspaceId from .infisical.json
-curl -s -H "Authorization: Bearer $INFISICAL_API_KEY" \
-  "https://app.infisical.com/api/v3/secrets/raw?workspaceId=${INFISICAL_PROJECT_ID}&environment=staging&secretPath=/" \
+# INFISICAL_PROJECT_ID is exported in agent sessions; same value as workspaceId in .infisical.json
+# An st.* token has 4 dot-segments; the last is a client-side decryption key that is NOT part of
+# the Bearer credential — strip it for raw API calls (the CLI, by contrast, wants the full token).
+# -f makes a 401/403 (token not scoped to this env) fail loudly instead of piping an error body
+# into python and printing zero names, which would misread as "environment is empty"
+curl -fsS -H "Authorization: Bearer ${INFISICAL_SERVICE_TOKEN%.*}" \
+  "https://app.infisical.com/api/v3/secrets/raw?workspaceId=${INFISICAL_PROJECT_ID}&environment=dev&secretPath=/" \
   | python3 -c "import sys,json; [print(s['secretKey']) for s in json.load(sys.stdin).get('secrets',[])]"
 ```
 
+Upstream now files `GET /api/v3/secrets/raw` under *deprecated* (replacement:
+`GET /api/v4/secrets?projectId=…`, same `secrets[].secretKey` response shape); the v3 route is
+still live — if it ever 404s, switch to the v4 form.
+
 ### Compare environments
 
-Check that staging and production have the same secret keys. Mind the name/slug trap: the
+Check that staging and production have the same secret keys — this needs a token scoped to
+**both** environments: with a *single*-scope token the override described above returns the same
+scoped env's keys for every iteration, so identical lists across envs would be the override, not
+parity. Mind the name/slug trap: the
 Infisical **slugs** are `dev` / `staging` / `prod` (canonical constant: `INFISICAL_ENV_SLUGS` in
 `scripts/check-env-slugs.mjs`) — the UI display name "Production" is not the slug, and
 `environment=production` returns an error, not an empty list:
@@ -154,7 +189,7 @@ Infisical **slugs** are `dev` / `staging` / `prod` (canonical constant: `INFISIC
 ```bash
 for env in staging prod; do
   echo "=== $env ==="
-  curl -s -H "Authorization: Bearer $INFISICAL_API_KEY" \
+  curl -fsS -H "Authorization: Bearer ${INFISICAL_SERVICE_TOKEN%.*}" \
     "https://app.infisical.com/api/v3/secrets/raw?workspaceId=${INFISICAL_PROJECT_ID}&environment=$env&secretPath=/" \
     | python3 -c "import sys,json; [print(s['secretKey']) for s in json.load(sys.stdin).get('secrets',[])]" | sort
 done

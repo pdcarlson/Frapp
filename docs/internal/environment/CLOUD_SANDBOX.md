@@ -429,10 +429,19 @@ configuration change apart. Staging is the blast radius we accept. **Enumerate.*
   (`STAGING_SMOKE_USER_EMAIL` / `STAGING_SMOKE_USER_PASSWORD`). Use a dedicated smoke
   account, never a real member's.
 - **Provider APIs.** Render, Vercel, Infisical, Sentry, and PostHog stay blocked to direct
-  `fetch`. Agents reach them through **MCP**, which does not go through this allowlist at
-  all — so the MCP-based [`infrastructure-research`](../../../.claude/skills/infrastructure-research/SKILL.md)
-  workflow is unaffected either way. Only raw-`fetch` scripts like `staging-conformance.mjs`
-  notice the difference, and those run in CI, where the allowlist does not apply.
+  `fetch`. For Render, Vercel, Sentry, and PostHog agents fall back to **MCP connectors**,
+  which do not go through this allowlist at all — those parts of the MCP-based
+  [`infrastructure-research`](../../../.claude/skills/infrastructure-research/SKILL.md)
+  workflow are unaffected either way. **Infisical is the exception: it has no MCP connector
+  that can read secrets** — its only hosted MCP is a docs assistant, and the official secrets
+  server `@infisical/mcp` is stdio-only, so it would run *inside* the sandbox and hit
+  this same allowlist — which leaves a sandboxed agent no Infisical path at all. Whether to
+  allowlist `app.infisical.com` — the only workable path unless Infisical ships a hosted MCP
+  endpoint — is [#1279](https://github.com/pdcarlson/Frapp/issues/1279)'s open decision; the
+  network is not the secrecy
+  boundary there — the service token's environment+path scope is. Only raw-`fetch` scripts
+  like `staging-conformance.mjs` notice the difference for the other four, and those run in
+  CI, where the allowlist does not apply.
 - **Per-deployment Vercel URLs.** Only the aliased staging hostnames are allowlisted, not
   the unique `*.vercel.app` URL each deployment also gets. When the alias lags behind the
   latest `main` build — the known Vercel behaviour described in

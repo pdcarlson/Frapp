@@ -213,7 +213,9 @@ not from an agent session.
   [`AGENT_INFRA.md`](../../../docs/internal/ci-cd/AGENT_INFRA.md).
 - **Provider APIs** (Render, Vercel, Infisical, Sentry, PostHog) — blocked to direct
   `fetch`, reached via **MCP**, which does not go through the network allowlist at all. Use
-  [`infrastructure-research`](../infrastructure-research/SKILL.md).
+  [`infrastructure-research`](../infrastructure-research/SKILL.md). Exception: **Infisical
+  has no MCP connector**, so a sandboxed agent has no Infisical path at all — report it as
+  unverified ([#1279](https://github.com/pdcarlson/Frapp/issues/1279)).
 - **Production**, in every form.
 
 ## 7. Reporting
