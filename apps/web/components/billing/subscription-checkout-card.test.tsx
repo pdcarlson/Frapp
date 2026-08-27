@@ -44,7 +44,8 @@ vi.mock("@/components/shared/can", () => ({
 
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 
-const { SubscriptionCheckoutCard } = await import("./subscription-checkout-card");
+const { SubscriptionCheckoutCard } =
+  await import("./subscription-checkout-card");
 
 function setChapter(
   subscription_status: string | undefined,
@@ -94,29 +95,61 @@ describe("SubscriptionCheckoutCard", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("never offers checkout to a lapsed chapter, which would double-subscribe", async () => {
-    // POST /v1/billing/checkout rejects only `active`, and Stripe is handed
-    // `customer_email` rather than the stored customer id — so a second
-    // checkout on a past_due chapter creates a second live subscription while
-    // the first keeps dunning. Lapsed chapters must go to the portal.
-    for (const status of ["past_due", "canceled"] as const) {
-      setChapter(status);
-      const { unmount } = renderCard();
+  it("never offers checkout to a past_due chapter, which would double-subscribe", async () => {
+    // A past_due subscription is live and in dunning. A second checkout would
+    // bill the chapter twice indefinitely and orphan the first subscription
+    // where nothing in the app can surface or cancel it, so recovery is the
+    // Portal — which updates the existing subscription in place. Since #929
+    // POST /v1/billing/checkout refuses this status outright, so this is now a
+    // client affordance over a real server boundary rather than the only guard.
+    setChapter("past_due");
+    renderCard();
 
-      expect(
-        screen.queryByRole("button", { name: /complete checkout/i }),
-      ).not.toBeInTheDocument();
-      const portal = screen.getByRole("button", { name: /manage billing/i });
-      expect(portal).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /complete checkout/i }),
+    ).not.toBeInTheDocument();
+    const portal = screen.getByRole("button", { name: /manage billing/i });
+    expect(portal).toBeInTheDocument();
 
-      mockPortalMutate.mockResolvedValue({ url: "https://portal.stripe.com/p" });
-      await userEvent.click(portal);
-      await waitFor(() => expect(mockPortalMutate).toHaveBeenCalled());
-      expect(mockCheckoutMutate).not.toHaveBeenCalled();
+    mockPortalMutate.mockResolvedValue({ url: "https://portal.stripe.com/p" });
+    await userEvent.click(portal);
+    await waitFor(() => expect(mockPortalMutate).toHaveBeenCalled());
+    expect(mockCheckoutMutate).not.toHaveBeenCalled();
+  });
 
-      unmount();
-      vi.clearAllMocks();
-    }
+  it("offers checkout — not the portal — to a canceled chapter (#929)", async () => {
+    // The Portal cannot resume a terminated subscription; it only reactivates
+    // one still scheduled to cancel at period end, which Stripe reports as
+    // `active`. Sending a canceled chapter there was a dead end, and the card
+    // used to promise exactly that ("Reopen the subscription from the billing
+    // portal"). Checkout is the only way back, and it is safe because the
+    // server reuses the chapter's stored customer instead of minting a second.
+    setChapter("canceled");
+    renderCard();
+
+    expect(
+      screen.queryByRole("button", { name: /manage billing/i }),
+    ).not.toBeInTheDocument();
+    const checkout = screen.getByRole("button", {
+      name: /complete checkout/i,
+    });
+    expect(checkout).toBeInTheDocument();
+
+    mockCheckoutMutate.mockResolvedValue({
+      url: "https://checkout.stripe.com/c",
+    });
+    await userEvent.click(checkout);
+    await waitFor(() => expect(mockCheckoutMutate).toHaveBeenCalled());
+    expect(mockPortalMutate).not.toHaveBeenCalled();
+  });
+
+  it("does not send a canceled chapter to the portal in its copy (#929)", () => {
+    // The old copy pointed at a path that cannot work. Guard the promise, not
+    // just the button.
+    setChapter("canceled");
+    renderCard();
+
+    expect(screen.queryByText(/from the billing portal/i)).toBeNull();
   });
 
   it("renders nothing rather than asserting a lock it cannot prove", () => {
@@ -165,7 +198,9 @@ describe("SubscriptionCheckoutCard", () => {
     expect(
       screen.getByRole("button", { name: /manage billing/i }),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/activating your chapter/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/activating your chapter/i),
+    ).not.toBeInTheDocument();
   });
 
   it("never offers checkout after the activation poll times out", async () => {

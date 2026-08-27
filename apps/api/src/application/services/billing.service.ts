@@ -109,16 +109,50 @@ export class BillingService {
       throw new NotFoundException('Chapter not found');
     }
 
+    // refuse-new (#929, owner-approved 2026-08-20). A chapter that already owns
+    // a *live* subscription recovers through the Customer Portal, which updates
+    // that subscription in place. Minting a second one here would double-bill
+    // the chapter indefinitely and orphan the first where nothing in the app
+    // can surface or cancel it.
+    //
+    // `canceled` is deliberately *not* refused. A canceled subscription is
+    // terminal at Stripe — mapStripeStatus folds both `canceled` and
+    // `incomplete_expired` into it — so the Portal cannot resume it and
+    // checkout is the chapter's only way back. There is also nothing live left
+    // to orphan, and the customer reuse below keeps a returning chapter on one
+    // continuous customer instead of forking a second billing history.
+    //
+    // These refusals ride in `message` rather than a structured `code`, because
+    // AllExceptionsFilter drops `code` from every response today (#1020). Both
+    // strings are stable and distinct so a client can map them to the portal.
     if (chapter.subscription_status === 'active') {
       throw new BadRequestException(
-        'Chapter already has an active subscription',
+        'Chapter already has an active subscription. Manage it from the billing portal.',
+      );
+    }
+
+    if (chapter.subscription_status === 'past_due') {
+      throw new BadRequestException(
+        'Chapter subscription is past due, not cancelled. Update the payment ' +
+          'method from the billing portal — starting a new checkout would ' +
+          'create a second subscription and bill the chapter twice.',
       );
     }
 
     let checkoutUrl: string;
     try {
-      if (!chapter.stripe_customer_id) {
-        const customerId = await this.billingProvider.createCustomer(
+      // Resolve the customer *before* the session and always pass it down. The
+      // adapter has no email fallback (#929), so there is no remaining path on
+      // which Stripe mints a Customer of its own.
+      //
+      // This also repairs a case the issue did not name: on a first checkout
+      // the customer created here was never attached to the session, so it was
+      // orphaned immediately — and permanently if checkout was abandoned —
+      // leaving `POST /v1/billing/portal` opening a portal for a customer that
+      // owns no subscription.
+      let customerId = chapter.stripe_customer_id;
+      if (!customerId) {
+        customerId = await this.billingProvider.createCustomer(
           input.customerEmail,
           chapter.name,
         );
@@ -129,17 +163,15 @@ export class BillingService {
 
       checkoutUrl = await this.billingProvider.createCheckoutSession({
         chapterId: input.chapterId,
-        customerEmail: input.customerEmail,
+        customerId,
         successUrl: input.successUrl,
         cancelUrl: input.cancelUrl,
-        // The trial is once per chapter. The guard above rejects only
-        // `active`, so a `past_due` or `canceled` chapter still reaches
-        // checkout — and because `StripeService` passes `customer_email`
-        // rather than the stored customer id, Stripe mints a fresh Customer
-        // with no trial history and would hand out another 14 free days on
-        // every call. Having ever held a subscription is the durable
-        // "already had its trial" mark; status is not, since a chapter can
-        // return to `canceled` repeatedly.
+        // The trial is once per chapter. Having ever held a subscription is the
+        // durable "already had its trial" mark; status is not, since a chapter
+        // can return to `canceled` repeatedly. Now that the session carries the
+        // chapter's own customer, Stripe can see that history too — but this
+        // stays the boundary rather than a second line of defence, because it
+        // is keyed on our record rather than on what Stripe infers.
         grantTrial: !chapter.subscription_id,
       });
     } catch (error) {
@@ -336,6 +368,45 @@ export class BillingService {
     // in-memory idempotency set, when the subscription has since moved on).
     if (this.isStaleWebhook(chapter, event, 'checkout.session.completed')) {
       return;
+    }
+
+    // AC-3 (#929): never *silently* discard a reference to another
+    // subscription. With the checkout guard in place this should now be
+    // reachable only for a `canceled` chapter resubscribing — where the prior
+    // subscription is terminal and replacing the reference is correct — or for
+    // a caller that raced the guard. Either way the incoming subscription is
+    // the one now billing the chapter and must be stored: dropping the write
+    // would leave the chapter paying for a subscription the app cannot see,
+    // which is the worse failure. So the reconciliation signal is a loud log,
+    // not a refusal.
+    if (
+      subscriptionId &&
+      chapter.subscription_id &&
+      subscriptionId !== chapter.subscription_id
+    ) {
+      this.logger.error(
+        `Chapter ${chapterId} completed checkout for subscription ` +
+          `${subscriptionId} while still referencing ${chapter.subscription_id}. ` +
+          'Replacing the stored reference — verify in Stripe that ' +
+          `${chapter.subscription_id} is not still live and billing, and cancel ` +
+          'it there if it is.',
+      );
+    }
+
+    // The same signal for the customer. After #929 the session's customer is
+    // the one we sent, so a mismatch here means the chapter has somehow
+    // acquired a second customer record — exactly the condition this issue
+    // exists to prevent, and worth surfacing rather than absorbing.
+    if (
+      session.customer &&
+      chapter.stripe_customer_id &&
+      session.customer !== chapter.stripe_customer_id
+    ) {
+      this.logger.error(
+        `Chapter ${chapterId} completed checkout under customer ` +
+          `${session.customer} while referencing ${chapter.stripe_customer_id}. ` +
+          'A second customer record exists for this chapter; reconcile in Stripe.',
+      );
     }
 
     await this.chapterRepo.update(chapterId, {
