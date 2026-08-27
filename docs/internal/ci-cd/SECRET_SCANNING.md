@@ -45,6 +45,25 @@ node scripts/scan-secrets.mjs --base <sha> --head <sha>  # a commit range
 
 > ### The audit is only as complete as the clone's refs
 >
+> **This is enforced, not just documented.** Since #931, `scan-secrets.mjs` checks ref completeness
+> in **full mode only**, before scanning, and reports coverage on the success line so an audit
+> record entry can quote what was actually covered. Severity depends on how full mode was reached:
+>
+> | How full mode was reached | Incomplete clone | Origin unreachable |
+> | --- | --- | --- |
+> | Explicitly requested (`npm run check:secrets`) — an audit | **refuses**, exits non-zero | warns, proceeds\* |
+> | Fallen back to from range mode (unreachable `--base`, or the all-zeros new-branch sentinel) | warns, proceeds | warns, proceeds\* |
+>
+> \* Unless shallowness or a narrow refspec already proves the clone incomplete — those need no
+> network, so an offline audit over a shallow clone still refuses. "Origin unreachable" only
+> downgrades the *comparison* against the remote, which is the one signal that needs it.
+>
+> The fallback row never fails on purpose: CI drops to full mode on a force-push, and hard-failing
+> there would red-light the required `secret-scan` check. The **`staged` and `range` modes** are not
+> gated at all — they only ever scan a diff and legitimately run in shallow checkouts. Note that is
+> a statement about the *mode*, not the flags: a `--base/--head` invocation whose base is unreachable
+> falls back to full mode and does get the (warn-only) check, which is what the second row describes.
+>
 > **`check:secrets` deliberately passes no `--log-opts`.** Bare `gitleaks git` already defaults to
 > `git log -p -U0 --full-history --all --diff-filter=tuxdb`, so `--all` is *already* in effect.
 > Do not "helpfully" add it: supplying any `--log-opts` **replaces** that whole default set rather
@@ -65,15 +84,46 @@ node scripts/scan-secrets.mjs --base <sha> --head <sha>  # a commit range
 >
 > The middle row is the dangerous one: `git rev-parse --is-shallow-repository` says `false`,
 > `git fetch --unshallow` errors as a no-op, and the scan reports clean having covered ~27% of
-> history. **Do not use shallowness as the completeness check.** Instead, fetch everything and
-> check that you hold as many refs as the remote offers:
+> history. **Do not use shallowness as the completeness check** — the guard above does not, and
+> neither should you.
+>
+> The guard's load-bearing signal is a **ref set comparison** against `git ls-remote`, because it is
+> the only one of the three that catches a third shape the table does not list: an ordinary clone
+> that is neither shallow nor narrowly configured, and has simply **not fetched lately**. That is the
+> normal state of any long-lived working copy of this repo, where hundreds of short-lived `claude/*`
+> and `bolt/*` branches are created and deleted continuously.
+>
+> Concretely, it asks the only question that settles it: **does this clone hold the commit each
+> remote ref points at?** Three cheaper formulations were each tried and each let a real gap through:
+>
+> | Compared | Misses |
+> | --- | --- |
+> | Ref **counts** | git never prunes remote-tracking refs (`fetch.prune` defaults to false), so one ref for a branch deleted upstream pays for one head never fetched — equal counts, missing branch |
+> | Ref **names** | a clone merely *behind* holds every branch name and none of the new commits — this is the middle row above |
+> | Refs in **one namespace** | heads sit under `refs/heads/*` in a mirror and `refs/remotes/origin/*` in a working clone; a bare repo with a remote uses the latter, and a linked worktree of a bare repo reports non-bare |
+>
+> Comparing **object ids across `refs/**`** sidesteps all three, and is the honest denominator
+> because `gitleaks git` walks `--all` — a remote commit present under any local ref really is
+> scanned. **PR refs are part of the verdict too**, for the reason given below: they are the one
+> place a secret can hide that no branch fetch will ever reach.
+>
+> To fix a clone the guard rejects, widen the refspec, then fetch everything:
 >
 > ```bash
-> git fetch origin '+refs/heads/*:refs/remotes/origin/*' '+refs/pull/*/head:refs/remotes/pr/*'
+> git remote set-branches origin '*'          # a --single-branch clone needs this FIRST
+> git fetch --unshallow 2>/dev/null || true   # only needed for a shallow clone
+> git fetch --prune origin '+refs/heads/*:refs/remotes/origin/*' '+refs/pull/*/head:refs/remotes/pr/*'
 > # local refs vs what the remote actually has — these two should agree
-> git for-each-ref --format='%(refname)' 'refs/remotes/**' | wc -l
+> # `grep -v` drops the symbolic origin/HEAD, which ls-remote never lists — without it
+> # the left side reads one higher than the right on any ordinary clone.
+> git for-each-ref --format='%(refname)' 'refs/remotes/**' | grep -v '/HEAD$' | wc -l
 > { git ls-remote --heads origin; git ls-remote origin 'refs/pull/*/head'; } | wc -l
 > ```
+>
+> `set-branches` is not optional on a `--single-branch` or `--depth` clone: a command-line
+> `git fetch` retrieves the refs but never rewrites the persisted `remote.origin.fetch`, so the
+> next `git fetch` narrows the clone straight back again. `--prune` matters for the same reason
+> the set comparison does — it is what clears refs for branches deleted upstream.
 >
 > **Compare refs, not commit counts.** `git rev-list --count --all` will *not* match the "commits
 > scanned" figure gitleaks prints — gitleaks' default `--diff-filter=tuxdb` skips merge commits and
@@ -116,7 +166,7 @@ mv .gitleaks-baseline.json .gitleaks-baseline.json.bak
 ```
 
 > **Do not "align" this command with `buildGitleaksArgs`.** Full mode adds `--baseline-path` whenever
-> the file exists (`scan-secrets.mjs:148`), and a generator run with that flag filters every finding
+> the file exists (`scan-secrets.mjs:448`), and a generator run with that flag filters every finding
 > against the baseline already on disk and writes **`[]`** — with `--exit-code 0` suppressing any
 > complaint. Committing that empty array silently un-accepts all five findings. Moving the file aside
 > first (above) makes the run independent of whatever is already committed. Otherwise the flags must
