@@ -614,6 +614,65 @@ console.log("\n=== RLS smoke ===");
 }
 for (const lm of RLS_SMOKE) await runOne(lm);
 
+// ─── Policy inventory (#977) ────────────────────────────────────────────────
+//
+// `AUTHORIZATION_MODEL.md` §4 heads its table "The policies that do exist (N
+// statements)". That number had drifted and was reconciled by hand, which is
+// precisely why it drifted again: nothing re-checked it. This checks it against
+// the catalog.
+//
+// The counting convention, written down because ambiguity was the actual defect:
+// **N counts individual policy statements — rows in `pg_policies` — not rows in
+// the doc's table**, several of which name two policies each.
+//
+// PGlite legitimately sees fewer than a hosted project, and every one of the
+// three absences is role- or schema-gated rather than a defect:
+//   - `users.auth_admin_can_read_users` and `members.auth_admin_can_read_members`
+//     are created inside `if exists (select 1 from pg_roles where rolname =
+//     'supabase_auth_admin')` (20260802120000_active_chapter_jwt_claim.sql:137),
+//     and that role does not exist here.
+//   - `realtime.messages.realtime_messages_scoped_select` lives in the `realtime`
+//     schema, which PGlite does not have at all.
+// So: 8 in `public` here; 11 hosted (10 in `public` + 1 in `realtime`).
+//
+// Asserted as an exact SET rather than a count: a bare count lets a dropped
+// policy be masked by an added one, which is the failure mode that matters — a
+// silently removed policy widens access without changing the total.
+{
+  const EXPECTED_PUBLIC_POLICIES = [
+    "chapter_audit_log.audit_log_no_delete",
+    "chapter_audit_log.audit_log_no_update",
+    "chat_message_actions.chat_message_actions_delete",
+    "chat_message_actions.chat_message_actions_insert",
+    "chat_message_actions.chat_message_actions_select",
+    "chat_messages.chat_messages_select",
+    "chat_notification_preferences.chat_notification_preferences_select_own",
+    "member_custom_field_values.member_custom_field_values_service_role",
+  ];
+  const res = await db.query(
+    `select tablename, policyname from pg_policies
+      where schemaname = 'public'
+      order by tablename, policyname`,
+  );
+  const got = res.rows.map((r) => `${r.tablename}.${r.policyname}`);
+  const added = got.filter((p) => !EXPECTED_PUBLIC_POLICIES.includes(p));
+  const removed = EXPECTED_PUBLIC_POLICIES.filter((p) => !got.includes(p));
+  if (added.length === 0 && removed.length === 0) {
+    console.log(
+      `OK    public policy inventory matches AUTHORIZATION_MODEL.md §4 (${got.length} here, 11 hosted)`,
+    );
+  } else {
+    missing += 1;
+    console.log(
+      "MISS  public policy inventory drifted from AUTHORIZATION_MODEL.md §4" +
+        (added.length
+          ? `\n        ↳ ADDED (a new policy widens access — update §4): ${added.join(", ")}`
+          : "") +
+        (removed.length ? `\n        ↳ REMOVED: ${removed.join(", ")}` : ""),
+    );
+  }
+}
+
 // ─── Functional smoke: anonymize_user (FRA-40) ──────────────────────────────
 //
 // The account-deletion contract (spec/behavior/data-retention.md "Individual
@@ -1050,6 +1109,127 @@ if (readSeeded) {
         console.log(`MISS  ${s.name}\n        ↳ expected ${s.expect} visible row(s), got ${got}`);
       }
     }
+
+
+    // ─── chat_messages read enforcement (black-box, SET ROLE) — #977 ─────────
+    //
+    // The tier above proves the POLICY on `chat_message_actions` is wired to the
+    // predicate. `chat_messages` had only the shape assertion in the RLS smoke
+    // list, plus (since #974) the two archive-rule reads below — and a shape
+    // assertion is defeatable by construction. The harness says so itself about
+    // the sibling: substring-shaped, so a determined rewrite slips past it.
+    // `using (auth.role() = 'authenticated' and (can_read_chat_message(id) or
+    // true))` satisfies both regexes AND `rows.length === 1`, turning every
+    // message in every chapter's private channels and DMs into an authenticated
+    // read. Only reading the table as a non-owner role catches that.
+    //
+    // Placement is deliberate: this runs BEFORE the archive block below inserts
+    // its imported row and its live null-sender row, so the fixture here is
+    // exactly the six seeded live messages. An expectation in this tier means
+    // "of those six" and cannot silently absorb rows added later.
+    //
+    // Asserted as an exact SET per reader, not a count. A total can be right for
+    // the wrong reason — userD sees three rows, but *which* three is the whole
+    // question: '*' opens both ROLE_GATED channels and must still not open a DM.
+    const MSG_LABEL = {
+      [F.msgPublic]: "PUBLIC",
+      [F.msgPrivate]: "PRIVATE",
+      [F.msgDM]: "DM",
+      [F.msgRoleGated]: "ROLE_GATED(chat:secret)",
+      [F.msgRoleGatedOpen]: "ROLE_GATED(empty-req)",
+      [F.msgGroupDM]: "GROUP_DM",
+    };
+    const ALL_MSG_IDS = Object.keys(MSG_LABEL);
+    const label = (id) => MSG_LABEL[id] ?? id;
+
+    const MSG_BLACKBOX = [
+      {
+        who: "chapter member in member_ids holding chat:secret",
+        uid: F.userAAuth,
+        visible: [F.msgPublic, F.msgPrivate, F.msgDM, F.msgRoleGated, F.msgGroupDM],
+      },
+      {
+        who: "cross-chapter member",
+        uid: F.userBAuth,
+        visible: [],
+        wholeTableZero: true, // AC: a cross-chapter member sees ZERO rows, table-wide
+      },
+      {
+        who: "chapter member with no privileges, in no member list",
+        uid: F.userCAuth,
+        visible: [F.msgPublic],
+      },
+      {
+        // The case the sibling tier never exercises black-box, and the sharpest
+        // one: permission and membership are independent axes. '*' grants both
+        // ROLE_GATED channels (including the empty-requirement one) and still
+        // must not grant PRIVATE / DM / GROUP_DM, which gate on member_ids.
+        who: "chapter member holding the '*' wildcard, in no member list",
+        uid: F.userDAuth,
+        visible: [F.msgPublic, F.msgRoleGated, F.msgRoleGatedOpen],
+      },
+      {
+        who: "no JWT (null auth.uid())",
+        uid: null,
+        visible: [],
+        wholeTableZero: true, // AC: NULL auth.uid() sees ZERO rows, table-wide
+      },
+    ];
+
+    for (const s of MSG_BLACKBOX) {
+      await db.exec(
+        s.uid === null
+          ? `create or replace function auth.uid() returns uuid language sql as $$ select null::uuid $$;`
+          : `create or replace function auth.uid() returns uuid language sql as $$ select '${s.uid}'::uuid $$;`,
+      );
+      await db.exec("set role rls_probe;");
+      let seen;
+      let tableTotal;
+      try {
+        const res = await db.query(
+          `select id::text as id from public.chat_messages
+            where id in (${ALL_MSG_IDS.map((m) => `'${m}'`).join(", ")})`,
+        );
+        seen = res.rows.map((r) => r.id);
+        if (s.wholeTableZero) {
+          const all = await db.query(
+            `select count(*)::int as n from public.chat_messages`,
+          );
+          tableTotal = all.rows[0].n;
+        }
+      } finally {
+        await db.exec("reset role;");
+      }
+
+      const want = [...s.visible].sort();
+      const got = [...seen].sort();
+      const leaked = got.filter((g) => !want.includes(g));
+      const absent = want.filter((w) => !got.includes(w));
+
+      if (leaked.length === 0 && absent.length === 0) {
+        console.log(
+          `OK    ${s.who} reads exactly ${want.length}/6 (${want.map(label).join(", ") || "nothing"})`,
+        );
+      } else {
+        missing += 1;
+        console.log(
+          `MISS  ${s.who} reads the wrong set of chat_messages` +
+            (leaked.length ? `\n        ↳ LEAKED: ${leaked.map(label).join(", ")}` : "") +
+            (absent.length ? `\n        ↳ wrongly hidden: ${absent.map(label).join(", ")}` : ""),
+        );
+      }
+
+      if (s.wholeTableZero) {
+        const name = `${s.who} sees zero rows table-wide (not just among the fixtures)`;
+        if (tableTotal === 0) {
+          console.log(`OK    ${name}`);
+        } else {
+          missing += 1;
+          console.log(`MISS  ${name}\n        ↳ expected 0, got ${tableTotal}`);
+        }
+      }
+    }
+
 
     // ─── chat_messages: the imported-archive exclusion (Discord import) ──────
     //
