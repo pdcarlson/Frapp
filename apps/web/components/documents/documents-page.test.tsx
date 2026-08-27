@@ -8,12 +8,14 @@ const {
   mockCurrentChapter,
   mockDeleteDoc,
   mockRefetch,
+  mockDocumentRefetch,
   documentsQuery,
   mockOffline,
 } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
   mockDeleteDoc: vi.fn().mockResolvedValue({}),
   mockRefetch: vi.fn(),
+  mockDocumentRefetch: vi.fn(),
   mockOffline: { value: false },
   documentsQuery: {
     data: [] as unknown[],
@@ -37,10 +39,11 @@ const BYLAWS = {
   created_at: "2026-08-01T00:00:00Z",
 };
 
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/hooks")>()),
   useCurrentChapter: () => mockCurrentChapter(),
   useDocuments: () => documentsQuery,
-  useDocument: () => ({ refetch: vi.fn() }),
+  useDocument: () => ({ refetch: mockDocumentRefetch }),
   useRequestDocumentUploadUrl: () => ({ mutateAsync: vi.fn() }),
   useConfirmDocumentUpload: () => ({ mutateAsync: vi.fn() }),
   useDeleteDocument: () => ({ mutateAsync: mockDeleteDoc }),
@@ -132,6 +135,36 @@ describe("DocumentsPage subscription gating", () => {
     expect(document.getElementById(describedBy!)).toHaveTextContent(
       /subscription is not active/i,
     );
+  });
+
+  // #1040: the call site read `download_url` while the API returns
+  // `downloadUrl`, so this opened `undefined`. Nothing typed catches it — the
+  // endpoint has no OpenAPI response schema, so the SDK types the body as
+  // `never` and any property access compiles.
+  it("opens the signed URL the API actually returns", async () => {
+    const user = userEvent.setup();
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    mockDocumentRefetch.mockResolvedValue({
+      data: { ...BYLAWS, downloadUrl: "https://signed/bylaws.pdf" },
+    });
+    chapter.active();
+    render(<DocumentsPage />);
+
+    // `finally`, so a failed assertion cannot leak the spy into later tests —
+    // vitest.config.ts sets no `restoreMocks`.
+    try {
+      await user.click(downloadButton());
+
+      await waitFor(() =>
+        expect(open).toHaveBeenCalledWith(
+          "https://signed/bylaws.pdf",
+          "_blank",
+          "noopener",
+        ),
+      );
+    } finally {
+      open.mockRestore();
+    }
   });
 
   it("never gates reading the library", () => {
