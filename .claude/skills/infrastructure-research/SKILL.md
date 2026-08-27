@@ -166,11 +166,13 @@ below.
 
 ```bash
 # INFISICAL_PROJECT_ID is exported in agent sessions; same value as workspaceId in .infisical.json
-# An st.* token has 4 dot-segments; the last is a client-side decryption key that is NOT part of
-# the Bearer credential — strip it for raw API calls (the CLI, by contrast, wants the full token).
+# Newly minted service tokens are 3 dot-segments (st.<id>.<secret>) and are sent whole; LEGACY
+# 4-segment tokens carry a client-side decryption key as the 4th segment, which is NOT part of
+# the Bearer credential. The case-strip handles both (the CLI always wants the full token).
 # -f makes a 401/403 (token not scoped to this env) fail loudly instead of piping an error body
 # into python and printing zero names, which would misread as "environment is empty"
-curl -fsS -H "Authorization: Bearer ${INFISICAL_SERVICE_TOKEN%.*}" \
+tok="$INFISICAL_SERVICE_TOKEN"; case "$tok" in st.*.*.*) tok="${tok%.*}";; esac
+curl -fsS -H "Authorization: Bearer $tok" \
   "https://app.infisical.com/api/v3/secrets/raw?workspaceId=${INFISICAL_PROJECT_ID}&environment=dev&secretPath=/" \
   | python3 -c "import sys,json; [print(s['secretKey']) for s in json.load(sys.stdin).get('secrets',[])]"
 ```
@@ -193,9 +195,10 @@ Infisical **slugs** are `dev` / `staging` / `prod` (canonical constant: `INFISIC
 `environment=production` returns an error, not an empty list:
 
 ```bash
+tok="$INFISICAL_SERVICE_TOKEN"; case "$tok" in st.*.*.*) tok="${tok%.*}";; esac
 for env in staging prod; do
   echo "=== $env ==="
-  curl -fsS -H "Authorization: Bearer ${INFISICAL_SERVICE_TOKEN%.*}" \
+  curl -fsS -H "Authorization: Bearer $tok" \
     "https://app.infisical.com/api/v3/secrets/raw?workspaceId=${INFISICAL_PROJECT_ID}&environment=$env&secretPath=/" \
     | python3 -c "import sys,json; [print(s['secretKey']) for s in json.load(sys.stdin).get('secrets',[])]" | sort
 done
