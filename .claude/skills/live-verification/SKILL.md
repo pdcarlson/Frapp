@@ -158,9 +158,11 @@ local `webServer` entirely. No code change needed:
 PLAYWRIGHT_BASE_URL=https://app.staging.frapp.live npm run test:floor -w apps/web
 ```
 
-**Unauthenticated, this run measures nothing — every test aborts before the floor is read.**
-(The suite is one test per `DASHBOARD_ROUTES` entry in `apps/web/tests/visual/routes.ts`; count
-them there, not here.)
+**Unauthenticated, this run measures no dashboard route — every `responsive-floor.spec.ts` test
+aborts before the floor is read.** (That spec is one test per `DASHBOARD_ROUTES` entry in
+`apps/web/tests/visual/routes.ts`; count them there, not here. `test:floor` runs the whole
+`tests/visual/` directory, so the pre-auth suite's handful of tests still run and pass —
+a partially-green run is not evidence any dashboard route was measured.)
 With an external `PLAYWRIGHT_BASE_URL` the config skips `webServer`, so `SUPABASE_AUTH_BYPASS`
 is never applied. Every dashboard route is in `PROTECTED_ROUTE_PREFIXES`, so each redirects to
 `/sign-in?redirectTo=%2F…` (`URLSearchParams.set` percent-encodes the slash, so the spec's

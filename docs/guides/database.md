@@ -177,10 +177,10 @@ The design (canonical: [`docs/internal/security/AUTHORIZATION_MODEL.md`](../inte
   clients. The API enforces authorization (guards + RBAC) and reaches the database through the
   service-role client, which bypasses RLS; tenant isolation is therefore **application-layer**:
   every API query must filter on `chapter_id`.
-- Client-reachable policies exist only where the browser deliberately reads Postgres directly —
-  the chat hot path (`chat_message_actions`, `chat_messages` reads scoped through
-  `can_read_chat_message`) and a few narrow cases. Do not add a permissive policy for a new
-  table unless you are deliberately opening a client-direct path; enable RLS and stop.
+- Client-reachable policies exist only where the browser deliberately reads Postgres directly
+  (the chat hot path); `AUTHORIZATION_MODEL.md` holds the per-table inventory and the policy
+  details. Do not add a permissive policy for a new table unless you are deliberately opening a
+  client-direct path; enable RLS and stop.
 
 When adding tables:
 

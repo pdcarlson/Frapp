@@ -7,9 +7,16 @@ This guide walks through the complete deployment setup: Vercel for frontends, Re
 - ✅ Landing and web are configured in Vercel with Preview and Production environments.
 - ✅ CI pipeline uses domain-specific parallel jobs with required status checks.
 - ✅ Branch protection enforced on `main` and `production`.
-- ✅ API deployment is automated: `.github/workflows/deploy-api.yml` deploys `frapp-api-staging`
-  from `main` (gated on green CI) and `frapp-api-prod` from `production` on Render (verified
-  against the Render API 2026-08-27: both services exist with auto-deploy on their branch).
+- ✅ API deployment is automated on Render: `frapp-api-staging` deploys from `main`,
+  `frapp-api-prod` from `production`, and `.github/workflows/deploy-api.yml` additionally
+  triggers gated deploys and applies staging migrations after green CI. ⚠️ Verified against the
+  Render API 2026-08-27: both services also have **Render-side auto-deploy set to trigger on
+  commit**, which deploys on push *without waiting for CI* (the latest staging deploy started
+  seconds after its commit). The workflow's green-CI gate governs only its own deploy hook;
+  reconciling the two is a Render-dashboard-only setting — "After CI checks pass" is the mode
+  that keeps the gate honest *without* breaking `verify-render-api` (§ Deploy verification),
+  which treats "no deploy created for this SHA" as a failure and so rules out turning
+  auto-deploy fully off.
 - ✅ Infisical is the central secrets store; deploy workflows inject secrets from it, and provider
   syncs are inventoried in [`../environment/SECRETS_MANAGEMENT.md`](../environment/SECRETS_MANAGEMENT.md).
 - ✅ Staging database migrations apply automatically on every green `main` run (`migrate-staging`
