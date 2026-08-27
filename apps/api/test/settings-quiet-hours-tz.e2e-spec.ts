@@ -2,8 +2,6 @@ import {
   CanActivate,
   ExecutionContext,
   INestApplication,
-  ValidationPipe,
-  VersioningType,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
@@ -11,7 +9,7 @@ import { NotificationController } from '../src/interface/controllers/notificatio
 import { NotificationService } from '../src/application/services/notification.service';
 import { AuthService } from '../src/application/services/auth.service';
 import { SupabaseAuthGuard } from '../src/interface/guards/supabase-auth.guard';
-import { VALIDATION_PIPE_OPTIONS } from '../src/interface/pipes/validation-pipe.options';
+import { configureApp } from '../src/bootstrap';
 
 const V1 = '/v1';
 
@@ -70,8 +68,7 @@ describe('PATCH /v1/settings — quiet_hours_tz validation (#687)', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
-    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-    app.useGlobalPipes(new ValidationPipe(VALIDATION_PIPE_OPTIONS));
+    configureApp(app);
     await app.init();
   });
 

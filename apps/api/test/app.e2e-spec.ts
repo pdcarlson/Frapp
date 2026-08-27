@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { configureApp } from '../src/bootstrap';
 
 describe('Health (e2e)', () => {
   let app: INestApplication;
@@ -24,6 +25,7 @@ describe('Health (e2e)', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
+    configureApp(app);
     await app.init();
   });
 

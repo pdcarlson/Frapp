@@ -2,7 +2,6 @@ import {
   CanActivate,
   ExecutionContext,
   INestApplication,
-  VersioningType,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
@@ -13,6 +12,7 @@ import { SupabaseAuthGuard } from '../src/interface/guards/supabase-auth.guard';
 import { ChapterGuard } from '../src/interface/guards/chapter.guard';
 import { PermissionsGuard } from '../src/interface/guards/permissions.guard';
 import { createSupabaseMock } from './helpers/supabase-mock.factory';
+import { configureApp } from '../src/bootstrap';
 
 const V1 = '/v1';
 
@@ -85,7 +85,7 @@ describe('Task lifecycle (e2e)', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
-    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
+    configureApp(app);
     await app.init();
   });
 
