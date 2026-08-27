@@ -140,9 +140,12 @@ runs walk the whole Backlog):
 - **Agent briefs:** within the same batch, backfill missing briefs on `suggestion`-owned issues
   and correct mis-calibrated ones — same rules as Pass A step 3, **including delivering them as
   comments rather than body edits** and **not re-stating a correction a prior run already
-  commented** ([comment once](#comment-once-not-once-per-run)). An out-of-roster value
-  (`depth:shallow`/`medium`, `model:sonnet`) is worth one correcting comment, never a second;
-  the systemic fix is tracked in #1205.
+  commented** ([comment once](#comment-once-not-once-per-run)). An out-of-roster value is worth
+  one correcting comment, never a second; the systemic fix is tracked in #1205. Treat the roster
+  itself (`depth:skim|standard|deep`, `model:fable|any`) as the test rather than matching a list
+  of known-bad spellings — `depth:shallow`/`medium` and `model:sonnet` were the first three, and
+  `model:opus` turned up later on a path none of them named. Check what the value *is*, not
+  whether you recognise it.
 - **Epic-attach ONLY clear fits:** attach a suggestion as an epic's sub-issue **only when it
   unambiguously belongs** to that epic's scope. **Leave general, cross-cutting, infra, or
   speculative suggestions standalone — most suggestions stay standalone, and that's correct.**
