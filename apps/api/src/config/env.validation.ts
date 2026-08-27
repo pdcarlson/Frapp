@@ -16,7 +16,7 @@ const REQUIRED_ENV_VARS = [
 //   - POSTHOG_HOST         optional provider host override (default PostHog US)
 //
 // Also optional, same reasoning (#994): the rotating event check-in code.
-// Unset, `POST /v1/events/:id/attendance/check-in-token` returns 503 and a
+// Unset, `GET /v1/events/:eventId/attendance/check-in-token` returns 503 and a
 // supplied token is rejected; plain self check-in and the geofence are
 // unaffected, so no test or local flow depends on it being present.
 //   - EVENT_CHECK_IN_TOKEN_SECRET  per-environment HMAC key for check-in codes

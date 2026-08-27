@@ -11,10 +11,10 @@ This guide walks through the complete deployment setup: Vercel for frontends, Re
   `frapp-api-prod` from `production`, and `.github/workflows/deploy-api.yml` additionally
   triggers gated deploys and applies staging migrations after green CI. ⚠️ Verified against the
   Render API 2026-08-27: both services also have **Render-side auto-deploy set to trigger on
-  commit**, which deploys on push *without waiting for CI* (the latest staging deploy started
+  commit**, which deploys on push _without waiting for CI_ (the latest staging deploy started
   seconds after its commit). The workflow's green-CI gate governs only its own deploy hook;
   reconciling the two is a Render-dashboard-only setting — "After CI checks pass" is the mode
-  that keeps the gate honest *without* breaking `verify-render-api` (§ Deploy verification),
+  that keeps the gate honest _without_ breaking `verify-render-api` (§ Deploy verification),
   which treats "no deploy created for this SHA" as a failure and so rules out turning
   auto-deploy fully off.
 - ✅ Infisical is the central secrets store; deploy workflows inject secrets from it, and provider
@@ -105,11 +105,11 @@ feature/xyz ──PR──▶ main (staging) ──PR──▶ production (produ
 
 **Vercel environment mapping:**
 
-| Vercel environment           | Git trigger           | Domain example            |
-| ---------------------------- | --------------------- | ------------------------- |
-| **Production**               | Push to `production`  | `app.frapp.live`, `frapp.live` |
+| Vercel environment           | Git trigger           | Domain example                                 |
+| ---------------------------- | --------------------- | ---------------------------------------------- |
+| **Production**               | Push to `production`  | `app.frapp.live`, `frapp.live`                 |
 | **Preview** (pre-production) | Push to `main`        | `app.staging.frapp.live`, `staging.frapp.live` |
-| **Disabled**                 | Any other branch / PR | No auto deployment        |
+| **Disabled**                 | Any other branch / PR | No auto deployment                             |
 
 The `main` branch's staging domain is configured by assigning the domain to the Preview environment and filtering to the `main` branch in Vercel's domain settings. Each app's `vercel.json` also uses `git.deploymentEnabled` so only `main` and `production` auto-deploy (`"**": false` is used to match feature branch names that include `/`).
 
@@ -216,10 +216,10 @@ In each Vercel project → Settings → Domains:
 
 #### Staging Domains (connected to Preview environment, filtered to `main` branch)
 
-| Project         | Domain                    | Environment | Branch filter |
-| --------------- | ------------------------- | ----------- | ------------- |
-| `frapp-web`     | `app.staging.frapp.live`  | Preview     | `main`        |
-| `frapp-landing` | `staging.frapp.live`      | Preview     | `main`        |
+| Project         | Domain                   | Environment | Branch filter |
+| --------------- | ------------------------ | ----------- | ------------- |
+| `frapp-web`     | `app.staging.frapp.live` | Preview     | `main`        |
+| `frapp-landing` | `staging.frapp.live`     | Preview     | `main`        |
 
 **To set this up:** In each project, go to Settings → Domains → Add the staging domain → Connect to environment: **Preview** → set the branch filter to `main`.
 
@@ -313,7 +313,7 @@ Create **two** Render Web Services: one for production, one for staging.
 | `STRIPE_PRICE_ID`           | `price_...` (prod)               | `price_...` (test)                  |
 | `SENTRY_DSN`                | `<prod sentry dsn>`              | `<staging sentry dsn>`              |
 | `PORT`                      | `3001`                           | `3001`                              |
-| `NODE_ENV`                  | `production`                     | `production`                        |
+| `NODE_ENV`                  | `production`                     | `staging`                           |
 
 ### 5.3 Custom Domains
 
@@ -357,16 +357,16 @@ When the split happens, deploy `ChatPushWorkerModule` (and `ChatBridgeWorkerModu
 
 **These differ from the §5.5 chat workers in one way that matters for scaling.** The chat workers each hold a single Supabase Realtime subscription, so extra replicas mostly duplicate a stream. A `@Cron` handler instead fires on **every replica, on every tick**. Multi-instance safety therefore comes from the database, not the topology: each unit of work claims a row in `scheduled_notification_dispatches`, unique on `(entity_type, entity_id, threshold, due_date)`, and only the replica that wins the insert acts. Reminders cannot be double-sent, and auto-absent runs once per event rather than once per replica per hour.
 
-**The report-retention sweep is the exception, and deliberately takes no claim.** The claim exists to stop a *duplicate side effect* — the same reminder sent twice. Deleting a storage object is idempotent: both replicas list before either deletes, so the loser issues `remove()` against keys that are already gone, and Supabase reports success for those (verified against the local stack: `remove()` on a missing key returns no error and an empty result array). It needs no dispatch row, and adding one would only make the sweep skip work after a crash. It also reads its work list from storage rather than the `chapters` table — it lists the chapter folders under the `reports` bucket — so its cost scales with chapters that have *exported*, not with chapters that exist, and a prefix whose chapter row was deleted still gets reaped.
+**The report-retention sweep is the exception, and deliberately takes no claim.** The claim exists to stop a _duplicate side effect_ — the same reminder sent twice. Deleting a storage object is idempotent: both replicas list before either deletes, so the loser issues `remove()` against keys that are already gone, and Supabase reports success for those (verified against the local stack: `remove()` on a missing key returns no error and an empty result array). It needs no dispatch row, and adding one would only make the sweep skip work after a crash. It also reads its work list from storage rather than the `chapters` table — it lists the chapter folders under the `reports` bucket — so its cost scales with chapters that have _exported_, not with chapters that exist, and a prefix whose chapter row was deleted still gets reaped.
 
 Consequences worth knowing before scaling the API service:
 
 - Adding replicas does **not** multiply notifications, and needs no configuration change.
-- The sweeps are self-healing across missed ticks — auto-absent looks back 24 hours, overdue reminders 7 days, and due-soon reminders accept the due date itself as a late catch-up — so a deploy that skips 09:00 delays reminders rather than dropping them. Report retention re-derives what is expired from each object's stored-at timestamp on every tick, so missed ticks delay a delete rather than skipping it. A *persistent* read failure is a different matter and is deliberately audible: the sweep logs a warning naming how many chapter prefixes it skipped, another if any object carries no stored-at timestamp (which it keeps rather than guessing), and an info line when it finds no chapter prefixes at all — the storage layer reports a missing bucket as an empty folder, so an unprovisioned or renamed `reports` bucket would otherwise be the one persistent failure that logged nothing. A sweep that silently reaps nothing forever would otherwise be indistinguishable from a healthy one.
-- The claim is taken *before* sending. If every delivery for a claim fails it is released and retried next tick; if only some recipients fail the claim is kept and the shortfall is logged, so a partial failure is visible but never re-spams the recipients who did get it. Both the claim insert and the compensating delete bind `chapter_id` from the sweep row, so a failed send in one chapter cannot drop another chapter's claim.
+- The sweeps are self-healing across missed ticks — auto-absent looks back 24 hours, overdue reminders 7 days, and due-soon reminders accept the due date itself as a late catch-up — so a deploy that skips 09:00 delays reminders rather than dropping them. Report retention re-derives what is expired from each object's stored-at timestamp on every tick, so missed ticks delay a delete rather than skipping it. A _persistent_ read failure is a different matter and is deliberately audible: the sweep logs a warning naming how many chapter prefixes it skipped, another if any object carries no stored-at timestamp (which it keeps rather than guessing), and an info line when it finds no chapter prefixes at all — the storage layer reports a missing bucket as an empty folder, so an unprovisioned or renamed `reports` bucket would otherwise be the one persistent failure that logged nothing. A sweep that silently reaps nothing forever would otherwise be indistinguishable from a healthy one.
+- The claim is taken _before_ sending. If every delivery for a claim fails it is released and retried next tick; if only some recipients fail the claim is kept and the shortfall is logged, so a partial failure is visible but never re-spams the recipients who did get it. Both the claim insert and the compensating delete bind `chapter_id` from the sweep row, so a failed send in one chapter cannot drop another chapter's claim.
 - Timing is UTC. No `TZ` is set on the API service, so `EVERY_DAY_AT_9AM` means 09:00 UTC and the sweeps' date arithmetic is UTC-based. Setting `TZ` on the service would shift both together; do it deliberately, not incidentally.
 
-Splitting these into a standalone Render Background Worker is not currently warranted — the sweeps are short and run at most hourly — but if they are split, they must not run in *both* places at once unless the dispatch claim is preserved, since that is the only thing preventing duplicate work.
+Splitting these into a standalone Render Background Worker is not currently warranted — the sweeps are short and run at most hourly — but if they are split, they must not run in _both_ places at once unless the dispatch claim is preserved, since that is the only thing preventing duplicate work.
 
 ### 5.7 Deploy Hooks (for GitHub Actions)
 
@@ -477,11 +477,11 @@ error that names neither this page nor the setting.
    taken from the browser, which the flow must never do.
 4. **Register the redirect URI** — OAuth2 → Redirects → Add, **exactly**:
 
-   | Environment | Redirect URI |
-   |---|---|
-   | local | `http://localhost:3001/v1/discord/connect/callback` |
-   | staging | `https://api-staging.frapp.live/v1/discord/connect/callback` |
-   | production | `https://api.frapp.live/v1/discord/connect/callback` |
+   | Environment | Redirect URI                                                 |
+   | ----------- | ------------------------------------------------------------ |
+   | local       | `http://localhost:3001/v1/discord/connect/callback`          |
+   | staging     | `https://api-staging.frapp.live/v1/discord/connect/callback` |
+   | production  | `https://api.frapp.live/v1/discord/connect/callback`         |
 
    It is `API_URL` + `/v1/discord/connect/callback` and Discord matches it
    **character for character**. Get it wrong and every admin who clicks "Add to
@@ -490,6 +490,7 @@ error that names neither this page nor the setting.
    The path is pinned in code as `DISCORD_CALLBACK_PATH`
    (`apps/api/src/application/services/discord-oauth.service.ts`); this table is
    the third copy, and the one that drifts.
+
 5. **Enable Message Content Intent** — Bot → Privileged Gateway Intents →
    Message Content Intent → on. This is **self-serve below 100 servers** and is
    separate from bot verification, which is not needed yet (revisit before that
@@ -506,7 +507,7 @@ chapter, and a read-only archiver has no business holding a permission that can
 change anything in someone's server.
 
 **One thing the portal cannot express, so it is worth knowing here.** Discord's
-consent screen names *Signet* — it does not name the chapter the connection will
+consent screen names _Signet_ — it does not name the chapter the connection will
 be bound to, and it cannot. Signet closes that gap on its own side: the callback
 parks the server and links nothing, and an authenticated request scoped to the
 chapter is what activates it. So a Signet officer cannot send their authorize
@@ -581,7 +582,7 @@ All deployments are gated behind CI success. The flow is:
 3. **PR merged** → Push event triggers deploy pipeline (`workflow_run` waits for CI).
 4. **Deploy pipeline**: DB migration (dry-run → apply) → API deploy (Render) → Frontends auto-deploy (Vercel).
 
-Production deploys run automatically after the `main` → `production` promotion PR merges and CI passes — there is no separate GitHub Actions environment-approval pause. The control point for production is the promotion PR itself (branch protection: CI + an approving review + conversation resolution). This used to be explained as required-reviewer environment rules being Enterprise-only *on private repositories*; **that reason is wrong — this repo is public** (corrected 2026-08-21, see `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets). The gate is unchanged; whether to add environment reviewers on top is an open question, not a correction.
+Production deploys run automatically after the `main` → `production` promotion PR merges and CI passes — there is no separate GitHub Actions environment-approval pause. The control point for production is the promotion PR itself (branch protection: CI + an approving review + conversation resolution). This used to be explained as required-reviewer environment rules being Enterprise-only _on private repositories_; **that reason is wrong — this repo is public** (corrected 2026-08-21, see `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets). The gate is unchanged; whether to add environment reviewers on top is an open question, not a correction.
 
 ### Required Status Checks
 

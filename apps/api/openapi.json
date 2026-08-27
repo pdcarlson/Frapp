@@ -321,7 +321,14 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentChapterResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -6069,6 +6076,96 @@
           "name",
           "university",
           "accept_terms_privacy"
+        ]
+      },
+      "CurrentChapterResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "university": {
+            "type": "string"
+          },
+          "subscription_status": {
+            "type": "string",
+            "enum": [
+              "incomplete",
+              "active",
+              "past_due",
+              "canceled"
+            ],
+            "description": "Read by the client subscription gate. Load-bearing — see `chapter-member-view.ts`."
+          },
+          "past_due_since": {
+            "type": "string",
+            "nullable": true,
+            "description": "Timestamp the chapter entered `past_due`, or null. Drives the 3-day client grace window; the grace predicate fails open without it."
+          },
+          "accent_color": {
+            "type": "string",
+            "nullable": true
+          },
+          "logo_path": {
+            "type": "string",
+            "nullable": true
+          },
+          "donation_url": {
+            "type": "string",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "org_archetype": {
+            "type": "string"
+          },
+          "enabled_modules": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "boolean"
+            }
+          },
+          "vocabulary": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "branding": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "theme_palette": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "analytics_opt_out": {
+            "type": "boolean",
+            "description": "Per-chapter opt-out for the pseudonymous analytics pipeline. Mobile reads it off this payload."
+          },
+          "logo_url": {
+            "type": "string",
+            "nullable": true,
+            "description": "Signed URL for the chapter logo, or null when none is set or signing failed. Computed, not a column."
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "university",
+          "subscription_status",
+          "past_due_since",
+          "accent_color",
+          "logo_path",
+          "donation_url",
+          "created_at",
+          "updated_at",
+          "logo_url"
         ]
       },
       "UpdateChapterDto": {

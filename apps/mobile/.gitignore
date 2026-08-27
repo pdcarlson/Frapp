@@ -18,6 +18,12 @@ expo-env.d.ts
 *.key
 *.mobileprovision
 
+# Play service-account key referenced by eas.json submit config — a real key
+# dropped at this path must never be stageable. (Deliberately NOT named
+# google-services.json: that is Firebase's client config, which EAS builds
+# would need packaged, i.e. tracked.)
+play-service-account.json
+
 # Metro
 .metro-health-check*
 
