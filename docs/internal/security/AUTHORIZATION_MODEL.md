@@ -179,9 +179,16 @@ drift: `auth_admin_can_read_users` and `auth_admin_can_read_members` are created
 schema PGlite does not have. `scripts/check-pglite-migrations.mjs` pins the `public` set **by name and command**, so adding or
 dropping one of those 8 — or flipping one from `SELECT` to `ALL` — fails CI. Because a name-and-command
 set still cannot see a policy *rewritten in place*, it additionally rejects any permissive policy whose
-qualifier is literally `true`; that is the one rewrite that would hand every row to any authenticated
-caller under an unchanged name, and it matters most for
-`member_custom_field_values_service_role`, which is `FOR ALL` and has no other coverage in the repo.
+qualifier is a bare tautology — checking **both `qual` and `with_check`**. Reading only `qual` would
+miss the write path entirely: a `FOR INSERT` policy such as `chat_message_actions_insert` has a NULL
+`qual` and carries its whole predicate in `with_check`, and on a `FOR ALL` policy it is `with_check`
+that gates writes. So `using (auth.role() = 'service_role') with check (true)` — name, command and
+qualifier all unchanged — would otherwise have passed clean while letting any client insert arbitrary
+rows. That matters most for `member_custom_field_values_service_role`, which is `FOR ALL` and, like
+`chat_notification_preferences_select_own`, has no other coverage anywhere in the repo.
+
+This is a tripwire for the obvious rewrite, not a proof: it catches the literal spellings
+(`true`, `(true)`, `1=1`), and an adversarial `using (id = id)` would still pass.
 
 Note the limit of the guard: the three policies PGlite cannot see are **not** covered, so dropping
 `auth_admin_can_read_users`, `auth_admin_can_read_members`, or `realtime_messages_scoped_select`
@@ -345,7 +352,8 @@ using ((auth.role() = 'authenticated' and kind <> 'imported' and can_read_chat_m
 
 hands every archived message in every chapter to an unauthenticated client while satisfying all
 three shape regexes and every membership expectation. Verified 2026-08-27: with that policy applied,
-the shape assertion still reports `OK` and only the post-archive re-check fails.
+the shape assertion, the policy inventory, and all five membership assertions still report `OK`, and
+the **only** failure in the whole suite is the null-uid post-archive re-check.
 
 Why black-box rather than a shape assertion: the smoke-tier check on the policy *expression* is
 substring-shaped and defeatable by construction. It tests three substrings —
@@ -366,5 +374,5 @@ message in every chapter's private channels and DMs readable by any authenticate
 Verified 2026-08-27 by applying exactly that edit to
 `20260823123000_chat_imported_kind_semantics.sql` locally and running the suite: the shape assertion
 and the policy inventory both still reported `OK`, and the black-box tier failed 7 assertions — the
-cross-chapter reader and the no-JWT reader each seeing all six seeded messages. The migration was
+cross-chapter reader and the no-JWT reader each seeing all seven seeded messages. The migration was
 then reverted.
