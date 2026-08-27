@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { deriveSignetPalette } from '@repo/chapter-theme';
 import { ChapterService } from './chapter.service';
+import { toChapterMemberView } from './chapter-member-view';
 import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
 import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
@@ -215,22 +216,37 @@ describe('ChapterService', () => {
     expect(mockMemberRepo.findByUser).toHaveBeenCalledWith('user-1');
     expect(mockChapterRepo.findById).toHaveBeenNthCalledWith(1, 'ch-1');
     expect(mockChapterRepo.findById).toHaveBeenNthCalledWith(2, 'ch-2');
+    // Projected, not the raw row (#930). This assertion used to read
+    // `chapter: chapters[0]`, which pinned the leak: `GET /v1/chapters` has no
+    // billing permission, yet shipped `stripe_customer_id`, `subscription_id`
+    // and `last_stripe_webhook_at` for every chapter the caller belongs to.
     expect(result).toEqual([
       {
         member_id: 'member-1',
         chapter_id: 'ch-1',
         role_ids: ['role-president'],
         has_completed_onboarding: true,
-        chapter: chapters[0],
+        chapter: toChapterMemberView(chapters[0]),
       },
       {
         member_id: 'member-2',
         chapter_id: 'ch-2',
         role_ids: ['role-member'],
         has_completed_onboarding: false,
-        chapter: chapters[1],
+        chapter: toChapterMemberView(chapters[1]),
       },
     ]);
+
+    // Asserted directly rather than left implicit in the projection helper, so
+    // this test fails on a regression here even if the helper's own contract
+    // changed.
+    for (const summary of result) {
+      expect(summary.chapter).not.toHaveProperty('stripe_customer_id');
+      expect(summary.chapter).not.toHaveProperty('subscription_id');
+      expect(summary.chapter).not.toHaveProperty('last_stripe_webhook_at');
+      // Still present — the chapter picker and the subscription gate read it.
+      expect(summary.chapter).toHaveProperty('subscription_status');
+    }
   });
 
   it('should throw NotFoundException when chapter not found', async () => {
@@ -305,6 +321,52 @@ describe('ChapterService', () => {
       await expect(service.findByIdWithLogoUrl('ch-1')).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    describe('member-safe projection (#930)', () => {
+      /*
+       * `GET /v1/chapters/current` is guarded by `members:view` — every member
+       * of the chapter. The repository read behind it is `select('*')`, so
+       * without a projection the whole row shipped. These two tests are the
+       * endpoint-level halves of the issue's AC #2 and AC #3.
+       */
+      function populatedChapter(): Chapter {
+        return {
+          ...chapterWith(null),
+          stripe_customer_id: 'cus_SENSITIVE',
+          subscription_id: 'sub_SENSITIVE',
+          subscription_status: 'past_due',
+          past_due_since: '2026-08-01T00:00:00.000Z',
+          last_stripe_webhook_at: '2026-08-02T00:00:00.000Z',
+          legal_accepted_by: 'user-legal-signer',
+          beta_config: { enabled: true },
+        };
+      }
+
+      it('withholds billing identifiers and internal columns', async () => {
+        mockChapterRepo.findById.mockResolvedValue(populatedChapter());
+
+        const result = await service.findByIdWithLogoUrl('ch-1');
+
+        expect(result).not.toHaveProperty('stripe_customer_id');
+        expect(result).not.toHaveProperty('subscription_id');
+        expect(result).not.toHaveProperty('last_stripe_webhook_at');
+        expect(result).not.toHaveProperty('legal_accepted_by');
+        expect(result).not.toHaveProperty('beta_config');
+        expect(JSON.stringify(result)).not.toContain('SENSITIVE');
+      });
+
+      it('still delivers the entitlement mirror the client gate reads', async () => {
+        // If this fails, every client silently renders grace-window
+        // affordances while the server hard-locks the same writes —
+        // `isWithinSubscriptionGrace(null)` fails open.
+        mockChapterRepo.findById.mockResolvedValue(populatedChapter());
+
+        const result = await service.findByIdWithLogoUrl('ch-1');
+
+        expect(result.subscription_status).toBe('past_due');
+        expect(result.past_due_since).toBe('2026-08-01T00:00:00.000Z');
+      });
     });
   });
 

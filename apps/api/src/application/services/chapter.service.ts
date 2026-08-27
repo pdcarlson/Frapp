@@ -14,6 +14,10 @@ import {
 } from '@repo/validation';
 import { assertSafeStoragePath } from '../../domain/utils/storage-path';
 import { buildChapterPalette } from './chapter-palette';
+import {
+  toChapterMemberView,
+  type ChapterMemberView,
+} from './chapter-member-view';
 import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
 import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
@@ -48,7 +52,10 @@ export interface ChapterMembershipSummary {
   chapter_id: string;
   role_ids: string[];
   has_completed_onboarding: boolean;
-  chapter: Chapter;
+  // Projected, not the raw row: this endpoint has no billing permission, and
+  // an unprojected chapter here leaked the same identifiers `/current` did
+  // (#930). See `chapter-member-view.ts`.
+  chapter: ChapterMemberView;
 }
 
 @Injectable()
@@ -108,9 +115,15 @@ export class ChapterService {
    */
   async findByIdWithLogoUrl(
     id: string,
-  ): Promise<Chapter & { logo_url: string | null }> {
+  ): Promise<ChapterMemberView & { logo_url: string | null }> {
     const chapter = await this.findById(id);
-    return { ...chapter, logo_url: await this.resolveLogoUrl(chapter) };
+    return {
+      // Projected rather than spread. `findById` returns `select('*')`, and
+      // this is the one caller whose result reaches a member-permissioned
+      // route — see `chapter-member-view.ts` (#930).
+      ...toChapterMemberView(chapter),
+      logo_url: await this.resolveLogoUrl(chapter),
+    };
   }
 
   private async resolveLogoUrl(chapter: Chapter): Promise<string | null> {
@@ -369,7 +382,7 @@ export class ChapterService {
       chapter_id: member.chapter_id,
       role_ids: member.role_ids,
       has_completed_onboarding: member.has_completed_onboarding,
-      chapter,
+      chapter: toChapterMemberView(chapter),
     };
   }
 }

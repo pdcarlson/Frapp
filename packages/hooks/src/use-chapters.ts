@@ -8,18 +8,35 @@ export interface ChapterMembershipSummary {
   member_id: string;
   role_ids: string[];
   has_completed_onboarding: boolean;
+  /**
+   * The member-safe projection the API actually returns, not the `chapters`
+   * row (#930). `stripe_customer_id` and `subscription_id` were declared here
+   * and are deliberately gone: this endpoint carries no billing permission, so
+   * the server withholds them. They are available from `GET /v1/billing/status`
+   * to callers holding `billing:view`.
+   *
+   * Keep this in step with `CHAPTER_MEMBER_VIEW_FIELDS` on the API side.
+   * `useListChapters` asserts the response into this type, so a field declared
+   * here that the server does not send is `undefined` at runtime with nothing
+   * failing to say so.
+   */
   chapter: {
     id: string;
     name: string;
     university: string;
-    stripe_customer_id: string | null;
     subscription_status: "incomplete" | "active" | "past_due" | "canceled";
-    subscription_id: string | null;
+    past_due_since: string | null;
     accent_color: string | null;
     logo_path: string | null;
     donation_url: string | null;
     created_at: string;
     updated_at: string;
+    org_archetype?: string;
+    enabled_modules?: Record<string, boolean>;
+    vocabulary?: Record<string, unknown>;
+    branding?: Record<string, unknown>;
+    theme_palette?: Record<string, unknown>;
+    analytics_opt_out?: boolean;
   };
 }
 
