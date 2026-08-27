@@ -507,11 +507,17 @@ const RLS_SMOKE = [
     ok: (rows) => {
       if (rows.length !== 1 || rows[0].prosecdef !== true) return false;
       const cfg = rows[0].proconfig;
+      // proconfig arrives as a JS array from PGlite; the string branch is
+      // defensive. It must NOT split on "," -- the value we are looking for is
+      // `search_path=public, pg_temp`, a SINGLE element that itself contains a
+      // comma, which Postgres therefore renders quoted inside the array literal.
+      // Splitting naively would tear it in half and fail a correctly-pinned
+      // function. Match quoted elements whole, unquoted ones up to the next comma.
       const items = Array.isArray(cfg)
         ? cfg
-        : String(cfg ?? "")
-            .replace(/^\{|\}$/g, "")
-            .split("|");
+        : ((String(cfg ?? "").replace(/^\{|\}$/g, "").match(/"(?:[^"\\]|\\.)*"|[^,]+/g) ?? []).map(
+            (it) => it.trim().replace(/^"|"$/g, "").replace(/\\"/g, '"'),
+          ));
       const sp = items
         .map((it) => String(it).trim())
         .find((it) => /^search_path\s*=/i.test(it));

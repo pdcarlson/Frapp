@@ -353,3 +353,34 @@ Two of those reads are redundant rather than merely additive: `ChapterGuard` has
 
 ### Prevention
 Any chapter-wide list endpoint over a per-user-visible resource must go through `ChannelAccessService`. A route-level permission gate scopes the **tenant**; it never scopes the **row**. When a handler cannot filter because it has no caller identity, that is the bug — thread the id rather than assuming the guard covered it. And treat metadata as content: names, membership arrays and server-generated identifiers can disclose a relationship as completely as the messages inside it.
+
+## `search_path` shadowing in `SECURITY DEFINER` functions (#985)
+
+### Overview
+Seven `SECURITY DEFINER` functions in `public` were declared `set search_path = public`. Postgres
+resolves unqualified relation names against `pg_temp` **first** when `pg_temp` is not itself listed,
+so a caller-created temp table shadowed the real table inside those functions while they ran with the
+definer's privileges. Four are authorization code: `can_read_chat_message` backs chat RLS, and
+`realtime_can_read_chapter_scope` / `_event_scope` / `_user_scope` gate realtime topic delivery — a
+shadowed read there is an authorization decision made against attacker-supplied rows.
+
+### Details
+Fixed in `supabase/migrations/20260827190000_secdef_search_path_pg_temp.sql`, which redefines all
+seven with `set search_path = public, pg_temp`. Bodies are unchanged. `20260816190000` had already
+applied the same fix to `get_channel_unread_counts` (#983); this completed the sweep.
+
+Reachability, stated plainly: there is no known path to this from the app surface today — PostgREST
+exposes no arbitrary SQL and the Supabase client can only invoke defined RPCs, so triggering it
+requires a session that can execute DDL. It becomes live the moment anything grants broader SQL
+access (a direct connection string, a psql-capable admin tool, or an RPC that runs caller-supplied
+SQL). Treated as defense-in-depth on authorization-critical code rather than an active incident, which
+is why it was P2 and not P1. This is also what Supabase's advisor reports as "Function Search Path
+Mutable".
+
+### Prevention
+Declare every `SECURITY DEFINER` function `set search_path = public, pg_temp`, with `pg_temp` **last**
+— listing it first reinstates the defect. `scripts/check-pglite-migrations.mjs` enforces this against
+the applied catalog (the `security definer search_path` tier) and fails the `pglite-migrations` job on
+any function that does not, so the eighth one cannot land silently. The check reads the catalog rather
+than scanning migration SQL, because migrations are immutable — the three files that introduced the
+bare setting keep it in their text permanently, and only the end state is meaningful.
