@@ -633,33 +633,58 @@ for (const lm of RLS_SMOKE) await runOne(lm);
 //     and that role does not exist here.
 //   - `realtime.messages.realtime_messages_scoped_select` lives in the `realtime`
 //     schema, which PGlite does not have at all.
-// So: 8 in `public` here; 11 hosted (10 in `public` + 1 in `realtime`).
+// So: 8 in `public` here; 11 hosted (10 in `public` + 1 in `realtime`). The
+// printed hosted figure is derived from this list + those 3, so it cannot
+// silently contradict itself the way a second hardcoded literal would.
 //
 // Asserted as an exact SET rather than a count: a bare count lets a dropped
 // policy be masked by an added one, which is the failure mode that matters — a
 // silently removed policy widens access without changing the total.
 {
   const EXPECTED_PUBLIC_POLICIES = [
-    "chapter_audit_log.audit_log_no_delete",
-    "chapter_audit_log.audit_log_no_update",
-    "chat_message_actions.chat_message_actions_delete",
-    "chat_message_actions.chat_message_actions_insert",
-    "chat_message_actions.chat_message_actions_select",
-    "chat_messages.chat_messages_select",
-    "chat_notification_preferences.chat_notification_preferences_select_own",
-    "member_custom_field_values.member_custom_field_values_service_role",
+    "chapter_audit_log.audit_log_no_delete [DELETE]",
+    "chapter_audit_log.audit_log_no_update [UPDATE]",
+    "chat_message_actions.chat_message_actions_delete [DELETE]",
+    "chat_message_actions.chat_message_actions_insert [INSERT]",
+    "chat_message_actions.chat_message_actions_select [SELECT]",
+    "chat_messages.chat_messages_select [SELECT]",
+    "chat_notification_preferences.chat_notification_preferences_select_own [SELECT]",
+    // FOR ALL, so an in-place rewrite here would widen writes as well as reads —
+    // which is why the unconditional check below matters most for this one.
+    "member_custom_field_values.member_custom_field_values_service_role [ALL]",
   ];
+  // `cmd` is part of the identity, not decoration: flipping a policy from SELECT
+  // to ALL widens it to writes while the name set is unchanged.
   const res = await db.query(
-    `select tablename, policyname from pg_policies
+    `select tablename, policyname, cmd, permissive,
+            coalesce(qual, '') as qual
+       from pg_policies
       where schemaname = 'public'
       order by tablename, policyname`,
   );
-  const got = res.rows.map((r) => `${r.tablename}.${r.policyname}`);
+  const got = res.rows.map((r) => `${r.tablename}.${r.policyname} [${r.cmd}]`);
   const added = got.filter((p) => !EXPECTED_PUBLIC_POLICIES.includes(p));
   const removed = EXPECTED_PUBLIC_POLICIES.filter((p) => !got.includes(p));
-  if (added.length === 0 && removed.length === 0) {
+
+  // A name-and-cmd set still cannot see a policy REWRITTEN in place, and two of
+  // these eight have no other coverage anywhere in the repo
+  // (`chat_notification_preferences_select_own`,
+  // `member_custom_field_values_service_role`). Dropping and recreating one with
+  // `using (true)` under the same name would keep the set identical and hand
+  // every row to any authenticated PostgREST client. None of the eight is
+  // unconditional today, so assert that directly.
+  const unconditional = res.rows
+    .filter((r) => r.permissive === "PERMISSIVE" && /^\s*true\s*$/i.test(r.qual))
+    .map((r) => `${r.tablename}.${r.policyname}`);
+
+  if (added.length === 0 && removed.length === 0 && unconditional.length === 0) {
     console.log(
-      `OK    public policy inventory matches AUTHORIZATION_MODEL.md §4 (${got.length} here, 11 hosted)`,
+      `OK    public policy inventory matches AUTHORIZATION_MODEL.md §4 (${got.length} here, ${EXPECTED_PUBLIC_POLICIES.length + 3} hosted)`,
+    );
+  } else if (unconditional.length > 0) {
+    missing += 1;
+    console.log(
+      `MISS  a permissive public policy is unconditional (\`using (true)\`)\n        ↳ ${unconditional.join(", ")}`,
     );
   } else {
     missing += 1;
@@ -913,12 +938,18 @@ const F = {
   chRoleGated: "c0000004-0000-0000-0000-000000000001",
   chRoleGatedOpen: "c0000005-0000-0000-0000-000000000001",
   chGroupDM: "c0000006-0000-0000-0000-000000000001",
+  // Chapter B's own PUBLIC channel. Exists so the cross-chapter reader has
+  // something it legitimately CAN see: without it, "userB sees zero chapter-A
+  // rows" is satisfied just as well by a uuid the schema has never heard of,
+  // and proves nothing about tenant scoping.
+  chPublicB: "c0000007-0000-0000-0000-000000000001",
   msgPublic: "10000001-0000-0000-0000-000000000001",
   msgPrivate: "10000002-0000-0000-0000-000000000001",
   msgDM: "10000003-0000-0000-0000-000000000001",
   msgRoleGated: "10000004-0000-0000-0000-000000000001",
   msgRoleGatedOpen: "10000005-0000-0000-0000-000000000001",
   msgGroupDM: "10000006-0000-0000-0000-000000000001",
+  msgPublicB: "10000007-0000-0000-0000-000000000001",
 };
 
 // Seeded outside a transaction (these rows are read-only fixtures for the
@@ -958,14 +989,16 @@ try {
     ('${F.chDM}',            '${F.chapA}', 'dm',         'DM',         '{${F.userAId}}',  null),
     ('${F.chRoleGated}',     '${F.chapA}', 'gated',      'ROLE_GATED', null,              '{chat:secret}'),
     ('${F.chRoleGatedOpen}', '${F.chapA}', 'gated-open', 'ROLE_GATED', null,              '{}'),
-    ('${F.chGroupDM}',       '${F.chapA}', 'groupdm',    'GROUP_DM',   '{${F.userAId}}',  null);
+    ('${F.chGroupDM}',       '${F.chapA}', 'groupdm',    'GROUP_DM',   '{${F.userAId}}',  null),
+    ('${F.chPublicB}',       '${F.chapB}', 'public-b',   'PUBLIC',     null,              null);
   insert into chat_messages (id, channel_id, sender_id) values
     ('${F.msgPublic}',        '${F.chPublic}',        '${F.userAId}'),
     ('${F.msgPrivate}',       '${F.chPrivate}',       '${F.userAId}'),
     ('${F.msgDM}',            '${F.chDM}',            '${F.userAId}'),
     ('${F.msgRoleGated}',     '${F.chRoleGated}',     '${F.userAId}'),
     ('${F.msgRoleGatedOpen}', '${F.chRoleGatedOpen}', '${F.userAId}'),
-    ('${F.msgGroupDM}',       '${F.chGroupDM}',       '${F.userAId}');
+    ('${F.msgGroupDM}',       '${F.chGroupDM}',       '${F.userAId}'),
+    ('${F.msgPublicB}',       '${F.chPublicB}',       '${F.userBId}');
 `);
   readSeeded = true;
 } catch (e) {
@@ -1118,10 +1151,13 @@ if (readSeeded) {
     // list, plus (since #974) the two archive-rule reads below — and a shape
     // assertion is defeatable by construction. The harness says so itself about
     // the sibling: substring-shaped, so a determined rewrite slips past it.
-    // `using (auth.role() = 'authenticated' and (can_read_chat_message(id) or
-    // true))` satisfies both regexes AND `rows.length === 1`, turning every
-    // message in every chapter's private channels and DMs into an authenticated
-    // read. Only reading the table as a non-owner role catches that.
+    // That check tests three substrings — `can_read_chat_message(id)`,
+    // `authenticated`, and `kind <> 'imported'` — so a defeating rewrite keeps
+    // all three and neuters only the one doing the work:
+    //     and (public.can_read_chat_message(id) or true)
+    // which satisfies all three AND `rows.length === 1`, turning every message
+    // in every chapter's private channels and DMs into an authenticated read.
+    // Only reading the table as a non-owner role catches that.
     //
     // Placement is deliberate: this runs BEFORE the archive block below inserts
     // its imported row and its live null-sender row, so the fixture here is
@@ -1138,6 +1174,7 @@ if (readSeeded) {
       [F.msgRoleGated]: "ROLE_GATED(chat:secret)",
       [F.msgRoleGatedOpen]: "ROLE_GATED(empty-req)",
       [F.msgGroupDM]: "GROUP_DM",
+      [F.msgPublicB]: "chapterB/PUBLIC",
     };
     const ALL_MSG_IDS = Object.keys(MSG_LABEL);
     const label = (id) => MSG_LABEL[id] ?? id;
@@ -1149,10 +1186,14 @@ if (readSeeded) {
         visible: [F.msgPublic, F.msgPrivate, F.msgDM, F.msgRoleGated, F.msgGroupDM],
       },
       {
-        who: "cross-chapter member",
+        // The positive control is what makes this assertion mean anything. userB
+        // is a real, functioning reader — it sees its OWN chapter's PUBLIC
+        // message — and still sees none of chapter A's six. Without that half,
+        // "sees zero of chapter A" is equally satisfied by a uuid belonging to
+        // nobody, and the tenant boundary is never actually exercised.
+        who: "cross-chapter member (sees only their own chapter)",
         uid: F.userBAuth,
-        visible: [],
-        wholeTableZero: true, // AC: a cross-chapter member sees ZERO rows, table-wide
+        visible: [F.msgPublicB],
       },
       {
         who: "chapter member with no privileges, in no member list",
@@ -1168,15 +1209,36 @@ if (readSeeded) {
         uid: F.userDAuth,
         visible: [F.msgPublic, F.msgRoleGated, F.msgRoleGatedOpen],
       },
-      {
-        who: "no JWT (null auth.uid())",
-        uid: null,
-        visible: [],
-        wholeTableZero: true, // AC: NULL auth.uid() sees ZERO rows, table-wide
-      },
+      { who: "no JWT (null auth.uid())", uid: null, visible: [] },
     ];
 
+    // Every expectation below is stated as a set over ALL_MSG_IDS. That is only
+    // equivalent to "what this reader can see in the table" if the fixtures ARE
+    // the table — so assert it once, as owner, instead of re-counting per
+    // scenario. If a future seed adds a message and forgets this tier, this
+    // fails loudly rather than letting the set assertions quietly go partial.
+    {
+      const total = await db.query(
+        `select count(*)::int as n from public.chat_messages`,
+      );
+      const name = "the message fixtures are the whole table (set assertions below are table-wide)";
+      if (total.rows[0].n === ALL_MSG_IDS.length) {
+        console.log(`OK    ${name}`);
+      } else {
+        missing += 1;
+        console.log(
+          `MISS  ${name}\n        ↳ expected ${ALL_MSG_IDS.length} row(s), found ${total.rows[0].n}`,
+        );
+      }
+    }
+
     for (const s of MSG_BLACKBOX) {
+      // A mistyped `F.` key yields undefined, which would interpolate the string
+      // 'undefined'::uuid and read as a denial — a scenario that silently tests
+      // nothing. Fail loudly instead.
+      if (s.uid !== null && typeof s.uid !== "string") {
+        throw new Error(`MSG_BLACKBOX scenario "${s.who}" has a non-fixture uid`);
+      }
       await db.exec(
         s.uid === null
           ? `create or replace function auth.uid() returns uuid language sql as $$ select null::uuid $$;`
@@ -1184,21 +1246,22 @@ if (readSeeded) {
       );
       await db.exec("set role rls_probe;");
       let seen;
-      let tableTotal;
       try {
         const res = await db.query(
           `select id::text as id from public.chat_messages
             where id in (${ALL_MSG_IDS.map((m) => `'${m}'`).join(", ")})`,
         );
         seen = res.rows.map((r) => r.id);
-        if (s.wholeTableZero) {
-          const all = await db.query(
-            `select count(*)::int as n from public.chat_messages`,
-          );
-          tableTotal = all.rows[0].n;
-        }
       } finally {
-        await db.exec("reset role;");
+        // Never let this replace a pending exception. These run inside the open
+        // transaction, so a failed query aborts it and `RESET ROLE` then raises
+        // 25P02 — which would surface instead of the real cause and collapse the
+        // whole tier into one uninformative ERR.
+        try {
+          await db.exec("reset role;");
+        } catch {
+          /* keep the original error */
+        }
       }
 
       const want = [...s.visible].sort();
@@ -1208,7 +1271,7 @@ if (readSeeded) {
 
       if (leaked.length === 0 && absent.length === 0) {
         console.log(
-          `OK    ${s.who} reads exactly ${want.length}/6 (${want.map(label).join(", ") || "nothing"})`,
+          `OK    ${s.who} reads exactly ${want.length}/${ALL_MSG_IDS.length} (${want.map(label).join(", ") || "nothing"})`,
         );
       } else {
         missing += 1;
@@ -1217,16 +1280,6 @@ if (readSeeded) {
             (leaked.length ? `\n        ↳ LEAKED: ${leaked.map(label).join(", ")}` : "") +
             (absent.length ? `\n        ↳ wrongly hidden: ${absent.map(label).join(", ")}` : ""),
         );
-      }
-
-      if (s.wholeTableZero) {
-        const name = `${s.who} sees zero rows table-wide (not just among the fixtures)`;
-        if (tableTotal === 0) {
-          console.log(`OK    ${name}`);
-        } else {
-          missing += 1;
-          console.log(`MISS  ${name}\n        ↳ expected 0, got ${tableTotal}`);
-        }
       }
     }
 
@@ -1287,6 +1340,58 @@ if (readSeeded) {
       } else {
         missing += 1;
         console.log(`MISS  ${s.name}\n        ↳ expected ${s.expect} visible row(s), got ${got}`);
+      }
+    }
+
+    // ─── The archive row must not reopen the table to unauthorised readers ──
+    //
+    // The membership tier above runs before IMPORTED_MSG exists, which is what
+    // keeps its expectations readable — but it also means no assertion there can
+    // see a policy that special-cases imported rows. That gap is reachable:
+    //
+    //   using ((auth.role() = 'authenticated' and kind <> 'imported'
+    //           and can_read_chat_message(id))
+    //          or (auth.uid() is null and kind = 'imported'))
+    //
+    // hands every archived message in every chapter to an unauthenticated
+    // PostgREST client. It satisfies all three shape regexes, keeps one
+    // permissive policy, and passes every membership expectation — because the
+    // row it leaks does not exist yet when those run. So re-check the two
+    // readers that must see nothing of another tenant, now that it does.
+    const POST_ARCHIVE = [
+      { who: "no JWT (null auth.uid())", uid: null, expect: 0 },
+      {
+        who: "cross-chapter member",
+        uid: F.userBAuth,
+        expect: 1, // their own chapter's PUBLIC message, and nothing else
+      },
+    ];
+    for (const s of POST_ARCHIVE) {
+      await db.exec(
+        s.uid === null
+          ? `create or replace function auth.uid() returns uuid language sql as $$ select null::uuid $$;`
+          : `create or replace function auth.uid() returns uuid language sql as $$ select '${s.uid}'::uuid $$;`,
+      );
+      await db.exec("set role rls_probe;");
+      let got;
+      try {
+        const res = await db.query(
+          `select count(*)::int as n from public.chat_messages`,
+        );
+        got = res.rows[0].n;
+      } finally {
+        try {
+          await db.exec("reset role;");
+        } catch {
+          /* keep the original error */
+        }
+      }
+      const name = `${s.who} still sees ${s.expect} row(s) once an imported archive row exists`;
+      if (got === s.expect) {
+        console.log(`OK    ${name}`);
+      } else {
+        missing += 1;
+        console.log(`MISS  ${name}\n        ↳ expected ${s.expect}, got ${got}`);
       }
     }
 
