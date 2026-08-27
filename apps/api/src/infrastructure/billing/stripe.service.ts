@@ -32,7 +32,11 @@ import {
  *
  * Whether a given checkout may open one is `params.grantTrial`, decided by the
  * caller: this layer cannot see billing history, and the trial is once per
- * chapter rather than once per checkout session.
+ * chapter rather than once per checkout session. That stays true even now that
+ * the session is tied to the chapter's own `customer` (#929): Stripe would only
+ * refuse a repeat trial on a customer it can recognise, and `grantTrial` is
+ * keyed on our own record of having held a subscription, which is the stronger
+ * signal. It remains the boundary, not a second line of defence.
  */
 const TRIAL_PERIOD_DAYS = 14;
 
@@ -58,7 +62,13 @@ export class StripeBillingService implements IBillingProvider {
   async createCheckoutSession(params: CreateCheckoutParams): Promise<string> {
     const session = await this.stripe.checkout.sessions.create({
       mode: 'subscription',
-      customer_email: params.customerEmail,
+      // The chapter's own customer, never `customer_email` (#929). Stripe mints
+      // a fresh Customer for an email it is given, so passing one here meant a
+      // repeat checkout could not be recognised as the same chapter — the
+      // second subscription landed on a second customer and the first was
+      // orphaned. `customer` is also what makes Stripe's own trial history
+      // meaningful, since that history hangs off the Customer.
+      customer: params.customerId,
       line_items: [{ price: this.priceId, quantity: 1 }],
       ...(params.grantTrial
         ? { subscription_data: { trial_period_days: TRIAL_PERIOD_DAYS } }
