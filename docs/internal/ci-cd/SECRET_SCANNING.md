@@ -51,12 +51,18 @@ node scripts/scan-secrets.mjs --base <sha> --head <sha>  # a commit range
 >
 > | How full mode was reached | Incomplete clone | Origin unreachable |
 > | --- | --- | --- |
-> | Explicitly requested (`npm run check:secrets`) — an audit | **refuses**, exits non-zero | warns, proceeds |
-> | Fallen back to from range mode (unreachable `--base`, or the all-zeros new-branch sentinel) | warns, proceeds | warns, proceeds |
+> | Explicitly requested (`npm run check:secrets`) — an audit | **refuses**, exits non-zero | warns, proceeds\* |
+> | Fallen back to from range mode (unreachable `--base`, or the all-zeros new-branch sentinel) | warns, proceeds | warns, proceeds\* |
+>
+> \* Unless shallowness or a narrow refspec already proves the clone incomplete — those need no
+> network, so an offline audit over a shallow clone still refuses. "Origin unreachable" only
+> downgrades the *comparison* against the remote, which is the one signal that needs it.
 >
 > The fallback row never fails on purpose: CI drops to full mode on a force-push, and hard-failing
-> there would red-light the required `secret-scan` check. `--staged` and `--base/--head` are not
-> gated at all — they only ever scan a diff and legitimately run in shallow checkouts.
+> there would red-light the required `secret-scan` check. The **`staged` and `range` modes** are not
+> gated at all — they only ever scan a diff and legitimately run in shallow checkouts. Note that is
+> a statement about the *mode*, not the flags: a `--base/--head` invocation whose base is unreachable
+> falls back to full mode and does get the (warn-only) check, which is what the second row describes.
 >
 > **`check:secrets` deliberately passes no `--log-opts`.** Bare `gitleaks git` already defaults to
 > `git log -p -U0 --full-history --all --diff-filter=tuxdb`, so `--all` is *already* in effect.
@@ -79,19 +85,35 @@ node scripts/scan-secrets.mjs --base <sha> --head <sha>  # a commit range
 > The middle row is the dangerous one: `git rev-parse --is-shallow-repository` says `false`,
 > `git fetch --unshallow` errors as a no-op, and the scan reports clean having covered ~27% of
 > history. **Do not use shallowness as the completeness check** — the guard above does not, and
-> neither should you. A cloud sandbox measured on 2026-08-27 makes the point sharper still: its
-> `remote.origin.fetch` was exactly the full glob while it held **2 of origin's 324 heads**, so a
-> refspec check alone would have passed it too. Only the ref-count comparison catches both rows.
+> neither should you.
 >
-> To fix a clone the guard rejects, fetch everything and check that you hold as many refs as the
-> remote offers:
+> The guard's load-bearing signal is a **ref set comparison** against `git ls-remote`, because it is
+> the only one of the three that catches a third shape the table does not list: an ordinary clone
+> that is neither shallow nor narrowly configured, and has simply **not fetched lately**. That is the
+> normal state of any long-lived working copy of this repo, where hundreds of short-lived `claude/*`
+> and `bolt/*` branches are created and deleted continuously.
+>
+> It compares ref **sets, not counts**. Git never prunes remote-tracking refs on its own
+> (`fetch.prune` defaults to false), so under a count comparison one ref for a branch deleted
+> upstream silently pays for one head that was never fetched — and the clone reports full coverage it
+> does not have. Verified: a clone holding `{main, feat/one, deleted-upstream}` against an origin
+> offering `{main, feat/one, brand-new}` has equal counts and is genuinely missing a branch.
+>
+> To fix a clone the guard rejects, widen the refspec, then fetch everything:
 >
 > ```bash
-> git fetch origin '+refs/heads/*:refs/remotes/origin/*' '+refs/pull/*/head:refs/remotes/pr/*'
+> git remote set-branches origin '*'          # a --single-branch clone needs this FIRST
+> git fetch --unshallow 2>/dev/null || true   # only needed for a shallow clone
+> git fetch --prune origin '+refs/heads/*:refs/remotes/origin/*' '+refs/pull/*/head:refs/remotes/pr/*'
 > # local refs vs what the remote actually has — these two should agree
 > git for-each-ref --format='%(refname)' 'refs/remotes/**' | wc -l
 > { git ls-remote --heads origin; git ls-remote origin 'refs/pull/*/head'; } | wc -l
 > ```
+>
+> `set-branches` is not optional on a `--single-branch` or `--depth` clone: a command-line
+> `git fetch` retrieves the refs but never rewrites the persisted `remote.origin.fetch`, so the
+> next `git fetch` narrows the clone straight back again. `--prune` matters for the same reason
+> the set comparison does — it is what clears refs for branches deleted upstream.
 >
 > **Compare refs, not commit counts.** `git rev-list --count --all` will *not* match the "commits
 > scanned" figure gitleaks prints — gitleaks' default `--diff-filter=tuxdb` skips merge commits and
@@ -134,7 +156,7 @@ mv .gitleaks-baseline.json .gitleaks-baseline.json.bak
 ```
 
 > **Do not "align" this command with `buildGitleaksArgs`.** Full mode adds `--baseline-path` whenever
-> the file exists (`scan-secrets.mjs:148`), and a generator run with that flag filters every finding
+> the file exists (`scan-secrets.mjs:448`), and a generator run with that flag filters every finding
 > against the baseline already on disk and writes **`[]`** — with `--exit-code 0` suppressing any
 > complaint. Committing that empty array silently un-accepts all five findings. Moving the file aside
 > first (above) makes the run independent of whatever is already committed. Otherwise the flags must

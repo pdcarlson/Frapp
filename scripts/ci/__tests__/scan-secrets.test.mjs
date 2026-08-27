@@ -8,6 +8,9 @@ import {
   buildGitleaksArgs,
   coveragePercent,
   evaluateRefCompleteness,
+  gatherRefState,
+  refCompletenessOutcome,
+  shortHeadNames,
 } from "../../scan-secrets.mjs";
 
 const CONFIG = "/repo/.gitleaks.toml";
@@ -68,46 +71,59 @@ test("secrets are redacted in output for every mode", () => {
 
 // ── Ref completeness: can this clone support a real audit? (#931) ────────────
 
-// A fully-fetched clone, as the baseline every case below deviates from.
+const FULL_GLOB = ["+refs/heads/*:refs/remotes/origin/*"];
+/** A fully-fetched clone — the baseline every case below deviates from. */
 const COMPLETE = {
   isShallow: false,
-  fetchSpecs: ["+refs/heads/*:refs/remotes/origin/*"],
-  localRefCount: 323,
-  remoteRefCount: 323,
+  fetchSpecs: FULL_GLOB,
+  localRefs: ["main", "feat/one", "feat/two"],
+  remoteRefs: ["main", "feat/one", "feat/two"],
 };
 
 test("a fully-fetched clone is complete", () => {
   const result = evaluateRefCompleteness(COMPLETE);
   assert.equal(result.status, "complete");
   assert.deepEqual(result.reasons, []);
+  assert.deepEqual(result.missing, []);
 });
 
-// The whole reason this guard exists. SECRET_SCANNING.md's middle row: full
-// depth, so `--is-shallow-repository` says false and `--unshallow` is a no-op,
-// yet the scan covers a fraction of history and exits 0.
+// The reason this guard exists. SECRET_SCANNING.md's middle row: full depth, so
+// `--is-shallow-repository` says false and `--unshallow` is a no-op, yet the
+// scan covers a fraction of history and exits 0.
 test("full-depth but under-fetched is incomplete even though it is NOT shallow", () => {
   const result = evaluateRefCompleteness({
     ...COMPLETE,
-    isShallow: false,
-    localRefCount: 445,
-    remoteRefCount: 1659,
+    localRefs: ["main"],
+    remoteRefs: ["main", "feat/one", "feat/two"],
   });
   assert.equal(result.status, "incomplete");
-  assert.match(result.reasons.join(" "), /445 remote-tracking head\(s\) but origin offers 1659/);
+  assert.deepEqual(result.missing, ["feat/one", "feat/two"]);
 });
 
-// Measured in a cloud sandbox on 2026-08-27: the refspec was exactly the full
-// glob while the clone held 2 of 324 heads. A refspec-only check passes this.
-test("the refspec glob alone does not prove completeness", () => {
+// Counts are not enough: git never prunes remote-tracking refs on its own, so a
+// stale ref would pay for a never-fetched head and the clone would report full
+// coverage it does not have — the exact false all-clear this guard prevents.
+test("a stale ref does not mask a head that was never fetched", () => {
   const result = evaluateRefCompleteness({
-    isShallow: false,
-    fetchSpecs: ["+refs/heads/*:refs/remotes/origin/*"],
-    localRefCount: 2,
-    remoteRefCount: 324,
+    ...COMPLETE,
+    // Same COUNT as the remote, but `deleted-upstream` is gone and
+    // `brand-new` was never fetched.
+    localRefs: ["main", "feat/one", "deleted-upstream"],
+    remoteRefs: ["main", "feat/one", "brand-new"],
   });
   assert.equal(result.status, "incomplete");
-  // The refspec is correct, so that must NOT be among the reasons.
-  assert.ok(!result.reasons.some((r) => r.includes("remote.origin.fetch")));
+  assert.deepEqual(result.missing, ["brand-new"]);
+});
+
+test("holding more stale refs than the remote has does not read as complete", () => {
+  const result = evaluateRefCompleteness({
+    ...COMPLETE,
+    localRefs: ["main", "gone-1", "gone-2", "gone-3", "gone-4"],
+    remoteRefs: ["main", "brand-new"],
+  });
+  assert.equal(result.status, "incomplete");
+  assert.equal(result.presentCount, 1);
+  assert.equal(result.remoteCount, 2);
 });
 
 test("a shallow clone is incomplete", () => {
@@ -116,45 +132,32 @@ test("a shallow clone is incomplete", () => {
   assert.match(result.reasons.join(" "), /shallow/);
 });
 
-test("a single-branch refspec is incomplete even when the counts agree", () => {
+// A mirror is the most complete clone shape there is; refusing it would turn the
+// guard away from precisely the clone an auditor is most likely to make.
+test("a mirror clone's `+refs/*:refs/*` is accepted, not misread as single-branch", () => {
+  const result = evaluateRefCompleteness({ ...COMPLETE, fetchSpecs: ["+refs/*:refs/*"] });
+  assert.equal(result.status, "complete");
+});
+
+// Regression: a narrow refspec must not fail a clone whose refs are all present,
+// or a dev who ran the printed remedy (a command-line fetch, which does not
+// rewrite the persisted refspec) would be refused forever with no way out.
+test("a narrow refspec alone does not refuse a clone that holds every head", () => {
   const result = evaluateRefCompleteness({
     ...COMPLETE,
     fetchSpecs: ["+refs/heads/main:refs/remotes/origin/main"],
-    localRefCount: 1,
-    remoteRefCount: 1,
   });
-  assert.equal(result.status, "incomplete");
-  assert.match(result.reasons.join(" "), /single-branch/);
-});
-
-test("every failing signal is reported, not just the first", () => {
-  const result = evaluateRefCompleteness({
-    isShallow: true,
-    fetchSpecs: ["+refs/heads/main:refs/remotes/origin/main"],
-    localRefCount: 1,
-    remoteRefCount: 324,
-  });
-  assert.equal(result.reasons.length, 3);
-});
-
-// ── Offline must not hard-block (the --soft-missing precedent) ───────────────
-
-test("an unreachable origin is 'unknown', never 'incomplete'", () => {
-  const result = evaluateRefCompleteness({ ...COMPLETE, remoteRefCount: null });
-  assert.equal(result.status, "unknown");
-  assert.equal(result.remoteRefCount, null);
-});
-
-test("a local signal still proves incompleteness with no network", () => {
-  const result = evaluateRefCompleteness({ ...COMPLETE, isShallow: true, remoteRefCount: null });
-  assert.equal(result.status, "incomplete");
-});
-
-// A remote count of 0 would mean "origin has no branches"; it must not be
-// conflated with null, which would make an offline clone read as complete.
-test("remoteRefCount 0 is distinct from null", () => {
-  const result = evaluateRefCompleteness({ ...COMPLETE, localRefCount: 0, remoteRefCount: 0 });
   assert.equal(result.status, "complete");
+});
+
+test("a narrow refspec is reported alongside genuinely missing refs, as the fix", () => {
+  const result = evaluateRefCompleteness({
+    ...COMPLETE,
+    fetchSpecs: ["+refs/heads/main:refs/remotes/origin/main"],
+    localRefs: ["main"],
+  });
+  assert.equal(result.status, "incomplete");
+  assert.match(result.reasons.join(" "), /set-branches origin/);
 });
 
 test("a repo with no configured refspec is not faulted for it", () => {
@@ -162,13 +165,121 @@ test("a repo with no configured refspec is not faulted for it", () => {
   assert.equal(result.status, "complete");
 });
 
+// ── Offline must not hard-block (the --soft-missing precedent) ───────────────
+
+test("an unreachable origin is 'unknown', never 'incomplete'", () => {
+  const result = evaluateRefCompleteness({ ...COMPLETE, remoteRefs: null });
+  assert.equal(result.status, "unknown");
+  assert.equal(result.remoteCount, null);
+});
+
+test("a local signal still proves incompleteness with no network", () => {
+  const result = evaluateRefCompleteness({ ...COMPLETE, isShallow: true, remoteRefs: null });
+  assert.equal(result.status, "incomplete");
+});
+
+// An empty remote list means "origin has no branches"; it must not be conflated
+// with null, which would make an offline clone read as complete.
+test("an empty remote ref list is distinct from null", () => {
+  const result = evaluateRefCompleteness({ ...COMPLETE, localRefs: [], remoteRefs: [] });
+  assert.equal(result.status, "complete");
+  assert.equal(result.remoteCount, 0);
+});
+
+// ── The severity split — what keeps the required CI check off red ────────────
+
+test("an explicit audit refuses an incomplete clone", () => {
+  const result = evaluateRefCompleteness({ ...COMPLETE, localRefs: [] });
+  assert.equal(refCompletenessOutcome(result, false).action, "refuse");
+});
+
+test("the same clone only warns when full mode was a fallback from range mode", () => {
+  const result = evaluateRefCompleteness({ ...COMPLETE, localRefs: [] });
+  assert.equal(refCompletenessOutcome(result, true).action, "warn");
+});
+
+test("an unreachable origin never refuses, even on an explicit audit", () => {
+  const result = evaluateRefCompleteness({ ...COMPLETE, remoteRefs: null });
+  assert.equal(refCompletenessOutcome(result, false).action, "warn");
+});
+
+test("a complete clone passes either way", () => {
+  const result = evaluateRefCompleteness(COMPLETE);
+  for (const isFallback of [true, false]) {
+    assert.equal(refCompletenessOutcome(result, isFallback).action, "pass");
+  }
+});
+
+// A run proven incomplete by a local signal must stay marked INCOMPLETE in the
+// audit record even when origin happened to be unreachable.
+test("a known-incomplete run is not softened to 'unverified' when offline", () => {
+  const result = evaluateRefCompleteness({ ...COMPLETE, isShallow: true, remoteRefs: null });
+  assert.match(refCompletenessOutcome(result, true).note, /INCOMPLETE/);
+});
+
 // ── Coverage reporting (so an audit record entry can quote it) ───────────────
 
 test("coverage never rounds a partial clone up to 100%", () => {
+  // 199/200 is exactly 99.5, which Math.round takes to 100.
+  assert.equal(coveragePercent(199, 200), "<100%");
   assert.equal(coveragePercent(1658, 1659), "<100%");
   assert.equal(coveragePercent(1659, 1659), "100%");
 });
 
-test("coverage keeps a decimal below 1% rather than reporting 0%", () => {
+test("a sub-1% clone does not render as 0.0%", () => {
   assert.equal(coveragePercent(2, 324), "0.6%");
+  assert.equal(coveragePercent(1, 2500), "<0.1%");
+  assert.equal(coveragePercent(0, 324), "0%");
+});
+
+// ── Parsing both git output shapes ──────────────────────────────────────────
+
+test("short names are read from ls-remote's <sha>TAB<refname> shape", () => {
+  const stdout = "abc123\trefs/heads/main\ndef456\trefs/heads/claude/next-steps\n";
+  assert.deepEqual(shortHeadNames(stdout, "refs/heads/"), ["main", "claude/next-steps"]);
+});
+
+test("short names are read from for-each-ref's bare refname shape", () => {
+  const stdout = "refs/remotes/origin/main\nrefs/remotes/origin/claude/next-steps\n";
+  assert.deepEqual(shortHeadNames(stdout, "refs/remotes/origin/"), ["main", "claude/next-steps"]);
+});
+
+test("the symbolic origin/HEAD pointer is not counted as a branch", () => {
+  const stdout = "refs/remotes/origin/HEAD\nrefs/remotes/origin/main\n";
+  assert.deepEqual(shortHeadNames(stdout, "refs/remotes/origin/"), ["main"]);
+});
+
+test("null stdout yields no names rather than throwing", () => {
+  assert.deepEqual(shortHeadNames(null, "refs/heads/"), []);
+});
+
+// ── gatherRefState drives git through an injectable runner ───────────────────
+
+test("a bare/mirror repo's heads are read from refs/heads, not refs/remotes", () => {
+  const calls = [];
+  const fakeGit = (args) => {
+    calls.push(args.join(" "));
+    if (args[1] === "--is-bare-repository") return "true\n";
+    if (args[1] === "--is-shallow-repository") return "false\n";
+    if (args[0] === "config") return "+refs/*:refs/*\n";
+    if (args[0] === "for-each-ref") return "refs/heads/main\nrefs/heads/feat/one\n";
+    if (args[0] === "ls-remote") return "a\trefs/heads/main\nb\trefs/heads/feat/one\n";
+    return null;
+  };
+  const state = gatherRefState(fakeGit);
+  assert.ok(calls.some((c) => c.includes("refs/heads/**")));
+  assert.deepEqual(state.localRefs, ["main", "feat/one"]);
+  assert.equal(evaluateRefCompleteness(state).status, "complete");
+});
+
+test("an unreachable origin yields remoteRefs null, not an empty list", () => {
+  const fakeGit = (args) => {
+    if (args[0] === "ls-remote") return null;
+    if (args[1] === "--is-bare-repository") return "false\n";
+    if (args[1] === "--is-shallow-repository") return "false\n";
+    if (args[0] === "config") return "+refs/heads/*:refs/remotes/origin/*\n";
+    if (args[0] === "for-each-ref") return "refs/remotes/origin/main\n";
+    return null;
+  };
+  assert.equal(gatherRefState(fakeGit).remoteRefs, null);
 });
