@@ -2,7 +2,19 @@ export const BILLING_PROVIDER = 'BILLING_PROVIDER';
 
 export interface CreateCheckoutParams {
   chapterId: string;
-  customerEmail: string;
+  /**
+   * The chapter's existing Stripe customer, which the caller resolves (creating
+   * one first if the chapter has none) before ever reaching this adapter.
+   *
+   * This is deliberately the *only* way to identify a customer here — there is
+   * no `customerEmail` escape hatch (#929). Letting the adapter fall back to an
+   * email is what made Stripe mint a brand-new Customer on every checkout, so a
+   * chapter that already owned a subscription got a second one against a second
+   * customer record, and the first was orphaned where nothing in the app could
+   * see or cancel it. One field, always populated, makes that unrepresentable
+   * rather than merely guarded against.
+   */
+  customerId: string;
   successUrl: string;
   cancelUrl: string;
   /**

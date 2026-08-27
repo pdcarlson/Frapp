@@ -96,7 +96,7 @@ The interesting half. Each takes either **no** chapter id, or a client-supplied 
 | `GET /analytics/identity` | A | **D** — returns the caller's own pseudonymous id |
 | `POST /analytics/events` | A | Body carries `chapter_id`; `trackFromClient` resolves `members.findByUserAndChapter(userId, chapterId)` and **403s a non-member**; a DB error fails closed (`analytics.service.ts:157-170`) |
 | `POST /chapters`, `POST /chapters/onboard` | A | Creates a new chapter for the caller; no existing row is addressed |
-| `GET /chapters` | A | **D** — lists only the caller's own memberships |
+| `GET /chapters` | A | **D** — lists only the caller's own memberships. Each embedded chapter is the member-safe projection (`toChapterMemberView`), not the raw row: this route carries no billing permission, and before #930 it shipped `stripe_customer_id` / `subscription_id` for every chapter the caller belongs to |
 | `POST /chapters/:id/activate` | A | Client-supplied `:id`, but `setActiveChapter` requires a membership row and throws `403` otherwise (`chapter.service.ts:81-87`) |
 | `POST /invites/redeem` | A | Redeems by opaque invite code; the code *is* the capability. Chapter comes from the invite row, not the caller |
 | `GET/PATCH /users/me`, `DELETE /users/me` | A | **D** |
