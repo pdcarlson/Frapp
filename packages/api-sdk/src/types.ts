@@ -2509,6 +2509,40 @@ export interface components {
             /** @description The admin accepted the Terms of Service and Privacy Policy. Must be true (spec/behavior/legal.md). The acceptance timestamp and policy version are recorded server-side from the session — never from this payload. */
             accept_terms_privacy: boolean;
         };
+        CurrentChapterResponseDto: {
+            id: string;
+            name: string;
+            university: string;
+            /**
+             * @description Read by the client subscription gate. Load-bearing — see `chapter-member-view.ts`.
+             * @enum {string}
+             */
+            subscription_status: "incomplete" | "active" | "past_due" | "canceled";
+            /** @description Timestamp the chapter entered `past_due`, or null. Drives the 3-day client grace window; the grace predicate fails open without it. */
+            past_due_since: string | null;
+            accent_color: string | null;
+            logo_path: string | null;
+            donation_url: string | null;
+            created_at: string;
+            updated_at: string;
+            org_archetype?: string;
+            enabled_modules?: {
+                [key: string]: boolean;
+            };
+            vocabulary?: {
+                [key: string]: unknown;
+            };
+            branding?: {
+                [key: string]: unknown;
+            };
+            theme_palette?: {
+                [key: string]: unknown;
+            };
+            /** @description Per-chapter opt-out for the pseudonymous analytics pipeline. Mobile reads it off this payload. */
+            analytics_opt_out?: boolean;
+            /** @description Signed URL for the chapter logo, or null when none is set or signing failed. Computed, not a column. */
+            logo_url: string | null;
+        };
         UpdateChapterDto: {
             name?: string;
             university?: string;
@@ -3568,7 +3602,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["CurrentChapterResponseDto"];
+                };
             };
         };
     };

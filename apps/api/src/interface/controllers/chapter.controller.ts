@@ -9,7 +9,12 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiTags,
+  ApiOperation,
+  ApiOkResponse,
+} from '@nestjs/swagger';
 import { ChapterService } from '../../application/services/chapter.service';
 import { ChapterOnboardingService } from '../../application/services/chapter-onboarding.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
@@ -33,6 +38,7 @@ import {
   ConfirmLogoDto,
 } from '../dtos/chapter.dto';
 import { ChapterOnboardingDto } from '../dtos/chapter-onboarding.dto';
+import { CurrentChapterResponseDto } from '../dtos/chapter-response.dto';
 import { SystemPermissions } from '../../domain/constants/permissions';
 
 @ApiTags('Chapters')
@@ -102,6 +108,9 @@ export class ChapterController {
   @ApiOperation({
     summary: 'Get current chapter (includes a signed logo_url when one is set)',
   })
+  // Guarded by `members:view`, i.e. every member — so the payload is the
+  // member-safe projection, never the raw row (#930).
+  @ApiOkResponse({ type: CurrentChapterResponseDto })
   async getCurrent(@CurrentChapterId() chapterId: string) {
     return this.chapterService.findByIdWithLogoUrl(chapterId);
   }
