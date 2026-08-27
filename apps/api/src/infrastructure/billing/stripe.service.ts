@@ -29,6 +29,10 @@ import {
  * values the `subscription_status` CHECK allows. A trialing chapter is
  * therefore a fully active chapter to every permission gate — which is the
  * intent: the trial is a free window, not a degraded tier.
+ *
+ * Whether a given checkout may open one is `params.grantTrial`, decided by the
+ * caller: this layer cannot see billing history, and the trial is once per
+ * chapter rather than once per checkout session.
  */
 const TRIAL_PERIOD_DAYS = 14;
 
@@ -56,7 +60,9 @@ export class StripeBillingService implements IBillingProvider {
       mode: 'subscription',
       customer_email: params.customerEmail,
       line_items: [{ price: this.priceId, quantity: 1 }],
-      subscription_data: { trial_period_days: TRIAL_PERIOD_DAYS },
+      ...(params.grantTrial
+        ? { subscription_data: { trial_period_days: TRIAL_PERIOD_DAYS } }
+        : {}),
       success_url: params.successUrl,
       cancel_url: params.cancelUrl,
       metadata: { chapter_id: params.chapterId },

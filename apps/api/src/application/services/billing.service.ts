@@ -132,6 +132,15 @@ export class BillingService {
         customerEmail: input.customerEmail,
         successUrl: input.successUrl,
         cancelUrl: input.cancelUrl,
+        // The trial is once per chapter. The guard above rejects only
+        // `active`, so a `past_due` or `canceled` chapter still reaches
+        // checkout — and because `StripeService` passes `customer_email`
+        // rather than the stored customer id, Stripe mints a fresh Customer
+        // with no trial history and would hand out another 14 free days on
+        // every call. Having ever held a subscription is the durable
+        // "already had its trial" mark; status is not, since a chapter can
+        // return to `canceled` repeatedly.
+        grantTrial: !chapter.subscription_id,
       });
     } catch (error) {
       this.logger.error(
