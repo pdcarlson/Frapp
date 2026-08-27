@@ -79,18 +79,19 @@ jobs:
             {
               echo "## Nightly DB backup did not run"
               echo
-              echo "The offsite destination is not provisioned yet. Missing secret(s):"
+              echo "The offsite destination secrets did not reach this job. Missing:"
               echo
               for s in $MISSING; do echo "- \`$s\`"; done
               echo
-              echo "This is tracked as **#1287** (human action: create the bucket + 4 secrets)."
-              echo "Until then this job fails every night on purpose — a green backup job that"
-              echo "wrote no backup is worse than a red one."
-              echo
-              echo "If the daily failure is noise while you get to it, disable this workflow in"
-              echo "the Actions tab; that is an explicit choice, which silent success is not."
+              echo "These were provisioned on 2026-08-27 (#1287: Cloudflare R2 bucket +"
+              echo "bucket-scoped token) and live in Infisical \`staging\` at \`/\` — so this is"
+              echo "a **regression**, not first-time setup. Do not re-provision the bucket."
+              echo "Check that the four secrets still exist in Infisical staging and that the"
+              echo "injection step above authenticated; see"
+              echo "docs/internal/environment/SECRETS_MANAGEMENT.md and"
+              echo "docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md § Backups: what exists."
             } >> "$GITHUB_STEP_SUMMARY"
-            echo "::error::Offsite backup destination not configured (missing:$MISSING). See issue #1287."
+            echo "::error::Offsite backup secrets missing from the job env (missing:$MISSING). Provisioned 2026-08-27 (#1287) — check Infisical staging, do not re-provision."
             exit 1
           fi
 
