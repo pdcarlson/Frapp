@@ -164,6 +164,21 @@ enforcing layer out of the API. Topics are authorised by `realtime_messages_scop
 
 ### The policies that do exist (11 statements)
 
+**Counting convention.** `11` counts individual policy *statements* — rows in `pg_policies` — not
+rows in the table below, several of which name two policies each. That ambiguity is what let the
+number drift unnoticed before, so it is now stated rather than derived.
+
+Reconciled against hosted `frapp-staging` on 2026-08-27
+(`select schemaname, count(*) from pg_policies group by schemaname`):
+**10 in `public` + 1 in `realtime` = 11.** The table below is correct.
+
+The PGlite CI substrate sees **8**, and all three absences are role- or schema-gated rather than
+drift: `auth_admin_can_read_users` and `auth_admin_can_read_members` are created only inside
+`if exists (select 1 from pg_roles where rolname = 'supabase_auth_admin')`
+(`20260802120000_active_chapter_jwt_claim.sql:137`), and `realtime.messages` needs a `realtime`
+schema PGlite does not have. `scripts/check-pglite-migrations.mjs` pins the `public` set **by name**,
+so adding or dropping a policy without updating this table fails CI.
+
 | Table | Policy | Effect |
 | --- | --- | --- |
 | `chat_message_actions` | `_select` | `auth.role() = 'authenticated' AND can_read_chat_message(message_id)` — per-row channel-membership check via a `SECURITY DEFINER` function mirroring `canAccessChannel`. RLS is the only gate here: the web reads it directly (`packages/chat-core/src/realtime-manager.ts`, 2 call sites) |
@@ -174,6 +189,38 @@ enforcing layer out of the API. Topics are authorised by `realtime_messages_scop
 | `chapter_audit_log` | `_no_update`, `_no_delete` | `using (false)` — append-only, tightens rather than widens |
 | `member_custom_field_values` | `_service_role` | `auth.role() = 'service_role'` — explicit rather than implicit; no non-service access |
 | `users`, `members` | `auth_admin_can_read_*` | `to supabase_auth_admin` only — lets the custom-access-token hook read the `active_chapter_id` claim. Not reachable by `anon`/`authenticated` |
+
+### The `chat_messages` read surface — accepted, with the bound named
+
+`chat_messages` is the largest table in the schema, and since
+`20260816140000_realtime_carrier_repair.sql` it is readable directly by an `authenticated` client so
+the chat `postgres_changes` subscription can receive rows. Its policy calls
+`can_read_chat_message(id)`, which is `SECURITY DEFINER` and therefore **can never be inlined**: the
+planner calls it once per candidate row, and each call joins
+`chat_messages` / `chat_channels` / `users` / `members`.
+
+A filter matching nothing is the worst case, because no `LIMIT` short-circuits it:
+
+```
+GET /rest/v1/chat_messages?content=ilike.*zzzz*
+```
+
+The two things that bound this *through the API* — `assertChannelAccess` narrowing to a single
+`channel_id`, and `DEFAULT_MESSAGE_LIMIT` — do not apply to a direct PostgREST read.
+
+**This cost is accepted rather than mitigated, and the bound of record is the per-role
+`statement_timeout`: `authenticated = 8s`, `anon = 3s`** (read from hosted `frapp-staging`,
+2026-08-27). The two alternatives were considered and rejected on the merits:
+
+- **An index does not help.** The planner cannot use one to avoid a non-inlinable `SECURITY DEFINER`
+  call — that call *is* the cost.
+- **Narrowing the policy is ruled out** by what Realtime needs: the row has to stay readable by the
+  subscriber, which is the entire point of #974.
+
+> ⚠️ The bound is a **Supabase platform default this repo does not set or pin.** `statement_timeout`
+> appears nowhere under `supabase/`, so raising it from the dashboard would weaken this mitigation
+> with no diff, no failing check, and no signal in the repo. Tracked as
+> [#1291](https://github.com/pdcarlson/Frapp/issues/1291).
 
 ### Storage buckets
 
@@ -256,3 +303,25 @@ so a fake that simply failed every lookup could not make the suite pass vacuousl
 managing permission) *on top of* chapter scoping, so their fixtures are owned by the caller.
 
 The rest of the e2e suite stubs `ChapterGuard`; this spec must not, or it tests nothing.
+
+### RLS enforcement (`scripts/check-pglite-migrations.mjs`)
+
+The two tables where **RLS is the only gate** are covered black-box, by reading them as an
+unprivileged `rls_probe` role rather than by pattern-matching the policy expression:
+
+| Table | Coverage |
+| --- | --- |
+| `chat_message_actions` | membership/tenancy matrix + own-row INSERT/DELETE |
+| `chat_messages` | membership/tenancy matrix (#977) + the imported-archive exclusion (#974) |
+
+Each reader's **exact visible set** is asserted, not a row count — a total can be right for the
+wrong reason. The matrix includes a `*` wildcard holder, which pins permission and membership as
+independent axes: the wildcard opens both `ROLE_GATED` channels and must still not open a DM.
+
+Why black-box rather than a shape assertion: the smoke-tier check on the policy *expression* is
+substring-shaped and defeatable by construction. Rewriting the policy to
+`using (auth.role() = 'authenticated' and (can_read_chat_message(id) or true))` satisfies that regex
+**and** the single-policy inventory, while making every message in every chapter's private channels
+and DMs readable by any authenticated user. Verified 2026-08-27: with that edit applied locally the
+shape assertion still passes and the black-box tier fails 7 assertions, including the cross-chapter
+reader and the no-JWT reader each seeing all six seeded messages.
