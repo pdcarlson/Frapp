@@ -3,11 +3,13 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 // Capture the create/update mutation args. `vi.hoisted` runs before the hoisted
 // `vi.mock` factory, so the spies exist when the factory wires them in.
-const { createMutate, updateMutate, mockCurrentChapter } = vi.hoisted(() => ({
-  createMutate: vi.fn(),
-  updateMutate: vi.fn(),
-  mockCurrentChapter: vi.fn(),
-}));
+const { createMutate, updateMutate, mockCurrentChapter, mockToast } =
+  vi.hoisted(() => ({
+    createMutate: vi.fn(),
+    updateMutate: vi.fn(),
+    mockCurrentChapter: vi.fn(),
+    mockToast: vi.fn(),
+  }));
 
 vi.mock("@repo/hooks", () => ({
   useCreateEvent: () => ({ mutateAsync: createMutate, isPending: false }),
@@ -36,7 +38,7 @@ vi.mock("@/lib/stores/chapter-store", () => ({
 }));
 
 vi.mock("@/hooks/use-toast", () => ({
-  useToast: () => ({ toast: vi.fn() }),
+  useToast: () => ({ toast: mockToast }),
 }));
 
 import { EventEditorDialog } from "./event-editor-dialog";
@@ -205,6 +207,230 @@ describe("EventEditorDialog role targeting", () => {
     expect(updateMutate).toHaveBeenCalledWith(
       expect.objectContaining({
         body: expect.objectContaining({ required_role_ids: [] }),
+      }),
+    );
+  });
+});
+
+describe("EventEditorDialog check-in zone", () => {
+  beforeEach(() => {
+    createMutate.mockReset();
+    updateMutate.mockReset();
+    mockToast.mockReset();
+    createMutate.mockResolvedValue(undefined);
+    updateMutate.mockResolvedValue(undefined);
+    chapter.active();
+  });
+
+  function addPoints(points: [string, string][]) {
+    points.forEach(() =>
+      fireEvent.click(screen.getByRole("button", { name: "Add point" })),
+    );
+    points.forEach(([lat, lng], index) => {
+      fireEvent.change(screen.getByLabelText(`Point ${index + 1} latitude`), {
+        target: { value: lat },
+      });
+      fireEvent.change(screen.getByLabelText(`Point ${index + 1} longitude`), {
+        target: { value: lng },
+      });
+    });
+  }
+
+  const TRIANGLE: [string, string][] = [
+    ["42.7298", "-73.6789"],
+    ["42.7300", "-73.6780"],
+    ["42.7290", "-73.6775"],
+  ];
+
+  it("sends check_in_zone and its name in the create payload", async () => {
+    render(
+      <EventEditorDialog
+        open
+        mode="create"
+        event={null}
+        usingPreviewData={false}
+        onOpenChange={() => {}}
+        onSaved={async () => {}}
+      />,
+    );
+
+    fillRequiredFields();
+    fireEvent.change(screen.getByLabelText("Zone name"), {
+      target: { value: "Great Hall" },
+    });
+    addPoints(TRIANGLE);
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    expect(createMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        check_in_zone: [
+          { lat: 42.7298, lng: -73.6789 },
+          { lat: 42.73, lng: -73.678 },
+          { lat: 42.729, lng: -73.6775 },
+        ],
+        check_in_zone_name: "Great Hall",
+      }),
+    );
+  });
+
+  // CreateEventDto carries @ArrayMinSize(3), so an empty array is a 400 rather
+  // than "no zone" — the key has to be absent entirely. This is the asymmetry
+  // with update below, and getting it backwards breaks every zone-less create.
+  it("omits check_in_zone entirely on create when no points are entered", async () => {
+    render(
+      <EventEditorDialog
+        open
+        mode="create"
+        event={null}
+        usingPreviewData={false}
+        onOpenChange={() => {}}
+        onSaved={async () => {}}
+      />,
+    );
+
+    fillRequiredFields();
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    expect(createMutate).toHaveBeenCalledWith(
+      expect.not.objectContaining({ check_in_zone: expect.anything() }),
+    );
+  });
+
+  it("blocks submit with the server's own wording when under 3 points", async () => {
+    render(
+      <EventEditorDialog
+        open
+        mode="create"
+        event={null}
+        usingPreviewData={false}
+        onOpenChange={() => {}}
+        onSaved={async () => {}}
+      />,
+    );
+
+    fillRequiredFields();
+    addPoints(TRIANGLE.slice(0, 2));
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    await waitFor(() => expect(mockToast).toHaveBeenCalled());
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: expect.stringContaining("at least 3 points"),
+      }),
+    );
+    expect(createMutate).not.toHaveBeenCalled();
+  });
+
+  it("rejects an out-of-range coordinate before it reaches the API", async () => {
+    render(
+      <EventEditorDialog
+        open
+        mode="create"
+        event={null}
+        usingPreviewData={false}
+        onOpenChange={() => {}}
+        onSaved={async () => {}}
+      />,
+    );
+
+    fillRequiredFields();
+    addPoints([["91", "0"], ...TRIANGLE.slice(1)]);
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    await waitFor(() => expect(mockToast).toHaveBeenCalled());
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: expect.stringContaining("between -90 and 90"),
+      }),
+    );
+    expect(createMutate).not.toHaveBeenCalled();
+  });
+
+  it("seeds a stored zone on edit and clears it to an empty array", async () => {
+    render(
+      <EventEditorDialog
+        open
+        mode="edit"
+        event={{
+          id: "e1",
+          name: "Exec Sync",
+          start_time: "2026-07-01T18:00:00.000Z",
+          end_time: "2026-07-01T19:00:00.000Z",
+          check_in_zone: [
+            { lat: 1, lng: 2 },
+            { lat: 3, lng: 4 },
+            { lat: 5, lng: 6 },
+          ],
+          check_in_zone_name: "Great Hall",
+        }}
+        usingPreviewData={false}
+        onOpenChange={() => {}}
+        onSaved={async () => {}}
+      />,
+    );
+
+    expect(screen.getByLabelText("Point 1 latitude")).toHaveValue("1");
+    expect(screen.getByLabelText("Zone name")).toHaveValue("Great Hall");
+
+    // Removing row 1 three times empties the list — the rows renumber, so the
+    // first "Remove point 1" click is repeated rather than 1/2/3 in turn.
+    fireEvent.click(screen.getByRole("button", { name: "Remove point 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove point 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove point 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(updateMutate).toHaveBeenCalledTimes(1));
+    // UpdateEventDto drops @ArrayMinSize so [] clears; the name clears with it.
+    expect(updateMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "e1",
+        body: expect.objectContaining({
+          check_in_zone: [],
+          check_in_zone_name: "",
+        }),
+      }),
+    );
+  });
+
+  it("reorders vertices, since order defines the polygon's edges", async () => {
+    render(
+      <EventEditorDialog
+        open
+        mode="edit"
+        event={{
+          id: "e2",
+          name: "Exec Sync",
+          start_time: "2026-07-01T18:00:00.000Z",
+          end_time: "2026-07-01T19:00:00.000Z",
+          check_in_zone: [
+            { lat: 1, lng: 2 },
+            { lat: 3, lng: 4 },
+            { lat: 5, lng: 6 },
+          ],
+        }}
+        usingPreviewData={false}
+        onOpenChange={() => {}}
+        onSaved={async () => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Move point 1 down" }));
+    expect(screen.getByLabelText("Point 1 latitude")).toHaveValue("3");
+    expect(screen.getByLabelText("Point 2 latitude")).toHaveValue("1");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(updateMutate).toHaveBeenCalledTimes(1));
+    expect(updateMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          check_in_zone: [
+            { lat: 3, lng: 4 },
+            { lat: 1, lng: 2 },
+            { lat: 5, lng: 6 },
+          ],
+        }),
       }),
     );
   });

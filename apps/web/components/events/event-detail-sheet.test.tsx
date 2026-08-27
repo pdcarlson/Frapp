@@ -141,3 +141,70 @@ describe("EventDetailSheet subscription gating", () => {
     expect(screen.getByText(/past due/i)).toBeInTheDocument();
   });
 });
+
+describe("EventDetailSheet check-in zone", () => {
+  it("names the zone and counts its points when one is set", () => {
+    render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        event={{
+          ...baseEvent,
+          check_in_zone: [
+            { lat: 1, lng: 2 },
+            { lat: 3, lng: 4 },
+            { lat: 5, lng: 6 },
+            { lat: 7, lng: 8 },
+          ],
+          check_in_zone_name: "Great Hall",
+        }}
+        onRequestEdit={() => {}}
+        onEventDeleted={async () => {}}
+      />,
+    );
+
+    expect(screen.getByText("Great Hall")).toBeInTheDocument();
+    expect(screen.getByText(/4 points/)).toBeInTheDocument();
+  });
+
+  it("says check-in is unrestricted when no zone is set", () => {
+    render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        event={baseEvent}
+        onRequestEdit={() => {}}
+        onEventDeleted={async () => {}}
+      />,
+    );
+
+    expect(screen.getByText(/can check in from anywhere/)).toBeInTheDocument();
+  });
+
+  // A 2-point polygon fails `isValidZone` server-side, which fails closed and
+  // rejects every check-in. Reporting that as "no zone" would tell the officer
+  // the exact opposite of what members hit.
+  it("warns rather than reporting no zone when the polygon is malformed", () => {
+    render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        event={{
+          ...baseEvent,
+          check_in_zone: [
+            { lat: 1, lng: 2 },
+            { lat: 3, lng: 4 },
+          ],
+        }}
+        onRequestEdit={() => {}}
+        onEventDeleted={async () => {}}
+      />,
+    );
+
+    expect(screen.getByText(/zone is incomplete/)).toBeInTheDocument();
+    expect(screen.queryByText(/can check in from anywhere/)).toBeNull();
+  });
+});
