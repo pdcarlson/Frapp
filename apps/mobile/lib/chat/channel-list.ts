@@ -23,10 +23,12 @@ export interface ChannelSummary {
    * `users.id` of each participant, for resolving a DM's title.
    *
    * Required and normalized: `selectChannels` emits `[]` for a null or absent
-   * column, so no consumer needs a `?? []`. Only DM and group-DM rows populate
-   * it server-side, and after the channel-list access filter landed a visible DM
-   * is one the caller is in — so their own participant ids are legitimately
-   * theirs to read.
+   * column, so no consumer needs a `?? []`. DM, group-DM **and PRIVATE** rows
+   * populate it server-side — PRIVATE seeds its creator (#1008) — so a non-empty
+   * list does **not** imply a direct message; classify with `isDirectChannel`
+   * (a `type` check), never with `member_ids.length`. After the channel-list
+   * access filter landed, a visible row is one the caller can read, so the
+   * participant ids on it are legitimately theirs to read.
    */
   member_ids: string[];
 }
