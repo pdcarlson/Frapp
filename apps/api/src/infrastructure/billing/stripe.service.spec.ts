@@ -91,10 +91,38 @@ describe('StripeBillingService', () => {
         mode: 'subscription',
         customer_email: params.customerEmail,
         line_items: [{ price: 'test_price_id', quantity: 1 }],
+        subscription_data: { trial_period_days: 14 },
         success_url: params.successUrl,
         cancel_url: params.cancelUrl,
         metadata: { chapter_id: params.chapterId },
       });
+    });
+
+    it('opens the 14-day trial the landing page sells (#913)', async () => {
+      const params = {
+        chapterId: 'chapter-123',
+        customerEmail: 'treasurer@example.com',
+        successUrl: 'https://example.com/success',
+        cancelUrl: 'https://example.com/cancel',
+      };
+
+      stripeMock.checkout = {
+        sessions: {
+          create: jest
+            .fn()
+            .mockResolvedValue({ url: 'https://checkout.stripe.com/c/pay/x' }),
+        },
+      } as any;
+
+      await service.createCheckoutSession(params);
+
+      // Asserted on its own because the trial cannot be carried by the Price:
+      // Stripe exposes no writable trial field there, so if this argument is
+      // dropped, swapping STRIPE_PRICE_ID cannot restore it and every chapter
+      // is charged on day zero while the site still advertises a free trial.
+      const [sessionArgs] = (stripeMock.checkout.sessions.create as jest.Mock)
+        .mock.calls[0];
+      expect(sessionArgs.subscription_data).toEqual({ trial_period_days: 14 });
     });
   });
 

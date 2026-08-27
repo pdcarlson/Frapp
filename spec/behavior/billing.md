@@ -1,5 +1,13 @@
 # Chapter Billing (Stripe)
 
+## The chapter subscription
+
+- **$149 per chapter / month, USD, flat**, billed as a Stripe recurring subscription. Commercial framing and the free-tier split are in [`spec/product/positioning.md`](../product/positioning.md); this section is the mechanical contract.
+- **One Price, one line item, `quantity: 1`.** `StripeService.createCheckoutSession` builds `line_items: [{ price: STRIPE_PRICE_ID, quantity: 1 }]` in `mode: 'subscription'`. A different `STRIPE_PRICE_ID` can therefore change **the amount and nothing else** — per-seat billing, quantity tiers, and per-chapter price variation each need a code change first, because a quantity-tiered Price would always resolve to its first tier against a hardcoded quantity of 1.
+- **A 14-day trial opens at checkout**, set by `subscription_data.trial_period_days` (#913). It has to be set there: Stripe's Price object exposes no writable trial field, so a trial cannot be carried by `STRIPE_PRICE_ID` and is lost silently if that argument is dropped — the checkout would then charge on day zero while the public site still advertises a free trial. `stripe.service.spec.ts` asserts it separately for that reason.
+- Stripe reports the window as `trialing`, which `mapStripeStatus` folds into `active`. No `trial` state exists in the database and none is needed — the `subscription_status` CHECK allows only `incomplete`/`active`/`past_due`/`canceled`, and a trialing chapter is deliberately a fully active one to every permission gate.
+- **The trial is per checkout session, not per chapter.** Nothing consults billing history before granting one, so a chapter that reaches checkout twice would open a second trial. That is bounded today by the same rule as the duplicate-customer gap below — checkout is only offered while a chapter is `incomplete` — and it becomes a real repeat-trial hole the moment that rule is relaxed. Close both together.
+
 ## Webhook Reliability
 
 - Stripe webhooks are the **source of truth** for subscription status changes.
@@ -72,7 +80,9 @@ AI features ([`ai.md`](ai.md), meeting summarization in [`meetings.md`](meetings
 
 ### Monthly allowance
 
-- The paid tier includes a monthly AI allowance (size: TBD — sized so that ~90% of chapters never overage based on usage analysis. Carried as `TBD: pricing analysis` until the launch number is set).
+- The paid tier includes a monthly AI allowance, sized so that ~90% of chapters never overage. **The number is still `TBD`, and the blocker is not the analysis — it is that every input to the analysis is missing.** There is no `ai` module under `apps/api/src/modules/`, no metering table anywhere in `supabase/migrations/` (no `tokens_in`, `transcription_seconds`, or `upstream_cost_cents` column exists), and no LLM or transcription provider is referenced anywhere in the API. The only AI surface that exists is the mobile s17 mock, which answers from a keyword table and is off by default. So there is no usage to analyse and no upstream unit cost to normalise against.
+- **Do not set a launch number by estimate.** An allowance is a dollar promise against provider costs that no one has picked yet; a guess here converts directly into either margin loss or a treasurer's surprise bill, which is the exact failure this model exists to prevent. The allowance is also **not on the critical path for billing** — it is a future line item with no Stripe object, so `STRIPE_PRICE_ID` and the flat subscription ship without it.
+- **What has to exist first, in order:** (1) the AI features and their chosen provider/model, (2) the metering row this spec already mandates below — `(chapter_id, feature, tokens_in, tokens_out, transcription_seconds, upstream_cost_cents, billed_at)`, written before the response returns, and (3) roughly a quarter of real multi-chapter usage. The allowance is then read off the 90th percentile of observed monthly cost, not chosen. Until (1) and (2) land, this stays `TBD: blocked on AI metering`.
 - Allowance covers LLM tokens (Q&A, summarization) and transcription minutes, normalized to a dollar equivalent of upstream provider cost.
 - Allowance resets on the chapter's monthly billing anniversary.
 - Unused allowance does **not** roll over.
