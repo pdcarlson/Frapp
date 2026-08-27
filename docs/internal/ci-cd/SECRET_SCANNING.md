@@ -45,6 +45,19 @@ node scripts/scan-secrets.mjs --base <sha> --head <sha>  # a commit range
 
 > ### The audit is only as complete as the clone's refs
 >
+> **This is enforced, not just documented.** Since #931, `scan-secrets.mjs` checks ref completeness
+> in **full mode only**, before scanning, and reports coverage on the success line so an audit
+> record entry can quote what was actually covered. Severity depends on how full mode was reached:
+>
+> | How full mode was reached | Incomplete clone | Origin unreachable |
+> | --- | --- | --- |
+> | Explicitly requested (`npm run check:secrets`) — an audit | **refuses**, exits non-zero | warns, proceeds |
+> | Fallen back to from range mode (unreachable `--base`, or the all-zeros new-branch sentinel) | warns, proceeds | warns, proceeds |
+>
+> The fallback row never fails on purpose: CI drops to full mode on a force-push, and hard-failing
+> there would red-light the required `secret-scan` check. `--staged` and `--base/--head` are not
+> gated at all — they only ever scan a diff and legitimately run in shallow checkouts.
+>
 > **`check:secrets` deliberately passes no `--log-opts`.** Bare `gitleaks git` already defaults to
 > `git log -p -U0 --full-history --all --diff-filter=tuxdb`, so `--all` is *already* in effect.
 > Do not "helpfully" add it: supplying any `--log-opts` **replaces** that whole default set rather
@@ -65,8 +78,13 @@ node scripts/scan-secrets.mjs --base <sha> --head <sha>  # a commit range
 >
 > The middle row is the dangerous one: `git rev-parse --is-shallow-repository` says `false`,
 > `git fetch --unshallow` errors as a no-op, and the scan reports clean having covered ~27% of
-> history. **Do not use shallowness as the completeness check.** Instead, fetch everything and
-> check that you hold as many refs as the remote offers:
+> history. **Do not use shallowness as the completeness check** — the guard above does not, and
+> neither should you. A cloud sandbox measured on 2026-08-27 makes the point sharper still: its
+> `remote.origin.fetch` was exactly the full glob while it held **2 of origin's 324 heads**, so a
+> refspec check alone would have passed it too. Only the ref-count comparison catches both rows.
+>
+> To fix a clone the guard rejects, fetch everything and check that you hold as many refs as the
+> remote offers:
 >
 > ```bash
 > git fetch origin '+refs/heads/*:refs/remotes/origin/*' '+refs/pull/*/head:refs/remotes/pr/*'
