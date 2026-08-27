@@ -8,16 +8,19 @@
  *   mobile-app/        real screens off the running Expo app (react-native-web)
  *   mobile-reference/  artboards from the committed design reference board
  *
- * Only the pre-auth screens can come from the running app. `apps/mobile` stores
- * its session and API token exclusively in `expo-secure-store`, whose web build
- * is `export default {}` — so on web the token never persists and every
- * authenticated call 401s. The signed-in screens therefore come from
- * `spec/ui/design-system/reference/canvas-screens.dc.html`, which the
- * signet-cutover skill designates as visual truth for those surfaces.
+ * The signed-in screens come from the running app. That needs the app to hold a
+ * session on web, which `expo-secure-store` cannot do — its web entry point is
+ * `export default {}` — so `lib/secure-store.web.ts` swaps in a localStorage
+ * adapter when `EXPO_PUBLIC_WEB_SECURE_STORE=1`. Start Expo with that set or
+ * every route below redirects to `/sign-in`; the landed-route assertion turns
+ * that into a loud failure rather than a folder of identical sign-in screens.
  *
+ *   scripts/demo/setup-demo.sh                        # seed the demo chapter
+ *   npx expo start --web --port 3002                  # from apps/mobile
  *   node scripts/demo/capture-mobile.mjs
  *
- * Env: MOBILE_URL (default http://localhost:3002), OUT_ROOT, CHROMIUM_PATH
+ * Env: MOBILE_URL (default http://localhost:3002), OUT_ROOT, CHROMIUM_PATH,
+ *      DEMO_EMAIL, DEMO_PASSWORD, EVENT_ID, SKIP_REFERENCE=1
  */
 import { chromium } from "playwright";
 import { mkdir, rm, readFile } from "node:fs/promises";
@@ -29,26 +32,18 @@ const OUT_ROOT = process.env.OUT_ROOT ?? "screenshots";
 const APP_DIR = path.join(OUT_ROOT, "mobile-app");
 const REF_DIR = path.join(OUT_ROOT, "mobile-reference");
 
+const EMAIL = process.env.DEMO_EMAIL ?? "marcus.ellison@westfield.edu";
+const PASSWORD = process.env.DEMO_PASSWORD ?? "DemoShowcase!2026";
+
+/** The zoned Chapter Meeting the demo seed marks up for check-in. */
+const EVENT_ID = process.env.EVENT_ID ?? "c0ffee00-0000-4000-8000-3000000000e1";
+
 const BOARD = "spec/ui/design-system/reference/canvas-screens.dc.html";
 const FONT = "packages/theme/fonts/FigtreeVF.woff2";
 
 /** iPhone 16 Pro logical size — the `hint-size` the board's artboards declare. */
 const PHONE = { width: 402, height: 874 };
 const SCALE = 3;
-
-/**
- * Routes the running app can actually render without a session — which is
- * sign-in, and only sign-in.
- *
- * `/welcome`, `/join`, `/chapter-picker` and `/create-chapter` all look
- * capturable and are not: `(auth)/_layout.tsx` routes them by *gate
- * destination*, not by URL, so a signed-out visit to any of them redirects to
- * `/sign-in`. Listing them here previously produced three byte-identical copies
- * of the sign-in screen under three different names. The landed-route
- * assertion below is what makes that failure loud instead of silent — keep it
- * if you add a route back.
- */
-const APP_ROUTES = [["01-sign-in", "/sign-in", "Sign in"]];
 
 const FREEZE_CSS = `
   *, *::before, *::after {
@@ -58,6 +53,21 @@ const FREEZE_CSS = `
   }
   html { scrollbar-width: none; }
   ::-webkit-scrollbar { display: none; }
+`;
+
+/**
+ * Metro's dev-only error toast, hidden for the shot.
+ *
+ * `expo-camera`'s web build fetches a wasm barcode decoder that the sandbox has
+ * no network for, and the rejection lands in the LogBox toast as a red
+ * "Aborted(...)" pill across the tab bar. It is a dev-server artifact of the
+ * web target — the native build neither loads that wasm nor renders a toast —
+ * so it is chrome to suppress, not a defect the screenshot should record.
+ */
+const HIDE_DEV_OVERLAY_CSS = `
+  #metro-error-overlay,
+  [data-testid="logbox-toast"],
+  div[role="alert"]:has(> div > div > span) { display: none !important; }
 `;
 
 function slugify(text) {
@@ -154,6 +164,111 @@ const REPAIR_MOJIBAKE = () => {
 
 const failures = [];
 
+/** Poll `read()` until it returns truthy, or throw with `label` on timeout. */
+async function waitFor(page, label, read, timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (await page.evaluate(read).catch(() => false)) return;
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${label}`);
+    await page.waitForTimeout(400);
+  }
+}
+
+const bodyText = () => document.body.innerText;
+
+/**
+ * The signed-in screens, in capture order.
+ *
+ * `ready` runs in the page and gates the shot on content the screen only shows
+ * once its queries have landed — a fixed sleep photographs skeletons on a slow
+ * bundle and wastes seconds on a fast one. `act` runs before it, for screens
+ * that need a tap to reach the state worth showing.
+ */
+const APP_SCREENS = [
+  {
+    slug: "01-home-chat",
+    route: "/",
+    label: "s04 — Chat home (chapter channels, UP NEXT, ✦ Ask pill)",
+    ready: () => document.body.innerText.includes("CHANNELS"),
+  },
+  {
+    slug: "02-ask-answer",
+    // Deliberately not the `/ask` route. Ask is a sheet hosted by Chat home and
+    // Events behind the ✦ pill, never a screen of its own
+    // (`spec/ui/mobile/navigation.md:60`); `app/(tabs)/ask.tsx` exists only to
+    // back a frozen `Tabs.Screen` registration and says so in its own header
+    // comment. Shooting the route photographs a deliberately bare shell with
+    // the tab navigator's "Ask" title stacked above the shell's own — the pill
+    // on s04 is where a member actually opens this.
+    route: "/",
+    label: "s17 — Ask sheet over Chat home, answered with citations",
+    async act(page) {
+      await page.getByLabel("Ask", { exact: true }).first().click();
+      await page.waitForTimeout(1200);
+      await page.getByText("When's the next mandatory event?").first().click();
+    },
+    // The citation chip only exists on an `answered` result, so this waits out
+    // the sheet's deliberate in-flight state rather than racing it.
+    ready: () => document.body.innerText.includes("Bylaws"),
+  },
+  {
+    slug: "03-chat-thread",
+    route: "/",
+    label: "s05 — Chat thread, #general",
+    async act(page) {
+      await page.getByText("general", { exact: true }).first().click();
+      await page.waitForTimeout(2000);
+    },
+    // Two things this predicate must not be phrased as. Not "CHANNELS has
+    // gone": React Navigation keeps the tab's index screen mounted under the
+    // pushed thread, so the channel list stays in `innerText` throughout. And
+    // not `innerText.includes("Message")` for the composer: a placeholder is an
+    // attribute, so it never appears in `innerText` at all and the wait can
+    // only ever time out. "Thread" is text, and only this route renders it.
+    ready: () =>
+      document.body.innerText.includes("Thread") &&
+      Boolean(document.querySelector('[placeholder="Message"]')),
+    expectRoute: "/chat-thread",
+  },
+  {
+    slug: "04-host-check-in",
+    route: `/host-check-in?eventId=${EVENT_ID}`,
+    label: "s22 — Host check-in, rotating QR + manual override",
+    // "Rotates in 0:00" is the clamped floor of an expiring window, not a
+    // stopped clock: the token query polls every 10s and `formatCountdown`
+    // floors at zero in between. Hold out for ten seconds or more left on the
+    // clock — merely non-zero lands "0:02" about as often as not, which reads
+    // as a code caught mid-expiry rather than one an officer is projecting.
+    ready: () => /Rotates in 0:[12]\d/.test(document.body.innerText),
+  },
+];
+
+async function signIn(page) {
+  await page.goto(`${MOBILE_URL}/sign-in`, {
+    waitUntil: "domcontentloaded",
+    timeout: 120_000,
+  });
+  await waitFor(page, "sign-in form", () =>
+    document.body.innerText.includes("Sign in to your chapter"),
+  );
+
+  await page
+    .locator('input[type="email"], input[inputmode="email"]')
+    .first()
+    .fill(EMAIL);
+  await page.locator('input[type="password"]').first().fill(PASSWORD);
+  await page.getByText("Sign in", { exact: true }).last().click();
+
+  // The chapter name in the header is the first thing that proves the whole
+  // chain worked: session persisted, token mirrored, API accepted the Bearer.
+  await waitFor(
+    page,
+    "signed-in home (is EXPO_PUBLIC_WEB_SECURE_STORE=1 set?)",
+    () => document.body.innerText.includes("CHANNELS"),
+    60_000,
+  );
+}
+
 async function captureRunningApp(browser) {
   const context = await browser.newContext({
     viewport: PHONE,
@@ -165,29 +280,42 @@ async function captureRunningApp(browser) {
   const page = await context.newPage();
   const done = [];
 
-  for (const [slug, route, label] of APP_ROUTES) {
-    process.stdout.write(`  app ${route} ... `);
+  process.stdout.write(`  signing in as ${EMAIL} ... `);
+  await signIn(page);
+  console.log("ok");
+
+  for (const screen of APP_SCREENS) {
+    const { slug, route, label } = screen;
+    process.stdout.write(`  app ${slug} ... `);
     try {
       await page.goto(`${MOBILE_URL}${route}`, {
         waitUntil: "domcontentloaded",
         timeout: 120_000,
       });
-      // Metro serves a bundle that boots the whole router before first paint.
-      await page.waitForTimeout(9000);
+      // Let the router settle on the requested route before acting on it.
+      await waitFor(page, `${slug} first paint`, bodyText);
+      await page.waitForTimeout(2500);
+
+      if (screen.act) await screen.act(page);
+      if (screen.ready) await waitFor(page, slug, screen.ready);
 
       // Never save a screenshot under a name the app did not actually render.
       const landed = new URL(page.url()).pathname;
-      if (landed !== route) {
-        throw new Error(`redirected to ${landed} — not capturable signed out`);
+      const expected = screen.expectRoute ?? new URL(route, MOBILE_URL).pathname;
+      if (landed !== expected) {
+        throw new Error(`landed on ${landed}, expected ${expected}`);
       }
 
       await page.addStyleTag({ content: FREEZE_CSS }).catch(() => {});
+      await page.addStyleTag({ content: HIDE_DEV_OVERLAY_CSS }).catch(() => {});
+      await page.waitForTimeout(300);
+
       const file = path.join(APP_DIR, `${slug}.png`);
       await page.screenshot({ path: file });
       done.push({ slug, label, file });
       console.log("ok");
     } catch (error) {
-      failures.push(`${route}: ${error.message.split("\n")[0]}`);
+      failures.push(`${slug}: ${error.message.split("\n")[0]}`);
       console.log(`FAILED: ${error.message.split("\n")[0]}`);
     }
   }
@@ -272,23 +400,28 @@ async function captureReferenceBoard(browser) {
 
 async function main() {
   await rm(APP_DIR, { recursive: true, force: true });
-  await rm(REF_DIR, { recursive: true, force: true });
   await mkdir(APP_DIR, { recursive: true });
-  await mkdir(REF_DIR, { recursive: true });
 
   const browser = await chromium.launch({
     executablePath: process.env.CHROMIUM_PATH || undefined,
+    args: ["--no-sandbox"],
   });
 
-  console.log("Running app (pre-auth screens only — see header comment):");
+  console.log("Running app (signed in against the seeded demo chapter):");
   const app = await captureRunningApp(browser);
 
-  console.log("\nDesign reference board:");
-  const ref = await captureReferenceBoard(browser);
+  let ref = [];
+  if (process.env.SKIP_REFERENCE !== "1") {
+    await rm(REF_DIR, { recursive: true, force: true });
+    await mkdir(REF_DIR, { recursive: true });
+    console.log("\nDesign reference board:");
+    ref = await captureReferenceBoard(browser);
+  }
 
   await browser.close();
   console.log(`\n${app.length} app screens -> ${APP_DIR}`);
-  console.log(`${ref.length} reference artboards -> ${REF_DIR}`);
+  for (const { slug, label } of app) console.log(`  ${slug}.png  ${label}`);
+  if (ref.length) console.log(`${ref.length} reference artboards -> ${REF_DIR}`);
 
   if (failures.length) {
     console.log("\nFailed:");
@@ -299,5 +432,5 @@ async function main() {
 
 main().catch((error) => {
   console.error(error);
-  process.exit(1);
+  process.exitCode = 1;
 });

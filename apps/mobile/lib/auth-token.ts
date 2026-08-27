@@ -1,4 +1,4 @@
-import * as SecureStore from "expo-secure-store";
+import * as SecureStore from "./secure-store";
 
 /**
  * Where the API access token lives for `frapp-client.tsx`'s SDK middleware.
