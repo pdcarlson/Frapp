@@ -23,10 +23,12 @@ describe("NOTIFICATION_CATEGORIES", () => {
     ]);
   });
 
-  // See the module docblock: `announcements` is gated ahead of the priority
-  // check, so a switch would silently mute URGENT broadcasts; `admin` is
-  // chapter operations delivered chapter-wide; `default` is the service's
-  // fallback for a payload that omits a category. None is a member preference.
+  // See the module docblock: `announcements` carries only URGENT traffic, and
+  // URGENT bypasses the preference gate since #1041, so a switch would suppress
+  // nothing until routine announcements are separated from emergencies
+  // (#1323); `admin` is chapter operations delivered chapter-wide; `default` is
+  // the service's fallback for a payload that omits a category. None is a
+  // member preference.
   it("omits the categories that are not a member's to switch", () => {
     const keys = NOTIFICATION_CATEGORIES.map((category) => category.key);
     expect(keys).not.toContain("announcements");

@@ -85,18 +85,32 @@ export class NotificationService {
     payload: NotifyPayload,
   ): Promise<void> {
     const category = payload.category ?? 'default';
+    const priority = payload.priority ?? 'NORMAL';
 
-    const pref = await this.preferenceRepo.findByUserChapterCategory(
-      userId,
-      chapterId,
-      category,
-    );
-    if (pref && !pref.is_enabled) {
-      return;
+    // URGENT outranks the member's category preference — for the in-app row
+    // below as well as the push. A member must not be able to mute a chapter
+    // emergency from a settings screen: `announcements` and the president's
+    // subscription-status alert are URGENT precisely because they are not
+    // optional. Suppressing the row would be the same failure in a slower
+    // form, leaving no trace of the broadcast anywhere. Quiet hours already
+    // exempt URGENT immediately below; this gate was the outlier.
+    //
+    // The lookup is gated rather than reordered so neither path pays for the
+    // other: URGENT skips the preference read entirely, and a suppressed
+    // category still returns before the `user_settings` read.
+    if (priority !== 'URGENT') {
+      const pref = await this.preferenceRepo.findByUserChapterCategory(
+        userId,
+        chapterId,
+        category,
+      );
+      if (pref && !pref.is_enabled) {
+        return;
+      }
     }
 
     const settings = await this.settingsRepo.findByUser(userId);
-    let effectivePriority = payload.priority ?? 'NORMAL';
+    let effectivePriority = priority;
     if (
       effectivePriority !== 'URGENT' &&
       this.isInQuietHours(settings, userId)

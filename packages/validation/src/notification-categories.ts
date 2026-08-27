@@ -16,13 +16,16 @@
  * Grepping `category: '…'` across `apps/api/src` yields eight distinct values.
  * Six are here. The other two are deliberately absent:
  *
- * - **`announcements`** — the delivery flow checks the member's preference
- *   *before* it checks priority (`notification.service.ts`), so switching this
- *   off suppresses URGENT chapter announcements **and** the in-app row, not just
- *   the push. #564 assumes URGENT is exempt; on this server it is not. Exposing
- *   the row would let a member silently mute an emergency broadcast from a
- *   settings screen. It ships once the server exempts URGENT from the
- *   preference gate.
+ * - **`announcements`** — still absent, but for a different reason than it used
+ *   to be. The old blocker was gate ordering: the preference was checked before
+ *   priority, so the switch would have muted URGENT broadcasts. That is fixed —
+ *   `notifyUser` now exempts URGENT from this gate entirely (#1041), which is
+ *   what #564 always assumed. What replaces it is that the category has no
+ *   non-URGENT traffic to switch: `chat.service.ts` is the only emitter and it
+ *   sends every announcements-channel post as URGENT, so a preference row here
+ *   would suppress nothing — the exact dead-control failure the first paragraph
+ *   of this docblock exists to prevent. It ships once routine announcements are
+ *   distinguishable from emergency ones; see #1323.
  * - **`admin`** — "new member joined" / "invite accepted" / "role change". It is
  *   member-facing in *delivery* (`InviteService` sends it through
  *   `notifyChapter`, so every member gets a row), but it is chapter operations
@@ -89,10 +92,12 @@ export const NOTIFICATION_CATEGORIES = [
   {
     key: "billing",
     label: "Billing",
-    // Impure, knowingly: `BillingService` sends URGENT "subscription status
-    // changed" alerts to the chapter president on this same key, so a president
-    // who switches billing off also silences those. Splitting them needs a
-    // second category server-side.
+    // `BillingService` sends URGENT "subscription status changed" alerts to
+    // the chapter president on this same key. Those used to be silenced along
+    // with everything else when a president switched billing off; since #1041
+    // URGENT bypasses the preference gate, so this switch now governs only the
+    // routine invoice and dues traffic it advertises. No second server-side
+    // category is needed.
     description: "Invoices created, dues coming due, and payments received.",
     defaultEnabled: true,
   },

@@ -109,6 +109,67 @@ describe('ChatPushWorkerService', () => {
     );
   });
 
+  // The title and priority have always treated any channel *named*
+  // `announcements` as an announcement, but the category keyed on `kind`
+  // alone — so an ordinary `text` message here went out titled "New
+  // Announcement" at URGENT while labelled `category: 'chat'`. Harmless until
+  // URGENT became exempt from the category preference gate (#1041): after
+  // that, the mismatch let these escape a member's coarse Chat switch. Pinning
+  // the three together is what stops that.
+  it('labels an ordinary message in an announcements channel as an announcement, not chat', async () => {
+    service.__setChannelForTest(ANNOUNCEMENT_CHANNEL);
+    setMembers(['sender', 'a', 'b']);
+    await service.handleMessage({
+      id: 'm1',
+      channel_id: ANNOUNCEMENT_CHANNEL.id,
+      sender_id: 'sender',
+      content: 'Reminder about Saturday',
+      kind: 'text',
+      created_at: '',
+    });
+    expect(notifyUser).toHaveBeenCalledWith(
+      'a',
+      'chap-1',
+      expect.objectContaining({
+        title: 'New Announcement',
+        priority: 'URGENT',
+        category: 'announcements',
+      }),
+    );
+    expect(notifyUser).not.toHaveBeenCalledWith(
+      'a',
+      'chap-1',
+      expect.objectContaining({ category: 'chat' }),
+    );
+  });
+
+  // The positive control for the branch above: an ordinary channel must keep
+  // `category: 'chat'` at NORMAL, so the shared predicate cannot be "fixed" by
+  // simply labelling everything an announcement. Mentioned so the default
+  // `mentions` tier lets the push through at all.
+  it('still labels an ordinary channel message as chat at NORMAL', async () => {
+    service.__setChannelForTest(CHANNEL);
+    setMembers(['sender', 'a']);
+    await service.handleMessage({
+      id: 'm1',
+      channel_id: CHANNEL.id,
+      sender_id: 'sender',
+      content: 'hello @a',
+      kind: 'text',
+      mentions: ['a'],
+      created_at: '',
+    });
+    expect(notifyUser).toHaveBeenCalledWith(
+      'a',
+      'chap-1',
+      expect.objectContaining({
+        title: 'New message in #general',
+        priority: 'NORMAL',
+        category: 'chat',
+      }),
+    );
+  });
+
   it('skips recipients currently in the channel (presence)', async () => {
     service.__setChannelForTest(ANNOUNCEMENT_CHANNEL);
     service.__setPresenceForTest(ANNOUNCEMENT_CHANNEL.id, ['a']);
