@@ -17,6 +17,27 @@
  *                   and gate pass this so an offline dev isn't hard-blocked; CI
  *                   omits it so a missing scanner is a hard error.
  *
+ * ## Ref completeness (full mode only)
+ *
+ * `gitleaks git` scans every ref the clone holds — and silently reports clean over
+ * the ones it doesn't. A partial clone therefore produces an all-clear that is
+ * indistinguishable from a real audit, which is how a false entry gets appended to
+ * the audit record in SECRET_SCANNING.md. Full mode now refuses to pretend.
+ *
+ * **Shallowness is the wrong diagnostic.** A full-depth `--single-branch` clone
+ * reports `is-shallow=false`, `git fetch --unshallow` errors as a no-op, and the
+ * scan covers a fraction of history at exit 0. The load-bearing signal is instead
+ * a *ref count comparison* against `git ls-remote` — measured in a cloud sandbox
+ * on 2026-08-27, `remote.origin.fetch` was exactly the full glob while the clone
+ * held 2 of origin's 324 heads, so the refspec check alone would have passed it.
+ *
+ * Severity depends on how full mode was reached, which is not cosmetic:
+ *   - explicitly requested (an audit) -> refuse, non-zero
+ *   - fallen back to from range mode  -> warn only, never fail. CI drops here on an
+ *     unreachable base or the all-zeros new-branch sentinel (see main), and failing
+ *     would red-light the required `secret-scan` check on a force-push.
+ *   - origin unreachable (offline)    -> warn only, mirroring --soft-missing
+ *
  * Docs: docs/internal/ci-cd/SECRET_SCANNING.md
  */
 
@@ -66,6 +87,85 @@ export function buildGitleaksArgs({ mode, base, head, configPath, baselinePath }
 }
 
 /**
+ * A refspec that maps *every* head into remote-tracking refs, rather than one branch.
+ * `+refs/heads/*:refs/remotes/origin/*` passes; `+refs/heads/main:...` does not.
+ */
+const FULL_HEADS_REFSPEC = /^\+?refs\/heads\/\*:/;
+
+/**
+ * Decide whether a clone can support a real full-history audit (pure — unit-tested).
+ *
+ * Three independent signals, all reported rather than short-circuited, so the
+ * message names every reason a run is untrustworthy instead of only the first.
+ *
+ * `remoteRefCount: null` means origin was unreachable. That is deliberately NOT
+ * "incomplete": an offline dev has no way to prove completeness either way, and
+ * hard-blocking them contradicts the --soft-missing precedent. It downgrades to
+ * "unknown" — unless a local signal (shallow, narrow refspec) already proves
+ * incompleteness on its own, which needs no network to know.
+ *
+ * @param {{isShallow:boolean, fetchSpecs?:string[], localRefCount:number, remoteRefCount:number|null}} state
+ * @returns {{status:"complete"|"incomplete"|"unknown", reasons:string[], localRefCount:number, remoteRefCount:number|null}}
+ */
+export function evaluateRefCompleteness({
+  isShallow,
+  fetchSpecs = [],
+  localRefCount,
+  remoteRefCount,
+}) {
+  const reasons = [];
+
+  if (isShallow) {
+    reasons.push("the clone is shallow (`--depth`), so most commits are absent entirely");
+  }
+
+  // Only meaningful when at least one refspec is configured; a repo with no
+  // `remote.origin.fetch` at all has no origin to be narrow about.
+  if (fetchSpecs.length > 0 && !fetchSpecs.some((spec) => FULL_HEADS_REFSPEC.test(spec.trim()))) {
+    reasons.push(
+      `\`remote.origin.fetch\` is ${fetchSpecs.map((s) => `\`${s}\``).join(", ")}, ` +
+        "which does not map every head (a `--single-branch` clone)",
+    );
+  }
+
+  const remoteKnown = typeof remoteRefCount === "number";
+
+  // The one check that catches the middle row of SECRET_SCANNING.md's table: a
+  // full-depth single-branch clone whose refspec is nonetheless the full glob.
+  if (remoteKnown && localRefCount < remoteRefCount) {
+    reasons.push(
+      `the clone holds ${localRefCount} remote-tracking head(s) but origin offers ${remoteRefCount}` +
+        ` (${coveragePercent(localRefCount, remoteRefCount)} of the remote's heads)`,
+    );
+  }
+
+  const normalizedRemote = remoteKnown ? remoteRefCount : null;
+
+  if (reasons.length > 0) {
+    return { status: "incomplete", reasons, localRefCount, remoteRefCount: normalizedRemote };
+  }
+  if (!remoteKnown) {
+    return {
+      status: "unknown",
+      reasons: ["origin is unreachable, so ref coverage could not be compared"],
+      localRefCount,
+      remoteRefCount: null,
+    };
+  }
+  return { status: "complete", reasons: [], localRefCount, remoteRefCount };
+}
+
+/** Coverage as a display string. Exported only so the tests can pin the rounding. */
+export function coveragePercent(local, remote) {
+  if (!remote) return "0%";
+  const pct = (local / remote) * 100;
+  // Never round a genuinely partial clone up to "100%" — that is the exact
+  // false all-clear this guard exists to prevent.
+  if (pct > 99.5 && local < remote) return "<100%";
+  return `${pct < 1 && pct > 0 ? pct.toFixed(1) : Math.round(pct)}%`;
+}
+
+/**
  * gitleaks' `git --pre-commit --staged` / `--log-opts` interface needs gitleaks >= 8.19
  * (the `git`/`dir`/`stdin` subcommand split). Used to vet a PATH fallback binary so an
  * older system/Homebrew gitleaks isn't driven with flags it doesn't understand.
@@ -85,6 +185,94 @@ function isReachable(rev) {
     stdio: "ignore",
   });
   return !result.error && result.status === 0;
+}
+
+/** Run git for stdout; null when git itself failed (not installed, no repo, offline). */
+function gitStdout(args) {
+  const result = spawnSync("git", args, { cwd: ROOT, encoding: "utf8" });
+  if (result.error || result.status !== 0) return null;
+  return result.stdout;
+}
+
+/**
+ * Count refnames on stdout, ignoring the symbolic `origin/HEAD` pointer so the
+ * local tally compares like-for-like against `git ls-remote --heads` (which never
+ * lists it). Counting it would let a 1-branch clone read as 2 refs.
+ */
+function countRefLines(stdout) {
+  if (!stdout) return 0;
+  return stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "" && !line.endsWith("/HEAD")).length;
+}
+
+/** Read this clone's ref state. Impure counterpart to evaluateRefCompleteness. */
+function gatherRefState() {
+  const fetchOut = gitStdout(["config", "--get-all", "remote.origin.fetch"]);
+  return {
+    isShallow: String(gitStdout(["rev-parse", "--is-shallow-repository"]) ?? "").trim() === "true",
+    fetchSpecs: fetchOut
+      ? fetchOut
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean)
+      : [],
+    localRefCount: countRefLines(
+      gitStdout(["for-each-ref", "--format=%(refname)", "refs/remotes/origin/**"]),
+    ),
+    // null (not 0) when origin is unreachable — 0 would read as "the remote has
+    // no branches" and make an offline clone look complete.
+    remoteRefCount: (() => {
+      const out = gitStdout(["ls-remote", "--heads", "origin"]);
+      return out === null ? null : countRefLines(out);
+    })(),
+  };
+}
+
+const REMEDY =
+  "  Fetch every ref, then re-run:\n" +
+  "    git fetch --unshallow 2>/dev/null || true   # only needed for a shallow clone\n" +
+  "    git fetch origin '+refs/heads/*:refs/remotes/origin/*' '+refs/pull/*/head:refs/remotes/pr/*'\n" +
+  "  See docs/internal/ci-cd/SECRET_SCANNING.md § The audit is only as complete as the clone's refs.";
+
+/**
+ * Gate a full-mode scan on ref completeness. Returns a coverage note to append to
+ * the success line, so an audit record entry can quote what was actually covered.
+ *
+ * @param {boolean} isFallback true when full mode was fallen back to from range
+ *   mode rather than requested — warn, never fail (see the module docblock).
+ */
+function checkRefCompleteness(isFallback) {
+  const result = evaluateRefCompleteness(gatherRefState());
+  const { status, reasons, localRefCount, remoteRefCount } = result;
+
+  if (status === "complete") {
+    return ` Covered ${localRefCount} of origin's ${remoteRefCount} heads (all of them).`;
+  }
+
+  const detail = reasons.map((reason) => `  • ${reason}`).join("\n");
+
+  if (status === "incomplete" && !isFallback) {
+    console.error(
+      "❌ Refusing to run a full-history audit over an incomplete clone.\n" +
+        `${detail}\n\n` +
+        "  A scan over these refs would print a clean result that covers only part of\n" +
+        "  history — indistinguishable from a real all-clear, and not a valid audit record.\n\n" +
+        REMEDY,
+    );
+    process.exit(1);
+  }
+
+  console.warn(
+    `⚠️  Scanning full history over a clone of ${status === "unknown" ? "unverified" : "incomplete"} coverage.\n` +
+      `${detail}\n\n` +
+      `${REMEDY}\n` +
+      "  Continuing — but this run is NOT a valid audit record.",
+  );
+  return remoteRefCount === null
+    ? ` Coverage unverified (${localRefCount} local heads; origin unreachable).`
+    : ` Covered ${localRefCount} of origin's ${remoteRefCount} heads — INCOMPLETE.`;
 }
 
 function resolveBinary() {
@@ -127,6 +315,15 @@ function main() {
     mode = /^0+$/.test(base) || !isReachable(base) ? "full" : "range";
   }
 
+  // Full mode only, and before the scan so a refusal costs nothing. The presence
+  // of --base/--head means we *fell back* to full at the line above rather than
+  // being asked for an audit; that path warns and proceeds, because failing it
+  // would red-light the required `secret-scan` check on a force-push.
+  // `staged` and `range` legitimately run in shallow checkouts — they only ever
+  // scan a diff — so neither is gated.
+  const coverageNote =
+    mode === "full" ? checkRefCompleteness(hasFlag("--base") || hasFlag("--head")) : "";
+
   const bin = resolveBinary();
   if (!bin) {
     const guidance =
@@ -164,7 +361,7 @@ function main() {
     // failure, never a pass (process.exit(null) would coerce to 0 and falsely report clean).
     process.exit(result.status ?? 1);
   }
-  console.log("✅ gitleaks: no secrets found.");
+  console.log(`✅ gitleaks: no secrets found.${coverageNote}`);
 }
 
 // Run only when invoked directly, so tests can import buildGitleaksArgs cleanly.
