@@ -40,9 +40,103 @@ Use when:
 
 Action:
 1. Freeze writes (maintenance mode if needed).
-2. Restore latest verified backup/snapshot in Supabase.
+2. Restore the most recent offsite dump — see [Restoring from an offsite dump](#restoring-from-an-offsite-dump). **There is no Supabase snapshot to restore instead**; see Backup reality below.
 3. Re-deploy API once DB state is consistent.
 4. Execute incident postmortem.
+
+## Backup reality
+
+Established from the Supabase Management API and Supabase's own documentation on
+2026-08-27 (#852), not assumed:
+
+| Fact | Value |
+| --- | --- |
+| Org | `Frapp Live` (`iouzvaszrnjlndtmookt`) |
+| **Plan** | **`free`** — holds *both* `frapp-staging` and `frapp-prod` |
+| `frapp-staging` | `hnoyzpidbmizhbqaiity`, `us-east-1`, Postgres 17.6.1.063 |
+| `frapp-prod` | `unttyvyfezddlyafcydh`, `us-east-2`, Postgres 17.6.1.063 |
+| Supabase daily backups | **None available.** [Pro/Team/Enterprise only](https://supabase.com/docs/guides/platform/backups) |
+| Point-in-Time Recovery | **Not available.** Paid add-on, Pro and above |
+
+Supabase's guidance for the free tier is to do exactly what this repo now does:
+
+> We recommend that free tier plan projects regularly export their data using the
+> Supabase CLI `db dump` command and maintain off-site backups.
+
+Two consequences worth stating plainly:
+
+- **The nightly offsite dump is not defence-in-depth. It is the only restorable
+  backup either project has.** If it is not running, there is no recovery path
+  from data loss beyond replaying migrations into an empty database.
+- Free-tier projects may have up to 7 daily backups taken internally, but
+  Supabase makes them accessible **only on upgrade**, and states it "might no
+  longer make daily backups for free projects in the future". That is not
+  something a recovery plan can depend on. Upgrading the org to Pro is the
+  single change that would most improve this posture.
+
+## Backups: what exists
+
+| | |
+| --- | --- |
+| Producer | [`.github/workflows/db-backup.yml`](../../../.github/workflows/db-backup.yml) — nightly 07:00 UTC, plus `workflow_dispatch` |
+| Script | [`scripts/db-backup.sh`](../../../scripts/db-backup.sh) |
+| Contents | three gzipped SQL files — roles, schema, data — plus a manifest carrying a SHA-256 per file |
+| Scope | `frapp-staging` only. Production is deferred by choice (#814 / `scope:production`) |
+| Destination | S3-compatible bucket outside Supabase — **provisioning tracked in #1287** |
+| Retention | `BACKUP_RETENTION_DAYS`, default 30, pruned by the same workflow |
+
+Until #1287 is done the workflow **fails every night on purpose**. A backup job
+that reports success while writing no backup is the failure mode this whole
+runbook exists to prevent.
+
+### What this backup does not cover
+
+- **Storage objects.** Per Supabase, "Database backups do not include objects you
+  store via the Storage API, as the database only includes metadata about these
+  objects." Five buckets hold real content, `chat-archive` in particular. A
+  restore therefore yields rows referencing objects that were never captured.
+  Backing up Storage is separate, unfiled work.
+- **The `storage` schema itself**, deliberately: bucket rows are provisioned by
+  this repo's own `supabase/migrations/*_bucket.sql`, so they come back when
+  migrations run. Including them made the restore abort on `buckets_pkey`.
+- **`auth.schema_migrations`**, deliberately: GoTrue's own ledger, populated on
+  every project, so restoring it aborts on `schema_migrations_pkey`.
+- **Custom role passwords.** Supabase excludes them from `--role-only` dumps.
+  Reset them by hand after a restore if any exist.
+
+## Restoring from an offsite dump
+
+```bash
+# 1. Fetch the dump you want (labels are UTC and sort chronologically).
+aws s3 cp "s3://$BACKUP_S3_BUCKET/staging/<label>/" ./restore/ \
+  --endpoint-url "$BACKUP_S3_ENDPOINT" --recursive
+
+# 2. Restore. Verifies checksums and preconditions before touching the target.
+scripts/db-restore.sh --backup-dir ./restore --db-url "<target-url>" --force
+```
+
+**The target must be a Supabase-provisioned database** — a freshly created
+project, or a reset local stack. These dumps are *not* self-contained:
+`supabase db dump` excludes Supabase-managed schemas, so the schema dump references
+`auth`, `storage` and `extensions` without creating them, and restoring into a
+bare `CREATE DATABASE` dies partway through. The restore script checks this up front
+rather than letting you discover it mid-replay.
+
+`--force` is required for any non-local target. That is not ceremony: the script
+replaces the contents of the database it is pointed at, and the difference
+between a rehearsal and an outage is one mistyped host.
+
+## Rehearsal log
+
+A backup you have never restored is a rumor. Re-run
+[`scripts/db-restore-rehearsal.sh`](../../../scripts/db-restore-rehearsal.sh)
+after changing any dump flag or the restore order — it backs up the local stack,
+drops the application schema, restores from the dump alone, and diffs row counts
+table-by-table, exiting non-zero on any drift.
+
+| Date | Result | Notes |
+| --- | --- | --- |
+| 2026-08-27 | **PASS** | 24 tables identical row-for-row. `auth.users` restored with `encrypted_password` intact. Took five iterations; each failure was a real defect in the recipe (see #852). Local stack, Postgres 17.6 — same major/minor as staging. Not yet rehearsed against a real Supabase project, which needs #1287. |
 
 ## Immediate response steps
 
@@ -66,6 +160,46 @@ After any rollback event:
   ([`../DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md) rule 4)
 - create/update postmortem entry with timeline and root cause
 - add preventive checks to migration or CI workflow
+
+## Rollback the `security definer` search_path pin
+
+* **Migration**: `20260827190000_secdef_search_path_pg_temp.sql`
+* **Read this first**: rolling this back **reintroduces a security defect** (#985). The
+  migration adds nothing and changes no function body — it only appends `pg_temp` to
+  the `search_path` of seven `security definer` functions, four of which are
+  authorization code (`can_read_chat_message` backs chat RLS; the three
+  `realtime_can_read_*_scope` functions gate realtime delivery). Reverting restores the
+  state where a caller-created temp table shadows the real table inside those functions
+  while they run with the definer's privileges. There is almost never a reason to do
+  this; prefer a forward fix.
+* **Action**: no function body is needed. `ALTER FUNCTION` changes the setting alone,
+  which is why this rollback is trivial and total:
+  ```sql
+  ALTER FUNCTION public.can_read_chat_message(uuid)            SET search_path TO 'public';
+  ALTER FUNCTION public.realtime_can_read_chapter_scope(uuid)  SET search_path TO 'public';
+  ALTER FUNCTION public.realtime_can_read_event_scope(uuid)    SET search_path TO 'public';
+  ALTER FUNCTION public.realtime_can_read_user_scope(uuid)     SET search_path TO 'public';
+  ALTER FUNCTION public.realtime_notify_event_attendance()     SET search_path TO 'public';
+  ALTER FUNCTION public.realtime_notify_events()               SET search_path TO 'public';
+  ALTER FUNCTION public.realtime_notify_notifications()        SET search_path TO 'public';
+  ```
+  Re-applying is the same statements with `TO 'public', 'pg_temp'`. Both directions were
+  exercised on the local stack.
+* **Order**: **no coordination required — deploy in either order.** This is the rare
+  purely-additive-to-a-setting change: signatures, return types, and bodies are all
+  untouched, so `create or replace` kept every dependent RLS policy and trigger
+  resolving, and no API revision can observe the difference. There is no window in which
+  a running API sees a shape it does not expect, in either direction.
+* **Data caveat**: none. Nothing is written, dropped, or backfilled.
+* **CI will stop you.** `scripts/check-pglite-migrations.mjs` asserts every
+  `security definer` function in `public` pins `pg_temp` **last** (the
+  `=== security definer search_path ===` tier), so a rollback committed as a *migration*
+  fails the `pglite-migrations` job by design. An emergency `ALTER` applied directly to a
+  hosted database is not caught by CI — if you do that, file the follow-up immediately,
+  because the next `db reset` silently re-applies the fix and the two environments drift.
+* **Note on order within the pin**: `pg_temp` must be **last**. `search_path = pg_temp,
+  public` is not a partial fix, it is the original bug spelled explicitly — the guard
+  rejects it for that reason.
 
 ## Rollback the chat author fields
 

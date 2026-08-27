@@ -6,7 +6,24 @@ import type {
   TablesUpdate,
 } from '../database.types';
 import { IMemberRepository } from '../../../domain/repositories/member.repository.interface';
-import { Member } from '../../../domain/entities/member.entity';
+import {
+  ChapterMemberIdentity,
+  Member,
+} from '../../../domain/entities/member.entity';
+
+/**
+ * The wire shape of the `users!inner(id, display_name)` embed, written out
+ * because the types shim cannot infer it. Every field is optional: this
+ * describes what PostgREST *might* hand back, and
+ * `findChapterMemberIdentities` narrows it before anything downstream sees it.
+ */
+interface ChapterMemberIdentityRow {
+  user_id?: string | null;
+  users?:
+    | { id?: string | null; display_name?: string | null }
+    | { id?: string | null; display_name?: string | null }[]
+    | null;
+}
 
 @Injectable()
 export class SupabaseMemberRepository implements IMemberRepository {
@@ -55,6 +72,41 @@ export class SupabaseMemberRepository implements IMemberRepository {
       .eq('chapter_id', chapterId);
     if (error) throw error;
     return data || [];
+  }
+
+  async findChapterMemberIdentities(
+    chapterId: string,
+  ): Promise<ChapterMemberIdentity[]> {
+    // `users!inner(...)` rather than a second round trip through
+    // `userRepo.findByIds`: the inner join both drops members whose user row is
+    // gone and keeps the chapter predicate in the same statement as the lookup,
+    // which is this repo's multi-tenancy rule (same shape as the
+    // `chat_channels!inner(chapter_id)` embeds elsewhere).
+    const { data, error } = await this.supabase
+      .from('members')
+      .select('user_id, users!inner(id, display_name)')
+      .eq('chapter_id', chapterId);
+    if (error) throw error;
+
+    // Narrowed, never cast. `database.types.ts` is a hand-rolled shim whose
+    // `Relationships` are declared structurally rather than as literals, so
+    // postgrest-js cannot infer an embed's shape and hands back a loose row.
+    // A blind cast would turn a schema drift — an embed that arrives as an
+    // array, or a null `display_name` — into an undefined flowing on to the
+    // mention resolver, where it would throw inside `fold()` on the send hot
+    // path. Dropping the row instead costs one member's mentionability.
+    const identities: ChapterMemberIdentity[] = [];
+    for (const row of (data ?? []) as unknown as ChapterMemberIdentityRow[]) {
+      // PostgREST returns a many-to-one embed as an object, but returns an
+      // array when it resolves the relationship the other way; accept both
+      // rather than depending on which side it picked.
+      const user = Array.isArray(row?.users) ? row.users[0] : row?.users;
+      const userId = user?.id ?? row?.user_id;
+      if (typeof userId !== 'string' || typeof user?.display_name !== 'string')
+        continue;
+      identities.push({ user_id: userId, display_name: user.display_name });
+    }
+    return identities;
   }
 
   async create(memberData: TablesInsert<'members'>): Promise<Member> {

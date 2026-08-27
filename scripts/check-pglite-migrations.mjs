@@ -484,23 +484,52 @@ const RLS_SMOKE = [
     ok: (rows) => rows.length === 1 && rows[0].public_exec === false,
   },
   {
-    name: "can_read_chat_message() is SECURITY DEFINER with search_path pinned to exactly public",
+    name: "can_read_chat_message() is SECURITY DEFINER with search_path pinned to exactly `public, pg_temp`",
     sql: `select prosecdef, proconfig
             from pg_proc p join pg_namespace n on n.oid = p.pronamespace
            where n.nspname = 'public' and p.proname = 'can_read_chat_message'`,
-    // The pin must be exactly `search_path = public` (a single schema). Parse each
-    // proconfig item, tolerate optional quoting (`public` vs `"public"`), and reject
-    // any extra schema (e.g. `public, pg_catalog`) so a weakened pin fails.
+    // The pin must be exactly `public, pg_temp` — that list, in that order.
+    //
+    // This asserted "exactly public" until #985. That was the weaker pin, not the
+    // stronger one: omitting `pg_temp` does not exclude the temp schema, it moves it
+    // to the FRONT of the resolution order implicitly, so a caller-created temp table
+    // shadowed `chat_messages` inside the RLS predicate while it ran with the
+    // definer's privileges. Naming `pg_temp` LAST is what demotes it. It is therefore
+    // not a widening, and the original intent — reject an extra readable schema like
+    // `public, pg_catalog` — is preserved by pinning the exact list rather than
+    // merely looking for `pg_temp` somewhere in it.
+    //
+    // Order is asserted, not just membership: `pg_temp, public` would reinstate the
+    // exact shadowing this exists to prevent. The repo-wide version of this check
+    // lives in the `security definer search_path` tier below and covers every such
+    // function; this landmark stays because this one backs chat RLS and deserves its
+    // own named assertion.
     ok: (rows) => {
       if (rows.length !== 1 || rows[0].prosecdef !== true) return false;
       const cfg = rows[0].proconfig;
+      // proconfig arrives as a JS array from PGlite; the string branch is
+      // defensive. It must NOT split on "," -- the value we are looking for is
+      // `search_path=public, pg_temp`, a SINGLE element that itself contains a
+      // comma, which Postgres therefore renders quoted inside the array literal.
+      // Splitting naively would tear it in half and fail a correctly-pinned
+      // function. Match quoted elements whole, unquoted ones up to the next comma.
       const items = Array.isArray(cfg)
         ? cfg
-        : String(cfg ?? "")
-            .replace(/^\{|\}$/g, "")
-            .split(",");
-      return items.some((it) =>
-        /^\s*search_path\s*=\s*"?public"?\s*$/i.test(String(it)),
+        : ((String(cfg ?? "").replace(/^\{|\}$/g, "").match(/"(?:[^"\\]|\\.)*"|[^,]+/g) ?? []).map(
+            (it) => it.trim().replace(/^"|"$/g, "").replace(/\\"/g, '"'),
+          ));
+      const sp = items
+        .map((it) => String(it).trim())
+        .find((it) => /^search_path\s*=/i.test(it));
+      if (!sp) return false;
+      const schemas = sp
+        .replace(/^search_path\s*=\s*/i, "")
+        .split(",")
+        .map((s) => s.trim().replace(/^"|"$/g, "").toLowerCase());
+      return (
+        schemas.length === 2 &&
+        schemas[0] === "public" &&
+        schemas[1] === "pg_temp"
       );
     },
   },
@@ -1713,6 +1742,66 @@ try {
   console.log(
     `MISS  chapter directory seed load\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`,
   );
+}
+
+// ─── `security definer` search_path guard (#985) ─────────────────────────────
+//
+// Postgres resolves unqualified relation names against `pg_temp` FIRST unless
+// `pg_temp` is itself listed in `search_path`. A `security definer` function
+// declared `set search_path = public` therefore reads a caller-created temp table
+// in place of the real one while holding the DEFINER's privileges. Four of the
+// functions this guards are authorization code — `can_read_chat_message` backs
+// chat RLS, and the `realtime_can_read_*_scope` trio gates realtime delivery — so
+// a shadowed read there is an authorization decision made against attacker-
+// supplied rows.
+//
+// Catalog-driven on purpose. The obvious alternative — grep migration SQL for
+// `security definer` without `pg_temp` — cannot work here: migrations are
+// immutable, so the three files that introduced the bare setting (20260803150000,
+// 20260807220000, 20260816140000) keep it in their text forever. A regex would
+// flag them permanently and tempt someone into editing applied history. Reading
+// the applied catalog asserts the END STATE instead, which is exactly the query
+// #985 specifies, and it catches the eighth function regardless of which file
+// declares it or in what syntax.
+//
+// `pg_temp` must be LAST, so POSITION is asserted rather than mere presence:
+// listing it first would reinstate the very shadowing this exists to prevent.
+//
+// The `search_path` entry is read out of the raw `proconfig` array rather than a
+// comma-joined string. A function may carry unrelated settings (`statement_timeout`
+// and friends), and in a joined string those are indistinguishable from further
+// search_path entries — which would let a genuinely-unpinned function pass.
+console.log("\n=== security definer search_path ===");
+{
+  const res = await db.query(
+    `select p.proname,
+            (select cfg from unnest(coalesce(p.proconfig, '{}')) as cfg
+              where cfg like 'search_path=%' limit 1) as sp
+       from pg_proc p
+       join pg_namespace n on n.oid = p.pronamespace
+      where p.prosecdef and n.nspname = 'public'
+      order by p.proname`,
+  );
+  const offenders = res.rows.filter((r) => {
+    if (!r.sp) return true; // security definer with no search_path pinned at all
+    const entries = String(r.sp)
+      .slice("search_path=".length)
+      .split(",")
+      .map((s) => s.trim().replace(/^"|"$/g, ""));
+    return entries[entries.length - 1] !== "pg_temp";
+  });
+  if (offenders.length === 0) {
+    console.log(
+      `OK    all ${res.rows.length} security definer function(s) pin pg_temp last in search_path`,
+    );
+  } else {
+    missing += 1;
+    console.log(
+      `MISS  ${offenders.length} security definer function(s) without pg_temp last in search_path` +
+        `\n        \u21b3 ${offenders.map((o) => `${o.proname} (${o.sp ?? "<no search_path>"})`).join("; ")}` +
+        `\n        \u21b3 fix: declare \`set search_path = public, pg_temp\` with pg_temp LAST (#985)`,
+    );
+  }
 }
 
 const tableCount = await db.query(
