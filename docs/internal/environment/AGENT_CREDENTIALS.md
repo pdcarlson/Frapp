@@ -20,7 +20,7 @@ APIs before proposing changes. Usage policy for `GITHUB_PAT` lives in
 | ------- | ----------- |
 | `GITHUB_PAT` | GitHub PAT — branch-protection script, agent-owned PRs/issues; export as `GH_TOKEN` for `gh` |
 | `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN` | Supabase CLI / management |
-| `INFISICAL_SERVICE_TOKEN` | Infisical service token (`st.*` format — scoped at mint time; per [#1279](https://github.com/pdcarlson/Frapp/issues/1279) minted `dev` + `staging` **read-only**, never `prod`). The Infisical CLI reads it as `INFISICAL_TOKEN`: `export INFISICAL_TOKEN="$INFISICAL_SERVICE_TOKEN"` |
+| `INFISICAL_SERVICE_TOKEN` | Infisical service token (`st.*` format — scoped at mint time; per [#1279](https://github.com/pdcarlson/Frapp/issues/1279) minted `dev` + `staging` **read-only**, never `prod`, and confirmed so against `GET /api/v2/service-token` on 2026-08-27). The Infisical CLI reads it as `INFISICAL_TOKEN`: `export INFISICAL_TOKEN="$INFISICAL_SERVICE_TOKEN"` |
 | `INFISICAL_PROJECT_ID` | Infisical project (workspace) id — same value as `workspaceId` in `.infisical.json` |
 | `RENDER_API_KEY` | Render API |
 | `VERCEL_API_KEY` | Vercel API |
@@ -35,6 +35,14 @@ APIs before proposing changes. Usage policy for `GITHUB_PAT` lives in
 > in the web UI"); in an environment without that line the host is blocked and the token is
 > unexercisable from the sandbox. No Infisical MCP connector can read secrets, so there is no
 > fallback path — see [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md) § "What this does not unlock".
+> **Verified end-to-end from a cloud sandbox on 2026-08-27**: `api/status` reachable, and the
+> token listed secret *names* for `dev` and `staging`. **Do not read scope off a listing** — an
+> environment the token is not scoped to answers `200` with an empty `secrets` array, not 401/403,
+> so an out-of-scope env is indistinguishable from an empty one. Ask
+> `GET /api/v2/service-token` (returns the token's own `scopes[]`/`permissions[]`); recipe and
+> caveats in
+> [`infrastructure-research`](../../../.claude/skills/infrastructure-research/SKILL.md)
+> § "Infisical: Secret configuration".
 >
 > **Canonical names & aliases.** The hosted-agent GitHub PAT is `GITHUB_PAT` — **not**
 > `GITHUB_TOKEN` (the GitHub Actions runtime token, which lacks branch-administration
