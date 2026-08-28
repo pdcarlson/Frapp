@@ -96,9 +96,14 @@ export function useMemberDisplayNames(): MemberDisplayNames {
     [byId],
   );
 
+  // Keyed on `query.refetch`, which TanStack keeps stable, rather than on
+  // `query` — the observer hands back a fresh result object every render, so
+  // depending on it would make this callback a new identity each time and defeat
+  // memoization in any consumer that lists it as a dependency.
+  const { refetch: runRefetch } = query;
   const refetch = useCallback(() => {
-    void query.refetch();
-  }, [query]);
+    void runRefetch();
+  }, [runRefetch]);
 
   return {
     byId,
