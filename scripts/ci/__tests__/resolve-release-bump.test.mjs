@@ -1,6 +1,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import {
   applyBump,
   highestBump,
@@ -166,4 +170,28 @@ describe("resolveReleaseBump", () => {
     assert.equal(result.bump, "patch");
     assert.equal(result.version, "1.0.1");
   });
+});
+
+describe("the workflows that run this script grant the scope it needs", () => {
+  // `fetchPrLabels` calls GET /repos/{repo}/pulls/{n}, which is gated on the
+  // `pull-requests` permission — NOT on `contents`. A `permissions:` block is
+  // exhaustive, so a job declaring only `contents: write` has `pull-requests:
+  // none`, and the DEFAULT `bump: auto` path then fails after Render and Vercel
+  // have already deployed. Both the reusable workflow and its caller need it:
+  // a called workflow's permissions are intersected with the caller's.
+  const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+
+  for (const [file, job] of [
+    [".github/workflows/release.yml", "release"],
+    [".github/workflows/deploy-production.yml", "release"],
+  ]) {
+    it(`${file} grants pull-requests: read on its \`${job}\` job`, () => {
+      const text = readFileSync(join(repoRoot, file), "utf8");
+      const jobStart = text.indexOf(`\n  ${job}:\n`);
+      assert.notEqual(jobStart, -1, `job \`${job}\` not found in ${file}`);
+      const jobBody = text.slice(jobStart, jobStart + 2000);
+      assert.match(jobBody, /permissions:/);
+      assert.match(jobBody, /pull-requests: read/);
+    });
+  }
 });

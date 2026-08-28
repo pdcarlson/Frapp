@@ -376,7 +376,12 @@ jobs:
     if: ${{ needs.deploy.result == 'success' && !inputs.dry_run_only }}
     uses: ./.github/workflows/release.yml
     permissions:
+      # A called workflow's job permissions are intersected with what the caller
+      # grants, so both sides need `pull-requests: read` — see the note in
+      # release.yml. Granting it only there would still leave the token unable
+      # to read the `release:*` labels.
       contents: write
+      pull-requests: read
     with:
       sha: ${{ inputs.sha }}
       bump: ${{ inputs.bump }}
