@@ -29,6 +29,8 @@
 // Semantics: the pure functions below. Unit tests:
 // `scripts/ci/__tests__/resolve-release-bump.test.mjs`.
 
+import { appendFileSync } from "node:fs";
+
 const MERGE_SUBJECT = /^Merge pull request #(\d+)\b/;
 const SQUASH_SUBJECT = /\(#(\d+)\)\s*$/;
 
@@ -169,9 +171,7 @@ function requireEnv(name) {
 function appendOutput(lines) {
   const file = process.env.GITHUB_OUTPUT;
   if (!file) return;
-  // Imported lazily so the module stays importable (and testable) in an
-  // environment with no filesystem expectations.
-  import("node:fs").then(({ appendFileSync }) => appendFileSync(file, `${lines.join("\n")}\n`));
+  appendFileSync(file, `${lines.join("\n")}\n`);
 }
 
 async function main() {

@@ -50,9 +50,11 @@ export const ALERT_ISSUE_TITLE =
 export const ALERT_ISSUE_LOOKUP_LABEL = "routine-state";
 export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"];
 
-export const RENDER_PROD_SERVICE_ID = "srv-d6lqu41aae7s73f62df0";
-export const VERCEL_WEB_PROJECT_ID = "prj_xkn32taKrJCgYRZoN6pZRfGfPT9T";
-export const VERCEL_LANDING_PROJECT_ID = "prj_aAkER9EZJcxR51vUY0mwNDnCf8vy";
+// Provider identifiers are NOT defaulted here, deliberately. Every sibling
+// script requires them from the environment, and the workflows that call this
+// one pass the same values they use to deploy. A default would let this
+// watchdog keep asserting against a service the deploy no longer targets — the
+// one failure mode a guardrail must not have.
 
 const RENDER_SERVICE_URL = (serviceId) => `https://api.render.com/v1/services/${serviceId}`;
 const VERCEL_PROJECT_URL = (projectId, teamId) =>
@@ -135,11 +137,8 @@ export async function collectFindings({
   renderApiKey,
   vercelApiKey,
   teamId,
-  renderServiceId = RENDER_PROD_SERVICE_ID,
-  vercelProjects = [
-    { projectId: VERCEL_WEB_PROJECT_ID, label: "frapp-web" },
-    { projectId: VERCEL_LANDING_PROJECT_ID, label: "frapp-landing" },
-  ],
+  renderServiceId,
+  vercelProjects,
   fetchImpl = fetch,
 }) {
   const findings = [];
@@ -208,6 +207,11 @@ async function main() {
     renderApiKey: requireEnv("RENDER_API_KEY"),
     vercelApiKey: requireEnv("VERCEL_API_KEY"),
     teamId: process.env.VERCEL_TEAM_ID,
+    renderServiceId: requireEnv("RENDER_SERVICE_ID"),
+    vercelProjects: [
+      { projectId: requireEnv("VERCEL_WEB_PROJECT_ID"), label: "frapp-web" },
+      { projectId: requireEnv("VERCEL_LANDING_PROJECT_ID"), label: "frapp-landing" },
+    ],
   });
 
   const summary = buildSummary(findings);

@@ -140,6 +140,13 @@ jobs:
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
+          # The SAME identifiers the deploy steps below use. Passing them rather
+          # than letting the script default means the preflight can only ever
+          # assert against the services this run actually deploys to.
+          RENDER_SERVICE_ID: ${{ env.RENDER_PROD_SERVICE_ID }}
+          VERCEL_WEB_PROJECT_ID: ${{ env.VERCEL_WEB_PROJECT_ID }}
+          VERCEL_LANDING_PROJECT_ID: ${{ env.VERCEL_LANDING_PROJECT_ID }}
+          VERCEL_TEAM_ID: ${{ env.VERCEL_TEAM_ID }}
         run: node scripts/ci/production-guardrails.mjs --preflight
 
       # Proven to be an ancestor of main, so this is already-reviewed code.
@@ -209,14 +216,18 @@ jobs:
             exit 1
           fi
           node scripts/ci/check-migration-replay.mjs | tee "${RUNNER_TEMP:-/tmp}/replay.log"
-          # `nothing-pending` exits 0 having rehearsed NOTHING. Recording which
-          # it was stops "replay passed" from reading as "the apply was
-          # rehearsed" when there was nothing to rehearse.
-          if grep -q "nothing-pending\|No pending migrations" "${RUNNER_TEMP:-/tmp}/replay.log"; then
-            echo "outcome=nothing-pending" >> "$GITHUB_OUTPUT"
-          else
-            echo "outcome=replayed" >> "$GITHUB_OUTPUT"
+
+          # `nothing-pending` exits 0 having rehearsed NOTHING, and that must not
+          # read as "the apply was rehearsed" in the run summary. The script
+          # prints a machine-readable `replay_outcome=<code>` line for exactly
+          # this; do not go back to grepping its human message, which is where
+          # this went wrong the first time.
+          OUTCOME="$(grep -oP '^replay_outcome=\K.*' "${RUNNER_TEMP:-/tmp}/replay.log" | tail -n1 || true)"
+          if [ -z "$OUTCOME" ]; then
+            echo "::error::The replay produced no replay_outcome line. Refusing to report an unknown rehearsal state as a pass."
+            exit 1
           fi
+          echo "outcome=$OUTCOME" >> "$GITHUB_OUTPUT"
 
       # ── The fence ────────────────────────────────────────────────────────
       # Its own step so that no `continue-on-error` anywhere can swallow it.

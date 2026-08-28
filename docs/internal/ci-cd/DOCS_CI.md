@@ -2,7 +2,7 @@
 
 ## What runs
 
-On pull requests to `main` and `production`, `.github/workflows/docs.yml` (workflow display name
+On pull requests to `main`, `.github/workflows/docs.yml` (workflow display name
 **Docs spec sync**) runs **three jobs** covering **five** checks. They are separate on purpose: each
 asserts one thing, and each fails with a different fix.
 

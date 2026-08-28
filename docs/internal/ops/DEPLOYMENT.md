@@ -193,7 +193,7 @@ You import the **same GitHub repo twice** — once per Next.js app (`apps/web`, 
 - **Build:** `turbo run build` (auto-scoped to the current workspace)
 - **Output:** Next.js default (`.next`)
 
-The `vercel.json` in each app adds `git.deploymentEnabled` (deploy only `main`/`production`, disable all others with `"**": false`), `turbo-ignore` (skip rebuilds when files haven't changed), and security headers.
+The `vercel.json` in each app adds `git.deploymentEnabled` (auto-deploy only `main`, disable all others with `"**": false`), `turbo-ignore` (skip rebuilds when files haven't changed), and security headers. Production deployments are not covered by this setting at all — `deploy-production.yml` creates them through the API.
 
 ### 4.2 Environment Variables per Project
 

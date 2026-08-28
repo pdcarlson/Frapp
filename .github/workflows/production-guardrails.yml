@@ -59,6 +59,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
+          # Passed rather than defaulted in the script: a watchdog that carries
+          # its own copy of a service id keeps asserting against the old service
+          # after a recreate, and reports green about an object nothing deploys
+          # to. Keep these in step with deploy-production.yml's `env:` block.
+          RENDER_SERVICE_ID: srv-d6lqu41aae7s73f62df0
+          VERCEL_WEB_PROJECT_ID: prj_xkn32taKrJCgYRZoN6pZRfGfPT9T
+          VERCEL_LANDING_PROJECT_ID: prj_aAkER9EZJcxR51vUY0mwNDnCf8vy
           VERCEL_TEAM_ID: team_j9XLIANou5EpvALrr4bM9Nee
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: node scripts/ci/production-guardrails.mjs

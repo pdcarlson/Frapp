@@ -158,7 +158,7 @@ npm run generate -w packages/api-sdk
 
 ## 5. Continuous Integration (CI)
 
-CI runs as domain-specific parallel jobs on every PR to `main` or `production`. Each job is an independent required status check — failures are visible per domain, not hidden behind a single monolith gate.
+CI runs as domain-specific parallel jobs on every PR to `main`. Each job is an independent required status check — failures are visible per domain, not hidden behind a single monolith gate.
 
 ### CI Job Matrix
 
@@ -187,7 +187,7 @@ CI runs as domain-specific parallel jobs on every PR to `main` or `production`. 
 The **Blocker?** column states the *intended* set — every `Yes` above is an entry in `CI_CHECKS` /
 `DOCS_CHECKS` in [`scripts/configure-branch-protection.mjs`](../../scripts/configure-branch-protection.mjs),
 with one exception: `branch-policy` is in neither array — `buildProtectionPayload` appends it for
-`production` only, so it never blocks a PR into `main`.
+`production` only, so it never blocked a PR into `main`.
 Live branch protection is whatever an admin last applied and can lag the script, so no doc claims
 per-check whether a gate is live today; read live state per
 [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
@@ -225,7 +225,7 @@ session model (Opus). There is no `claude-review-gate` required check, no `claud
 
 ### Key Design Decisions
 
-- **No CI frontend build gate.** CI focuses on lint/type/tests/docs gates; Vercel handles frontend deployments on `main`/`production` only.
+- **No CI frontend build gate.** CI focuses on lint/type/tests/docs gates; Vercel handles staging frontend deployments off `main`, and production deployments are created by `deploy-production.yml`.
 - **No placeholder secrets.** CI never sets `NEXT_PUBLIC_SUPABASE_URL` or similar to dummy values. All env-dependent builds happen in the provider (Vercel/Render).
 - **API contract check uses git-diff.** The `openapi.json` is committed as a source-of-truth artifact. CI checks freshness via `git diff` — it does not bootstrap the NestJS application, avoiding the need for Supabase/Stripe credentials in CI.
 - **Mobile CI is lint + typecheck only.** EAS builds are expensive and slow; they run on-demand, not per-PR.
@@ -236,7 +236,7 @@ If any required check fails, the PR cannot be merged. Branch protection rules en
 
 ## 6. Continuous Deployment (CD)
 
-GitHub Actions-managed deploy steps are gated by CI. After CI succeeds, the deploy workflow runs database migrations and triggers the Render API deploy. Vercel deployments are push-triggered only for `main` and `production`.
+Staging deploy steps are gated by CI: after CI succeeds on `main`, `deploy-api.yml` runs database migrations and triggers the Render staging deploy, and Vercel produces a Preview deployment from the same push. Nothing about production is push-triggered — `deploy-production.yml` creates the Render deploy and both Vercel production deployments itself, for a commit a human named.
 
 ### Deploy Pipeline (on merge)
 
@@ -265,13 +265,13 @@ secrets.
   staging API URL and staging Supabase keys inlined at build time.
 - Feature/PR branches do not auto-deploy on Vercel.
 - Each app uses `turbo-ignore` to skip rebuilds when its files haven't changed.
-- Branch filtering is controlled with `git.deploymentEnabled` in each app's `vercel.json` (`main` and `production` enabled, all others disabled).
+- Branch filtering is controlled with `git.deploymentEnabled` in each app's `vercel.json` (`main` enabled, all others disabled). Production deployments bypass branch triggers entirely: `deploy-production.yml` creates them through the Vercel API with `target: production`.
 - Vercel detects the monorepo structure and builds the appropriate app via `vercel.json` build commands.
 
 ### API (Render)
 
 - API deploys are gated behind CI success using `workflow_run` triggers.
-- Push to `production` (after CI) → GitHub Actions triggers Render production deploy hook.
+- Production: a human dispatches **Deploy production** with a commit SHA → the workflow calls the Render API with that `commitId` (no deploy hook, and no push involved).
 - Push to `main` (after CI) → GitHub Actions triggers Render staging deploy hook.
 - Render builds the Docker image from `apps/api/Dockerfile` and performs zero-downtime swap.
 - Database migrations run automatically before deploy (see Section 8).

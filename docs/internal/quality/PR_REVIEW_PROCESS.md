@@ -45,7 +45,7 @@ Large infrastructure PRs are hard to review, hard to debug, and can leave checks
    - All review threads resolved.
 4. **Merge**
    - Feature work: squash merge into `main`.
-   - Promotion: merge `main` into `production` via dedicated PR.
+   - Production: no PR. Dispatch **Deploy production** with the SHA you want live (#1340).
 
 ## CI/CD change rollout plan (replace a mega-PR like #20)
 

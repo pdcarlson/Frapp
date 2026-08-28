@@ -8,6 +8,12 @@ import {
   collectFindings,
 } from "../production-guardrails.mjs";
 
+const RENDER_SERVICE_ID = "srv-test";
+const VERCEL_PROJECTS = [
+  { projectId: "prj_web", label: "frapp-web" },
+  { projectId: "prj_landing", label: "frapp-landing" },
+];
+
 function okJson(body) {
   return { ok: true, status: 200, json: async () => body };
 }
@@ -75,6 +81,8 @@ describe("collectFindings", () => {
     const findings = await collectFindings({
       renderApiKey: "r",
       vercelApiKey: "v",
+      renderServiceId: RENDER_SERVICE_ID,
+      vercelProjects: VERCEL_PROJECTS,
       fetchImpl: async (url) => okJson(url.includes("render.com") ? goodRender : goodVercel),
     });
     assert.deepEqual(findings, []);
@@ -87,6 +95,8 @@ describe("collectFindings", () => {
     const findings = await collectFindings({
       renderApiKey: "r",
       vercelApiKey: "v",
+      renderServiceId: RENDER_SERVICE_ID,
+      vercelProjects: VERCEL_PROJECTS,
       fetchImpl: async (url) =>
         url.includes("render.com") ? { ok: false, status: 401 } : okJson(goodVercel),
     });
@@ -98,6 +108,8 @@ describe("collectFindings", () => {
     const findings = await collectFindings({
       renderApiKey: "r",
       vercelApiKey: "v",
+      renderServiceId: RENDER_SERVICE_ID,
+      vercelProjects: VERCEL_PROJECTS,
       fetchImpl: async (url) =>
         url.includes("render.com") ? okJson(goodRender) : { ok: false, status: 403 },
     });
@@ -109,9 +121,11 @@ describe("collectFindings", () => {
     const findings = await collectFindings({
       renderApiKey: "r",
       vercelApiKey: "v",
+      renderServiceId: RENDER_SERVICE_ID,
+      vercelProjects: VERCEL_PROJECTS,
       fetchImpl: async (url) => {
         if (url.includes("render.com")) return okJson(goodRender);
-        return okJson(url.includes("prj_aAkER") ? { link: { productionBranch: "main" } } : goodVercel);
+        return okJson(url.includes("prj_landing") ? { link: { productionBranch: "main" } } : goodVercel);
       },
     });
     assert.equal(findings.length, 1);
@@ -126,5 +140,34 @@ describe("buildSummary", () => {
     const summary = buildSummary(["a", "b"]);
     assert.match(summary, /2 production guardrail violation/);
     assert.match(summary, /- a/);
+  });
+});
+
+describe("provider identifiers are inputs, never defaults", () => {
+  // The failure this guards: `frapp-api-prod` is recreated and gets a new
+  // service id. Whoever updates deploy-production.yml (which is what actually
+  // deploys) has no reason to touch this script — so a default baked in here
+  // would keep the daily watchdog asserting auto-deploy against the OLD
+  // service, reporting green forever about an object nothing deploys to. Every
+  // sibling script requires its ids from env for the same reason.
+  it("queries exactly the service and projects it was handed", async () => {
+    const urls = [];
+    await collectFindings({
+      renderApiKey: "r",
+      vercelApiKey: "v",
+      renderServiceId: "srv-somewhere-else",
+      vercelProjects: [{ projectId: "prj_only", label: "solo" }],
+      fetchImpl: async (url) => {
+        urls.push(url);
+        return okJson(url.includes("render.com") ? { autoDeploy: "no", branch: "main" } : { link: { productionBranch: "production" } });
+      },
+    });
+
+    assert.equal(urls.length, 2);
+    assert.ok(urls[0].endsWith("/services/srv-somewhere-else"));
+    assert.ok(urls[1].includes("prj_only"));
+    // No hardcoded production id leaked into the calls.
+    assert.ok(!urls.some((u) => u.includes("srv-d6lqu41aae7s73f62df0")));
+    assert.ok(!urls.some((u) => u.includes("prj_xkn32taKrJCgYRZoN6pZRfGfPT9T")));
   });
 });

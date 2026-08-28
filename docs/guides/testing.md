@@ -36,7 +36,7 @@ Jest is configured in `apps/api/package.json` with scripts:
 All three CI suites run in the **`api-tests`** job (`.github/workflows/ci.yml`) — it runs
 `npm run test -w apps/api`, then `npm run test:e2e -w apps/api`, then
 `npm run test:ai-evals -w apps/api`. `api-tests` is a merge-blocking required check (see
-`scripts/configure-branch-protection.mjs`), so all three gate PRs to `main`/`production` without a
+`scripts/configure-branch-protection.mjs`), so all three gate PRs to `main` without a
 separate status. The E2E specs override the Supabase client with mocks (see §6) and the evals are
 pure fixtures, so the job is deterministic and needs no live database or secrets.
 
