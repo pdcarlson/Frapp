@@ -41,6 +41,13 @@ on:
     branches: [main, production]
   push:
     branches: [main]
+  # On demand, so `migration-replay`'s expensive path can be exercised without
+  # waiting for a migration-bearing PR to come along. That path — Docker, a real
+  # Supabase stack, a two-phase apply — does no work on a change that touches no
+  # migrations, which is correct behaviour and also means the ordinary PR run
+  # proves nothing about it. Making a gate required on the strength of a run
+  # that skipped its own body is how a check ends up green and inert.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -60,11 +67,18 @@ jobs:
     runs-on: ubuntu-latest
     # Fork PRs receive no secrets, so the Infisical step below cannot succeed.
     # A job-level `if:` reports Success when skipped, which satisfies the
-    # required check rather than deadlocking the PR. This repo is private and
-    # takes no fork PRs today; the guard is here so that fact stopping being
-    # true does not silently wedge every PR.
+    # required check rather than deadlocking the PR. This repo takes no fork PRs
+    # today; the guard is here so that fact stopping being true does not
+    # silently wedge every PR.
+    #
+    # `workflow_dispatch` is listed explicitly: it carries no pull_request
+    # context, so the comparison below is `null == 'owner/repo'` — false — and
+    # without this clause a manual run would skip the job and report Success
+    # having done nothing. Only users with write access can dispatch, so there
+    # is no fork-secret concern in that path.
     if: |
       github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
       github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - name: Checkout
@@ -146,11 +160,13 @@ jobs:
   # seconds without starting Docker.
   migration-replay:
     runs-on: ubuntu-latest
-    # Fork PRs receive no secrets — same guard, same reason, as migration-drift
-    # above. A job-level `if:` reports Success when skipped, which satisfies the
-    # required check instead of deadlocking the PR.
+    # Fork PRs receive no secrets — same guard, same reason, and the same
+    # `workflow_dispatch` clause as migration-drift above. A job-level `if:`
+    # reports Success when skipped, which satisfies the required check instead
+    # of deadlocking the PR.
     if: |
       github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
       github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - name: Checkout
@@ -177,6 +193,15 @@ jobs:
           # failed pipeline — the false-green that hid a skipped production
           # deploy in #1330 (fixed for deploy-api.yml in #1331).
           CHANGED="${RUNNER_TEMP:-/tmp}/replay-changed-paths.txt"
+
+          # A manual dispatch has neither a base SHA nor a `before` SHA, and is
+          # only ever run to exercise the replay — so it skips the diff and
+          # forces the full path.
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Manual dispatch — running the replay regardless of the diff."
+            exit 0
+          fi
 
           if [ "$EVENT_NAME" = "pull_request" ]; then
             RANGE="$BASE_SHA...$HEAD_SHA"
