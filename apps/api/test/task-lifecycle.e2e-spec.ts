@@ -121,6 +121,9 @@ describe('Task lifecycle (e2e)', () => {
     expect(taskServiceMock.confirmCompletion).toHaveBeenCalledWith(
       'task-1',
       'chapter-1',
+      // Resolved by @CurrentUser('id') from the mocked appUser, so the service
+      // can refuse a self-confirmation (#1056).
+      'user-1',
     );
   });
 
