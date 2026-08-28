@@ -21,6 +21,12 @@ export const stateMicrocopy = {
     emptyLeaderboardTitle: "No leaderboard entries",
     emptyLeaderboardDescription:
       "Point activity will populate after attendance, study, or admin adjustments.",
+    // A filtered board that matches nothing is not an empty board. Reusing the
+    // copy above would assert the chapter has had no point activity at all,
+    // which is a claim about the data rather than about the search (#1197).
+    noLeaderboardMatchesTitle: "No members match that search",
+    noLeaderboardMatchesDescription:
+      "Check the spelling, or clear the search to see the full leaderboard.",
     emptyTransactionsTitle: "No transactions in this window",
     emptyTransactionsDescription:
       "Your attendance, study sessions, and adjustments will appear here.",

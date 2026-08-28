@@ -3,7 +3,11 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { FlaggedGlyph } from "@/components/points/points-glyphs";
-import { useMembers, usePointsTransactions } from "@repo/hooks";
+import {
+  memberFallbackLabel,
+  useMemberDisplayNames,
+  usePointsTransactions,
+} from "@repo/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,11 +46,6 @@ type TransactionRow = {
   created_at?: string;
 };
 
-type MemberSummary = {
-  user_id?: string;
-  display_name?: string | null;
-};
-
 function asArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
 }
@@ -56,20 +55,21 @@ export function PointsAuditCard() {
   const [categoryFilter, setCategoryFilter] = useState<"ALL" | Category>("ALL");
   const [userFilter, setUserFilter] = useState<string>("ALL");
 
-  const membersQuery = useMembers();
-  const members = useMemo(
-    () => asArray<MemberSummary>(membersQuery.data),
-    [membersQuery.data],
-  );
-  const memberNameById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const member of members) {
-      if (member.user_id) {
-        map.set(String(member.user_id), member.display_name ?? "Unnamed member");
-      }
-    }
-    return map;
-  }, [members]);
+  // The display roster, not `useMembers`: this card needs a name per row and a
+  // name per filter option, and `GET /v1/members` would put every member's
+  // email, bio, graduation year, city and company on the wire for anyone who
+  // opens /points — this card renders above its own `points:view_all` gate, so
+  // that fetch was unconditional (#1000, #986). The leaderboard on this page
+  // reads the same hook and the same cache key, so /points issues one request
+  // for both rather than the two it used to.
+  //
+  // `nameFor` also replaces a local map with a `?? "Unnamed member"` default:
+  // `display_name` is `NOT NULL DEFAULT ''`, and `??` passes the empty string
+  // straight through, so a member who never set a name rendered a blank label.
+  const { byId, nameFor } = useMemberDisplayNames();
+  // One subscription, not two: `useMemberDisplayNames` already reads the roster,
+  // and its map's keys are the same member ids the filter needs.
+  const memberIds = useMemo(() => Object.keys(byId), [byId]);
 
   const transactionsQuery = usePointsTransactions({
     userId: userFilter === "ALL" ? undefined : userFilter,
@@ -172,12 +172,9 @@ export function PointsAuditCard() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">All members</SelectItem>
-                {members.map((member) => (
-                  <SelectItem
-                    key={member.user_id ?? "unknown"}
-                    value={String(member.user_id ?? "")}
-                  >
-                    {member.display_name ?? "Unnamed member"}
+                {memberIds.map((userId) => (
+                  <SelectItem key={userId} value={userId}>
+                    {nameFor(userId) ?? memberFallbackLabel(userId)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -215,9 +212,14 @@ export function PointsAuditCard() {
                 <ul className="divide-y divide-border">
                   {rows.map((row) => {
                     const flagged = row.metadata?.flagged === true;
+                    // The full id, not `memberFallbackLabel`, and deliberately
+                    // unlike the leaderboard: this is the audit record, where a
+                    // uuid is the operator's handle for a support ticket or a
+                    // direct lookup. It is the one surface on /points that still
+                    // shows one, which is what the leaderboard's pasted-id
+                    // search exists to receive.
                     const name = row.user_id
-                      ? memberNameById.get(String(row.user_id)) ??
-                        String(row.user_id)
+                      ? nameFor(String(row.user_id)) ?? String(row.user_id)
                       : "Unknown member";
                     const sign = (row.amount ?? 0) >= 0 ? "+" : "";
                     return (

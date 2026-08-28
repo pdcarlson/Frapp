@@ -46,6 +46,27 @@ export function resolveDisplayName(
   return trimmed.length > 0 ? trimmed : null;
 }
 
+/** How many characters of a user id the fallback label shows. */
+const FALLBACK_ID_CHARS = 6;
+
+/**
+ * What to render in a name slot when the roster cannot name someone.
+ *
+ * One definition so the label is genuinely shared rather than re-typed per
+ * surface: `resolveAuthorLabel` below uses the same rule for chat, and the
+ * points leaderboard and audit list call this directly. A departed member keeps
+ * their rows on those surfaces, so this is a permanent state for them, not a
+ * transient one — two surfaces disagreeing about how to spell it means an
+ * officer cannot tell that two rows are the same person.
+ *
+ * Not a bare uuid: a 36-character id in a name column is unreadable and, per
+ * `spec/ui/design-system/foundations.md` §7, would drag mono type into a slot
+ * that otherwise holds a person.
+ */
+export function memberFallbackLabel(userId: string): string {
+  return `Member ${userId.slice(0, FALLBACK_ID_CHARS)}`;
+}
+
 /**
  * A DM channel name the server generated from participant ids
  * (`dm-<uuidA>-<uuidB>`). These are storage keys, never display strings.
@@ -214,7 +235,7 @@ export function resolveAuthorLabel(
   if (viewerId && author.sender_id === viewerId) return "You";
   const name = resolveAuthorName(author, nameFor);
   if (name) return name;
-  if (author.sender_id) return `Member ${author.sender_id.slice(0, 6)}`;
+  if (author.sender_id) return memberFallbackLabel(author.sender_id);
   return UNKNOWN_AUTHOR;
 }
 

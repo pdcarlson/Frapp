@@ -31,6 +31,23 @@ const { mockCurrentChapter } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
 }));
 
+/**
+ * The roster projection behind the leaderboard's User column (#1197).
+ *
+ * Mocked at `useMemberDisplayNames`' real contract boundary — `nameFor` returns
+ * a name or `null` — rather than by restating the resolution rule. Whether a
+ * blank `display_name` or a missing id becomes `null` belongs to
+ * `resolveDisplayName`, which `packages/hooks/src/display-names.spec.ts`
+ * already covers; what the page owes is correct handling of the `null`.
+ */
+const rosterRefetch = vi.fn();
+
+const rosterState: {
+  names: Record<string, string | null>;
+  isPending: boolean;
+  isError: boolean;
+} = { names: {}, isPending: false, isError: false };
+
 vi.mock("@repo/hooks", () => ({
   // Paid-ops writes on this surface now read the chapter subscription (#841);
   // these cases predate the gate, so they run against an active chapter.
@@ -42,6 +59,26 @@ vi.mock("@repo/hooks", () => ({
   }),
   useLeaderboard: () => leaderboardQuery,
   useMyPoints: () => summaryQuery,
+  // Mirrors the real pure helper (`packages/hooks/src/display-names.ts`), which
+  // has its own unit test; this module is mocked wholesale, so it cannot be
+  // imported through. Kept in step by `display-names.spec.ts` asserting the
+  // exact same string shape.
+  memberFallbackLabel: (userId: string) => `Member ${userId.slice(0, 6)}`,
+  useMemberDisplayNames: () => ({
+    byId: rosterState.names,
+    // Mirrors `resolveDisplayName` rather than `?? null`: `display_name` is
+    // `NOT NULL DEFAULT ''`, so the real resolver maps a blank name to null. A
+    // `??` mock would pass '' through and let a blank-cell regression pass here.
+    nameFor: (userId: string) => {
+      const name = rosterState.names[userId];
+      if (typeof name !== "string") return null;
+      const trimmed = name.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    },
+    isPending: rosterState.isPending,
+    isError: rosterState.isError,
+    refetch: rosterRefetch,
+  }),
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
@@ -74,6 +111,7 @@ function setQueries(overrides: {
   leaderboard?: Partial<QueryState>;
   summary?: Partial<QueryState>;
   offline?: boolean;
+  roster?: Partial<typeof rosterState>;
 }) {
   Object.assign(leaderboardQuery, {
     data: [],
@@ -88,6 +126,12 @@ function setQueries(overrides: {
     ...overrides.summary,
   });
   networkState.isOffline = overrides.offline ?? false;
+  Object.assign(rosterState, {
+    names: {},
+    isPending: false,
+    isError: false,
+    ...overrides.roster,
+  });
 }
 
 // The preview rows this page used to fabricate on error (FRA-235). None of
@@ -189,7 +233,8 @@ describe("PointsPage success state", () => {
 
     render(<PointsPage />);
 
-    expect(screen.getByText("user-a")).toBeInTheDocument();
+    // No roster in this fixture, so the row degrades to the shared Member label.
+    expect(screen.getByText("Member user-a")).toBeInTheDocument();
     // The leaderboard total and the balance are both 42; match each by the
     // element that owns it so a future shared value can't make these ambiguous.
     expect(screen.getByRole("cell", { name: "42" })).toBeInTheDocument();
@@ -208,6 +253,202 @@ describe("PointsPage success state", () => {
     expect(screen.getByText("No leaderboard entries")).toBeInTheDocument();
     expect(screen.getByText("No transactions in this window")).toBeInTheDocument();
     expectNoFabricatedData();
+  });
+});
+
+
+describe("PointsPage leaderboard naming (#1197)", () => {
+  const ALICE = "8f14e45f-ceea-467a-9f1c-1a2b3c4d5e6f";
+  const BOB = "c9f0f895-fb98-4b41-9b8e-7d2a1c0b3e4d";
+  const CAROL = "45c48cce-2e2d-4fbd-aa1c-9d3f8e7b6a50";
+
+  function withLeaderboard(
+    rows: { user_id: string; total: number }[],
+    names: Record<string, string | null>,
+  ) {
+    setQueries({ leaderboard: { data: rows }, roster: { names } });
+  }
+
+  const userCell = (text: string) => screen.getByRole("cell", { name: text });
+  const search = () => screen.getByPlaceholderText("Search by member name");
+
+  const BOARD = [
+    { user_id: ALICE, total: 42 },
+    { user_id: BOB, total: 17 },
+    { user_id: CAROL, total: 9 },
+  ];
+  const NAMED = {
+    [ALICE]: "Alice Chen",
+    [BOB]: "Bob Ruiz",
+    [CAROL]: "Carol Diaz",
+  };
+
+  it("names each member instead of showing a raw uuid", () => {
+    withLeaderboard(BOARD, NAMED);
+
+    render(<PointsPage />);
+
+    expect(screen.getByText("Alice Chen")).toBeInTheDocument();
+    expect(screen.getByText("Bob Ruiz")).toBeInTheDocument();
+    // The whole point of the issue: no uuid reaches the surface.
+    expect(screen.queryByText(ALICE)).not.toBeInTheDocument();
+    expect(screen.queryByText(BOB)).not.toBeInTheDocument();
+  });
+
+  it("degrades an unresolvable member to the app's shared Member label", () => {
+    // They are off the roster but keep their points, so the row must still
+    // render — via the shared `memberFallbackLabel`, the same spelling chat uses
+    // through `resolveAuthorLabel`.
+    withLeaderboard(BOARD, { [ALICE]: "Alice Chen" });
+
+    render(<PointsPage />);
+
+    expect(screen.getByText("Alice Chen")).toBeInTheDocument();
+    expect(userCell("Member c9f0f8")).toBeInTheDocument();
+    expect(screen.queryByText(BOB)).not.toBeInTheDocument();
+  });
+
+  it("treats a member who never set a name as unresolved, not as a blank cell", () => {
+    // `display_name` is `NOT NULL DEFAULT ''`, so this is the real "no name set"
+    // case rather than a missing row, and a blank cell would read as broken.
+    withLeaderboard([{ user_id: ALICE, total: 42 }], { [ALICE]: "   " });
+
+    render(<PointsPage />);
+
+    expect(userCell("Member 8f14e4")).toBeInTheDocument();
+  });
+
+  it("keeps rank and total on mono tabular numerals, and the name off mono", () => {
+    // #920's Directory & Finance slice added the numeral treatment and it must
+    // survive; foundations §7 reserves mono for ids, tokens, keys and points
+    // cells, and this cell now holds a person.
+    withLeaderboard([{ user_id: ALICE, total: 42 }], { [ALICE]: "Alice Chen" });
+
+    render(<PointsPage />);
+
+    expect(userCell("#1")).toHaveClass("font-mono", "tabular-nums");
+    expect(userCell("42")).toHaveClass("font-mono", "tabular-nums");
+    expect(userCell("Alice Chen")).not.toHaveClass("font-mono");
+  });
+
+  it("searches by name", () => {
+    withLeaderboard(BOARD, NAMED);
+
+    render(<PointsPage />);
+    fireEvent.change(search(), { target: { value: "alice" } });
+
+    expect(screen.getByText("Alice Chen")).toBeInTheDocument();
+    expect(screen.queryByText("Bob Ruiz")).not.toBeInTheDocument();
+  });
+
+  it("reports the board rank, not the position within a filtered view", () => {
+    // Naming the rows made filtering an everyday action, so a rank renumbered
+    // from #1 per search would misreport chapter standing.
+    withLeaderboard(BOARD, NAMED);
+
+    render(<PointsPage />);
+    fireEvent.change(search(), { target: { value: "carol" } });
+
+    expect(screen.getByText("Carol Diaz")).toBeInTheDocument();
+    expect(userCell("#3")).toBeInTheDocument();
+    expect(screen.queryByRole("cell", { name: "#1" })).not.toBeInTheDocument();
+  });
+
+  it("does not let a short name query match hex inside the hidden ids", () => {
+    // The id is no longer rendered, so matching it on any input means matching
+    // invisible text — "a" appears in roughly 87% of uuids, which would leave
+    // the first keystroke of a name search showing nearly the whole board.
+    withLeaderboard(BOARD, NAMED);
+
+    render(<PointsPage />);
+    fireEvent.change(search(), { target: { value: "f1" } });
+
+    // Present in Alice's uuid (`8f14…`, `9f1c`), absent from every name. Under
+    // the old unguarded id match this returned her row with nothing on screen
+    // containing "f1".
+    expect(screen.getByText("No members match that search")).toBeInTheDocument();
+  });
+
+  it("still finds a named member by a pasted user id", () => {
+    // Officers paste ids out of audit rows and support tickets, and that was the
+    // only thing this box matched before names existed.
+    withLeaderboard(BOARD, NAMED);
+
+    render(<PointsPage />);
+    fireEvent.change(search(), { target: { value: BOB } });
+
+    expect(screen.getByText("Bob Ruiz")).toBeInTheDocument();
+    expect(screen.queryByText("Alice Chen")).not.toBeInTheDocument();
+  });
+
+  it("says a search matched nothing rather than claiming the chapter has no activity", () => {
+    withLeaderboard(BOARD, NAMED);
+
+    render(<PointsPage />);
+    fireEvent.change(search(), { target: { value: "nobody" } });
+
+    expect(screen.getByText("No members match that search")).toBeInTheDocument();
+    expect(screen.queryByText("No leaderboard entries")).not.toBeInTheDocument();
+  });
+
+  it("keeps the empty-board copy when the board really is empty", () => {
+    withLeaderboard([], {});
+
+    render(<PointsPage />);
+
+    expect(screen.getByText("No leaderboard entries")).toBeInTheDocument();
+    expect(
+      screen.queryByText("No members match that search"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders rows while the roster is still pending, rather than withholding them", () => {
+    // The roster feeds one column and stays pending across its whole retry
+    // sequence, so waiting on it would hide totals that are already in memory
+    // and then show these very labels anyway. It also never settles at all
+    // without an active chapter, which is how the sessionless floor harness
+    // renders this route.
+    setQueries({
+      leaderboard: { data: BOARD },
+      summary: { data: { balance: 42, transactions: [] } },
+      roster: { isPending: true },
+    });
+
+    render(<PointsPage />);
+
+    expect(screen.queryByText("Loading points ledger...")).not.toBeInTheDocument();
+    expect(userCell("Member 8f14e4")).toBeInTheDocument();
+    expect(screen.getByText("42 points")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Adjust points/ })).toBeEnabled();
+  });
+
+  it("raises no error card of its own when only the roster fails", () => {
+    // The page never reads the roster's `isError`, and that is the point: the
+    // totals came from the leaderboard read and are still accurate, so replacing
+    // a working board would be worse. This pins that decision — it is not a test
+    // of failure *handling*, because there is deliberately none here. Giving the
+    // degradation a visible signal is #1209's.
+    setQueries({
+      leaderboard: { data: [{ user_id: ALICE, total: 42 }] },
+      roster: { isError: true },
+    });
+
+    render(<PointsPage />);
+
+    expect(screen.queryByText("Couldn't load the points ledger")).not.toBeInTheDocument();
+    expect(userCell("Member 8f14e4")).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "42" })).toBeInTheDocument();
+  });
+
+  it("recovers names from the page's retry controls", () => {
+    // The roster raises no error card of its own, so these are the only path
+    // back to names once its retries are spent.
+    setQueries({ leaderboard: { isError: true } });
+
+    render(<PointsPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(rosterRefetch).toHaveBeenCalledTimes(1);
   });
 });
 
