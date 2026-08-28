@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ErrorState, LoadingState, OfflineState } from "@/components/shared/async-states";
-import { NestedEmpty } from "@/components/shared/nested-states";
+import { NestedEmpty, NestedLoading } from "@/components/shared/nested-states";
 import { amountToneClassName } from "@/components/points/amount-tone";
 import {
   dashboardCheckboxCellClassName,
@@ -67,11 +67,22 @@ export default function PointsPage() {
   // `GET /v1/points/leaderboard` returns `{ user_id, total }` and no name, so the
   // roster is what turns a rank into a person (#1197). `useMemberDisplayNames`
   // rather than `useMembers`: this cell needs one string per row, and the full
-  // profile route would ship every member's email, bio, graduation year, city
-  // and company to everyone who opens /points — see the note on
-  // `useChapterRoster` in `packages/hooks/src/use-members.ts` (#1000, #986).
-  const { nameFor, isPending: isRosterPending } = useMemberDisplayNames();
+  // profile route carries every member's email, bio, graduation year, city and
+  // company — see the note on `useChapterRoster` in
+  // `packages/hooks/src/use-members.ts` (#1000, #986).
+  const {
+    nameFor,
+    isLoading: isRosterLoading,
+    refetch: refetchRoster,
+  } = useMemberDisplayNames();
 
+  // The roster is deliberately absent from both gates. It feeds one column, so
+  // letting it withhold the page would trade a brief unnamed render for holding
+  // the balance, the ledger, the audit card and the adjust control hostage to a
+  // third query — and with `retry: 3` and backoff, a roster that 5xxs would do
+  // that for seconds before painting the very ids it was waiting to avoid. The
+  // leaderboard card waits on its own; everything else renders as before.
+  const isLoading = leaderboardQuery.isLoading || summaryQuery.isLoading;
   const hasError = leaderboardQuery.isError || summaryQuery.isError;
 
   const leaderboard = useMemo(() => {
@@ -80,28 +91,6 @@ export default function PointsPage() {
       : [];
   }, [leaderboardQuery.data]);
 
-  // The roster joins the loading gate so ranks do not paint as UUIDs for a frame
-  // and then re-label — but only when there is a row to name.
-  //
-  // The row count is load-bearing, not a micro-optimisation. These are three
-  // different signals: the points hooks expose `isLoading`, which is
-  // `isPending && isFetching` and so reads false for a *disabled* query, while
-  // `useMemberDisplayNames` exposes `isPending`, which stays true for one.
-  // All three queries are `enabled: !!chapterId`, so with no active chapter a
-  // bare `isRosterPending` would hold this page on its loading state forever —
-  // and `/points` is the one route whose real content the sessionless 375px
-  // floor harness actually measures (`spec/ui/web-dashboard/README.md`, and
-  // `tests/visual/responsive-floor.spec.ts`). No chapter means no rows, so
-  // there is nothing to name and nothing to wait for.
-  //
-  // It deliberately does NOT join `hasError`: a failed roster degrades names to
-  // ids over totals that are still accurate, so replacing a working board with
-  // an error card would be the worse outcome (#1209 owns surfacing that
-  // degradation, and already names /points as a call site).
-  const isLoading =
-    leaderboardQuery.isLoading ||
-    summaryQuery.isLoading ||
-    (isRosterPending && leaderboard.length > 0);
 
   const summary = summaryQuery.data as
     | { balance?: number; transactions?: PointTransactionRow[] }
@@ -109,16 +98,30 @@ export default function PointsPage() {
   const transactions = useMemo(() => {
     return Array.isArray(summary?.transactions) ? summary.transactions : [];
   }, [summary]);
-  // One projection drives the cell, its type treatment and the search needle, so
-  // a row can never display one string and match another.
+  // One projection drives the label and the rank, so neither can disagree with
+  // what the row is.
   const leaderboardRows = useMemo(() => {
-    return leaderboard.map((entry) => {
+    return leaderboard.map((entry, index) => {
+      // Rank belongs to the board, not to the filtered view. It used to be the
+      // render index, which was survivable while the search only matched uuids
+      // that nobody typed; naming the rows makes filtering an everyday action,
+      // and a rank renumbered from #1 per search would misreport chapter
+      // standing on the surface officers read it off.
+      const rank = index + 1;
       // `null` for an unset name as well as a missing member: `display_name` is
       // `NOT NULL DEFAULT ''`, so `resolveDisplayName` treats '' as unresolved
       // rather than rendering a blank cell. Someone who has left the chapter is
-      // off the roster but keeps their points, so a raw id is a real outcome.
+      // off the roster but keeps their points (`spec/behavior/points.md`), so an
+      // unresolved row is expected rather than a fault. It degrades to the same
+      // `Member <6 hex>` label the rest of the app uses — `resolveAuthorLabel`
+      // in `@repo/hooks`, the task board, and the member directory — so one
+      // departed member reads identically wherever they appear.
       const name = nameFor(entry.user_id);
-      return { ...entry, label: name ?? entry.user_id, isNamed: name !== null };
+      return {
+        ...entry,
+        rank,
+        label: name ?? `Member ${entry.user_id.slice(0, 6)}`,
+      };
     });
     // `nameFor` and not the whole hook result: `useMemberDisplayNames` returns a
     // fresh object every render, so depending on it would rebuild this list each
@@ -128,8 +131,14 @@ export default function PointsPage() {
   const filteredLeaderboard = useMemo(() => {
     const query = leaderboardSearch.trim().toLowerCase();
     if (!query) return leaderboardRows;
-    return leaderboardRows.filter((entry) =>
-      entry.label.toLowerCase().includes(query),
+    // The id stays a needle alongside the name. Officers paste user ids out of
+    // audit rows and support tickets, and that was the only thing this box
+    // matched before names existed — narrowing it to the label would have
+    // quietly removed the affordance for exactly the rows that now resolve.
+    return leaderboardRows.filter(
+      (entry) =>
+        entry.label.toLowerCase().includes(query) ||
+        entry.user_id.toLowerCase().includes(query),
     );
   }, [leaderboardRows, leaderboardSearch]);
   const filteredTransactions = useMemo(() => {
@@ -201,6 +210,9 @@ export default function PointsPage() {
         onRetry={() => {
           void leaderboardQuery.refetch();
           void summaryQuery.refetch();
+          // The roster has no error card of its own by design, so these two
+          // controls are the only recovery path for names on this page.
+          refetchRoster();
         }}
       />
     );
@@ -224,6 +236,9 @@ export default function PointsPage() {
         onRetry={() => {
           void leaderboardQuery.refetch();
           void summaryQuery.refetch();
+          // The roster has no error card of its own by design, so these two
+          // controls are the only recovery path for names on this page.
+          refetchRoster();
         }}
       />
     );
@@ -305,11 +320,27 @@ export default function PointsPage() {
                 className="h-11 pl-9"
               />
             </div>
-            {filteredLeaderboard.length === 0 ? (
-              <NestedEmpty
-                title={stateMicrocopy.points.emptyLeaderboardTitle}
-                description={stateMicrocopy.points.emptyLeaderboardDescription}
-              />
+            {isRosterLoading ? (
+              // Scoped to this card on purpose: only the User column needs the
+              // roster, so the rest of the page stays live while it lands.
+              <NestedLoading message="Loading member names..." />
+            ) : filteredLeaderboard.length === 0 ? (
+              // A search that matches nothing is not an empty board — saying
+              // "point activity will populate after..." there would assert
+              // something false about the chapter's data.
+              leaderboardRows.length > 0 ? (
+                <NestedEmpty
+                  title={stateMicrocopy.points.noLeaderboardMatchesTitle}
+                  description={
+                    stateMicrocopy.points.noLeaderboardMatchesDescription
+                  }
+                />
+              ) : (
+                <NestedEmpty
+                  title={stateMicrocopy.points.emptyLeaderboardTitle}
+                  description={stateMicrocopy.points.emptyLeaderboardDescription}
+                />
+              )
             ) : (
               <Table>
                 <TableHeader>
@@ -320,21 +351,16 @@ export default function PointsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredLeaderboard.map((entry, index) => (
+                  {filteredLeaderboard.map((entry) => (
                     <TableRow key={entry.user_id}>
-                      <TableCell className="font-mono tabular-nums">#{index + 1}</TableCell>
+                      <TableCell className="font-mono tabular-nums">#{entry.rank}</TableCell>
                       {/*
                         foundations §7 reserves mono for ids, tokens, keys and
-                        points cells — a member's name is none of those, so the
-                        family follows the value rather than the column.
+                        points cells. This cell now holds a person, not an id —
+                        even the unresolved fallback is a `Member …` label — so
+                        it is no longer one of them.
                       */}
-                      <TableCell
-                        className={
-                          entry.isNamed
-                            ? "text-[12.5px]"
-                            : "font-mono text-[12.5px]"
-                        }
-                      >
+                      <TableCell className="text-[12.5px]">
                         {entry.label}
                       </TableCell>
                       <TableCell className="font-mono font-semibold tabular-nums">

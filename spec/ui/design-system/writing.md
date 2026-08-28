@@ -148,6 +148,7 @@ Implementation: `PermissionsOffline` (`apps/web/components/shared/async-states.t
 |---|---|---|
 | Loading | — | `Loading points ledger...` |
 | Empty leaderboard | `No leaderboard entries` | `Point activity will populate after attendance, study, or admin adjustments.` |
+| Leaderboard search matched nothing | `No members match that search` | `Check the spelling, or clear the search to see the full leaderboard.` |
 | Empty transactions | `No transactions in this window` | `Your attendance, study sessions, and adjustments will appear here.` |
 | Error | `Couldn't load the points ledger` | `Standings and transactions are unavailable, so none are shown. Verify your chapter access and API health, then retry.` |
 | Offline | `Points ledger unavailable offline` | `Reconnect to refresh leaderboard standings and transaction history.` |

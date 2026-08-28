@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { FlaggedGlyph } from "@/components/points/points-glyphs";
-import { useMembers, usePointsTransactions } from "@repo/hooks";
+import { useChapterRoster, useMemberDisplayNames, usePointsTransactions } from "@repo/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,11 +42,6 @@ type TransactionRow = {
   created_at?: string;
 };
 
-type MemberSummary = {
-  user_id?: string;
-  display_name?: string | null;
-};
-
 function asArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
 }
@@ -56,20 +51,19 @@ export function PointsAuditCard() {
   const [categoryFilter, setCategoryFilter] = useState<"ALL" | Category>("ALL");
   const [userFilter, setUserFilter] = useState<string>("ALL");
 
-  const membersQuery = useMembers();
-  const members = useMemo(
-    () => asArray<MemberSummary>(membersQuery.data),
-    [membersQuery.data],
-  );
-  const memberNameById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const member of members) {
-      if (member.user_id) {
-        map.set(String(member.user_id), member.display_name ?? "Unnamed member");
-      }
-    }
-    return map;
-  }, [members]);
+  // The display roster, not `useMembers`: this card needs a name per row and a
+  // name per filter option, and `GET /v1/members` would put every member's
+  // email, bio, graduation year, city and company on the wire for anyone who
+  // opens /points — this card renders above its own `points:view_all` gate, so
+  // that fetch was unconditional (#1000, #986). Both hooks read the same cache
+  // key, so the card and the leaderboard share one request.
+  const rosterQuery = useChapterRoster();
+  const members = useMemo(() => rosterQuery.data ?? [], [rosterQuery.data]);
+  // `nameFor` rather than a local map with a `?? "Unnamed member"` default:
+  // `display_name` is `NOT NULL DEFAULT ''`, and `??` passes the empty string
+  // straight through, so a member who never set a name rendered a blank label
+  // here. `resolveDisplayName` treats '' as unresolved.
+  const { nameFor } = useMemberDisplayNames();
 
   const transactionsQuery = usePointsTransactions({
     userId: userFilter === "ALL" ? undefined : userFilter,
@@ -173,11 +167,9 @@ export function PointsAuditCard() {
               <SelectContent>
                 <SelectItem value="ALL">All members</SelectItem>
                 {members.map((member) => (
-                  <SelectItem
-                    key={member.user_id ?? "unknown"}
-                    value={String(member.user_id ?? "")}
-                  >
-                    {member.display_name ?? "Unnamed member"}
+                  <SelectItem key={member.user_id} value={member.user_id}>
+                    {nameFor(member.user_id) ??
+                      `Member ${member.user_id.slice(0, 6)}`}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -216,8 +208,8 @@ export function PointsAuditCard() {
                   {rows.map((row) => {
                     const flagged = row.metadata?.flagged === true;
                     const name = row.user_id
-                      ? memberNameById.get(String(row.user_id)) ??
-                        String(row.user_id)
+                      ? nameFor(String(row.user_id)) ??
+                        `Member ${String(row.user_id).slice(0, 6)}`
                       : "Unknown member";
                     const sign = (row.amount ?? 0) >= 0 ? "+" : "";
                     return (

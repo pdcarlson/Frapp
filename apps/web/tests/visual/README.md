@@ -127,19 +127,6 @@ content — `/chat` and `/backwork` early-return before their real surfaces moun
 and `/points` is the one route whose fix for #1142 lives inside `<main>` and does
 render for real.
 
-**`/points` renders here only because its reads are *disabled*, not *loading*,
-and that is easy to break from inside the page.** Its hooks are all
-`enabled: !!chapterId`, and a disabled TanStack query is `isPending` **but not**
-`isLoading` (`isLoading` is `isPending && isFetching`). So a page-level loading
-gate built from `isLoading` reads false with no chapter and the content mounts;
-one that folds in a bare `isPending` — which is what a roster or lookup hook
-exposing only `isPending` will hand you — pins the route to its loading state
-and quietly removes the only populated-content coverage this suite has. It does
-not fail the gate, it hollows it out. `/points` guards this by gating its roster
-wait on the row count instead (#1197, covered in
-`app/(dashboard)/points/page.test.tsx`); any new read added to a measured route
-needs the same care.
-
 That is a real limit, not a formality: a route whose *populated* table overflows
 at 375px while its empty state does not would still pass. Seeding an active
 chapter would flip every route that gates on `activeChapterId` at once and is its
