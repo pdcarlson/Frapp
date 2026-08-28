@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import * as Sentry from '@sentry/nestjs';
 import type { RequestContext } from '../types/request-context.types';
+import { pathOnly } from '../utils/path-only';
 import {
   pseudonymizeChapterId,
   pseudonymizeIp,
@@ -118,7 +119,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
           userId: request.appUser?.id,
           chapterId: request.chapterId,
           method: request.method,
-          path: request.url,
+          // Same leak as the request log, at `error` level (#1260).
+          path: pathOnly(request.url),
           statusCode: status,
           error: toReportableError(exception).stack,
         }),
@@ -257,10 +259,4 @@ export class AllExceptionsFilter implements ExceptionFilter {
 function clientIp(request: RequestContext): string | undefined {
   const forwarded = Array.isArray(request.ips) ? request.ips[0] : undefined;
   return forwarded ?? request.ip;
-}
-
-function pathOnly(url: string | undefined): string | undefined {
-  if (!url) return undefined;
-  const cut = url.search(/[?#]/);
-  return cut === -1 ? url : url.slice(0, cut);
 }

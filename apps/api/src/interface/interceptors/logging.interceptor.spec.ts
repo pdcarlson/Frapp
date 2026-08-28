@@ -102,6 +102,35 @@ describe('LoggingInterceptor', () => {
         .subscribe({ next: () => resolve(), error: () => resolve() }),
     );
 
+  it('logs no query string, and neither the OAuth state nor code (#1260)', async () => {
+    // The Discord connect callback's `state` IS the CSRF token (its state row's
+    // primary key), so a log record carrying it is the whole attack.
+    await run(
+      context({
+        ...request,
+        url: '/v1/discord/connect/callback?code=abc123&state=deadbeefcafe',
+      }),
+      { handle: () => of({ ok: true }) },
+    );
+
+    // Assert against the whole serialized record, not just the field: a leak
+    // anywhere in the line is still a leak in the log stream.
+    expect(logged[0]).not.toContain('deadbeefcafe');
+    expect(logged[0]).not.toContain('abc123');
+    expect(logged[0]).not.toContain('?');
+  });
+
+  it('keeps the path itself, so route grouping is not degraded (#1260)', async () => {
+    await run(
+      context({ ...request, url: '/v1/discord/connect/callback?state=x' }),
+      { handle: () => of({ ok: true }) },
+    );
+
+    expect(JSON.parse(logged[0])).toMatchObject({
+      path: '/v1/discord/connect/callback',
+    });
+  });
+
   it('emits the forwarded-chain shape on a successful request', async () => {
     await run(context(request), { handle: () => of({ ok: true }) });
 
