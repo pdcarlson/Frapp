@@ -59,7 +59,7 @@ function makeMessage(overrides: Record<string, unknown> = {}): ChatMessage {
     id: "msg-1",
     channel_id: "ch-1",
     sender_id: "admin-1",
-    content: "Assigned \"Clean the house\" to Bob (due 2026-06-15)",
+    content: 'Assigned "Clean the house" to Bob (due 2026-06-15)',
     kind: "task",
     is_deleted: false,
     payload: {
@@ -89,9 +89,7 @@ describe("TaskCard", () => {
   });
 
   it("renders the assignment snapshot (title, names, due, points)", () => {
-    render(
-      <TaskCard message={makeMessage()} viewerId="someone" isConfirmed />,
-    );
+    render(<TaskCard message={makeMessage()} viewerId="someone" isConfirmed />);
     expect(screen.getByText("Clean the house")).toBeInTheDocument();
     expect(screen.getByText(/Alice → Bob/)).toBeInTheDocument();
     expect(screen.getByText(/\+10 pts/)).toBeInTheDocument();
@@ -119,9 +117,7 @@ describe("TaskCard", () => {
   });
 
   it("hides assignee actions from a non-assignee", () => {
-    render(
-      <TaskCard message={makeMessage()} viewerId="other" isConfirmed />,
-    );
+    render(<TaskCard message={makeMessage()} viewerId="other" isConfirmed />);
     expect(
       screen.queryByRole("button", { name: /start/i }),
     ).not.toBeInTheDocument();
@@ -230,9 +226,49 @@ describe("TaskCard", () => {
       "task-1",
       expect.objectContaining({ onError: expect.any(Function) }),
     );
+    expect(screen.getByRole("button", { name: /reject/i })).toBeInTheDocument();
+  });
+
+  it("hides Confirm from a tasks:manage assignee on their own card (#1056)", () => {
+    // The API refuses a self-confirmation, so the assignee gets no confirm
+    // affordance here even holding tasks:manage. Reject survives — it withholds
+    // points rather than awarding them — so the card still shows an action.
+    canManage = true;
+    mockUseTask.mockReturnValue({
+      data: { id: "task-1", status: "COMPLETED", points_awarded: false },
+    });
+    render(
+      <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
+    );
+
     expect(
-      screen.getByRole("button", { name: /reject/i }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: /confirm/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /reject/i })).toBeInTheDocument();
+  });
+
+  it("keeps the disabled Confirmed indicator for an assignee-admin", () => {
+    // Once another admin confirms, the assignee-admin must still be able to see
+    // that it happened. The button is disabled and reads "Confirmed", so it
+    // reports state rather than offering the refused action — and it is what
+    // keeps the card from rendering a lone SubscriptionNotice on a lapsed
+    // chapter, which is why the subscription is inactive here.
+    chapter.incomplete();
+    canManage = true;
+    mockUseTask.mockReturnValue({
+      data: { id: "task-1", status: "COMPLETED", points_awarded: true },
+    });
+    render(
+      <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
+    );
+
+    const confirmed = screen.getByRole("button", { name: /confirmed/i });
+    expect(confirmed).toBeInTheDocument();
+    expect(confirmed).toBeDisabled();
+    // Reject is gone once points are awarded — that gate is pre-existing.
+    expect(
+      screen.queryByRole("button", { name: /reject/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("disables actions while the chat row is unconfirmed", () => {
@@ -259,17 +295,19 @@ describe("TaskCard subscription gating", () => {
 
   it("disables the assignee's action and explains why on a lapsed chapter", () => {
     chapter.incomplete();
-    render(<TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />);
+    render(
+      <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
+    );
 
     expect(screen.getByRole("button", { name: /start/i })).toBeDisabled();
-    expect(
-      screen.getByText(/subscription is not active/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/subscription is not active/i)).toBeInTheDocument();
   });
 
   it("ties the disabled action to its explanation", () => {
     chapter.incomplete();
-    render(<TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />);
+    render(
+      <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
+    );
 
     const describedBy = screen
       .getByRole("button", { name: /start/i })
@@ -282,7 +320,9 @@ describe("TaskCard subscription gating", () => {
 
   it("leaves the action alone on an active chapter", () => {
     chapter.active();
-    render(<TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />);
+    render(
+      <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
+    );
 
     expect(screen.getByRole("button", { name: /start/i })).toBeEnabled();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
@@ -290,7 +330,9 @@ describe("TaskCard subscription gating", () => {
 
   it("fails open when the chapter record cannot be read", () => {
     chapter.unreadable();
-    render(<TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />);
+    render(
+      <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
+    );
 
     expect(screen.getByRole("button", { name: /start/i })).toBeEnabled();
   });
@@ -299,7 +341,9 @@ describe("TaskCard subscription gating", () => {
     // A timeline would otherwise repeat one chapter-wide sentence under every
     // task card, including ones the viewer could never act on.
     chapter.incomplete();
-    render(<TaskCard message={makeMessage()} viewerId="someone-else" isConfirmed />);
+    render(
+      <TaskCard message={makeMessage()} viewerId="someone-else" isConfirmed />,
+    );
 
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });

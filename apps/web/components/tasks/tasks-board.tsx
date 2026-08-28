@@ -591,7 +591,23 @@ export function TasksBoard() {
                       const assigneeName =
                         membersByUserId.get(task.assignee_id) ??
                         `Member ${task.assignee_id.slice(0, 6)}`;
+                      // Fails closed. `myUserId` is "" while `useCurrentUser`
+                      // is in flight or errored, which would otherwise make
+                      // `isMine` false for every row and put Confirm back on
+                      // your own task — the flip-and-revert this gate exists to
+                      // stop. Treat an unknown viewer as "might be me".
+                      //
+                      // Note the cost, which is deliberate but not free: the
+                      // board has no early return for `currentUser`, so if
+                      // `GET /v1/users/me` fails terminally, Confirm stays
+                      // hidden on *every* row with no notice saying why, and an
+                      // officer may read it as a revoked grant. Hiding a
+                      // control the server would accept is the safer failure
+                      // than offering one it will refuse, but the missing
+                      // explanation is tracked in #1346.
+                      const viewerUnknown = myUserId === "";
                       const isMine = task.assignee_id === myUserId;
+                      const cannotConfirm = isMine || viewerUnknown;
                       return (
                         <div
                           key={task.id}
@@ -646,19 +662,39 @@ export function TasksBoard() {
                             <Can permission="tasks:manage">
                               {actionStatus(task) === "COMPLETED" ? (
                                 <>
-                                  <Button
-                                    size="sm"
-                                    onClick={() => void confirmCompletion(task)}
-                                    {...gate.controlProps(
-                                      task.points_awarded ||
-                                        lifecycleWritePending,
-                                    )}
-                                  >
-                                    <CheckCircle2 className="h-4 w-4" />
-                                    {task.points_awarded
-                                      ? "Confirmed"
-                                      : "Confirm"}
-                                  </Button>
+                                  {/*
+                                   * The *live* Confirm is hidden on your own
+                                   * task: the API refuses a self-confirmation
+                                   * (#1056), so rendering it would offer an
+                                   * action guaranteed to 403 — and the optimistic
+                                   * write would flip the label to "Confirmed"
+                                   * and snap back. The already-awarded button is
+                                   * kept: it is disabled and reads "Confirmed",
+                                   * so it reports state rather than offering an
+                                   * action, and an assignee-admin would
+                                   * otherwise lose any sign their task was
+                                   * confirmed. Reject stays throughout: it
+                                   * withholds points rather than awarding them,
+                                   * so the server rule does not cover it.
+                                   */}
+                                  {cannotConfirm &&
+                                  !task.points_awarded ? null : (
+                                    <Button
+                                      size="sm"
+                                      onClick={() =>
+                                        void confirmCompletion(task)
+                                      }
+                                      {...gate.controlProps(
+                                        task.points_awarded ||
+                                          lifecycleWritePending,
+                                      )}
+                                    >
+                                      <CheckCircle2 className="h-4 w-4" />
+                                      {task.points_awarded
+                                        ? "Confirmed"
+                                        : "Confirm"}
+                                    </Button>
+                                  )}
                                   <Button
                                     size="sm"
                                     variant="secondary"
@@ -690,7 +726,8 @@ export function TasksBoard() {
                 {column.status === "COMPLETED" ? (
                   <CardFooter className="text-[12.5px] text-muted-foreground">
                     Confirming a task awards its point reward (when set) to the
-                    assignee.
+                    assignee. You cannot confirm a task assigned to you —
+                    another admin has to.
                   </CardFooter>
                 ) : null}
               </Card>

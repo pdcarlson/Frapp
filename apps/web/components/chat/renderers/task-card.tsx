@@ -34,7 +34,6 @@ interface TaskCardProps {
   isConfirmed: boolean;
 }
 
-
 /** Live task shape read back from `GET /v1/tasks/{id}`. */
 interface LiveTask {
   id: string;
@@ -113,8 +112,7 @@ function coerceLiveTask(data: unknown): LiveTask | null {
       typeof r.stored_status === "string"
         ? (r.stored_status as TaskStatus)
         : undefined,
-    point_reward:
-      typeof r.point_reward === "number" ? r.point_reward : null,
+    point_reward: typeof r.point_reward === "number" ? r.point_reward : null,
     points_awarded: r.points_awarded === true,
   };
 }
@@ -141,12 +139,13 @@ function formatDate(value: string): string {
   return instant.toLocaleDateString();
 }
 
-const STATUS_BADGE: Record<TaskStatus, "default" | "outline" | "destructive"> = {
-  TODO: "outline",
-  IN_PROGRESS: "default",
-  COMPLETED: "default",
-  OVERDUE: "destructive",
-};
+const STATUS_BADGE: Record<TaskStatus, "default" | "outline" | "destructive"> =
+  {
+    TODO: "outline",
+    IN_PROGRESS: "default",
+    COMPLETED: "default",
+    OVERDUE: "destructive",
+  };
 
 /**
  * Task assignment card. The chat message is an immutable creation-time snapshot
@@ -219,6 +218,14 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   // orphaned notice per card, explaining a control they cannot see — which is
   // the exact repetition this variable exists to prevent.
   const canManageTasks = can("tasks:manage", permissionsPayload?.permissions);
+  // Confirm is refused server-side on your own task (#1056), so the assignee
+  // gets no *live* confirm control. The already-confirmed button is a different
+  // thing — it is disabled and reads "Confirmed", so it is a state indicator
+  // rather than an action, and hiding it would leave an assignee-admin unable to
+  // see that their task was confirmed at all. Keeping it also means a COMPLETED
+  // card always carries exactly one control for a `tasks:manage` assignee
+  // (Reject before confirmation, the Confirmed indicator after), so
+  // `showsAnyAction` stays honest and the notice never renders alone.
   const showsAnyAction =
     (isAssignee &&
       (storedStatus === "TODO" || storedStatus === "IN_PROGRESS")) ||
@@ -250,7 +257,9 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   return (
     <Card className={cn(MESSAGE_CARD)}>
       <div className="flex items-center justify-between gap-2">
-        <div className={cn(EYEBROW, "flex items-center gap-1.5 text-accent-text")}>
+        <div
+          className={cn(EYEBROW, "flex items-center gap-1.5 text-accent-text")}
+        >
           <TasksGlyph className="h-4 w-4" /> Task
         </div>
         <Badge variant={STATUS_BADGE[status]}>{STATUS_LABELS[status]}</Badge>
@@ -305,22 +314,24 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
         ) : null}
         {storedStatus === "COMPLETED" ? (
           <Can permission="tasks:manage">
-            <Button
-              size="sm"
-              {...gate.controlProps(actionsDisabled || pointsAwarded)}
-              onClick={() =>
-                confirmTask.mutate(
-                  payload.task_id,
-                  onFailure(
-                    "Couldn't confirm task",
-                    "Only admins with tasks:manage can confirm completions.",
-                  ),
-                )
-              }
-            >
-              <CheckCircle2 className="h-4 w-4" />
-              {pointsAwarded ? "Confirmed" : "Confirm"}
-            </Button>
+            {isAssignee && !pointsAwarded ? null : (
+              <Button
+                size="sm"
+                {...gate.controlProps(actionsDisabled || pointsAwarded)}
+                onClick={() =>
+                  confirmTask.mutate(
+                    payload.task_id,
+                    onFailure(
+                      "Couldn't confirm task",
+                      "Only admins with tasks:manage can confirm completions.",
+                    ),
+                  )
+                }
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                {pointsAwarded ? "Confirmed" : "Confirm"}
+              </Button>
+            )}
             {pointsAwarded ? null : (
               <Button
                 size="sm"

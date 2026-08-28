@@ -121,9 +121,10 @@ export class TaskController {
   @ApiOperation({ summary: 'Confirm task completion and award points' })
   async confirmCompletion(
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
     @Param('id') id: string,
   ) {
-    return this.taskService.confirmCompletion(id, chapterId);
+    return this.taskService.confirmCompletion(id, chapterId, userId);
   }
 
   @Post(':id/reject')

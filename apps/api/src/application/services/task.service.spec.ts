@@ -414,7 +414,11 @@ describe('TaskService', () => {
       mockTaskRepo.findById.mockResolvedValue(completed);
       mockTaskRepo.confirmCompletionAtomic.mockResolvedValue(confirmed);
 
-      const result = await service.confirmCompletion('task-1', 'ch-1');
+      const result = await service.confirmCompletion(
+        'task-1',
+        'ch-1',
+        'admin-1',
+      );
 
       // The confirm + ledger insert now happen in one DB transaction, so the
       // service delegates to the RPC and never issues separate writes.
@@ -441,7 +445,11 @@ describe('TaskService', () => {
       mockTaskRepo.findById.mockResolvedValue(completed);
       mockTaskRepo.confirmCompletionAtomic.mockResolvedValue(confirmed);
 
-      const result = await service.confirmCompletion('task-1', 'ch-1');
+      const result = await service.confirmCompletion(
+        'task-1',
+        'ch-1',
+        'admin-1',
+      );
 
       expect(mockTaskRepo.confirmCompletionAtomic).toHaveBeenCalledWith(
         'task-1',
@@ -460,12 +468,12 @@ describe('TaskService', () => {
       };
       mockTaskRepo.findById.mockResolvedValue(alreadyConfirmed);
 
-      await expect(service.confirmCompletion('task-1', 'ch-1')).rejects.toThrow(
-        BadRequestException,
-      );
-      await expect(service.confirmCompletion('task-1', 'ch-1')).rejects.toThrow(
-        'Points have already been awarded for this task',
-      );
+      await expect(
+        service.confirmCompletion('task-1', 'ch-1', 'admin-1'),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.confirmCompletion('task-1', 'ch-1', 'admin-1'),
+      ).rejects.toThrow('Points have already been awarded for this task');
 
       expect(mockTaskRepo.confirmCompletionAtomic).not.toHaveBeenCalled();
     });
@@ -481,21 +489,89 @@ describe('TaskService', () => {
       mockTaskRepo.findById.mockResolvedValue(completed);
       mockTaskRepo.confirmCompletionAtomic.mockResolvedValue(null);
 
-      await expect(service.confirmCompletion('task-1', 'ch-1')).rejects.toThrow(
-        BadRequestException,
+      await expect(
+        service.confirmCompletion('task-1', 'ch-1', 'admin-1'),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.confirmCompletion('task-1', 'ch-1', 'admin-1'),
+      ).rejects.toThrow('no longer eligible or points were already awarded');
+    });
+
+    it('refuses a self-confirmation, mirroring adjustPoints (#1056)', async () => {
+      // The assignee is `user-1`, and here `user-1` is also the caller: an
+      // officer holding `tasks:manage` who assigned a task to themselves,
+      // marked it COMPLETED, and is now confirming it. Confirming would insert
+      // `point_reward` into their own ledger with no second party — exactly
+      // what `PointsService.adjustPoints` refuses for `points:adjust`.
+      const completed: Task = {
+        ...baseTask,
+        status: TaskStatus.COMPLETED,
+        completed_at: '2026-02-26T18:30:00.000Z',
+      };
+      mockTaskRepo.findById.mockResolvedValue(completed);
+
+      await expect(
+        service.confirmCompletion('task-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        service.confirmCompletion('task-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow('Admins cannot confirm their own task completions');
+
+      // The ledger must not move. Refusing after the award would be no refusal
+      // at all, so this assertion is the actual point of the test.
+      expect(mockTaskRepo.confirmCompletionAtomic).not.toHaveBeenCalled();
+    });
+
+    it('refuses a self-confirmation before the status guard', async () => {
+      // A self-confirm on a task that is not COMPLETED must still read as
+      // Forbidden, not BadRequest: which refusal a caller sees must not depend
+      // on what state their own task happens to be in.
+      mockTaskRepo.findById.mockResolvedValue(baseTask);
+
+      await expect(
+        service.confirmCompletion('task-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockTaskRepo.confirmCompletionAtomic).not.toHaveBeenCalled();
+    });
+
+    it('still allows a different admin to confirm', async () => {
+      // The guard keys on the assignee, not on "is an admin involved" — the
+      // ordinary two-party path must stay open.
+      const completed: Task = {
+        ...baseTask,
+        status: TaskStatus.COMPLETED,
+        completed_at: '2026-02-26T18:30:00.000Z',
+      };
+      const confirmed: Task = {
+        ...completed,
+        confirmed_at: '2026-02-26T19:00:00.000Z',
+        points_awarded: true,
+      };
+      mockTaskRepo.findById.mockResolvedValue(completed);
+      mockTaskRepo.confirmCompletionAtomic.mockResolvedValue(confirmed);
+
+      const result = await service.confirmCompletion(
+        'task-1',
+        'ch-1',
+        'some-other-officer',
       );
-      await expect(service.confirmCompletion('task-1', 'ch-1')).rejects.toThrow(
-        'no longer eligible or points were already awarded',
+
+      expect(mockTaskRepo.confirmCompletionAtomic).toHaveBeenCalledWith(
+        'task-1',
+        'ch-1',
       );
+      expect(result.points_awarded).toBe(true);
     });
 
     it('should reject confirmation when task not COMPLETED', async () => {
       mockTaskRepo.findById.mockResolvedValue(baseTask);
 
-      await expect(service.confirmCompletion('task-1', 'ch-1')).rejects.toThrow(
-        BadRequestException,
-      );
-      await expect(service.confirmCompletion('task-1', 'ch-1')).rejects.toThrow(
+      await expect(
+        service.confirmCompletion('task-1', 'ch-1', 'admin-1'),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.confirmCompletion('task-1', 'ch-1', 'admin-1'),
+      ).rejects.toThrow(
         'Task must be marked COMPLETED by assignee before confirmation',
       );
 
@@ -781,7 +857,7 @@ describe('TaskService', () => {
       mockTaskRepo.findById.mockResolvedValue(completed);
       mockTaskRepo.confirmCompletionAtomic.mockResolvedValue(confirmed);
 
-      await service.confirmCompletion('task-1', 'ch-1');
+      await service.confirmCompletion('task-1', 'ch-1', 'admin-1');
 
       expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
         'user-1',

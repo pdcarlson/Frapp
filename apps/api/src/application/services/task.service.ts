@@ -270,10 +270,31 @@ export class TaskService {
     return toDisplayStatus(updated);
   }
 
-  async confirmCompletion(id: string, chapterId: string): Promise<TaskView> {
+  async confirmCompletion(
+    id: string,
+    chapterId: string,
+    callerUserId: string,
+  ): Promise<TaskView> {
     const task = await this.taskRepo.findById(id, chapterId);
     if (!task) {
       throw new NotFoundException('Task not found');
+    }
+
+    // Confirming awards `point_reward` to the assignee's ledger, so a holder of
+    // `tasks:manage` confirming their own task moves their own balance with no
+    // second party. `PointsService.adjustPoints` already refuses the equivalent
+    // (`points.service.ts:215`). The rule this implements is `points.md`'s
+    // "No self-award" bullet, which binds the ledger rather than one endpoint;
+    // the neighbouring ceiling bullet applies that same ledger-wide reasoning to
+    // a different control. This is the rule reaching the path it missed.
+    //
+    // Ordered before the status guard deliberately: which refusal a caller sees
+    // must not depend on what state their own task happens to be in, and an
+    // authorization failure is the more fundamental of the two.
+    if (task.assignee_id === callerUserId) {
+      throw new ForbiddenException(
+        'Admins cannot confirm their own task completions',
+      );
     }
 
     if (task.status !== TaskStatus.COMPLETED) {

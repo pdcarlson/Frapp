@@ -48,7 +48,7 @@
 - Categories: ATTENDANCE, ACADEMIC, SERVICE, FINE, MANUAL.
 - A member's balance is the sum of their transactions.
 - Admins can manually adjust points with a required reason. Audit trail tracks which admin made the adjustment.
-- Anti-fraud: rate limiting on adjustments, anomaly flagging for large transactions, no self-adjustment.
+- Anti-fraud: rate limiting on adjustments, anomaly flagging for large transactions, no self-award (enforced on `points:adjust` and task confirmation; **not yet** on service-hour approval — see [`points.md`](../behavior/points.md) § Anti-Fraud and [#1338](https://github.com/pdcarlson/Frapp/issues/1338)).
 - Leaderboard with configurable time windows (all-time, semester, month).
 
 ### Member Invoices (Dues)

@@ -3,10 +3,13 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
-const { mockCurrentChapter, tasksRef } = vi.hoisted(() => ({
+const { mockCurrentChapter, tasksRef, currentUserRef } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
   // Mutable so a test can swap the rows the board renders.
   tasksRef: { current: [] as unknown[] },
+  // Mutable so a test can simulate `useCurrentUser` still in flight or errored,
+  // which is when the Confirm gate has to fail closed.
+  currentUserRef: { current: undefined as { id?: string } | undefined },
 }));
 
 // Only the chapter payload is stubbed — `useSubscriptionWriteState` and
@@ -71,7 +74,7 @@ vi.mock("@repo/hooks", () => ({
     refetch: vi.fn(),
   }),
   useMembers: () => ({ data: [] }),
-  useCurrentUser: () => ({ data: { id: ME } }),
+  useCurrentUser: () => ({ data: currentUserRef.current }),
   useCreateTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateTaskStatus: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useConfirmTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -107,6 +110,7 @@ describe("TasksBoard subscription gating", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     tasksRef.current = TASKS;
+    currentUserRef.current = { id: ME };
   });
 
   it("leaves every task write alone on an active chapter", () => {
@@ -120,6 +124,64 @@ describe("TasksBoard subscription gating", () => {
     expect(rejectButton()).toBeEnabled();
     for (const button of deleteButtons()) expect(button).toBeEnabled();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("hides Confirm on your own completed task but keeps Reject (#1056)", () => {
+    // The API refuses a self-confirmation, so offering the control would be a
+    // guaranteed 403 plus an optimistic flip-and-revert. Reject is untouched:
+    // it withholds points rather than awarding them.
+    chapter.active();
+    tasksRef.current = [{ ...TASKS[2], id: "task-mine", assignee_id: ME }];
+    render(<TasksBoard />);
+
+    expect(
+      screen.queryByRole("button", { name: /^confirm$/i }),
+    ).not.toBeInTheDocument();
+    expect(rejectButton()).toBeEnabled();
+  });
+
+  it("keeps the disabled Confirmed indicator on your own awarded task", () => {
+    // Hiding the awarded button too would leave an assignee-admin no sign that
+    // another admin confirmed their task. It is disabled and reads "Confirmed",
+    // so it reports state rather than offering the refused action.
+    chapter.active();
+    tasksRef.current = [
+      {
+        ...TASKS[2],
+        id: "task-mine-awarded",
+        assignee_id: ME,
+        points_awarded: true,
+      },
+    ];
+    render(<TasksBoard />);
+
+    const confirmed = screen.getByRole("button", { name: /confirmed/i });
+    expect(confirmed).toBeInTheDocument();
+    expect(confirmed).toBeDisabled();
+  });
+
+  it("hides Confirm while the viewer is unknown, rather than failing open", () => {
+    // `myUserId` is "" until `useCurrentUser` resolves. If the gate keyed on
+    // `isMine` alone, every row would read as someone else's during that window
+    // and Confirm would come back on your own task.
+    chapter.active();
+    currentUserRef.current = undefined;
+    tasksRef.current = [{ ...TASKS[2], id: "task-mine", assignee_id: ME }];
+    render(<TasksBoard />);
+
+    expect(
+      screen.queryByRole("button", { name: /^confirm$/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("still offers Confirm on someone else's completed task", () => {
+    // The gate keys on the assignee, not on "is an admin looking" — the
+    // ordinary two-party path must stay open.
+    chapter.active();
+    tasksRef.current = [TASKS[2]];
+    render(<TasksBoard />);
+
+    expect(confirmButton()).toBeEnabled();
   });
 
   it("disables the trigger and names blocker plus recovery when incomplete", async () => {
@@ -168,10 +230,7 @@ describe("TasksBoard subscription gating", () => {
     const describedBy = trigger().getAttribute("aria-describedby");
     expect(describedBy).toBeTruthy();
     expect(startButton()).toHaveAttribute("aria-describedby", describedBy);
-    expect(deleteButtons()[0]).toHaveAttribute(
-      "aria-describedby",
-      describedBy,
-    );
+    expect(deleteButtons()[0]).toHaveAttribute("aria-describedby", describedBy);
     expect(document.getElementById(describedBy!)).toHaveTextContent(
       /subscription is not active/i,
     );
@@ -333,8 +392,6 @@ describe("TasksBoard overdue affordances", () => {
     ).not.toBeInTheDocument();
     // Still readable, and Delete still offered — only the ambiguous
     // lifecycle transition is withheld.
-    expect(
-      screen.getByText(/submit the ride-share list/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/submit the ride-share list/i)).toBeInTheDocument();
   });
 });
