@@ -95,7 +95,12 @@ export function deriveDisplayStatus(
   today: string,
 ): TaskStatus {
   const derivable = storedStatus === "TODO" || storedStatus === "IN_PROGRESS";
-  if (derivable && typeof dueDate === "string" && dueDate !== "" && dueDate < today) {
+  if (
+    derivable &&
+    typeof dueDate === "string" &&
+    dueDate !== "" &&
+    dueDate < today
+  ) {
     return "OVERDUE";
   }
   return storedStatus;
@@ -291,8 +296,10 @@ async function cancelTaskQueries(
  * rather than the hook's render-scope value. v5 pushes fresh options into an
  * in-flight mutation, so a chapter switch mid-flight replaces the `onSettled`
  * closure, and invalidating the *new* chapter would leave the optimistic row in
- * the old one marked valid forever. Web's `queryClient.clear()` on switch hides
- * that; mobile has no such clear.
+ * the old one marked valid forever. Both platforms now clear wholesale on
+ * switch (#1042), which hides that — do not let it excuse the wrong chapter id
+ * here: the clear runs after commit, so an in-flight `onSettled` can still
+ * resolve against the old chapter first.
  */
 function invalidateTask(
   queryClient: QueryClient,

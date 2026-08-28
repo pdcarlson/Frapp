@@ -8,10 +8,12 @@
  *
  * **`chapterId` is a required `string`.** Omitting it, or passing `null` /
  * `undefined`, is a type error. Unscoped keys (`["polls"]`, `["tasks", id]`)
- * are how a chapter switch serves the outgoing chapter's rows — web currently
- * papers over that with a wholesale `queryClient.clear()`, and mobile has no
- * such clear. Wave 1 migrates call sites onto this factory; this module only
- * exists so a key missing the tenant scope cannot type-check.
+ * are how a chapter switch serves the outgoing chapter's rows. Web and mobile
+ * both paper over that with a wholesale `queryClient.clear()` on switch (#1042
+ * added mobile's), but that is defense in depth and not a substitute: the next
+ * unscoped key is still a bug, and anything cached *within* a chapter's session
+ * is untouched by it. Wave 1 migrates call sites onto this factory; this module
+ * only exists so a key missing the tenant scope cannot type-check.
  *
  * Do not add `string | null` back. A hook that has no chapter yet should not
  * build a key; it should leave the query `enabled: false`.
