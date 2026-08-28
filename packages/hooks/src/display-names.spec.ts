@@ -7,6 +7,7 @@ import {
   isServerGeneratedGroupDmName,
   resolveAuthorLabel,
   resolveAuthorName,
+  memberFallbackLabel,
   resolveDisplayName,
   type DisplayNameMap,
 } from "./display-names";
@@ -26,6 +27,28 @@ const names: DisplayNameMap = {
   "user-blank": "",
   "user-deleted": "Deleted User",
 };
+
+describe("memberFallbackLabel", () => {
+  it("renders the first six characters of the id", () => {
+    expect(memberFallbackLabel("8f14e45f-ceea-467a-9f1c-1a2b3c4d5e6f")).toBe(
+      "Member 8f14e4",
+    );
+  });
+
+  it("is what resolveAuthorLabel falls back to, so the two cannot drift", () => {
+    // The label is a cross-surface identity: the same departed member has to
+    // read identically in chat and on the points board, or an officer cannot
+    // tell the two rows are one person.
+    const id = "c9f0f895-fb98-4b41-9b8e-7d2a1c0b3e4d";
+    expect(resolveAuthorLabel({ sender_id: id }, () => null, null)).toBe(
+      memberFallbackLabel(id),
+    );
+  });
+
+  it("tolerates an id shorter than the truncation", () => {
+    expect(memberFallbackLabel("abc")).toBe("Member abc");
+  });
+});
 
 describe("resolveDisplayName", () => {
   it("returns the name when one is set", () => {
