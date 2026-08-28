@@ -37,7 +37,16 @@ A lightweight task management system for chapter operations.
   would move the confirmer's own balance with no second party — the same thing `points:adjust`
   refuses, and the "No self-award" rule in [`points.md`](points.md) binds the ledger rather than
   a single endpoint. The API returns 403; the check runs before the COMPLETED-status guard, so
-  the refusal does not depend on the task's state.
+  the refusal does not depend on the task's state. Clients hide the Confirm control on
+  the viewer's own task rather than letting it 403 (`tasks-board.tsx`, chat `task-card.tsx`).
+- **Consequence in a single-admin chapter.** Where the assignee is the chapter's only
+  `tasks:manage` holder, a self-assigned task with a point reward cannot be confirmed by
+  anyone, and there is no reassignment endpoint — so it stays COMPLETED with
+  `points_awarded: false` until another admin exists or the task is deleted. Rejection only
+  cycles it back to IN_PROGRESS. This is the accepted cost of the rule above: the
+  alternative is a single-officer chapter where one member both earns and authorises every
+  task award, which is the thing being prevented. Tracked as an open question in
+  [#1340](https://github.com/pdcarlson/Frapp/issues/1340).
 - The admin can reject the completion (revert to IN_PROGRESS) with an optional comment. Rejection
   is deliberately **not** subject to the rule above: it withholds points rather than awarding
   them, so there is no self-benefit to prevent.

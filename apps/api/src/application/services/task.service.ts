@@ -283,10 +283,10 @@ export class TaskService {
     // Confirming awards `point_reward` to the assignee's ledger, so a holder of
     // `tasks:manage` confirming their own task moves their own balance with no
     // second party. `PointsService.adjustPoints` already refuses the equivalent
-    // (`points.service.ts:215`), and `spec/behavior/points.md` scopes that rule
-    // to the ledger rather than to one endpoint: anti-fraud limits apply to
-    // "every award path ... attendance, tasks, study, and service accrual all
-    // write the same ledger". This is that rule reaching the path it missed.
+    // (`points.service.ts:215`). The rule this implements is `points.md`'s
+    // "No self-award" bullet, which binds the ledger rather than one endpoint;
+    // the neighbouring ceiling bullet applies that same ledger-wide reasoning to
+    // a different control. This is the rule reaching the path it missed.
     //
     // Ordered before the status guard deliberately: which refusal a caller sees
     // must not depend on what state their own task happens to be in, and an

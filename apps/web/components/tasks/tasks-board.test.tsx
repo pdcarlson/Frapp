@@ -122,6 +122,30 @@ describe("TasksBoard subscription gating", () => {
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
+  it("hides Confirm on your own completed task but keeps Reject (#1056)", () => {
+    // The API refuses a self-confirmation, so offering the control would be a
+    // guaranteed 403 plus an optimistic flip-and-revert. Reject is untouched:
+    // it withholds points rather than awarding them.
+    chapter.active();
+    tasksRef.current = [{ ...TASKS[2], id: "task-mine", assignee_id: ME }];
+    render(<TasksBoard />);
+
+    expect(
+      screen.queryByRole("button", { name: /^confirm$/i }),
+    ).not.toBeInTheDocument();
+    expect(rejectButton()).toBeEnabled();
+  });
+
+  it("still offers Confirm on someone else's completed task", () => {
+    // The gate keys on the assignee, not on "is an admin looking" — the
+    // ordinary two-party path must stay open.
+    chapter.active();
+    tasksRef.current = [TASKS[2]];
+    render(<TasksBoard />);
+
+    expect(confirmButton()).toBeEnabled();
+  });
+
   it("disables the trigger and names blocker plus recovery when incomplete", async () => {
     chapter.incomplete();
     render(<TasksBoard />);
@@ -168,10 +192,7 @@ describe("TasksBoard subscription gating", () => {
     const describedBy = trigger().getAttribute("aria-describedby");
     expect(describedBy).toBeTruthy();
     expect(startButton()).toHaveAttribute("aria-describedby", describedBy);
-    expect(deleteButtons()[0]).toHaveAttribute(
-      "aria-describedby",
-      describedBy,
-    );
+    expect(deleteButtons()[0]).toHaveAttribute("aria-describedby", describedBy);
     expect(document.getElementById(describedBy!)).toHaveTextContent(
       /subscription is not active/i,
     );
@@ -333,8 +354,6 @@ describe("TasksBoard overdue affordances", () => {
     ).not.toBeInTheDocument();
     // Still readable, and Delete still offered — only the ambiguous
     // lifecycle transition is withheld.
-    expect(
-      screen.getByText(/submit the ride-share list/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/submit the ride-share list/i)).toBeInTheDocument();
   });
 });
