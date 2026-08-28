@@ -48,6 +48,15 @@ on:
   # proves nothing about it. Making a gate required on the strength of a run
   # that skipped its own body is how a check ends up green and inert.
   workflow_dispatch:
+    inputs:
+      replay_fixture:
+        description: >-
+          Recorded applied-state file to replay against instead of live
+          production. Leave blank to use production. Use a fixture to exercise
+          the two-phase apply when production has nothing pending.
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -272,14 +281,32 @@ jobs:
         if: steps.touched.outputs.run == 'true'
         run: supabase start -x studio,imgproxy,edge-runtime,logflare,vector,pooler,mailpit
 
+      # A fixture run exercises the two-phase apply that a live run cannot when
+      # production has nothing pending — which is its steady state, so on an
+      # ordinary day the live path reports "nothing to replay" in about a second
+      # and never touches phase 1 or phase 2. The fixture is the only way to
+      # prove that body works in CI without waiting for a real migration PR.
       - name: Replay pending migrations against production's applied state
         if: steps.touched.outputs.run == 'true'
         env:
           # SUPABASE_ACCESS_TOKEN and SUPABASE_PROJECT_REF are both injected
           # above; the ref is production's because the slug was `prod`.
           REPLAY_SUPABASE_CLI: supabase
+          REPLAY_FIXTURE: ${{ inputs.replay_fixture }}
         run: |
-          if [ -z "$SUPABASE_PROJECT_REF" ]; then
+          set -euo pipefail
+
+          if [ -n "${REPLAY_FIXTURE:-}" ]; then
+            if [ ! -f "$REPLAY_FIXTURE" ]; then
+              echo "::error::replay_fixture '$REPLAY_FIXTURE' does not exist in this checkout."
+              exit 1
+            fi
+            echo "Replaying against recorded state '$REPLAY_FIXTURE' (production is NOT read)."
+            node scripts/ci/check-migration-replay.mjs --applied-from "$REPLAY_FIXTURE"
+            exit $?
+          fi
+
+          if [ -z "${SUPABASE_PROJECT_REF:-}" ]; then
             echo "::error::SUPABASE_PROJECT_REF is not set in the Infisical 'prod' environment. See docs/internal/environment/SECRETS_MANAGEMENT.md."
             exit 1
           fi
