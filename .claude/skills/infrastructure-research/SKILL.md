@@ -252,7 +252,9 @@ done
 ### "Did a migration land in production?"
 
 1. `npx supabase migration list --project-ref <prod_ref>` (requires Supabase access token)
-2. Cross-reference with `supabase/migrations/` in the `production` branch
+2. Cross-reference with `supabase/migrations/` on `main` — there is no separate
+   production branch since #1340; production is deployed from a named commit on
+   `main` by `.github/workflows/deploy-production.yml`
 3. Check [`docs/internal/ops/DB_PROMOTION_RUNBOOK.md`](../../../docs/internal/ops/DB_PROMOTION_RUNBOOK.md) for promotion status
 
 ### "Are secrets in sync?"

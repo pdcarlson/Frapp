@@ -1,7 +1,24 @@
 #!/usr/bin/env node
 
 /**
- * Configure branch protection rules for main and production.
+ * Configure branch protection rules for `main`.
+ *
+ * `main` is the only long-lived branch. `production` was retired in #1340 —
+ * production is deployed from `main` by `.github/workflows/deploy-production.yml`,
+ * a manual dispatch that names a commit. The asymmetric `production` payload
+ * this script used to write (required approving review, required conversation
+ * resolution, and the extra `branch-policy` required check) went with it:
+ *
+ *   * `branch-policy` enforced that a PR into `production` came from `main`.
+ *     Its replacement is `scripts/ci/validate-deploy-sha.mjs`, which asserts
+ *     `git merge-base --is-ancestor <sha> origin/main` before any deploy.
+ *   * The required approving review was the human gate on promotion. That gate
+ *     moved to the `production` GitHub ENVIRONMENT's Required reviewers, where
+ *     it fires at the moment of deploy rather than at a PR opened before anyone
+ *     knew whether the migration applied.
+ *
+ * Note this script does not DELETE protection rules, so removing the
+ * `production` branch's rule after deleting the branch is a manual step.
  *
  * Usage:
  *   GITHUB_PAT=github_pat_xxx node scripts/configure-branch-protection.mjs
@@ -286,41 +303,25 @@ async function callGitHubApi({ token, method, path, body }) {
 // ── Branch protection payloads ──────────────────────────────────────────────
 
 function buildProtectionPayload(branch) {
-  const requiresApprovingReview = branch === "production";
-  const requiresConversationResolution = branch === "production";
-  const payload = {
+  return {
     required_status_checks: {
       strict: true,
       contexts: ALL_REQUIRED_CHECKS,
     },
     enforce_admins: true,
-    required_pull_request_reviews: requiresApprovingReview
-      ? {
-          dismiss_stale_reviews: true,
-          require_code_owner_reviews: false,
-          required_approving_review_count: 1,
-          require_last_push_approval: false,
-        }
-      : null,
+    // No required approving review on `main`, which is unchanged from before
+    // #1340 — this repo's human gate is the production deploy approval, not the
+    // merge. See docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md.
+    required_pull_request_reviews: null,
     restrictions: null,
     required_linear_history: true,
     allow_force_pushes: false,
     allow_deletions: false,
     block_creations: false,
-    required_conversation_resolution: requiresConversationResolution,
+    required_conversation_resolution: false,
     lock_branch: false,
     allow_fork_syncing: true,
   };
-
-  // production has stricter policy: branch source enforcement + required review + required conversation resolution.
-  if (branch === "production") {
-    payload.required_status_checks.contexts = [
-      ...ALL_REQUIRED_CHECKS,
-      "branch-policy",
-    ];
-  }
-
-  return payload;
 }
 
 // ── Main ────────────────────────────────────────────────────────────────────
@@ -350,7 +351,7 @@ async function main() {
   console.log(`Mode: ${dryRun ? "DRY RUN" : "LIVE"}`);
   console.log("");
 
-  for (const branch of ["main", "production"]) {
+  for (const branch of ["main"]) {
     const payload = buildProtectionPayload(branch);
     const checks = payload.required_status_checks.contexts;
 
@@ -395,7 +396,7 @@ async function main() {
     console.log("Dry run complete. No changes were made.");
     console.log("Remove --dry-run to apply these settings.");
   } else {
-    console.log("Branch protection configured successfully for main and production.");
+    console.log("Branch protection configured successfully for main.");
   }
 }
 
@@ -407,7 +408,9 @@ async function main() {
 // check to main, which would have blocked every PR until it was noticed and undone.
 //
 // A module that reconfigures repository governance as a side effect of being loaded
-// has no safe way to be read. `--dry-run` does not help, because the caller doing the
+// has no safe way to be read. `scripts/ci/validate-deploy-sha.mjs` imports
+// ALL_REQUIRED_CHECKS from here on every production deploy, so this guard is now
+// load-bearing on the deploy path too, not only in review. `--dry-run` does not help, because the caller doing the
 // importing never passes argv at all.
 const isDirectRun =
   process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;

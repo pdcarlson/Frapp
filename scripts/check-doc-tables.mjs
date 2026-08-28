@@ -139,7 +139,7 @@ export function compareRoster({ file, text, required, known }) {
     }
   }
   // The reverse direction is scoped to tables that are *about* checks — a doc also holds
-  // tables keyed on commit types (`test`, `chore`) and branches (`main`, `production`),
+  // tables keyed on commit types (`test`, `chore`) and environments (`staging`, `prod`),
   // whose first cells look identical. A block earns the check only if it already names a
   // known one, which is what makes "this row names something that is not a check" meaningful.
   for (const block of tableBlocks(text)) {
@@ -215,7 +215,14 @@ function main() {
   if (docsYml) for (const m of docsYml.matchAll(/^  ([a-zA-Z0-9_-]+):$/gm)) known.add(m[1]);
   const driftYml = read(".github/workflows/migration-drift-gate.yml");
   if (driftYml) for (const m of driftYml.matchAll(/^  ([a-zA-Z0-9_-]+):$/gm)) known.add(m[1]);
-  known.add("branch-policy"); // production-only; appended by buildProtectionPayload, not an array.
+  // Production deploys are their own workflow since #1340, and its jobs are
+  // legitimate rows for a doc table to describe.
+  const deployProdYml = read(".github/workflows/deploy-production.yml");
+  if (deployProdYml) for (const m of deployProdYml.matchAll(/^  ([a-zA-Z0-9_-]+):$/gm)) known.add(m[1]);
+  // `known.add("branch-policy")` used to sit here. It was removed with the job
+  // itself (#1340). Leaving it would have kept stale `branch-policy` rows in the
+  // three doc tables passing this gate — the quiet disarm this file's header
+  // warns about, where a gate keeps reporting green about a thing that is gone.
 
   const findings = [];
 

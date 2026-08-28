@@ -4,7 +4,7 @@
 
 Migrations are now applied automatically in the deploy pipeline (see `.github/workflows/deploy-api.yml`):
 - **Staging:** Runs automatically on merge to `main` (no approval needed)
-- **Production:** Runs after the `main` → `production` promotion PR merges and CI passes, but **pauses on the `production` environment's required reviewer** before it applies — corrected 2026-08-28 (`docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets). (The gate is not only the promotion PR; the gate is the promotion PR itself: branch protection requires CI + an approving review + conversation resolution. The old justification — Enterprise-only environment rules *on private repos* — was corrected 2026-08-21: this repo is public. See `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets.)
+- **Production:** Never automatic. `deploy-production.yml` applies migrations for one named commit, and **pauses on the `production` environment's required reviewer** before it applies (`docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets). That approval is the only human gate since #1340 retired the `main` → `production` promotion PR. Before applying, the workflow rehearses the migration against production's live applied state with `check-migration-replay.mjs`; `migrate-production.yml` is the code-free escape hatch and does **not** rehearse. (The old justification for saying the environment did not gate anything — Enterprise-only environment rules *on private repos* — was corrected 2026-08-21: this repo is public. See `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets.)
 
 If an automated migration fails, the entire deploy pipeline halts — no API deploy happens. Check the GitHub Actions run for the error output.
 
@@ -29,7 +29,7 @@ Use when:
 Action:
 1. Create new migration: `npx supabase migration new <hotfix_name>`
 2. Apply to staging first.
-3. Promote to production once verified.
+3. Deploy that commit to production once verified (**Deploy production**, with the SHA).
 
 ### 2) Full rollback to backup/snapshot
 

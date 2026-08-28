@@ -29,9 +29,7 @@ function noOpNeeds() {
       outputs: { "api-changed": "false", "migrations-changed": "false" },
     },
     "migrate-staging": { result: "skipped", outputs: {} },
-    "migrate-production": { result: "skipped", outputs: {} },
     "deploy-staging": { result: "skipped", outputs: {} },
-    "deploy-production": { result: "skipped", outputs: {} },
   };
 }
 
@@ -43,9 +41,7 @@ function failedNeeds() {
       outputs: { "api-changed": "true", "migrations-changed": "false" },
     },
     "migrate-staging": { result: "skipped", outputs: {} },
-    "migrate-production": { result: "skipped", outputs: {} },
     "deploy-staging": { result: "failure", outputs: {} },
-    "deploy-production": { result: "skipped", outputs: {} },
   };
 }
 
@@ -56,9 +52,7 @@ function deployedNeeds() {
       outputs: { "api-changed": "true", "migrations-changed": "true" },
     },
     "migrate-staging": { result: "success", outputs: {} },
-    "migrate-production": { result: "skipped", outputs: {} },
     "deploy-staging": { result: "success", outputs: {} },
-    "deploy-production": { result: "skipped", outputs: {} },
   };
 }
 
@@ -118,15 +112,28 @@ function capturingLogger() {
   return { logger: { log: (line) => lines.push(line) }, lines };
 }
 
+// ── Alert issue identity ────────────────────────────────────────────────────
+
+test("the alert issue title is NOT rescoped to staging", () => {
+  // #1340 narrowed this watchdog to staging (the production jobs moved to
+  // deploy-production.yml), and the obvious tidy-up is to say "staging" in the
+  // title. Don't: `findAlertIssues` looks the issue up by EXACT title, so a
+  // rename orphans whatever alert is open right now — it can never be found
+  // again, and therefore never self-closes. The stale-sounding title is load
+  // bearing.
+  assert.equal(
+    ALERT_ISSUE_TITLE,
+    "Deploy API is failing — pushes are not reaching the environment",
+  );
+});
+
 // ── readJobResults ──────────────────────────────────────────────────────────
 
 test("readJobResults flattens the needs context", () => {
   assert.deepEqual(readJobResults(failedNeeds()), {
     "check-changes": "success",
     "migrate-staging": "skipped",
-    "migrate-production": "skipped",
     "deploy-staging": "failure",
-    "deploy-production": "skipped",
   });
 });
 

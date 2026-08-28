@@ -196,3 +196,25 @@ test("the summary names the pending files and any foreign versions", () => {
   assert.match(text, /20260827190000_secdef_search_path_pg_temp\.sql/);
   assert.match(text, /20260228000000/);
 });
+
+// `deploy-production.yml` parses `replay_outcome=<code>` out of this script's
+// stdout to tell "rehearsed the pending set" from "there was nothing to
+// rehearse" — both exit 0, and only one verified anything. The first cut of
+// that step grepped the human message instead and silently reported every
+// nothing-pending run as a real rehearsal. These pin the codes the workflow
+// reads, so renaming one fails here rather than in a production run summary.
+test("decideOutcome codes are the ones deploy-production.yml parses", () => {
+  const nothingPending = decideOutcome({
+    partition: { baseline: [{ version: "1" }], pending: [], foreign: [], backDated: [] },
+    replay: null,
+  });
+  assert.equal(nothingPending.ok, true);
+  assert.equal(nothingPending.code, "nothing-pending");
+
+  const replayed = decideOutcome({
+    partition: { baseline: [{ version: "1" }], pending: [{ version: "2" }], foreign: [], backDated: [] },
+    replay: { ok: true },
+  });
+  assert.equal(replayed.ok, true);
+  assert.notEqual(replayed.code, "nothing-pending");
+});

@@ -2,11 +2,26 @@
 
 ## Purpose
 
-Configure merge-blocking branch protections for `main` and `production`. This ensures:
+Configure merge-blocking branch protections for `main`, the repository's only long-lived
+branch. This ensures:
 
 - All required CI checks pass before merge
-- PRs to `production` must come from `main`
 - No force pushes, no direct commits, no bypasses (even for admins)
+
+> **`production` was retired in #1340.** This runbook used to configure two branches with
+> asymmetric policy. Production is now deployed from a named commit on `main` by
+> `.github/workflows/deploy-production.yml`, and the two things `production`'s protection
+> bought have moved:
+>
+> - the `branch-policy` required check (PR into `production` must come from `main`) is now
+>   `git merge-base --is-ancestor` inside `scripts/ci/validate-deploy-sha.mjs`, which also
+>   asserts CI was green on the exact commit being deployed;
+> - the 1 required approving review is now the `production` **GitHub Environment**'s
+>   Required reviewers, which pauses the deploy itself.
+>
+> `configure-branch-protection.mjs` no longer writes a `production` payload, but it does
+> **not delete** one that already exists. Removing the orphaned rule is a manual step in
+> Settings → Branches.
 
 ## Prerequisites
 
@@ -84,24 +99,22 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 
 ## What Gets Configured
 
-### Both branches (main and production)
+### `main`
 
-| Setting                     | Value                                                          |
-| --------------------------- | -------------------------------------------------------------- |
-| Required status checks      | See table below                                                |
-| Require branches up to date | Yes                                                            |
-| Enforce admins              | Yes                                                            |
-| Linear history              | Yes                                                            |
-| Force pushes                | Blocked                                                        |
-| Deletions                   | Blocked                                                        |
-| Conversation resolution     | Branch-specific (disabled on `main`, required on `production`) |
+| Setting                     | Value           |
+| --------------------------- | --------------- |
+| Required status checks      | See table below |
+| Require branches up to date | Yes             |
+| Enforce admins              | Yes             |
+| Linear history              | Yes             |
+| Force pushes                | Blocked         |
+| Deletions                   | Blocked         |
+| Conversation resolution     | Disabled        |
+| Required approving reviews  | Disabled        |
 
-### Branch-specific PR review rules
-
-| Branch       | Required approving reviews | Dismiss stale reviews | Require conversation resolution |
-| ------------ | -------------------------- | --------------------- | ------------------------------- |
-| `main`       | Disabled                   | N/A                   | Disabled                        |
-| `production` | 1                          | Enabled               | Enabled                         |
+No required human approval on merge is deliberate and unchanged: review is the local
+pre-push gate, and the human gate on what reaches users is the production deploy
+approval, not the merge.
 
 ### Required Status Checks
 
@@ -153,7 +166,7 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 | Check name         | What it validates                                                     |
 | ------------------ | --------------------------------------------------------------------- |
 | `migration-drift`  | Staging holds every migration on `main` (`check-migration-drift-gate.mjs`). The only required check about a **deployed database** rather than about the code — everything else stays green while staging sits migrations behind |
-| `migration-replay` | Pending migrations apply cleanly to a disposable Supabase stack rebuilt at **production's** currently-applied state (`check-migration-replay.mjs`). Rehearses the incremental apply that `migrate-production` is about to perform for real; production itself is only read, never written |
+| `migration-replay` | Pending migrations apply cleanly to a disposable Supabase stack rebuilt at **production's** currently-applied state (`check-migration-replay.mjs`). Rehearses the incremental apply that `deploy-production.yml` is about to perform for real; production itself is only read, never written. The deploy workflow runs the same gate again at deploy time, against production's state as of that moment |
 
 This is the gate that would have caught the incident where two migrations merged to `main` and were never applied to staging. It compares `origin/main` against staging's applied migration history, **not** the PR head — a PR that adds a migration is not failed by its own unmerged file. A migration is tolerated for 30 minutes from the moment it landed on `main`, which is the window `migrate-staging` needs to apply it.
 
@@ -161,38 +174,27 @@ Like `doc-paths`, it can block a PR over state that PR did not cause; that trade
 
 ### Vercel policy (not a required check)
 
-Vercel deployments are intentionally limited to `main` and `production` branches via `git.deploymentEnabled` in each app `vercel.json`. This keeps PR traffic from consuming Vercel build quota while CI remains the merge gate.
+Vercel deployments are intentionally limited to the `main` branch via
+`git.deploymentEnabled` in each app `vercel.json`. This keeps PR traffic from consuming
+Vercel build quota while CI remains the merge gate. Production Vercel deployments are not
+branch-driven at all — `deploy-production.yml` creates them through the API for a named
+commit.
 
-**production branch only:**
+### Deploy verification is no longer a branch-protection question
 
-| Check name      | What it validates            |
-| --------------- | ---------------------------- |
-| `branch-policy` | Source branch must be `main` |
+`verify-deployments.yml` polls Render and Vercel after a push to `main` and emits
+`verify-render-api`, `verify-vercel-web`, `verify-vercel-landing`. This runbook used to
+carry a recipe for promoting those three to required checks **on `production`**, once the
+workflow had stabilised.
 
-### Future: require deploy verification on production
+That recipe is gone, and not because it was abandoned: the thing it wanted is now
+structural. Production deploy verification happens *inside* `deploy-production.yml`,
+synchronously, polling the deployment IDs it was handed — so a failed production deploy
+fails the release rather than reporting after the fact on a branch. A required check on a
+branch could never have done that.
 
-The `verify-deployments` workflow (`.github/workflows/verify-deployments.yml`) polls Render and Vercel after every push to `main` and `production` and emits three status contexts: `verify-render-api`, `verify-vercel-web`, `verify-vercel-landing`. These are **not** currently required on `production`, but they are designed to become so once the workflow has stabilized.
-
-Recipe to mark them required on `production` (do not run until the workflow has succeeded on at least one production push so GitHub knows the check names):
-
-1. Verify the checks have already reported against a production push:
-
-   ```bash
-   gh api \
-     repos/pdcarlson/Frapp/commits/$(git rev-parse origin/production)/check-runs \
-     | jq -r '.check_runs[].name'
-   ```
-
-2. Add the three context names to the production required-checks list in [`scripts/configure-branch-protection.mjs`](../../../scripts/configure-branch-protection.mjs).
-
-3. Dry-run and apply:
-
-   ```bash
-   npm run configure:branch-protection -- --dry-run
-   npm run configure:branch-protection
-   ```
-
-Do **not** mark these required on `main` — staging deploys are allowed to fail without blocking `main` churn.
+Do **not** mark these required on `main` — staging deploys are allowed to fail without
+blocking `main` churn.
 
 ### AI review policy
 
@@ -227,18 +229,25 @@ Common causes and fixes:
 - **Job/workflow renames:** required check name no longer matches emitted name.  
   **Fix:** update `scripts/configure-branch-protection.mjs` and re-run `npm run configure:branch-protection`.
 - **Stale required check reference:** a required context name no longer exists because the underlying workflow was removed.  
-  **Fix:** remove the orphan context from the production protection payload (`scripts/configure-branch-protection.mjs` plus `gh api -X DELETE repos/<owner>/<repo>/branches/production/protection/required_status_checks/contexts -f 'contexts[]=<orphan>'`) and re-run the branch-protection script.
+  **Fix:** remove the orphan context from `ALL_REQUIRED_CHECKS` in `scripts/configure-branch-protection.mjs`, then `gh api -X DELETE repos/<owner>/<repo>/branches/main/protection/required_status_checks/contexts -f 'contexts[]=<orphan>'`, and re-run the branch-protection script.
 
 ## Verification Checklist
 
 After running the script, verify in the GitHub UI (Settings → Branches):
 
-- [ ] Branch protection rules exist for `main` and `production`
+- [ ] A branch protection rule exists for `main`
 - [ ] All required status checks are listed
 - [ ] "Include administrators" is checked
 - [ ] "Require linear history" is checked
-- [ ] "Require conversation resolution" is checked
+- [ ] No leftover rule for `production` (the script stopped writing one in #1340 but cannot delete an existing rule — remove it by hand)
 - [ ] Test: create a PR with a deliberate lint failure → verify merge is blocked
+
+Separately, in Settings → **Environments** → `production`:
+
+- [ ] **Required reviewers** is enabled. This is the only human gate on a production
+      deploy since #1340. To confirm it is actually active, dispatch **Deploy production**
+      with *Stop after the dry run* checked and watch the job: an environment-gated job
+      parks on "Waiting for approval", while an ungated one starts in about two seconds.
 
 ## Emergency Override
 

@@ -4,8 +4,8 @@
 // `Deploy API` failed 44 of 44 executing runs for 71 days and nobody noticed,
 // because three things compounded —
 //
-//   1. A skipped run is a GREEN run. The `check-changes` path gate skips all
-//      four deploy/migrate jobs when a push touches neither `apps/api/` nor
+//   1. A skipped run is a GREEN run. The `check-changes` path gate skips the
+//      deploy/migrate jobs when a push touches neither `apps/api/` nor
 //      `supabase/migrations/`; 46 of the last 90 runs were green-because-empty,
 //      so the Actions list read "healthy" while the deploy path was 100% dead.
 //   2. `workflow_run` failures never land on a commit or a PR the way `CI`
@@ -33,7 +33,7 @@
 //   GITHUB_REPOSITORY  — required, owner/repo
 //   DEPLOY_NEEDS       — required, `toJSON(needs)` from the workflow
 //   RUN_URL            — required, html_url of this Deploy API run
-//   HEAD_BRANCH        — the deployed ref (main / production)
+//   HEAD_BRANCH        — the deployed ref (always `main` since #1340)
 //   HEAD_SHA           — the deployed commit
 //
 // Exits 0 on every handled outcome — a watchdog that reds the run creates the
@@ -58,15 +58,21 @@ export const ALERT_ISSUE_TITLE =
 export const ALERT_ISSUE_LOOKUP_LABEL = "routine-state";
 export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"];
 
-// The gate job, and the four jobs that actually migrate or deploy. Order is the
+// The gate job, and the jobs that actually migrate or deploy. Order is the
 // order they are reported in.
+//
+// `migrate-production` and `deploy-production` used to be here. They were
+// deleted from deploy-api.yml with the `production` branch (#1340) — production
+// now deploys through `deploy-production.yml`, a manual dispatch that does its
+// own terminal reporting in its `report` job. A name left here that no workflow
+// emits would report as a permanently missing job.
+//
+// NOTE: `ALERT_ISSUE_TITLE` above is deliberately NOT rescoped to "staging"
+// even though this now only watches staging. The title is the issue LOOKUP KEY,
+// so renaming it orphans any alert issue currently open — it could never be
+// found again, and so never self-close.
 export const GATE_JOB_NAME = "check-changes";
-export const DEPLOY_JOB_NAMES = [
-  "migrate-staging",
-  "migrate-production",
-  "deploy-staging",
-  "deploy-production",
-];
+export const DEPLOY_JOB_NAMES = ["migrate-staging", "deploy-staging"];
 
 // Results that mean the job did not do its work. `cancelled` and `timed_out`
 // are included deliberately: a cancelled deploy is not a deploy, and treating it

@@ -266,8 +266,10 @@ For each migration:
 | Workflow | File | Key concerns |
 |----------|------|--------------|
 | CI | `.github/workflows/ci.yml` | All required CI jobs passing, correct branch triggers |
-| Deploy | `.github/workflows/deploy-api.yml` | Secret handling, migration gating, health checks |
-| Release | `.github/workflows/release.yml` | Version bump logic, tag creation |
+| Deploy (staging) | `.github/workflows/deploy-api.yml` | Secret handling, migration gating, health checks |
+| Deploy (production) | `.github/workflows/deploy-production.yml` | SHA validation (ancestor of `main` + CI green), the replay/apply fence, provider guardrail preflight, deploy-by-commit, strict CANCELED handling |
+| Production guardrails | `.github/workflows/production-guardrails.yml` | Render auto-deploy off, Vercel Production Branch not `main` — both dashboard-only and fail open |
+| Release | `.github/workflows/release.yml` | Version bump logic, tag creation, `workflow_call` input plumbing |
 | Docs | `.github/workflows/docs.yml` (`docs-spec-sync` job) | Spec sync enforcement |
 
 ### Secret exposure in workflows

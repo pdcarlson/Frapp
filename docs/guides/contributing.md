@@ -4,18 +4,21 @@ This guide defines how we work on Frapp: branch workflow, commit messages, and s
 
 ## 1. Branching model
 
-We use a two-environment branch model:
+One long-lived branch, two environments:
 
-- `main` — pre-production integration branch (deployed to Vercel Preview domains and staging infrastructure)
-- `production` — production branch (deployed to production environments)
+- `main` — the integration branch (every merge deploys to Vercel Preview domains and staging infrastructure)
 - `feature/*` — short-lived branches for individual features and fixes
+
+Production is not a branch. It is deployed from a **named commit on `main`** by the
+**Deploy production** workflow, which refuses any commit that is not an ancestor of `main`
+with green CI. The `production` branch was retired in #1340.
 
 Typical flow:
 
 1. Branch from `main` into `feature/*`.
 2. Open a PR from `feature/*` to `main`.
 3. Validate behavior in staging/preview environments.
-4. Open a promotion PR from `main` to `production` for production release.
+4. To release, dispatch the **Deploy production** workflow with the commit SHA you want live.
 
 Example feature branch names:
 
@@ -73,8 +76,8 @@ When opening a PR:
 PR targets:
 
 - Feature work: `feature/*` → `main`
-- Production promotion: `main` → `production`
-- **Never** another feature branch. `pull_request.branches` is only `[main, production]`, so a
+- Production: no PR. Dispatch **Deploy production** with a SHA that is already on `main`.
+- **Never** another feature branch. `pull_request.branches` is only `[main]`, so a
   stacked PR skips CI and a squash-merge can show MERGED while `origin/main` never receives the
   work. Playbook: [`docs/internal/ci-cd/AGENT_INFRA.md`](../internal/ci-cd/AGENT_INFRA.md#ci-branch-filters-never-target-a-feature-branch)
   (incidents #1120, #1123–#1125). Re-land by cherry-pick onto `origin/main`.
