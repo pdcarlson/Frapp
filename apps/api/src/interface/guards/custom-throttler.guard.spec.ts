@@ -174,6 +174,37 @@ describe('CustomThrottlerGuard', () => {
       ).resolves.toBe('ip:203.0.113.7');
     });
 
+    // #864 AC 4. Before `trust proxy` was set, `req.ips` was always empty
+    // behind Render and `req.ip` was the proxy, so every unauthenticated
+    // caller collapsed into one bucket. With the measured hop count in
+    // `configureApp`, two callers key separately — which is the whole point of
+    // the rate limit, and of the auth-failure spike detector that shares the
+    // tracker.
+    it('buckets two different forwarded clients separately', async () => {
+      const trackerFor = (clientIp: string) =>
+        guard.track({
+          headers: {},
+          ips: [clientIp, '192.0.2.1'],
+          ip: clientIp,
+        });
+
+      const [first, second] = await Promise.all([
+        trackerFor('198.51.100.5'),
+        trackerFor('198.51.100.77'),
+      ]);
+
+      expect(first).toBe('ip:198.51.100.5');
+      expect(second).toBe('ip:198.51.100.77');
+      expect(first).not.toBe(second);
+    });
+
+    it('keeps one client in one bucket across repeated requests', async () => {
+      const req = { headers: {}, ips: ['198.51.100.5', '192.0.2.1'] };
+
+      await expect(guard.track(req)).resolves.toBe('ip:198.51.100.5');
+      await expect(guard.track(req)).resolves.toBe('ip:198.51.100.5');
+    });
+
     it('prefers the first forwarded IP when present', async () => {
       const req = {
         headers: {},

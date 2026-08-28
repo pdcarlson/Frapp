@@ -30,7 +30,45 @@ import { LoggingInterceptor } from './interface/interceptors/logging.interceptor
  * with no bearing on how a handler's result is turned into a response, and
  * neither is meaningful against an in-memory test app.
  */
+/**
+ * Express `trust proxy` hop count for the Render deployment.
+ *
+ * **Measured, not assumed** (#864). Probes against `api-staging.frapp.live` on
+ * 2026-08-28 returned an `x-forwarded-for` length of 3, 4 and 5 for 0, 1 and 2
+ * forged entries — exactly linear, so the infrastructure contribution is a
+ * constant three: Render's Cloudflare edge, Render's ingress, and the origin
+ * hop whose address arrives on the socket. Evidence, with the raw log lines:
+ * https://github.com/pdcarlson/Frapp/issues/864#issuecomment-5457812781
+ *
+ * Why a count rather than `true`: `true` trusts the entire chain, so any client
+ * can prepend a forged address and rotate it to evade the very rate limit this
+ * restores — strictly worse than leaving the setting off. And why not the
+ * intuitive small numbers: `1` resolves `req.ip` to a Render-internal address
+ * and `2` to Cloudflare's edge, so both keep every unauthenticated caller in
+ * one shared bucket while looking like a fix.
+ *
+ * This is the **staging** figure. `frapp-api-prod` is a separate service whose
+ * chain has never been observed (#1273 — it has never deployed), so the value
+ * is unverified there.
+ */
+export const TRUST_PROXY_HOPS = 3;
+
+/** The one Express method used here — narrower than importing express types. */
+interface ExpressSettable {
+  set: (setting: string, value: unknown) => void;
+}
+
 export function configureApp(app: INestApplication): void {
+  // Behind Render, Express must resolve the caller from `X-Forwarded-For`, or
+  // `req.ip` is the proxy's address and every unauthenticated caller shares one
+  // rate-limit bucket (`custom-throttler.guard.ts` falls back to `ip:` keying)
+  // and one `originHash` (#864). It lives here rather than in `main.ts` so the
+  // e2e suite runs under the same resolution production does — the #1020 gap
+  // this whole function exists to close.
+  const httpAdapter: { getInstance: () => unknown } = app.getHttpAdapter();
+  const expressInstance = httpAdapter.getInstance() as ExpressSettable;
+  expressInstance.set('trust proxy', TRUST_PROXY_HOPS);
+
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
 
   app.useGlobalPipes(new ValidationPipe(VALIDATION_PIPE_OPTIONS));

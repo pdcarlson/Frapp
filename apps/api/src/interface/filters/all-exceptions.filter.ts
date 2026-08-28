@@ -176,10 +176,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
       // (`custom-throttler.guard.ts`): authenticated subject when there is one,
       // origin otherwise. Sharing the notion of "who" means this degrades
       // exactly as the rate limiter does behind a proxy rather than inventing a
-      // second, differently-wrong one. NOTE: `trust proxy` is not set on the
-      // Express app, so behind Render's edge every unauthenticated caller
-      // currently collapses into one bucket — tracked separately; until it
-      // lands, treat per-origin attribution in staging/production as coarse.
+      // second, differently-wrong one. `trust proxy` is set to the measured
+      // hop count in `configureApp` (#864), so behind Render's edge this
+      // resolves to the real caller rather than collapsing every
+      // unauthenticated request into one bucket.
       const originKey =
         request.appUser?.id ?? originHash ?? clientIp(request) ?? 'unknown';
       const trip = this.spikeDetector.record(originKey);
