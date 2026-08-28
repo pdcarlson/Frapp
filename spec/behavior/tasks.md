@@ -32,7 +32,15 @@ A lightweight task management system for chapter operations.
   persists. The transaction confirms only when the task is still COMPLETED and `points_awarded` is
   `false` (a compare-and-set), so concurrent confirmations cannot award points twice — at most one
   succeeds and the rest are rejected as already awarded.
-- The admin can reject the completion (revert to IN_PROGRESS) with an optional comment.
+- **No self-confirmation.** A member cannot confirm a task assigned to themselves, even holding
+  `tasks:manage`. Confirmation writes `point_reward` to the assignee's ledger, so a self-confirm
+  would move the confirmer's own balance with no second party — the same thing `points:adjust`
+  refuses, and the "No self-award" rule in [`points.md`](points.md) binds the ledger rather than
+  a single endpoint. The API returns 403; the check runs before the COMPLETED-status guard, so
+  the refusal does not depend on the task's state.
+- The admin can reject the completion (revert to IN_PROGRESS) with an optional comment. Rejection
+  is deliberately **not** subject to the rule above: it withholds points rather than awarding
+  them, so there is no self-benefit to prevent.
 
 ## Notifications
 

@@ -225,11 +225,18 @@ describe('TaskController', () => {
         points_awarded: true,
       } as any);
 
-      const result = await controller.confirmCompletion(chapterId, taskId);
+      const result = await controller.confirmCompletion(
+        chapterId,
+        'admin-1',
+        taskId,
+      );
 
+      // The caller's id is threaded through so the service can refuse a
+      // self-confirmation (#1056); the route previously resolved no user at all.
       expect(taskService.confirmCompletion).toHaveBeenCalledWith(
         taskId,
         chapterId,
+        'admin-1',
       );
       expect(result).toEqual({ id: taskId, points_awarded: true });
     });
