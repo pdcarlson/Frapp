@@ -337,6 +337,33 @@ describe('AllExceptionsFilter', () => {
     expect(reported).toBe(thrown);
   });
 
+  it('strips the query string from the 5xx error log (#1260)', () => {
+    // The shared fixture URL is `/v1/chapters/join?invite=secret-code`, so the
+    // query already carries a credential-shaped value. This log line runs at
+    // `error` level, which ships in every environment.
+    new AllExceptionsFilter().catch(new Error('boom'), host());
+
+    expect(captured.error[0]).not.toContain('secret-code');
+    expect(captured.error[0]).not.toContain('?');
+
+    // ...and the path itself survives, so the record still identifies the route.
+    const logged = JSON.parse(captured.error[0] ?? '{}') as Record<
+      string,
+      unknown
+    >;
+    expect(logged).toMatchObject({ path: '/v1/chapters/join' });
+  });
+
+  it('strips the OAuth state and code from the 5xx error log (#1260)', () => {
+    new AllExceptionsFilter().catch(
+      new Error('boom'),
+      host({ url: '/v1/discord/connect/callback?code=abc123&state=deadbeef' }),
+    );
+
+    expect(captured.error[0]).not.toContain('deadbeef');
+    expect(captured.error[0]).not.toContain('abc123');
+  });
+
   it('preserves the existing 5xx error log shape', () => {
     new AllExceptionsFilter().catch(new Error('boom'), host());
 

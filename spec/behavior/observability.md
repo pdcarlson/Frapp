@@ -4,7 +4,7 @@
 
 Every API request is logged as structured JSON with: request ID, user ID, chapter ID, endpoint, HTTP method, status code, response latency, the forwarded-chain shape (below), and timestamp.
 
-**Identifier handling (internal logs):** `user_id` and `chapter_id` are retained as raw values in internal structured logs because the logs are confined to Frapp-internal observability tooling and operate under the internal retention policy. They are **not** PII-scrubbed at the log boundary — scrubbing applies only at external-reporting boundaries (Sentry / external observability vendors). Email addresses, IPs, auth tokens, request bodies, and response bodies are never logged.
+**Identifier handling (internal logs):** `user_id` and `chapter_id` are retained as raw values in internal structured logs because the logs are confined to Frapp-internal observability tooling and operate under the internal retention policy. They are **not** PII-scrubbed at the log boundary — scrubbing applies only at external-reporting boundaries (Sentry / external observability vendors). Email addresses, IPs, auth tokens, request bodies, and response bodies are never logged. The auth-token half of that rule is not only about the `Authorization` header: a query string is free text on a public surface and routinely carries credentials — the Discord connect callback's `state` **is** the CSRF token — so every log site that writes a path routes it through `pathOnly` (`apps/api/src/interface/utils/path-only.ts`), which is what makes the `path` row below true rather than aspirational ([#1260](https://github.com/pdcarlson/Frapp/issues/1260)).
 
 **Forwarded-chain shape (`xffCount`, `xffSocketIsLast`).** The request log carries two facts about the `X-Forwarded-For` chain and **no address from it**: `xffCount`, the number of entries (`0` when the header is absent), and `xffSocketIsLast`, whether the socket peer *also* appears as the chain's final entry. Both are computed in `LoggingInterceptor` (`apps/api/src/interface/interceptors/logging.interceptor.ts`); the addresses are compared in process and discarded.
 
@@ -98,7 +98,7 @@ They are emitted from `AllExceptionsFilter` (`apps/api/src/interface/filters/all
 | `kind` | `auth_failure` (401), `authorization_denied` (403), or `rate_limit_rejected` (429). |
 | `statusCode` | The HTTP status that produced the record. |
 | `method` | Request method. |
-| `path` | Request path **without the query string** — a query is free text on a public surface and routinely carries tokens. |
+| `path` | Request path **without the query string** — a query is free text on a public surface and routinely carries tokens. Enforced by `pathOnly`; there is deliberately **no allowlist**, because a per-parameter exception list logs each newly added parameter by default until someone notices it should not be. |
 | `requestId` | Ties the record to the request-tracing ID above. |
 | `userId` | Raw user id, when the request resolved one. Raw per the internal-log rule above. |
 | `chapterId` | Raw chapter id, when one was in context. |
