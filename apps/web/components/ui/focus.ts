@@ -22,8 +22,10 @@
  * `TabsTrigger` the bottom border IS the selected indicator — so swapping it on
  * focus either loses the state or, worse, paints the exact visual that means
  * "selected", leaving a keyboard user unable to tell focus from selection.
- * Those controls take `FOCUS_RING_OFFSET`, which puts the same accent solid in
- * an offset ring *around* the control and leaves its border alone.
+ * Those controls take `FOCUS_RING_OFFSET`, which puts the accent ring step in
+ * an offset ring *around* the control and leaves its border alone. It uses
+ * `--ring` at full opacity rather than `--primary`, because with no border to
+ * swap the ring has to clear the 3:1 floor by itself — see that constant.
  *
  * `focus-visible` rather than `focus`: a pointer click on a button should not
  * leave a ring behind it. Controls that are focusable but not clickable — the
@@ -46,11 +48,40 @@ export const FOCUS_RING =
 
 /**
  * For controls whose own border encodes state — `Switch` (on/off) and
- * `TabsTrigger` (selected). Same accent solid, moved off the control so it
- * cannot be confused with, or overridden by, the state border.
+ * `TabsTrigger` (selected). The accent moves off the control so it cannot be
+ * confused with, or overridden by, the state border.
+ *
+ * ## Here the ring IS the indicator, which is why the token differs
+ *
+ * `FOCUS_RING` can afford a diluted `ring-ring/25` because its solid border
+ * carries the signal. This recipe has no border to swap — that is the whole
+ * reason a control lands on it — so the ring is the entire indicator and must
+ * clear README §6's 3:1 non-text floor on its own.
+ *
+ * It draws in `--ring` (accent-8), **not** `--primary` (accent-9). Measured
+ * against `--background` across all 19 seeded chapter accents
+ * (`components/ui/focus-contrast.test.ts`): `--primary` fails on five of them
+ * — `#800000` at 1.77:1, `#8B0000` 1.94, `#1F4E79` 2.24, `#006400` 2.61,
+ * `#8B4513` 2.74 — while `--ring` clears the floor on all nineteen. On those
+ * five chapters the accent-9 ring meant a keyboard user got no conforming
+ * focus indicator at all.
+ *
+ * The margin is real but thin: `--ring`'s worst seed is `#4B0082` at 3.05:1
+ * against a 3.0 floor. The guard pins it, so a palette change that erodes it
+ * fails the suite rather than shipping.
+ *
+ * ## `ring-offset-background` is load-bearing — do not "simplify" it away
+ *
+ * The offset band is what makes the comparison above the right one. The ring's
+ * inner edge abuts that 2px band of `--background`; its outer edge abuts
+ * whatever surface the control sits on, and against the deeper ladder steps
+ * `--ring` does *not* clear 3:1 (worst seed: 2.86 on `--surface1`, 2.69 on
+ * `--card`, 2.48 on `--popover`). Dropping the offset would leave the ring
+ * depending on its host surface and reintroduce the failure this recipe was
+ * fixed to remove.
  */
 export const FOCUS_RING_OFFSET =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
 
 export const FOCUS_RING_ALWAYS =
   "focus:outline-none focus:border-primary focus:ring-[3px] focus:ring-ring/25"

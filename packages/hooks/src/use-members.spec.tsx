@@ -248,6 +248,46 @@ describe("useChapterRoster / useMemberDisplayNames", () => {
     expect(mockGet).not.toHaveBeenCalled();
   });
 
+  it("stays pending, never settling, while there is no active chapter", async () => {
+    // The read is `enabled: !!chapterId`, so a disabled query sits at
+    // `status: "pending"` indefinitely. Surfaces must degrade to a fallback
+    // label rather than block on this, or a chapterless visitor sees a spinner
+    // that never resolves — pinned here because it is a framework behaviour a
+    // consumer's own mock would otherwise be free to contradict.
+    const mockGet = vi.fn().mockResolvedValue({ data: [], error: null });
+    mockUseActiveChapterId.mockReturnValue(null);
+    mockUseFrappClient.mockReturnValue({
+      GET: mockGet,
+    } as unknown as ReturnType<typeof useFrappClient>);
+
+    const { result } = renderHook(() => useMemberDisplayNames(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => expect(result.current.nameFor("user-1")).toBeNull());
+
+    expect(result.current.isPending).toBe(true);
+    expect(mockGet).not.toHaveBeenCalled();
+  });
+
+  it("re-runs the roster read through refetch", async () => {
+    const mockGet = vi.fn().mockResolvedValue({ data: roster, error: null });
+    mockUseFrappClient.mockReturnValue({
+      GET: mockGet,
+    } as unknown as ReturnType<typeof useFrappClient>);
+
+    const { result } = renderHook(() => useMemberDisplayNames(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => expect(result.current.isPending).toBe(false));
+    expect(mockGet).toHaveBeenCalledTimes(1);
+
+    result.current.refetch();
+
+    await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(2));
+  });
+
   it("resolves ids to names and treats an empty name as unresolved", async () => {
     const mockGet = vi.fn().mockResolvedValue({ data: roster, error: null });
     mockUseFrappClient.mockReturnValue({

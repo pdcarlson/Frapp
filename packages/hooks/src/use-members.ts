@@ -52,8 +52,16 @@ export interface MemberDisplayNames {
   byId: DisplayNameMap;
   /** Single-id resolver; `null` when unresolved so the caller picks its copy. */
   nameFor: (userId: string) => string | null;
+  /**
+   * True until the first roster read settles — and, because the read is
+   * `enabled: !!chapterId`, true forever while there is no active chapter. A
+   * surface that blocks rendering on this never renders for a chapterless
+   * visitor; prefer degrading to {@link memberFallbackLabel} over waiting.
+   */
   isPending: boolean;
   isError: boolean;
+  /** Re-runs the roster read, so a caller's retry control can recover names. */
+  refetch: () => void;
 }
 
 /**
@@ -83,11 +91,21 @@ export function useMemberDisplayNames(): MemberDisplayNames {
     [byId],
   );
 
+  // Keyed on `query.refetch`, which TanStack keeps stable, rather than on
+  // `query` — the observer hands back a fresh result object every render, so
+  // depending on it would make this callback a new identity each time and defeat
+  // memoization in any consumer that lists it as a dependency.
+  const { refetch: runRefetch } = query;
+  const refetch = useCallback(() => {
+    void runRefetch();
+  }, [runRefetch]);
+
   return {
     byId,
     nameFor,
     isPending: query.isPending,
     isError: query.isError,
+    refetch,
   };
 }
 
