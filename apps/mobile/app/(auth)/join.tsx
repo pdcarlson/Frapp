@@ -11,7 +11,6 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useQueryClient } from "@tanstack/react-query";
 import { useRedeemInvite } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { useAuthSession } from "@/lib/auth-session";
@@ -40,7 +39,6 @@ export default function JoinChapter() {
   const styles = createStyles(tokens);
   const router = useRouter();
   const { status, signOut } = useAuthSession();
-  const queryClient = useQueryClient();
   const redeemInvite = useRedeemInvite();
   const selectChapter = useSelectChapter();
   const params = useLocalSearchParams<{ token?: string; invite?: string }>();
@@ -72,7 +70,8 @@ export default function JoinChapter() {
 
   async function handleSignOut() {
     await signOut();
-    queryClient.clear();
+    // `signOut` drops the query cache itself (`lib/auth-session.tsx`), so every
+    // sign-out path gets it without each screen remembering to.
     router.replace("/(auth)/sign-in");
   }
 

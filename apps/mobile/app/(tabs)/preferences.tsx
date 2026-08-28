@@ -9,7 +9,6 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import {
@@ -261,7 +260,6 @@ export default function PreferencesScreen() {
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
   const { signOut } = useAuthSession();
-  const queryClient = useQueryClient();
   const [linkFailed, setLinkFailed] = useState<string | null>(null);
   const deleteAccount = useDeleteAccount();
 
@@ -381,14 +379,8 @@ export default function PreferencesScreen() {
 
   async function handleSignOut() {
     await signOut();
-    // Drop every cached query on the way out. Mobile's `QueryClient` is a
-    // module singleton and `signOut` clears only SecureStore and React state,
-    // so without this the next member to sign in on the same device is served
-    // the previous one's rows until each entry goes stale — and several keys
-    // are not account-scoped at all (`["settings"]`, `["user","me"]`). Web's
-    // provider already does this on chapter switch
-    // (`spec/behavior/multi-tenancy.md`); the same argument applies to accounts.
-    queryClient.clear();
+    // `signOut` drops the query cache itself (`lib/auth-session.tsx`), so every
+    // sign-out path gets it without each screen remembering to.
     router.replace("/(auth)/sign-in");
   }
 

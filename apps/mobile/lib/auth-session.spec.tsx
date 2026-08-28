@@ -5,7 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 type AuthChangeHandler = (
   event: string,
-  session: { access_token: string; user: { email: string; id?: string } } | null,
+  session: {
+    access_token: string;
+    user: { email: string; id?: string };
+  } | null,
 ) => void;
 
 const mockState = vi.hoisted(() => ({
@@ -126,13 +129,24 @@ import { AuthSessionProvider, useAuthSession } from "./auth-session";
 import { AUTH_TOKEN_STORAGE_KEY } from "./auth-token";
 import { useIsApiAuthenticated } from "./use-is-api-authenticated";
 import { sessionStorageAdapter, getSupabaseClient } from "./supabase";
+import { queryClient } from "./query-client";
+
+/**
+ * A cache entry whose key carries no account scope — `["settings"]` and
+ * `["user","me"]` are the real ones. These are the entries that would otherwise
+ * survive into the next member's session on a shared device.
+ */
+const ACCOUNT_AGNOSTIC_KEY = ["settings"];
 
 function wrapper({ children }: { children: React.ReactNode }) {
   return <AuthSessionProvider>{children}</AuthSessionProvider>;
 }
 
 function emitAuthChange(
-  session: { access_token: string; user: { email: string; id?: string } } | null,
+  session: {
+    access_token: string;
+    user: { email: string; id?: string };
+  } | null,
 ) {
   for (const handler of [...mockState.authChangeHandlers]) {
     handler(session ? "SIGNED_IN" : "SIGNED_OUT", session);
@@ -274,6 +288,7 @@ beforeEach(async () => {
   mockState.signOutCalls = 0;
   mockState.configured = true;
   mockState.deepLinkUrl = null;
+  queryClient.clear();
 });
 
 afterEach(() => {
@@ -332,6 +347,8 @@ describe("AuthSessionProvider — token persistence", () => {
       ),
     );
 
+    queryClient.setQueryData(ACCOUNT_AGNOSTIC_KEY, ["outgoing-member-row"]);
+
     await act(async () => {
       await result.current.signOut();
     });
@@ -342,6 +359,9 @@ describe("AuthSessionProvider — token persistence", () => {
     expect(mockState.signOutCalls).toBe(1);
     expect(result.current.status).toBe("unauthenticated");
     expect(result.current.chapterId).toBeNull();
+    // Owned here rather than in each screen: there are three sign-out paths and
+    // the picker's clear landed only after the leak was noticed a second time.
+    expect(queryClient.getQueryData(ACCOUNT_AGNOSTIC_KEY)).toBeUndefined();
   });
 
   it("signs out locally, without throwing, when the remote revoke fails", async () => {
@@ -353,6 +373,8 @@ describe("AuthSessionProvider — token persistence", () => {
         "access-token-1",
       ),
     );
+
+    queryClient.setQueryData(ACCOUNT_AGNOSTIC_KEY, ["outgoing-member-row"]);
 
     const { getSupabaseClient } = await import("./supabase");
     const client = vi.mocked(getSupabaseClient)();
@@ -373,6 +395,9 @@ describe("AuthSessionProvider — token persistence", () => {
       expect(mockState.secureStore.has(AUTH_TOKEN_STORAGE_KEY)).toBe(false),
     );
     expect(result.current.status).toBe("unauthenticated");
+    // The cache drop is on the same always-run path as the token clear, so a
+    // failed remote revoke must not leave the previous member's rows behind.
+    expect(queryClient.getQueryData(ACCOUNT_AGNOSTIC_KEY)).toBeUndefined();
   });
 });
 
@@ -501,7 +526,10 @@ describe("AuthSessionProvider — chapter context", () => {
   });
 
   it("drops the chapter when a different account signs in", async () => {
-    mockState.initialSession = { ...SESSION, user: { ...SESSION.user, id: "user-1" } };
+    mockState.initialSession = {
+      ...SESSION,
+      user: { ...SESSION.user, id: "user-1" },
+    };
     mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-1" };
 
     const { result } = renderHook(() => useAuthSession(), { wrapper });
