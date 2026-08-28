@@ -45,9 +45,8 @@ const rosterRefetch = vi.fn();
 const rosterState: {
   names: Record<string, string | null>;
   isPending: boolean;
-  isLoading: boolean;
   isError: boolean;
-} = { names: {}, isPending: false, isLoading: false, isError: false };
+} = { names: {}, isPending: false, isError: false };
 
 vi.mock("@repo/hooks", () => ({
   // Paid-ops writes on this surface now read the chapter subscription (#841);
@@ -60,6 +59,11 @@ vi.mock("@repo/hooks", () => ({
   }),
   useLeaderboard: () => leaderboardQuery,
   useMyPoints: () => summaryQuery,
+  // Mirrors the real pure helper (`packages/hooks/src/display-names.ts`), which
+  // has its own unit test; this module is mocked wholesale, so it cannot be
+  // imported through. Kept in step by `display-names.spec.ts` asserting the
+  // exact same string shape.
+  memberFallbackLabel: (userId: string) => `Member ${userId.slice(0, 6)}`,
   useMemberDisplayNames: () => ({
     byId: rosterState.names,
     // Mirrors `resolveDisplayName` rather than `?? null`: `display_name` is
@@ -72,7 +76,6 @@ vi.mock("@repo/hooks", () => ({
       return trimmed.length > 0 ? trimmed : null;
     },
     isPending: rosterState.isPending,
-    isLoading: rosterState.isLoading,
     isError: rosterState.isError,
     refetch: rosterRefetch,
   }),
@@ -126,7 +129,6 @@ function setQueries(overrides: {
   Object.assign(rosterState, {
     names: {},
     isPending: false,
-    isLoading: false,
     isError: false,
     ...overrides.roster,
   });
@@ -295,9 +297,8 @@ describe("PointsPage leaderboard naming (#1197)", () => {
 
   it("degrades an unresolvable member to the app's shared Member label", () => {
     // They are off the roster but keep their points, so the row must still
-    // render — and it renders the same `Member <6 hex>` label `resolveAuthorLabel`,
-    // the task board and the member directory use, so one departed member reads
-    // identically wherever they appear.
+    // render — via the shared `memberFallbackLabel`, the same spelling chat uses
+    // through `resolveAuthorLabel`.
     withLeaderboard(BOARD, { [ALICE]: "Alice Chen" });
 
     render(<PointsPage />);
@@ -353,6 +354,21 @@ describe("PointsPage leaderboard naming (#1197)", () => {
     expect(screen.queryByRole("cell", { name: "#1" })).not.toBeInTheDocument();
   });
 
+  it("does not let a short name query match hex inside the hidden ids", () => {
+    // The id is no longer rendered, so matching it on any input means matching
+    // invisible text — "a" appears in roughly 87% of uuids, which would leave
+    // the first keystroke of a name search showing nearly the whole board.
+    withLeaderboard(BOARD, NAMED);
+
+    render(<PointsPage />);
+    fireEvent.change(search(), { target: { value: "f1" } });
+
+    // Present in Alice's uuid (`8f14…`, `9f1c`), absent from every name. Under
+    // the old unguarded id match this returned her row with nothing on screen
+    // containing "f1".
+    expect(screen.getByText("No members match that search")).toBeInTheDocument();
+  });
+
   it("still finds a named member by a pasted user id", () => {
     // Officers paste ids out of audit rows and support tickets, and that was the
     // only thing this box matched before names existed.
@@ -386,42 +402,32 @@ describe("PointsPage leaderboard naming (#1197)", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("waits for names inside the leaderboard card without withholding the page", () => {
-    // The roster feeds one column. Gating the whole page on it would hold the
-    // balance, the ledger and the adjust control hostage to a third query — and
-    // with retry backoff, for seconds before painting the ids it was avoiding.
+  it("renders rows while the roster is still pending, rather than withholding them", () => {
+    // The roster feeds one column and stays pending across its whole retry
+    // sequence, so waiting on it would hide totals that are already in memory
+    // and then show these very labels anyway. It also never settles at all
+    // without an active chapter, which is how the sessionless floor harness
+    // renders this route.
     setQueries({
       leaderboard: { data: BOARD },
       summary: { data: { balance: 42, transactions: [] } },
-      roster: { isPending: true, isLoading: true },
+      roster: { isPending: true },
     });
 
     render(<PointsPage />);
 
-    expect(screen.getByText("Loading member names...")).toBeInTheDocument();
     expect(screen.queryByText("Loading points ledger...")).not.toBeInTheDocument();
+    expect(userCell("Member 8f14e4")).toBeInTheDocument();
     expect(screen.getByText("42 points")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Adjust points/ })).toBeEnabled();
-    expect(screen.queryByText(ALICE)).not.toBeInTheDocument();
   });
 
-  it("renders the board with no active chapter, where the roster query is disabled", () => {
-    // A disabled query is `isPending` but not `isLoading`. Gating on the former
-    // would pin this route to a loading state whenever there is no chapter,
-    // which is the state the sessionless 375px floor harness renders it in.
-    setQueries({ leaderboard: { data: [] }, roster: { isPending: true } });
-
-    render(<PointsPage />);
-
-    expect(screen.queryByText("Loading points ledger...")).not.toBeInTheDocument();
-    expect(screen.queryByText("Loading member names...")).not.toBeInTheDocument();
-    expect(screen.getByText("No leaderboard entries")).toBeInTheDocument();
-  });
-
-  it("keeps the board usable when the roster fails, degrading names to labels", () => {
-    // Deliberately not an error card: the totals came from the leaderboard read
-    // and are still accurate, so replacing a working board would be worse.
-    // Surfacing the degradation to the member is #1209's job, not this page's.
+  it("raises no error card of its own when only the roster fails", () => {
+    // The page never reads the roster's `isError`, and that is the point: the
+    // totals came from the leaderboard read and are still accurate, so replacing
+    // a working board would be worse. This pins that decision — it is not a test
+    // of failure *handling*, because there is deliberately none here. Giving the
+    // degradation a visible signal is #1209's.
     setQueries({
       leaderboard: { data: [{ user_id: ALICE, total: 42 }] },
       roster: { isError: true },

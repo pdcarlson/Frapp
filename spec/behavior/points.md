@@ -40,14 +40,17 @@ When a user checks into an event:
 - Chapter-scoped. Shows rank, member name, and total points.
 - **Names are resolved client-side against the chapter roster**, not joined onto
   the leaderboard response: `GET /v1/points/leaderboard` aggregates
-  `point_transactions` and returns `{ user_id, total }` only. Surfaces read
-  `GET /v1/members/roster` (id, display name and avatar — never the full member
-  profile) and resolve each row at render.
+  `point_transactions` and returns `{ user_id, total }` only. The web dashboard
+  resolves each row at render from the display roster, whose payload is owned by
+  [`chat/README.md`](chat/README.md) — deliberately not the full member profile.
 - A row whose `user_id` does not resolve renders the shared `Member <first six
-  hex>` label rather than a bare uuid or a blank cell. Two cases reach it: a
-  member who has left the chapter (see *Edge Cases*), and one who has never set
-  a display name — `users.display_name` is `NOT NULL DEFAULT ''`, so an empty
-  string means "no name set" and counts as unresolved.
+  hex>` label (`memberFallbackLabel`, `packages/hooks/src/display-names.ts`)
+  rather than a bare uuid or a blank cell. Two cases reach it: a member who has
+  left the chapter (see *Edge Cases*), and one who has never set a display name
+  — `users.display_name` is `NOT NULL DEFAULT ''`, so an empty string means "no
+  name set" and counts as unresolved.
+- The **audit list** is the exception and keeps the full `user_id` on an
+  unresolved row: it is a record officers read ids out of, not a name slot.
 - Rank is the member's position on the **whole** board for the selected window.
   Filtering the view — by name or by pasted user id — never renumbers it.
 - Configurable time window: all-time, this semester, this month.

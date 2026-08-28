@@ -3,7 +3,11 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { FlaggedGlyph } from "@/components/points/points-glyphs";
-import { useChapterRoster, useMemberDisplayNames, usePointsTransactions } from "@repo/hooks";
+import {
+  memberFallbackLabel,
+  useMemberDisplayNames,
+  usePointsTransactions,
+} from "@repo/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -55,15 +59,17 @@ export function PointsAuditCard() {
   // name per filter option, and `GET /v1/members` would put every member's
   // email, bio, graduation year, city and company on the wire for anyone who
   // opens /points — this card renders above its own `points:view_all` gate, so
-  // that fetch was unconditional (#1000, #986). Both hooks read the same cache
-  // key, so the card and the leaderboard share one request.
-  const rosterQuery = useChapterRoster();
-  const members = useMemo(() => rosterQuery.data ?? [], [rosterQuery.data]);
-  // `nameFor` rather than a local map with a `?? "Unnamed member"` default:
+  // that fetch was unconditional (#1000, #986). The leaderboard on this page
+  // reads the same hook and the same cache key, so /points issues one request
+  // for both rather than the two it used to.
+  //
+  // `nameFor` also replaces a local map with a `?? "Unnamed member"` default:
   // `display_name` is `NOT NULL DEFAULT ''`, and `??` passes the empty string
-  // straight through, so a member who never set a name rendered a blank label
-  // here. `resolveDisplayName` treats '' as unresolved.
-  const { nameFor } = useMemberDisplayNames();
+  // straight through, so a member who never set a name rendered a blank label.
+  const { byId, nameFor } = useMemberDisplayNames();
+  // One subscription, not two: `useMemberDisplayNames` already reads the roster,
+  // and its map's keys are the same member ids the filter needs.
+  const memberIds = useMemo(() => Object.keys(byId), [byId]);
 
   const transactionsQuery = usePointsTransactions({
     userId: userFilter === "ALL" ? undefined : userFilter,
@@ -166,10 +172,9 @@ export function PointsAuditCard() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">All members</SelectItem>
-                {members.map((member) => (
-                  <SelectItem key={member.user_id} value={member.user_id}>
-                    {nameFor(member.user_id) ??
-                      `Member ${member.user_id.slice(0, 6)}`}
+                {memberIds.map((userId) => (
+                  <SelectItem key={userId} value={userId}>
+                    {nameFor(userId) ?? memberFallbackLabel(userId)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -207,9 +212,14 @@ export function PointsAuditCard() {
                 <ul className="divide-y divide-border">
                   {rows.map((row) => {
                     const flagged = row.metadata?.flagged === true;
+                    // The full id, not `memberFallbackLabel`, and deliberately
+                    // unlike the leaderboard: this is the audit record, where a
+                    // uuid is the operator's handle for a support ticket or a
+                    // direct lookup. It is the one surface on /points that still
+                    // shows one, which is what the leaderboard's pasted-id
+                    // search exists to receive.
                     const name = row.user_id
-                      ? nameFor(String(row.user_id)) ??
-                        `Member ${String(row.user_id).slice(0, 6)}`
+                      ? nameFor(String(row.user_id)) ?? String(row.user_id)
                       : "Unknown member";
                     const sign = (row.amount ?? 0) >= 0 ? "+" : "";
                     return (

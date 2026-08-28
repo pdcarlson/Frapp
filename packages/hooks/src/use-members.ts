@@ -52,18 +52,13 @@ export interface MemberDisplayNames {
   byId: DisplayNameMap;
   /** Single-id resolver; `null` when unresolved so the caller picks its copy. */
   nameFor: (userId: string) => string | null;
-  isPending: boolean;
   /**
-   * Pending *and* actually in flight — false while the query is disabled.
-   *
-   * Exposed alongside `isPending` because the two answer different questions and
-   * a caller that wants "should I wait for names?" almost always means this one.
-   * Every roster read is `enabled: !!chapterId`, and a disabled query sits at
-   * `status: "pending"` with `fetchStatus: "idle"` forever, so a screen that
-   * gates rendering on `isPending` never renders at all without an active
-   * chapter. `isLoading` is `isPending && isFetching`, so it reads false there.
+   * True until the first roster read settles — and, because the read is
+   * `enabled: !!chapterId`, true forever while there is no active chapter. A
+   * surface that blocks rendering on this never renders for a chapterless
+   * visitor; prefer degrading to {@link memberFallbackLabel} over waiting.
    */
-  isLoading: boolean;
+  isPending: boolean;
   isError: boolean;
   /** Re-runs the roster read, so a caller's retry control can recover names. */
   refetch: () => void;
@@ -109,7 +104,6 @@ export function useMemberDisplayNames(): MemberDisplayNames {
     byId,
     nameFor,
     isPending: query.isPending,
-    isLoading: query.isLoading,
     isError: query.isError,
     refetch,
   };

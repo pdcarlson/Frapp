@@ -2,14 +2,19 @@
 
 import { useMemo, useState } from "react";
 import { AdjustGlyph, SearchGlyph } from "@/components/points/points-glyphs";
-import { useLeaderboard, useMemberDisplayNames, useMyPoints } from "@repo/hooks";
+import {
+  memberFallbackLabel,
+  useLeaderboard,
+  useMemberDisplayNames,
+  useMyPoints,
+} from "@repo/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ErrorState, LoadingState, OfflineState } from "@/components/shared/async-states";
-import { NestedEmpty, NestedLoading } from "@/components/shared/nested-states";
+import { NestedEmpty } from "@/components/shared/nested-states";
 import { amountToneClassName } from "@/components/points/amount-tone";
 import {
   dashboardCheckboxCellClassName,
@@ -39,6 +44,12 @@ type LeaderboardRow = {
   user_id: string;
   total: number;
 };
+
+/**
+ * A search needle long enough, and narrow enough, to be a pasted user id rather
+ * than a name. Hex and dashes only, so it cannot fire on ordinary typing.
+ */
+const ID_SHAPED_QUERY = /^[0-9a-f-]{8,}$/;
 
 type PointTransactionRow = {
   id: string;
@@ -70,18 +81,15 @@ export default function PointsPage() {
   // profile route carries every member's email, bio, graduation year, city and
   // company — see the note on `useChapterRoster` in
   // `packages/hooks/src/use-members.ts` (#1000, #986).
-  const {
-    nameFor,
-    isLoading: isRosterLoading,
-    refetch: refetchRoster,
-  } = useMemberDisplayNames();
+  const { nameFor, refetch: refetchRoster } = useMemberDisplayNames();
 
-  // The roster is deliberately absent from both gates. It feeds one column, so
-  // letting it withhold the page would trade a brief unnamed render for holding
-  // the balance, the ledger, the audit card and the adjust control hostage to a
-  // third query — and with `retry: 3` and backoff, a roster that 5xxs would do
-  // that for seconds before painting the very ids it was waiting to avoid. The
-  // leaderboard card waits on its own; everything else renders as before.
+  // The roster gates nothing, at either scope. It feeds one column, and a query
+  // stays `isLoading` across its whole retry sequence — with `retry: 3` and
+  // 1s/2s/4s backoff, waiting on it would hide a board that is already in memory
+  // for the better part of ten seconds and then show the fallback labels anyway.
+  // Rows render as soon as their totals arrive and names land when they land;
+  // the unresolved label is a real, permanent state for departed members, so an
+  // unnamed row is never a broken-looking one.
   const isLoading = leaderboardQuery.isLoading || summaryQuery.isLoading;
   const hasError = leaderboardQuery.isError || summaryQuery.isError;
 
@@ -112,15 +120,18 @@ export default function PointsPage() {
       // `NOT NULL DEFAULT ''`, so `resolveDisplayName` treats '' as unresolved
       // rather than rendering a blank cell. Someone who has left the chapter is
       // off the roster but keeps their points (`spec/behavior/points.md`), so an
-      // unresolved row is expected rather than a fault. It degrades to the same
-      // `Member <6 hex>` label the rest of the app uses — `resolveAuthorLabel`
-      // in `@repo/hooks`, the task board, and the member directory — so one
-      // departed member reads identically wherever they appear.
+      // unresolved row is a permanent state for them rather than a fault.
+      //
+      // `memberFallbackLabel` is the shared spelling, which chat already uses
+      // via `resolveAuthorLabel`. The task board hand-rolls the identical six
+      // characters and the member directory hand-rolls *eight* — that
+      // divergence is why this now lives in one place (#1197 follow-up tracks
+      // migrating those two).
       const name = nameFor(entry.user_id);
       return {
         ...entry,
         rank,
-        label: name ?? `Member ${entry.user_id.slice(0, 6)}`,
+        label: name ?? memberFallbackLabel(entry.user_id),
       };
     });
     // `nameFor` and not the whole hook result: `useMemberDisplayNames` returns a
@@ -131,14 +142,18 @@ export default function PointsPage() {
   const filteredLeaderboard = useMemo(() => {
     const query = leaderboardSearch.trim().toLowerCase();
     if (!query) return leaderboardRows;
-    // The id stays a needle alongside the name. Officers paste user ids out of
+    // The id stays a needle alongside the name — officers paste user ids out of
     // audit rows and support tickets, and that was the only thing this box
-    // matched before names existed — narrowing it to the label would have
-    // quietly removed the affordance for exactly the rows that now resolve.
+    // matched before names existed. But only for a query that looks like one:
+    // the id is no longer rendered, so matching it on any input means matching
+    // invisible text. A uuid is 32 hex characters, so "a" occurs in ~87% of
+    // them and the first keystroke of a name search would leave the whole board
+    // standing with nothing on screen explaining why.
+    const byId = ID_SHAPED_QUERY.test(query);
     return leaderboardRows.filter(
       (entry) =>
         entry.label.toLowerCase().includes(query) ||
-        entry.user_id.toLowerCase().includes(query),
+        (byId && entry.user_id.toLowerCase().includes(query)),
     );
   }, [leaderboardRows, leaderboardSearch]);
   const filteredTransactions = useMemo(() => {
@@ -210,8 +225,12 @@ export default function PointsPage() {
         onRetry={() => {
           void leaderboardQuery.refetch();
           void summaryQuery.refetch();
-          // The roster has no error card of its own by design, so these two
-          // controls are the only recovery path for names on this page.
+          // Names are refreshed alongside the reads that raised this card, so a
+          // retry that fixes the board fixes the labels too. Not the only path
+          // and not a complete one: a roster that fails while the points reads
+          // succeed renders no card at all, and recovers on window focus or
+          // reconnect (`query-provider.tsx`) rather than from any control here.
+          // Giving that case a visible signal is #1209's.
           refetchRoster();
         }}
       />
@@ -236,8 +255,12 @@ export default function PointsPage() {
         onRetry={() => {
           void leaderboardQuery.refetch();
           void summaryQuery.refetch();
-          // The roster has no error card of its own by design, so these two
-          // controls are the only recovery path for names on this page.
+          // Names are refreshed alongside the reads that raised this card, so a
+          // retry that fixes the board fixes the labels too. Not the only path
+          // and not a complete one: a roster that fails while the points reads
+          // succeed renders no card at all, and recovers on window focus or
+          // reconnect (`query-provider.tsx`) rather than from any control here.
+          // Giving that case a visible signal is #1209's.
           refetchRoster();
         }}
       />
@@ -320,11 +343,7 @@ export default function PointsPage() {
                 className="h-11 pl-9"
               />
             </div>
-            {isRosterLoading ? (
-              // Scoped to this card on purpose: only the User column needs the
-              // roster, so the rest of the page stays live while it lands.
-              <NestedLoading message="Loading member names..." />
-            ) : filteredLeaderboard.length === 0 ? (
+            {filteredLeaderboard.length === 0 ? (
               // A search that matches nothing is not an empty board — saying
               // "point activity will populate after..." there would assert
               // something false about the chapter's data.
