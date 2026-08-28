@@ -180,18 +180,12 @@ function ModuleRow({
               the ring *is* the whole indicator. `FOCUS_RING_OFFSET` is the
               system's recipe for exactly that shape.
 
-              **It improves this control without fixing it, and the residual is
-              not this call site's to fix.** Measured across the 19 seeds: the
-              old bare ring sat straight on `--card` and missed §6's 3:1
-              non-text floor on 8 of them; the offset ring abuts `--background`
-              instead and misses on 5. Better, and still not clean — because
-              `FOCUS_RING_OFFSET` draws in `--primary` (accent-9), and against
-              `--background` that fails for `#006400`, `#1F4E79`, `#800000`,
-              `#8B0000` and `#8B4513`. `--ring` (accent-8) fails 0 of 19 on the
-              same surface, so the primitive has a one-token answer — but it is
-              a `components/ui/**` primitive with consumers across three
-              slices, which is #1211's situation exactly, so it is filed as
-              #1215 rather than changed under a family repaint.
+              This call site used to carry the residual: the offset ring cut §6
+              3:1 failures from 8 seeds to 5, but not to 0, because the recipe
+              drew in `--primary` (accent-9). #1215 fixed that in the primitive
+              — it now draws in `--ring` (accent-8), which clears all 19 — so
+              there is no residual left here. See `components/ui/focus.ts` and
+              its `focus-contrast.test.ts` guard.
             */
             className={cn(
               "mt-0.5 rounded-xs text-muted-foreground transition-colors hover:text-foreground",
