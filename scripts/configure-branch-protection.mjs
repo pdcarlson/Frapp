@@ -176,6 +176,29 @@ const DRIFT_CHECKS = [
   // migration-drift job exists on the target branch and has run green,
   // otherwise every PR blocks on a missing required check.
   "migration-drift",
+  // Do the migrations a PR adds actually APPLY to the database they are heading
+  // for? Rebuilds production's currently-applied state on a disposable Supabase
+  // stack and runs the pending set against it, through the same CLI path
+  // `run-migration.mjs` uses for real. Read-only against production (one GET to
+  // the Management API); every apply lands on the throwaway stack.
+  //
+  // The gap it closes: `pglite-migrations` applies the corpus from ZERO, which
+  // is a different question from applying the tail to a database that is
+  // already at some version, and `migration-safety` / `migration-lock-safety`
+  // read the SQL without running it. Until this job existed, the first real
+  // execution of an incremental production apply was the production apply.
+  //
+  // Required rather than advisory for the same reason `migration-drift` is: a
+  // migration that cannot apply is not a style opinion, and the failure it
+  // prevents is one that is discovered mid-deploy with a half-migrated
+  // database. Unlike `migration-drift` it CANNOT block a PR over unrelated
+  // state — it does real work only when the PR touches
+  // `supabase/migrations/**`, and passes in seconds otherwise.
+  //
+  // ROLLOUT: same caveat as secret-scan — required only once the
+  // migration-replay job exists on the target branch and has run green,
+  // otherwise every PR blocks on a missing required check.
+  "migration-replay",
 ];
 
 const ALL_REQUIRED_CHECKS = [...CI_CHECKS, ...DOCS_CHECKS, ...DRIFT_CHECKS];

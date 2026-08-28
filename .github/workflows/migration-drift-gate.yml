@@ -46,8 +46,12 @@ permissions:
   contents: read
 
 concurrency:
-  # Per-ref, and cancellable: this check is a read-only assertion, so a
-  # superseded run has no cleanup to do and no reason to finish.
+  # Per-ref, and cancellable. Neither job here can leave anything half-done
+  # outside its own runner: `migration-drift` is a read-only assertion, and
+  # `migration-replay` writes only to the disposable Supabase stack it started
+  # on that runner, which is thrown away with it. Nothing in this workflow ever
+  # sends SQL to a deployed database, so a superseded run has no cleanup to do
+  # and no reason to finish.
   group: migration-drift-gate-${{ github.ref }}
   cancel-in-progress: true
 
@@ -114,3 +118,148 @@ jobs:
             exit 1
           fi
           node scripts/ci/check-migration-drift-gate.mjs
+
+  # ── Production migration replay ─────────────────────────────────────────
+  # REQUIRED check: do the migrations this PR adds actually apply to the
+  # database they are about to be applied to?
+  #
+  # Nothing else in this repo asks that. `pglite-migrations` (ci.yml) applies
+  # every migration to an EMPTY database, which proves the corpus is
+  # self-consistent from zero and cannot prove an INCREMENTAL apply works —
+  # production is not an empty database, and `supabase db push` only ever runs
+  # the tail. `migration-safety` and `migration-lock-safety` read the SQL
+  # without executing it. So the apply against production's real state has
+  # never been rehearsed anywhere before it happened for real.
+  #
+  # This job rebuilds production's currently-applied state on a disposable local
+  # Supabase stack, then applies exactly the pending set through the same CLI
+  # path `run-migration.mjs` uses against the real project. Read-only against
+  # production: one GET to the Management API's migration-history endpoint, no
+  # SQL, ever. Semantics live in scripts/ci/check-migration-replay.mjs; unit
+  # tests in scripts/ci/__tests__/ (`npm run test:ci-scripts`).
+  #
+  # ── Why the migrations filter is a STEP and not a `paths:` ──────────────
+  # Same trap the header of this file documents: a required check on a workflow
+  # skipped by a workflow-level `paths:` filter never reports and sits Pending
+  # forever. So the job always runs and decides for itself whether this change
+  # touches `supabase/migrations/**`; a PR that does not touch them passes in
+  # seconds without starting Docker.
+  migration-replay:
+    runs-on: ubuntu-latest
+    # Fork PRs receive no secrets — same guard, same reason, as migration-drift
+    # above. A job-level `if:` reports Success when skipped, which satisfies the
+    # required check instead of deadlocking the PR.
+    if: |
+      github.event_name == 'push' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Does this change touch migrations?
+        id: touched
+        env:
+          # Every ref reaches the shell through the environment rather than
+          # through `${{ }}` interpolation into the script body. These are all
+          # GitHub-supplied SHAs today, so this is consistency and habit rather
+          # than a live injection hole — but the habit is the point.
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # The changed-file list goes to a FILE and grep reads the file. Never
+          # `echo "$LIST" | grep -q`: `grep -q` exits at its first match, killing
+          # `echo` with EPIPE, and `pipefail` turns that successful match into a
+          # failed pipeline — the false-green that hid a skipped production
+          # deploy in #1330 (fixed for deploy-api.yml in #1331).
+          CHANGED="${RUNNER_TEMP:-/tmp}/replay-changed-paths.txt"
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            RANGE="$BASE_SHA...$HEAD_SHA"
+          else
+            RANGE="$BEFORE_SHA..$HEAD_SHA"
+          fi
+
+          if git diff --name-only "$RANGE" > "$CHANGED" 2>/dev/null; then
+            DIFF_OK=1
+          else
+            DIFF_OK=0
+            : > "$CHANGED"
+            echo "::warning::Could not diff $RANGE. Replaying anyway rather than skipping the gate."
+          fi
+
+          if [ "$DIFF_OK" -eq 0 ] || grep -qE '^supabase/migrations/' "$CHANGED"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Migrations touched (or the diff was unreadable) — running the replay."
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "No files under supabase/migrations/ changed — nothing to replay."
+          fi
+
+      - name: Setup Node
+        if: steps.touched.outputs.run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Verify Infisical credentials are configured
+        if: steps.touched.outputs.run == 'true'
+        env:
+          CLIENT_ID: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+        run: |
+          MISSING=""
+          [ -n "$CLIENT_ID" ] || MISSING="$MISSING INFISICAL_MACHINE_IDENTITY_ID"
+          [ -n "$CLIENT_SECRET" ] || MISSING="$MISSING INFISICAL_CLIENT_SECRET"
+          if [ -n "$MISSING" ]; then
+            echo "::error::Infisical credentials are not configured. Missing or empty:$MISSING. See docs/internal/environment/SECRETS_MANAGEMENT.md."
+            exit 1
+          fi
+
+      # The `prod` slug, not `staging`: this gate is about the database the
+      # migrations are heading for. NOTE the slug for production is `prod`.
+      - name: Inject production secrets from Infisical
+        if: steps.touched.outputs.run == 'true'
+        uses: Infisical/secrets-action@v1.0.12
+        with:
+          method: "universal"
+          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: "frapp-live-ej-ls"
+          env-slug: "prod"
+          secret-path: "/"
+          include-imports: true
+
+      - name: Setup Supabase CLI
+        if: steps.touched.outputs.run == 'true'
+        uses: supabase/setup-cli@v2
+        with:
+          version: 2.77.0
+
+      # Only what the migrations need a real server for. Studio, imgproxy, the
+      # edge runtime, the log pipeline and the pooler contribute nothing to an
+      # apply and cost image pulls on every run.
+      - name: Start disposable Supabase stack
+        if: steps.touched.outputs.run == 'true'
+        run: supabase start -x studio,imgproxy,edge-runtime,logflare,vector,pooler,mailpit
+
+      - name: Replay pending migrations against production's applied state
+        if: steps.touched.outputs.run == 'true'
+        env:
+          # SUPABASE_ACCESS_TOKEN and SUPABASE_PROJECT_REF are both injected
+          # above; the ref is production's because the slug was `prod`.
+          REPLAY_SUPABASE_CLI: supabase
+        run: |
+          if [ -z "$SUPABASE_PROJECT_REF" ]; then
+            echo "::error::SUPABASE_PROJECT_REF is not set in the Infisical 'prod' environment. See docs/internal/environment/SECRETS_MANAGEMENT.md."
+            exit 1
+          fi
+          node scripts/ci/check-migration-replay.mjs
+
+      - name: No migrations touched
+        if: steps.touched.outputs.run != 'true'
+        run: echo "No files under supabase/migrations/ changed — replay not needed."
