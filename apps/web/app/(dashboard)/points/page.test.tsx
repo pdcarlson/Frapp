@@ -374,6 +374,22 @@ describe("PointsPage leaderboard naming (#1197)", () => {
     expect(screen.queryByText(ALICE)).not.toBeInTheDocument();
   });
 
+  it("still renders content with no active chapter, where the roster query never resolves", () => {
+    // All three reads are `enabled: !!chapterId`. The points hooks expose
+    // `isLoading` (false for a disabled query) but the roster exposes
+    // `isPending` (true for one), so gating on it unconditionally would pin this
+    // page to its loading state with no chapter. `/points` is the one route
+    // whose real content the sessionless 375px floor harness measures
+    // (`tests/visual/responsive-floor.spec.ts`), so that would silently hollow
+    // out the gate rather than fail it.
+    setQueries({ leaderboard: { data: [] }, roster: { isPending: true } });
+
+    render(<PointsPage />);
+
+    expect(screen.queryByText("Loading points ledger...")).not.toBeInTheDocument();
+    expect(screen.getByText("No leaderboard entries")).toBeInTheDocument();
+  });
+
   it("keeps the board usable when the roster fails, degrading names to ids", () => {
     // Deliberately NOT an error card: the totals came from the leaderboard read
     // and are still accurate, so replacing a working board would be worse.

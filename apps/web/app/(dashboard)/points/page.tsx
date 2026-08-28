@@ -72,13 +72,6 @@ export default function PointsPage() {
   // `useChapterRoster` in `packages/hooks/src/use-members.ts` (#1000, #986).
   const { nameFor, isPending: isRosterPending } = useMemberDisplayNames();
 
-  // The roster joins the loading gate so ranks do not render as UUIDs for a
-  // frame and then re-label. It deliberately does NOT join `hasError`: a failed
-  // roster degrades names to ids, and the board is still accurate and usable, so
-  // replacing it with an error card would be the worse outcome (#1209 owns
-  // surfacing that degradation, and names /points as a call site).
-  const isLoading =
-    leaderboardQuery.isLoading || summaryQuery.isLoading || isRosterPending;
   const hasError = leaderboardQuery.isError || summaryQuery.isError;
 
   const leaderboard = useMemo(() => {
@@ -86,6 +79,29 @@ export default function PointsPage() {
       ? (leaderboardQuery.data as LeaderboardRow[])
       : [];
   }, [leaderboardQuery.data]);
+
+  // The roster joins the loading gate so ranks do not paint as UUIDs for a frame
+  // and then re-label — but only when there is a row to name.
+  //
+  // The row count is load-bearing, not a micro-optimisation. These are three
+  // different signals: the points hooks expose `isLoading`, which is
+  // `isPending && isFetching` and so reads false for a *disabled* query, while
+  // `useMemberDisplayNames` exposes `isPending`, which stays true for one.
+  // All three queries are `enabled: !!chapterId`, so with no active chapter a
+  // bare `isRosterPending` would hold this page on its loading state forever —
+  // and `/points` is the one route whose real content the sessionless 375px
+  // floor harness actually measures (`spec/ui/web-dashboard/README.md`, and
+  // `tests/visual/responsive-floor.spec.ts`). No chapter means no rows, so
+  // there is nothing to name and nothing to wait for.
+  //
+  // It deliberately does NOT join `hasError`: a failed roster degrades names to
+  // ids over totals that are still accurate, so replacing a working board with
+  // an error card would be the worse outcome (#1209 owns surfacing that
+  // degradation, and already names /points as a call site).
+  const isLoading =
+    leaderboardQuery.isLoading ||
+    summaryQuery.isLoading ||
+    (isRosterPending && leaderboard.length > 0);
 
   const summary = summaryQuery.data as
     | { balance?: number; transactions?: PointTransactionRow[] }
