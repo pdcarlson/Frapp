@@ -1,0 +1,1 @@
+Process note: everything Buildpad and Claude Code produce in this phase (research, audits, specs) is groundwork and suggestions \u2014 not final decisions. Paul has final say on every design, architecture, and UX call before anything is treated as locked.

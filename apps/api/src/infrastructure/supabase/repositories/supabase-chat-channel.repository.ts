@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+  TablesUpdate,
+} from '../database.types';
 import type { IChatChannelRepository } from '../../../domain/repositories/chat.repository.interface';
 import { ChatChannel } from '../../../domain/entities/chat.entity';
 
@@ -19,7 +23,7 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
       .eq('chapter_id', chapterId)
       .maybeSingle();
     if (error) throw error;
-    return data as ChatChannel | null;
+    return data;
   }
 
   async findByChapter(chapterId: string): Promise<ChatChannel[]> {
@@ -29,7 +33,7 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
       .eq('chapter_id', chapterId)
       .order('created_at', { ascending: true });
     if (error) throw error;
-    return (data as ChatChannel[]) || [];
+    return data || [];
   }
 
   async findDm(
@@ -53,30 +57,30 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
     return match ?? null;
   }
 
-  async create(data: Partial<ChatChannel>): Promise<ChatChannel> {
+  async create(data: TablesInsert<'chat_channels'>): Promise<ChatChannel> {
     const { data: created, error } = await this.supabase
       .from('chat_channels')
-      .insert(data as never)
+      .insert(data)
       .select()
       .single();
     if (error) throw error;
-    return created as ChatChannel;
+    return created;
   }
 
   async update(
     id: string,
     chapterId: string,
-    data: Partial<ChatChannel>,
+    data: TablesUpdate<'chat_channels'>,
   ): Promise<ChatChannel> {
     const { data: updated, error } = await this.supabase
       .from('chat_channels')
-      .update(data as never)
+      .update(data)
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .select()
       .single();
     if (error) throw error;
-    return updated as ChatChannel;
+    return updated;
   }
 
   async delete(id: string, chapterId: string): Promise<void> {

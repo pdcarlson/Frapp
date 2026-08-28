@@ -1,0 +1,11 @@
+<svg width="184" height="64" viewBox="0 0 184 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>Frapp</title>
+  <rect width="64" height="64" rx="16" fill="#0F172A"/>
+  <path d="M20 18H46V25H27V31H43V38H27V52H20V18Z" fill="#60A5FA"/>
+  <text
+    x="76"
+    y="44"
+    fill="currentColor"
+    style="font-family: ui-sans-serif, system-ui, sans-serif; font-size: 32px; font-weight: 700;"
+  >frapp</text>
+</svg>

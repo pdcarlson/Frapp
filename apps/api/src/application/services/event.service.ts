@@ -1,13 +1,18 @@
 import {
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
 import { EVENT_REPOSITORY } from '../../domain/repositories/event.repository.interface';
 import type { IEventRepository } from '../../domain/repositories/event.repository.interface';
+import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
+import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
 import { Event } from '../../domain/entities/event.entity';
+import type { GeofenceCoordinate } from '../../domain/entities/study.entity';
 import { NotificationService } from './notification.service';
+import { ChatService } from './chat.service';
 
 export interface CreateEventInput {
   chapter_id: string;
@@ -21,6 +26,17 @@ export interface CreateEventInput {
   recurrence_rule?: string | null;
   required_role_ids?: string[] | null;
   notes?: string | null;
+  check_in_zone?: GeofenceCoordinate[] | null;
+  check_in_zone_name?: string | null;
+  /** Creator user id — used as the chat card sender when posting via `/event`. */
+  created_by?: string;
+  /**
+   * When set together with `client_message_id`, an interactive event card is
+   * posted to this chat channel after the row commits (the `/event` slash
+   * command). Omitted for dashboard creates.
+   */
+  channel_id?: string;
+  client_message_id?: string;
 }
 
 export interface UpdateEventInput {
@@ -34,13 +50,41 @@ export interface UpdateEventInput {
   recurrence_rule?: string | null;
   required_role_ids?: string[] | null;
   notes?: string | null;
+  check_in_zone?: GeofenceCoordinate[] | null;
+  check_in_zone_name?: string | null;
+}
+
+/**
+ * Normalize an inbound check-in zone to what the column stores.
+ *
+ * An empty array **clears** the zone, mirroring the `required_role_ids` wire
+ * semantics already documented in `spec/behavior/events.md` — one rule for
+ * "unset this optional collection" across the whole event payload rather than
+ * two. A 1- or 2-point array is rejected here so the caller gets a 400 naming
+ * the problem instead of a 500 surfacing from the table's shape CHECK.
+ */
+function normalizeCheckInZone(
+  zone: GeofenceCoordinate[] | null | undefined,
+): GeofenceCoordinate[] | null | undefined {
+  if (zone === undefined) return undefined;
+  if (zone === null || zone.length === 0) return null;
+  if (zone.length < 3) {
+    throw new BadRequestException(
+      'check_in_zone must have at least 3 points, or be empty to clear it',
+    );
+  }
+  return zone;
 }
 
 @Injectable()
 export class EventService {
+  private readonly logger = new Logger(EventService.name);
+
   constructor(
     @Inject(EVENT_REPOSITORY) private readonly eventRepo: IEventRepository,
+    @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
     private readonly notificationService: NotificationService,
+    private readonly chatService: ChatService,
   ) {}
 
   async findById(id: string, chapterId: string): Promise<Event> {
@@ -82,6 +126,8 @@ export class EventService {
       parent_event_id: null,
       required_role_ids: input.required_role_ids ?? null,
       notes: input.notes ?? null,
+      check_in_zone: normalizeCheckInZone(input.check_in_zone) ?? null,
+      check_in_zone_name: input.check_in_zone_name ?? null,
     });
 
     if (parent.recurrence_rule) {
@@ -97,6 +143,34 @@ export class EventService {
         data: { target: { screen: 'events', eventId: parent.id } },
       });
     } catch {}
+
+    // The `/event` slash command asks us to surface an interactive event card
+    // in chat. The card is server-originated (a client cannot forge
+    // `kind:"event"` — see ChatService.SERVER_ONLY_KINDS) and best-effort: the
+    // event row is the source of truth, so a failed post is logged and never
+    // rolls the event back.
+    //
+    // channel_id and client_message_id are paired (the optimistic placeholder
+    // is keyed on client_message_id). If only one is supplied the card is
+    // silently skipped and the client's placeholder would hang — surface that.
+    if (Boolean(input.channel_id) !== Boolean(input.client_message_id)) {
+      this.logger.warn(
+        'Event card not posted: channel_id and client_message_id must be supplied together',
+        { chapterId: input.chapter_id, eventId: parent.id },
+      );
+    }
+    if (input.channel_id && input.client_message_id && input.created_by) {
+      try {
+        await this.postEventCard(input, parent);
+      } catch (error) {
+        this.logger.warn('Failed to post event card to chat', {
+          eventId: parent.id,
+          channelId: input.channel_id,
+          chapterId: input.chapter_id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
 
     return parent;
   }
@@ -123,7 +197,10 @@ export class EventService {
         return;
     }
 
-    for (let i = 1; i <= count; i++) {
+    // ⚡ Bolt: Optimize recurring instance creation using Promise.all
+    // Eliminates N+1 sequential database queries by executing them concurrently.
+    const promises = Array.from({ length: count }, (_, idx) => {
+      const i = idx + 1;
       const instanceStart = new Date(start);
       const instanceEnd = new Date(end);
 
@@ -155,7 +232,7 @@ export class EventService {
         instanceEnd.setDate(Math.min(end.getDate(), maxEndDay));
       }
 
-      await this.eventRepo.create({
+      return this.eventRepo.create({
         chapter_id: parent.chapter_id,
         name: parent.name,
         description: parent.description,
@@ -169,7 +246,62 @@ export class EventService {
         required_role_ids: parent.required_role_ids,
         notes: parent.notes,
       });
-    }
+    });
+
+    await Promise.all(promises);
+  }
+
+  /**
+   * Post the `kind:"event"` card for a committed event. The creator's name is
+   * resolved here and the details embedded in the payload so the snapshot stays
+   * a correct record even if the event is later edited. The card carries the
+   * event id; the renderer reads the live attendance count back through the
+   * attendance query (the chat message row is never mutated). Posts as the
+   * creator into the channel they ran the command from; channel access is
+   * re-checked by `ChatService.sendMessage`.
+   */
+  private async postEventCard(
+    input: CreateEventInput,
+    event: Event,
+  ): Promise<void> {
+    const createdBy = input.created_by!;
+    const users = await this.userRepo.findByIds([createdBy]);
+    const creatorName =
+      users.find((u) => u.id === createdBy)?.display_name ?? 'Unknown member';
+
+    const payload = {
+      event_id: event.id,
+      name: event.name,
+      start_time: event.start_time,
+      end_time: event.end_time,
+      location: event.location ?? null,
+      point_value: event.point_value,
+      is_mandatory: event.is_mandatory,
+      created_at: event.created_at,
+    };
+
+    // The server has no creator-timezone context, so render the snapshot time
+    // explicitly in UTC (labelled) rather than the API host's local zone. This
+    // string is only the fallback shown when the rich renderer can't read the
+    // payload; the event card itself localises start_time per viewer.
+    const startLabel = new Date(event.start_time).toLocaleString('en-US', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+      timeZone: 'UTC',
+    });
+    const locationSuffix = event.location ? ` at ${event.location}` : '';
+    const content = `${creatorName} scheduled "${event.name}" — ${startLabel} UTC${locationSuffix}`;
+
+    await this.chatService.sendMessage({
+      chapter_id: input.chapter_id,
+      channel_id: input.channel_id!,
+      sender_id: createdBy,
+      content,
+      kind: 'event',
+      payload,
+      client_message_id: input.client_message_id,
+      system_originated: true,
+    });
   }
 
   async update(
@@ -196,6 +328,12 @@ export class EventService {
 
     const updated = await this.eventRepo.update(id, chapterId, {
       ...input,
+      // Spread first, then overwrite: `normalizeCheckInZone` returns `undefined`
+      // for an absent key, which the repository's partial update ignores, so an
+      // update that never mentions the zone leaves it untouched.
+      ...(input.check_in_zone !== undefined
+        ? { check_in_zone: normalizeCheckInZone(input.check_in_zone) }
+        : {}),
     });
 
     if (input.start_time || input.end_time || input.location !== undefined) {

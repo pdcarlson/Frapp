@@ -3,10 +3,80 @@
 This directory documents hook-level conventions and test coverage for
 `packages/hooks`.
 
+## Query keys and chapter scope
+
+Endpoints that return data for the active chapter must include the active
+chapter id in the TanStack Query cache key (see `useActiveChapterId` in
+`use-frapp-client.tsx`). For example, `useSearch` uses
+`["search", chapterId, query]` so the command palette and chat search cannot
+show results cached from another chapter after a switch.
+
+Tasks use the `taskKeys` factory in `use-tasks.ts` — `taskKeys.lists(chapterId)`
+and `taskKeys.detail(chapterId, id)`. Two things it fixes are worth knowing
+before adding a family of your own:
+
+- The old keys were `["tasks", assigneeId]` and `["tasks", id]`, neither
+  chapter-scoped. On web the bleed was masked by the wholesale
+  `queryClient.clear()` in `apps/web/lib/providers/frapp-client-provider.tsx`;
+  **mobile has no such clear**, so an unscoped key there really does serve the
+  outgoing chapter's rows after a switch. Do not rely on the web clear.
+- `["tasks", undefined]` (the list) and `["tasks", "<uuid>"]` (a detail) are
+  structurally indistinguishable, so no prefix could mean "every list" without
+  also matching every detail. The explicit `"list"` / `"detail"` segment is what
+  lets a mutation invalidate precisely.
+
+**New families use `createChapterQueryKeys` in `chapter-query-keys.ts`.** It is
+the same shape as `taskKeys`, with `chapterId: string` as a mandatory first
+argument — omitting it, or passing `null`, is a type error. Existing call sites
+still use ad-hoc literals (some still `string | null`); those migrate in a
+later pass. Do not add `string | null` to the factory to make a disabled query
+type-check — leave the query `enabled: false` instead of building an unscoped
+key.
+
+## Optimistic mutations
+
+`useUpdateNotificationPreference` (`use-notifications.ts`) and the three task
+lifecycle mutations (`use-tasks.ts`) are the reference implementations. A new
+one should follow this shape:
+
+- `onMutate` — `cancelQueries` first (an in-flight GET that started before the
+  write has not observed it, and letting it land looks like the write was lost),
+  then snapshot, then write.
+- **Never write into an entry that is `undefined`.** That means the query has
+  never resolved, so there is no server answer to predict against — and it is
+  unrollbackable, because query-core ignores a `setQueryData` of `undefined`.
+  Leave shapes you do not recognise byte-identical for the same reason.
+- `onError` — revert **surgically**, field by field or row by row, and only
+  while the cache still holds what this mutation wrote. Mutation-level callbacks
+  always fire in v5, so a slow failure can land after a fast success on the same
+  record; restoring a whole snapshot there silently undoes the newer write.
+- `onSettled`, not `onSuccess` — a failed write must reconcile too, or the
+  rolled-back value stays unverified against the server.
+- Keep the user-facing failure message at the call site, passed as a
+  per-`mutate()` `onError`. This package has no toast and React Native has none
+  at all. v5 drops the per-call callback for a superseded mutation, which is
+  right for a toast and wrong for a rollback — hence the split.
+- **Set `retry: false` on a non-idempotent mutation.** `apps/web` defaults every
+  mutation to `retry: 2` (`apps/web/lib/providers/query-provider.tsx`). For a
+  compare-and-set transition — the task status/confirm/reject routes — a first
+  attempt whose response is merely lost leaves the retry to be answered with a
+  guaranteed 400, so the rollback undoes a write that actually landed and
+  reports a failure for an action that succeeded.
+
+Two existing optimistic mutations do **not** follow the surgical-revert rule and
+should not be copied as templates: `useUpdateUserSettings` (`use-notifications.ts`)
+and `usePatchOrgConfig` (`use-org-config.ts`) both restore a
+whole snapshot. Each writes a single object edited from one form, so the race is
+narrower there — but it is the same race, and neither is the shape to imitate.
+
 ## Testing strategy
 
 Hooks in `packages/hooks/src` are tested with Vitest, React Testing Library, and a
 real `QueryClient` wrapped with `FrappClientProvider` and `QueryClientProvider`.
+
+## Event query keys
+
+`useEvent` caches each event under `["events", chapterId, id]` (see `use-events.ts`), not `["events", id]`. Any TanStack Query invalidation that should refresh the event detail after related data changes (for example realtime attendance updates in the web app) must include the same `chapterId` segment from `useActiveChapterId()` so prefix matching hits the mounted query.
 
 - Vitest (`packages/hooks/vitest.config.ts`)
 - `@testing-library/react` `renderHook`
@@ -68,7 +138,23 @@ From `packages/hooks` run:
 - `npm exec --workspace packages/hooks vitest run src/use-members.spec.tsx` for focused `useMembers` coverage
 - `npx vitest run` for the full hooks package suite
 
+From the repo root, `npm run test -w packages/hooks` runs the whole suite — this
+is the command CI uses. The `web-tests` job in
+[`ci.yml`](../../.github/workflows/ci.yml) runs it (alongside `packages/chat-core`),
+reached via that job's `packages/**` path filter.
+
+`web-tests` **is a required status check** (ADR-15 2026-08-19 amendment — see
+[`spec/architecture/README.md`](../../spec/architecture/README.md)). The
+required-check list lives in
+[`scripts/configure-branch-protection.mjs`](../../scripts/configure-branch-protection.mjs).
+
+Collection is pinned to `src` by `packages/hooks/vitest.config.ts`. That is
+load-bearing: `npm run build` compiles the specs to `dist/` as CommonJS, and
+Vitest 4 no longer excludes `dist` by default, so an unscoped run collects the
+twins and fails (#762).
+
 ## Testing Additions
 
 - **`useCreateRole`**: Added test case in `use-roles.spec.tsx` ensuring that creating a role with only the required fields properly maps the request body and executes the correct query invalidation behavior.
 Update: Added tests for useCheckIn hook
+- **`useSearch`**: `use-search.spec.tsx` covers success wiring, disabled states without a chapter or query, and cache isolation per chapter for the same search string.

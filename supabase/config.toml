@@ -25,12 +25,23 @@ enable_signup = true
 double_confirm_changes = false
 enable_confirmations = false
 
+# Stamps the active chapter into every issued access token as the
+# `active_chapter_id` claim, which ChapterGuard treats as authoritative per
+# spec/behavior/multi-tenancy.md. Local only -- hosted projects enable this in
+# the dashboard (Authentication -> Hooks) or via the Management API.
+[auth.hook.custom_access_token]
+enabled = true
+uri = "pg-functions://postgres/public/custom_access_token_hook"
+
 [auth.external.google]
 enabled = false
 
 [storage]
 enabled = true
-file_size_limit = "26214400" # 25MB
+file_size_limit = "104857600" # 100MB -- the chat-archive bucket ceiling (Discord boosted-server per-file max).
+# This is a GLOBAL cap for the local stack and overrides a higher per-bucket
+# `storage.buckets.file_size_limit`; member-upload buckets stay pinned at 25MB
+# (MAX_UPLOAD_BYTES) by their own column and by `@repo/validation`.
 
 [realtime]
 enabled = true

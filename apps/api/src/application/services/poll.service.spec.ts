@@ -1,10 +1,19 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PollService } from './poll.service';
+import { ChannelAccessService } from './channel-access.service';
+import { RbacService } from './rbac.service';
 import { CHAT_MESSAGE_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
 import type { IChatMessageRepository } from '../../domain/repositories/chat.repository.interface';
 import { CHAT_CHANNEL_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
 import type { IChatChannelRepository } from '../../domain/repositories/chat.repository.interface';
+import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import { POLL_VOTE_REPOSITORY } from '../../domain/repositories/poll-vote.repository.interface';
 import type { IPollVoteRepository } from '../../domain/repositories/poll-vote.repository.interface';
 import type { ChatMessage } from '../../domain/entities/chat.entity';
@@ -16,6 +25,12 @@ describe('PollService', () => {
   let mockMessageRepo: jest.Mocked<IChatMessageRepository>;
   let mockChannelRepo: jest.Mocked<IChatChannelRepository>;
   let mockVoteRepo: jest.Mocked<IPollVoteRepository>;
+  let mockMemberRepo: jest.Mocked<IMemberRepository>;
+  let mockRbac: {
+    getEffectivePermissions: jest.Mock;
+    hasAlumniRole: jest.Mock;
+  };
+  let loggerErrorSpy: jest.SpyInstance;
 
   const baseChannel: ChatChannel = {
     id: 'ch-1',
@@ -58,11 +73,16 @@ describe('PollService', () => {
   };
 
   beforeEach(async () => {
+    loggerErrorSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+
     mockMessageRepo = {
       findById: jest.fn(),
       findByChannel: jest.fn(),
       findPinnedByChannel: jest.fn(),
       countPinnedByChannel: jest.fn(),
+      findPollsByChapter: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     };
@@ -78,6 +98,9 @@ describe('PollService', () => {
 
     mockVoteRepo = {
       findByMessage: jest.fn(),
+      findByMessages: jest.fn(),
+      aggregateOptionTotalsByMessages: jest.fn(),
+      findUserVotesByMessagesForUser: jest.fn(),
       findByMessageAndUser: jest.fn(),
       create: jest.fn(),
       createMany: jest.fn(),
@@ -85,9 +108,38 @@ describe('PollService', () => {
       deleteByMessageUserAndOption: jest.fn(),
     };
 
+    mockMemberRepo = {
+      findById: jest.fn(),
+      findByUser: jest.fn(),
+      findByUserAndChapter: jest.fn(),
+      findByChapter: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+    };
+
+    mockRbac = {
+      getEffectivePermissions: jest.fn(),
+      // Active (non-alumni) member by default; alumni posting is covered in
+      // channel-access.service.spec.ts.
+      hasAlumniRole: jest.fn().mockResolvedValue(false),
+    };
+
+    // Default: caller is a chapter member with no extra permissions, and the
+    // chapter's channels are PUBLIC (channel-1 hosts the listPolls fixtures).
+    // Individual tests override these to exercise PRIVATE / ROLE_GATED / 404.
+    mockMemberRepo.findByUserAndChapter.mockResolvedValue({
+      id: 'm-1',
+    });
+    mockRbac.getEffectivePermissions.mockResolvedValue([]);
+    mockChannelRepo.findByChapter.mockResolvedValue([
+      { ...baseChannel, id: 'channel-1', type: 'PUBLIC', member_ids: null },
+    ]);
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PollService,
+        ChannelAccessService,
         {
           provide: CHAT_MESSAGE_REPOSITORY,
           useValue: mockMessageRepo,
@@ -100,10 +152,22 @@ describe('PollService', () => {
           provide: POLL_VOTE_REPOSITORY,
           useValue: mockVoteRepo,
         },
+        {
+          provide: MEMBER_REPOSITORY,
+          useValue: mockMemberRepo,
+        },
+        {
+          provide: RbacService,
+          useValue: mockRbac,
+        },
       ],
     }).compile();
 
     service = module.get(PollService);
+  });
+
+  afterEach(() => {
+    loggerErrorSpy.mockRestore();
   });
 
   describe('createPoll', () => {
@@ -363,6 +427,373 @@ describe('PollService', () => {
 
       await expect(service.getPoll('msg-x', 'ch-1', 'user-2')).rejects.toThrow(
         NotFoundException,
+      );
+    });
+  });
+
+  describe('listPolls', () => {
+    const futureIso = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const pastIso = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
+    const activePoll: ChatMessage = {
+      id: 'poll-active',
+      chapter_id: 'ch-1',
+      channel_id: 'channel-1',
+      sender_id: 'user-1',
+      content: 'Meeting night?',
+      type: 'POLL',
+      reply_to_id: null,
+      metadata: {
+        question: 'Meeting night?',
+        options: ['Monday', 'Tuesday'],
+        choice_mode: 'single',
+        expires_at: futureIso,
+      },
+      is_pinned: false,
+      pinned_at: null,
+      edited_at: null,
+      is_deleted: false,
+      created_at: '2026-01-02T00:00:00.000Z',
+    };
+
+    const expiredPoll: ChatMessage = {
+      ...activePoll,
+      id: 'poll-expired',
+      created_at: '2026-01-01T00:00:00.000Z',
+      metadata: {
+        question: 'T-shirt colour?',
+        options: ['Blue', 'Red'],
+        choice_mode: 'single',
+        expires_at: pastIso,
+      },
+    };
+
+    it('returns every poll for the chapter with aggregate vote counts', async () => {
+      mockMessageRepo.findPollsByChapter.mockResolvedValue([
+        activePoll,
+        expiredPoll,
+      ]);
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([
+        { message_id: 'poll-active', option_index: 0, vote_count: 2 },
+        { message_id: 'poll-active', option_index: 1, vote_count: 1 },
+      ]);
+
+      const result = await service.listPolls('ch-1');
+
+      expect(mockVoteRepo.aggregateOptionTotalsByMessages).toHaveBeenCalledWith(
+        ['poll-active', 'poll-expired'],
+      );
+      expect(
+        mockVoteRepo.findUserVotesByMessagesForUser,
+      ).not.toHaveBeenCalled();
+      expect(result).toHaveLength(2);
+      expect(result[0].id).toBe('poll-active');
+      expect(result[0].results).toEqual([
+        { optionIndex: 0, optionText: 'Monday', voteCount: 2 },
+        { optionIndex: 1, optionText: 'Tuesday', voteCount: 1 },
+      ]);
+      expect(result[0].isExpired).toBe(false);
+      expect(result[1].isExpired).toBe(true);
+    });
+
+    it('loads vote aggregates in one RPC for many polls (no per-poll vote queries)', async () => {
+      const manyPolls = Array.from({ length: 50 }, (_, i) => ({
+        ...activePoll,
+        id: `poll-${i}`,
+      }));
+      mockMessageRepo.findPollsByChapter.mockResolvedValue(manyPolls);
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([]);
+
+      await service.listPolls('ch-1');
+
+      expect(
+        mockVoteRepo.aggregateOptionTotalsByMessages,
+      ).toHaveBeenCalledTimes(1);
+      expect(mockVoteRepo.aggregateOptionTotalsByMessages).toHaveBeenCalledWith(
+        manyPolls.map((p) => p.id),
+      );
+      expect(mockVoteRepo.findByMessage).not.toHaveBeenCalled();
+      expect(mockVoteRepo.findByMessageAndUser).not.toHaveBeenCalled();
+    });
+
+    it('filters to active=true (expired polls excluded)', async () => {
+      // Repository applies active/expired before limit; service does not re-filter.
+      mockMessageRepo.findPollsByChapter.mockResolvedValue([activePoll]);
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([]);
+
+      const result = await service.listPolls('ch-1', { active: true });
+
+      expect(result.map((p) => p.id)).toEqual(['poll-active']);
+      expect(mockMessageRepo.findPollsByChapter).toHaveBeenCalledWith(
+        'ch-1',
+        expect.objectContaining({ active: true }),
+      );
+    });
+
+    it('filters to active=false (only expired polls)', async () => {
+      mockMessageRepo.findPollsByChapter.mockResolvedValue([expiredPoll]);
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([]);
+
+      const result = await service.listPolls('ch-1', { active: false });
+
+      expect(result.map((p) => p.id)).toEqual(['poll-expired']);
+      expect(mockMessageRepo.findPollsByChapter).toHaveBeenCalledWith(
+        'ch-1',
+        expect.objectContaining({ active: false }),
+      );
+    });
+
+    it('includes userVotes when a userId is supplied', async () => {
+      mockMessageRepo.findPollsByChapter.mockResolvedValue([activePoll]);
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([]);
+      mockVoteRepo.findUserVotesByMessagesForUser.mockResolvedValue([
+        { message_id: 'poll-active', option_index: 1 },
+      ]);
+
+      const result = await service.listPolls('ch-1', { userId: 'user-2' });
+
+      expect(result[0].userVotes).toEqual([1]);
+      expect(mockVoteRepo.findUserVotesByMessagesForUser).toHaveBeenCalledWith(
+        ['poll-active'],
+        'user-2',
+      );
+      expect(mockVoteRepo.findByMessageAndUser).not.toHaveBeenCalled();
+    });
+
+    it('clamps limit to the 1–200 range before calling the repository', async () => {
+      mockMessageRepo.findPollsByChapter.mockResolvedValue([]);
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([]);
+
+      await service.listPolls('ch-1', { limit: 0 });
+      expect(mockMessageRepo.findPollsByChapter).toHaveBeenCalledWith(
+        'ch-1',
+        expect.objectContaining({ limit: 1 }),
+      );
+
+      await service.listPolls('ch-1', { limit: 9999 });
+      expect(mockMessageRepo.findPollsByChapter).toHaveBeenLastCalledWith(
+        'ch-1',
+        expect.objectContaining({ limit: 200 }),
+      );
+    });
+
+    it('logs when the batched vote aggregation fails and returns zero tallies', async () => {
+      mockMessageRepo.findPollsByChapter.mockResolvedValue([activePoll]);
+      const batchError = new Error('postgrest timeout');
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockRejectedValue(
+        batchError,
+      );
+
+      const result = await service.listPolls('chapter-xyz');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].results.every((r) => r.voteCount === 0)).toBe(true);
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('chapter-xyz'),
+        expect.stringContaining('postgrest timeout'),
+      );
+    });
+  });
+
+  describe('channel-access enforcement', () => {
+    const privateChannel: ChatChannel = {
+      ...baseChannel,
+      id: 'ch-private',
+      type: 'PRIVATE',
+      member_ids: ['other-user'],
+    };
+
+    const roleGatedChannel: ChatChannel = {
+      ...baseChannel,
+      id: 'ch-role',
+      type: 'ROLE_GATED',
+      member_ids: null,
+      required_permissions: ['secret:view'],
+    };
+
+    const privatePoll: ChatMessage = {
+      ...basePollMessage,
+      channel_id: 'ch-private',
+    };
+
+    const roleGatedPoll: ChatMessage = {
+      ...basePollMessage,
+      channel_id: 'ch-role',
+    };
+
+    it('createPoll → 403 when the caller cannot post to the channel', async () => {
+      mockChannelRepo.findById.mockResolvedValue(privateChannel);
+
+      await expect(
+        service.createPoll({
+          channelId: 'ch-private',
+          chapterId: 'ch-1',
+          senderId: 'user-1',
+          question: 'Q?',
+          options: ['A', 'B'],
+        }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockMessageRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('vote → 403 when the caller cannot access the channel', async () => {
+      mockMessageRepo.findById.mockResolvedValue(privatePoll);
+      mockChannelRepo.findById.mockResolvedValue(privateChannel);
+
+      await expect(
+        service.vote('msg-1', 'user-1', 'ch-1', [0]),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockVoteRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('vote → 404 when the poll channel does not resolve within the chapter', async () => {
+      mockMessageRepo.findById.mockResolvedValue(privatePoll);
+      mockChannelRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.vote('msg-1', 'user-1', 'ch-1', [0]),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('removeVote → 403 when the caller cannot access the channel', async () => {
+      mockMessageRepo.findById.mockResolvedValue(privatePoll);
+      mockChannelRepo.findById.mockResolvedValue(privateChannel);
+
+      await expect(
+        service.removeVote('msg-1', 'user-1', 'ch-1'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockVoteRepo.deleteByMessageAndUser).not.toHaveBeenCalled();
+    });
+
+    it('getPoll → 403 when the caller cannot read the channel', async () => {
+      mockMessageRepo.findById.mockResolvedValue(privatePoll);
+      mockChannelRepo.findById.mockResolvedValue(privateChannel);
+
+      await expect(service.getPoll('msg-1', 'ch-1', 'user-1')).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('getPoll → allowed for a ROLE_GATED channel when the caller holds the permission', async () => {
+      mockMessageRepo.findById.mockResolvedValue(roleGatedPoll);
+      mockChannelRepo.findById.mockResolvedValue(roleGatedChannel);
+      mockRbac.getEffectivePermissions.mockResolvedValue(['secret:view']);
+      mockVoteRepo.findByMessage.mockResolvedValue([]);
+      mockVoteRepo.findByMessageAndUser.mockResolvedValue([]);
+
+      const result = await service.getPoll('msg-1', 'ch-1', 'user-1');
+
+      expect(result.id).toBe('msg-1');
+    });
+
+    it('getPoll → 403 for a ROLE_GATED channel when the caller lacks the permission', async () => {
+      mockMessageRepo.findById.mockResolvedValue(roleGatedPoll);
+      mockChannelRepo.findById.mockResolvedValue(roleGatedChannel);
+      mockRbac.getEffectivePermissions.mockResolvedValue([]);
+
+      await expect(service.getPoll('msg-1', 'ch-1', 'user-1')).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('listPolls excludes polls in channels the caller cannot read', async () => {
+      const visiblePoll: ChatMessage = {
+        ...basePollMessage,
+        id: 'poll-visible',
+        channel_id: 'channel-1',
+      };
+      const hiddenPoll: ChatMessage = {
+        ...basePollMessage,
+        id: 'poll-hidden',
+        channel_id: 'channel-2',
+      };
+      mockMessageRepo.findPollsByChapter.mockResolvedValue([
+        visiblePoll,
+        hiddenPoll,
+      ]);
+      mockChannelRepo.findByChapter.mockResolvedValue([
+        { ...baseChannel, id: 'channel-1', type: 'PUBLIC', member_ids: null },
+        {
+          ...baseChannel,
+          id: 'channel-2',
+          type: 'PRIVATE',
+          member_ids: ['other-user'],
+        },
+      ]);
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([]);
+
+      const result = await service.listPolls('ch-1', { userId: 'user-1' });
+
+      expect(result.map((p) => p.id)).toEqual(['poll-visible']);
+      // The hidden poll's votes are never even aggregated.
+      expect(mockVoteRepo.aggregateOptionTotalsByMessages).toHaveBeenCalledWith(
+        ['poll-visible'],
+      );
+    });
+
+    it('listPolls returns nothing when the caller is not a chapter member', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+      mockMessageRepo.findPollsByChapter.mockResolvedValue([
+        { ...basePollMessage, id: 'poll-1', channel_id: 'channel-1' },
+      ]);
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([]);
+
+      const result = await service.listPolls('ch-1', { userId: 'ghost' });
+
+      expect(result).toEqual([]);
+    });
+  });
+
+  // Alumni are restricted from *posting*, not from participating. Creating a
+  // poll authors a message into the channel; voting does not. These run through
+  // the real ChannelAccessService, so they cover the PollService → predicate
+  // wiring end to end. See spec/behavior/alumni.md.
+  describe('Alumni lifecycle', () => {
+    beforeEach(() => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue({
+        id: 'm-1',
+        role_ids: ['role-alumni'],
+      });
+      mockRbac.hasAlumniRole.mockResolvedValue(true);
+    });
+
+    it('denies an alumni member creating a poll in a PUBLIC channel', async () => {
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+
+      await expect(
+        service.createPoll({
+          channelId: 'channel-1',
+          chapterId: 'ch-1',
+          senderId: 'user-2',
+          question: 'Pick one',
+          options: ['a', 'b'],
+        }),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(mockMessageRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('still lets an alumni member vote in a poll they can read', async () => {
+      mockMessageRepo.findById.mockResolvedValue(basePollMessage);
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockVoteRepo.deleteByMessageAndUser.mockResolvedValue();
+      mockVoteRepo.create.mockResolvedValue(baseVote);
+
+      await service.vote('msg-1', 'user-2', 'ch-1', [1]);
+
+      expect(mockVoteRepo.create).toHaveBeenCalled();
+    });
+
+    it('still lets an alumni member retract a vote', async () => {
+      mockMessageRepo.findById.mockResolvedValue(basePollMessage);
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockVoteRepo.deleteByMessageAndUser.mockResolvedValue();
+
+      await service.removeVote('msg-1', 'user-2', 'ch-1');
+
+      expect(mockVoteRepo.deleteByMessageAndUser).toHaveBeenCalledWith(
+        'msg-1',
+        'user-2',
       );
     });
   });

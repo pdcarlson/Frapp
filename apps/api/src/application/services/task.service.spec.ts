@@ -7,23 +7,24 @@ import {
 import { TaskService } from './task.service';
 import { TASK_REPOSITORY } from '../../domain/repositories/task.repository.interface';
 import type { ITaskRepository } from '../../domain/repositories/task.repository.interface';
-import { POINT_TRANSACTION_REPOSITORY } from '../../domain/repositories/point-transaction.repository.interface';
-import type { IPointTransactionRepository } from '../../domain/repositories/point-transaction.repository.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
-import type { Task } from '../../domain/entities/task.entity';
+import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
+import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
+import { Task, TaskStatus } from '../../domain/entities/task.entity';
 import type { Member } from '../../domain/entities/member.entity';
-import type { PointTransaction } from '../../domain/entities/point-transaction.entity';
 import { NotificationService } from './notification.service';
+import { ChatService } from './chat.service';
 
 describe('TaskService', () => {
   let service: TaskService;
   let mockTaskRepo: jest.Mocked<ITaskRepository>;
-  let mockPointTxnRepo: jest.Mocked<IPointTransactionRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
+  let mockUserRepo: jest.Mocked<Pick<IUserRepository, 'findByIds'>>;
   let mockNotificationService: jest.Mocked<
     Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
   >;
+  let mockChatService: jest.Mocked<Pick<ChatService, 'sendMessage'>>;
 
   const baseTask: Task = {
     id: 'task-1',
@@ -33,7 +34,7 @@ describe('TaskService', () => {
     assignee_id: 'user-1',
     created_by: 'admin-1',
     due_date: '2099-03-15',
-    status: 'TODO',
+    status: TaskStatus.TODO,
     point_reward: 10,
     points_awarded: false,
     completed_at: null,
@@ -41,25 +42,22 @@ describe('TaskService', () => {
     created_at: '2026-02-26T00:00:00.000Z',
   };
 
+  /**
+   * A task as the read paths return it (#1051). `create` deliberately does not
+   * go through `toDisplayStatus`, which is why its assertions still compare
+   * against the bare entity.
+   */
+  const asView = (task: Task) => ({ ...task, stored_status: task.status });
+
   const baseMember: Member = {
     id: 'member-1',
     user_id: 'user-1',
     chapter_id: 'ch-1',
     role_ids: ['role-1'],
+    custom_role_ids: [],
     has_completed_onboarding: true,
     created_at: '2026-02-01T00:00:00.000Z',
     updated_at: '2026-02-01T00:00:00.000Z',
-  };
-
-  const basePointTxn: PointTransaction = {
-    id: 'pt-1',
-    chapter_id: 'ch-1',
-    user_id: 'user-1',
-    amount: 10,
-    category: 'MANUAL',
-    description: 'Task completed: Test Task',
-    metadata: { task_id: 'task-1' },
-    created_at: '2026-02-26T18:30:00.000Z',
   };
 
   beforeEach(async () => {
@@ -69,13 +67,8 @@ describe('TaskService', () => {
       findByAssignee: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      confirmCompletionAtomic: jest.fn(),
       delete: jest.fn(),
-    };
-
-    mockPointTxnRepo = {
-      create: jest.fn(),
-      findByUser: jest.fn(),
-      findByChapter: jest.fn(),
     };
 
     mockMemberRepo = {
@@ -87,18 +80,30 @@ describe('TaskService', () => {
       delete: jest.fn(),
     };
 
+    mockUserRepo = {
+      findByIds: jest.fn().mockResolvedValue([]),
+    };
+
     mockNotificationService = {
       notifyUser: jest.fn().mockResolvedValue(undefined),
       notifyChapter: jest.fn().mockResolvedValue(undefined),
+    };
+
+    mockChatService = {
+      sendMessage: jest.fn().mockResolvedValue({
+        message: { id: 'msg-1' },
+        deduplicated: false,
+      }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TaskService,
         { provide: TASK_REPOSITORY, useValue: mockTaskRepo },
-        { provide: POINT_TRANSACTION_REPOSITORY, useValue: mockPointTxnRepo },
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
+        { provide: USER_REPOSITORY, useValue: mockUserRepo },
         { provide: NotificationService, useValue: mockNotificationService },
+        { provide: ChatService, useValue: mockChatService },
       ],
     }).compile();
 
@@ -131,7 +136,7 @@ describe('TaskService', () => {
         assignee_id: 'user-1',
         created_by: 'admin-1',
         due_date: '2099-03-15',
-        status: 'TODO',
+        status: TaskStatus.TODO,
         point_reward: 10,
         points_awarded: false,
         completed_at: null,
@@ -179,11 +184,83 @@ describe('TaskService', () => {
       ).rejects.toThrow(BadRequestException);
       expect(mockTaskRepo.create).not.toHaveBeenCalled();
     });
+
+    it('posts a server-originated task card when channel + client_message_id are set', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+      mockTaskRepo.create.mockResolvedValue(baseTask);
+      mockUserRepo.findByIds.mockResolvedValue([
+        { id: 'admin-1', display_name: 'Admin Alice' },
+        { id: 'user-1', display_name: 'Member Bob' },
+      ]);
+
+      await service.create({
+        chapter_id: 'ch-1',
+        title: 'Test Task',
+        assignee_id: 'user-1',
+        created_by: 'admin-1',
+        due_date: '2099-03-15',
+        point_reward: 10,
+        channel_id: 'channel-1',
+        client_message_id: 'cmid-1',
+      });
+
+      expect(mockChatService.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chapter_id: 'ch-1',
+          channel_id: 'channel-1',
+          sender_id: 'admin-1',
+          kind: 'task',
+          system_originated: true,
+          client_message_id: 'cmid-1',
+          payload: expect.objectContaining({
+            task_id: 'task-1',
+            title: 'Test Task',
+            assigner_name: 'Admin Alice',
+            assignee_name: 'Member Bob',
+            status: 'TODO',
+            point_reward: 10,
+          }),
+        }),
+      );
+    });
+
+    it('does not post a card for a dashboard create (no channel)', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+      mockTaskRepo.create.mockResolvedValue(baseTask);
+
+      await service.create({
+        chapter_id: 'ch-1',
+        title: 'Test Task',
+        assignee_id: 'user-1',
+        created_by: 'admin-1',
+        due_date: '2099-03-15',
+      });
+
+      expect(mockChatService.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('returns the created task even if the card post fails (best-effort)', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+      mockTaskRepo.create.mockResolvedValue(baseTask);
+      mockChatService.sendMessage.mockRejectedValue(new Error('chat down'));
+
+      const result = await service.create({
+        chapter_id: 'ch-1',
+        title: 'Test Task',
+        assignee_id: 'user-1',
+        created_by: 'admin-1',
+        due_date: '2099-03-15',
+        channel_id: 'channel-1',
+        client_message_id: 'cmid-1',
+      });
+
+      expect(result).toEqual(baseTask);
+    });
   });
 
   describe('updateStatus', () => {
     it('should allow TODO → IN_PROGRESS transition', async () => {
-      const updated: Task = { ...baseTask, status: 'IN_PROGRESS' };
+      const updated: Task = { ...baseTask, status: TaskStatus.IN_PROGRESS };
       mockTaskRepo.findById.mockResolvedValue(baseTask);
       mockTaskRepo.update.mockResolvedValue(updated);
 
@@ -192,22 +269,22 @@ describe('TaskService', () => {
         'ch-1',
         'user-1',
         false,
-        'IN_PROGRESS',
+        TaskStatus.IN_PROGRESS,
       );
 
       expect(mockTaskRepo.update).toHaveBeenCalledWith(
         'task-1',
         'ch-1',
-        expect.objectContaining({ status: 'IN_PROGRESS' }),
+        expect.objectContaining({ status: TaskStatus.IN_PROGRESS }),
       );
-      expect(result.status).toBe('IN_PROGRESS');
+      expect(result.status).toBe(TaskStatus.IN_PROGRESS);
     });
 
     it('should allow IN_PROGRESS → COMPLETED transition', async () => {
-      const inProgress: Task = { ...baseTask, status: 'IN_PROGRESS' };
+      const inProgress: Task = { ...baseTask, status: TaskStatus.IN_PROGRESS };
       const completed: Task = {
         ...baseTask,
-        status: 'COMPLETED',
+        status: TaskStatus.COMPLETED,
         completed_at: '2026-02-26T18:30:00.000Z',
       };
       mockTaskRepo.findById.mockResolvedValue(inProgress);
@@ -218,28 +295,40 @@ describe('TaskService', () => {
         'ch-1',
         'user-1',
         false,
-        'COMPLETED',
+        TaskStatus.COMPLETED,
       );
 
       expect(mockTaskRepo.update).toHaveBeenCalledWith(
         'task-1',
         'ch-1',
         expect.objectContaining({
-          status: 'COMPLETED',
+          status: TaskStatus.COMPLETED,
           completed_at: expect.any(String),
         }),
       );
-      expect(result.status).toBe('COMPLETED');
+      expect(result.status).toBe(TaskStatus.COMPLETED);
     });
 
     it('should reject invalid transition TODO → COMPLETED', async () => {
       mockTaskRepo.findById.mockResolvedValue(baseTask);
 
       await expect(
-        service.updateStatus('task-1', 'ch-1', 'user-1', false, 'COMPLETED'),
+        service.updateStatus(
+          'task-1',
+          'ch-1',
+          'user-1',
+          false,
+          TaskStatus.COMPLETED,
+        ),
       ).rejects.toThrow(BadRequestException);
       await expect(
-        service.updateStatus('task-1', 'ch-1', 'user-1', false, 'COMPLETED'),
+        service.updateStatus(
+          'task-1',
+          'ch-1',
+          'user-1',
+          false,
+          TaskStatus.COMPLETED,
+        ),
       ).rejects.toThrow('Invalid status transition from TODO to COMPLETED');
 
       expect(mockTaskRepo.update).not.toHaveBeenCalled();
@@ -249,7 +338,13 @@ describe('TaskService', () => {
       mockTaskRepo.findById.mockResolvedValue(baseTask);
 
       await expect(
-        service.updateStatus('task-1', 'ch-1', 'user-1', false, 'OVERDUE'),
+        service.updateStatus(
+          'task-1',
+          'ch-1',
+          'user-1',
+          false,
+          TaskStatus.OVERDUE,
+        ),
       ).rejects.toThrow(BadRequestException);
 
       expect(mockTaskRepo.update).not.toHaveBeenCalled();
@@ -264,7 +359,7 @@ describe('TaskService', () => {
           'ch-1',
           'other-user',
           false,
-          'IN_PROGRESS',
+          TaskStatus.IN_PROGRESS,
         ),
       ).rejects.toThrow(ForbiddenException);
       await expect(
@@ -273,7 +368,7 @@ describe('TaskService', () => {
           'ch-1',
           'other-user',
           false,
-          'IN_PROGRESS',
+          TaskStatus.IN_PROGRESS,
         ),
       ).rejects.toThrow('Only the assignee or an admin can update task status');
 
@@ -284,19 +379,31 @@ describe('TaskService', () => {
       mockTaskRepo.findById.mockResolvedValue(null);
 
       await expect(
-        service.updateStatus('task-1', 'ch-1', 'user-1', false, 'IN_PROGRESS'),
+        service.updateStatus(
+          'task-1',
+          'ch-1',
+          'user-1',
+          false,
+          TaskStatus.IN_PROGRESS,
+        ),
       ).rejects.toThrow(NotFoundException);
       await expect(
-        service.updateStatus('task-1', 'ch-1', 'user-1', false, 'IN_PROGRESS'),
+        service.updateStatus(
+          'task-1',
+          'ch-1',
+          'user-1',
+          false,
+          TaskStatus.IN_PROGRESS,
+        ),
       ).rejects.toThrow('Task not found');
     });
   });
 
   describe('confirmCompletion', () => {
-    it('should confirm completion with points', async () => {
+    it('should confirm completion with points via the atomic RPC', async () => {
       const completed: Task = {
         ...baseTask,
-        status: 'COMPLETED',
+        status: TaskStatus.COMPLETED,
         completed_at: '2026-02-26T18:30:00.000Z',
       };
       const confirmed: Task = {
@@ -305,34 +412,24 @@ describe('TaskService', () => {
         points_awarded: true,
       };
       mockTaskRepo.findById.mockResolvedValue(completed);
-      mockPointTxnRepo.create.mockResolvedValue(basePointTxn);
-      mockTaskRepo.update.mockResolvedValue(confirmed);
+      mockTaskRepo.confirmCompletionAtomic.mockResolvedValue(confirmed);
 
       const result = await service.confirmCompletion('task-1', 'ch-1');
 
-      expect(mockPointTxnRepo.create).toHaveBeenCalledWith({
-        chapter_id: 'ch-1',
-        user_id: 'user-1',
-        amount: 10,
-        category: 'MANUAL',
-        description: 'Task completed: Test Task',
-        metadata: { task_id: 'task-1' },
-      });
-      expect(mockTaskRepo.update).toHaveBeenCalledWith(
+      // The confirm + ledger insert now happen in one DB transaction, so the
+      // service delegates to the RPC and never issues separate writes.
+      expect(mockTaskRepo.confirmCompletionAtomic).toHaveBeenCalledWith(
         'task-1',
         'ch-1',
-        expect.objectContaining({
-          confirmed_at: expect.any(String),
-          points_awarded: true,
-        }),
       );
+      expect(mockTaskRepo.update).not.toHaveBeenCalled();
       expect(result.points_awarded).toBe(true);
     });
 
     it('should confirm completion without points (no point_reward)', async () => {
       const completed: Task = {
         ...baseTask,
-        status: 'COMPLETED',
+        status: TaskStatus.COMPLETED,
         completed_at: '2026-02-26T18:30:00.000Z',
         point_reward: null,
       };
@@ -342,26 +439,21 @@ describe('TaskService', () => {
         points_awarded: true,
       };
       mockTaskRepo.findById.mockResolvedValue(completed);
-      mockTaskRepo.update.mockResolvedValue(confirmed);
+      mockTaskRepo.confirmCompletionAtomic.mockResolvedValue(confirmed);
 
       const result = await service.confirmCompletion('task-1', 'ch-1');
 
-      expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
-      expect(mockTaskRepo.update).toHaveBeenCalledWith(
+      expect(mockTaskRepo.confirmCompletionAtomic).toHaveBeenCalledWith(
         'task-1',
         'ch-1',
-        expect.objectContaining({
-          confirmed_at: expect.any(String),
-          points_awarded: true,
-        }),
       );
       expect(result.points_awarded).toBe(true);
     });
 
-    it('should prevent double point award', async () => {
+    it('should prevent double point award (fast-path guard)', async () => {
       const alreadyConfirmed: Task = {
         ...baseTask,
-        status: 'COMPLETED',
+        status: TaskStatus.COMPLETED,
         completed_at: '2026-02-26T18:30:00.000Z',
         confirmed_at: '2026-02-26T19:00:00.000Z',
         points_awarded: true,
@@ -375,8 +467,26 @@ describe('TaskService', () => {
         'Points have already been awarded for this task',
       );
 
-      expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
-      expect(mockTaskRepo.update).not.toHaveBeenCalled();
+      expect(mockTaskRepo.confirmCompletionAtomic).not.toHaveBeenCalled();
+    });
+
+    it('should reject when the atomic confirm awards nothing (lost race)', async () => {
+      // findById sees an un-awarded task, but a concurrent confirm flips
+      // points_awarded first, so the compare-and-set updates 0 rows (null).
+      const completed: Task = {
+        ...baseTask,
+        status: TaskStatus.COMPLETED,
+        completed_at: '2026-02-26T18:30:00.000Z',
+      };
+      mockTaskRepo.findById.mockResolvedValue(completed);
+      mockTaskRepo.confirmCompletionAtomic.mockResolvedValue(null);
+
+      await expect(service.confirmCompletion('task-1', 'ch-1')).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.confirmCompletion('task-1', 'ch-1')).rejects.toThrow(
+        'no longer eligible or points were already awarded',
+      );
     });
 
     it('should reject confirmation when task not COMPLETED', async () => {
@@ -389,8 +499,7 @@ describe('TaskService', () => {
         'Task must be marked COMPLETED by assignee before confirmation',
       );
 
-      expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
-      expect(mockTaskRepo.update).not.toHaveBeenCalled();
+      expect(mockTaskRepo.confirmCompletionAtomic).not.toHaveBeenCalled();
     });
   });
 
@@ -398,12 +507,12 @@ describe('TaskService', () => {
     it('should reject completion and revert to IN_PROGRESS', async () => {
       const completed: Task = {
         ...baseTask,
-        status: 'COMPLETED',
+        status: TaskStatus.COMPLETED,
         completed_at: '2026-02-26T18:30:00.000Z',
       };
       const reverted: Task = {
         ...completed,
-        status: 'IN_PROGRESS',
+        status: TaskStatus.IN_PROGRESS,
         completed_at: null,
       };
       mockTaskRepo.findById.mockResolvedValue(completed);
@@ -416,16 +525,16 @@ describe('TaskService', () => {
       );
 
       expect(mockTaskRepo.update).toHaveBeenCalledWith('task-1', 'ch-1', {
-        status: 'IN_PROGRESS',
+        status: TaskStatus.IN_PROGRESS,
         completed_at: null,
       });
-      expect(result.status).toBe('IN_PROGRESS');
+      expect(result.status).toBe(TaskStatus.IN_PROGRESS);
     });
 
     it('should reject when task already has points awarded', async () => {
       const confirmed: Task = {
         ...baseTask,
-        status: 'COMPLETED',
+        status: TaskStatus.COMPLETED,
         completed_at: '2026-02-26T18:30:00.000Z',
         confirmed_at: '2026-02-26T19:00:00.000Z',
         points_awarded: true,
@@ -465,7 +574,7 @@ describe('TaskService', () => {
       expect(mockTaskRepo.findByChapter).toHaveBeenCalledWith('ch-1');
       expect(mockTaskRepo.findByAssignee).not.toHaveBeenCalled();
       expect(result).toHaveLength(1);
-      expect(result[0]).toEqual(baseTask);
+      expect(result[0]).toEqual(asView(baseTask));
     });
 
     it('should list tasks by assignee when not admin', async () => {
@@ -479,7 +588,7 @@ describe('TaskService', () => {
       );
       expect(mockTaskRepo.findByChapter).not.toHaveBeenCalled();
       expect(result).toHaveLength(1);
-      expect(result[0]).toEqual(baseTask);
+      expect(result[0]).toEqual(asView(baseTask));
     });
 
     it('should display OVERDUE status for past-due tasks', async () => {
@@ -487,14 +596,81 @@ describe('TaskService', () => {
       pastDue.setDate(pastDue.getDate() - 1);
       const overdueTask: Task = {
         ...baseTask,
-        status: 'TODO',
+        status: TaskStatus.TODO,
         due_date: pastDue.toISOString().slice(0, 10),
       };
       mockTaskRepo.findByChapter.mockResolvedValue([overdueTask]);
 
       const result = await service.list('ch-1', 'user-1', true);
 
-      expect(result[0].status).toBe('OVERDUE');
+      expect(result[0].status).toBe(TaskStatus.OVERDUE);
+    });
+
+    /**
+     * The point of `stored_status` (#1051): `OVERDUE` collapses TODO and
+     * IN_PROGRESS into one indistinct rendered value, and the transition table
+     * is checked against the stored one. Without this field a client cannot
+     * tell which transition is legal, so it cannot offer the assignee any
+     * action on an overdue task at all.
+     */
+    it('carries the stored status alongside a derived OVERDUE', async () => {
+      const pastDue = new Date();
+      pastDue.setDate(pastDue.getDate() - 1);
+      const dueDate = pastDue.toISOString().slice(0, 10);
+      mockTaskRepo.findByChapter.mockResolvedValue([
+        { ...baseTask, id: 'a', status: TaskStatus.TODO, due_date: dueDate },
+        {
+          ...baseTask,
+          id: 'b',
+          status: TaskStatus.IN_PROGRESS,
+          due_date: dueDate,
+        },
+      ]);
+
+      const result = await service.list('ch-1', 'user-1', true);
+
+      // Both render identically...
+      expect(result.map((t) => t.status)).toEqual([
+        TaskStatus.OVERDUE,
+        TaskStatus.OVERDUE,
+      ]);
+      // ...and are told apart only by the stored value.
+      expect(result.map((t) => t.stored_status)).toEqual([
+        TaskStatus.TODO,
+        TaskStatus.IN_PROGRESS,
+      ]);
+    });
+
+    // The guard the ternary rewrite could silently lose. Without this, dropping
+    // the `TODO || IN_PROGRESS` term keeps every other test green, and a
+    // COMPLETED task past its due date would render OVERDUE — grouping into the
+    // wrong board column and hiding Confirm, so its points are never awarded.
+    it('never derives OVERDUE for a COMPLETED task past its due date', async () => {
+      const pastDue = new Date();
+      pastDue.setDate(pastDue.getDate() - 1);
+      mockTaskRepo.findByChapter.mockResolvedValue([
+        {
+          ...baseTask,
+          status: TaskStatus.COMPLETED,
+          due_date: pastDue.toISOString().slice(0, 10),
+        },
+      ]);
+
+      const result = await service.list('ch-1', 'user-1', true);
+
+      expect(result[0].status).toBe(TaskStatus.COMPLETED);
+      expect(result[0].stored_status).toBe(TaskStatus.COMPLETED);
+    });
+
+    it('reports stored_status unchanged when nothing is derived', async () => {
+      mockTaskRepo.findByChapter.mockResolvedValue([
+        { ...baseTask, status: TaskStatus.COMPLETED },
+      ]);
+
+      const result = await service.list('ch-1', 'user-1', true);
+
+      expect(result[0].status).toBe(TaskStatus.COMPLETED);
+      expect(result[0].stored_status).toBe(TaskStatus.COMPLETED);
     });
   });
 
@@ -505,7 +681,7 @@ describe('TaskService', () => {
       const result = await service.listByChapter('ch-1');
 
       expect(mockTaskRepo.findByChapter).toHaveBeenCalledWith('ch-1');
-      expect(result).toEqual([baseTask]);
+      expect(result).toEqual([asView(baseTask)]);
     });
   });
 
@@ -519,7 +695,7 @@ describe('TaskService', () => {
         'ch-1',
         'user-1',
       );
-      expect(result).toEqual([baseTask]);
+      expect(result).toEqual([asView(baseTask)]);
     });
   });
 
@@ -530,7 +706,7 @@ describe('TaskService', () => {
       const result = await service.findById('task-1', 'ch-1');
 
       expect(mockTaskRepo.findById).toHaveBeenCalledWith('task-1', 'ch-1');
-      expect(result).toEqual(baseTask);
+      expect(result).toEqual(asView(baseTask));
     });
 
     it('should throw NotFoundException when task not found', async () => {
@@ -594,7 +770,7 @@ describe('TaskService', () => {
     it('should notify assignee when task completion is confirmed', async () => {
       const completed: Task = {
         ...baseTask,
-        status: 'COMPLETED',
+        status: TaskStatus.COMPLETED,
         completed_at: '2026-02-26T18:30:00.000Z',
       };
       const confirmed: Task = {
@@ -603,8 +779,7 @@ describe('TaskService', () => {
         points_awarded: true,
       };
       mockTaskRepo.findById.mockResolvedValue(completed);
-      mockPointTxnRepo.create.mockResolvedValue(basePointTxn);
-      mockTaskRepo.update.mockResolvedValue(confirmed);
+      mockTaskRepo.confirmCompletionAtomic.mockResolvedValue(confirmed);
 
       await service.confirmCompletion('task-1', 'ch-1');
 

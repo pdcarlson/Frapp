@@ -14,6 +14,7 @@ import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
+import { RequireModule } from '../decorators/module.decorator';
 import {
   CurrentChapterId,
   CurrentUser,
@@ -23,12 +24,15 @@ import {
   UpdateGeofenceDto,
   StartStudySessionDto,
   StudySessionHeartbeatDto,
+  ResumeStudySessionDto,
 } from '../dtos/study.dto';
 import { SystemPermissions } from '../../domain/constants/permissions';
 
 @ApiTags('Study Hours')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard, ChapterGuard)
+@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+@RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+@RequireModule('geofences')
 @Controller('geofences')
 export class StudyGeofenceController {
   constructor(private readonly studyService: StudyService) {}
@@ -40,7 +44,6 @@ export class StudyGeofenceController {
   }
 
   @Post()
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.GEOFENCES_MANAGE)
   @ApiOperation({ summary: 'Create geofence (admin)' })
   async create(
@@ -54,11 +57,11 @@ export class StudyGeofenceController {
       minutes_per_point: dto.minutes_per_point,
       points_per_interval: dto.points_per_interval,
       min_session_minutes: dto.min_session_minutes,
+      pause_grace_minutes: dto.pause_grace_minutes,
     });
   }
 
   @Patch(':id')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.GEOFENCES_MANAGE)
   @ApiOperation({ summary: 'Update geofence (admin)' })
   async update(
@@ -70,7 +73,6 @@ export class StudyGeofenceController {
   }
 
   @Delete(':id')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.GEOFENCES_MANAGE)
   @ApiOperation({ summary: 'Delete geofence (admin)' })
   async delete(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
@@ -81,7 +83,9 @@ export class StudyGeofenceController {
 
 @ApiTags('Study Hours')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard, ChapterGuard)
+@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+@RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+@RequireModule('hours')
 @Controller('study-sessions')
 export class StudySessionController {
   constructor(private readonly studyService: StudyService) {}
@@ -110,6 +114,33 @@ export class StudySessionController {
     @Body() dto: StudySessionHeartbeatDto,
   ) {
     return this.studyService.heartbeat(userId, chapterId, dto.lat, dto.lng);
+  }
+
+  @Post('pause')
+  @ApiOperation({
+    summary: 'Pause the active session (app backgrounded / tab hidden)',
+    description:
+      'Credits foreground time up to now and starts the grace clock. The session stays ACTIVE until the geofence pause_grace_minutes window elapses, then auto-expires as PAUSED_EXPIRED.',
+  })
+  async pause(
+    @CurrentUser('id') userId: string,
+    @CurrentChapterId() chapterId: string,
+  ) {
+    return this.studyService.pauseSession(userId, chapterId);
+  }
+
+  @Post('resume')
+  @ApiOperation({
+    summary: 'Resume a paused session (with lat/lng)',
+    description:
+      'Resumes without resetting accumulated foreground minutes. If the grace window already elapsed, returns the session as PAUSED_EXPIRED.',
+  })
+  async resume(
+    @CurrentUser('id') userId: string,
+    @CurrentChapterId() chapterId: string,
+    @Body() dto: ResumeStudySessionDto,
+  ) {
+    return this.studyService.resumeSession(userId, chapterId, dto.lat, dto.lng);
   }
 
   @Post('stop')

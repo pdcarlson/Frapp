@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useFrappClient } from "./use-frapp-client";
+import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 export function useBackworkResources(filters?: {
   department_id?: string;
@@ -14,8 +14,9 @@ export function useBackworkResources(filters?: {
   search?: string;
 }) {
   const client = useFrappClient();
+  const chapterId = useActiveChapterId();
   return useQuery({
-    queryKey: ["backwork", filters],
+    queryKey: ["backwork", chapterId, filters],
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/backwork", {
         params: { query: filters },
@@ -24,6 +25,7 @@ export function useBackworkResources(filters?: {
       return data;
     },
     staleTime: 60_000,
+    enabled: !!chapterId,
   });
 }
 

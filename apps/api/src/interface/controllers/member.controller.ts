@@ -13,39 +13,46 @@ import {
   ApiTags,
   ApiOperation,
   ApiQuery,
+  ApiOkResponse,
 } from '@nestjs/swagger';
 import { MemberService } from '../../application/services/member.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
+import { FreeTier } from '../decorators/subscription.decorator';
 import {
   CurrentChapterId,
   CurrentMember,
+  CurrentUser,
 } from '../decorators/current-user.decorator';
 import { UpdateMemberRolesDto, UpdateOnboardingDto } from '../dtos/member.dto';
+import {
+  MemberProfileDto,
+  MemberRosterEntryDto,
+} from '../dtos/member-profile.dto';
 import { SystemPermissions } from '../../domain/constants/permissions';
 
 @ApiTags('Members')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard, ChapterGuard)
+@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+@RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+@FreeTier()
 @Controller('members')
 export class MemberController {
   constructor(private readonly memberService: MemberService) {}
 
   @Get()
   @ApiOperation({ summary: 'List chapter members' })
-  @UseGuards(PermissionsGuard)
-  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+  @ApiOkResponse({ type: MemberProfileDto, isArray: true })
   async list(@CurrentChapterId() chapterId: string) {
-    return this.memberService.findByChapter(chapterId);
+    return this.memberService.findProfilesByChapter(chapterId);
   }
 
   @Get('search')
   @ApiOperation({ summary: 'Search members by name' })
-  @UseGuards(PermissionsGuard)
-  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   @ApiQuery({ name: 'q', required: true, description: 'Search query (name)' })
+  @ApiOkResponse({ type: MemberProfileDto, isArray: true })
   async search(
     @CurrentChapterId() chapterId: string,
     @Query('q') query: string,
@@ -53,23 +60,43 @@ export class MemberController {
     return this.memberService.searchByChapterAndName(chapterId, query ?? '');
   }
 
+  // MUST stay above `@Get(':id')`. Nest matches routes in declaration order and
+  // a single-segment `:id` would otherwise swallow this path, resolving it as
+  // `getOne('roster')` and answering 404 for a route that exists.
+  @Get('roster')
+  @ApiOperation({
+    summary: 'Display roster for the chapter — id, name and avatar only',
+  })
+  @ApiOkResponse({ type: MemberRosterEntryDto, isArray: true })
+  async roster(@CurrentChapterId() chapterId: string) {
+    return this.memberService.findRosterByChapter(chapterId);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get member profile by ID' })
-  @UseGuards(PermissionsGuard)
-  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
-  async getOne(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
-    return this.memberService.findProfileById(id, chapterId);
+  @ApiOkResponse({ type: MemberProfileDto })
+  async getOne(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') viewerUserId: string,
+    @Param('id') id: string,
+  ) {
+    return this.memberService.findProfileById(id, chapterId, viewerUserId);
   }
 
   @Patch(':id/roles')
   @ApiOperation({ summary: 'Update member roles' })
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.ROLES_MANAGE)
   async updateRoles(
+    @CurrentChapterId() chapterId: string,
     @Param('id') id: string,
     @Body() dto: UpdateMemberRolesDto,
   ) {
-    return this.memberService.updateRoles(id, dto.role_ids);
+    return this.memberService.updateRoles(
+      id,
+      dto.role_ids,
+      chapterId,
+      dto.custom_role_ids,
+    );
   }
 
   @Patch('me/onboarding')
@@ -86,10 +113,9 @@ export class MemberController {
 
   @Delete(':id')
   @ApiOperation({ summary: 'Remove member from chapter' })
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.MEMBERS_REMOVE)
-  async remove(@Param('id') id: string) {
-    await this.memberService.remove(id);
+  async remove(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
+    await this.memberService.remove(id, chapterId);
     return { success: true };
   }
 }

@@ -1,22 +1,33 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search, Scale } from "lucide-react";
+import { AdjustGlyph, SearchGlyph } from "@/components/points/points-glyphs";
 import { useLeaderboard, useMyPoints } from "@repo/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { EmptyState, LoadingState, OfflineState } from "@/components/shared/async-states";
+import { ErrorState, LoadingState, OfflineState } from "@/components/shared/async-states";
+import { NestedEmpty } from "@/components/shared/nested-states";
+import { amountToneClassName } from "@/components/points/amount-tone";
 import {
+  dashboardCheckboxCellClassName,
+  dashboardCheckboxHitAreaClassName,
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
 import { useToast } from "@/hooks/use-toast";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
-import { PointsAdjustmentDialog } from "@/components/points-adjustment-dialog";
+import { PointsAdjustmentDialog } from "@/components/points/points-adjustment-dialog";
+import {
+  SubscriptionNotice,
+  useGatedDialog,
+  useSubscriptionGate,
+} from "@/components/shared/subscription-gate";
+import { formatLocaleDateTime as formatTimestamp } from "@repo/formatting";
+import { PointsAuditCard } from "@/components/points/points-audit-card";
 
 const windows = [
   { label: "All Time", value: "all" as const },
@@ -36,40 +47,6 @@ type PointTransactionRow = {
   description: string;
   created_at: string;
 };
-const fallbackLeaderboard: LeaderboardRow[] = [
-  { user_id: "preview-user-1", total: 320 },
-  { user_id: "preview-user-2", total: 295 },
-  { user_id: "preview-user-3", total: 244 },
-];
-const fallbackTransactions: PointTransactionRow[] = [
-  {
-    id: "preview-txn-1",
-    amount: 10,
-    category: "ATTENDANCE",
-    description: "Chapter Meeting check-in",
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "preview-txn-2",
-    amount: 6,
-    category: "STUDY",
-    description: "Library geofence session",
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(),
-  },
-  {
-    id: "preview-txn-3",
-    amount: -3,
-    category: "FINE",
-    description: "Late arrival adjustment",
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 9).toISOString(),
-  },
-];
-
-function formatTimestamp(value: string): string {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "—";
-  return parsed.toLocaleString();
-}
 
 export default function PointsPage() {
   const { isOffline } = useNetwork();
@@ -80,31 +57,29 @@ export default function PointsPage() {
   const [amountFilter, setAmountFilter] = useState<"all" | "positive" | "negative">("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([]);
-  const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
+  // `POST /v1/points/adjust` is paid-ops. The dialog gates its own fields, but
+  // `open` is owned here, so §5 rule 1 — refuse to open onto a doomed form —
+  // has to be enforced at this trigger (#841).
+  const adjustGate = useSubscriptionGate();
+  const adjustDialog = useGatedDialog(adjustGate);
   const leaderboardQuery = useLeaderboard(window);
   const summaryQuery = useMyPoints(window);
-  const usingPreviewData = leaderboardQuery.isError || summaryQuery.isError;
 
   const isLoading = leaderboardQuery.isLoading || summaryQuery.isLoading;
+  const hasError = leaderboardQuery.isError || summaryQuery.isError;
 
   const leaderboard = useMemo(() => {
-    if (usingPreviewData) {
-      return fallbackLeaderboard;
-    }
     return Array.isArray(leaderboardQuery.data)
       ? (leaderboardQuery.data as LeaderboardRow[])
       : [];
-  }, [usingPreviewData, leaderboardQuery.data]);
+  }, [leaderboardQuery.data]);
 
   const summary = summaryQuery.data as
     | { balance?: number; transactions?: PointTransactionRow[] }
     | undefined;
   const transactions = useMemo(() => {
-    if (usingPreviewData) {
-      return fallbackTransactions;
-    }
     return Array.isArray(summary?.transactions) ? summary.transactions : [];
-  }, [usingPreviewData, summary?.transactions]);
+  }, [summary]);
   const filteredLeaderboard = useMemo(() => {
     const query = leaderboardSearch.trim().toLowerCase();
     if (!query) return leaderboard;
@@ -190,25 +165,59 @@ export default function PointsPage() {
     return <LoadingState message={stateMicrocopy.points.loading} />;
   }
 
+  // The leaderboard and the ledger are what officers read chapter financial
+  // standing off, so a failed fetch must not be papered over with plausible
+  // rows (`spec/ui/resilience.md` §1: "Show, don't guess"). Failing the whole
+  // page — rather than rendering a healthy-looking shell — also keeps the
+  // adjust and bulk-export controls out of reach while the data is unknown,
+  // matching how Members handles its supporting queries.
+  if (hasError) {
+    return (
+      <ErrorState
+        title={stateMicrocopy.points.errorTitle}
+        description={stateMicrocopy.points.errorDescription}
+        onRetry={() => {
+          void leaderboardQuery.refetch();
+          void summaryQuery.refetch();
+        }}
+      />
+    );
+  }
+
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        {/*
+          Stacked below `sm` (#1142): the title plus "Adjust points" and the
+          three window buttons cannot share a row inside a 375px viewport, and
+          every one of them is `whitespace-nowrap`. Scoped with `max-sm:` rather
+          than written mobile-first on purpose — at `sm` and above the class list
+          resolves to exactly what it was, so the pinned 1440px visual baseline
+          for this route does not move.
+        */}
+        <CardHeader className="flex flex-row items-center justify-between max-sm:flex-col max-sm:items-start max-sm:gap-3 max-sm:space-y-0">
           <div>
             <CardTitle>Points Ledger</CardTitle>
             <CardDescription>
               Track chapter ranking, manual adjustments, and transaction history.
             </CardDescription>
           </div>
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={() => setAdjustDialogOpen(true)}>
-              <Scale className="h-4 w-4" />
+          {/* `flex-wrap` is inert at desktop width and lets the four nowrap
+              buttons stack instead of overflow at 375px. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              {...adjustGate.controlProps()}
+              onClick={() => adjustDialog.setOpen(true)}
+            >
+              <AdjustGlyph className="h-4 w-4" />
               Adjust points
             </Button>
             {windows.map((item) => (
               <Button
                 key={item.value}
-                variant={window === item.value ? "default" : "outline"}
+                variant={window === item.value ? "default" : "secondary"}
                 size="sm"
                 onClick={() => setWindow(item.value)}
               >
@@ -217,42 +226,23 @@ export default function PointsPage() {
             ))}
           </div>
         </CardHeader>
-        <CardContent className="flex flex-wrap items-center gap-3">
-          <Badge variant="secondary">{usingPreviewData ? "Preview balance" : "My balance"}</Badge>
-          <p className="text-2xl font-semibold">
-            {usingPreviewData
-              ? 186
-              : typeof summary?.balance === "number"
-                ? summary.balance
-                : 0} points
-          </p>
+        <CardContent>
+          {/*
+            The all/semester/month window buttons beside the trigger are reads
+            and stay live — a lapsed chapter keeps its full ledger history.
+          */}
+          <SubscriptionNotice
+            gate={adjustGate}
+            feature="point adjustments"
+          />
+          <div className="flex flex-wrap items-center gap-3">
+            <Badge variant="secondary">My balance</Badge>
+            <p className="text-2xl font-bold tabular-nums">
+              {typeof summary?.balance === "number" ? summary.balance : 0} points
+            </p>
+          </div>
         </CardContent>
       </Card>
-
-      {usingPreviewData ? (
-        <Card className="border-amber-200 bg-amber-50/70 dark:border-amber-800 dark:bg-amber-950/30">
-          <CardContent className="flex items-center justify-between gap-4 pt-6">
-            <div>
-              <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
-                {stateMicrocopy.points.previewTitle}
-              </p>
-              <p className="text-xs text-amber-800 dark:text-amber-200">
-                {stateMicrocopy.points.previewDescription}
-              </p>
-            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                leaderboardQuery.refetch();
-                summaryQuery.refetch();
-              }}
-            >
-              Retry
-            </Button>
-          </CardContent>
-        </Card>
-      ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
         <Card>
@@ -262,16 +252,16 @@ export default function PointsPage() {
           </CardHeader>
           <CardContent>
             <div className="mb-3 relative">
-              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <SearchGlyph className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 value={leaderboardSearch}
                 onChange={(event) => setLeaderboardSearch(event.target.value)}
                 placeholder="Search by user id"
-                className="pl-9"
+                className="h-11 pl-9"
               />
             </div>
             {filteredLeaderboard.length === 0 ? (
-              <EmptyState
+              <NestedEmpty
                 title={stateMicrocopy.points.emptyLeaderboardTitle}
                 description={stateMicrocopy.points.emptyLeaderboardDescription}
               />
@@ -287,11 +277,13 @@ export default function PointsPage() {
                 <TableBody>
                   {filteredLeaderboard.map((entry, index) => (
                     <TableRow key={entry.user_id}>
-                      <TableCell>#{index + 1}</TableCell>
-                      <TableCell className="font-mono text-xs">
+                      <TableCell className="font-mono tabular-nums">#{index + 1}</TableCell>
+                      <TableCell className="font-mono text-[12.5px]">
                         {entry.user_id}
                       </TableCell>
-                      <TableCell className="font-semibold">{entry.total}</TableCell>
+                      <TableCell className="font-mono font-semibold tabular-nums">
+                        {entry.total}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -308,15 +300,16 @@ export default function PointsPage() {
           <CardContent>
             <div className="mb-3 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
               <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <SearchGlyph className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
                   value={transactionSearch}
                   onChange={(event) => setTransactionSearch(event.target.value)}
                   placeholder="Search descriptions"
-                  className="pl-9"
+                  className="h-11 pl-9"
                 />
               </div>
               <select
+                aria-label="Filter transactions by amount"
                 value={amountFilter}
                 onChange={(event) =>
                   setAmountFilter(
@@ -330,6 +323,7 @@ export default function PointsPage() {
                 <option value="negative">Amount: Negative</option>
               </select>
               <select
+                aria-label="Filter transactions by category"
                 value={categoryFilter}
                 onChange={(event) => setCategoryFilter(event.target.value)}
                 className={dashboardFilterSelectClassName}
@@ -343,22 +337,22 @@ export default function PointsPage() {
               </select>
             </div>
             {selectedTransactionIds.length > 0 ? (
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-primary/30 bg-primary-50/70 p-3 dark:bg-primary/10">
-                <p className="text-sm font-medium">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-accent-border bg-accent-subtle p-3">
+                <p className="text-sm font-semibold">
                   {selectedTransactionIds.length} transaction
                   {selectedTransactionIds.length > 1 ? "s" : ""} selected
                 </p>
                 <div className="flex gap-2">
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant="secondary"
                     onClick={() => handleBulkTransactionAction("Export selected")}
                   >
                     Export selected
                   </Button>
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant="secondary"
                     onClick={() => handleBulkTransactionAction("Flag for audit")}
                   >
                     Flag for audit
@@ -367,7 +361,7 @@ export default function PointsPage() {
               </div>
             ) : null}
             {filteredTransactions.length === 0 ? (
-              <EmptyState
+              <NestedEmpty
                 title={stateMicrocopy.points.emptyTransactionsTitle}
                 description={stateMicrocopy.points.emptyTransactionsDescription}
               />
@@ -375,14 +369,16 @@ export default function PointsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-10">
-                      <input
-                        type="checkbox"
-                        aria-label="Select all visible transactions"
-                        className={dashboardTableCheckboxClassName}
-                        checked={allTransactionsSelected}
-                        onChange={(event) => toggleAllTransactions(event.target.checked)}
-                      />
+                    <TableHead className={dashboardCheckboxCellClassName}>
+                      <label className={dashboardCheckboxHitAreaClassName}>
+                        <input
+                          type="checkbox"
+                          aria-label="Select all visible transactions"
+                          className={dashboardTableCheckboxClassName}
+                          checked={allTransactionsSelected}
+                          onChange={(event) => toggleAllTransactions(event.target.checked)}
+                        />
+                      </label>
                     </TableHead>
                     <TableHead>Amount</TableHead>
                     <TableHead>Category</TableHead>
@@ -392,28 +388,35 @@ export default function PointsPage() {
                 </TableHeader>
                 <TableBody>
                   {filteredTransactions.map((transaction) => (
-                    <TableRow key={transaction.id}>
-                      <TableCell className="w-10">
-                        <input
-                          type="checkbox"
-                          aria-label={`Select ${transaction.description}`}
-                          className={dashboardTableCheckboxClassName}
-                          checked={selectedTransactionIds.includes(transaction.id)}
-                          onChange={(event) => toggleTransaction(transaction.id, event.target.checked)}
-                        />
+                    <TableRow
+                      key={transaction.id}
+                      data-state={
+                        selectedTransactionIds.includes(transaction.id)
+                          ? "selected"
+                          : undefined
+                      }
+                    >
+                      <TableCell className={dashboardCheckboxCellClassName}>
+                        <label className={dashboardCheckboxHitAreaClassName}>
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${transaction.description}`}
+                            className={dashboardTableCheckboxClassName}
+                            checked={selectedTransactionIds.includes(transaction.id)}
+                            onChange={(event) =>
+                              toggleTransaction(transaction.id, event.target.checked)
+                            }
+                          />
+                        </label>
                       </TableCell>
                       <TableCell
-                        className={
-                          transaction.amount >= 0
-                            ? "font-semibold text-emerald-700"
-                            : "font-semibold text-destructive"
-                        }
+                        className={amountToneClassName(transaction.amount)}
                       >
                         {transaction.amount >= 0 ? `+${transaction.amount}` : transaction.amount}
                       </TableCell>
                       <TableCell>{transaction.category}</TableCell>
                       <TableCell>{transaction.description}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
+                      <TableCell className="text-[12.5px] text-muted-foreground">
                         {formatTimestamp(transaction.created_at)}
                       </TableCell>
                     </TableRow>
@@ -425,10 +428,12 @@ export default function PointsPage() {
         </Card>
       </div>
 
+      <PointsAuditCard />
+
       <PointsAdjustmentDialog
-        open={adjustDialogOpen}
-        onOpenChange={setAdjustDialogOpen}
-        usingPreviewData={usingPreviewData}
+        open={adjustDialog.open}
+        onOpenChange={adjustDialog.setOpen}
+        onCloseAutoFocus={adjustDialog.contentProps.onCloseAutoFocus}
         onAdjusted={async () => {
           await Promise.all([leaderboardQuery.refetch(), summaryQuery.refetch()]);
         }}

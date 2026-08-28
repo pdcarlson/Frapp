@@ -1,7 +1,16 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
-  "ui": "tui",
-  "globalEnv": ["CI", "PLAYWRIGHT_BASE_URL"],
+  "ui": "stream",
+  "globalEnv": [
+    "CI",
+    "NODE_ENV",
+    "PLAYWRIGHT_BASE_URL",
+    "SUPABASE_AUTH_BYPASS",
+    "SENTRY_AUTH_TOKEN",
+    "NEXT_PUBLIC_SENTRY_DSN",
+    "NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE",
+    "VERCEL_ENV"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -9,10 +18,14 @@
       "outputs": [".next/**", "!.next/cache/**", "dist/**"]
     },
     "lint": {
-      "dependsOn": ["^lint"]
+      "dependsOn": ["^build"]
     },
     "check-types": {
-      "dependsOn": ["^check-types"]
+      "dependsOn": ["^build"]
+    },
+    "test:cov": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"]
     },
     "dev": {
       "cache": false,

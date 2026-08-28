@@ -16,6 +16,39 @@ export function useChannels() {
   });
 }
 
+/** One row per channel the caller can read, zeros included. */
+export interface ChannelUnreadCount {
+  channel_id: string;
+  unread_count: number;
+  mention_count: number;
+}
+
+/**
+ * Unread and mention counts for every readable channel.
+ *
+ * `spec/behavior/chat/README.md` § Read Receipts is explicit that clients MUST
+ * NOT re-derive either number: the server excludes the viewer's own messages and
+ * deleted ones, and treats "never opened" as all-unread, so a second local
+ * definition would disagree on exactly those cases.
+ *
+ * This is the one chat operation whose response body is actually generated in
+ * `@repo/api-sdk` (every other one infers as `never`), so it needs no cast.
+ */
+export function useChannelUnreadCounts() {
+  const client = useFrappClient();
+  return useQuery({
+    queryKey: ["channels", "unread"],
+    queryFn: async () => {
+      const { data, error } = await client.GET("/v1/channels/unread");
+      if (error) throw error;
+      return (data ?? []) as ChannelUnreadCount[];
+    },
+    // Deliberately shorter than the 60s on `useChannels`: a badge that lags a
+    // read is the most visible staleness in the app.
+    staleTime: 15_000,
+  });
+}
+
 export function useChannel(id: string) {
   const client = useFrappClient();
   return useQuery({
@@ -89,9 +122,7 @@ export function useCategories() {
   return useQuery({
     queryKey: ["channels", "categories"],
     queryFn: async () => {
-      const { data, error } = await client.GET(
-        "/v1/channels/categories/list",
-      );
+      const { data, error } = await client.GET("/v1/channels/categories/list");
       if (error) throw error;
       return data;
     },
@@ -210,7 +241,20 @@ export function useSendMessage() {
     }: {
       channelId: string;
       body: {
+        client_message_id: string;
         content: string;
+        kind?:
+          | "text"
+          | "event"
+          | "task"
+          | "poll"
+          | "dues"
+          | "points"
+          | "hours"
+          | "system_audit"
+          | "loading"
+          | "announcement";
+        payload?: Record<string, never>;
         reply_to_id?: string;
         metadata?: Record<string, never>;
       };
@@ -367,6 +411,80 @@ export function useRequestChatUploadUrl() {
       );
       if (error) throw error;
       return data;
+    },
+  });
+}
+
+/** An attachment plus the short-lived signed URL that downloads it. */
+export interface MessageAttachment {
+  id: string;
+  message_id: string;
+  filename: string;
+  content_type: string | null;
+  byte_size: number | null;
+  width: number | null;
+  height: number | null;
+  download_url: string;
+}
+
+/**
+ * Attachments on one message, each with a signed download URL.
+ *
+ * Fetched on demand rather than embedded in the message list, because the URLs
+ * expire — minting them into a cache that `staleTime: Infinity` never refreshes
+ * would hand out links that are dead by the time anyone clicks. `staleTime` is
+ * therefore well inside the server's one-hour TTL.
+ *
+ * Gated on `enabled` so the common case — a message with no attachments — costs
+ * no request at all. Callers pass `message.attachment_count > 0`.
+ */
+export function useMessageAttachments(
+  channelId: string,
+  messageId: string,
+  enabled: boolean,
+) {
+  const client = useFrappClient();
+  return useQuery({
+    queryKey: ["channels", channelId, "messages", messageId, "attachments"],
+    enabled: enabled && !!channelId && !!messageId,
+    // Comfortably inside the API's 3600s signed-URL TTL, so a link handed to the
+    // DOM is still live when it is used.
+    staleTime: 10 * 60_000,
+    queryFn: async () => {
+      const { data, error } = await client.GET(
+        "/v1/channels/{id}/messages/{messageId}/attachments",
+        { params: { path: { id: channelId, messageId } } },
+      );
+      if (error) throw error;
+      return (data ?? []) as MessageAttachment[];
+    },
+  });
+}
+
+/**
+ * Performs the PUT to a Supabase Storage signed URL returned by
+ * `useRequestChatUploadUrl`. Wraps the raw `fetch` so every chat network
+ * call stays inside `@repo/hooks` and benefits from TanStack Query's retry,
+ * pending state, and error handling primitives.
+ */
+export function useUploadSignedUrl() {
+  return useMutation({
+    mutationFn: async ({
+      signedUrl,
+      file,
+    }: {
+      signedUrl: string;
+      file: File;
+    }) => {
+      const res = await fetch(signedUrl, {
+        method: "PUT",
+        body: file,
+        headers: { "Content-Type": file.type },
+      });
+      if (!res.ok) {
+        throw new Error(`Upload failed (${res.status})`);
+      }
+      return { status: res.status, contentType: file.type, size: file.size };
     },
   });
 }

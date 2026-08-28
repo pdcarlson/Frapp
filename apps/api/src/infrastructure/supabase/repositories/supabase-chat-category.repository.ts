@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+  TablesUpdate,
+} from '../database.types';
 import type { IChatCategoryRepository } from '../../../domain/repositories/chat.repository.interface';
 import { ChatChannelCategory } from '../../../domain/entities/chat.entity';
 
@@ -18,40 +22,57 @@ export class SupabaseChatCategoryRepository implements IChatCategoryRepository {
       .eq('chapter_id', chapterId)
       .order('display_order', { ascending: true });
     if (error) throw error;
-    return (data as ChatChannelCategory[]) || [];
+    return data || [];
   }
 
   async create(
-    data: Partial<ChatChannelCategory>,
+    data: TablesInsert<'chat_channel_categories'>,
   ): Promise<ChatChannelCategory> {
     const { data: created, error } = await this.supabase
       .from('chat_channel_categories')
-      .insert(data as never)
+      .insert(data)
       .select()
       .single();
     if (error) throw error;
-    return created as ChatChannelCategory;
+    return created;
+  }
+
+  async findById(
+    id: string,
+    chapterId: string,
+  ): Promise<ChatChannelCategory | null> {
+    const { data, error } = await this.supabase
+      .from('chat_channel_categories')
+      .select('*')
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
   }
 
   async update(
     id: string,
-    data: Partial<ChatChannelCategory>,
+    chapterId: string,
+    data: TablesUpdate<'chat_channel_categories'>,
   ): Promise<ChatChannelCategory> {
     const { data: updated, error } = await this.supabase
       .from('chat_channel_categories')
-      .update(data as never)
+      .update(data)
       .eq('id', id)
+      .eq('chapter_id', chapterId)
       .select()
       .single();
     if (error) throw error;
-    return updated as ChatChannelCategory;
+    return updated;
   }
 
-  async delete(id: string): Promise<void> {
+  async delete(id: string, chapterId: string): Promise<void> {
     const { error } = await this.supabase
       .from('chat_channel_categories')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .eq('chapter_id', chapterId);
     if (error) throw error;
   }
 }

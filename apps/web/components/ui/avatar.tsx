@@ -5,6 +5,14 @@ import * as AvatarPrimitive from "@radix-ui/react-avatar"
 
 import { cn } from "@/lib/utils"
 
+/*
+ * `spec/ui/design-system/components.md` §7 and §11 draw the avatar the same way
+ * everywhere it appears: a circle on the elevated `#26221C` step with the
+ * initials in `--muted-foreground` at the caption size and 700. The scaffold
+ * filled the fallback with `bg-secondary`, which under Signet is the card step
+ * — one below elevated, so an avatar sitting on a card vanished into it.
+ */
+
 const Avatar = React.forwardRef<
   React.ElementRef<typeof AvatarPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof AvatarPrimitive.Root>
@@ -39,7 +47,7 @@ const AvatarFallback = React.forwardRef<
   <AvatarPrimitive.Fallback
     ref={ref}
     className={cn(
-      "flex h-full w-full items-center justify-center rounded-full bg-muted",
+      "flex h-full w-full items-center justify-center rounded-full bg-accent text-[12.5px] font-bold text-muted-foreground",
       className
     )}
     {...props}

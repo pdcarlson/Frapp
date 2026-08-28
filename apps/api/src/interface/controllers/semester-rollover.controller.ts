@@ -11,7 +11,8 @@ import { RolloverDto } from '../dtos/semester-rollover.dto';
 
 @ApiTags('Semesters')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard, ChapterGuard)
+@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+@RequirePermissions(SystemPermissions.MEMBERS_VIEW)
 @Controller()
 export class SemesterRolloverController {
   constructor(
@@ -19,7 +20,6 @@ export class SemesterRolloverController {
   ) {}
 
   @Post('chapters/current/rollover')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.SEMESTER_ROLLOVER)
   @ApiOperation({ summary: 'Trigger semester rollover' })
   async rollover(

@@ -1,9 +1,15 @@
+import * as path from 'path';
 import {
   Inject,
   Injectable,
   NotFoundException,
+  BadRequestException,
   ConflictException,
 } from '@nestjs/common';
+import {
+  isAllowedUploadExtension,
+  isAllowedUploadMime,
+} from '@repo/validation';
 import {
   BACKWORK_RESOURCE_REPOSITORY,
   BACKWORK_DEPARTMENT_REPOSITORY,
@@ -27,6 +33,7 @@ import {
   STORAGE_PROVIDER,
   type IStorageProvider,
 } from '../../domain/adapters/storage.interface';
+import { assertSafeStoragePath } from '../../domain/utils/storage-path';
 
 const BACKWORK_BUCKET = 'backwork';
 
@@ -68,8 +75,22 @@ export class BackworkService {
   ) {}
 
   async requestUploadUrl(input: RequestUploadUrlInput) {
+    const ext = input.filename.includes('.')
+      ? input.filename.slice(input.filename.lastIndexOf('.')).toLowerCase()
+      : '';
+
+    if (!isAllowedUploadExtension('document', ext)) {
+      throw new BadRequestException(`File extension "${ext}" is not allowed`);
+    }
+
+    if (!isAllowedUploadMime('document', input.contentType)) {
+      throw new BadRequestException(
+        `Content type "${input.contentType}" is not allowed`,
+      );
+    }
+
     const resourceId = crypto.randomUUID();
-    const storagePath = `chapters/${input.chapterId}/backwork/${resourceId}/${input.filename}`;
+    const storagePath = `chapters/${input.chapterId}/backwork/${resourceId}/${path.basename(input.filename)}`;
 
     const signedUrl = await this.storageProvider.getSignedUploadUrl(
       BACKWORK_BUCKET,
@@ -81,6 +102,23 @@ export class BackworkService {
   }
 
   async confirmUpload(input: ConfirmUploadInput): Promise<BackworkResource> {
+    if (
+      !input.storage_path.startsWith(`chapters/${input.chapter_id}/backwork/`)
+    ) {
+      throw new BadRequestException(
+        'storage_path must be within the chapter backwork folder',
+      );
+    }
+    // A prefix check is not containment — relative segments satisfy it and
+    // still climb out, and this value is persisted and later handed to
+    // getSignedDownloadUrl/deleteFile. The storage layer rejects them too, but
+    // this write path must not rely on that alone: it is what turns any future
+    // gap in that guard into a cross-bucket read of a service-role-signed URL.
+    assertSafeStoragePath(
+      input.storage_path,
+      'storage_path must not contain relative path segments',
+    );
+
     const existing = await this.resourceRepo.findByFileHash(
       input.chapter_id,
       input.file_hash,
@@ -170,9 +208,18 @@ export class BackworkService {
 
   async updateDepartment(
     id: string,
+    chapterId: string,
     data: { name?: string },
   ): Promise<BackworkDepartment> {
-    return this.departmentRepo.update(id, data);
+    // The repository scopes the write to the active chapter, so `null` means
+    // the department is either gone or owned by another chapter. Both surface
+    // as 404 — a `backwork:admin` must not be able to probe for the existence
+    // of another chapter's departments by UUID.
+    const updated = await this.departmentRepo.update(id, chapterId, data);
+    if (!updated) {
+      throw new NotFoundException('Department not found');
+    }
+    return updated;
   }
 
   async getProfessors(chapterId: string): Promise<BackworkProfessor[]> {

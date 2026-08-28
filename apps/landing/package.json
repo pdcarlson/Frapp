@@ -4,29 +4,32 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "prebuild": "node ../../scripts/sync-brand-assets.mjs",
     "dev": "next dev --port 3002",
-    "build": "next build",
+    "build": "node ../../scripts/next-build.mjs",
     "start": "next start",
     "lint": "eslint --max-warnings 0",
-    "check-types": "next typegen && tsc --noEmit"
+    "check-types": "next typegen && tsc --noEmit",
+    "test": "vitest run",
+    "test:cov": "vitest run --coverage"
   },
   "dependencies": {
     "@repo/theme": "*",
-    "@repo/ui": "*",
-    "autoprefixer": "^10.4.27",
-    "lucide-react": "^0.564.0",
-    "next": "^16.1.5",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
+    "autoprefixer": "^10.5.4",
+    "lucide-react": "^1.33.0",
+    "next": "^16.3.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
     "tailwindcss": "^3.4.19"
   },
   "devDependencies": {
     "@repo/eslint-config": "*",
     "@repo/typescript-config": "*",
-    "@types/node": "^22.15.3",
+    "@types/node": "^26.2.0",
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.2",
-    "eslint": "^9.39.1",
-    "typescript": "5.9.2"
+    "eslint": "^9.39.5",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "vitest": "^4.1.10"
   }
 }

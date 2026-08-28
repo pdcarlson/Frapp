@@ -15,6 +15,11 @@ import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
+import { FreeTier, GraceBlocked } from '../decorators/subscription.decorator';
+import {
+  ThrottleExpensiveWrite,
+  ThrottleFanOutWrite,
+} from '../decorators/throttle-profiles.decorator';
 import {
   CurrentUser,
   CurrentChapterId,
@@ -30,6 +35,7 @@ import { SystemPermissions } from '../../domain/constants/permissions';
 @ApiBearerAuth()
 @UseGuards(SupabaseAuthGuard)
 @UseInterceptors(AuthSyncInterceptor)
+@FreeTier()
 @Controller('invites')
 export class InviteController {
   constructor(private readonly inviteService: InviteService) {}
@@ -37,6 +43,7 @@ export class InviteController {
   @Post()
   @UseGuards(ChapterGuard, PermissionsGuard)
   @RequirePermissions(SystemPermissions.MEMBERS_INVITE)
+  @GraceBlocked()
   @ApiOperation({ summary: 'Generate an invite token' })
   async create(
     @CurrentChapterId() chapterId: string,
@@ -47,8 +54,10 @@ export class InviteController {
   }
 
   @Post('batch')
+  @ThrottleExpensiveWrite()
   @UseGuards(ChapterGuard, PermissionsGuard)
   @RequirePermissions(SystemPermissions.MEMBERS_INVITE)
+  @GraceBlocked()
   @ApiOperation({ summary: 'Generate multiple invite tokens' })
   async createBatch(
     @CurrentChapterId() chapterId: string,
@@ -64,6 +73,7 @@ export class InviteController {
   }
 
   @Post('redeem')
+  @ThrottleFanOutWrite()
   @ApiOperation({ summary: 'Redeem an invite token to join a chapter' })
   async redeem(
     @CurrentUser('id') userId: string,

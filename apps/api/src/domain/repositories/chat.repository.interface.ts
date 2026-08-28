@@ -2,16 +2,59 @@ import {
   ChatChannel,
   ChatChannelCategory,
   ChatMessage,
+  ChatMessageAction,
+  ChatMessageAttachment,
   MessageReaction,
   ChannelReadReceipt,
+  ChannelUnreadCount,
 } from '../entities/chat.entity';
 
 export const CHAT_CHANNEL_REPOSITORY = 'CHAT_CHANNEL_REPOSITORY';
 export const CHAT_CATEGORY_REPOSITORY = 'CHAT_CATEGORY_REPOSITORY';
 export const CHAT_MESSAGE_REPOSITORY = 'CHAT_MESSAGE_REPOSITORY';
+export const CHAT_MESSAGE_ACTION_REPOSITORY = 'CHAT_MESSAGE_ACTION_REPOSITORY';
+export const CHAT_MESSAGE_ATTACHMENT_REPOSITORY =
+  'CHAT_MESSAGE_ATTACHMENT_REPOSITORY';
 export const MESSAGE_REACTION_REPOSITORY = 'MESSAGE_REACTION_REPOSITORY';
 export const CHANNEL_READ_RECEIPT_REPOSITORY =
   'CHANNEL_READ_RECEIPT_REPOSITORY';
+
+/** Postgres unique-violation error code. */
+export const PG_UNIQUE_VIOLATION = '23505';
+
+/**
+ * Thrown by `IChatMessageRepository.create` when the partial unique index
+ * `idx_chat_messages_dedupe` rejects the insert. Callers should re-select
+ * the existing row via `findByClientMessageId` and return it as
+ * `deduplicated: true`.
+ */
+export class ChatMessageDuplicateError extends Error {
+  constructor(
+    public readonly channel_id: string,
+    public readonly sender_id: string | null,
+    public readonly client_message_id: string,
+  ) {
+    super('Duplicate chat_messages insert (client_message_id collision)');
+    this.name = 'ChatMessageDuplicateError';
+  }
+}
+
+/**
+ * Thrown by `IChatMessageActionRepository.create` when the unique dedupe
+ * index `idx_chat_message_actions_dedupe` rejects the insert. Callers
+ * decide whether to UPSERT (vote-change) or surface the existing row
+ * as a no-op dedup.
+ */
+export class ChatMessageActionDuplicateError extends Error {
+  constructor(
+    public readonly message_id: string,
+    public readonly user_id: string,
+    public readonly action_type: string,
+  ) {
+    super('Duplicate chat_message_actions insert');
+    this.name = 'ChatMessageActionDuplicateError';
+  }
+}
 
 export interface IChatChannelRepository {
   findById(id: string, chapterId: string): Promise<ChatChannel | null>;
@@ -28,12 +71,14 @@ export interface IChatChannelRepository {
 
 export interface IChatCategoryRepository {
   findByChapter(chapterId: string): Promise<ChatChannelCategory[]>;
+  findById(id: string, chapterId: string): Promise<ChatChannelCategory | null>;
   create(data: Partial<ChatChannelCategory>): Promise<ChatChannelCategory>;
   update(
     id: string,
+    chapterId: string,
     data: Partial<ChatChannelCategory>,
   ): Promise<ChatChannelCategory>;
-  delete(id: string): Promise<void>;
+  delete(id: string, chapterId: string): Promise<void>;
 }
 
 export interface IChatMessageRepository {
@@ -44,8 +89,67 @@ export interface IChatMessageRepository {
   ): Promise<ChatMessage[]>;
   findPinnedByChannel(channelId: string): Promise<ChatMessage[]>;
   countPinnedByChannel(channelId: string): Promise<number>;
+  /**
+   * Newest-first list of POLL messages across every channel in the chapter.
+   * Optional `channelId` scopes to a single channel. `limit` caps result size
+   * (undefined, non-finite, or non-positive values use the shared list default;
+   * finite positive values are clamped to the shared list min/max in the repo).
+   * When `active` is set, expiration is enforced in SQL (via `metadata.expires_at`)
+   * so `limit` applies after that filter, not before.
+   */
+  findPollsByChapter(
+    chapterId: string,
+    options?: { channelId?: string; limit?: number; active?: boolean },
+  ): Promise<ChatMessage[]>;
+  /**
+   * Locate an already-persisted message by its idempotency triple. Used by
+   * the hot-path send to reconcile a duplicate `(channel_id, sender_id,
+   * client_message_id)` insert. Returns null when no such row exists.
+   */
+  findByClientMessageId(
+    channelId: string,
+    senderId: string | null,
+    clientMessageId: string,
+  ): Promise<ChatMessage | null>;
+  /**
+   * Insert a row. Throws {@link ChatMessageDuplicateError} on a
+   * `(channel_id, sender_id, client_message_id)` unique violation so the
+   * service can re-select and surface it as `deduplicated: true` instead
+   * of a 5xx.
+   */
   create(data: Partial<ChatMessage>): Promise<ChatMessage>;
   update(id: string, data: Partial<ChatMessage>): Promise<ChatMessage>;
+}
+
+export interface IChatMessageActionRepository {
+  /**
+   * Insert a per-user reaction / vote / RSVP row. Throws
+   * {@link ChatMessageActionDuplicateError} on the unique index violation
+   * so the caller can decide between dedup-as-success (emoji reactions)
+   * and UPSERT (vote-change, ADR-07) without a read-then-insert race.
+   */
+  create(data: {
+    message_id: string;
+    user_id: string;
+    action_type: string;
+    payload?: Record<string, unknown>;
+  }): Promise<ChatMessageAction>;
+  findOne(
+    messageId: string,
+    userId: string,
+    actionType: string,
+  ): Promise<ChatMessageAction | null>;
+  /**
+   * Vote-change UPSERT (ADR-07): overwrite `payload` + bump `created_at`
+   * on the row keyed by (message_id, user_id, action_type). The row id
+   * stays stable so a subscribed client matches the Realtime UPDATE.
+   */
+  updateForVote(
+    messageId: string,
+    userId: string,
+    actionType: string,
+    payload: Record<string, unknown>,
+  ): Promise<ChatMessageAction | null>;
 }
 
 export interface IMessageReactionRepository {
@@ -69,4 +173,66 @@ export interface IChannelReadReceiptRepository {
     userId: string,
     lastReadAt: string,
   ): Promise<ChannelReadReceipt>;
+  /**
+   * Unread and mention tallies for every channel in a chapter, for one viewer.
+   *
+   * Returns a row per channel **including ones the viewer cannot access**, so
+   * the caller must filter. Kept that way deliberately: the access predicate
+   * lives in `ChannelAccessService` and a second copy inside the SQL would be
+   * free to drift from it.
+   */
+  getUnreadCounts(
+    chapterId: string,
+    userId: string,
+  ): Promise<ChannelUnreadCount[]>;
+}
+
+/**
+ * The fields an attachment is created with.
+ *
+ * Spelled out rather than `Partial<ChatMessageAttachment>` — matching
+ * `IChatMessageActionRepository.create` — because every one of these is required
+ * at insert time and a `Partial` would let a caller omit `channel_id`, which is
+ * what carries the row's tenant scope.
+ */
+export interface NewChatMessageAttachment {
+  message_id: string;
+  channel_id: string;
+  bucket: string;
+  storage_path: string;
+  filename: string;
+  content_type: string | null;
+  byte_size: number | null;
+  width?: number | null;
+  height?: number | null;
+  external_url?: string | null;
+}
+
+/**
+ * Attachment rows for chat messages.
+ *
+ * Deliberately narrow: attachments are written once with their message and read
+ * back per message. There is no update method because there is nothing to
+ * update — an attachment is an immutable fact about a message — and no delete
+ * because `ON DELETE CASCADE` from `chat_messages` already removes them, which
+ * is the only way one should ever disappear.
+ */
+export interface IChatMessageAttachmentRepository {
+  /** Bulk-insert the attachments for one message. Returns the created rows. */
+  createMany(
+    rows: NewChatMessageAttachment[],
+  ): Promise<ChatMessageAttachment[]>;
+
+  /**
+   * Attachments for one message, oldest first (the order they were attached).
+   *
+   * `chapterId` is not redundant with `messageId`: the tenant predicate belongs
+   * in the same statement as the lookup, so a message id from another chapter
+   * returns nothing rather than relying on the caller having checked first
+   * (spec/behavior/multi-tenancy.md — scope the query, don't read-then-check).
+   */
+  findByMessage(
+    messageId: string,
+    chapterId: string,
+  ): Promise<ChatMessageAttachment[]>;
 }

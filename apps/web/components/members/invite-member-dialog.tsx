@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Copy, Loader2, ShieldPlus, Trash2 } from "lucide-react";
+import { AlertTriangle, Copy, Loader2, Trash2 } from "lucide-react";
+import { InviteGlyph } from "@/components/members/directory-glyphs";
 import {
   useBatchCreateInvites,
   useCreateInvite,
@@ -13,6 +14,10 @@ import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  SubscriptionNotice,
+  useSubscriptionGate,
+} from "@/components/shared/subscription-gate";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -23,6 +28,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { dashboardFilterSelectClassName } from "@/components/shared/table-controls";
+import { formatLocaleDateTime as formatDate } from "@repo/formatting";
+import { getErrorMessage } from "@/lib/utils";
 
 type RoleRow = {
   id: string;
@@ -36,44 +43,6 @@ type InviteRow = {
   expires_at: string;
   used_at: string | null;
 };
-
-const fallbackRoles: RoleRow[] = [
-  { id: "member-role", name: "Member" },
-  { id: "new-member-role", name: "New Member" },
-  { id: "exec-role", name: "Executive Board" },
-];
-
-const fallbackInvites: InviteRow[] = [
-  {
-    id: "preview-invite-1",
-    token: "preview-token-alpha",
-    role: "Member",
-    expires_at: new Date(Date.now() + 1000 * 60 * 60 * 12).toISOString(),
-    used_at: null,
-  },
-  {
-    id: "preview-invite-2",
-    token: "preview-token-bravo",
-    role: "Executive Board",
-    expires_at: new Date(Date.now() + 1000 * 60 * 60 * 4).toISOString(),
-    used_at: null,
-  },
-];
-
-function formatDate(value: string): string {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return "—";
-  }
-  return parsed.toLocaleString();
-}
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return "Something went wrong. Please retry.";
-}
 
 function normalizeInvites(input: unknown): InviteRow[] {
   const source = Array.isArray(input) ? input : input ? [input] : [];
@@ -125,16 +94,31 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   const createInviteMutation = useCreateInvite();
   const createBatchInvitesMutation = useBatchCreateInvites();
   const revokeInviteMutation = useRevokeInvite();
+  // `POST /invites` and `POST /invites/batch` are the repo's only two
+  // `@FreeTier` + `@GraceBlocked` routes (`invite.controller.ts:46,60`): they
+  // keep working while `incomplete`, and are blocked *by name* only inside the
+  // `past_due` grace window. That is the one gate class the rest of this sweep
+  // never exercises, so it gets the matching writeClass rather than the default.
+  //
+  // Deliberately gating the submit rather than the trigger, against §5 rule 1.
+  // Two reasons: the trigger is a caller-supplied node (`trigger` prop), and
+  // this dialog is mostly a read surface — the invite list — plus a revoke that
+  // is plain `@FreeTier` and must stay live during grace. Blocking the dialog
+  // from opening would take those away to gate one button inside it.
+  const gate = useSubscriptionGate("grace-blocked");
+  // Revoke is `DELETE /invites/:id` — the class-level `@FreeTier` WITHOUT
+  // `@GraceBlocked`. That is not "always allowed": free-tier survives
+  // `incomplete` and the grace window, then hits `write_locked` past it, and
+  // `canceled` is checked above the carve-out entirely. So it needs its own
+  // verdict rather than being left ungated.
+  const revokeGate = useSubscriptionGate("free-tier");
   const { toast } = useToast();
-  const usingPreviewData = rolesQuery.isError || invitesQuery.isError;
+  const hasLiveDataError = rolesQuery.isError || invitesQuery.isError;
 
   const roleOptions = useMemo(() => {
-    if (usingPreviewData) {
-      return fallbackRoles;
-    }
     const rolesData = rolesQuery.data as unknown;
     if (!Array.isArray(rolesData)) {
-      return fallbackRoles;
+      return [];
     }
     const roles = rolesData
       .flatMap((role: unknown) => {
@@ -147,18 +131,16 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
       })
       .sort((first: RoleRow, second: RoleRow) => first.name.localeCompare(second.name));
 
-    return roles.length > 0 ? roles : fallbackRoles;
-  }, [rolesQuery.data, usingPreviewData]);
+    return roles;
+  }, [rolesQuery.data]);
 
   const inviteRows = useMemo(() => {
-    if (usingPreviewData) {
-      return fallbackInvites;
-    }
     return normalizeInvites(invitesQuery.data);
-  }, [invitesQuery.data, usingPreviewData]);
+  }, [invitesQuery.data]);
 
   useEffect(() => {
     if (!roleOptions.some((role: RoleRow) => role.name === roleName)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- keep the picker on a role that still exists after the catalog loads
       setRoleName(roleOptions[0]?.name ?? "Member");
     }
   }, [roleName, roleOptions]);
@@ -206,7 +188,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
     } catch (error) {
       toast({
         title: "Could not generate invite",
-        description: getErrorMessage(error),
+        description: getErrorMessage(error, "Something went wrong. Please retry."),
         variant: "destructive",
       });
     }
@@ -239,7 +221,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
     } catch (error) {
       toast({
         title: "Could not revoke invite",
-        description: getErrorMessage(error),
+        description: getErrorMessage(error, "Something went wrong. Please retry."),
         variant: "destructive",
       });
     }
@@ -251,7 +233,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
       <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ShieldPlus className="h-4 w-4" />
+            <InviteGlyph className="h-5 w-5" />
             Invite members
           </DialogTitle>
           <DialogDescription>
@@ -259,11 +241,12 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
           </DialogDescription>
         </DialogHeader>
 
-        {usingPreviewData ? (
-          <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+        {hasLiveDataError ? (
+          <div className="flex items-start gap-3 rounded-md border border-warning/[.28] bg-warning/[.13] p-3 text-[12.5px] text-warning">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <div>
-              Showing preview invite data. Sign in with chapter permissions to generate live invites.
+              Live invite data could not load. Resolve the underlying API error before issuing
+              chapter invites.
             </div>
           </div>
         ) : null}
@@ -296,7 +279,9 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
           <div className="flex items-end">
             <Button
               onClick={handleGenerateInvites}
-              disabled={usingPreviewData || isSubmitting}
+              {...gate.controlProps(
+                hasLiveDataError || isSubmitting || roleOptions.length === 0,
+              )}
               className="w-full"
             >
               {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
@@ -305,22 +290,24 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
           </div>
         </div>
 
+        <SubscriptionNotice gate={gate} feature="issuing invites" />
+
         {generatedInvites.length > 0 ? (
-          <div className="space-y-2 rounded-md border border-primary/30 bg-primary-50/70 p-3 dark:bg-primary/10">
-            <p className="text-sm font-medium">Freshly generated tokens</p>
+          <div className="space-y-2 rounded-md border border-accent-border bg-accent-subtle p-3">
+            <p className="text-sm font-semibold">Freshly generated tokens</p>
             <div className="space-y-2">
               {generatedInvites.map((invite) => (
                 <div
                   key={invite.id}
-                  className="flex items-center justify-between gap-2 rounded-md border border-border bg-background p-2"
+                  className="flex items-center justify-between gap-2 rounded-md border border-accent-border bg-accent-subtle-hover p-2"
                 >
                   <div className="min-w-0">
-                    <p className="truncate font-mono text-xs">{invite.token}</p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="truncate font-mono text-[12.5px]">{invite.token}</p>
+                    <p className="text-[12.5px] text-muted-foreground">
                       {invite.role} • expires {formatDate(invite.expires_at)}
                     </p>
                   </div>
-                  <Button size="sm" variant="outline" onClick={() => handleCopyInvite(invite)}>
+                  <Button size="sm" variant="secondary" onClick={() => handleCopyInvite(invite)}>
                     <Copy className="h-3.5 w-3.5" />
                     Copy code
                   </Button>
@@ -331,7 +318,13 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
         ) : null}
 
         <div className="space-y-2">
-          <p className="text-sm font-medium">Active invite tokens</p>
+          <p className="text-sm font-semibold">Active invite tokens</p>
+          {/*
+            Revoke's verdict differs from Generate's — free-tier vs
+            grace-blocked diverge exactly inside the grace window — so it needs
+            its own notice for its own `aria-describedby` target.
+          */}
+          <SubscriptionNotice gate={revokeGate} feature="revoking invites" />
           {activeInviteRows.length === 0 ? (
             <div className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
               No active invite tokens.
@@ -340,27 +333,29 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
             activeInviteRows.map((invite) => (
               <div
                 key={invite.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-card p-3"
+                className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-input p-3"
               >
                 <div className="space-y-1">
-                  <p className="font-mono text-xs">{invite.token}</p>
+                  <p className="font-mono text-[12.5px]">{invite.token}</p>
                   <div className="flex items-center gap-2">
                     <Badge variant="outline">{invite.role}</Badge>
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-[12.5px] text-muted-foreground">
                       Expires {formatDate(invite.expires_at)}
                     </span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button size="sm" variant="outline" onClick={() => handleCopyInvite(invite)}>
+                  <Button size="sm" variant="secondary" onClick={() => handleCopyInvite(invite)}>
                     <Copy className="h-3.5 w-3.5" />
                     Copy code
                   </Button>
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant="secondary"
                     onClick={() => handleRevokeInvite(invite.id)}
-                    disabled={revokeInviteMutation.isPending || usingPreviewData}
+                    {...revokeGate.controlProps(
+                      revokeInviteMutation.isPending || hasLiveDataError,
+                    )}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                     Revoke
@@ -373,7 +368,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
 
         <DialogFooter>
           <Button
-            variant="outline"
+            variant="secondary"
             onClick={() => {
               void invitesQuery.refetch();
               void rolesQuery.refetch();

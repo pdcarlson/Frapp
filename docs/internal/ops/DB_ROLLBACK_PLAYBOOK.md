@@ -1,0 +1,1027 @@
+# DB Rollback Playbook
+
+## Automated Migration Context
+
+Migrations are now applied automatically in the deploy pipeline (see `.github/workflows/deploy-api.yml`):
+- **Staging:** Runs automatically on merge to `main` (no approval needed)
+- **Production:** Runs automatically after the `main` → `production` promotion PR merges and CI passes. (No GitHub Actions environment-approval pause; the gate is the promotion PR itself: branch protection requires CI + an approving review + conversation resolution. The old justification — Enterprise-only environment rules *on private repos* — was corrected 2026-08-21: this repo is public. See `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets.)
+
+If an automated migration fails, the entire deploy pipeline halts — no API deploy happens. Check the GitHub Actions run for the error output.
+
+## When to trigger rollback
+
+Trigger rollback procedures if any of the following occurs after migration promotion:
+
+- sustained API 5xx increase tied to schema errors
+- failing health checks caused by DB query errors
+- webhook processing failures caused by missing/changed columns
+- severe latency/regression from new indexes/queries
+
+## Decision matrix
+
+### 1) Fast forward-fix (preferred)
+
+Use when:
+- issue is contained and can be fixed with additive SQL,
+- no data corruption occurred,
+- service can stay online.
+
+Action:
+1. Create new migration: `npx supabase migration new <hotfix_name>`
+2. Apply to staging first.
+3. Promote to production once verified.
+
+### 2) Full rollback to backup/snapshot
+
+Use when:
+- destructive migration caused data loss/corruption,
+- service remains broken after attempted forward-fix,
+- unacceptable blast radius.
+
+Action:
+1. Freeze writes (maintenance mode if needed).
+2. Restore the most recent offsite dump — see [Restoring from an offsite dump](#restoring-from-an-offsite-dump). **There is no Supabase snapshot to restore instead**; see Backup reality below.
+3. Re-deploy API once DB state is consistent.
+4. Execute incident postmortem.
+
+## Backup reality
+
+Established from the Supabase Management API and Supabase's own documentation on
+2026-08-27 (#852), not assumed:
+
+| Fact | Value |
+| --- | --- |
+| Org | `Frapp Live` (`iouzvaszrnjlndtmookt`) |
+| **Plan** | **`free`** — holds *both* `frapp-staging` and `frapp-prod` |
+| `frapp-staging` | `hnoyzpidbmizhbqaiity`, `us-east-1`, Postgres 17.6.1.063 |
+| `frapp-prod` | `unttyvyfezddlyafcydh`, `us-east-2`, Postgres 17.6.1.063 |
+| Supabase daily backups | **None available.** [Pro/Team/Enterprise only](https://supabase.com/docs/guides/platform/backups) |
+| Point-in-Time Recovery | **Not available.** Paid add-on, Pro and above |
+
+Supabase's guidance for the free tier is to do exactly what this repo now does:
+
+> We recommend that free tier plan projects regularly export their data using the
+> Supabase CLI `db dump` command and maintain off-site backups.
+
+Two consequences worth stating plainly:
+
+- **The nightly offsite dump is not defence-in-depth. It is the only restorable
+  backup either project has.** If it is not running, there is no recovery path
+  from data loss beyond replaying migrations into an empty database.
+- Free-tier projects may have up to 7 daily backups taken internally, but
+  Supabase makes them accessible **only on upgrade**, and states it "might no
+  longer make daily backups for free projects in the future". That is not
+  something a recovery plan can depend on. Upgrading the org to Pro is the
+  single change that would most improve this posture.
+
+## Backups: what exists
+
+| | |
+| --- | --- |
+| Producer | [`.github/workflows/db-backup.yml`](../../../.github/workflows/db-backup.yml) — nightly 07:00 UTC, plus `workflow_dispatch` |
+| Script | [`scripts/db-backup.sh`](../../../scripts/db-backup.sh) |
+| Contents | three gzipped SQL files — roles, schema, data — plus a manifest carrying a SHA-256 per file |
+| Scope | `frapp-staging` only. Production is deferred by choice (#814 / `scope:production`) |
+| Destination | A private Cloudflare R2 bucket, outside Supabase on purpose — Supabase deletes its own backups with the project. Provisioned 2026-08-27 (#1287): scoped API token (object read/write on that one bucket), `BACKUP_S3_*` secrets in Infisical `staging` at `/` — see [`ENV_REFERENCE.md`](../environment/ENV_REFERENCE.md) § Offsite Backup Secrets |
+| Retention | `BACKUP_RETENTION_DAYS`, default 30, pruned by the same workflow |
+| First verified run | [2026-08-27, run 1](https://github.com/pdcarlson/Frapp/actions/runs/33116113194) — upload plus independent read-back listing all 4 objects |
+
+If the `BACKUP_S3_*` secrets ever go missing the workflow still **fails loudly
+before dumping** rather than going green. A backup job that reports success
+while writing no backup is the failure mode this whole runbook exists to
+prevent.
+
+### What this backup does not cover
+
+- **Storage objects.** Per Supabase, "Database backups do not include objects you
+  store via the Storage API, as the database only includes metadata about these
+  objects." Five buckets hold real content, `chat-archive` in particular. A
+  restore therefore yields rows referencing objects that were never captured.
+  Backing up Storage is separate work, tracked in #1290 (unblocked now that the
+  offsite bucket exists — it is meant to write to the same bucket under a
+  `storage/` prefix).
+- **The `storage` schema itself**, deliberately: bucket rows are provisioned by
+  this repo's own `supabase/migrations/*_bucket.sql`, so they come back when
+  migrations run. Including them made the restore abort on `buckets_pkey`.
+- **`auth.schema_migrations`**, deliberately: GoTrue's own ledger, populated on
+  every project, so restoring it aborts on `schema_migrations_pkey`.
+- **Custom role passwords.** Supabase excludes them from `--role-only` dumps.
+  Reset them by hand after a restore if any exist.
+
+## Restoring from an offsite dump
+
+```bash
+# 1. Fetch the dump you want (labels are UTC and sort chronologically).
+aws s3 cp "s3://$BACKUP_S3_BUCKET/staging/<label>/" ./restore/ \
+  --endpoint-url "$BACKUP_S3_ENDPOINT" --recursive
+
+# 2. Restore. Verifies checksums and preconditions before touching the target.
+scripts/db-restore.sh --backup-dir ./restore --db-url "<target-url>" --force
+```
+
+**The target must be a Supabase-provisioned database** — a freshly created
+project, or a reset local stack. These dumps are *not* self-contained:
+`supabase db dump` excludes Supabase-managed schemas, so the schema dump references
+`auth`, `storage` and `extensions` without creating them, and restoring into a
+bare `CREATE DATABASE` dies partway through. The restore script checks this up front
+rather than letting you discover it mid-replay.
+
+`--force` is required for any non-local target. That is not ceremony: the script
+replaces the contents of the database it is pointed at, and the difference
+between a rehearsal and an outage is one mistyped host.
+
+## Rehearsal log
+
+A backup you have never restored is a rumor. Re-run
+[`scripts/db-restore-rehearsal.sh`](../../../scripts/db-restore-rehearsal.sh)
+after changing any dump flag or the restore order — it backs up the local stack,
+drops the application schema, restores from the dump alone, and diffs row counts
+table-by-table, exiting non-zero on any drift.
+
+| Date | Result | Notes |
+| --- | --- | --- |
+| 2026-08-27 | **PASS** | 24 tables identical row-for-row. `auth.users` restored with `encrypted_password` intact. Took five iterations; each failure was a real defect in the recipe (see #852). Local stack, Postgres 17.6 — same major/minor as staging. Not yet rehearsed against a real Supabase project — unblocked since 2026-08-27, when #1287 provisioned the offsite bucket. |
+
+## Immediate response steps
+
+1. Announce incident in engineering channel.
+2. Capture failing SQL/error logs and request IDs.
+3. Identify failing migration file(s) and affected tables/indexes/policies.
+4. Choose recovery strategy (forward-fix vs restore) using matrix above.
+
+## Verification after rollback/recovery
+
+- [ ] `GET /health` reports DB connected
+- [ ] critical API routes pass smoke checks
+- [ ] Stripe webhook endpoint processes signed test event
+- [ ] no ongoing elevated error alerts (Sentry/logs)
+
+## Documentation requirements
+
+After any rollback event:
+
+- file the incident notes as a **GitHub issue** — work status is not a doc
+  ([`../DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md) rule 4)
+- create/update postmortem entry with timeline and root cause
+- add preventive checks to migration or CI workflow
+
+## Rollback the `security definer` search_path pin
+
+* **Migration**: `20260827190000_secdef_search_path_pg_temp.sql`
+* **Read this first**: rolling this back **reintroduces a security defect** (#985). The
+  migration adds nothing and changes no function body — it only appends `pg_temp` to
+  the `search_path` of seven `security definer` functions, four of which are
+  authorization code (`can_read_chat_message` backs chat RLS; the three
+  `realtime_can_read_*_scope` functions gate realtime delivery). Reverting restores the
+  state where a caller-created temp table shadows the real table inside those functions
+  while they run with the definer's privileges. There is almost never a reason to do
+  this; prefer a forward fix.
+* **Action**: no function body is needed. `ALTER FUNCTION` changes the setting alone,
+  which is why this rollback is trivial and total:
+  ```sql
+  ALTER FUNCTION public.can_read_chat_message(uuid)            SET search_path TO 'public';
+  ALTER FUNCTION public.realtime_can_read_chapter_scope(uuid)  SET search_path TO 'public';
+  ALTER FUNCTION public.realtime_can_read_event_scope(uuid)    SET search_path TO 'public';
+  ALTER FUNCTION public.realtime_can_read_user_scope(uuid)     SET search_path TO 'public';
+  ALTER FUNCTION public.realtime_notify_event_attendance()     SET search_path TO 'public';
+  ALTER FUNCTION public.realtime_notify_events()               SET search_path TO 'public';
+  ALTER FUNCTION public.realtime_notify_notifications()        SET search_path TO 'public';
+  ```
+  Re-applying is the same statements with `TO 'public', 'pg_temp'`. Both directions were
+  exercised on the local stack.
+* **Order**: **no coordination required — deploy in either order.** This is the rare
+  purely-additive-to-a-setting change: signatures, return types, and bodies are all
+  untouched, so `create or replace` kept every dependent RLS policy and trigger
+  resolving, and no API revision can observe the difference. There is no window in which
+  a running API sees a shape it does not expect, in either direction.
+* **Data caveat**: none. Nothing is written, dropped, or backfilled.
+* **CI will stop you.** `scripts/check-pglite-migrations.mjs` asserts every
+  `security definer` function in `public` pins `pg_temp` **last** (the
+  `=== security definer search_path ===` tier), so a rollback committed as a *migration*
+  fails the `pglite-migrations` job by design. An emergency `ALTER` applied directly to a
+  hosted database is not caught by CI — if you do that, file the follow-up immediately,
+  because the next `db reset` silently re-applies the fix and the two environments drift.
+* **Note on order within the pin**: `pg_temp` must be **last**. `search_path = pg_temp,
+  public` is not a partial fix, it is the original bug spelled explicitly — the guard
+  rejects it for that reason.
+
+## Rollback the chat author fields
+
+* **Migration**: `20260823120000_chat_message_authors.sql`
+* **Action**:
+  ```sql
+  -- 1. the index shape (safe any time)
+  DROP INDEX IF EXISTS public.idx_chat_messages_author_external;
+  DROP INDEX IF EXISTS public.idx_chat_messages_dedupe;
+  CREATE UNIQUE INDEX idx_chat_messages_dedupe
+    ON public.chat_messages (channel_id, sender_id, client_message_id)
+    WHERE client_message_id IS NOT NULL;
+
+  -- 2. the constraint
+  ALTER TABLE public.chat_messages DROP CONSTRAINT IF EXISTS chat_messages_author_present;
+
+  -- 3. the columns
+  ALTER TABLE public.chat_messages
+    DROP COLUMN IF EXISTS author_name,
+    DROP COLUMN IF EXISTS author_avatar_path,
+    DROP COLUMN IF EXISTS author_external_id;
+
+  -- 4. the NOT NULL — READ THE CAVEAT FIRST
+  ALTER TABLE public.chat_messages ALTER COLUMN sender_id SET NOT NULL;
+  ```
+* **Order**: **redeploy the API first.** `ChatMessage.sender_id` is `string | null`
+  on the post-change revision and both clients resolve the label through
+  `resolveAuthorLabel`; dropping the columns under a running API is survivable
+  (they are all optional reads) but re-adding `NOT NULL` under one that permits
+  nulls is not.
+* **Step 4 fails if any imported row exists**, and that is the useful behaviour:
+  `SET NOT NULL` scans the table and raises `23502` on the first null sender. If
+  it fails, the archive is still in the database and the rollback is incomplete
+  by definition — decide whether to delete the imported rows
+  (`DELETE FROM chat_messages WHERE kind = 'imported';`, which cascades to
+  `chat_message_attachments`) or to stop at step 3 and leave the column nullable.
+  **Leaving it nullable is almost always right**: a nullable column with no null
+  rows costs nothing and breaks nothing.
+* **Data caveat**: dropping `author_name` is **not recoverable by re-applying**.
+  It is the only attribution an imported message has — there is no `users` row to
+  join back to, which is the whole reason the column exists. Re-running the
+  importer from the original DiscordChatExporter export is the only way back.
+* **The dedupe-index bullet that used to live here is superseded.** It said
+  dropping `NULLS NOT DISTINCT` while imported rows exist would let the next
+  importer run insert the whole archive again. That stopped being true when
+  `20260824120000_discord_import.sql` moved the importer onto its own
+  `external_message_id` column and its own index: imported rows no longer set
+  `client_message_id` at all, so this index does not govern them either way. The
+  index whose loss duplicates an archive is now
+  **`idx_chat_messages_external_dedupe`** — see *Rollback the Discord importer*
+  below. The recreate above is safe as written.
+
+## Rollback the Discord connect confirmation
+
+* **Migration**: `20260824150000_discord_connect_confirm.sql`
+* **Action**:
+  ```sql
+  DROP INDEX IF EXISTS public.idx_discord_oauth_states_confirm_token;
+  ALTER TABLE public.discord_oauth_states
+    DROP COLUMN IF EXISTS pending_guild_id,
+    DROP COLUMN IF EXISTS pending_guild_name,
+    DROP COLUMN IF EXISTS pending_guild_icon,
+    DROP COLUMN IF EXISTS pending_discord_user_id,
+    DROP COLUMN IF EXISTS pending_discord_username,
+    DROP COLUMN IF EXISTS pending_permissions,
+    DROP COLUMN IF EXISTS pending_scopes,
+    DROP COLUMN IF EXISTS confirm_token,
+    DROP COLUMN IF EXISTS confirm_expires_at,
+    DROP COLUMN IF EXISTS confirmed_at;
+  ```
+* **Order**: **redeploy the API first**, and understand what you are removing
+  before you do. These columns are not bookkeeping — they are the confirmation
+  step, and the confirmation step is the control that keeps one chapter from
+  reading another Discord server's history.
+* **This rollback re-opens a known cross-tenant hole.** Without the confirm
+  step, the OAuth callback binds a guild to whichever chapter minted the
+  `state` — and minting one is an ordinary action for any `channels:manage`
+  holder in any chapter. An officer can then send their own authorize link to an
+  admin of any Discord server, and if that person clicks through Discord's
+  genuine consent screen, their server is readable by the sender's chapter.
+  Every Discord-side check still passes; that is what makes it a confused-deputy
+  bug rather than a broken check. **If you roll this back, unset
+  `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` in the same change** so
+  `GET /v1/discord/availability` answers `false` and the connect flow is
+  unreachable. The DiscordChatExporter upload path is unaffected either way.
+* **Nothing already connected is lost.** `discord_connections` is a separate
+  table and is untouched — existing links keep working and imports keep running.
+  Only *new* connections are affected.
+* **In-flight handshakes are collateral, and cheap.** Any admin mid-connect
+  loses their click and retries; every row here is single-use and dead within
+  fifteen minutes anyway.
+
+## Rollback the Discord bot connection
+
+* **Migration**: `20260824140000_discord_bot_connection.sql`
+* **Action**:
+  ```sql
+  -- 1. the connection tables (safe any time; nothing else references them)
+  DROP TABLE IF EXISTS public.discord_oauth_states;
+  DROP TABLE IF EXISTS public.discord_connections;
+
+  -- 2. the per-channel bot columns
+  DROP INDEX IF EXISTS public.idx_discord_import_channels_order;
+  ALTER TABLE public.discord_import_channels
+    DROP COLUMN IF EXISTS cursor_before_snowflake,
+    DROP COLUMN IF EXISTS parent_discord_channel_id,
+    DROP COLUMN IF EXISTS position;
+
+  -- 3. the source discriminator — READ THE CAVEAT FIRST
+  ALTER TABLE public.discord_imports
+    DROP CONSTRAINT IF EXISTS discord_imports_source_check;
+  ALTER TABLE public.discord_imports DROP COLUMN IF EXISTS source;
+  ```
+* **Order**: **redeploy the API first.** `DiscordImportWorkerService.sweepImports`
+  reads `job.source` on every tick to decide which slice runs, and
+  `DiscordExportWorkerService` reads `discord_connections` on every slice.
+  Dropping either under a running worker fails the sweep once a minute, forever.
+* **Step 3 is the one that bites, and it is worse than it looks.** `source` is
+  what tells the sweeper a job reads Discord rather than an uploaded export.
+  Drop it while a bot import is `ready` or `running` and the column's absence
+  does not stop the job — it makes every remaining tick hand that job to
+  `runImportSlice`, which looks for uploaded export parts, finds none, and marks
+  the import `completed` having imported nothing further. A half-imported
+  channel is then indistinguishable from a finished one. **Cancel or purge every
+  `source = 'bot'` import before rolling this back**:
+  `SELECT id, status FROM discord_imports WHERE source = 'bot' AND status IN ('ready','running');`
+* **Losing `discord_connections` does not lose imported history.** It only
+  forgets which Discord server a chapter linked, so no *further* bot import can
+  start. Messages already imported are ordinary `kind = 'imported'` rows and are
+  purged the same way as any other import — see *Rollback the Discord importer*
+  below. Reconnecting is one pass through the wizard, so this table is cheap to
+  lose and is deliberately not backed up separately.
+* **`discord_oauth_states` is disposable by construction.** Every row is
+  single-use and expires within 15 minutes; dropping it mid-flight costs at most
+  one admin an in-progress "Connect Discord" click, which they retry.
+* **Data caveat**: dropping `cursor_before_snowflake` loses per-channel resume
+  position, not data. A resumed import re-reads the channel from its newest
+  message; `idx_chat_messages_external_dedupe` makes the replayed rows a no-op,
+  so the cost is Discord API calls and wall-clock, never duplicate messages.
+  Dropping `parent_discord_channel_id` is worse in kind: thread rows then have
+  no parent to inherit a destination from, and a re-run resolves each thread
+  independently — which, under `create_new`, mints one identically-named channel
+  per thread (`chat_channels` has no unique `(chapter_id, name)`). **Do not drop
+  it while a bot import is mid-flight.**
+* **The bot itself is not rolled back by any of this.** The Signet Discord
+  application stays installed in every chapter's server until someone removes it
+  there, and `DISCORD_BOT_TOKEN` keeps working. If the rollback is a response to
+  a security incident, rotate the token in Infisical — that is what actually
+  revokes access, not this migration.
+
+## Rollback the Discord importer
+
+* **Migration**: `20260824120000_discord_import.sql`
+* **Action**:
+  ```sql
+  -- 1. the job tables (safe any time; nothing else references them)
+  DROP TABLE IF EXISTS public.discord_import_files;
+  DROP TABLE IF EXISTS public.discord_import_channels;
+  DROP TABLE IF EXISTS public.discord_imports;
+
+  -- 2. the indexes
+  DROP INDEX IF EXISTS public.idx_chat_messages_discord_import;
+  DROP INDEX IF EXISTS public.idx_chat_messages_external_dedupe;
+
+  -- 3. the column — READ BOTH CAVEATS FIRST
+  ALTER TABLE public.chat_messages DROP COLUMN IF EXISTS external_message_id;
+  ```
+* **Order**: **redeploy the API first.** The importer writes
+  `external_message_id` on every row it inserts; dropping the column under a
+  running importer fails every insert mid-archive and leaves a half-imported
+  channel behind.
+* **Step 3 destroys re-run idempotency, and this is the one that bites.** The
+  column is the *only* thing that makes a second import of the same export a
+  no-op. Drop it while an archive is in the database and the next run inserts
+  every message a second time, silently — `client_message_id` will not catch it,
+  because imported rows do not set it. If any imported row exists, stop at step
+  2 and leave the column: a nullable column costs nothing.
+* **Losing the job tables loses the purge.** `discord_imports` is what
+  `DELETE /v1/discord-imports/{id}` walks to find the messages and the storage
+  objects belonging to one import. Dropping it strands both — the rows stay
+  readable in chat, and the `chat-archive` objects are orphaned with nothing left
+  to name them (no chapter-deletion path exists, and nothing else sweeps that
+  bucket). **Purge any unwanted imports before rolling this back**, not after.
+* **Data caveat**: `metadata->>'discord_import_id'` survives on the message rows
+  independently of these tables, so a hand-written purge is still possible:
+  `DELETE FROM chat_messages WHERE kind = 'imported' AND metadata->>'discord_import_id' = '<id>';`
+  cascades to `chat_message_attachments`. The storage objects under
+  `chapters/<chapter>/chat-archive/imports/<id>/` must be deleted separately —
+  no cascade reaches storage.
+
+## Rollback chat attachments
+
+* **Migration**: `20260823121000_chat_message_attachments.sql`
+* **Action**: `DROP TABLE IF EXISTS public.chat_message_attachments;`
+* **Order**: **redeploy the API first.** `ChatService.sendMessage` writes
+  attachment rows and `GET /v1/channels/{id}/messages/{messageId}/attachments`
+  reads them; dropping the table under a running post-change API makes any send
+  carrying a file 500 and the attachments route 500 on every call.
+* **The body rewrite is reversible, and this is how.** The migration stripped
+  `📎 <name> (<storagePath>)` out of `chat_messages.content` after copying the
+  filename and path into rows. Re-append them **before** dropping the table:
+  ```sql
+  UPDATE chat_messages m
+  SET content = btrim(m.content || E'\n' || x.sigils)
+  FROM (
+    SELECT a.message_id,
+           string_agg('📎 ' || a.filename || ' (' || a.storage_path || ')', E'\n'
+                      ORDER BY a.created_at) AS sigils
+    FROM chat_message_attachments a
+    GROUP BY a.message_id
+  ) x
+  WHERE m.id = x.message_id;
+
+  UPDATE chat_messages
+  SET metadata = metadata - 'attachment_count'
+  WHERE metadata ? 'attachment_count';
+  ```
+  Rows written *after* the migration are also restored by this — they were never
+  in the sigil format, but the pre-change composer produced exactly that format,
+  so the result is what a pre-change client would have sent.
+* **Data caveat**: dropping the table without running the restore above loses the
+  link between every message and its file. **The objects themselves are not
+  touched** — they stay in the `chat` bucket under
+  `chapters/{chapter_id}/chat/{channel_id}/{…}/{filename}` — so nothing is
+  destroyed, but nothing points at them either.
+* **Lighter option**: the table is additive and read only through one route. To
+  stop attachments being written without touching the schema, redeploy the API at
+  the pre-change revision; existing rows are then simply unread.
+
+## Rollback chat message search
+
+* **Migration**: `20260823122000_chat_message_search_vector.sql`
+* **Action**:
+  ```sql
+  DROP INDEX IF EXISTS public.idx_chat_messages_content_search;
+  ALTER TABLE public.chat_messages DROP COLUMN IF EXISTS content_search;
+  ```
+* **Order**: **redeploy the API first, then the database.** `SearchService`
+  queries the column by name via `.textSearch('content_search', …)`, so dropping
+  it under a running post-change API turns `GET /v1/search` into a 500 on every
+  request — PostgREST `42703 column "content_search" does not exist`. The
+  pre-change revision uses `ILIKE` and does not reference the column at all.
+* **Note**: **nothing is lost.** The column is `GENERATED ALWAYS ... STORED` and
+  derived entirely from `content`, so re-applying the migration reconstructs it
+  exactly. This is the cheapest rollback in this file to reverse.
+* **Locks**: dropping the column is a catalog operation and does not rewrite the
+  heap. **Re-applying is the expensive direction** — the generated column
+  materialises per row under ACCESS EXCLUSIVE. If the archive has already been
+  imported, treat a re-apply as a scheduled maintenance window, not a hotfix.
+* **Lighter option**: if the problem is search *results* rather than the schema
+  (stemming surprises, an unexpected match), revert only the service change and
+  leave the column and index in place. They cost writes on insert and nothing on
+  read, and they will be needed again.
+
+## Rollback the imported-kind semantics
+
+* **Migration**: `20260823123000_chat_imported_kind_semantics.sql`
+* **Action**: restore the previous function body and policy, both of which are
+  the versions in `20260816190000_chat_unread_and_mentions.sql` and
+  `20260816140000_realtime_carrier_repair.sql` respectively. Copy them from those
+  files rather than retyping — the grant block and the `search_path` pin matter.
+* **Order**: no coordinated redeploy needed; nothing in the API reads either the
+  function body or the policy text.
+* **⚠️ Do not roll this back while imported rows exist in a chapter people are
+  using.** Both halves are guardrails, and both fail loudly in the same
+  direction:
+  * Restoring the old unread function re-introduces `m.sender_id <> p_user_id`,
+    which excludes imported rows only as an artefact of `NULL <> uuid` being
+    NULL. That still *works*, so this half is safe — but it is the trap the
+    migration exists to remove, so re-read the promotion entry before deciding
+    the null-safety looks wrong.
+  * Restoring the old policy removes `kind <> 'imported'`, which is the Realtime
+    fan-out control. Every archived message in the database immediately becomes
+    eligible to be delivered as a `postgres_changes` frame — not retroactively
+    (Realtime reads the WAL, not the table), but any subsequent write or
+    re-import fans out per row to every connected client with no batching.
+* **Verification after rollback**:
+  `select pg_get_expr(polqual, polrelid) from pg_policy p join pg_class c on c.oid=p.polrelid where c.relname='chat_messages';`
+  should be back to two conjuncts, and
+  `npm run check:pglite-migrations` will fail its tightened landmark — which is
+  correct and is your signal that the rollback also needs the landmark relaxed.
+* **Lighter option**: to stop *only* the badge behaviour without touching the
+  policy, `create or replace` the function with just the `kind` clause removed.
+  The two rules are independent by design.
+
+## Rollback the chat-archive bucket
+
+* **Migration**: `20260823124000_chat_archive_bucket.sql`
+* **Action**:
+  ```sql
+  -- Only when the bucket is empty; Storage refuses to drop a bucket with objects.
+  DELETE FROM storage.buckets WHERE id = 'chat-archive';
+  ```
+* **Order**: no coordinated redeploy required *if the bucket is unused*. Once an
+  import has run, the objects in it are the only copy of the archive's media —
+  `chat_message_attachments.external_url` is **always null** for imported rows (the importer never contacts Discord, so there is no CDN link to keep) and the only recovery handle is `discord_import_files` plus the admin's original export — so
+  treat deletion as destructive.
+* **Note**: additive bucket only. Nothing else references it, and the live `chat`
+  bucket is untouched. Re-applying the migration recreates it with the same id
+  and constraints; the objects are not restored by that.
+* **Also revert `supabase/config.toml`** if you are rolling back the whole slice:
+  the global local-stack `[storage] file_size_limit` was raised from `26214400`
+  to `104857600`. Leaving it raised is harmless — every member-upload bucket is
+  still pinned to 25 MB by its own `allowed_mime_types`/`file_size_limit` columns
+  and by `MAX_UPLOAD_BYTES` in `@repo/validation`.
+* **Lighter option**: to stop new writes without deleting anything, revert the API
+  and leave the bucket in place. An unused private bucket costs storage for what
+  is in it and nothing else.
+
+## Rollback the Realtime carrier repair
+
+* **Migration**: `20260816140000_realtime_carrier_repair.sql`
+* **Action**: everything this migration creates is additive and separately droppable. Full revert:
+  ```sql
+  -- 1. stop the change pings
+  DROP TRIGGER IF EXISTS realtime_notify_notifications    ON public.notifications;
+  DROP TRIGGER IF EXISTS realtime_notify_events           ON public.events;
+  DROP TRIGGER IF EXISTS realtime_notify_event_attendance ON public.event_attendance;
+  DROP FUNCTION IF EXISTS public.realtime_notify_notifications();
+  DROP FUNCTION IF EXISTS public.realtime_notify_events();
+  DROP FUNCTION IF EXISTS public.realtime_notify_event_attendance();
+
+  -- 2. de-authorise the private topics
+  DROP POLICY IF EXISTS "realtime_messages_scoped_select" ON realtime.messages;
+  DROP FUNCTION IF EXISTS public.realtime_can_read_user_scope(uuid);
+  DROP FUNCTION IF EXISTS public.realtime_can_read_chapter_scope(uuid);
+  DROP FUNCTION IF EXISTS public.realtime_can_read_event_scope(uuid);
+
+  -- 3. un-publish chat and re-close the table
+  ALTER PUBLICATION supabase_realtime DROP TABLE public.chat_messages;
+  ALTER PUBLICATION supabase_realtime DROP TABLE public.chat_message_actions;
+  DROP POLICY IF EXISTS "chat_messages_select" ON public.chat_messages;
+  ```
+  **Order matters in one direction only, and it is the harmless one.** Rolling the database back without redeploying the web app does not error: the three dashboard subscriptions simply stop receiving pings (a private channel with no authorising policy is denied), and chat's `postgres_changes` handler goes quiet. That is *precisely* the pre-migration behavior — see the note below — so a DB-only rollback degrades to "realtime never worked", which is where `main` sat before this landed. There is no 500, no broken route, and no user-visible error; only staleness until a manual refresh.
+* **Note**: **rolling back does not re-open a vulnerability — it narrows access.** The only widening this migration performs is the `chat_messages_select` policy, which lets the browser read `chat_messages` scoped to channel membership (mirroring the precedent `chat_message_actions` already set). Dropping it returns the table to default-deny. The `realtime.messages` policy is likewise purely additive: that table had RLS on with *no* policy, denying every private channel, and this migration grants exactly three topic families. Nothing predating the migration can be lost — no column, constraint, or row is touched anywhere.
+* **Prefer a roll-forward fix anyway.** Reverting restores the #867 defect in full: every `postgres_changes` subscription in the product receives nothing, in every environment, and does so *silently* — the channel joins, reports `SUBSCRIBED`, and never fires, which is indistinguishable from an idle one. That silence is what hid the bug from the first deploy until 2026-08-16. If you roll this back, say so loudly somewhere a human reads, because nothing in the app will tell you.
+* **Data caveat**: none. This migration stores no data. `realtime.messages` rows are ephemeral broadcast envelopes, partitioned by day and pruned by Realtime itself, and the pings carry only `{table, op}` — no row content — so there is nothing to snapshot before dropping and nothing to reconstruct after re-applying. Re-applying is fully idempotent: every block is guarded (`pg_publication_tables` membership, `pg_policies` existence, `create or replace` on the functions, `drop trigger if exists` before each `create trigger`).
+* **Partial rollback to avoid**: dropping `chat_messages_select` while leaving `chat_messages` in the publication. Realtime enforces RLS per subscriber, so the table stays replicated but every subscriber is denied — the WAL work is done and thrown away. If you want chat off, drop it from the publication too.
+
+## Rollback the chat unread/mention slice
+
+* **Migration**: `20260816190000_chat_unread_and_mentions.sql`
+* **Action**: everything it adds is separately droppable.
+  ```sql
+  -- 1. the read path (drop this AFTER the API is back on a pre-C1 revision)
+  DROP FUNCTION IF EXISTS public.get_channel_unread_counts(uuid, uuid);
+
+  -- 2. the index
+  DROP INDEX IF EXISTS public.idx_channel_read_receipts_user;
+
+  -- 3. the column — see the data caveat before running this one
+  ALTER TABLE public.chat_messages DROP COLUMN IF EXISTS mentions;
+  ```
+* **Order**: **redeploy the API first, then the database. Do not skip this.** This is the coordinated shape, not the additive one, and the column matters more than the function:
+  * **`chat_messages.mentions` is written on every send.** `ChatService.sendMessage` includes `mentions` in every insert unconditionally, and `editMessage` in every update. Dropping the column under a running C1 API therefore fails **every chat message in the product, chapter-wide**, with PostgREST `42703 column "mentions" does not exist` — not a degraded badge, a dead send button.
+  * `GET /v1/channels/unread` calls the function directly, so dropping that turns the route into a 500 on every request. This is the smaller half: as of this migration the endpoint exists but no client consumes it yet (the mobile channel list and the web badge land later in C1).
+
+  Roll the API back to a pre-C1 revision first and both disappear with it; then the DB drop is unobserved. If you only remember one thing here: the "no client consumes it yet" note applies to the *endpoint*, never to the column.
+* **Note**: the `mentions` half degrades gracefully in *both* directions, which is worth knowing before you panic. The push worker reads `row.mentions ?? []`, so a missing column simply means no message is ever treated as a mention — the same behavior the product had before this migration, since the worker was previously casting over a column that never existed and always resolving to empty. Dropping the column cannot therefore break push; it only returns the `mentions` tier to never firing.
+* **Data caveat**: **dropping the column is not recoverable by re-applying.** `mentions` is resolved at send time against chapter membership as it stood at that moment, so re-adding the column gives every historical message an empty array. The raw `@`-text survives in `content`, so a backfill is *possible*, but it would resolve against today's membership — a member who has since left, been renamed, or whose display name now collides with another's would resolve differently or not at all. If you only need to stop a bad mention resolution rather than remove the feature, `UPDATE chat_messages SET mentions = '{}'` on the affected rows and leave the schema alone.
+* **Lighter option**: to stop the badges without touching the schema, revert the client. The counts are read-only and computed on demand — no writes, no background job, nothing accruing — so an unused function and an unread column cost essentially nothing to leave in place. There is no index on `chat_messages` to pay for — see below.
+* **Do not "restore" an index on `chat_messages.mentions`.** An earlier draft of this migration created a GIN index there and it was removed deliberately, so its absence is not an oversight to correct during a rollback. The mention tally is computed inside an aggregate `filter (where ...)`, which is not a row-selection predicate, so the planner cannot consult an index for it at all — the plan is a seq scan with the index present and without it. Adding one back buys nothing and costs write amplification on the product's hottest insert path. If a future *row-predicate* query needs it (a "my mentions" inbox), it must be spelled `mentions @> array[$1]`, which GIN can serve; the equivalent-looking `$1 = any (mentions)` cannot and seq-scans regardless.
+
+## Rollback the activation funnel table
+
+* **Migration**: `20260809001500_chapter_activation_milestones.sql`
+* **Action**: `DROP TABLE IF EXISTS chapter_activation_milestones;`
+* **Order**: Unusually, **no coordinated redeploy is required**. `ActivationService.record` wraps its whole body in a catch and every one of the seven call sites ignores the result, so a missing table degrades to "no milestones recorded, one logged error per action" rather than a failed checkout, invite, or message send. Redeploy the API at the pre-#267 revision if you want the log noise to stop.
+* **Note**: Additive table only; nothing else references it, so dropping loses just the funnel ledger. **The loss is not recoverable by re-applying** — the table records *when a chapter first did something*, and that history cannot be reconstructed after the fact (the source events are spread across `chapters`, `invites`, `chat_messages` and Stripe, and none of them record "this was the first"). If the concern is a single wrong row rather than the feature, delete that row instead: the next matching action will re-record the milestone naturally.
+* **Lighter option**: to stop emission without touching the schema, unset `POSTHOG_API_KEY` — the no-op provider takes over and the rows keep accruing for later analysis.
+
+## Rollback durable Stripe webhook idempotency
+
+* **Migration**: `20260805150000_stripe_webhook_events.sql`
+* **Action**: Redeploy the API at the pre-FRA-23 revision **first** — the post-FRA-23 `BillingService` claims every side-effecting event and 500s on `POST /v1/webhooks/stripe` if the table or function is gone, which makes Stripe retry the same events for days. Then `DROP FUNCTION IF EXISTS public.claim_stripe_webhook_event(text, text, integer); DROP TABLE IF EXISTS stripe_webhook_events;`.
+* **Note**: Additive table + function only; nothing else references them, so dropping loses only the delivery ledger. Behaviour reverts to the in-memory `Set` — dedup within one process, and a replay after any restart re-applies the event. No backfill on re-apply; the table refills from the next deliveries.
+* **Lighter option — usually the right one**: if the goal is just to unstick a specific event rather than remove the feature, do not drop anything. `update stripe_webhook_events set status = 'failed' where event_id = 'evt_…';` makes it immediately re-claimable on Stripe's next retry, and `select event_id, event_type, status, attempts, last_error from stripe_webhook_events where status <> 'processed' order by claimed_at desc;` lists everything currently stuck or failing.
+
+## Rollback study-session pause + grace window
+
+* **Migration**: `20260807150000_study_session_pause_grace.sql`
+* **Action**: drop both columns; each is referenced only by the study feature.
+  ```sql
+  ALTER TABLE study_sessions  DROP COLUMN IF EXISTS paused_at;
+  ALTER TABLE study_geofences DROP COLUMN IF EXISTS pause_grace_minutes;
+  ```
+  **Redeploy the API at the pre-FRA-232 revision first.** The post-FRA-232 `StudyService` *inserts* `paused_at` on every `startSession` and selects it on every heartbeat, and `createGeofence` inserts `pause_grace_minutes` — with the columns gone, starting a session and creating a study zone both 500 outright. `POST /v1/study-sessions/pause` and `/resume` disappear with that redeploy, and the web study page calls them on every tab hide/show, so roll the web app back in the same window or members see a paused session they cannot resume.
+* **Note**: Additive DDL only (two nullable-or-defaulted columns); no existing column, constraint, index, or policy is altered, and `PAUSED_EXPIRED` was already permitted by the original `status` CHECK, so that constraint is untouched by both apply and rollback. Rolling back **re-opens the hole this migration closed** (FRA-232): with no pause signal the server cannot distinguish "app backgrounded" from "heartbeat in flight" and credits the whole gap between heartbeats as foreground study time, so members earn points for time they were not studying. Prefer a roll-forward fix.
+* **Data caveat**: `paused_at` is live state, not history — dropping it strands any session that is paused *at that moment*. Those rows keep `status = 'ACTIVE'`, so the one-active-session rule blocks the member from starting a new session, and with the column gone nothing can ever expire them. Settle them **before** dropping:
+  ```sql
+  -- Inspect first; then close them out as if the grace window lapsed.
+  SELECT id, user_id, chapter_id, total_foreground_minutes, paused_at
+    FROM study_sessions WHERE paused_at IS NOT NULL AND status = 'ACTIVE';
+  UPDATE study_sessions
+     SET status = 'PAUSED_EXPIRED', end_time = paused_at
+   WHERE paused_at IS NOT NULL AND status = 'ACTIVE';
+  ```
+  The `status = 'ACTIVE'` filter is load-bearing, not defensive: a session that ended as `LOCATION_INVALID` from the paused branch keeps its `paused_at` (nothing clears it, and the row is never re-read because `findActiveByUserAndChapter` filters on `ACTIVE`). Without the filter this statement rewrites those finished sessions to `PAUSED_EXPIRED` and backdates their `end_time` — verified by running the unfiltered form against a live database.
+  Points for those sessions are **not** awarded by this statement — the award runs in application code. Reconcile manually against `point_transactions` if any settled session cleared its zone's `min_session_minutes`.
+  Historical rows already in a terminal state lose nothing: `total_foreground_minutes`, `end_time`, and `status` (including `PAUSED_EXPIRED`) all survive, so past sessions and awarded points stay intact and readable. `pause_grace_minutes` is per-zone config; on re-apply every zone returns to the default 5 and any chapter that had tuned its window must set it again — snapshot `select id, chapter_id, name, pause_grace_minutes from study_geofences` first if any zone has been customized.
+
+## Rollback ROLE_GATED `required_permissions`
+
+* **Migration**: `20260807220000_role_gated_required_permissions.sql`
+* **Action**: there is no DDL to undo — the migration only populates an existing nullable column and replaces one function. To restore the previous read semantics, re-apply the **prior** definition of `public.can_read_chat_message` from `20260803150000_chat_message_actions_membership_rls.sql` verbatim (it is `create or replace`, so re-running that file's function block is the rollback). The backfilled `required_permissions` values can stay: under the old predicate an explicit `{members:view}` behaves the same as the empty list it replaced, since every seeded role holds `members:view`.
+  **Redeploy the API at the pre-FRA-321 revision first**, or the app-layer predicate keeps denying empty-gated channels while the SQL one allows them — the same split this migration exists to prevent, just inverted.
+  To revert only the seeded `#alumni` marker and re-open alumni posting to every ROLE_GATED channel, drop the marker and redeploy the old code: `update chat_channels set required_permissions = array['members:view']::text[] where type = 'ROLE_GATED' and 'alumni:post' = any (required_permissions);`
+* **⚠️ Note**: Rolling back **re-opens the vulnerability** (FRA-321): a ROLE_GATED channel with no `required_permissions` becomes readable by every chapter member, and — because the pre-FRA-321 posting rule keys on channel *type* — writable by alumni, including a chapter's `#exec-board`. Prefer a roll-forward fix. Nothing predating the migration can be lost: no column, constraint, policy, or row is dropped.
+* **Data caveat**: the two `UPDATE`s only touch rows whose `required_permissions` is null or empty, so a chapter that had already configured a channel is never overwritten and re-applying is idempotent. What a drop/re-apply cycle cannot reconstruct is *which* channel was the alumni channel: step 1 matches on `name = 'alumni'`, so a chapter that renamed it gets `{members:view}` from step 2 and loses alumni posting there until an officer with `channels:manage` adds `alumni:post` back. Snapshot `select id, chapter_id, name, type, required_permissions from chat_channels where type = 'ROLE_GATED'` first if any chapter has renamed or hand-tuned a role-gated channel. The Alumni role grant (step 3) is guarded by an `any(permissions)` check and is likewise idempotent; to undo it, `update roles set permissions = array_remove(permissions, 'alumni:post') where system_key = 'ALUMNI';`
+
+## Rollback system-role `system_key`
+
+* **Migration**: `20260806220000_role_system_key.sql`
+* **Action**: dropping the column is sufficient — Postgres drops indexes involving the column automatically, including this partial one (verified under PGlite), so no `CASCADE` and no separate `DROP INDEX` are required:
+  ```sql
+  ALTER TABLE roles DROP COLUMN IF EXISTS system_key;
+  ```
+  To revert only the uniqueness guarantee while keeping the column and its values, drop the index alone instead: `DROP INDEX IF EXISTS idx_roles_chapter_system_key;`
+  **Redeploy the API at the pre-FRA-320 revision first.** The post-FRA-320 code `select`s and filters on `system_key` in `RbacService.getAlumniRoleId`, `MemberService.findAlumniByChapter`, and `BillingService.notifyChapterPresident`, and `ChapterService.create` *inserts* it — with the column gone, chapter creation 500s outright and the three lookups error rather than degrading.
+* **Note**: Additive DDL only (one nullable column + one partial unique index); no existing column, constraint, policy, or row is altered, so nothing predating the migration can be lost. Rolling back reverts every system-role lookup to name matching, which **re-opens the silent rename fail-open this migration closed** (FRA-320): renaming the Alumni role again disables study-hour, event-check-in, and chat-posting restrictions chapter-wide with no error and no log line. Prefer a roll-forward fix.
+* **Data caveat**: the column holds derived identity, not user data — on re-apply the migration's backfill reconstructs it from each system role's current name, so no snapshot is needed. The one thing that does *not* survive a drop/re-apply cycle: a chapter that renamed a system role **while the column existed** kept a correct key through the rename, but the re-apply backfill matches on the *current* name and will leave that role with a null key. Those chapters silently return to the fail-open path. If any chapter has renamed a system role since this migration landed, snapshot `select id, chapter_id, name, system_key from roles where system_key is not null` before dropping and restore it after re-applying.
+
+## Rollback scheduled notification dispatches
+
+* **Migration**: `20260805140000_scheduled_notification_dispatches.sql`
+* **Action**: the migration creates one table **and three indexes on pre-existing tables**, which do *not* drop with it:
+  ```sql
+  DROP TABLE IF EXISTS scheduled_notification_dispatches; -- its own index drops with it
+  DROP INDEX IF EXISTS idx_events_end_time;
+  DROP INDEX IF EXISTS idx_financial_invoices_status_due_date;
+  DROP INDEX IF EXISTS idx_tasks_status_due_date;
+  ```
+  The three indexes are safe to keep — they are pure read optimizations for the sweep queries and nothing depends on their existence. Drop them only if you are fully reverting the migration.
+* **⚠️ Note**: Additive DDL only — no existing table's data is touched, so nothing that predates the migration can be lost. But **redeploy the API at the pre-FRA-24 revision first**, or disable the sweeps. `ScheduledJobsService` claims a row before *every* unit of work, and `ScheduledJobsRepository` treats an unexpected insert error as "not claimed", so with the table gone **all three claim-based sweeps silently stop doing anything** (report retention takes no claim and is unaffected) — reminders send nothing, and attendance auto-absent stops marking. They fail safe (no crash, no double-send) but they also fail *quietly*: the only signal is a `dispatch claim failed` line per item. Auto-absent is not exempt — it claims under `entity_type = 'EVENT'` so it runs once per event instead of once per replica per hour.
+* **Data caveat**: the rows are delivery bookkeeping — which reminder has already gone out for which invoice/task. Dropping the table erases that memory, so **re-applying the migration and re-enabling the sweeps re-sends every reminder still inside the 7-day `OVERDUE_LOOKBACK_DAYS` window** (and any invoice/task due the next day). Members see duplicates for anything in that window; older items stay silent because the lookback bound excludes them. If that matters, snapshot the table before dropping and restore it alongside the re-apply.
+
+## Rollback custom-role member assignment
+
+* **Migration**: `20260804230000_member_custom_role_ids.sql`
+* **Action**: `ALTER TABLE members DROP COLUMN IF EXISTS custom_role_ids;` — but redeploy the API at the pre-FRA-229 revision **first**: the post-FRA-229 `ChapterGuard` `select`s the column on every request and errors if it is gone.
+* **Note**: Purely additive (`uuid[] not null default '{}'`). Dropping it loses only which members hold which `chapter_custom_roles` — the roles themselves, their capabilities, and all live-role assignments are untouched, and enforcement falls back to exactly the pre-bridge behavior (custom roles present but presentation-only). No backfill is needed on re-apply; assignments would have to be redone by hand.
+
+## Rollback the dashboard-created bucket declarations
+
+* **Migration**: `20260808204500_declare_dashboard_created_buckets.sql`
+* **⚠️ Never delete these buckets.** This is the one bucket migration that does **not** own its buckets. `branding`, `profiles`, `documents`, `backwork` and `chat` were created by hand in the dashboard long before it and already hold live member uploads — logos, profile photos, chapter documents, Backwork resources, chat attachments. The migration only *constrains* rows it did not create, so emptying or deleting a bucket here destroys real chapter data and is never a rollback step (contrast the `reports` and `service` sections below, whose migrations did create their buckets).
+* **What it actually changed**: three columns per bucket — `public → false`, `allowed_mime_types` → that bucket's API-side allowlist, `file_size_limit → 26214400`. Nothing else, and no object was touched.
+* **Action — no deploy required, and no API rollback is ever needed.** Reverse only the column that is causing trouble:
+  * Uploads rejected as the wrong type or too large: `update storage.buckets set allowed_mime_types = null, file_size_limit = null where id = '<bucket>';`
+  * An image or file that used to load over a public URL now 404s: `update storage.buckets set public = true where id = '<bucket>';` — **but treat this as an incident, not a fix.** It means something was reading that bucket without a signed URL, which `spec/architecture/README.md` §7 says nothing should do. Restore availability if you must, then find the reader and move it onto a signed URL.
+* **Note**: The API is indifferent to all three columns — it only ever mints signed URLs, and `IStorageProvider` has no `getPublicUrl` method — so no API revision pairs with this migration in either direction. Re-applying is safe and idempotent at any time: the `on conflict (id) do update` re-asserts all three columns onto whatever rows exist, which is also what makes it self-healing if someone changes a bucket in the dashboard again.
+* **Tightening caveat**: a MIME allowlist constrains only *future* uploads; objects already stored outside the allowlist keep serving. So a rollback is never needed to protect existing files — only to unblock new uploads.
+* **Comment-only follow-up (Wave 1 item 2):** header comments now cross-reference `@repo/validation` upload kinds (`image` / `document`) instead of per-service constant names. No DDL change; the rollback steps above are unchanged. Application-layer MIME checks read the shared module; bucket columns still enforce on the PUT.
+
+## Rollback the generated-reports bucket
+
+* **Migration**: `20260805133000_reports_bucket.sql`
+* **Action**: Nothing schema-side is usually needed — the row is pure additive config. If the bucket must actually go: first redeploy the API at the pre-FRA-19 revision (otherwise `POST /v1/reports/*?format=pdf` 500s on upload; `format=json` and `format=csv` are unaffected and keep working either way), then empty and remove the bucket **through the Storage API, never raw SQL** — `supabase.storage.emptyBucket('reports')` then `supabase.storage.deleteBucket('reports')` (dashboard: Storage → reports → Empty bucket → Delete). Deleting `storage.objects` rows with SQL removes only metadata and strands the file bytes in the backing store with nothing left to find them by.
+* **Note**: Report PDFs are disposable derived artifacts — every one can be regenerated from live data, and nothing in the database references them, so deleting them loses no chapter data. Any signed URL already handed out keeps working until its hour is up or the object is removed, whichever comes first. To only loosen the constraints instead, `update storage.buckets set allowed_mime_types = null, file_size_limit = null where id = 'reports';` — no deploy required. Old exports are reaped automatically: an hourly sweep deletes anything past 24h, and account deletion clears the departing member's chapters' report prefixes outright (`spec/behavior/data-retention.md`). Both live in the API, so rolling the API back to a pre-#694 revision stops the reaping and the bucket resumes growing — empty it by hand via the Storage API if that rollback is held for long.
+* **Comment-only follow-up (Wave 1 item 2):** header comments now point at `MAX_UPLOAD_BYTES` in `@repo/validation` for the 25 MB cap. This bucket is still not a member-upload kind. No DDL change; rollback unchanged.
+
+## Rollback the service-proof bucket
+
+* **Migration**: `20260803231500_service_proof_bucket.sql`
+* **Action**: Nothing schema-side is usually needed — the row is pure additive config. If the bucket must actually go: first redeploy the API at the pre-FRA-49 revision (otherwise `POST /v1/service-entries/proof-upload-url` 500s), then empty and remove the bucket **through the Storage API, never raw SQL** — `supabase.storage.emptyBucket('service')` then `supabase.storage.deleteBucket('service')` (dashboard: Storage → service → Empty bucket → Delete). Deleting `storage.objects` rows with SQL removes only metadata and strands the file bytes in the backing store with nothing left to find them by.
+* **Note**: Deleting the bucket destroys every uploaded proof object; entries keep their `proof_path` strings and `GET /v1/service-entries/{id}/proof-url` returns 404 for them afterwards. To only loosen the upload constraints instead, `update storage.buckets set allowed_mime_types = null, file_size_limit = null where id = 'service';` — no deploy required.
+* **Comment-only follow-up (Wave 1 item 2):** header comments now require the MIME list to stay in lockstep with kind `proof` in `@repo/validation`. No DDL change; rollback unchanged.
+
+## Rollback active-chapter JWT claim
+
+* **Migration**: `20260802120000_active_chapter_jwt_claim.sql`
+* **First action — no deploy required**: disable the hook (**Authentication → Hooks** in the Supabase dashboard, or `hook_custom_access_token_enabled: false` via the Management API). This is the instant mitigation for anything auth-related and is almost always sufficient: with the hook off, tokens are issued without the `active_chapter_id` claim and `ChapterGuard` falls back to the `x-chapter-id` header, which every client still sends. **Do this before touching the schema** — it takes effect on the next token issuance, whereas dropping the function while the hook is still pointed at it would fail token issuance outright and lock users out.
+* **Then, if the schema must also go**: `DROP FUNCTION IF EXISTS public.custom_access_token_hook(jsonb);` followed by `ALTER TABLE users DROP COLUMN IF EXISTS active_chapter_id;`. Order matters — the function reads the column. Also drop the two auth-admin read policies if fully reverting: `DROP POLICY IF EXISTS "auth_admin_can_read_users" ON public.users;` and `DROP POLICY IF EXISTS "auth_admin_can_read_members" ON public.members;`.
+* **Note**: Dropping the column loses each user's persisted chapter selection only; memberships are untouched, so on re-apply single-chapter users auto-resolve again immediately and multi-chapter users re-select. The post-FRA-303 API tolerates the claim being absent by design, so **no API rollback is needed** — that is the whole point of the header fallback. The API only breaks if `users.active_chapter_id` is dropped while the activate endpoint is still deployed, so redeploy the pre-FRA-303 revision before dropping the column.
+
+## Rollback past_due grace clock
+
+* **Migration**: `20260602120000_chapter_past_due_since.sql`
+* **Action**: `ALTER TABLE chapters DROP COLUMN IF EXISTS past_due_since;`
+* **Note**: The column only feeds `ChapterGuard`'s 3-day `past_due` grace window. Dropping it reverts to the prior behavior where any `past_due` write is hard-blocked immediately (no grace) — strictly more restrictive, so it is safe and causes no data loss beyond the per-chapter grace timestamps. After dropping, redeploy the API at the pre-FRA-109 revision (the post-FRA-109 guard `select`s the column and will error if it is gone). No data backfill needed on re-apply; the migration re-stamps existing `past_due` rows.
+
+## Rollback Stripe webhook ordering mark
+
+* **Migration**: `20260604121000_chapter_last_stripe_webhook_at.sql` (renamed from `20260604120000_…` to resolve a version collision — FRA-288)
+* **Action**: `ALTER TABLE chapters DROP COLUMN IF EXISTS last_stripe_webhook_at;`
+* **Note**: Additive nullable column only — it records the `event.created` of the most recently applied Stripe subscription webhook so `BillingService` can drop out-of-order/retried deliveries (FRA-242, `spec/behavior/billing.md`). Dropping it reverts to last-writer-wins, where a delayed webhook can overwrite a newer status — strictly less safe but no data loss. The post-FRA-242 `BillingService` both `select`s and writes this column, so a forward-fix (redeploy the pre-FRA-242 API revision) is required before dropping it. No backfill on re-apply; the next webhook per chapter re-stamps the mark.
+
+## Rollback Terms/Privacy acceptance columns
+
+* **Migration**: `20260604130000_chapter_legal_acceptance.sql`
+* **Action**: `ALTER TABLE chapters DROP COLUMN IF EXISTS legal_accepted_at, DROP COLUMN IF EXISTS legal_policy_version, DROP COLUMN IF EXISTS legal_accepted_by;`
+* **Note**: Additive nullable columns recording the chapter admin's Terms/Privacy acceptance at onboarding (FRA-17, `spec/behavior/legal.md`). The post-FRA-17 `ChapterOnboardingService` **writes** these on chapter creation, so redeploy the pre-FRA-17 API revision (which omits them) before dropping, or new-chapter onboarding inserts will fail on the missing columns. Reads use `select('*')` and tolerate their absence. Dropping loses the per-chapter acceptance audit (timestamp, policy version, accepting user) but no operational data; no backfill on re-apply (legacy rows stay `NULL`).
+
+## Rollback Chunk 09 member custom-field values
+
+* **Migration**: `20260531120000_member_custom_field_values.sql`
+* **Action**: Run `DROP TABLE IF EXISTS member_custom_field_values;` (its indexes, composite foreign keys, and the `updated_at` trigger drop automatically with the table). To fully revert the migration, also drop the helper unique constraints it added to the parent tables (safe to keep — they are redundant supersets of each table's primary key):
+  ```sql
+  ALTER TABLE members DROP CONSTRAINT IF EXISTS members_id_chapter_id_key;
+  ALTER TABLE chapter_custom_fields DROP CONSTRAINT IF EXISTS chapter_custom_fields_id_chapter_id_key;
+  ```
+* **Note**: The table holds per-member values for the `chapter_custom_fields` definitions, carrying a `chapter_id` enforced by composite FKs so a row can never pair a member with a field from another chapter. Dropping it loses any stored custom-field values but does not touch the definitions. There is no value-write API yet (deferred to #581), so in most environments the table is empty.
+
+## Rollback Chunk 07d dues config alignment
+* **Migration**: `20260530193000_chapter_dues_config_align_spec.sql`
+* **Action (forward-fix)**: Drop the added column and restore the prior cadence CHECK/default:
+  ```sql
+  ALTER TABLE chapter_dues_config DROP COLUMN IF EXISTS installment_count;
+  ALTER TABLE chapter_dues_config DROP CONSTRAINT IF EXISTS chapter_dues_config_cadence_check;
+  ALTER TABLE chapter_dues_config
+    ALTER COLUMN cadence SET DEFAULT 'semester',
+    ADD CONSTRAINT chapter_dues_config_cadence_check
+      CHECK (cadence IN ('semester','monthly','annual'));
+  ```
+* **Note**: Safe at any time — `chapter_dues_config` has no write path until the API shipped in this chunk, so the table is empty and there is no data to lose. If rows exist by rollback time, any `per_semester`/`per_quarter` value must be reconciled to the old vocabulary first or the restored CHECK will reject them.
+
+## Rollback analytics opt-out flag
+* **Migration**: `20260530180000_chapter_analytics_opt_out.sql`
+* **Action**: Run `ALTER TABLE chapters DROP COLUMN IF EXISTS analytics_opt_out;`
+* **Note**: Additive boolean with a default; dropping it loses only each chapter's opt-out preference. The server reads it defensively and treats a missing/false value as "analytics enabled".
+
+## Rollback `confirm_task_completion` RPC
+* **Migration**: `20260602210000_add_confirm_task_completion_rpc.sql`
+* **Action**: Run `DROP FUNCTION IF EXISTS confirm_task_completion(uuid, uuid);`
+* **Note**: Additive function only — dropping it removes the atomic confirm path but loses no data. The API calls it from `SupabaseTaskRepository.confirmCompletionAtomic`, so a forward-fix (rather than a bare drop) is required to keep task confirmation working: deploy an API revision that reverts to the prior two-write path before dropping the function.
+
+## Rollback `approve_service_entry` RPC
+* **Migration**: `20260603120000_add_approve_service_entry_rpc.sql`
+* **Action**: Run `DROP FUNCTION IF EXISTS approve_service_entry(uuid, uuid, uuid, text, integer);`
+* **Note**: Additive function only — dropping it removes the atomic service-hour approval path but loses no data. The API calls it from `SupabaseServiceEntryRepository.approveAtomic`, so a forward-fix (rather than a bare drop) is required to keep service-hour approval working: deploy an API revision that reverts to the prior two-write path (point insert + entry update) before dropping the function.
+
+## Rollback `check_in_event` RPC
+* **Migration**: `20260603140000_add_check_in_event_rpc.sql`
+* **Action**: Run `DROP FUNCTION IF EXISTS check_in_event(uuid, uuid, uuid, timestamptz, integer, text);`
+* **Note**: Additive function only — dropping it removes the atomic event check-in path but loses no data. The API calls it from `SupabaseAttendanceRepository.checkInAtomic`, so a forward-fix (rather than a bare drop) is required to keep event check-in working: deploy an API revision that reverts to the prior two-write path (attendance insert + point insert) before dropping the function.
+
+## Rollback `transfer_presidency` RPC
+* **Migration**: `20260604120000_add_transfer_presidency_rpc.sql`
+* **Action**: Run `DROP FUNCTION IF EXISTS transfer_presidency(uuid, uuid, uuid, text);`
+* **Note**: Additive function only — dropping it removes the atomic presidency-transfer path but loses no data. The API calls it from `SupabaseMemberRepository.transferPresidencyAtomic`, so a forward-fix (rather than a bare drop) is required to keep presidency transfer working: deploy an API revision that reverts to the prior two-write path (remove the wildcard role from the current President, add it to the target) before dropping the function.
+
+## Rollback `get_points_report` RPC
+* **Migration**: `20260604140000_get_points_report_window_filter.sql` (supersedes `20250226120000_add_get_points_report_rpc.sql`)
+* **Action**: Run `DROP FUNCTION IF EXISTS get_points_report(uuid, uuid, timestamptz);`
+* **Note**: Additive/no data loss — the migration drops the old `(uuid, uuid, text)` overload and recreates the RPC with a `p_since timestamptz` window filter (FRA-31). The API calls the new overload from `ReportService.getPointsReport`, so a forward-fix (rather than a bare drop) is required to keep the points report working: deploy an API revision that reverts to the prior all-time call and re-creates the original `(uuid, uuid, text)` body before dropping the `timestamptz` overload.
+
+## Rollback `chat_message_actions` membership-scoped read RLS
+* **Migration**: `20260803150000_chat_message_actions_membership_rls.sql`
+* **Action (forward-fix — restore the prior policy first, then drop the helper)**:
+  ```sql
+  DROP POLICY IF EXISTS "chat_message_actions_select" ON public.chat_message_actions;
+  CREATE POLICY "chat_message_actions_select"
+    ON public.chat_message_actions FOR SELECT
+    USING (auth.role() = 'authenticated');
+  DROP FUNCTION IF EXISTS public.can_read_chat_message(uuid);
+  ```
+* **⚠️ Note**: Rolling back **re-opens the cross-chapter / private-DM / role-gated action-read leak this migration closed** (FRA-38 / #279) — any authenticated user could again read every `chat_message_actions` row via the web client's direct query and the global Realtime subscription, so **prefer a roll-forward fix over this rollback**. No data is lost (policy + function only). Drop order matters: the `SELECT` policy references `can_read_chat_message(...)`, so the policy must be dropped/recreated **before** the function. No app-code change is required either way — the web reaction backfill and Realtime subscription work under either policy; the restored policy is simply permissive again.
+* **Replica identity**: nothing to revert. The migration deliberately leaves `chat_message_actions` at the default replica identity — see the rationale in the migration header and `docs/internal/security/SECURITY_FIXES.md`. If you find the table set to `FULL`, that is drift, not this migration.
+
+## Rollback poll list vote aggregate RPCs
+* **Migration**: `20260417180000_add_poll_list_vote_aggregate_rpcs.sql`
+* **Action**: Run `DROP FUNCTION IF EXISTS get_poll_vote_option_totals(uuid[]);` and `DROP FUNCTION IF EXISTS get_poll_user_votes_for_messages(uuid[], uuid);`
+
+## Rollback `idx_point_transactions_chapter_created_at`
+* **Migration**: `20260417120000_point_transactions_chapter_created_at_idx.sql`
+* **Action**: `DROP INDEX IF EXISTS idx_point_transactions_chapter_created_at;`
+* **Note**: Safe additive change only; dropping removes the performance optimization for chapter-scoped transaction lists. Same-day data backfills on `public.roles` are separate migrations — see the next two sections (`20260417140000`, `20260417150000`).
+
+## Rollback `backfill_polls_view_all_system_roles`
+* **Migration**: `20260417140000_backfill_polls_view_all_system_roles.sql`
+* **Action (best-effort):** Remove appended permission and inserted roles (VP/Secretary may include `members:view` and `polls:view_all`), then restore `display_order` for system roles that were shifted by +2:
+  1. `delete from public.roles where name in ('Vice President', 'Secretary') and is_system = true;`
+  2. `update public.roles set permissions = array_remove(permissions, 'polls:view_all') where is_system = true and name = 'Treasurer' and not ('*' = any (permissions));`
+  3. For each chapter that no longer has a Vice President row, decrement `display_order` by 2 on system roles with `display_order >= 5` (Member and below in the default ordering). Prefer restoring from a snapshot if unsure.
+* **Note:** This migration is data-only; rollback is manual because removing `polls:view_all` from Treasurer may have been intentional pre-migration state.
+
+## Rollback `backfill_members_view_vp_secretary`
+* **Migration**: `20260417150000_backfill_members_view_vp_secretary.sql`
+* **Action (best-effort):** `update public.roles set permissions = array_remove(permissions, 'members:view') where is_system = true and name in ('Vice President', 'Secretary');`
+* **Note:** Only use if no chapter intentionally granted `members:view` solely through these roles and depends on it; prefer snapshot restore when unsure.
+
+## Rollback Chunk 05 migration (20260527120000_chat_notification_preferences.sql)
+
+Migration is additive (one new table with its own indexes, policy, and trigger). Rollback is safe at any time; the only data loss is per-user preference rows. The push worker tolerates an empty table (it falls back to channel-name defaults in `apps/api/src/modules/chat-push-worker/push-rules.ts`), so dropping the table degrades preferences gracefully without breaking fanout.
+
+```sql
+-- The trigger and indexes drop automatically with the table.
+DROP TABLE IF EXISTS chat_notification_preferences;
+```
+
+**Note:** No NestJS worker change is required after rollback — the push worker's preference repository tolerates an empty result set and treats it as "no preference set," which falls back to the defaults table in [`spec/behavior/notifications.md`](../../../spec/behavior/notifications.md).
+
+## Rollback Chunk 03 migration (20260524120000_chapter_directory_requests.sql)
+
+Migration is additive (new table + one seeded row). Rollback is safe to run at any time without data-loss risk beyond losing directory-request submissions.
+
+```sql
+-- 1. Drop chapter_directory_requests (indexes drop automatically with table)
+DROP TABLE IF EXISTS chapter_directory_requests;
+
+-- 2. Remove the system user seed (only if it was inserted by this migration
+--    and no chat_messages rows reference it; if they do, delete those first
+--    or leave this row in place to keep historical system messages intact).
+-- DELETE FROM public.users WHERE id = '00000000-0000-0000-0000-000000000000';
+```
+
+**Note:** The `DELETE` for the system user is commented out intentionally — if any `chat_messages` rows have `sender_id = '00000000-…'`, removing the user violates the FK. Prefer leaving the system user in place and only dropping the `chapter_directory_requests` table unless you are certain no system messages were written.
+
+## Rollback Chunk 02 migrations (20260523*)
+
+All four migrations are additive. Rollback drops the new structures in reverse order.
+
+```sql
+-- 1. chat hot-path (20260523150000)
+DROP TABLE IF EXISTS chat_message_actions;
+DROP INDEX IF EXISTS idx_chat_messages_dedupe;
+DROP INDEX IF EXISTS idx_chat_messages_channel_created;
+ALTER TABLE chat_messages
+  DROP COLUMN IF EXISTS kind,
+  DROP COLUMN IF EXISTS payload,
+  DROP COLUMN IF EXISTS client_message_id,
+  DROP COLUMN IF EXISTS deleted_at;
+
+-- 2. chapter directory (20260523140000)
+ALTER TABLE chapters DROP CONSTRAINT IF EXISTS fk_chapters_directory;
+DROP TABLE IF EXISTS chapter_directory;
+
+-- 3. audit log (20260523130000)
+DROP TABLE IF EXISTS chapter_audit_log;
+
+-- 4. chapter customization (20260523120000)
+DROP TABLE IF EXISTS chapter_dues_config;
+DROP TABLE IF EXISTS chapter_workflows;
+DROP TABLE IF EXISTS chapter_custom_roles;
+DROP TABLE IF EXISTS chapter_custom_fields;
+ALTER TABLE chapters
+  DROP COLUMN IF EXISTS org_archetype,
+  DROP COLUMN IF EXISTS enabled_modules,
+  DROP COLUMN IF EXISTS vocabulary,
+  DROP COLUMN IF EXISTS branding,
+  DROP COLUMN IF EXISTS theme_palette,
+  DROP COLUMN IF EXISTS directory_id,
+  DROP COLUMN IF EXISTS beta_config;
+```
+
+**Note:** Rolling back drops both new tables *and* the new columns added to `chapters` and `chat_messages`. Any data stored in those columns (`org_archetype`, `enabled_modules`, `vocabulary`, `branding`, `theme_palette`, `directory_id`, `beta_config`, `kind`, `payload`, `client_message_id`, `deleted_at`) will be permanently lost, in addition to all rows inserted into the new tables.
+
+## Rollback the invoice payment RPC + indexes (20260803120000)
+
+Additive: one function and two partial unique indexes (FRA-15). No columns or
+rows are created, so rollback loses nothing that existed before the migration.
+
+```sql
+DROP FUNCTION IF EXISTS apply_invoice_payment(uuid, uuid, text, text);
+DROP INDEX IF EXISTS idx_financial_transactions_payment_charge;
+DROP INDEX IF EXISTS idx_financial_invoices_payment_intent;
+```
+
+**Order matters only for the function**: drop it before deploying an API build
+that predates FRA-15, since the old build never calls it. Do **not** drop it
+while the current API is serving — `FinancialInvoiceService.applyStripePaymentSuccess`
+(webhook path) and `transitionStatus` → PAID (admin path) both call it, and a
+missing function surfaces as a 500 on the Stripe webhook, which Stripe then
+retries for up to ~72h.
+
+**Data caveat:** the values the migration lets the app write —
+`financial_invoices.stripe_payment_intent_id` and
+`financial_transactions.stripe_charge_id` — are *not* removed by this rollback
+and stay valid; only the uniqueness guarantee goes away. If you later re-apply
+the migration, the `CREATE UNIQUE INDEX` statements will fail if duplicate
+non-null ids accumulated while the indexes were absent. Check first:
+
+```sql
+SELECT stripe_payment_intent_id, count(*) FROM financial_invoices
+ WHERE stripe_payment_intent_id IS NOT NULL
+ GROUP BY 1 HAVING count(*) > 1;
+
+SELECT stripe_charge_id, count(*) FROM financial_transactions
+ WHERE stripe_charge_id IS NOT NULL AND type = 'PAYMENT'
+ GROUP BY 1 HAVING count(*) > 1;
+```
+
+Resolve any duplicates (they indicate a double-recorded payment worth
+reconciling in Stripe regardless) before re-applying.
+
+## Rollback account deletion (20260803140000)
+
+Additive DDL: one nullable column and one function (FRA-40). Rolling the
+*schema* back loses nothing that existed before the migration:
+
+```sql
+DROP FUNCTION IF EXISTS anonymize_user(uuid, boolean);
+DROP FUNCTION IF EXISTS anonymize_card_content(text, text);
+ALTER TABLE users DROP COLUMN IF EXISTS deleted_at;
+```
+
+**Order matters for the function**: drop it only alongside (or after) deploying
+an API build without FRA-40 — `AccountDeletionService.deleteAccount` calls it on
+`DELETE /v1/users/me`, and a missing function surfaces as a 500 on every
+account-deletion request while the current build is serving.
+
+**Data caveat — anonymization itself is irreversible by design.** Rows already
+processed by `anonymize_user` stay tombstoned after rollback: PII columns are
+overwritten (not recoverable), current-state rows (memberships, settings, push
+tokens, notifications, read receipts, study sessions) are deleted, and the
+Supabase Auth account is removed by the API flow. `spec/behavior/data-retention.md`
+documents deletion as irreversible, so this is the contract, not collateral —
+there is nothing to restore. Dropping `deleted_at` also drops the tombstone
+*marker*; if the migration is later re-applied, previously deleted users show
+`deleted_at = null` while keeping their scrubbed "Deleted User" fields. That is
+safe: the function re-runs its full scrub on every call by design (no tombstone
+early-return), so re-running it on such a row simply re-stamps the marker.
+
+## Rollback service-hours config + leaderboard (20260809124500)
+
+Purely additive DDL — one table, one index, one read-only function (#273).
+Nothing existing is altered, so a schema rollback loses only what the migration
+itself introduced:
+
+```sql
+DROP FUNCTION IF EXISTS get_service_leaderboard(uuid, date, date);
+DROP INDEX IF EXISTS idx_service_entries_chapter_status_date;
+DROP TABLE IF EXISTS chapter_service_config;
+```
+
+**Order matters for the function and the table**: drop them only alongside (or
+after) deploying an API build without #273. `ServiceEntryService.approve` reads
+`chapter_service_config` on every approval and
+`GET /v1/service-entries/leaderboard` calls the function, so dropping either
+while the current build is serving turns those into 500s. The read path
+tolerates a *failed* read (it falls back to the default rate and logs a
+warning), but not a missing relation on the leaderboard route.
+
+**Data caveat — rolling back silently changes point awards.** Any chapter that
+configured a non-default rate loses it: approvals revert to 60 minutes per
+point. Points already awarded are **not** recomputed (the ledger is
+append-only and the system never auto-reverses — see
+`spec/behavior/service-hours.md` → Edge Cases), so pre-rollback awards keep
+whatever rate produced them. Capture the rates before dropping if you intend to
+restore them:
+
+```sql
+SELECT chapter_id, minutes_per_point FROM chapter_service_config
+ WHERE minutes_per_point <> 60;
+```
+
+Dropping `idx_service_entries_chapter_status_date` is always safe — it is a
+pure performance index, and the older `idx_service_entries_chapter` still
+covers chapter-scoped reads.
+
+## Rollback chapter document folders (20260809120000)
+
+Additive DDL: one new table, no changes to any existing table (#274).
+
+```sql
+DROP TABLE IF EXISTS chapter_document_folders;
+```
+
+**Order matters**: drop the table only alongside (or after) deploying an API
+build without #274. `ChapterDocumentService.listFolders` / `createFolder` /
+`updateFolder` / `deleteFolder` all query it, and `confirmUpload` writes to it
+on every upload that names a folder — so with the table gone, the current build
+returns a 500 on document *upload*, not just on the folder routes.
+
+**No data loss on the documents themselves.** `chapter_documents.folder` is the
+free-text column it has always been and this migration never touches it: the
+folders table is a *sidecar* holding the name and `sort_order`. Dropping it
+loses only the ordering officers configured and any folder that was created but
+never filled — every document keeps its folder name and stays filterable by
+`GET /v1/documents?folder=`, which is exactly the pre-#274 behavior.
+
+**Re-applying is safe and self-healing.** The migration's backfill re-derives
+one row per `distinct (chapter_id, folder)` from `chapter_documents`, so folders
+in active use come back on their own; it is `ON CONFLICT DO NOTHING`, so
+re-running it against a populated table inserts nothing and cannot fail. What
+does *not* come back is `sort_order` (every re-derived folder returns at `0`,
+ordering by name) and any empty folder, which has no document to be derived
+from. If either matters, snapshot before dropping:
+
+```sql
+SELECT chapter_id, name, sort_order FROM chapter_document_folders ORDER BY 1, 3, 2;
+```
+
+## Rollback event check-in geofence (20260817170000)
+
+Additive DDL: two nullable columns on `events` plus one CHECK constraint, no
+changes to any existing column (#994).
+
+```sql
+ALTER TABLE events DROP CONSTRAINT IF EXISTS events_check_in_zone_shape;
+ALTER TABLE events DROP COLUMN IF EXISTS check_in_zone;
+ALTER TABLE events DROP COLUMN IF EXISTS check_in_zone_name;
+```
+
+**Order matters, but less than usual.** `AttendanceService.checkIn` reads
+`event.check_in_zone` on every check-in, and `EventService.create` writes both
+columns on every event create — so with the columns gone, the current build
+returns errors on *event creation* as well as check-in. Drop them only alongside
+or after deploying a build without #994.
+
+**Dropping is a security regression, not just a feature rollback.** The zone is
+the anti-proxy control for check-in (`spec/ui/mobile/patterns.md` § QR check-in):
+without it, a member who receives a forwarded code can check in from anywhere.
+The rotating token still applies where a client sends one, but it is explicitly
+not an access control. Prefer clearing zones over dropping the columns:
+
+```sql
+UPDATE events SET check_in_zone = NULL, check_in_zone_name = NULL;
+```
+
+**Snapshot before dropping** — a polygon is hand-drawn per event and cannot be
+re-derived from anything else in the schema:
+
+```sql
+SELECT id, chapter_id, name, check_in_zone, check_in_zone_name
+  FROM events WHERE check_in_zone IS NOT NULL ORDER BY start_time DESC;
+```
+
+**Re-applying is safe.** Both `ADD COLUMN` statements are `IF NOT EXISTS`, so the
+migration is idempotent; the CHECK constraint is not, so re-running against a
+table that still carries it needs the `DROP CONSTRAINT` above first.

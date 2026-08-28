@@ -1,1326 +1,193 @@
 # AGENTS.md
 
-## Jules Cloud-specific instructions
+Concise operating guide for AI agents and developers. **Deep detail:** [`docs/internal/environment/LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md) (machines, Infisical, ports), [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md) (CI, deploys, PAT policy, Infisical sync map). **Task playbooks:** the skills under [`.claude/skills/`](.claude/skills/) — see [Skills](#skills-read-the-matching-one-before-deep-work).
 
-### Additional credentials (Jules agent env vars)
+## Optional agent credentials (automation / cloud sessions)
 
-| Env var | Purpose | Permissions |
-|---------|---------|-------------|
-| `INFISICAL_API_KEY` | Infisical API access for secrets lookup/maintenance | Project-scoped secret management |
-| `RENDER_APIKEY` | Render API access for service/deploy status checks | Render service management |
-| `SUPABASE_API_KEY` | Supabase API access for schema/project checks | Supabase project management |
-| `VERCEL_API_KEY` | Vercel API access for build/deployment checks | Vercel project management |
-| `JULES_USER_API_KEY` | Jules API access for agent-related automations | Jules user-scoped automation |
-
-### Research-first agent workflow
-
-When relevant credentials are available, agents should prefer a research-first workflow before proposing changes:
-
-1. **Gather runtime truth first** (CI statuses, deployment state, schema state, environment sync status) using provider APIs/CLIs.
-2. **Use provider checks during testing** for high-signal validation:
-   - Supabase: schema/project checks before and after DB-affecting changes.
-   - Vercel/Render: build/deploy status and health verification for release-impacting work.
-   - Infisical: secret presence/mapping validation when environment configuration changes.
-3. **Minimize assumptions** by verifying live state, then aligning code/docs/spec updates to the observed reality.
-4. **Never print secret values** in logs, commits, PRs, docs, or comments. Only reference variable names and status.
-
-### Operating mindset (Dev - Senior Engineer & Chief of Staff)
-
-#### Core truths
-- Be genuinely helpful, not performatively helpful. Skip "Great question!" and get to the answer.
-- Have opinions. If code is bad or direction is wrong, say so clearly and propose a better path.
-- Be resourceful before asking. Read files, check context, and search first; return with answers.
-- If it can be handled without user input, handle it. If user input is needed, flag why.
-- Keep replies proportional; one sentence is enough when one sentence solves it.
-
-#### Communication style
-- Direct and concise for simple tasks; thorough when the problem is complex.
-- No corporate filler or flattery; communicate like a sharp teammate.
-- Use code where code is clearest; plain language where plain language is clearest.
-
-#### Boundaries
-- Confirm before external/public actions (emails, social posts, public-facing communications).
-- Be proactive with internal actions (research, file updates, organization, staging work).
-- Treat access as trust: keep private information private.
-- If agent operating files are changed, explicitly call that out in the final response.
-
-### Project overview
-
-Frapp is a Turborepo + npm workspaces monorepo with 5 apps and 7 shared packages. See `README.md` for repo structure and `spec/` for detailed product/architecture specs.
-
-### Branch model
-
-Two long-lived branches: `main` (staging) and `production` (production). See `CONTRIBUTING.md` for the full model.
-
-- **Feature work:** branch from `main` → PR to `main`
-- **Production promotion:** PR from `main` → `production`
-- **Direct pushes to `main` and `production` are blocked** by branch protection
-- PRs to `production` from non-`main` branches are rejected by CI
-
-### Documentation sync mandate (non-optional)
-
-For **every** non-doc code change (including tests, refactors, tooling, CI, and config), the agent must update at least one related file in `apps/docs/`, `docs/`, or `spec/` in the same PR.
-
-Required behavior:
-- Run or reason against the docs/spec sync rule (`scripts/check-docs-impact.mjs`) before finalizing work.
-- Treat docs/spec updates as part of done criteria, not a follow-up.
-- If behavior is unchanged, add concise maintenance documentation that explains what changed technically and why no product behavior changed.
-
-### Services and ports
-
-| Service | Port | Command |
-|---------|------|---------|
-| API (NestJS) | 3001 | `npm run dev:api` (with Infisical) or `npm run start:dev -w apps/api` |
-| Web dashboard (Next.js) | 3000 | `npm run dev:web` (with Infisical) or `npm run dev -w apps/web` |
-| Landing (Next.js) | 3002 | `npm run dev:landing` (with Infisical) or `npm run dev -w apps/landing` |
-| Docs (Next.js) | 3005 | `npm run dev -w apps/docs` |
-| Supabase Studio | 54323 | `npx supabase start` |
-| Supabase API | 54321 | (started with supabase) |
-| Supabase DB | 54322 | (started with supabase) |
-
-### Starting the dev environment
-
-1. Docker must be running before Supabase can start: `sudo dockerd &>/tmp/dockerd.log &` (wait ~3s). Grant socket access by adding your user to the docker group (`sudo usermod -aG docker $USER`) and re-logging, or by starting dockerd via the system service (`sudo systemctl start docker`). The `chmod 666 /var/run/docker.sock` shortcut should only be used in ephemeral, isolated CI/test VMs.
-2. Start Supabase: `npx supabase start` (pulls images on first run, takes ~90s; subsequent starts are ~10s).
-3. Start services with Infisical-injected env vars: `npm run dev:api`, `npm run dev:web`, etc. These inject secrets from Infisical's `local` environment — no `.env.local` files needed.
-4. Alternatively, create `.env.local` files using keys from `npx supabase status -o env` and use the non-Infisical commands.
+Hosted agent sessions may carry provider/research credentials and cloud-sandbox runtime vars. **Canonical list:** [`docs/internal/environment/AGENT_CREDENTIALS.md`](docs/internal/environment/AGENT_CREDENTIALS.md). Omit all on a normal laptop; use `npx infisical login` for local app secrets.
 
-### Secrets and environment variables
-
-All secrets are managed in **Infisical** (project ID: `a207b6c2-0be2-4507-a8fb-9a21ee8538bd`). See these docs for details:
-
-| Document | What it covers |
-|----------|---------------|
-| `docs/internal/ENV_REFERENCE.md` | Complete list of every variable, per app, per environment |
-| `docs/internal/SECRETS_MANAGEMENT.md` | Infisical setup, syncs, rotation policy |
-
-Key principles:
-- **No `.env.example` files** — use `docs/internal/ENV_REFERENCE.md` as the reference
-- **No placeholder secrets in CI** — CI only runs lint, typecheck, and tests
-- **No environment suffixes** — `RENDER_DEPLOY_HOOK_URL` has different values per Infisical environment, not `_STAGING`/`_PRODUCTION` variants
-- **Canonical values + references** — `SUPABASE_URL` stored once, `NEXT_PUBLIC_SUPABASE_URL = ${SUPABASE_URL}` resolves automatically
-- **Local env uses real staging Stripe/Sentry keys** so billing and error tracking work during development
-
-### CI/CD architecture
-
-| Concept | Details |
-|---------|---------|
-| **CI workflow** | `.github/workflows/ci.yml` — 7 parallel domain-specific jobs |
-| **Deploy workflow** | `.github/workflows/deploy-api.yml` — triggers after CI passes (`workflow_run`) |
-| **Release workflow** | `.github/workflows/release.yml` — auto-tags on main→production merge |
-| **Docs workflow** | `.github/workflows/docs.yml` — docs build + lint + spec sync check |
-| **Branch protection** | 7 required checks on main, 8 on production (includes branch-policy) |
-| **CodeRabbit** | Review-based blocker via `request_changes_workflow` in `.coderabbit.yaml` |
-| **Vercel builds** | Auto-deploy only from `main` and `production`; PR branches are disabled via `git.deploymentEnabled` |
-| **Deploy gating** | API deploys only after CI passes; production migrations require manual approval |
-
-PR review policy:
-- `main`: no required approving review and no required conversation resolution (CodeRabbit suggestions are advisory).
-- `production`: 1 required approving review and required conversation resolution remain enabled for promotion control.
-
-To reconfigure branch protection after changing CI job names:
-```bash
-GITHUB_PAT="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" npm run configure:branch-protection -- --dry-run  # Review
-GITHUB_PAT="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" npm run configure:branch-protection               # Apply
-```
-
-### Infisical sync map
-
-| # | Infisical env | Destination |
-|---|---|---|
-| 1 | staging | Render → frapp-api-staging |
-| 2 | production | Render → frapp-api-prod |
-| 3 | staging | Vercel → frapp-web (Preview) |
-| 4 | production | Vercel → frapp-web (Production) |
-| 5 | staging | Vercel → frapp-landing (Preview) |
-| 6 | production | Vercel → frapp-landing (Production) |
-| 7 | per-env | GitHub Actions (OIDC) |
-
-### GitHub infrastructure
-
-**Environments:**
+**Research-first:** when these exist, gather runtime truth (CI, deploys, schema, secret presence) before proposing changes. Never print secret values. GitHub PAT usage policy + CI tables: [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md).
 
-| Name | Protection | Purpose |
-|------|-----------|---------|
-| `staging` | None | Staging deploys (main branch) |
-| `production` | Required reviewer (pdcarlson) | Production deploys + migration approval gate |
+## Operating mindset
 
-**Repository Secrets (3 — Infisical bootstrap):**
+- Confirm before external/public actions; be proactive on internal/repo work.
+- **Use sub-agents liberally.** Delegate broad searches, independent research, and self-contained chunks to Explore/Plan/general-purpose sub-agents in parallel. Keep heavy reading out of your own context. Sub-agents inherit the session model — there is no pinned sub-agent model.
+- **Stop and report cloud-sandbox failures — don't work around them.** If the local stack fails to come up (`.cloud-sandbox-up.failed`, `host_not_allowed`/`403`, Docker Hub rate limit, missing env var), STOP and tell the user exactly what to add or change in the Claude Code web environment (network policy, env var, setup script). These are environment config you cannot fix from inside the session. Map of symptom → fix: [`docs/internal/environment/CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md) ("When bringup fails"). Trust the `.cloud-sandbox-up.failed` sentinel over the log.
 
-| Secret | Purpose |
-|--------|---------|
-| `INFISICAL_MACHINE_IDENTITY_ID` | Machine identity Client ID for Infisical auth |
-| `INFISICAL_CLIENT_SECRET` | Machine identity Client Secret for Infisical auth |
-| `INFISICAL_PROJECT_ID` | Infisical project identifier |
+## Spec vs code
 
-> **Note:** The deploy workflow (`deploy-api.yml`) currently references `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF`, `RENDER_DEPLOY_HOOK_URL`, and `API_HEALTHCHECK_URL` via `${{ secrets.* }}`. These are **transitional** — they will be replaced by Infisical OIDC injection once the `@infisical/secrets-action` is integrated. Until then, these secrets are populated via Infisical's GitHub Actions sync or set manually in GitHub environment-scoped secrets.
+**`spec/` is the source of truth for intended behavior. Code is the source of truth for current behavior.** Disagreement between them is a tracked bug — file it, do not silently pick whichever loaded first. Fix the stale side in the same PR when it's in scope. Do not "correct" a spec to match a bug, and do not "correct" working code to match a superseded spec, without an explicit decision. Mid-task habit: [`.claude/skills/check-our-docs/SKILL.md`](.claude/skills/check-our-docs/SKILL.md).
 
-**Labels:**
+## ADR discipline
 
-| Label | Purpose |
-|-------|---------|
-| `release:major` | Bump major version on main→production merge |
-| `release:minor` | Bump minor version |
-| `release:patch` | Bump patch version (default) |
+One-off incidents and decisions are logged **once** as an immutable ADR in [`spec/architecture/README.md`](spec/architecture/README.md). Never edit an ADR in place; supersede it with an amendment or a new ADR. A rule graduates into **this file** only when it is (1) recurring, (2) still true, and (3) something an agent would not derive by reading the code. Incident narration stays in the ADR.
 
-### Lint, test, build, type-check
+## Project overview
 
-Standard commands from `package.json` scripts (run from repo root):
-- **Lint:** `npm run lint` (turbo, all lint-enabled workspaces). Run `npm run lint:api` for API-only linting.
-- **Tests:** `npm run test -w apps/api` (377 Jest unit tests across 28 suites).
-- **Build:** `npm run build` (turbo, builds all packages/apps).
-- **Type-check:** `npm run check-types` (turbo).
-- **Contract check:** `npm run check:api-contract` (git-diff freshness check, no NestJS bootstrap).
-- **Migration check:** `npm run check:migration-safety` (filename + promotion docs validation).
+Frapp is a Turborepo + npm workspaces monorepo (**4 apps, 13 shared packages**). Structure: `README.md`. Product/architecture: `spec/`. Developer docs: markdown in [`docs/guides/`](docs/guides/README.md) (no separate docs web app in-repo).
 
-### Available credentials (Jules agent env vars)
+- **Documentation map:** [`docs/README.md`](docs/README.md). **Conventions:** [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md).
 
-The following tokens are available as environment variables in Jules Cloud sessions:
+## Planning canvas (`.buildpad/`)
 
-| Env var | Purpose | Permissions |
-|---------|---------|-------------|
-| `GITHUB_FULL_PERSONAL_ACCESS_TOKEN` | GitHub PAT for repo admin operations | Full repo access |
-| `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN` | Supabase CLI auth | Project management |
+`.buildpad/` (`blobs/`, `documents/`, `notes/`) is a periodically-synced export of the Buildpad research/planning archive. It is **not** a spec, **not** authoritative, and **may contain stale or superseded ideas**. Read the relevant file when a task points at it; do not treat its contents as current product decisions unless they match `spec/` and the code. Never hand-edit it — the next sync overwrites it. Rules: [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md#buildpad-is-background-not-documentation).
 
-### GitHub PAT usage policy
+## Branch model
 
-The agent **MAY** use the GitHub PAT (`GITHUB_FULL_PERSONAL_ACCESS_TOKEN`) for:
-- Creating PRs (always targeting the correct branch per the two-branch model)
-- Closing stale/accidental PRs that the agent itself created
-- Creating GitHub labels
-- Running the branch protection configuration script
-- Configuring GitHub environments and protection rules
-- Reading PR status, CI logs, and branch protection rules
+`main` = staging, `production` = production. Feature branches from `main` → PR to `main`. Promotion: PR `main` → `production`. Direct pushes to `main` / `production` are blocked. PRs to `production` from branches other than `main` are rejected by CI. Details: `CONTRIBUTING.md`.
 
-The agent **MUST NOT** use the GitHub PAT to:
-- Merge PRs without explicit user approval
-- Delete branches without explicit user approval
-- Modify repository settings beyond branch protection and environments (e.g., visibility, collaborators)
-- Create or modify GitHub Secrets (user must do this manually or grant explicit permission)
-- Force push to any branch
-- Create releases or tags outside of the automated release workflow
+## Documentation sync mandate (non-optional)
 
-When using the PAT, always use `GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN"` for `gh` CLI commands.
+For **every** non-doc code change (tests, refactors, tooling, CI, config), update at least one related file under **`docs/`** or **`spec/`** in the same PR. Satisfy the gate by updating the **relevant** existing doc/spec per the placement map in [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md) — never by dropping a new stray file. **Canonical developer guides** live under [`docs/guides/`](docs/guides/README.md).
 
-### Agent skills
+- Run or reason against `scripts/check-docs-impact.mjs` before finishing.
+- **If the change genuinely has no docs impact, label the PR `no-doc-change-needed`.** That is the
+  expected path for a mechanical PR, not a last resort. Never append a note to an unrelated doc to
+  turn the check green — the gate only sees that *some* doc moved, so filler passes, and what it
+  leaves behind is an unowned claim in a doc's canonical home. Worked example and mechanics:
+  [`DOCS_CI.md`](docs/internal/ci-cd/DOCS_CI.md#the-no-doc-change-needed-waiver).
 
-Skills are detailed SOPs in the appendix below. Reference them when working in the relevant area:
+## Work tracking
 
-| Skill | Section | Use when |
-|-------|------|----------|
-| Testing | `§ Testing` | Running tests, verifying changes, CI parity checks |
-| UI Development | `§ UI Development` | Building/modifying web dashboard, landing, or shared UI components |
-| API Development | `§ API Development` | Adding NestJS endpoints, services, repositories, or updating the API contract |
-| Audit | Audit & Quality | `§ Audit | `Appendix: audit.md` | Quality` | Code quality reviews, security audits, dependency checks, migration reviews | Quality | `§ Audit & Quality` | Code quality reviews, security audits, dependency checks, migration reviews |
-| Infrastructure Research | `§ Infrastructure Research` | Investigating deployments, CI failures, secret sync, or service health |
+Work lives in **GitHub Issues** on this repository. Linear is retired (ADR-16 amendment 5). **All issues are opened on GitHub with the `triage` label.** Never track work in a scratch file. Carve-out: `routine-state` infrastructure issues — not work; skipped by `/next` and the routines.
 
-### Gotchas
+Closing is usually the PR that does the work (`Fixes #N`). Agents may also close directly when done, obsolete, or duplicate (`issue_write` + `state_reason`). The **GitHub MCP** is the only sanctioned tracker path in cloud sandboxes — never `gh` or raw REST. Board: `triage` → Backlog (no state label; priority expected) → `in-progress` → `in-review` → closed. Epics are parent issues with native sub-issues. Start work with `/next`. Policy: [`GITHUB_PM.md`](docs/internal/ci-cd/GITHUB_PM.md). Procedure: [`.claude/commands/next.md`](.claude/commands/next.md).
 
-- The API reads env from `.env.local` then `.env` (NestJS ConfigModule). Prefer using `npm run dev:api` which injects from Infisical instead.
-- Local Supabase keys are deterministic JWTs — same for everyone, output by `npx supabase status -o env`.
-- Local environment uses real staging Stripe test keys (`sk_test_`) and Sentry DSN so billing and error tracking work during development.
-- API lint warnings mostly reflect strict type-safety checks around request context/repository boundaries; lint passes, but warnings can be incrementally hardened over time.
-- The mobile app (`apps/mobile`) requires Expo Go on a physical device or emulator; it cannot be tested in a headless cloud VM.
-- `npx supabase db push` requires `--local` flag when running against local dev (no linked project). Without it, the CLI errors with "Cannot find project ref".
-- The `openapi.json` is committed as a source-of-truth artifact. When changing API endpoints, regenerate it: `npm run openapi:export -w apps/api && npm run generate -w packages/api-sdk`. CI checks freshness via git-diff.
-- Branch protection is enforced for admins (`enforce_admins: true`). Emergency overrides require temporarily modifying protection rules via GitHub UI.
-- The `INFISICAL_API_KEY` env var may not have access to the `local` Infisical environment (returns 404 for path `/`). In cloud VMs, create `.env.local` files using `npx supabase status -o env` values for Supabase keys plus placeholder Stripe values (`sk_test_placeholder...`, `whsec_placeholder...`, `price_placeholder...`). The API will start but billing endpoints won't function without real Stripe test keys.
-- Docker in cloud VMs requires `fuse-overlayfs` storage driver and `iptables-legacy`. See daemon config at `/etc/docker/daemon.json`. Start with `sudo dockerd &>/tmp/dockerd.log &`. For socket access, prefer adding the user to the `docker` group (`sudo usermod -aG docker $USER` and re-login) or starting dockerd as the current user. The `chmod 666 /var/run/docker.sock` shortcut should **only** be used in ephemeral, isolated CI/test VMs where no untrusted code runs — it grants root-equivalent access to any local process.
-- `npx supabase db push --local` is idempotent — safe to run every startup. If migrations are already applied (from `supabase start`), it reports "Remote database is up to date".
+Follow-up that does not belong in the current PR: [`.claude/skills/file-follow-up/SKILL.md`](.claude/skills/file-follow-up/SKILL.md). Human-only blockers: file per that skill **and** ask in the end-of-run report — an issue is durable, not an interruption.
 
+## Tech debt protocol (non-optional)
 
-## Appendix: Agent Skills and Rules
+This repo is **mid-rebuild (Frapp → Signet)**. Treat existing code as *possibly dead* until you've checked, not as precedent.
 
-### Developer Notes & Resources
+**Before extending existing code, confirm it has real consumers.** A definition or `index.ts` re-export is not evidence of a caller. Building on an orphan doubles the debt.
 
-> **Note to Jules:** When the user provides resources like API keys, tool workarounds, or environment-specific hints that aren't documented elsewhere, record them here.
+**Never silently work around orphaned, superseded, or contradictory code.** Flag it in the response and the PR body, and file a GitHub issue per [`file-follow-up`](.claude/skills/file-follow-up/SKILL.md) — or fix it inline when it's small and in scope.
 
-*(No custom resources recorded yet)*
+**The tracker is the only debt list.** Do not start a running debt file (`TECH-DEBT.md` or similar). GitHub Issues already have status, ownership, priority, and close-on-merge.
 
-### Core Skills
+**A cutover deletes what it replaces** in the same change, unless there is an explicit reason to keep both live (a flag, a documented migration window). "We might need it later" is not a reason. Checklist: [`.claude/skills/signet-cutover/SKILL.md`](.claude/skills/signet-cutover/SKILL.md).
 
-#### Api Development
-> Use when building or modifying NestJS API endpoints, services, repositories, or the contract artifacts.
+**End every audit or implementation with a short "debt spotted" note** — even when the answer is "none found". One line per item plus the issue number.
 
----
+## Services and ports
 
-## Architecture
+| What            | Port  | Notes                                     |
+| --------------- | ----- | ----------------------------------------- |
+| **Default run** | —     | `npm run dev:stack` (API + web + landing) |
+| Web             | 3000  |                                           |
+| API / Swagger   | 3001  | `/docs` for Swagger                       |
+| Landing         | 3002  |                                           |
+| Supabase Studio | 54323 | After `npx supabase start`                |
 
-The API follows a layered architecture in `apps/api/src/`:
+Per-app `dev:*` commands, fallbacks, mobile, Turbo: [`docs/internal/environment/LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md).
 
-| Layer | Directory | Contains |
-|-------|-----------|----------|
-| **Interface** | `interface/` | Controllers, DTOs, guards, interceptors, decorators, filters |
-| **Application** | `application/services/` | Business logic and orchestration |
-| **Infrastructure** | `infrastructure/` | Supabase repositories, Stripe, storage, notifications |
-| **Domain** | `domain/` | Entities, repository interfaces, adapter interfaces, constants |
-| **Modules** | `modules/` | NestJS module wiring (thin glue) |
+## Starting the dev environment
 
-Dependencies flow inward: Interface → Application → Domain ← Infrastructure.
+**Primary — Claude Code web sandbox:** the local stack (Docker + Supabase + API) auto-starts in the background at session start. Wait for `.cloud-sandbox-up.done`, then `npm run start:dev -w apps/api`. Config, env vars, and failure troubleshooting: [`docs/internal/environment/CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md).
 
----
+**Secondary — laptop / WSL / Linux:** with Docker reachable, run `bash scripts/local-dev-setup.sh` (deps, Supabase, `db push --local`, optional checks; flags `--quick`, `--reset-supabase`, `--reset-supabase-data`). Then `npx infisical login` once and **`npm run dev:stack`**. See [`docs/internal/environment/LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md) and [`docs/internal/environment/SECRETS_MANAGEMENT.md`](docs/internal/environment/SECRETS_MANAGEMENT.md).
 
-## Adding a new endpoint (full workflow)
+## Secrets and environment variables
 
-### 1. Define the entity
+Managed in **Infisical** (project ID in `.infisical.json`). Canonical lists: [`docs/internal/environment/ENV_REFERENCE.md`](docs/internal/environment/ENV_REFERENCE.md), [`docs/internal/environment/SECRETS_MANAGEMENT.md`](docs/internal/environment/SECRETS_MANAGEMENT.md).
 
-`domain/entities/<name>.entity.ts` — plain TypeScript interface matching the DB table:
-
-```typescript
-export interface Widget {
-  id: string;
-  chapter_id: string;
-  name: string;
-  created_at: string;
-}
-```
-
-### 2. Define the repository interface
+- No `.env.example` in repo — use `ENV_REFERENCE.md`.
+- No placeholder secrets in CI.
+- No `_STAGING` / `_PRODUCTION` suffixes on names; values differ per Infisical environment.
+- Local `local` env often uses real Stripe test keys and Sentry for realistic dev.
 
-`domain/repositories/<name>.repository.interface.ts`:
-
-```typescript
-export const WIDGET_REPOSITORY = 'WIDGET_REPOSITORY';
-
-export interface IWidgetRepository {
-  findByChapterId(chapterId: string): Promise<Widget[]>;
-  create(data: Partial<Widget>): Promise<Widget>;
-}
-```
-
-### 3. Implement the Supabase repository
-
-`infrastructure/supabase/repositories/supabase-<name>.repository.ts`:
-
-```typescript
-@Injectable()
-export class SupabaseWidgetRepository implements IWidgetRepository {
-  constructor(@Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient) {}
-
-  async findByChapterId(chapterId: string): Promise<Widget[]> {
-    const { data, error } = await this.supabase
-      .from('widgets')
-      .select('*')
-      .eq('chapter_id', chapterId);
-    if (error) throw error;
-    return data ?? [];
-  }
-}
-```
-
-Conventions:
-- Single row: `.maybeSingle()` (returns `null`), not `.single()` (throws)
-- Always `if (error) throw error;`
-- Return `data ?? []` for lists, `data` for singles
-
-### 4. Write the service
-
-`application/services/<name>.service.ts`:
+## CI/CD, GitHub, PAT rules, Infisical syncs
 
-```typescript
-@Injectable()
-export class WidgetService {
-  constructor(@Inject(WIDGET_REPOSITORY) private readonly widgetRepo: IWidgetRepository) {}
+See [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md). Deploy architecture: [`docs/internal/ops/DEPLOYMENT.md`](docs/internal/ops/DEPLOYMENT.md).
 
-  async list(chapterId: string): Promise<Widget[]> {
-    return this.widgetRepo.findByChapterId(chapterId);
-  }
-}
-```
-
-### 5. Create DTOs
-
-`interface/dtos/<name>.dto.ts` — class-validator + Swagger decorators:
-
-```typescript
-export class CreateWidgetDto {
-  @ApiProperty()
-  @IsString()
-  @MaxLength(255)
-  name: string;
-}
-```
-
-### 6. Create the controller
-
-`interface/controllers/<name>.controller.ts`:
-
-```typescript
-@ApiTags('Widgets')
-@ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard, ChapterGuard)
-@Controller('widgets')
-export class WidgetController {
-  constructor(private readonly widgetService: WidgetService) {}
-
-  @Get()
-  @UseGuards(PermissionsGuard)
-  @RequirePermissions(SystemPermissions.WIDGETS_VIEW)
-  @ApiOperation({ summary: 'List widgets' })
-  async list(@CurrentChapterId() chapterId: string) {
-    return this.widgetService.list(chapterId);
-  }
-
-  @Post()
-  @UseGuards(PermissionsGuard)
-  @RequirePermissions(SystemPermissions.WIDGETS_CREATE)
-  @ApiOperation({ summary: 'Create a widget' })
-  async create(@CurrentChapterId() chapterId: string, @Body() dto: CreateWidgetDto) {
-    return this.widgetService.create(chapterId, dto);
-  }
-}
-```
-
-### 7. Wire the module
-
-`modules/<name>/<name>.module.ts`:
-
-```typescript
-@Module({
-  controllers: [WidgetController],
-  providers: [
-    WidgetService,
-    { provide: WIDGET_REPOSITORY, useClass: SupabaseWidgetRepository },
-  ],
-  exports: [WidgetService],
-})
-export class WidgetModule {}
-```
-
-Import in `app.module.ts`.
-
-### 8. Write tests
-
-`application/services/<name>.service.spec.ts` — mock the repository:
-
-```typescript
-const mockRepo = { findByChapterId: jest.fn(), create: jest.fn() };
-const module = await Test.createTestingModule({
-  providers: [
-    WidgetService,
-    { provide: WIDGET_REPOSITORY, useValue: mockRepo },
-  ],
-}).compile();
-```
-
-### 9. Update contract artifacts
-
-```bash
-npm run openapi:export -w apps/api
-npm run generate -w packages/api-sdk
-```
-
-Commit source + `openapi.json` + `types.ts` together. CI rejects mismatches.
-
----
-
-## Auth and guard chain
-
-**These guards are NOT globally registered.** There is no `APP_GUARD` or `APP_INTERCEPTOR` provider in `app.module.ts`. You must apply them manually per-controller or per-route using `@UseGuards()` and `@UseInterceptors()`. Missing a decorator means the route is unprotected.
-
-Recommended per-route pattern (applied in this order):
-
-```text
-Bearer token → SupabaseAuthGuard (validates JWT, sets request.supabaseUser)
-             → AuthSyncInterceptor (syncs to users table, sets request.appUser)
-             → ChapterGuard (validates x-chapter-id + membership, sets request.member, request.chapterId)
-             → PermissionsGuard (checks @RequirePermissions against member's roles)
-             → Controller
-```
-
-### How to apply
-
-- **Controller-level** (most common): `@UseGuards(SupabaseAuthGuard, ChapterGuard)` on the class
-- **Route-level permissions**: `@UseGuards(PermissionsGuard)` + `@RequirePermissions(...)` on individual methods
-- **AuthSyncInterceptor**: Applied via `@UseInterceptors(AuthSyncInterceptor)` — currently only on user, invite, notification, and chapter-create controllers. Only needed where user auto-sync is required on first request.
-
-**Order matters.** `SupabaseAuthGuard` must run before `ChapterGuard` (which needs `request.supabaseUser`). `ChapterGuard` must run before `PermissionsGuard` (which needs `request.member`).
-
-### Custom decorators
-
-| Decorator | Returns | Source |
-|-----------|---------|--------|
-| `@CurrentUser()` | `{ id: string }` | `request.appUser` |
-| `@CurrentChapterId()` | `string` | `request.chapterId` |
-| `@RequirePermissions(...)` | — | Sets metadata for PermissionsGuard |
-| `@RequireAnyOfPermissions(...)` | — | OR-logic variant |
-
-### Special cases
-
-- `/health` — no guards at all
-- `POST /v1/chapters` — `SupabaseAuthGuard` + `AuthSyncInterceptor` only (no chapter exists yet)
-- `POST /v1/billing/webhook` — `StripeWebhookGuard` (signature verification, no JWT)
-
----
-
-## Database changes
-
-When adding a table or column:
-
-1. `npx supabase migration new my_change_name`
-2. Write SQL in `supabase/migrations/<timestamp>_my_change_name.sql`
-3. Enable RLS: `ALTER TABLE my_table ENABLE ROW LEVEL SECURITY;` (all tables must have RLS)
-4. Apply locally: `npx supabase db push --local`
-5. Update `database.types.ts`: `npx supabase gen types typescript --local > apps/api/src/infrastructure/supabase/database.types.ts`
-6. Update `docs/internal/DB_ROLLBACK_PLAYBOOK.md` with rollback strategy
-7. Filename format: `{14-digit timestamp}_{snake_case}.sql`
-
----
-
-## Rate limiting
-
-Configured in `app.module.ts`:
-
-| Throttle | Limit | Window |
-|----------|-------|--------|
-| Read | 100 req | 60s |
-| Write | 30 req | 60s |
-
-Additionally, `PointsService` enforces 50 point adjustments per hour per admin.
-
----
-
-## Updating this skill
-
-- If new guard types are added, update the "Auth and guard chain" section.
-- If new custom decorators are created, add to the decorator table.
-- If the Supabase repository conventions change, update section 3.
-- If rate limits change, update the rate limiting table.
-
-### Audit
-> Use when performing code audits, security reviews, dependency checks, migration reviews, or quality assessments.
-
----
-
-## Audit types
-
-| Audit | What to check | Key files |
-|-------|---------------|-----------|
-| Code quality | Architecture adherence, DRY, naming, typing | `apps/api/src/`, `apps/web/`, `packages/` |
-| Security | Auth guards, RLS, input validation, secret exposure | Guards, DTOs, migrations, `.env*`, workflows |
-| Dependencies | Outdated packages, vulnerabilities, license issues | `package.json` (root + workspaces), `package-lock.json` |
-| API contract | Spec drift, breaking changes, DTO completeness | `openapi.json`, `packages/api-sdk/src/types.ts` |
-| Database | Migration safety, schema consistency, RLS coverage | `supabase/migrations/`, `database.types.ts` |
-| CI/CD | Workflow correctness, secret exposure, check coverage | `.github/workflows/` |
-
----
-
-## Code quality audit workflow
-
-### 1. Architecture layer compliance
-
-Verify the dependency direction: Interface → Application → Domain ← Infrastructure.
-
-Red flags:
-- Controllers importing from `infrastructure/` directly (should go through services)
-- Services importing from `interface/` (DTOs, guards)
-- Domain entities importing from `@nestjs/*` or `@supabase/*`
-
-### 2. Pattern consistency
-
-Check that new code follows established patterns:
-- Repositories use `{ provide: TOKEN, useClass: Impl }` binding
-- Services use `@Inject(TOKEN)` for repositories, not concrete classes
-- Controllers use the standard guard chain (`SupabaseAuthGuard`, `ChapterGuard`, `PermissionsGuard`)
-- DTOs use `class-validator` decorators + `@ApiProperty`/`@ApiPropertyOptional`
-
-### 3. Type safety
-
-```bash
-npm run check-types   # Turbo runs tsc --noEmit across all workspaces
-```
-
-Check for `any` types, `@ts-ignore`, and untyped function parameters.
-
-### 4. Lint
-
-```bash
-npm run lint   # ESLint across all lint-enabled workspaces
-```
-
-The API has strict lint rules. Warnings are tracked but currently tolerated — see AGENTS.md gotchas.
-
----
-
-## Security audit workflow
-
-### Auth and authorization
-
-1. **Every controller** should have `@UseGuards(SupabaseAuthGuard, ChapterGuard)` unless it's:
-   - `/health` (no auth)
-   - Webhook endpoints (signature verification only)
-   - Chapter creation (no chapter guard, since no chapter exists yet)
-
-2. **Write endpoints** should additionally have `@UseGuards(PermissionsGuard)` with appropriate `@RequirePermissions()`.
-
-3. **Audit the permissions**: Check `domain/constants/permissions.ts` for the permission enum. Verify each controller method uses the correct permission.
-
-### RLS coverage
-
-All tables in `supabase/migrations/` must have `ENABLE ROW LEVEL SECURITY`. The current design uses no permissive policies (default deny) — all data access goes through the `service_role` client in the API.
-
-To verify:
-```bash
-# Check all CREATE TABLE statements have RLS
-grep -A5 "CREATE TABLE" supabase/migrations/*.sql | grep -c "ROW LEVEL SECURITY"
-```
-
-### Input validation
-
-- DTOs must use `class-validator` decorators (`@IsString`, `@MaxLength`, `@IsUUID`, etc.)
-- `ValidationPipe` is configured globally in `main.ts` with `whitelist: true` (strips unknown fields) and `forbidNonWhitelisted: true`
-
-### Secret exposure
-
-Check for:
-- Hardcoded secrets in source (keys, tokens, passwords)
-- Secrets logged in interceptors or error handlers
-- Secrets in CI workflow outputs
-- `.env*` files not in `.gitignore`
-
-```bash
-npm audit   # Check for known vulnerabilities in dependencies
-```
-
----
-
-## Dependency audit
-
-```bash
-npm audit                    # Vulnerability scan
-npm outdated                 # Check for outdated packages
-npm outdated -w apps/api     # Per-workspace
-```
-
-Key dependencies to watch:
-- `@supabase/supabase-js` and `@supabase/ssr` — breaking changes between major versions
-- `@nestjs/*` — NestJS 11 is current; watch for deprecations
-- `next` — Next.js App Router APIs change between versions
-- `@tanstack/react-query` — hook API changes
-- `stripe` — webhook signature verification changes
-
----
-
-## API contract audit
-
-### Check for drift
-
-```bash
-npm run check:api-contract
-```
-
-This uses git diff to verify `openapi.json` and `types.ts` are updated when API source changes. Run after any controller or DTO change.
-
-### Manual review
-
-1. Open `http://localhost:3001/docs` (Swagger UI)
-2. Verify endpoints match the product spec in `spec/product.md`
-3. Check for undocumented endpoints or missing `@ApiOperation` summaries
-4. Verify request/response schemas match DTOs
-
----
-
-## Database migration audit
-
-### Filename validation
-
-```bash
-npm run check:migration-safety
-```
-
-Validates:
-- Filenames match `{14-digit-timestamp}_{snake_case}.sql`
-- No duplicate timestamps
-- Promotion docs updated when migrations change
-
-### Content review checklist
-
-For each migration:
-- [ ] RLS enabled on new tables
-- [ ] No destructive operations without rollback plan in `DB_ROLLBACK_PLAYBOOK.md`
-- [ ] Foreign keys have appropriate `ON DELETE` behavior
-- [ ] Indexes added for frequently queried columns
-- [ ] `update_updated_at` trigger added for tables with `updated_at` column
-- [ ] No raw user input in SQL (parameterized queries in repositories)
-
----
-
-## CI/CD audit
-
-### Workflow checks
-
-| Workflow | File | Key concerns |
-|----------|------|--------------|
-| CI | `.github/workflows/ci.yml` | All 7 jobs passing, correct branch triggers |
-| Deploy | `.github/workflows/deploy-api.yml` | Secret handling, migration gating, health checks |
-| Release | `.github/workflows/release.yml` | Version bump logic, tag creation |
-| Docs | `.github/workflows/docs.yml` | Spec sync enforcement |
-
-### Secret exposure in workflows
-
-- Verify secrets are accessed via `${{ secrets.* }}`, never echoed or logged
-- Check `permissions:` blocks are minimal
-- Verify `pull_request_target` triggers don't expose secrets to untrusted forks
-
-### Branch protection
-
-```bash
-GITHUB_PAT="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" npm run configure:branch-protection -- --dry-run
-```
-
-Compare output with expected checks in `CONTRIBUTING.md`.
-
----
-
-## Spec compliance audit
-
-The spec is the source of truth. When auditing:
-
-1. **Product**: Compare implemented features against `spec/product.md` domains
-2. **Behavior**: Verify edge cases and invariants from `spec/behavior.md` are tested
-3. **Architecture**: Check stack choices and patterns match `spec/architecture.md`
-4. **Environments**: Verify env setup matches `spec/environments.md`
-
----
-
-## Generating an audit report
-
-Structure your findings as:
-
-```markdown
-## Audit: [Type] — [Date]
-
-### Critical (must fix)
-- ...
-
-### Warnings (should fix)
-- ...
-
-### Observations (nice to have)
-- ...
-
-### Recommendations
-- ...
-```
-
-Reference existing audit docs in `docs/archive/audits/` for format precedent.
-
----
-
-## Updating this skill
-
-- When new security patterns are introduced (e.g., CSRF, CSP headers), add to the security section.
-- When new CI checks are added, update the CI/CD audit table.
-- When CodeRabbit rules change (`.coderabbit.yaml`), document the new path instructions.
-
-### Infrastructure Research
-> Use when investigating deployment state, CI failures, environment configuration, or service health before proposing changes. Also applies when reviewing PRs, debugging production issues, or syncing secrets.
-
----
-
-## Research-first principle
-
-Before making infrastructure-related changes, gather runtime truth from the available APIs. This prevents stale assumptions and wasted effort.
-
-**Available credentials** (env vars in Cloud sessions):
-
-| Env var | CLI/API | What you can check |
-|---------|---------|-------------------|
-| `GITHUB_FULL_PERSONAL_ACCESS_TOKEN` | `gh` CLI | PR status, CI logs, branch protection, labels |
-| `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN` | Supabase CLI | Project status, migrations, schema |
-| `INFISICAL_API_KEY` | Infisical API | Secret presence, sync status |
-| `RENDER_APIKEY` | Render API | Service status, deploy history |
-| `VERCEL_API_KEY` | Vercel API | Build status, deployment state |
-| `SUPABASE_API_KEY` | Supabase Management API | Project-level operations |
-
----
-
-## GitHub: CI and PR status
-
-### Check CI status on a branch
-
-```bash
-GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" gh run list --branch main --limit 5
-```
-
-### View failed CI job logs
-
-```bash
-GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" gh run view <run_id> --log-failed
-```
-
-### Check PR status and reviews
-
-```bash
-GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" gh pr view <number>
-GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" gh pr checks <number>
-```
-
-### Branch protection state
-
-```bash
-GITHUB_PAT="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" npm run configure:branch-protection -- --dry-run
-```
-
-### Find recent PRs touching a path
-
-```bash
-GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" gh pr list --search "supabase/migrations" --state merged --limit 5
-```
-
----
-
-## Supabase: Schema and project status
-
-### Local status
-
-```bash
-npx supabase status          # Running services, ports, keys
-npx supabase db diff --local  # Uncommitted schema changes
-npx supabase migration list --local  # Applied migrations
-```
-
-### Remote project (staging/production)
-
-```bash
-export SUPABASE_ACCESS_TOKEN="$PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN"
-npx supabase projects list
-npx supabase migration list --project-ref <ref>
-```
-
-### Compare local vs remote schema
-
-```bash
-npx supabase db diff --linked  # Requires project to be linked
-```
-
----
-
-## Render: API deployment status
-
-### Check service status
-
-```bash
-curl -s -H "Authorization: Bearer $RENDER_APIKEY" \
-  "https://api.render.com/v1/services?type=web_service&limit=10" | python3 -m json.tool
-```
-
-### Recent deploys
-
-```bash
-curl -s -H "Authorization: Bearer $RENDER_APIKEY" \
-  "https://api.render.com/v1/services/<service_id>/deploys?limit=5" | python3 -m json.tool
-```
-
-### Health check
-
-```bash
-curl -s https://api-staging.frapp.live/health   # Staging
-curl -s https://api.frapp.live/health           # Production
-```
-
----
-
-## Vercel: Build and deployment status
-
-### List deployments
-
-```bash
-curl -s -H "Authorization: Bearer $VERCEL_API_KEY" \
-  "https://api.vercel.com/v6/deployments?projectId=<project_id>&limit=5" | python3 -m json.tool
-```
-
-### Check build logs
-
-```bash
-curl -s -H "Authorization: Bearer $VERCEL_API_KEY" \
-  "https://api.vercel.com/v2/deployments/<deployment_id>/events" | python3 -m json.tool
-```
-
----
-
-## Infisical: Secret configuration
-
-### Check secret presence (no values)
-
-```bash
-curl -s -H "Authorization: Bearer $INFISICAL_API_KEY" \
-  "https://app.infisical.com/api/v3/secrets/raw?workspaceId=a207b6c2-0be2-4507-a8fb-9a21ee8538bd&environment=staging&secretPath=/" \
-  | python3 -c "import sys,json; [print(s['secretKey']) for s in json.load(sys.stdin).get('secrets',[])]"
-```
-
-### Compare environments
-
-Check that staging and production have the same secret keys:
-
-```bash
-for env in staging production; do
-  echo "=== $env ==="
-  curl -s -H "Authorization: Bearer $INFISICAL_API_KEY" \
-    "https://app.infisical.com/api/v3/secrets/raw?workspaceId=a207b6c2-0be2-4507-a8fb-9a21ee8538bd&environment=$env&secretPath=/" \
-    | python3 -c "import sys,json; [print(s['secretKey']) for s in json.load(sys.stdin).get('secrets',[])]" | sort
-done
-```
-
-**Never print secret values.** Only reference variable names and presence/absence.
-
----
-
-## Common investigation patterns
-
-### "CI is failing on my PR"
-
-1. `gh pr checks <number>` — identify which job failed
-2. `gh run view <run_id> --log-failed` — read the failure logs
-3. Check if it's a flaky test, environment issue, or real code problem
-4. If contract check fails: regenerate with `npm run openapi:export -w apps/api && npm run generate -w packages/api-sdk`
-
-### "Is staging healthy?"
-
-1. `curl https://api-staging.frapp.live/health`
-2. Check Render deploys for recent failures
-3. Check Vercel deployments for web/landing build status
-4. Compare Infisical staging secrets against expected keys in `docs/internal/ENV_REFERENCE.md`
-
-### "Did a migration land in production?"
-
-1. `npx supabase migration list --project-ref <prod_ref>` (requires Supabase access token)
-2. Cross-reference with `supabase/migrations/` in the `production` branch
-3. Check `docs/internal/DB_PROMOTION_RUNBOOK.md` for promotion status
-
-### "Are secrets in sync?"
-
-1. List secret keys in each Infisical environment (see above)
-2. Compare against `docs/internal/ENV_REFERENCE.md`
-3. Verify Infisical syncs are active for each destination (Render, Vercel, GitHub)
-
----
-
-## Infisical sync map (quick reference)
-
-| # | From | To |
-|---|------|----|
-| 1 | staging | Render → frapp-api-staging |
-| 2 | production | Render → frapp-api-prod |
-| 3 | staging | Vercel → frapp-web (Preview) |
-| 4 | production | Vercel → frapp-web (Production) |
-| 5 | staging | Vercel → frapp-landing (Preview) |
-| 6 | production | Vercel → frapp-landing (Production) |
-| 7 | per-env | GitHub Actions (OIDC) |
-
----
-
-## Updating this skill
-
-- When new provider integrations are added (e.g., Sentry API, Expo EAS), add their research patterns.
-- When the Infisical sync map changes, update the quick reference table.
-- When new API keys become available as env vars, add them to the credentials table.
-
-### Testing
-> Use when running tests, verifying changes, or setting up the test environment.
-
----
-
-## Quick reference
-
-| What | Command |
-|------|---------|
-| All lint | `npm run lint` |
-| API-only lint | `npm run lint:api` |
-| Type-check | `npm run check-types` |
-| API unit tests | `npm run test -w apps/api` |
-| Single test file | `npm run test -w apps/api -- --testPathPattern=<pattern>` |
-| Contract check | `npm run check:api-contract` |
-| Migration check | `npm run check:migration-safety` |
-
----
-
-## Environment setup for testing
-
-### Minimal (lint + unit tests only)
-
-Unit tests and lint do **not** require Docker, Supabase, or running services. Just `npm install`.
-
-```bash
-npm install
-npm run lint
-npm run test -w apps/api
-npm run check-types
-```
-
-### Full (integration / manual testing)
-
-Requires Docker + Supabase. See `AGENTS.md` "Starting the dev environment" section.
-
-Prefer Infisical-injected envs as the primary method:
-```bash
-sudo dockerd &>/tmp/dockerd.log &
-sleep 3
-npx supabase start
-npx supabase db push --local
-npm run dev:api     # Infisical-injected, port 3001
-npm run dev:web     # Infisical-injected, port 3000
-```
-
-Fall back to `.env.local` files only when Infisical is unavailable (NestJS ConfigModule reads `.env.local` then `.env`):
-```bash
-npm run start:dev -w apps/api   # reads .env.local, port 3001
-npm run dev -w apps/web         # reads .env.local, port 3000
-```
-
-### Health verification
-
-```bash
-curl http://localhost:3001/health
-# {"status":"ok","database":"connected","uptime":...}
-```
-
----
-
-## API unit tests
-
-### Location and naming
-
-All tests live alongside their source in `apps/api/src/`:
-- Services: `application/services/<name>.service.spec.ts`
-- Guards: `interface/guards/<name>.guard.spec.ts`
-- Interceptors: `interface/interceptors/<name>.interceptor.spec.ts`
-- Utils: `domain/utils/<name>.spec.ts`
-
-### Mocking pattern
-
-Tests use `@nestjs/testing` `TestingModule` with manual mocks:
-
-```typescript
-const module: TestingModule = await Test.createTestingModule({
-  providers: [
-    MyService,
-    { provide: MY_REPOSITORY, useValue: mockRepo },
-    { provide: SUPABASE_CLIENT, useValue: mockSupabase },
-  ],
-}).compile();
-```
-
-Repositories and adapters are mocked via `jest.fn()` on each method. No shared mock factories — each spec defines its own fixtures inline.
-
-### Running a subset
-
-```bash
-# Single file (via npm workspace flag)
-npm run test -w apps/api -- --testPathPattern="event.service"
-
-# Pattern match
-npm run test -w apps/api -- --testPathPattern="billing"
-```
-
----
-
-## Contract and migration checks
-
-### API contract (`check:api-contract`)
-
-Verifies that `openapi.json` and `packages/api-sdk/src/types.ts` are up to date when API source changes. Uses git diff — no NestJS bootstrap required.
-
-If this fails after changing API endpoints:
-```bash
-npm run openapi:export -w apps/api
-npm run generate -w packages/api-sdk
-```
-
-### Migration safety (`check:migration-safety`)
-
-Validates migration filenames match `{14-digit-timestamp}_{snake_case}.sql` and that promotion docs (`DB_PROMOTION_RUNBOOK.md`, `DB_ROLLBACK_PLAYBOOK.md`) are updated alongside migration changes.
-
----
-
-## Manual testing workflows
-
-### Auth flow (end-to-end)
-
-1. Create a user via Supabase Auth:
-```bash
-curl -X POST http://127.0.0.1:54321/auth/v1/signup \
-  -H "apikey: <ANON_KEY>" \
-  -H "Content-Type: application/json" \
-  -d '{"email":"test@example.com","password":"Password123!"}'
-```
-
-2. Use the returned `access_token` to hit the API:
-```bash
-curl http://localhost:3001/v1/users/me \
-  -H "Authorization: Bearer <access_token>"
-```
-
-The API's `AuthSyncInterceptor` auto-creates a `users` row on first authenticated request.
-
-### Chapter operations (requires auth + chapter)
-
-Most endpoints need `Authorization` + `x-chapter-id` headers. Create a chapter first:
-```bash
-curl -X POST http://localhost:3001/v1/chapters \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Test Chapter","greek_letters":"ΑΒΓ","university":"Test University"}'
-```
-
-Then use the chapter ID:
-```bash
-curl http://localhost:3001/v1/events \
-  -H "Authorization: Bearer <token>" \
-  -H "x-chapter-id: <chapter_id>"
-```
-
-### Web dashboard (GUI)
-
-Open `http://localhost:3000` in browser. Auth flows go through Supabase — the sign-in flow is currently in development. Use Supabase Studio (`http://127.0.0.1:54323`) to inspect data directly.
-
----
-
-## CI parity checklist
-
-Before pushing, verify these pass locally (mirrors the CI pipeline):
-
-1. `npm run lint` → `lint-and-typecheck`
-2. `npm run check-types` → `lint-and-typecheck`
-3. `npm run test -w apps/api` → `api-tests`
-4. `npm run check:api-contract` → `api-contract-check`
-5. `npm run check:migration-safety` → `migration-safety`
-
----
-
-## Updating this skill
-
-When you discover new testing patterns, fixtures, or gotchas:
-1. Add them to the relevant section above.
-2. If a new test utility or shared mock factory is created, document it under "Mocking pattern".
-3. If new CI checks are added, update the "CI parity checklist" and "Quick reference" sections.
-
-### Ui Development
-> Use when building or modifying UI in the web dashboard, landing site, or shared component packages.
-
----
-
-## Architecture overview
-
-| Layer | Location | Purpose |
-|-------|----------|---------|
-| `@repo/ui` | `packages/ui/src/` | Shared primitive components (Button, Card, Code) |
-| `@repo/theme` | `packages/theme/src/` | Tailwind config preset + CSS variables + global styles |
-| ShadCN components | `apps/web/components/ui/` | Radix-based composites (Dialog, Select, Toast, etc.) |
-| App components | `apps/web/components/` | Feature-level components |
-| Pages | `apps/web/app/` | Next.js App Router pages and layouts |
-| Landing | `apps/landing/app/` | Marketing site (separate Next.js app) |
-
----
-
-## Component patterns
-
-### `@repo/ui` primitives
-
-Located in `packages/ui/src/`. Each component is a separate file with barrel export via `package.json` `"exports"`:
-
-```typescript
-import { Button } from "@repo/ui/button";
-import { Card, CardHeader, CardTitle, CardContent } from "@repo/ui/card";
-```
-
-These use `joinClassNames` from `@repo/ui/utils` for class merging.
-
-### ShadCN / Radix components
-
-Located in `apps/web/components/ui/`. These follow ShadCN conventions:
-- Class Variance Authority (CVA) for variant-based styling
-- `cn()` utility from `@/lib/utils` (clsx + tailwind-merge)
-- Radix UI primitives for accessible behavior
-
-Available components: accordion, avatar, badge, button, card, command, dialog, dropdown-menu, input, popover, progress, scroll-area, select, separator, sheet, skeleton, switch, table, tabs, textarea, toast, tooltip.
-
-### Adding a new ShadCN component
-
-ShadCN components are copy-pasted from the ShadCN registry, not installed via CLI. To add one:
-1. Create file in `apps/web/components/ui/`
-2. Install the Radix dependency: `npm install @radix-ui/react-<primitive> -w apps/web`
-3. Use `cn()` for class merging, `cva()` for variants
-4. Follow existing patterns in the directory for consistency
-
----
-
-## Tailwind and theming
-
-### Theme tokens (from `@repo/theme`)
-
-The design system uses HSL CSS variables for semantic colors:
-
-| Token | Usage |
-|-------|-------|
-| `background` / `foreground` | Page background and text |
-| `card` / `card-foreground` | Card surfaces |
-| `primary` / `primary-foreground` | Primary actions (navy-800) |
-| `muted` / `muted-foreground` | Subdued text and backgrounds |
-| `destructive` / `destructive-foreground` | Danger states |
-| `border` | Borders |
-| `ring` | Focus rings |
-
-### Brand colors
-
-| Name | Hex range | Usage |
-|------|-----------|-------|
-| `navy` | 50–950 | Primary backgrounds, headers |
-| `royal-blue` | 50–950 | Accent, links |
-| `emerald` | 50–950 | Success states |
-
-### Custom animations
-
-Pre-defined in the theme: `fade-up`, `fade-in`, `count-up`, `slide-down`, `slide-in-right`. Use via `animate-fade-up`, `animate-slide-down`, etc.
-
-### Consuming the theme
-
-Web and landing apps extend the shared config:
-```typescript
-// apps/web/tailwind.config.ts
-import sharedConfig from "@repo/theme/tailwind";
-const config: Config = {
-  presets: [sharedConfig],
-  content: [
-    "./app/**/*.{js,ts,jsx,tsx}",
-    "../../packages/ui/src/**/*.{js,ts,jsx,tsx}",
-  ],
-};
-```
-
-Global CSS imports the theme's base styles:
-```css
-/* apps/web/app/globals.css */
-@import "../../../packages/theme/src/globals.css";
-```
-
----
-
-## Data layer for UI
-
-### API SDK (`@repo/api-sdk`)
-
-Generated TypeScript client from `openapi.json`. Uses `openapi-fetch` for type-safe requests.
-
-### React hooks (`@repo/hooks`)
-
-All data fetching uses TanStack Query via shared hooks. Import from the package root (barrel export in `packages/hooks/src/index.ts`):
-
-```typescript
-import { useCurrentUser, useUpdateUser, useMembers, useCurrentChapter } from "@repo/hooks";
-```
-
-Pattern:
-- `useQuery` for reads: `queryKey` for caching, `queryFn` calls `client.GET`
-- `useMutation` for writes: `mutationFn` calls `client.POST/PATCH/DELETE`, `onSuccess` invalidates queries
-- All hooks require both `QueryClientProvider` (TanStack Query — provides caching, invalidation, and retry logic) and `FrappClientProvider` (provides the typed API client) in the component tree
-
-### Provider chain (web app)
-
-```text
-QueryProvider (TanStack Query)
-  └─ FrappProvider (API client with Supabase auth token + chapter ID)
-       └─ NetworkProvider (online/offline state)
-            └─ App content
-```
-
-These providers are defined in `apps/web/lib/providers/` but not yet wired into the root layout — they must be added when building real pages.
-
-### Validation (`@repo/validation`)
-
-Shared Zod schemas for form validation:
-```typescript
-import { CreateChapterSchema, UpdateUserSchema } from "@repo/validation";
-```
-
-Use with React Hook Form or direct `parse`/`safeParse` for client-side validation that matches API expectations.
-
----
-
-## State management
-
-- **Chapter selection**: Zustand store at `apps/web/lib/stores/chapter-store.ts`. Persists `activeChapterId` to localStorage.
-- **Server state**: TanStack Query (via `@repo/hooks`). No Redux or other global state.
-
----
-
-## Testing UI changes
-
-### Visual verification
-
-After making UI changes, start the dev server and verify in-browser:
-```bash
-npm run dev -w apps/web   # http://localhost:3000
-npm run dev -w apps/landing  # http://localhost:3002
-```
-
-### Dark mode
-
-The theme supports dark mode via the `.dark` class. Toggle by adding/removing the class on `<html>`. CSS variables automatically switch.
-
-### Responsive design
-
-Tailwind breakpoints are standard: `sm` (640px), `md` (768px), `lg` (1024px), `xl` (1280px). The web dashboard targets desktop-first; landing targets mobile-first.
-
----
-
-## Updating this skill
-
-When new patterns emerge:
-1. Document new ShadCN component additions and their Radix dependencies.
-2. If the provider chain changes (e.g., auth middleware is added), update the "Provider chain" section.
-3. If new shared hooks are added to `@repo/hooks`, mention them in the data layer section.
-
-### Additional Rules
-
-#### Rule: Api Development
-See Skills: API Development before working on the API.
-
-Key points:
-- Layered architecture: Interface → Application → Domain ← Infrastructure — respect dependency direction
-- New endpoints follow a 9-step workflow: entity → repo interface → Supabase impl → service → DTOs → controller → module → tests → contract artifacts
-- Guards are **not** global (`APP_GUARD` is not registered in `app.module.ts`). You must apply them manually per-controller or per-route using `@UseGuards()` and `@UseInterceptors()` in the correct order. The typical chain is: `@UseGuards(SupabaseAuthGuard, ChapterGuard)` at controller level, `@UseGuards(PermissionsGuard)` + `@RequirePermissions()` on individual routes. `AuthSyncInterceptor` is only used on user, invite, notification, and chapter-create controllers via `@UseInterceptors(AuthSyncInterceptor)`.
-- After changing any controller or DTO, regenerate contract: `npm run openapi:export -w apps/api && npm run generate -w packages/api-sdk`
-- Supabase repositories use `.maybeSingle()` for single rows (not `.single()`), always `if (error) throw error;`
-
-#### Rule: Audit
-See Skills: Audit before performing any audit or quality review.
-
-Key points:
-- All tables must have RLS enabled — current design uses default-deny with service_role bypass
-- Every endpoint (read or write) that accesses or returns protected user/chapter data must have `@UseGuards(PermissionsGuard)` with explicit `@RequirePermissions()` — this includes GET/list endpoints (e.g., `member.controller.ts` uses `MEMBERS_VIEW` on reads, `financial-invoice.controller.ts` uses `BILLING_VIEW` on GET)
-- Migrations must follow `{14-digit-timestamp}_{snake_case}.sql` naming and update rollback docs
-- DTOs must use class-validator decorators — global ValidationPipe strips unknown fields
-- The spec (`spec/`) is the source of truth — implementation follows spec
-
-#### Rule: Infrastructure Research
-See Skills: Infrastructure Research before investigating infrastructure state.
-
-Key points:
-- Always gather runtime truth BEFORE proposing changes — use provider APIs/CLIs
-- Available credentials: `GITHUB_FULL_PERSONAL_ACCESS_TOKEN`, `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN`, `INFISICAL_API_KEY`, `RENDER_APIKEY`, `VERCEL_API_KEY`, `SUPABASE_API_KEY`
-- Use `GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN"` for all `gh` CLI commands
-- Never print secret values — only reference variable names and presence/absence
-- Check `docs/internal/ENV_REFERENCE.md` as the canonical variable reference
-
-#### Rule: Testing
-See Skills: Testing before running tests, writing test cases, or verifying changes.
-
-Key points:
-- Unit tests require only `npm install` — no Docker, Supabase, or env files needed
-- Manual/integration tests require Docker + Supabase. Prefer Infisical-injected envs (`npm run dev:api`) as the primary method; fall back to `.env.local` files only when Infisical is unavailable (NestJS ConfigModule reads `.env.local` then `.env`, so `.env.local` is a fallback, not the primary method)
-- Always run the CI parity checklist before pushing: lint, check-types, api tests, contract check, migration check
-- Each spec defines its own mocks inline — no shared fixtures
-- Use `@nestjs/testing` TestingModule with `{ provide: TOKEN, useValue: mockObj }` pattern
-
-#### Rule: Ui Development
-See Skills: UI Development before working on frontend code.
-
-Key points:
-- Two component layers: `@repo/ui` primitives and ShadCN/Radix composites in `apps/web/components/ui/`
-- Theme uses HSL CSS variables from `@repo/theme` — brand colors are navy, royal-blue, emerald
-- All data fetching uses TanStack Query via `@repo/hooks` — never raw fetch
-- ShadCN components are copy-pasted, not CLI-installed — use `cn()` for class merging
-- Shared Zod schemas in `@repo/validation` for form validation that matches API expectations
-
-To resolve PR comments: When addressing PR review feedback, ensure any GitHub comments related to those fixes are marked as resolved in the GitHub UI, as unresolved comments block merging.
+## Lint, test, build, type-check
+
+| Step         | Command                             |
+| ------------ | ----------------------------------- |
+| Lint         | `npm run lint` / `npm run lint:api` (read-only) |
+| Lint autofix | `npm run lint:api:fix` — the only lint script that writes; see [contributing.md §5](docs/guides/contributing.md#5-linting-types-and-tests) |
+| Tests        | `npm run test -w apps/api`          |
+| Build        | `npm run build`                     |
+| Types        | `npm run check-types` (includes API via `tsconfig.build.json`, same program as `nest build`) |
+| API compile  | `npm run build -w apps/api` (matches Render `Dockerfile` builder) |
+| API image    | `docker build -f apps/api/Dockerfile .` (also runs in CI as `api-docker-build`) |
+| API contract | `npm run check:api-contract`        |
+| Doc citations | `npm run check:doc-paths` — backticked repo paths in docs resolve; **required**, whole-tree |
+| Doc rosters  | `npm run check:doc-tables` — hand-copied required-check tables vs `CI_CHECKS`/`ci.yml`; advisory |
+| Migrations   | `npm run check:migration-safety`    |
+| Boundaries   | `npm run check:dep-cruiser` — required gate; existing violations grandfathered in `.dependency-cruiser-known-violations.json`, which exists to shrink |
+| Duplication  | `npm run check:duplication` — advisory; repo-wide threshold that only ratchets down |
+| API breaking changes | `npm run check:api-breaking -- --base origin/main` — advisory; needs `bash scripts/install-oasdiff.sh` first |
+| Coverage     | `npm run test:cov` — no threshold; a measurement, not a gate |
+
+Gate postures: [`docs/internal/ci-cd/QUALITY_GATES.md`](docs/internal/ci-cd/QUALITY_GATES.md). Testing detail: [`.claude/skills/testing/SKILL.md`](.claude/skills/testing/SKILL.md).
+
+## Skills (read the matching one before deep work)
+
+All skills live under [`.claude/skills/`](.claude/skills/) and are invocable by an agent:
+
+| Skill | Use |
+| ----- | --- |
+| [`/api-development`](.claude/skills/api-development/SKILL.md) | NestJS API, layered architecture, contract regeneration. |
+| [`/ui-development`](.claude/skills/ui-development/SKILL.md) | Web / landing / UI: component layers, theming, data layer. |
+| [`/signet-cutover`](.claude/skills/signet-cutover/SKILL.md) | Signet vs legacy Frapp surfaces: tokens, visual truth, delete-what-you-replace. |
+| [`/realtime-resilience`](.claude/skills/realtime-resilience/SKILL.md) | Chat realtime, connection state, topic teardown, message delivery. |
+| [`/testing`](.claude/skills/testing/SKILL.md) | Tests, verification, CI parity. |
+| [`/audit`](.claude/skills/audit/SKILL.md) | Audits / quality reviews (RLS coverage, deps, contract, CI). |
+| [`/check-our-docs`](.claude/skills/check-our-docs/SKILL.md) | Verify a doc claim before acting on it; fix the doc in the same pass. |
+| [`/file-follow-up`](.claude/skills/file-follow-up/SKILL.md) | File out-of-scope work and proven human-only blockers as GitHub issues. |
+| [`/infrastructure-research`](.claude/skills/infrastructure-research/SKILL.md) | Deploy / CI / provider runtime-truth gathering. |
+| [`/live-verification`](.claude/skills/live-verification/SKILL.md) | Verifying against **deployed staging** (live Realtime, RLS-as-GoTrue, deployed UI). Staging only, never prod. |
+| [`/issue-curator`](.claude/skills/issue-curator/SKILL.md) | Scheduled backlog-curator routine ([`ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md)). |
+| [`/issue-triage`](.claude/skills/issue-triage/SKILL.md) | Scheduled triage routine ([`ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md)). |
+| [`/pr-followups`](.claude/skills/pr-followups/SKILL.md) | Weekly PR follow-ups harvester ([`ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md)). |
+| [`/docs-upkeep`](.claude/skills/docs-upkeep/SKILL.md) | Weekly docs sweep — verifies a rotating slice and **fixes** it ([`ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md)). |
+| [`/diff-review`](.claude/skills/diff-review/SKILL.md) | Pre-push review gate. Mechanics: [`AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md). |
+| [`/handoff`](.claude/skills/handoff/SKILL.md) | Copy-pasteable prompt handing work to a fresh session. Offer it proactively. |
+| [`/needs-me`](.claude/skills/needs-me/SKILL.md) | Owner-facing: sweep what's waiting on Paul, pick one, walk it to done. Reads only. |
+
+**Long sessions degrade.** Treat `/handoff` as a normal part of the workflow. Write orientation for the next session — not instructions.
+
+## Gotchas
+
+- API loads `.env.local` then `.env`; prefer `npm run dev:api` with Infisical.
+- Local Supabase keys: `npx supabase status -o env`.
+- `npx supabase db push --local` when using local CLI without a linked project ref. It is idempotent.
+- Regenerate API contract after controller/DTO changes: `npm run openapi:export -w apps/api && npm run generate -w packages/api-sdk`.
+- Agent VMs expose `INFISICAL_SERVICE_TOKEN` / `INFISICAL_PROJECT_ID` (not `INFISICAL_API_KEY`); sandbox reach to Infisical needs `app.infisical.com` on the environment allowlist ([#1279](https://github.com/pdcarlson/Frapp/issues/1279)) — without it, use `.env.local` + `npx supabase status -o env` instead.
+- Mobile needs Expo Go; not for headless VMs.
+- **React is pinned to an exact `19.2.3` in every workspace, plus a root `overrides` entry. Do not widen it to a caret range.** React Native 0.86.2 bundles `react-native-renderer` 19.2.3, which asserts *exact* version equality with `react` at runtime. Its peer range (`^19.2.0`) does not express that, so npm accepts a newer React without warning, hoists it to the root, and `apps/mobile` dies on first render with "Invalid hook call" / "Incompatible React versions". The pin *moves* with each Expo SDK bump (read the target from `expo/bundledNativeModules.json`) — moving it in lockstep across all six manifests is correct; widening it never is.
+- **TypeScript 7 is two packages, not one.** `@typescript/native` is `npm:typescript@7.0.2` and provides `tsc`. The `typescript` package is `npm:@typescript/typescript6@6.0.2` (wrapper; `tsc6` / `createProgram` report 6.0.3 via `@typescript/old`, pinned in root `overrides`). Flattening that back to `typescript@7` takes down `nest build`, `typescript-eslint` (peer `<6.1.0`), and `ts-jest` (peer `<7`). Details: [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md) § TypeScript 7.
+- **Bumping an Expo SDK needs a lockfile regeneration, not just a `npm install`.** Peer-only deps like `@expo/vector-icons` (`expo-font: ">=14.0.4"`) stay satisfied by the *old* pinned versions, so npm leaves the entire previous SDK chain hoisted at the root alongside the new one. `rm -rf node_modules package-lock.json && npm install`; then confirm `node_modules/expo` is the only copy and is the new version.
+- **`Skill(skill: "code-review")` is only invocable when this turn's prompt carries `/code-review` as a whitespace-delimited token.** Backticks, quotes, and trailing punctuation all defeat it. `/diff-review` is always invocable and is the pre-push gate. Mechanics: [`AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
+- Branch protection uses `enforce_admins: true`.
+
+## Developer notes for agents
+
+When the user supplies durable environment hints or tool workarounds not documented elsewhere, add a short bullet here.
+
+- Cloud VMs expose the Render key as `RENDER_API_KEY` and the GitHub PAT as `GITHUB_PAT` (distinct from `GITHUB_TOKEN`, the Actions runtime token); prefer those names when present. For `gh`/git, `export GH_TOKEN="$GITHUB_PAT"`.
+
+## Autonomous PR lifecycle (cloud sessions)
+
+A task is not "done" when the code is pushed — it's done when the PR is ready to merge (`doneMeansMerged: true` in `.claude/settings.json`). After completing the requested work:
+
+1. **Open a PR** against the right base (feature → `main`; promotion → `production`). Don't wait to be asked.
+2. **Subscribe to PR activity** (`subscribe_pr_activity`). The webhook fires on CI **failure**, **successful check-suite rollups**, comments, and reviews — not cancelled, timed-out, or merge-conflict. (The success half was observed on 2026-08-21 — four `check_suite.completed` envelopes with `"conclusion":"success"`; see [`AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md) § Wake coverage.)
+3. **Do not call `send_later`, and do not add it to `permissions.allow`.** It still prompts the owner. Wake coverage is the PR-activity webhook, `CI wake` comments, and `PR base sync` comments. Anything that needs a schedule is a Routine in the UI.
+4. **Triage CI failures before "fixing" them.** A job that died before its first repo step is GitHub Actions infra, not code — re-run it (`actions_run_trigger`), don't patch. **No `CI wake` comment does not mean no failure:** that watchdog now comments only on a cancelled or timed-out run, or an infra failure its auto-requeue could not absorb. An ordinary red CI reaches you through the webhook and is yours to diagnose from the run itself.
+5. **Babysit until green:** real CI failure → diagnose and push a fix; review comment → address and resolve the thread. A `Base-branch sync` comment (`<!-- frapp-base-sync -->`) means merge `origin/main` (or follow the comment). Once the base-sync App is configured a clean behind-PR is updated for you silently and no comment arrives; **until then it is not** — you get the comment and you do the merge. Never read the absence of a comment as "it was updated for me": check the PR's own mergeability. Details: [`AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md) § Base-branch sync.
+6. **Stop conditions:** green and review-clean, OR out of scope (file an issue, report, stop), OR the user says to stop (`unsubscribe_pr_activity`).
+
+A `/next` session may hold **up to two open PRs** (pipelining in [`.claude/commands/next.md`](.claude/commands/next.md) Phase 4). Every obligation above then reads **plural**. The pipelined unit runs on a fresh from-`main` branch suffixed `-p2`.
+
+Wake-path mechanics: [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md) § "PR babysitting: wake signals and CI-failure triage".
+
+## Claude Code web sandbox
+
+`.claude/hooks/session-start.sh` launches `scripts/cloud-sandbox-up.sh` in the **background** at session start (gated on the `/etc/frapp-cloud-sandbox` marker, or `FRAPP_CLOUD_SANDBOX=1`) — it starts Docker + local Supabase and writes `apps/api/.env.local` and `apps/web/.env.local`, so the API boots and `npm run build -w apps/web` succeeds without Infisical.
+
+- **Wait before using the DB/API:** poll for `.cloud-sandbox-up.done` (success) or `.cloud-sandbox-up.failed` (error); live log at `/tmp/cloud-sandbox-up.log`.
+- **Boot the API** with `npm run start:dev -w apps/api` (the generated `.env.local` means no Infisical is needed).
+- **On failure, STOP and report** what to fix in the web environment. Don't paper over it.
+- Full config: [`docs/internal/environment/CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md). Local-only `.env.local` and SWC notes: [`docs/internal/environment/LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md).

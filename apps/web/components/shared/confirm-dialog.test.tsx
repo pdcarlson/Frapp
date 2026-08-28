@@ -1,0 +1,258 @@
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, it, expect, vi } from "vitest";
+import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import type { ConfirmResult } from "@/components/shared/confirm-dialog";
+
+/**
+ * The defect this file exists for.
+ *
+ * `window.prompt` answers `null` when a person cancels and `""` when they press
+ * OK having typed nothing, and both of the flows this dialog replaced branch on
+ * that difference — `tasks-board.tsx` and `service-page.tsx` each check
+ * `=== null` and then pass `comment || undefined`. A confirmation that
+ * collapsed the two would reject a task or a service entry at the moment
+ * someone meant to abandon the rejection, which is the worst direction for it
+ * to be wrong in: the member is notified either way.
+ *
+ * Nothing in the shipped suites reaches these paths — `tasks-board.test.tsx`
+ * and `service-page.test.tsx` assert button enablement for §5's gating and stop
+ * there — so before this file the whole confirmation path was untested on both
+ * sides of the conversion.
+ */
+
+/**
+ * One harness for both shapes. The only difference the tests care about is
+ * whether the request asks for a comment, so that is the only parameter.
+ */
+function Harness({
+  onSettle,
+  withComment = true,
+}: {
+  onSettle: (result: ConfirmResult | null) => void;
+  withComment?: boolean;
+}) {
+  const { confirm, confirmDialog } = useConfirmDialog();
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={async () => {
+          onSettle(
+            await confirm(
+              withComment
+                ? {
+                    title: "Reject this?",
+                    description: "The member is notified.",
+                    confirmLabel: "Reject entry",
+                    tone: "destructive",
+                    comment: { label: "Comment for the member" },
+                  }
+                : {
+                    title: "Delete this?",
+                    description: "This can't be undone.",
+                    confirmLabel: "Delete study zone",
+                    tone: "destructive",
+                  },
+            ),
+          );
+        }}
+      >
+        Open
+      </button>
+      {confirmDialog}
+    </div>
+  );
+}
+
+const noop = () => {};
+
+const REQUEST = {
+  title: "Delete this?",
+  description: "This can't be undone.",
+  confirmLabel: "Delete study zone",
+  tone: "destructive",
+} as const;
+
+describe("cancel and an empty comment are different answers", () => {
+  it("resolves null when cancelled, so the caller's `=== null` guard still returns early", async () => {
+    const user = userEvent.setup();
+    const settled = vi.fn();
+    render(<Harness onSettle={settled} />);
+
+    await user.click(screen.getByRole("button", { name: "Open" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(settled).toHaveBeenCalledWith(null));
+  });
+
+  it("resolves an empty string — not null — when confirmed with nothing typed", async () => {
+    // This is the assertion that would have caught a dialog resolving `null`
+    // for "confirmed, no comment": the rejection is real and must proceed.
+    const user = userEvent.setup();
+    const settled = vi.fn();
+    render(<Harness onSettle={settled} />);
+
+    await user.click(screen.getByRole("button", { name: "Open" }));
+    await user.click(screen.getByRole("button", { name: "Reject entry" }));
+
+    await waitFor(() => expect(settled).toHaveBeenCalledWith({ comment: "" }));
+  });
+
+  it("carries the typed comment through", async () => {
+    const user = userEvent.setup();
+    const settled = vi.fn();
+    render(<Harness onSettle={settled} />);
+
+    await user.click(screen.getByRole("button", { name: "Open" }));
+    await user.type(
+      screen.getByLabelText("Comment for the member"),
+      "Needs receipts",
+    );
+    await user.click(screen.getByRole("button", { name: "Reject entry" }));
+
+    await waitFor(() =>
+      expect(settled).toHaveBeenCalledWith({ comment: "Needs receipts" }),
+    );
+  });
+
+  it("treats Escape as cancel rather than as an empty confirmation", async () => {
+    const user = userEvent.setup();
+    const settled = vi.fn();
+    render(<Harness onSettle={settled} />);
+
+    await user.click(screen.getByRole("button", { name: "Open" }));
+    await user.keyboard("{Escape}");
+
+    await waitFor(() => expect(settled).toHaveBeenCalledWith(null));
+  });
+
+  it("does not leave a stale comment on the next confirmation", async () => {
+    const user = userEvent.setup();
+    const settled = vi.fn();
+    render(<Harness onSettle={settled} />);
+
+    await user.click(screen.getByRole("button", { name: "Open" }));
+    await user.type(screen.getByLabelText("Comment for the member"), "first");
+    await user.click(screen.getByRole("button", { name: "Reject entry" }));
+    await waitFor(() =>
+      expect(settled).toHaveBeenCalledWith({ comment: "first" }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Open" }));
+    await user.click(screen.getByRole("button", { name: "Reject entry" }));
+    await waitFor(() =>
+      expect(settled).toHaveBeenLastCalledWith({ comment: "" }),
+    );
+  });
+});
+
+describe("a pending confirmation always settles", () => {
+  it("resolves null when the caller stops rendering the dialog", async () => {
+    // Every screen using this hook renders {confirmDialog} in its main return,
+    // after early returns for offline/loading/error. Going offline with a
+    // confirmation open takes the subtree away, and `onOpenChange` does not
+    // fire for an unmount — so before this the caller's `await` hung forever,
+    // holding its closure over the row and the mutation.
+    const user = userEvent.setup();
+    const settled = vi.fn();
+
+    function Screen({ hidden }: { hidden: boolean }) {
+      const { confirm, confirmDialog } = useConfirmDialog();
+      if (hidden) return <p>offline</p>;
+      return (
+        <div>
+          <button
+            type="button"
+            onClick={async () => {
+              onSettleRef.current = true;
+              settled(await confirm(REQUEST));
+            }}
+          >
+            Open
+          </button>
+          {confirmDialog}
+        </div>
+      );
+    }
+    const onSettleRef = { current: false };
+
+    const { rerender } = render(<Screen hidden={false} />);
+    await user.click(screen.getByRole("button", { name: "Open" }));
+    expect(settled).not.toHaveBeenCalled();
+
+    rerender(<Screen hidden={true} />);
+
+    await waitFor(() => expect(settled).toHaveBeenCalledWith(null));
+  });
+
+  it("does not strand the first promise when a second confirmation supersedes it", async () => {
+    // Two clicks can land in one commit — a held Enter repeats faster than the
+    // overlay paints. Overwriting `pending` used to drop the first `resolve`.
+    const first = vi.fn();
+    const second = vi.fn();
+
+    function Screen() {
+      const { confirm, confirmDialog } = useConfirmDialog();
+      return (
+        <div>
+          <button
+            type="button"
+            onClick={() => {
+              void confirm(REQUEST).then(first);
+              void confirm(REQUEST).then(second);
+            }}
+          >
+            Open twice
+          </button>
+          {confirmDialog}
+        </div>
+      );
+    }
+
+    const user = userEvent.setup();
+    render(<Screen />);
+    await user.click(screen.getByRole("button", { name: "Open twice" }));
+
+    // The superseded request answers null, which every call site treats as
+    // cancel — it must not simply never settle.
+    await waitFor(() => expect(first).toHaveBeenCalledWith(null));
+    expect(second).not.toHaveBeenCalled();
+  });
+});
+
+describe("the confirmation is in-product, and reads as a verb", () => {
+  it("never calls the banned browser dialogs", async () => {
+    // `README.md` §2 bans `window.confirm` "(and other browser-chrome dialogs)"
+    // on every surface, not only Signet ones.
+    const user = userEvent.setup();
+    const nativeConfirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const nativePrompt = vi.spyOn(window, "prompt").mockReturnValue("x");
+    render(<Harness onSettle={noop} withComment={false} />);
+
+    await user.click(screen.getByRole("button", { name: "Open" }));
+    await user.click(screen.getByRole("button", { name: "Delete study zone" }));
+
+    expect(nativeConfirm).not.toHaveBeenCalled();
+    expect(nativePrompt).not.toHaveBeenCalled();
+    nativeConfirm.mockRestore();
+    nativePrompt.mockRestore();
+  });
+
+  it("labels the action with its verb and object, never a bare 'Confirm'", async () => {
+    // `writing.md` §2's CTA rule, and it is also what keeps the screens' own
+    // suites unambiguous: `tasks-board.test.tsx` queries `/^delete$/i` and
+    // `service-page.test.tsx` queries `/reject/i` against the page's buttons.
+    const user = userEvent.setup();
+    render(<Harness onSettle={noop} withComment={false} />);
+
+    await user.click(screen.getByRole("button", { name: "Open" }));
+
+    expect(
+      screen.queryByRole("button", { name: /^confirm$/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Delete study zone" }),
+    ).toBeInTheDocument();
+  });
+});

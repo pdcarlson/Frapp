@@ -21,13 +21,20 @@ import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
-import { CurrentChapterId } from '../decorators/current-user.decorator';
+import { RequireModule } from '../decorators/module.decorator';
+import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
+import {
+  CurrentChapterId,
+  CurrentUser,
+} from '../decorators/current-user.decorator';
 import { CreateEventDto, UpdateEventDto } from '../dtos/event.dto';
 import { SystemPermissions } from '../../domain/constants/permissions';
 
 @ApiTags('Events')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard, ChapterGuard)
+@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+@RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+@RequireModule('events')
 @Controller('events')
 export class EventController {
   constructor(private readonly eventService: EventService) {}
@@ -45,21 +52,28 @@ export class EventController {
   }
 
   @Post()
-  @UseGuards(PermissionsGuard)
+  @ThrottleFanOutWrite()
   @RequirePermissions(SystemPermissions.EVENTS_CREATE)
   @ApiOperation({ summary: 'Create an event' })
   async create(
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') createdBy: string,
     @Body() dto: CreateEventDto,
   ) {
     return this.eventService.create({
-      chapter_id: chapterId,
+      // Server-decided keys go last so they win the spread. With the DTO
+      // spread last instead, adding a `chapter_id` property to CreateEventDto
+      // would silently let a caller write into another chapter — the whitelist
+      // pipe is what stops that today, and this ordering is what stops it if
+      // the DTO ever changes.
       ...dto,
+      chapter_id: chapterId,
+      created_by: createdBy,
     });
   }
 
   @Patch(':id')
-  @UseGuards(PermissionsGuard)
+  @ThrottleFanOutWrite()
   @RequirePermissions(SystemPermissions.EVENTS_UPDATE)
   @ApiOperation({ summary: 'Update an event' })
   async update(
@@ -87,7 +101,6 @@ export class EventController {
   }
 
   @Delete(':id')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.EVENTS_DELETE)
   @ApiOperation({ summary: 'Delete an event' })
   async delete(@CurrentChapterId() chapterId: string, @Param('id') id: string) {

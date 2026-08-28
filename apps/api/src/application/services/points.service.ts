@@ -1,6 +1,7 @@
 import {
   Inject,
   Injectable,
+  Logger,
   BadRequestException,
   ForbiddenException,
   HttpException,
@@ -10,13 +11,27 @@ import { POINT_TRANSACTION_REPOSITORY } from '../../domain/repositories/point-tr
 import type { IPointTransactionRepository } from '../../domain/repositories/point-transaction.repository.interface';
 import { SEMESTER_ARCHIVE_REPOSITORY } from '../../domain/repositories/semester-archive.repository.interface';
 import type { ISemesterArchiveRepository } from '../../domain/repositories/semester-archive.repository.interface';
+import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
+import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
 import type {
   PointTransaction,
   PointCategory,
 } from '../../domain/entities/point-transaction.entity';
 import { NotificationService } from './notification.service';
+import { ChatService } from './chat.service';
+import {
+  LIST_QUERY_LIMIT_DEFAULT,
+  LIST_QUERY_LIMIT_MAX,
+  LIST_QUERY_LIMIT_MIN,
+} from '../../domain/constants/list-query-limits';
+import {
+  resolveWindowSince,
+  type PointsWindow,
+} from '../../domain/utils/points-window';
 
-export type PointsWindow = 'all' | 'semester' | 'month';
+// Re-exported so existing importers (points.controller, etc.) keep their path;
+// the canonical definition now lives in domain/utils/points-window.
+export type { PointsWindow };
 
 interface AdjustPointsInput {
   chapterId: string;
@@ -25,59 +40,86 @@ interface AdjustPointsInput {
   amount: number;
   category: Extract<PointCategory, 'MANUAL' | 'FINE'>;
   reason: string;
+  /**
+   * When set together with `clientMessageId`, an append-only points card is
+   * posted to this chat channel after the ledger write (the `/points` slash
+   * command). Omitted for dashboard adjustments.
+   */
+  channelId?: string;
+  clientMessageId?: string;
 }
 
 @Injectable()
 export class PointsService {
+  private readonly logger = new Logger(PointsService.name);
+
   constructor(
     @Inject(POINT_TRANSACTION_REPOSITORY)
     private readonly pointTxnRepo: IPointTransactionRepository,
     @Inject(SEMESTER_ARCHIVE_REPOSITORY)
     private readonly semesterArchiveRepo: ISemesterArchiveRepository,
+    @Inject(USER_REPOSITORY)
+    private readonly userRepo: IUserRepository,
     private readonly notificationService: NotificationService,
+    private readonly chatService: ChatService,
   ) {}
 
   private filterByWindow(
     transactions: PointTransaction[],
     window: PointsWindow = 'all',
-    semesterRange?: { start: Date; end: Date },
+    semesterRange?: { after: Date },
   ): PointTransaction[] {
     if (window === 'all') return transactions;
 
     const now = new Date();
-    let from: Date;
-    let to: Date = now;
 
-    if (window === 'month') {
-      from = new Date(now);
-      from.setMonth(from.getMonth() - 1);
-    } else if (semesterRange) {
-      from = semesterRange.start;
-      to = semesterRange.end;
-    } else {
-      return transactions;
-    }
+    // Exclusive lower bound for the active window, matching the
+    // get_points_report RPC (created_at > p_since) so the leaderboard and the
+    // points report agree for the same window. Month: now − 1 calendar month.
+    // Semester: end of the latest archive's end_date day (a transaction recorded
+    // on the end_date day belongs to the archived period, hence exclusive); no
+    // archive → all-time.
+    const since =
+      window === 'month'
+        ? resolveWindowSince('month', { now })
+        : (semesterRange?.after ?? null);
+    if (!since) return transactions;
 
     return transactions.filter((txn) => {
       const createdAt = new Date(txn.created_at);
       return (
         !Number.isNaN(createdAt.getTime()) &&
-        createdAt >= from &&
-        createdAt <= to
+        createdAt > since &&
+        createdAt <= now
       );
     });
   }
 
+  /**
+   * Lower bound (exclusive) for the active "this semester" window. The archived
+   * period covers whole calendar days `[start_date, end_date]` (both are SQL
+   * `date` values, e.g. '2026-06-15'), so the active period begins after the
+   * END of the latest archive's end_date day. A transaction recorded anytime on
+   * the end_date day belongs to the archived period (see
+   * spec/behavior/semester-rollover.md). Uses the most-recently-created archive
+   * (`findLatestByChapter`), which assumes `end_date` increases with
+   * `created_at` — true for the normal sequential rollover flow. Returns
+   * undefined when no — or an unparseable — archive exists, so the caller falls
+   * back to all-time.
+   */
   private async getSemesterRange(
     chapterId: string,
-  ): Promise<{ start: Date; end: Date } | undefined> {
+  ): Promise<{ after: Date } | undefined> {
     const archive =
       await this.semesterArchiveRepo.findLatestByChapter(chapterId);
     if (!archive) return undefined;
-    return {
-      start: new Date(archive.start_date),
-      end: new Date(archive.end_date),
-    };
+    // Boundary math is centralized in resolveWindowSince so the leaderboard and
+    // the points report (report.service.ts) share one definition of "semester".
+    const after = resolveWindowSince('semester', {
+      now: new Date(),
+      latestArchiveEndDate: archive.end_date,
+    });
+    return after ? { after } : undefined;
   }
 
   async getUserSummary(
@@ -94,6 +136,45 @@ export class PointsService {
     const balance = filtered.reduce((sum, txn) => sum + txn.amount, 0);
 
     return { balance, transactions: filtered };
+  }
+
+  /**
+   * Chapter-wide transaction list for the points admin Audit tab.
+   *
+   * Filters (user, category, flagged, `before` cursor), sort (newest first),
+   * and limit are applied in Postgres via `findByChapterFiltered`, so work and
+   * memory scale with the page size rather than full chapter history.
+   */
+  async listTransactions(
+    chapterId: string,
+    options: {
+      userId?: string;
+      category?: PointCategory;
+      flagged?: boolean;
+      before?: string;
+      limit?: number;
+    } = {},
+  ): Promise<PointTransaction[]> {
+    const limit = Math.max(
+      LIST_QUERY_LIMIT_MIN,
+      Math.min(options.limit ?? LIST_QUERY_LIMIT_DEFAULT, LIST_QUERY_LIMIT_MAX),
+    );
+
+    let beforeIso: string | undefined;
+    if (options.before) {
+      const parsed = new Date(options.before);
+      if (!Number.isNaN(parsed.getTime())) {
+        beforeIso = parsed.toISOString();
+      }
+    }
+
+    return this.pointTxnRepo.findByChapterFiltered(chapterId, {
+      userId: options.userId,
+      category: options.category,
+      flagged: options.flagged,
+      before: beforeIso,
+      limit,
+    });
   }
 
   async getLeaderboard(
@@ -167,8 +248,9 @@ export class PointsService {
       metadata,
     });
 
+    const isFine = input.category === 'FINE' || input.amount < 0;
+
     try {
-      const isFine = input.category === 'FINE' || input.amount < 0;
       await this.notificationService.notifyUser(
         input.targetUserId,
         input.chapterId,
@@ -184,6 +266,72 @@ export class PointsService {
       );
     } catch {}
 
+    // The `/points` slash command asks us to surface an append-only card in
+    // chat. The card is server-originated (a client cannot forge `kind:"points"`
+    // — see ChatService.SERVER_ONLY_KINDS) and best-effort: the ledger row is the
+    // source of truth, so a failed post is logged and never rolls the txn back.
+    if (input.channelId && input.clientMessageId) {
+      try {
+        await this.postPointsCard(input, txn, isFine);
+      } catch (error) {
+        this.logger.warn('Failed to post points card to chat', {
+          transactionId: txn.id,
+          channelId: input.channelId,
+          chapterId: input.chapterId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
     return txn;
+  }
+
+  /**
+   * Post the `kind:"points"` card for a committed adjustment. Names are resolved
+   * here and embedded in the payload so the card stays a correct immutable audit
+   * record even if a member later leaves the chapter. Posts as the admin (the
+   * actor) into the channel they ran the command from; channel access is
+   * re-checked by `ChatService.sendMessage`.
+   */
+  private async postPointsCard(
+    input: AdjustPointsInput,
+    txn: PointTransaction,
+    isFine: boolean,
+  ): Promise<void> {
+    const users = await this.userRepo.findByIds([
+      input.adminUserId,
+      input.targetUserId,
+    ]);
+    const nameOf = (id: string): string =>
+      users.find((u) => u.id === id)?.display_name ?? 'Unknown member';
+    const actorName = nameOf(input.adminUserId);
+    const recipientName = nameOf(input.targetUserId);
+
+    const payload = {
+      actor_user_id: input.adminUserId,
+      actor_name: actorName,
+      recipient_user_id: input.targetUserId,
+      recipient_name: recipientName,
+      amount: txn.amount,
+      category: input.category,
+      reason: input.reason,
+      transaction_id: txn.id,
+      created_at: txn.created_at,
+    };
+
+    const verb = isFine ? 'Deducted' : 'Granted';
+    const preposition = isFine ? 'from' : 'to';
+    const content = `${verb} ${Math.abs(txn.amount)} points ${preposition} ${recipientName}: ${input.reason}`;
+
+    await this.chatService.sendMessage({
+      chapter_id: input.chapterId,
+      channel_id: input.channelId!,
+      sender_id: input.adminUserId,
+      content,
+      kind: 'points',
+      payload,
+      client_message_id: input.clientMessageId,
+      system_originated: true,
+    });
   }
 }

@@ -8,33 +8,44 @@ import {
 } from '@nestjs/common';
 import { TASK_REPOSITORY } from '../../domain/repositories/task.repository.interface';
 import type { ITaskRepository } from '../../domain/repositories/task.repository.interface';
-import { POINT_TRANSACTION_REPOSITORY } from '../../domain/repositories/point-transaction.repository.interface';
-import type { IPointTransactionRepository } from '../../domain/repositories/point-transaction.repository.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
-import type { Task, TaskStatus } from '../../domain/entities/task.entity';
+import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
+import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
+import type { Task, TaskView } from '../../domain/entities/task.entity';
+import { TaskStatus } from '../../domain/entities/task.entity';
 import { NotificationService } from './notification.service';
 import type { NotifyPayload } from './notification.service';
+import { ChatService } from './chat.service';
 
 const VALID_ASSIGNEE_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
-  TODO: ['IN_PROGRESS'],
-  IN_PROGRESS: ['COMPLETED'],
-  COMPLETED: [],
-  OVERDUE: ['IN_PROGRESS'],
+  [TaskStatus.TODO]: [TaskStatus.IN_PROGRESS],
+  [TaskStatus.IN_PROGRESS]: [TaskStatus.COMPLETED],
+  [TaskStatus.COMPLETED]: [],
+  [TaskStatus.OVERDUE]: [TaskStatus.IN_PROGRESS],
 };
 
-function toDisplayStatus(task: Task): Task {
+/**
+ * Rewrite a task's status to the value clients should render.
+ *
+ * `stored_status` travels alongside it and always carries the persisted value.
+ * It is not cosmetic: the transition table above is checked against the stored
+ * status, and `OVERDUE` collapses `TODO` and `IN_PROGRESS` into one indistinct
+ * value, so a client holding only `status` cannot tell which transition is
+ * legal — and therefore cannot offer the assignee any action at all (#1051).
+ */
+function toDisplayStatus(task: Task): TaskView {
   const today = new Date().toISOString().slice(0, 10);
-  if (
-    (task.status === 'TODO' || task.status === 'IN_PROGRESS') &&
+  const displayStatus =
+    (task.status === TaskStatus.TODO ||
+      task.status === TaskStatus.IN_PROGRESS) &&
     task.due_date < today
-  ) {
-    return { ...task, status: 'OVERDUE' as TaskStatus };
-  }
-  return task;
+      ? TaskStatus.OVERDUE
+      : task.status;
+  return { ...task, status: displayStatus, stored_status: task.status };
 }
 
-function toDisplayStatusList(tasks: Task[]): Task[] {
+function toDisplayStatusList(tasks: Task[]): TaskView[] {
   return tasks.map(toDisplayStatus);
 }
 
@@ -46,6 +57,13 @@ export interface CreateTaskInput {
   created_by: string;
   due_date: string;
   point_reward?: number | null;
+  /**
+   * When set together with `client_message_id`, an interactive task card is
+   * posted to this chat channel after the row commits (the `/task` slash
+   * command). Omitted for dashboard creates.
+   */
+  channel_id?: string;
+  client_message_id?: string;
 }
 
 export interface UpdateTaskStatusInput {
@@ -58,13 +76,13 @@ export class TaskService {
 
   constructor(
     @Inject(TASK_REPOSITORY) private readonly taskRepo: ITaskRepository,
-    @Inject(POINT_TRANSACTION_REPOSITORY)
-    private readonly pointTxnRepo: IPointTransactionRepository,
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
+    @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
     private readonly notificationService: NotificationService,
+    private readonly chatService: ChatService,
   ) {}
 
-  async findById(id: string, chapterId: string): Promise<Task> {
+  async findById(id: string, chapterId: string): Promise<TaskView> {
     const task = await this.taskRepo.findById(id, chapterId);
     if (!task) {
       throw new NotFoundException('Task not found');
@@ -76,19 +94,22 @@ export class TaskService {
     chapterId: string,
     userId: string,
     isAdmin: boolean,
-  ): Promise<Task[]> {
+  ): Promise<TaskView[]> {
     const tasks = isAdmin
       ? await this.taskRepo.findByChapter(chapterId)
       : await this.taskRepo.findByAssignee(chapterId, userId);
     return toDisplayStatusList(tasks);
   }
 
-  async listByChapter(chapterId: string): Promise<Task[]> {
+  async listByChapter(chapterId: string): Promise<TaskView[]> {
     const tasks = await this.taskRepo.findByChapter(chapterId);
     return toDisplayStatusList(tasks);
   }
 
-  async listByAssignee(chapterId: string, assigneeId: string): Promise<Task[]> {
+  async listByAssignee(
+    chapterId: string,
+    assigneeId: string,
+  ): Promise<TaskView[]> {
     const tasks = await this.taskRepo.findByAssignee(chapterId, assigneeId);
     return toDisplayStatusList(tasks);
   }
@@ -114,7 +135,7 @@ export class TaskService {
       assignee_id: input.assignee_id,
       created_by: input.created_by,
       due_date: input.due_date,
-      status: 'TODO',
+      status: TaskStatus.TODO,
       point_reward: input.point_reward ?? null,
       points_awarded: false,
       completed_at: null,
@@ -135,7 +156,74 @@ export class TaskService {
       'assignment',
     );
 
+    // The `/task` slash command asks us to surface an interactive assignment
+    // card in chat. The card is server-originated (a client cannot forge
+    // `kind:"task"` — see ChatService.SERVER_ONLY_KINDS) and best-effort: the
+    // task row is the source of truth, so a failed post is logged and never
+    // rolls the task back.
+    if (input.channel_id && input.client_message_id) {
+      try {
+        await this.postTaskCard(input, task);
+      } catch (error) {
+        this.logger.warn('Failed to post task card to chat', {
+          taskId: task.id,
+          channelId: input.channel_id,
+          chapterId: input.chapter_id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
     return task;
+  }
+
+  /**
+   * Post the `kind:"task"` assignment card for a committed task. Names are
+   * resolved here and embedded in the payload so the snapshot stays a correct
+   * record even if a member later leaves the chapter. The card carries the
+   * task id; the renderer reads live status back through the task query (the
+   * chat message row is never mutated). Posts as the admin (the creator) into
+   * the channel they ran the command from; channel access is re-checked by
+   * `ChatService.sendMessage`.
+   */
+  private async postTaskCard(
+    input: CreateTaskInput,
+    task: Task,
+  ): Promise<void> {
+    const users = await this.userRepo.findByIds([
+      input.created_by,
+      input.assignee_id,
+    ]);
+    const nameOf = (id: string): string =>
+      users.find((u) => u.id === id)?.display_name ?? 'Unknown member';
+    const assignerName = nameOf(input.created_by);
+    const assigneeName = nameOf(input.assignee_id);
+
+    const payload = {
+      task_id: task.id,
+      title: task.title,
+      assigner_user_id: input.created_by,
+      assigner_name: assignerName,
+      assignee_user_id: input.assignee_id,
+      assignee_name: assigneeName,
+      due_date: task.due_date,
+      status: 'TODO' as const,
+      point_reward: task.point_reward,
+      created_at: task.created_at,
+    };
+
+    const content = `Assigned "${task.title}" to ${assigneeName} (due ${task.due_date})`;
+
+    await this.chatService.sendMessage({
+      chapter_id: input.chapter_id,
+      channel_id: input.channel_id!,
+      sender_id: input.created_by,
+      content,
+      kind: 'task',
+      payload,
+      client_message_id: input.client_message_id,
+      system_originated: true,
+    });
   }
 
   async updateStatus(
@@ -144,7 +232,7 @@ export class TaskService {
     userId: string,
     isAdmin: boolean,
     newStatus: TaskStatus,
-  ): Promise<Task> {
+  ): Promise<TaskView> {
     const task = await this.taskRepo.findById(id, chapterId);
     if (!task) {
       throw new NotFoundException('Task not found');
@@ -160,8 +248,8 @@ export class TaskService {
     if (!allowed?.includes(newStatus)) {
       if (
         isAdmin &&
-        newStatus === 'IN_PROGRESS' &&
-        task.status === 'COMPLETED'
+        newStatus === TaskStatus.IN_PROGRESS &&
+        task.status === TaskStatus.COMPLETED
       ) {
         // Admin can revert (reject) - handled in rejectCompletion
         throw new BadRequestException(
@@ -174,7 +262,7 @@ export class TaskService {
     }
 
     const updateData: Partial<Task> = { status: newStatus };
-    if (newStatus === 'COMPLETED') {
+    if (newStatus === TaskStatus.COMPLETED) {
       updateData.completed_at = new Date().toISOString();
     }
 
@@ -182,13 +270,13 @@ export class TaskService {
     return toDisplayStatus(updated);
   }
 
-  async confirmCompletion(id: string, chapterId: string): Promise<Task> {
+  async confirmCompletion(id: string, chapterId: string): Promise<TaskView> {
     const task = await this.taskRepo.findById(id, chapterId);
     if (!task) {
       throw new NotFoundException('Task not found');
     }
 
-    if (task.status !== 'COMPLETED') {
+    if (task.status !== TaskStatus.COMPLETED) {
       throw new BadRequestException(
         'Task must be marked COMPLETED by assignee before confirmation',
       );
@@ -200,25 +288,20 @@ export class TaskService {
       );
     }
 
-    const updateData: Partial<Task> = {
-      confirmed_at: new Date().toISOString(),
-      points_awarded: true,
-    };
-
-    if (task.point_reward != null && task.point_reward > 0) {
-      await this.pointTxnRepo.create({
-        chapter_id: task.chapter_id,
-        user_id: task.assignee_id,
-        amount: task.point_reward,
-        category: 'MANUAL',
-        description: `Task completed: ${task.title}`,
-        metadata: { task_id: task.id },
-      });
-    } else {
-      updateData.points_awarded = true;
+    // Confirm the task and award its point reward atomically: a single DB
+    // transaction (compare-and-set on `points_awarded`) so a partial failure
+    // can't leave points without a confirmation, and concurrent confirms can't
+    // double-award. The guards above are a friendly fast path; the RPC's
+    // conditional update is the authoritative concurrency guard. Returns null
+    // when nothing was updated: points already awarded, or the task is no longer
+    // COMPLETED (e.g. a concurrent admin rejection reverted it) between the
+    // fast-path guard and the RPC — so keep the message broad enough for both.
+    const updated = await this.taskRepo.confirmCompletionAtomic(id, chapterId);
+    if (!updated) {
+      throw new BadRequestException(
+        'Task confirmation failed — task is no longer eligible or points were already awarded',
+      );
     }
-
-    const updated = await this.taskRepo.update(id, chapterId, updateData);
 
     await this.safeNotifyUser(
       task.assignee_id,
@@ -241,13 +324,13 @@ export class TaskService {
     id: string,
     chapterId: string,
     comment?: string | null,
-  ): Promise<Task> {
+  ): Promise<TaskView> {
     const task = await this.taskRepo.findById(id, chapterId);
     if (!task) {
       throw new NotFoundException('Task not found');
     }
 
-    if (task.status !== 'COMPLETED') {
+    if (task.status !== TaskStatus.COMPLETED) {
       throw new BadRequestException('Only completed tasks can be rejected');
     }
 
@@ -258,7 +341,7 @@ export class TaskService {
     }
 
     const updated = await this.taskRepo.update(id, chapterId, {
-      status: 'IN_PROGRESS',
+      status: TaskStatus.IN_PROGRESS,
       completed_at: null,
     });
 

@@ -1,4 +1,5 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -8,24 +9,52 @@ import {
 import { SearchService } from '../../application/services/search.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
-import { CurrentChapterId } from '../decorators/current-user.decorator';
+import { PermissionsGuard } from '../guards/permissions.guard';
+import { RequirePermissions } from '../decorators/permissions.decorator';
+import { FreeTier } from '../decorators/subscription.decorator';
+import { ThrottleExpensiveRead } from '../decorators/throttle-profiles.decorator';
+import {
+  CurrentChapterId,
+  CurrentUser,
+} from '../decorators/current-user.decorator';
+import { SystemPermissions } from '../../domain/constants/permissions';
 
 @ApiTags('Search')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard, ChapterGuard)
+@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+@RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+@FreeTier()
 @Controller('search')
 export class SearchController {
   constructor(private readonly searchService: SearchService) {}
 
   @Get()
+  @ThrottleExpensiveRead()
   @ApiOperation({
     summary: 'Cross-domain search (backwork, events, members, messages)',
   })
   @ApiQuery({ name: 'q', required: true, description: 'Search query' })
   async search(
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
     @Query('q') query: string,
+    @Res({ passthrough: true }) res: Response,
   ) {
-    return this.searchService.search(chapterId, query ?? '');
+    const { results, timedOut, timedOutSources } =
+      await this.searchService.searchWithinBudget(
+        chapterId,
+        userId,
+        query ?? '',
+      );
+    if (timedOut) {
+      res.setHeader('x-search-timeout', '1');
+      // Which sections are incomplete, so a client can say "still searching
+      // messages" instead of rendering an empty list as "no matches". The
+      // boolean header stays for callers that already read it; the budget is
+      // per-source now, so `1` means "at least one section is short", not
+      // "everything came back empty".
+      res.setHeader('x-search-timeout-sources', timedOutSources.join(','));
+    }
+    return results;
   }
 }

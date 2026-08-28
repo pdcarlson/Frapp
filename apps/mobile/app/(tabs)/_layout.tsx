@@ -1,196 +1,159 @@
 import { Redirect, Tabs } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
-import { usePreviewSession } from "@/lib/preview-session";
-import { useFrappTheme } from "@/lib/theme";
+import { ChapterHeaderTitle } from "@/components/chapter-header-title";
+import {
+  ChatGlyph,
+  EventsGlyph,
+  MoreGlyph,
+  TabLabel,
+  TasksGlyph,
+  type TabGlyphProps,
+} from "@/components/tab-glyphs";
+import { resolveAuthGate } from "@/lib/auth-gate";
+import { useAuthSession } from "@/lib/auth-session";
+import { useChapterBranding } from "@/lib/chapter-branding";
+import { typeRole, useFrappTheme } from "@/lib/theme";
 
-const TAB_ICON_SIZE = 20;
-
-const tabIcon = (
-  iconName: keyof typeof Ionicons.glyphMap,
-  color: string,
-  size = TAB_ICON_SIZE,
-) => <Ionicons name={iconName} size={size} color={color} />;
-
-const TAB_ICON_NAMES = {
-  home: { inactive: "home-outline", active: "home" },
-  chat: { inactive: "chatbubbles-outline", active: "chatbubbles" },
-  events: { inactive: "calendar-outline", active: "calendar" },
-  points: { inactive: "trophy-outline", active: "trophy" },
-  profile: { inactive: "person-outline", active: "person" },
-  more: {
-    inactive: "ellipsis-horizontal-circle-outline",
-    active: "ellipsis-horizontal-circle",
-  },
-} as const;
-
+/**
+ * The locked 4-tab IA (spec/ui/mobile/navigation.md §"Tab bar — 4 tabs, locked").
+ *
+ * There is no Home tab — chat is home. Every route outside these four is
+ * registered with `href: null` and reached by navigation only. Those hidden
+ * registrations are deliberately exhaustive: this file freezes after S2 (#937's
+ * hotspot protocol), so cluster slices add screens without reopening it. A
+ * `Tabs.Screen` needs a real backing file, which is why the not-yet-built routes
+ * ship as stubs rather than as registrations alone.
+ */
 export default function TabLayout() {
-  const { status } = usePreviewSession();
+  const { status, chapterId, isChapterResolving } = useAuthSession();
   const { tokens } = useFrappTheme();
+  // Inside the tab group the member is always in a chapter, so branding is
+  // safe to read here — the auth stack sits outside and stays Frapp-branded.
+  const { accent } = useChapterBranding();
 
-  if (status === "hydrating") {
+  const destination = resolveAuthGate({ status, chapterId, isChapterResolving });
+
+  if (destination === "hold") {
     return null;
   }
 
-  if (status === "unauthenticated") {
+  if (destination === "sign-in") {
     return <Redirect href="/(auth)/sign-in" />;
   }
+
+  const glyphPaint = (focused: boolean): TabGlyphProps => ({
+    focused,
+    accent,
+    muted: tokens.color.text.muted,
+  });
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: tokens.color.brand.royalBlue,
+        tabBarActiveTintColor: accent,
         tabBarInactiveTintColor: tokens.color.text.muted,
         tabBarStyle: {
           height: 62,
           paddingTop: 6,
           paddingBottom: 6,
           backgroundColor: tokens.color.surface.card,
-          borderTopColor: tokens.color.surface.border,
+          borderTopColor: tokens.color.border.hairline,
         },
-        headerTitleStyle: { fontWeight: "700", color: tokens.color.text.primary },
+        // iconography.md §1 rule 2: the active tab pairs the accent duotone
+        // glyph with a 700-weight label, and takes no pill or container shape.
+        // The weight has to come from the label component, not
+        // `tabBarLabelStyle` — that is one static style for both states.
+        tabBarLabel: ({ focused, color, children }) => (
+          <TabLabel focused={focused} color={color}>
+            {children}
+          </TabLabel>
+        ),
+        headerTitleStyle: {
+          ...typeRole(tokens.typography.role.title),
+          color: tokens.color.text.foreground,
+        },
         headerStyle: { backgroundColor: tokens.color.surface.card },
       }}
     >
+      {/* ── The four locked tabs ─────────────────────────────────────────── */}
       <Tabs.Screen
         name="index"
         options={{
-          title: "Home",
-          headerTitle: "Frapp",
-          tabBarIcon: ({ color, focused }) =>
-            tabIcon(
-              focused ? TAB_ICON_NAMES.home.active : TAB_ICON_NAMES.home.inactive,
-              color,
-            ),
-        }}
-      />
-      <Tabs.Screen
-        name="chat"
-        options={{
           title: "Chat",
-          tabBarIcon: ({ color, focused }) =>
-            tabIcon(
-              focused ? TAB_ICON_NAMES.chat.active : TAB_ICON_NAMES.chat.inactive,
-              color,
-            ),
+          headerTitle: ({ style }) => <ChapterHeaderTitle style={style} />,
+          tabBarIcon: ({ focused }) => <ChatGlyph {...glyphPaint(focused)} />,
         }}
       />
       <Tabs.Screen
         name="events"
         options={{
           title: "Events",
-          tabBarIcon: ({ color, focused }) =>
-            tabIcon(
-              focused
-                ? TAB_ICON_NAMES.events.active
-                : TAB_ICON_NAMES.events.inactive,
-              color,
-            ),
+          tabBarIcon: ({ focused }) => <EventsGlyph {...glyphPaint(focused)} />,
         }}
       />
       <Tabs.Screen
-        name="points"
+        name="tasks"
         options={{
-          title: "Points",
-          tabBarIcon: ({ color, focused }) =>
-            tabIcon(
-              focused
-                ? TAB_ICON_NAMES.points.active
-                : TAB_ICON_NAMES.points.inactive,
-              color,
-            ),
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: "Profile",
-          tabBarIcon: ({ color, focused }) =>
-            tabIcon(
-              focused
-                ? TAB_ICON_NAMES.profile.active
-                : TAB_ICON_NAMES.profile.inactive,
-              color,
-            ),
+          title: "Tasks",
+          tabBarIcon: ({ focused }) => <TasksGlyph {...glyphPaint(focused)} />,
         }}
       />
       <Tabs.Screen
         name="more"
         options={{
           title: "More",
-          tabBarIcon: ({ color, focused }) =>
-            tabIcon(
-              focused ? TAB_ICON_NAMES.more.active : TAB_ICON_NAMES.more.inactive,
-              color,
-            ),
+          tabBarIcon: ({ focused }) => <MoreGlyph {...glyphPaint(focused)} />,
         }}
+      />
+
+      {/* ── Live routes, reached by navigation ───────────────────────────── */}
+      <Tabs.Screen name="chat-thread" options={{ title: "Thread", href: null }} />
+      <Tabs.Screen
+        name="event-details"
+        options={{ title: "Event details", href: null }}
       />
       <Tabs.Screen
         name="notifications"
-        options={{
-          title: "Notifications",
-          href: null,
-        }}
+        options={{ title: "Notifications", href: null }}
       />
+      {/* s16's drawn title is "Settings"; the route filename stays
+          `preferences.tsx` per spec/ui/mobile/screens.md:37. */}
       <Tabs.Screen
         name="preferences"
-        options={{
-          title: "Preferences",
-          href: null,
-        }}
+        options={{ title: "Settings", href: null }}
       />
-      <Tabs.Screen
-        name="event-details"
-        options={{
-          title: "Event Details",
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="points-details"
-        options={{
-          title: "Points Details",
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="chat-thread"
-        options={{
-          title: "Chat Thread",
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="task-center"
-        options={{
-          title: "Task Center",
-          href: null,
-        }}
-      />
+      {/* Profile keeps its file but leaves the tab bar — reached from More. */}
+      <Tabs.Screen name="profile" options={{ title: "Profile", href: null }} />
       <Tabs.Screen
         name="service-hours"
-        options={{
-          title: "Service Hours",
-          href: null,
-        }}
+        options={{ title: "Service hours", href: null }}
+      />
+
+      {/* ── Pre-registered for the cluster slices ────────────────────────── */}
+      <Tabs.Screen name="study" options={{ title: "Study hours", href: null }} />
+      <Tabs.Screen name="dues" options={{ title: "Dues", href: null }} />
+      <Tabs.Screen
+        name="documents"
+        options={{ title: "Documents", href: null }}
       />
       <Tabs.Screen
-        name="documents-reports"
-        options={{
-          title: "Documents & Reports",
-          href: null,
-        }}
+        name="directory"
+        options={{ title: "Directory", href: null }}
+      />
+      <Tabs.Screen name="ask" options={{ title: "Ask", href: null }} />
+      <Tabs.Screen
+        name="check-in"
+        options={{ title: "Check in", href: null }}
       />
       <Tabs.Screen
-        name="onboarding-tour"
-        options={{
-          title: "Onboarding Tutorial",
-          href: null,
-        }}
+        name="host-check-in"
+        options={{ title: "Host check-in", href: null }}
       />
+
+      {/* THROWAWAY (#937 S1): Expo Go smoke screen, deleted before Phase 2 exit. */}
       <Tabs.Screen
-        name="notification-targets"
+        name="sheet-demo"
         options={{
-          title: "Notification Destinations",
+          title: "Sheet Demo",
           href: null,
         }}
       />

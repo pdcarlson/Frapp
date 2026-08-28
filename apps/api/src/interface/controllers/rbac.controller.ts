@@ -14,6 +14,7 @@ import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
+import { FreeTier } from '../decorators/subscription.decorator';
 import {
   CurrentChapterId,
   CurrentMember,
@@ -27,7 +28,9 @@ import { SystemPermissions } from '../../domain/constants/permissions';
 
 @ApiTags('Roles & Permissions')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard, ChapterGuard)
+@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+@RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+@FreeTier()
 @Controller('roles')
 export class RbacController {
   constructor(private readonly rbacService: RbacService) {}
@@ -46,7 +49,6 @@ export class RbacController {
 
   @Post()
   @ApiOperation({ summary: 'Create a custom role' })
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.ROLES_MANAGE)
   async create(
     @CurrentChapterId() chapterId: string,
@@ -57,22 +59,25 @@ export class RbacController {
 
   @Patch(':id')
   @ApiOperation({ summary: 'Update a role' })
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.ROLES_MANAGE)
-  async update(@Param('id') id: string, @Body() dto: UpdateRoleDto) {
-    return this.rbacService.update(id, dto);
+  async update(
+    @Param('id') id: string,
+    @CurrentChapterId() chapterId: string,
+    @Body() dto: UpdateRoleDto,
+  ) {
+    return this.rbacService.update(id, chapterId, dto);
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Delete a custom role' })
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.ROLES_MANAGE)
-  async delete(@Param('id') id: string) {
-    await this.rbacService.delete(id);
+  async delete(@Param('id') id: string, @CurrentChapterId() chapterId: string) {
+    await this.rbacService.delete(id, chapterId);
     return { success: true };
   }
 
   @Post('transfer-presidency')
+  @RequirePermissions(SystemPermissions.WILDCARD)
   @ApiOperation({ summary: 'Transfer presidency to another member' })
   async transferPresidency(
     @CurrentChapterId() chapterId: string,

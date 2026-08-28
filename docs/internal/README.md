@@ -1,38 +1,22 @@
-# Internal Operations Docs
+# Internal docs
 
-This folder holds operator-facing runbooks and rollout trackers that are intended
-for the engineering team.
+Operations, infrastructure, and agent/CI reference. Grouped by area.
 
-Use this area for:
+- **Conventions:** [`DOCUMENTATION_CONVENTIONS.md`](DOCUMENTATION_CONVENTIONS.md) — the authoritative
+  placement map for where docs/spec changes go (read before adding any doc).
+- **Admin:** [`ADMIN_DASHBOARD.md`](ADMIN_DASHBOARD.md)
 
-- environment rollout status
-- deployment checklists
-- incident and postmortem templates
-- provider-specific operational procedures
+| Area | Folder | Contents |
+| ---- | ------ | -------- |
+| Ops / runbooks | [`ops/`](ops/) | DB promotion/rollback, incident response, branch protection, alert routing, deploy |
+| CI / agent infra | [`ci-cd/`](ci-cd/) | docs-sync CI, agent infra, Claude Code routines, AI code review |
+| Mobile | [`mobile/`](mobile/) | mobile testing + smoke checklist |
+| Quality | [`quality/`](quality/) | accessibility protocol, PR review process |
+| Environment | [`environment/`](environment/) | **Claude Code cloud sandbox (primary dev env)**, local dev, env reference, secrets management, agent credentials |
+| Security | [`security/`](security/) | upload validation, path traversal, fixes log |
+| Services | [`services/`](services/) | per-service performance notes |
 
-## Current runbooks
+Design-system guidance moved to [`spec/ui/design-system/`](../../spec/ui/design-system/README.md) (Signet restructure).
 
-- `DEPLOYMENT_STATUS.md`
-- `DB_PROMOTION_RUNBOOK.md`
-- `DB_ROLLBACK_PLAYBOOK.md`
-- `CODERABBIT_RUNBOOK.md`
-- `ENV_REFERENCE.md` — **Definitive reference for all environment variables**
-- `GITHUB_BRANCH_PROTECTION_RUNBOOK.md`
-- `PR_REVIEW_PROCESS.md`
-- `INCIDENT_RESPONSE_API_DOWN.md`
-- `INCIDENT_RESPONSE_WEBHOOK_FAILURES.md`
-- `INCIDENT_RESPONSE_DB_LATENCY.md`
-- `SECRETS_MANAGEMENT.md` — Infisical setup and rotation policy
-- `ALERT_ROUTING.md`
-- `ACCESSIBILITY_TESTING_PROTOCOL.md`
-- `STATE_MICROCOPY_PACK.md`
-- `UX_WRITING_GUIDE.md`
-- `ICONOGRAPHY_GUIDELINES.md`
-- `ICON_INTENT_MAP.md`
-- `TYPOGRAPHY_GUIDELINES.md`
-- `MOBILE_INTERACTION_SMOKE_CHECKLIST.md`
-- `MOBILE_THREAD_RESOLUTION_MAP.md`
-- `PR_CONSOLIDATION_CANONICAL_PR_BODY.md`
-- `PR_CONSOLIDATION_OPERATOR_CHECKLIST.md`
-
-Public-facing product docs live in `apps/docs/`.
+Work status is tracked in **GitHub Issues** (see [`ci-cd/GITHUB_PM.md`](ci-cd/GITHUB_PM.md)), not here.
+Developer-facing guides live in [`../guides/`](../guides/README.md).

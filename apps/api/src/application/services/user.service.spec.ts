@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import {
+  NotFoundException,
+  BadRequestException,
+  GoneException,
+} from '@nestjs/common';
 import { UserService } from './user.service';
 import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
 import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
@@ -15,16 +19,24 @@ describe('UserService', () => {
     mockRepo = {
       findById: jest.fn(),
       findByIds: jest.fn(),
+      findDisplayIdentitiesByIds: jest.fn(),
       findBySupabaseAuthId: jest.fn(),
       findByEmail: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      anonymize: jest.fn(),
     };
 
     mockStorageProvider = {
       getSignedUploadUrl: jest.fn(),
       getSignedDownloadUrl: jest.fn(),
+      uploadFile: jest.fn(),
+      downloadFile: jest.fn(),
       deleteFile: jest.fn(),
+      listFiles: jest.fn(),
+      listObjects: jest.fn().mockResolvedValue([]),
+      listFolders: jest.fn().mockResolvedValue([]),
+      deleteFiles: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -72,19 +84,28 @@ describe('UserService', () => {
   });
 
   it('should update user profile data', async () => {
-    const updatedUser = {
+    const existingUser = {
       id: 'user-1',
       supabase_auth_id: 'auth-123',
       email: 'test@example.com',
-      display_name: 'Updated Name',
+      display_name: 'Old Name',
       avatar_url: null,
-      bio: 'New bio',
-      graduation_year: 2024,
+      bio: null,
+      graduation_year: null,
       current_city: null,
       current_company: null,
+      deleted_at: null,
       created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    };
+    const updatedUser = {
+      ...existingUser,
+      display_name: 'Updated Name',
+      bio: 'New bio',
+      graduation_year: 2024,
       updated_at: '2024-01-02',
     };
+    mockRepo.findById.mockResolvedValue(existingUser);
     mockRepo.update.mockResolvedValue(updatedUser);
 
     const result = await service.update('user-1', {
@@ -101,7 +122,70 @@ describe('UserService', () => {
     expect(result).toEqual(updatedUser);
   });
 
+  it('should reject profile updates on a tombstoned (deleted) account', async () => {
+    mockRepo.findById.mockResolvedValue({
+      id: 'user-1',
+      supabase_auth_id: 'auth-123',
+      email: 'deleted+user-1@anonymized.invalid',
+      display_name: 'Deleted User',
+      avatar_url: null,
+      bio: null,
+      graduation_year: null,
+      current_city: null,
+      current_company: null,
+      deleted_at: '2026-08-03T00:00:00Z',
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    });
+
+    await expect(
+      service.update('user-1', { display_name: 'Sneaky Comeback' }),
+    ).rejects.toThrow(GoneException);
+    expect(mockRepo.update).not.toHaveBeenCalled();
+  });
+
   describe('requestAvatarUploadUrl', () => {
+    it('should throw BadRequestException for invalid file extension', async () => {
+      await expect(
+        service.requestAvatarUploadUrl(
+          'ch-1',
+          'user-1',
+          'avatar.exe',
+          'image/jpeg',
+        ),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.requestAvatarUploadUrl(
+          'ch-1',
+          'user-1',
+          'avatar.exe',
+          'image/jpeg',
+        ),
+      ).rejects.toThrow('File extension is not allowed');
+
+      expect(mockStorageProvider.getSignedUploadUrl).not.toHaveBeenCalled();
+    });
+
+    it('should throw BadRequestException for invalid content type', async () => {
+      await expect(
+        service.requestAvatarUploadUrl(
+          'ch-1',
+          'user-1',
+          'avatar.jpg',
+          'application/exe',
+        ),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.requestAvatarUploadUrl(
+          'ch-1',
+          'user-1',
+          'avatar.jpg',
+          'application/exe',
+        ),
+      ).rejects.toThrow('Content type "application/exe" is not allowed');
+
+      expect(mockStorageProvider.getSignedUploadUrl).not.toHaveBeenCalled();
+    });
     it('should return signed URL and storage path for profile photo', async () => {
       mockStorageProvider.getSignedUploadUrl.mockResolvedValue(
         'https://storage.supabase.co/profiles/upload/signed',

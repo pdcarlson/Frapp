@@ -1,0 +1,13 @@
+{
+  "extends": "@repo/typescript-config/base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    // The base config includes DOM in `lib`. This package is consumed by the
+    // NestJS API, where a stray `document` or `window` reference would compile
+    // clean and only fail at runtime, so DOM is dropped here deliberately.
+    "lib": ["es2022"]
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "src/**/*.spec.ts"]
+}

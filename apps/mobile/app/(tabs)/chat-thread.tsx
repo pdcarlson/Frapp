@@ -1,346 +1,374 @@
-import { useEffect, useRef, useState } from "react";
-import { Link } from "expo-router";
-import { Pressable, StyleSheet, Text, View } from "react-native";
-import { FrappTokens } from "@repo/theme/tokens";
-import { ScreenShell } from "@/components/screen-shell";
-import { useFrappTheme } from "@/lib/theme";
+import { useCallback, useMemo } from "react";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import {
+  ActivityIndicator,
+  FlatList,
+  Pressable,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import type { ChatMessage } from "@repo/chat-core/types";
+import { useMarkChannelRead, useMemberDisplayNames } from "@repo/hooks";
+import { SignetTokens } from "@repo/theme/signet";
+import { ChatComposer } from "@/components/chat/chat-composer";
+import { MessageBubble } from "@/components/chat/message-bubble";
+import { useChatChannel } from "@/lib/chat/use-chat-channel";
+import { getKeyboardPath } from "@/lib/keyboard";
+import { useConnection } from "@/lib/connection/use-connection";
+import { typeRole, useFrappTheme } from "@/lib/theme";
 
-type MessageState = "sent" | "sending" | "retry";
-
-function MessageBubble({
-  author,
-  body,
-  timestamp,
-  state,
-  outgoing = false,
-  styles,
-  messageStateStyles,
-}: {
-  author: string;
-  body: string;
-  timestamp: string;
-  state: MessageState;
-  outgoing?: boolean;
-  styles: ReturnType<typeof createStyles>;
-  messageStateStyles: ReturnType<typeof createMessageStateStyles>;
-}) {
-  const stateStyle = messageStateStyles[state];
-
-  return (
-    <View
-      style={[
-        styles.messageBubble,
-        outgoing ? styles.messageBubbleOutgoing : styles.messageBubbleIncoming,
-      ]}
-    >
-      <View style={styles.messageHeader}>
-        <Text style={styles.messageAuthor}>{author}</Text>
-        <Text style={styles.messageTime}>{timestamp}</Text>
-      </View>
-      <Text style={styles.messageBody}>{body}</Text>
-      <View
-        style={[
-          styles.statePill,
-          {
-            backgroundColor: stateStyle.backgroundColor,
-            borderColor: stateStyle.borderColor,
-          },
-        ]}
-      >
-        <Text style={[styles.statePillText, { color: stateStyle.textColor }]}>
-          {stateStyle.label}
-        </Text>
-      </View>
-    </View>
-  );
-}
-
+/**
+ * s05 — Chat thread.
+ *
+ * **This screen deliberately does not use `ScreenShell`.** The shell wraps its
+ * children in a `ScrollView` (`components/screen-shell.tsx:33`), and a
+ * `FlatList` nested in a `ScrollView` loses windowing entirely — every message
+ * ever loaded would mount at once, which is precisely the thing a thread cannot
+ * afford. `app/(auth)/chapter-picker.tsx` is the existing precedent for opting
+ * out. The shell is frozen, so this is a hand-rolled `SafeAreaView` instead of a
+ * shell change.
+ *
+ * The list is **inverted**: `selectMessages` returns ascending order, so the
+ * data is reversed once and `inverted` pins the newest message to the bottom
+ * without a scroll-to-end effect racing every insert.
+ *
+ * Keyboard: `react-native-keyboard-controller` does not run in Expo Go, so it
+ * lives behind `lib/keyboard.tsx`. This reads `getKeyboardPath()` only to pick
+ * the right *behavior*, and uses `KeyboardAvoidingView` either way — the guarded
+ * `KeyboardProvider` is already mounted app-wide, and a screen must never import
+ * the native package directly (ESLint `no-restricted-imports` enforces it).
+ */
 export default function ChatThreadScreen() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const messageStateStyles = createMessageStateStyles(tokens);
-  const [pendingActions, setPendingActions] = useState(2);
-  const [retryCount, setRetryCount] = useState(2);
-  const [composerFeedback, setComposerFeedback] = useState(
-    "Draft preserved locally with retry metadata. Sending resumes automatically once connection improves.",
+  const router = useRouter();
+
+  // Params arrive as `string | string[]`; a repeated query key would otherwise
+  // silently produce an array where a channel id is expected.
+  const params = useLocalSearchParams<{ channelId?: string | string[] }>();
+  const channelId = useMemo(() => {
+    const raw = params.channelId;
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    return typeof value === "string" && value.length > 0 ? value : null;
+  }, [params.channelId]);
+
+  const {
+    messages,
+    isLoading,
+    loadError,
+    viewerId,
+    canSend,
+    send,
+    react,
+    unreact,
+    draft,
+    setDraft,
+    sendError,
+    typingUsers,
+    emitTyping,
+    connection,
+    retry,
+    discard,
+  } = useChatChannel(channelId);
+
+  // One cached roster fetch per chapter names every author in the thread.
+  // Resolving by `sender_id` is what makes it work for a message that arrived
+  // over the live `postgres_changes` echo as well as one from the REST page — a
+  // join on the message payload could only ever have covered the latter.
+  const { nameFor } = useMemberDisplayNames();
+
+  // Opening a channel stamps the read cursor to server `now()`; there is no
+  // mark-read-to-a-message API. Its invalidation of `["channels"]` refreshes the
+  // s04 badges by prefix.
+  //
+  // This is a **focus** effect, not a mount effect, and it stamps on the way out
+  // as well as the way in. Both halves are load-bearing:
+  //
+  //  - `chat-thread` is a `Tabs.Screen`, so React Navigation keeps it mounted
+  //    after first focus. A mount effect keyed on `channelId` would never re-run
+  //    when the member leaves to Chat and taps the same channel again, leaving
+  //    its badge stuck until they visited some *other* channel.
+  //  - Messages arriving over realtime while the thread is open are read as they
+  //    land, but the cursor was stamped before them. Stamping again on blur
+  //    covers that burst in one request, where re-stamping per message would be
+  //    one POST per message.
+  const markRead = useMarkChannelRead();
+  const markReadMutate = markRead.mutate;
+  useFocusEffect(
+    useCallback(() => {
+      if (!channelId) return;
+      markReadMutate(channelId);
+      return () => markReadMutate(channelId);
+    }, [channelId, markReadMutate]),
   );
-  const [isRetrying, setIsRetrying] = useState(false);
-  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    return () => {
-      if (retryTimeoutRef.current) {
-        clearTimeout(retryTimeoutRef.current);
-      }
-    };
-  }, []);
+  const handleChangeText = useCallback(
+    (next: string) => {
+      setDraft(next);
+      // The manager throttles to one broadcast per 3s, so this can ride every
+      // keystroke without flooding the channel.
+      emitTyping();
+    },
+    [setDraft, emitTyping],
+  );
 
-  function handleRetryUpload() {
-    if (isRetrying) {
-      return;
-    }
+  const handleSend = useCallback(() => {
+    void send(draft);
+  }, [send, draft]);
 
-    setIsRetrying(true);
-    setRetryCount((current) => current + 1);
-    setComposerFeedback(
-      "Retry requested. Upload requeued and compression fallback is running.",
-    );
+  // Inverted list wants newest first; the cache hands back oldest first.
+  const inverted = useMemo(() => [...messages].reverse(), [messages]);
 
-    if (retryTimeoutRef.current) {
-      clearTimeout(retryTimeoutRef.current);
-    }
+  const renderItem = useCallback(
+    ({ item }: { item: ChatMessage }) => (
+      <MessageBubble
+        message={item}
+        viewerId={viewerId}
+        nameFor={nameFor}
+        onRetry={(id) => void retry(id)}
+        onDiscard={(id) => void discard(id)}
+        onReact={(id, emoji) => void react(id, emoji)}
+        onUnreact={(id, emoji) => void unreact(id, emoji)}
+      />
+    ),
+    // `nameFor` belongs here: it changes identity when the roster resolves, and
+    // omitting it leaves a stale closure rendering truncated ids until some
+    // other dep happens to change.
+    [viewerId, nameFor, retry, discard, react, unreact],
+  );
 
-    retryTimeoutRef.current = setTimeout(() => {
-      setPendingActions((current) => Math.max(current - 1, 0));
-      setIsRetrying(false);
-      retryTimeoutRef.current = null;
-    }, 800);
-  }
+  const isOffline = connection === "offline";
+  const { isOffline: appOffline } = useConnection();
 
-  function handleQueueMessage() {
-    setPendingActions((current) => current + 1);
-    setComposerFeedback(
-      "Message queued successfully. It will send automatically when connection stabilizes.",
-    );
-  }
+  /**
+   * What the in-thread pill says, or `null` when it has nothing to add.
+   *
+   * `null` when the transport is live, and also when the transport is offline
+   * while the global banner is already saying so — see the comment at the
+   * render site.
+   */
+  const pillMessage =
+    connection === "live"
+      ? null
+      : isOffline
+        ? appOffline
+          ? null
+          : "Offline — messages will send when you reconnect"
+        : connection === "polling"
+          ? // Verbatim from spec/ui/resilience.md § 3.2, which declares this
+            // string normative; `apps/web`'s reconnect pill carries the same
+            // one. Polling is a working degraded mode, so calling it
+            // "reconnecting" would report a live surface as broken.
+            "Real-time updates paused. Polling for new messages."
+          : "Reconnecting…";
 
   return (
-    <ScreenShell
-      title="#general"
-      subtitle="Message-level reliability states for sent, sending, and retry-required events."
-    >
-      <View style={styles.threadSummaryCard}>
-        <Text style={styles.threadSummaryLabel}>Thread health</Text>
-        <Text style={styles.threadSummaryValue}>Delivery stabilized</Text>
-        <Text style={styles.threadSummaryMeta}>
-          {pendingActions} pending actions • {retryCount} retry attempts
-        </Text>
-      </View>
-
-      <MessageBubble
-        author="Jordan M."
-        body="Reminder: submit service hours before Sunday so we can finalize attendance rollups."
-        timestamp="6:11 PM"
-        state="sent"
-        styles={styles}
-        messageStateStyles={messageStateStyles}
-      />
-      <MessageBubble
-        author="You"
-        body="Uploading meeting notes PDF now. Will pin it once this sends."
-        timestamp="6:13 PM"
-        state="sending"
-        outgoing
-        styles={styles}
-        messageStateStyles={messageStateStyles}
-      />
-      <MessageBubble
-        author="You"
-        body="Attachment failed while reconnecting. Retrying with compressed file."
-        timestamp="6:14 PM"
-        state="retry"
-        outgoing
-        styles={styles}
-        messageStateStyles={messageStateStyles}
-      />
-
-      <View style={styles.composerCard}>
-        <Text style={styles.composerLabel}>Composer state</Text>
-        <Text style={styles.composerText}>{composerFeedback}</Text>
-        <View style={styles.composerActions}>
+    <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        // `padding` is the correct iOS behavior; on Android the window already
+        // resizes. The keyboard path only differs in how precisely the inset is
+        // tracked, not in which behavior is right.
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        enabled={getKeyboardPath() === "fallback" || Platform.OS === "ios"}
+      >
+        {/*
+          The rewrite dropped the old screen's "Back to chat overview" link, and
+          a tab-registered route gets no header back button of its own — on iOS
+          that left no way out but the Chat tab. The Canvas draws a `‹` here
+          (s05, canvas-screens.dc.html:163), so this is the specced affordance
+          rather than a reinstated stopgap.
+        */}
+        <View style={styles.header}>
           <Pressable
             accessibilityRole="button"
-            accessibilityState={{ disabled: isRetrying }}
-            disabled={isRetrying}
-            onPress={handleRetryUpload}
-            style={[
-              styles.retryButton,
-              isRetrying ? styles.retryButtonDisabled : null,
-            ]}
+            accessibilityLabel="Back to chat"
+            hitSlop={12}
+            onPress={() => router.push("/")}
+            style={({ pressed }) => (pressed ? styles.pressed : null)}
           >
-            <Text style={styles.retryButtonText}>
-              {isRetrying ? "Retrying upload..." : "Retry failed upload"}
-            </Text>
+            <Text style={styles.backChevron}>‹</Text>
           </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            onPress={handleQueueMessage}
-            style={styles.sendButton}
-          >
-            <Text style={styles.sendButtonText}>Queue message</Text>
-          </Pressable>
+          <Text numberOfLines={1} style={styles.headerTitle}>
+            Thread
+          </Text>
         </View>
-      </View>
 
-      <Link href="/chat" asChild>
-        <Pressable style={styles.backButton}>
-          <Text style={styles.backButtonText}>Back to chat overview</Text>
-        </Pressable>
-      </Link>
-    </ScreenShell>
+        {/*
+          Reconciled with the global banner rather than duplicating it (#998).
+          The two answer different questions — this pill is the *realtime
+          transport*, the banner is whether the API is reachable at all — but
+          when both are saying "offline" they are one fact told twice, stacked
+          on the same screen in two different sentences. So the pill yields its
+          offline branch to the banner and keeps the two it alone can report.
+          `polling` in particular must survive: it is a working degraded mode,
+          and `spec/ui/resilience.md` § 3.2 declares its string normative.
+        */}
+        {pillMessage ? (
+          <View style={styles.connectionPill}>
+            <Text style={styles.connectionText}>{pillMessage}</Text>
+          </View>
+        ) : null}
+
+        {!channelId ? (
+          <View style={styles.stateBlock}>
+            <Text style={styles.stateTitle}>No channel selected</Text>
+            <Text style={styles.stateBody}>
+              Open a channel from Chat to see its messages.
+            </Text>
+          </View>
+        ) : isLoading ? (
+          <View style={styles.stateBlock}>
+            <ActivityIndicator color={tokens.color.text.muted} />
+            <Text style={styles.stateBody}>Loading messages…</Text>
+          </View>
+        ) : loadError ? (
+          <View style={styles.stateBlock}>
+            <Text style={styles.stateTitle}>Couldn&apos;t load messages</Text>
+            <Text style={styles.stateBody}>{loadError.message}</Text>
+          </View>
+        ) : messages.length === 0 ? (
+          <View style={styles.stateBlock}>
+            <Text style={styles.stateTitle}>No messages yet</Text>
+            <Text style={styles.stateBody}>
+              Say something to start the conversation.
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            data={inverted}
+            renderItem={renderItem}
+            // `client_message_id` is always present and is stable across the
+            // optimistic → confirmed transition, which the server id is not.
+            keyExtractor={(item) => item.client_message_id}
+            inverted
+            contentContainerStyle={styles.listContent}
+            style={styles.flex}
+          />
+        )}
+
+        {typingUsers.length > 0 ? (
+          <Text style={styles.typing}>
+            {typingUsers.length === 1
+              ? "Someone is typing…"
+              : `${typingUsers.length} people are typing…`}
+          </Text>
+        ) : null}
+
+        {/*
+          The composer stays enabled offline **on purpose**. `sendMessage`
+          enqueues to the outbox and returns before it ever touches the network
+          (`chat-client.ts` — "the row is safely queued; the reconnect flush
+          will POST it"), and the runtime re-flushes on every reconnect. Gating
+          the input on connectivity would make composing-while-offline
+          impossible, which is the whole failure the outbox exists to prevent,
+          and would contradict the banner directly above it.
+        */}
+        <ChatComposer
+          value={draft}
+          onChangeText={handleChangeText}
+          onSend={handleSend}
+          canSend={canSend}
+          placeholder="Message"
+          // A send that never reached the outbox has no failed bubble to show
+          // (nothing was queued), so this line is the only report of it.
+          //
+          // The offline label is #501's "blocked **or clearly labeled**" half:
+          // this surface has a queue, so it labels. `lib/connection/state.ts`
+          // holds the rule for the surfaces that have to block instead.
+          disabledHint={
+            sendError ??
+            // `canSend` first. It is false until `ctx` resolves, and
+            // `ChatComposer` keys `editable` on it — so leading with the
+            // offline branch promised "messages send when you reconnect" over
+            // an input the member cannot type into, which is the one state
+            // where nothing will be queued and nothing will send.
+            (!canSend
+              ? "Connecting to chat…"
+              : appOffline
+                ? "You're offline — messages send when you reconnect."
+                : null)
+          }
+          hintTone={sendError ? "error" : "muted"}
+        />
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
-function createMessageStateStyles(tokens: FrappTokens) {
-  return {
-    sent: {
-      label: "Sent",
-      backgroundColor: tokens.color.feedback.successBackground,
-      borderColor: tokens.color.feedback.successBorder,
-      textColor: tokens.color.feedback.successText,
-    },
-    sending: {
-      label: "Sending",
-      backgroundColor: tokens.color.feedback.warningBackground,
-      borderColor: tokens.color.feedback.warningBorder,
-      textColor: tokens.color.feedback.warningText,
-    },
-    retry: {
-      label: "Retry needed",
-      backgroundColor: tokens.color.feedback.errorBackground,
-      borderColor: tokens.color.feedback.errorBorder,
-      textColor: tokens.color.feedback.errorText,
-    },
-  } as const;
-}
-
-function createStyles(tokens: FrappTokens) {
+function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    threadSummaryCard: {
-      borderRadius: tokens.radius.lg,
-      borderWidth: 1,
-      borderColor: tokens.color.feedback.infoBorder,
-      backgroundColor: tokens.color.feedback.infoBackground,
-      padding: tokens.spacing.lg,
-      gap: 6,
-    },
-    threadSummaryLabel: {
-      fontSize: 12,
-      fontWeight: "700",
-      letterSpacing: 0.3,
-      textTransform: "uppercase",
-      color: tokens.color.feedback.infoText,
-    },
-    threadSummaryValue: {
-      fontSize: 22,
-      fontWeight: "800",
-      color: tokens.color.feedback.infoTextStrong,
-      letterSpacing: -0.3,
-    },
-    threadSummaryMeta: {
-      fontSize: 13,
-      color: tokens.color.feedback.infoText,
-    },
-    messageBubble: {
-      borderRadius: tokens.radius.lg,
-      borderWidth: 1,
-      borderColor: tokens.color.surface.border,
-      padding: tokens.spacing.lg,
-      gap: 8,
-    },
-    messageBubbleIncoming: {
-      backgroundColor: tokens.color.surface.card,
-    },
-    messageBubbleOutgoing: {
-      backgroundColor: tokens.color.feedback.infoBackground,
-      borderColor: tokens.color.feedback.infoBorder,
-    },
-    messageHeader: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      gap: 8,
-    },
-    messageAuthor: {
-      fontSize: 13,
-      fontWeight: "700",
-      color: tokens.color.text.primary,
-    },
-    messageTime: {
-      fontSize: 12,
-      color: tokens.color.text.muted,
-    },
-    messageBody: {
-      fontSize: 14,
-      lineHeight: 20,
-      color: tokens.color.text.secondary,
-    },
-    statePill: {
-      alignSelf: "flex-start",
-      borderRadius: 999,
-      borderWidth: 1,
-      paddingHorizontal: 8,
-      paddingVertical: 3,
-    },
-    statePillText: {
-      fontSize: 11,
-      fontWeight: "700",
-    },
-    composerCard: {
-      borderRadius: tokens.radius.lg,
-      borderWidth: 1,
-      borderColor: tokens.color.surface.border,
-      backgroundColor: tokens.color.surface.card,
-      padding: tokens.spacing.lg,
-      gap: 10,
-    },
-    composerLabel: {
-      fontSize: 12,
-      fontWeight: "700",
-      letterSpacing: 0.3,
-      textTransform: "uppercase",
-      color: tokens.color.text.muted,
-    },
-    composerText: {
-      fontSize: 14,
-      lineHeight: 20,
-      color: tokens.color.text.secondary,
-    },
-    composerActions: {
-      flexDirection: "row",
-      gap: 8,
-    },
-    retryButton: {
+    safeArea: {
       flex: 1,
-      borderRadius: tokens.radius.md,
-      borderWidth: 1,
-      borderColor: tokens.color.feedback.errorBorder,
-      backgroundColor: tokens.color.feedback.errorBackground,
-      paddingVertical: 10,
-      alignItems: "center",
+      backgroundColor: tokens.color.surface.background,
     },
-    retryButtonDisabled: {
-      opacity: 0.65,
-    },
-    retryButtonText: {
-      fontSize: 12,
-      fontWeight: "700",
-      color: tokens.color.feedback.errorText,
-    },
-    sendButton: {
+    flex: {
       flex: 1,
-      borderRadius: tokens.radius.md,
-      backgroundColor: tokens.color.brand.royalBlue,
-      paddingVertical: 10,
+    },
+    listContent: {
+      padding: tokens.spacing.lg,
+      gap: tokens.spacing.lg,
+    },
+    header: {
+      flexDirection: "row",
       alignItems: "center",
+      gap: tokens.spacing.md,
+      paddingHorizontal: tokens.spacing.lg,
+      paddingTop: tokens.spacing.sm,
+      paddingBottom: tokens.spacing.md,
+      borderBottomWidth: 1,
+      borderBottomColor: tokens.color.border.hairline,
     },
-    sendButtonText: {
-      fontSize: 12,
-      fontWeight: "700",
-      color: tokens.color.text.inverse,
+    backChevron: {
+      ...typeRole(tokens.typography.role.title),
+      color: tokens.color.gold.askText,
+      minWidth: tokens.spacing.md,
     },
-    backButton: {
-      borderRadius: tokens.radius.md,
-      borderWidth: 1,
-      borderColor: tokens.color.surface.border,
-      backgroundColor: tokens.color.surface.card,
-      paddingVertical: 12,
+    headerTitle: {
+      flex: 1,
+      ...typeRole(tokens.typography.role.title),
+      color: tokens.color.text.foreground,
+    },
+    pressed: {
+      opacity: 0.6,
+    },
+    connectionPill: {
+      paddingHorizontal: tokens.spacing.lg,
+      paddingVertical: tokens.spacing.sm,
+      backgroundColor: tokens.color.surface.surface1,
+      borderBottomWidth: 1,
+      borderBottomColor: tokens.color.border.hairline,
+    },
+    connectionText: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+      textAlign: "center",
+    },
+    typing: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+      paddingHorizontal: tokens.spacing.lg,
+      paddingBottom: tokens.spacing.xs,
+    },
+    stateBlock: {
+      flex: 1,
+      gap: tokens.spacing.sm,
       alignItems: "center",
+      justifyContent: "center",
+      padding: tokens.spacing.xl,
     },
-    backButtonText: {
-      fontSize: 14,
-      fontWeight: "700",
-      color: tokens.color.text.primary,
+    stateTitle: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
+    },
+    stateBody: {
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.mutedForeground,
+      textAlign: "center",
     },
   });
 }

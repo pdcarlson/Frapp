@@ -2,6 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AttendanceController } from './attendance.controller';
 import { AttendanceService } from '../../application/services/attendance.service';
 import { CheckInDto, UpdateAttendanceDto } from '../dtos/attendance.dto';
+import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+import { SystemPermissions } from '../../domain/constants/permissions';
 
 describe('AttendanceController', () => {
   let controller: AttendanceController;
@@ -13,6 +15,7 @@ describe('AttendanceController', () => {
       getAttendance: jest.fn(),
       updateStatus: jest.fn(),
       markAutoAbsent: jest.fn(),
+      mintCheckInToken: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -52,8 +55,80 @@ describe('AttendanceController', () => {
         eventId,
         userId,
         chapterId,
+        {
+          token: undefined,
+          manualCode: undefined,
+          lat: undefined,
+          lng: undefined,
+        },
       );
       expect(result).toEqual(expectedResult);
+    });
+
+    it('forwards the scanner payload instead of discarding the DTO', async () => {
+      // The defect this slice fixes: the controller used to `void dto;`, so a
+      // scanned token and the member's coordinates never reached the service.
+      const dto: CheckInDto = {
+        token: 'signed-token',
+        manualCode: '4KQ-88',
+        lat: 42.7298,
+        lng: -73.678,
+      };
+      attendanceService.checkIn!.mockResolvedValue({ ok: true } as any);
+
+      await controller.checkIn('event-1', 'user-1', 'chapter-1', dto);
+
+      expect(attendanceService.checkIn).toHaveBeenCalledWith(
+        'event-1',
+        'user-1',
+        'chapter-1',
+        {
+          token: 'signed-token',
+          manualCode: '4KQ-88',
+          lat: 42.7298,
+          lng: -73.678,
+        },
+      );
+    });
+  });
+
+  describe('mintCheckInToken', () => {
+    it('should call attendanceService.mintCheckInToken with correct parameters', async () => {
+      const expectedResult = { token: 't', manualCode: '4KQ-88' };
+      attendanceService.mintCheckInToken!.mockResolvedValue(
+        expectedResult as any,
+      );
+
+      const result = await controller.mintCheckInToken('event-1', 'chapter-1');
+
+      expect(attendanceService.mintCheckInToken).toHaveBeenCalledWith(
+        'event-1',
+        'chapter-1',
+      );
+      expect(result).toEqual(expectedResult);
+    });
+
+    // The mint route hands out what admits members to the attendance record, so
+    // it must carry the same officer gate as the roster read on this controller.
+    // Asserted off the route metadata rather than by exercising the guard: the
+    // guard itself is covered by its own spec, and what regresses in practice is
+    // someone adding a route and forgetting the decorator.
+    it('is gated on events:update', () => {
+      const permissions = Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        AttendanceController.prototype.mintCheckInToken,
+      ) as string[] | undefined;
+
+      expect(permissions).toEqual([SystemPermissions.EVENTS_UPDATE]);
+    });
+
+    it('does not gate plain self check-in, which every member may do', () => {
+      const permissions = Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        AttendanceController.prototype.checkIn,
+      ) as string[] | undefined;
+
+      expect(permissions).toBeUndefined();
     });
   });
 

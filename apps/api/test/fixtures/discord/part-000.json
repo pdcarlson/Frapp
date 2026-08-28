@@ -1,0 +1,146 @@
+{
+  "guild": { "id": "700000000000000001", "name": "Tau Nu Chapter", "iconUrl": "Guild_Files/icon.png" },
+  "channel": {
+    "id": "800000000000000001",
+    "type": "GuildTextChat",
+    "categoryId": "800000000000000000",
+    "category": "General",
+    "name": "general",
+    "topic": "chapter chat — read the \"messages\" pinned above"
+  },
+  "dateRange": { "after": null, "before": null },
+  "exportedAt": "2026-08-24T00:00:00Z",
+  "messages": [
+    {
+      "id": "900000000000000001",
+      "type": "Default",
+      "timestamp": "2019-04-01T10:00:00Z",
+      "timestampEdited": null,
+      "isPinned": false,
+      "content": "Welcome to the chapter server.",
+      "author": {
+        "id": "600000000000000001",
+        "name": "pdcarlson",
+        "discriminator": "0000",
+        "nickname": "Paul",
+        "color": "#EFB63B",
+        "isBot": false,
+        "roles": [
+          { "id": "500000000000000001", "name": "President", "color": "#EFB63B", "position": 10 },
+          { "id": "500000000000000002", "name": "Brother", "color": null, "position": 1 }
+        ],
+        "avatarUrl": "Guild_Files/avatar-paul-a1b2.png"
+      },
+      "attachments": [],
+      "embeds": [],
+      "stickers": [],
+      "reactions": [],
+      "mentions": []
+    },
+    {
+      "id": "900000000000000002",
+      "type": "Default",
+      "timestamp": "2019-04-01T10:05:00Z",
+      "timestampEdited": "2019-04-01T10:06:30Z",
+      "isPinned": true,
+      "content": "Rush schedule attached. @Paul let me know.",
+      "author": {
+        "id": "600000000000000002",
+        "name": "treasurer",
+        "discriminator": "0000",
+        "nickname": null,
+        "color": null,
+        "isBot": false,
+        "roles": [{ "id": "500000000000000002", "name": "Brother", "color": null, "position": 1 }],
+        "avatarUrl": null
+      },
+      "attachments": [
+        {
+          "id": "950000000000000001",
+          "url": "general [800000000000000001]_Files/rush-schedule-c3d4.pdf",
+          "fileName": "Rush Schedule (2019).pdf",
+          "fileSizeBytes": 51234
+        }
+      ],
+      "embeds": [{ "title": "link preview" }],
+      "stickers": [],
+      "reactions": [
+        { "emoji": { "id": null, "name": "🔥", "code": "fire", "isAnimated": false }, "count": 4,
+          "users": [{ "id": "600000000000000001", "name": "pdcarlson" }] },
+        { "emoji": { "id": null, "name": "👍", "code": "thumbsup", "isAnimated": false }, "count": 2, "users": [] }
+      ],
+      "mentions": [{ "id": "600000000000000001", "name": "pdcarlson" }]
+    },
+    {
+      "id": "900000000000000003",
+      "type": "Reply",
+      "timestamp": "2019-04-01T10:09:00Z",
+      "timestampEdited": null,
+      "isPinned": false,
+      "content": "",
+      "author": {
+        "id": "600000000000000001", "name": "pdcarlson", "discriminator": "0000",
+        "nickname": "Paul", "color": "#EFB63B", "isBot": false, "roles": [],
+        "avatarUrl": "Guild_Files/avatar-paul-a1b2.png"
+      },
+      "attachments": [
+        { "id": "950000000000000002", "url": "general [800000000000000001]_Files/photo-e5f6.png",
+          "fileName": "photo.png", "fileSizeBytes": 8891 },
+        { "id": "950000000000000003", "url": "general [800000000000000001]_Files/photo-e5f6.png",
+          "fileName": "photo.png", "fileSizeBytes": 8891 }
+      ],
+      "embeds": [], "stickers": [{ "name": "partyparrot" }], "reactions": [], "mentions": [],
+      "reference": { "type": "Default", "messageId": "900000000000000002",
+                     "channelId": "800000000000000001", "guildId": "700000000000000001" }
+    },
+    {
+      "id": "900000000000000004",
+      "type": "Reply",
+      "timestamp": "2019-04-01T10:12:00Z",
+      "isPinned": false,
+      "content": "replying to something from another channel",
+      "author": { "id": "600000000000000003", "name": "alum", "nickname": null, "isBot": false, "roles": [], "avatarUrl": null },
+      "attachments": [], "embeds": [], "stickers": [], "reactions": [], "mentions": [],
+      "reference": { "type": "Default", "messageId": "999999999999999999",
+                     "channelId": "800000000000000099", "guildId": "700000000000000001" }
+    },
+    {
+      "id": "900000000000000005",
+      "type": "GuildMemberJoin",
+      "timestamp": "2019-04-02T09:00:00Z",
+      "isPinned": false,
+      "content": "",
+      "author": { "id": "600000000000000004", "name": "newbrother", "nickname": null, "isBot": false, "roles": [], "avatarUrl": null },
+      "attachments": [], "embeds": [], "stickers": [], "reactions": [], "mentions": []
+    },
+    {
+      "id": "900000000000000006",
+      "type": "Default",
+      "timestamp": "2019-04-02T09:30:00Z",
+      "isPinned": false,
+      "content": "beep boop",
+      "author": { "id": "600000000000000005", "name": "SomeBot", "nickname": null, "isBot": true, "roles": [], "avatarUrl": null },
+      "attachments": [
+        { "id": "950000000000000004", "url": "general [800000000000000001]_Files/never-uploaded.zip",
+          "fileName": "never-uploaded.zip", "fileSizeBytes": 999 }
+      ],
+      "embeds": [], "stickers": [], "reactions": [], "mentions": []
+    },
+    {
+      "id": "900000000000000007",
+      "timestamp": null,
+      "content": "no timestamp — unplaceable",
+      "author": { "id": "600000000000000006", "name": "ghost", "isBot": false, "roles": [], "avatarUrl": null },
+      "attachments": [], "embeds": [], "stickers": [], "reactions": [], "mentions": []
+    },
+    {
+      "id": null,
+      "type": "Default",
+      "timestamp": "2019-04-02T10:00:00Z",
+      "content": "no id — unplaceable",
+      "author": { "id": "600000000000000006", "name": "ghost", "isBot": false, "roles": [], "avatarUrl": null },
+      "attachments": [], "embeds": [], "stickers": [], "reactions": [], "mentions": []
+    }
+  ],
+  "messageCount": 8
+}

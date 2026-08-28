@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type { IMessageReactionRepository } from '../../../domain/repositories/chat.repository.interface';
 import { MessageReaction } from '../../../domain/entities/chat.entity';
 
@@ -18,7 +18,7 @@ export class SupabaseMessageReactionRepository implements IMessageReactionReposi
       .eq('message_id', messageId)
       .order('created_at', { ascending: true });
     if (error) throw error;
-    return (data as MessageReaction[]) || [];
+    return data || [];
   }
 
   async findOne(
@@ -34,17 +34,19 @@ export class SupabaseMessageReactionRepository implements IMessageReactionReposi
       .eq('emoji', emoji)
       .maybeSingle();
     if (error) throw error;
-    return data as MessageReaction | null;
+    return data;
   }
 
-  async create(data: Partial<MessageReaction>): Promise<MessageReaction> {
+  async create(
+    data: TablesInsert<'message_reactions'>,
+  ): Promise<MessageReaction> {
     const { data: created, error } = await this.supabase
       .from('message_reactions')
-      .insert(data as never)
+      .insert(data)
       .select()
       .single();
     if (error) throw error;
-    return created as MessageReaction;
+    return created;
   }
 
   async delete(

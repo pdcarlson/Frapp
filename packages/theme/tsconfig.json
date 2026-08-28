@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "@repo/typescript-config/base.json",
+  "compilerOptions": {
+    // This package has no build — `apps/web`, `apps/landing`, and `apps/mobile`
+    // consume `src/*.ts` directly through their own bundlers, so relative
+    // imports here are extensionless and must be resolved the way those
+    // bundlers resolve them, not the way NodeNext would.
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    // `src/signet.spec.ts` reads the canonical token spec off disk, so this
+    // package needs Node types. They are named explicitly rather than left to
+    // auto-discovery of every `@types/*` in the hoisted root: this package is
+    // consumed by React Native, and an ambient global arriving by accident is
+    // the same class of trap the ESLint `no-restricted-globals` rule guards.
+    // `lib` still carries DOM (from the shared base), which is why that rule
+    // and not this line is what keeps `document` out of the source.
+    "types": ["node"]
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules"]
+}

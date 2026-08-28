@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="crossorigin">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400..700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0D0C0A;color:#EDEAE3;font-family:'Figtree',system-ui,sans-serif}
+a{color:#EFB63B;text-decoration:none}a:hover{color:#F6C455}
+.fl{padding:36px 44px;border-bottom:1px solid rgba(255,255,255,.07);scroll-margin-top:16px}
+.fh{display:flex;align-items:baseline;gap:10px;margin:0 0 22px}
+.fid{font:600 10px ui-monospace,Menlo,monospace;padding:3px 7px;background:#EFB63B;color:#2C2000;border-radius:4px;text-decoration:none}
+.fname{font:600 13px/1.2 'Figtree',system-ui,sans-serif;color:#EDEAE3}
+.frow{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start}
+.fopt{flex:none;display:flex;flex-direction:column;gap:9px;scroll-margin-top:16px}
+.foid{font:600 10.5px ui-monospace,Menlo,monospace;padding:3px 7px;background:rgba(255,255,255,.09);color:#EDEAE3;border-radius:5px;text-decoration:none}
+.folabel{display:flex;align-items:baseline;gap:8px;font:400 11px/1.3 'Figtree',system-ui,sans-serif;color:rgba(237,234,227,.55)}
+.fopt:target .foid{background:#EFB63B;color:#2C2000}
+</style>
+</helmet>
+<section style="padding:40px 44px 28px;border-bottom:1px solid rgba(255,255,255,.07)">
+<div style="display:flex;align-items:center;gap:12px"><span style="width:34px;height:34px;border-radius:10px;background:#EFB63B;color:#2C2000;font-weight:800;font-size:18px;display:flex;align-items:center;justify-content:center">S</span><span style="font-size:20px;font-weight:700">Signet â€” all screens</span></div>
+<div style="font:500 11.5px ui-monospace,Menlo,monospace;color:#786F60;line-height:1.7;margin-top:12px;max-width:920px">Locked: Figtree Â· r12 controls (r18 bubbles, r20 sheets) Â· duotone icons Â· 8/16/24 rhythm Â· balanced density Â· gold micro-accents Â· tabs Chat/Events/Tasks/More, chat is home, no Home tab Â· mention/DM signal = fixed red #E5484D (semantic, never the chapter accent â€” contrast-safe on the dark base), channel unread = neutral Â· demo tenant runs the house-gold accent; Settings shows the chapter swap. System: <a href="signet-design-system.dc.html">Signet Design System</a>.</div>
+</section>
+
+<section class="fl" id="f1">
+<div class="fh"><a class="fid" href="#f1">01</a><span class="fname">Enter â€” sign-in Â· join Â· first-run</span></div>
+<div class="frow">
+
+<div class="fopt" id="s01" data-screen-label="Sign-in">
+<div class="folabel"><a class="foid" href="#s01">s01</a>Sign-in</div>
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402,874">
+<div style="height:100%;background:#0E0D0B;display:flex;flex-direction:column;box-sizing:border-box;padding:62px 24px 0;font-family:'Figtree',system-ui,sans-serif;color:#EDEAE3">
+  <div style="margin-top:64px"><span style="width:52px;height:52px;border-radius:14px;background:#EFB63B;color:#2C2000;font-weight:800;font-size:27px;display:flex;align-items:center;justify-content:center">S</span></div>
+  <div style="font-size:30px;font-weight:700;letter-spacing:-.4px;margin-top:24px">Signet</div>
+  <div style="font-size:16px;color:#A9A399;margin-top:6px">Ask your chapter anything.</div>
+  <div style="display:flex;flex-direction:column;gap:8px;margin-top:40px">
+    <div style="height:50px;border-radius:12px;background:#171512;border:1px solid rgba(255,255,255,.14);display:flex;align-items:center;padding:0 16px;color:#EDEAE3;font-size:16px">pdcarlson@rpi.edu</div>
+    <div style="height:50px;border-radius:12px;background:#171512;border:1px solid rgba(255,255,255,.14);display:flex;align-items:center;padding:0 16px;color:#78716A;font-size:16px">Password</div>
+  </div>
+  <div style="height:50px;border-radius:12px;background:#EFB63B;color:#2C2000;font-size:16px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:16px">Continue</div>
+  <div style="display:flex;align-items:center;gap:12px;margin-top:24px"><span style="flex:1;height:1px;background:rgba(255,255,255,.08)"></span><span style="font-size:12.5px;color:#78716A">or</span><span style="flex:1;height:1px;background:rgba(255,255,255,.08)"></span></div>
+  <div style="height:50px;border-radius:12px;background:#1E1B17;border:1px solid rgba(255,255,255,.14);color:#EDEAE3;font-size:15.5px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:16px">Continue with Apple</div>
+  <div style="text-align:center;font-size:14.5px;color:#A9A399;margin-top:auto;padding-bottom:40px">New here? <span style="color:#F4CB63;font-weight:600">Join your chapter</span></div>
+</div>
+</x-import>
+</div>
+
+<div class="fopt" id="s02" data-screen-label="Join chapter">
+<div class="folabel"><a class="foid" href="#s02">s02</a>Join â€” code or invite link</div>
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402,874">
+<div style="height:100%;background:#0E0D0B;display:flex;flex-direction:column;box-sizing:border-box;padding:62px 24px 0;font-family:'Figtree',system-ui,sans-serif;color:#EDEAE3">
+  <div style="font-size:15px;color:#F4CB63;margin-top:16px">â€¹ Back</div>
+  <div style="font-size:26px;font-weight:700;letter-spacing:-.3px;margin-top:32px">Join your chapter</div>
+  <div style="font-size:15.5px;line-height:23px;color:#A9A399;margin-top:8px">Enter the code from your chapter officer. One code for everyone â€” officers get promoted after.</div>
+  <div style="display:flex;gap:8px;margin-top:32px">
+    <span style="flex:1;height:58px;border-radius:12px;background:#171512;border:1px solid #EFB63B;color:#EDEAE3;font-size:24px;font-weight:700;display:flex;align-items:center;justify-content:center">T</span>
+    <span style="flex:1;height:58px;border-radius:12px;background:#171512;border:1px solid #EFB63B;color:#EDEAE3;font-size:24px;font-weight:700;display:flex;align-items:center;justify-content:center">N</span>
+    <span style="flex:1;height:58px;border-radius:12px;background:#171512;border:1px solid rgba(255,255,255,.14);color:#EDEAE3;font-size:24px;font-weight:700;display:flex;align-items:center;justify-content:center">7</span>
+    <span style="flex:1;height:58px;border-radius:12px;background:#171512;border:1px solid rgba(255,255,255,.14)"></span>
+    <span style="flex:1;height:58px;border-radius:12px;background:#171512;border:1px solid rgba(255,255,255,.14)"></span>
+    <span style="flex:1;height:58px;border-radius:12px;background:#171512;border:1px solid rgba(255,255,255,.14)"></span>
+  </div>
+  <div style="height:50px;border-radius:12px;background:#EFB63B;color:#2C2000;font-size:16px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:24px">Join chapter</div>
+  <div style="display:flex;align-items:center;gap:10px;border-radius:12px;background:#171512;border:1px solid rgba(255,255,255,.08);padding:14px 16px;margin-top:24px">
+    <svg width="20" height="20" viewBox="0 0 20 20"><path d="M8 12l4-4" stroke="#F4CB63" stroke-width="1.7" stroke-linecap="round"></path><path d="M9 6.5l1.2-1.2a3 3 0 014.2 4.2L13.2 10.7M11 13.5l-1.2 1.2a3 3 0 01-4.2-4.2L6.8 9.3" stroke="#F4CB63" stroke-width="1.7" fill="none" stroke-linecap="round"></path></svg>
+    <span style="font-size:14px;line-height:20px;color:#A9A399">Got an invite link? It opens here and fills the code for you.</span>
+  </div>
+</div>
+</x-import>
+</div>
+
+<div class="fopt" id="s03" data-screen-label="First-run + notification primer">
+<div class="folabel"><a class="foid" href="#s03">s03</a>First-run â€” auto-joined channels + contextual push primer</div>
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402,874">
+<div style="height:100%;background:#0E0D0B;display:flex;flex-direction:column;box-sizing:border-box;padding:62px 24px 0;font-family:'Figtree',system-ui,sans-serif;color:#EDEAE3">
+  <div style="font-size:26px;font-weight:700;letter-spacing:-.3px;margin-top:40px">You're in, Paul.</div>
+  <div style="font-size:15.5px;color:#A9A399;margin-top:8px">Phi Gamma Delta Â· Tau Nu â€” 42 brothers</div>
+  <div style="border-radius:14px;background:#171512;border:1px solid rgba(255,255,255,.08);padding:8px;margin-top:32px">
+    <div style="display:flex;align-items:center;gap:12px;padding:12px"><span style="font-size:16px;font-weight:700;color:#F4CB63">#</span><span style="font-size:16px;font-weight:600">announcements</span><span style="margin-left:auto;font-size:12.5px;color:#78716A">joined</span></div>
+    <div style="height:1px;background:rgba(255,255,255,.06);margin:0 12px"></div>
+    <div style="display:flex;align-items:center;gap:12px;padding:12px"><span style="font-size:16px;font-weight:700;color:#F4CB63">#</span><span style="font-size:16px;font-weight:600">general</span><span style="margin-left:auto;font-size:12.5px;color:#78716A">joined</span></div>
+    <div style="height:1px;background:rgba(255,255,255,.06);margin:0 12px"></div>
+    <div style="display:flex;align-items:center;gap:12px;padding:12px"><span style="font-size:16px;font-weight:700;color:#F4CB63">#</span><span style="font-size:16px;font-weight:600">events</span><span style="margin-left:auto;font-size:12.5px;color:#78716A">joined</span></div>
+  </div>
+  <div style="border-radius:14px;background:#1E1B17;border:1px solid rgba(255,255,255,.08);padding:20px;margin-top:16px">
+    <svg width="26" height="26" viewBox="0 0 24 24"><path d="M12 3a6 6 0 016 6v3.2l1.4 2.8H4.6L6 12.2V9a6 6 0 016-6z" fill="rgba(244,203,99,.16)" stroke="#F4CB63" stroke-width="1.6" stroke-linejoin="round"></path><path d="M9.8 18a2.3 2.3 0 004.4 0" stroke="#F4CB63" stroke-width="1.6" stroke-linecap="round" fill="none"></path></svg>
+    <div style="font-size:17px;font-weight:700;margin-top:12px">Don't miss @channel</div>
+    <div style="font-size:14.5px;line-height:21px;color:#A9A399;margin-top:4px">Get pinged for mandatory events, dues deadlines, and mentions. Nothing else.</div>
+    <div style="display:flex;gap:8px;margin-top:16px"><span style="flex:1;height:46px;border-radius:12px;background:#EFB63B;color:#2C2000;font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:center">Turn on</span><span style="height:46px;border-radius:12px;color:#A9A399;font-size:15px;font-weight:600;display:flex;align-items:center;justify-content:center;padding:0 18px">Not now</span></div>
+  </div>
+  <div style="height:50px;border-radius:12px;border:1px solid rgba(255,255,255,.14);color:#EDEAE3;font-size:16px;font-weight:600;display:flex;align-items:center;justify-content:center;margin-top:auto;margin-bottom:40px">Go to chat</div>
+</div>
+</x-import>
+</div>
+
+</div>
+</section>
+
+<section class="fl" id="f2">
+<div class="fh"><a class="fid" href="#f2">02</a><span class="fname">Core tabs â€” chat is home Â· Chat / Events / Tasks / More</span></div>
+<div class="frow">
+
+<div class="fopt" id="s04" data-screen-label="Chat â€” channels (landing)">
+<div class="folabel"><a class="foid" href="#s04">s04</a>Chat â€” landing Â· up-next pulse in top bar Â· mention/DM red vs neutral unread</div>
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402,874">
+<div style="height:100%;background:#0E0D0B;display:flex;flex-direction:column;box-sizing:border-box;padding-top:62px;font-family:'Figtree',system-ui,sans-serif;color:#EDEAE3">
+  <div style="display:flex;align-items:center;gap:10px;padding:8px 20px 6px">
+    <div style="flex:1;font-size:11.5px;font-weight:700;letter-spacing:.8px;color:#78716A">UP NEXT</div>
+    <span style="height:36px;border-radius:10px;background:#251E0E;border:1px solid #6B5619;color:#F4CB63;font-size:13.5px;font-weight:700;display:inline-flex;align-items:center;gap:6px;padding:0 13px">âœ¦ Ask</span>
+    <svg width="22" height="22" viewBox="0 0 22 22"><circle cx="10" cy="10" r="6" stroke="#A9A399" stroke-width="1.7" fill="rgba(255,255,255,.06)"></circle><path d="M14.5 14.5L18 18" stroke="#A9A399" stroke-width="1.7" stroke-linecap="round"></path></svg>
+  </div>
+  <div style="padding:0 20px 10px">
+    <div style="display:flex;align-items:center;gap:12px;padding:9px 0">
+      <svg width="20" height="20" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="3.5" fill="rgba(244,203,99,.18)" stroke="#F4CB63" stroke-width="1.6"></rect><path d="M4 9.5h16M8.5 3v4M15.5 3v4" stroke="#F4CB63" stroke-width="1.6"></path></svg>
+      <div style="flex:1;font-size:15px"><span style="font-weight:700">Chapter meeting</span><span style="color:#78716A"> Â· Great Hall</span></div>
+      <span style="font-size:13.5px;font-weight:700;color:#F4CB63;white-space:nowrap;flex:none">6:00 PM</span>
+    </div>
+    <div style="height:1px;background:rgba(255,255,255,.06)"></div>
+    <div style="display:flex;align-items:center;gap:12px;padding:9px 0">
+      <svg width="20" height="20" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="rgba(255,255,255,.06)" stroke="#78716A" stroke-width="1.6"></circle><path d="M8.5 12.2l2.4 2.4 4.6-5" stroke="#78716A" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      <div style="flex:1;font-size:15px"><span style="font-weight:700">Ride-share list</span><span style="color:#78716A"> Â· task</span></div>
+      <span style="font-size:13.5px;font-weight:700;color:#F85149;white-space:nowrap;flex:none">due tmrw</span>
+    </div>
+  </div>
+  <div style="flex:1;overflow:hidden;padding:8px 12px 0">
+    <div style="font-size:11.5px;font-weight:700;letter-spacing:.8px;color:#78716A;padding:8px 8px 6px">PINNED</div>
+    <div style="display:flex;align-items:center;gap:12px;padding:12px 8px;border-radius:12px">
+      <span style="font-size:17px;font-weight:700;color:#F4CB63">#</span>
+      <div style="flex:1"><div style="font-size:16px;font-weight:700">announcements</div><div style="font-size:13.5px;color:#A9A399;margin-top:2px">Pig Dinner committee sign-ups close Friday</div></div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px"><span style="font-size:12px;color:#78716A">4:02 PM</span><span style="min-width:20px;height:20px;border-radius:7px;background:#E5484D;color:#FFFFFF;font-size:11.5px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;padding:0 6px;white-space:nowrap">@ 2</span></div>
+    </div>
+    <div style="font-size:11.5px;font-weight:700;letter-spacing:.8px;color:#78716A;padding:14px 8px 6px">CHANNELS</div>
+    <div style="display:flex;align-items:center;gap:12px;padding:12px 8px;border-radius:12px;background:#171512">
+      <span style="font-size:17px;font-weight:700;color:#78716A">#</span>
+      <div style="flex:1"><div style="font-size:16px;font-weight:700">general</div><div style="font-size:13.5px;color:#A9A399;margin-top:2px">Jake: I've got the van â€” 3 seats left</div></div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px"><span style="font-size:12px;color:#78716A">5:14 PM</span><span style="min-width:20px;height:20px;border-radius:7px;background:rgba(255,255,255,.14);color:#EDEAE3;font-size:11.5px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;padding:0 6px">7</span></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;padding:12px 8px"><span style="font-size:17px;font-weight:700;color:#78716A">#</span><div style="flex:1"><div style="font-size:16px;font-weight:600;color:#A9A399">treasury</div><div style="font-size:13.5px;color:#78716A;margin-top:2px">Invoice batch went out â€” check dues tab</div></div><span style="font-size:12px;color:#78716A">1:30 PM</span></div>
+    <div style="display:flex;align-items:center;gap:12px;padding:12px 8px"><span style="font-size:17px;font-weight:700;color:#78716A">#</span><div style="flex:1"><div style="font-size:16px;font-weight:600;color:#A9A399">pledge-class</div><div style="font-size:13.5px;color:#78716A;margin-top:2px">Study hours leaderboard updated</div></div><span style="font-size:12px;color:#78716A">Yesterday</span></div>
+    <div style="font-size:11.5px;font-weight:700;letter-spacing:.8px;color:#78716A;padding:14px 8px 6px">DIRECT</div>
+    <div style="display:flex;align-items:center;gap:12px;padding:12px 8px"><span style="width:34px;height:34px;border-radius:50%;background:#26221C;color:#A9A399;font-size:12.5px;font-weight:700;display:flex;align-items:center;justify-content:center">MR</span><div style="flex:1"><div style="font-size:16px;font-weight:700">Marcus Reid</div><div style="font-size:13.5px;color:#A9A399;margin-top:2px">minutes doc is uploaded</div></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px"><span style="font-size:12px;color:#78716A">Tue</span><span style="min-width:20px;height:20px;border-radius:7px;background:#E5484D;color:#FFFFFF;font-size:11.5px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;padding:0 6px">1</span></div></div>
+  </div>
+  <div style="border-top:1px solid rgba(255,255,255,.08);background:#12110E;display:flex;padding:10px 4px 26px">
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M4 6.5A3.5 3.5 0 017.5 3h9A3.5 3.5 0 0120 6.5v6a3.5 3.5 0 01-3.5 3.5H10l-4.5 4v-4A3.5 3.5 0 014 12.5z" fill="rgba(244,203,99,.18)" stroke="#F4CB63" stroke-width="1.6" stroke-linejoin="round"></path></svg><span style="font-size:10.5px;font-weight:700;color:#F4CB63">Chat</span></div>
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px"><svg width="24" height="24" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="3.5" fill="rgba(255,255,255,.06)" stroke="#78716A" stroke-width="1.6"></rect><path d="M4 9.5h16M8.5 3v4M15.5 3v4" stroke="#78716A" stroke-width="1.6"></path></svg><span style="font-size:10.5px;font-weight:600;color:#78716A">Events</span></div>
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px"><svg width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="rgba(255,255,255,.06)" stroke="#78716A" stroke-width="1.6"></circle><path d="M8.5 12.2l2.4 2.4 4.6-5" stroke="#78716A" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"></path></svg><span style="font-size:10.5px;font-weight:600;color:#78716A">Tasks</span></div>
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px"><svg width="24" height="24" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="2.4" fill="rgba(255,255,255,.06)" stroke="#78716A" stroke-width="1.6"></rect><rect x="13" y="4" width="7" height="7" rx="2.4" fill="rgba(255,255,255,.06)" stroke="#78716A" stroke-width="1.6"></rect><rect x="4" y="13" width="7" height="7" rx="2.4" fill="rgba(255,255,255,.06)" stroke="#78716A" stroke-width="1.6"></rect><rect x="13" y="13" width="7" height="7" rx="2.4" fill="rgba(255,255,255,.06)" stroke="#78716A" stroke-width="1.6"></rect></svg><span style="font-size:10.5px;font-weight:600;color:#78716A">More</span></div>
+  </div>
+</div>
+</x-import>
+</div>
+
+<div class="fopt" id="s05" data-screen-label="Chat thread">
+<div class="folabel"><a class="foid" href="#s05">s05</a>Chat thread â€” #general</div>
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402,874">
+<div style="height:100%;background:#0E0D0B;display:flex;flex-direction:column;box-sizing:border-box;padding-top:62px;font-family:'Figtree',system-ui,sans-serif;color:#EDEAE3">
+  <div style="display:flex;align-items:center;gap:12px;padding:8px 20px 12px;border-bottom:1px solid rgba(255,255,255,.08)">
+    <span style="font-size:16px;color:#F4CB63">â€¹</span>
+    <div style="flex:1"><div style="font-size:17px;font-weight:700"># general</div><div style="font-size:12px;color:#78716A">42 members Â· 6 online</div></div>
+    <svg width="20" height="20" viewBox="0 0 20 20"><path d="M10 3l1.8 3.9 4.2.5-3.1 2.9.8 4.2L10 12.4l-3.7 2.1.8-4.2L4 7.4l4.2-.5z" fill="rgba(244,203,99,.16)" stroke="#F4CB63" stroke-width="1.4" stroke-linejoin="round"></path></svg>
+  </div>
+  <div style="flex:1;display:flex;flex-direction:column;gap:16px;padding:20px;overflow:hidden">
+    <div style="align-self:center;font-size:12px;font-weight:600;color:#78716A">Today</div>
+    <div style="display:flex;gap:10px;max-width:86%">
+      <span style="width:32px;height:32px;border-radius:50%;background:#26221C;color:#A9A399;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none">DK</span>
+      <div><div style="font-size:12.5px;color:#78716A;margin:0 0 4px 4px">Dev K Â· 5:09 PM</div><div style="background:#1E1B17;border:1px solid rgba(255,255,255,.06);border-radius:18px 18px 18px 6px;padding:11px 14px;font-size:16px;line-height:23px">Who's driving to the highway cleanup Saturday?</div></div>
+    </div>
+    <div style="display:flex;gap:10px;max-width:86%">
+      <span style="width:32px;height:32px;border-radius:50%;background:#26221C;color:#A9A399;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none">JM</span>
+      <div>
+        <div style="font-size:12.5px;color:#78716A;margin:0 0 4px 4px">Jake M Â· 5:14 PM</div>
+        <div style="background:#1E1B17;border:1px solid rgba(255,255,255,.06);border-radius:18px 18px 18px 6px;padding:11px 14px;font-size:16px;line-height:23px">I've got the van â€” 3 seats left, leaving at 9.</div>
+        <div style="display:flex;gap:6px;margin:6px 0 0 4px"><span style="height:26px;border-radius:9px;background:#251E0E;border:1px solid #6B5619;color:#F4CB63;font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;gap:4px;padding:0 9px">â–² 5</span><span style="height:26px;border-radius:9px;background:#26221C;color:#A9A399;font-size:12.5px;display:inline-flex;align-items:center;padding:0 9px">+</span></div>
+      </div>
+    </div>
+    <div style="align-self:flex-end;max-width:86%"><div style="background:#EFB63B;color:#2C2000;border-radius:18px 18px 6px 18px;padding:11px 14px;font-size:16px;line-height:23px;font-weight:500">Save me a seat â€” I'll bring the vests from the house.</div><div style="font-size:12px;color:#78716A;text-align:right;margin:4px 4px 0 0">5:16 PM Â· read</div></div>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;padding:10px 16px 30px;border-top:1px solid rgba(255,255,255,.08)">
+    <span style="width:38px;height:38px;border-radius:11px;background:#1E1B17;border:1px solid rgba(255,255,255,.14);color:#A9A399;font-size:19px;display:flex;align-items:center;justify-content:center">+</span>
+    <span style="flex:1;height:44px;border-radius:12px;background:#171512;border:1px solid rgba(255,255,255,.14);display:flex;align-items:center;padding:0 14px;color:#78716A;font-size:15.5px">Message #general</span>
+    <span style="width:38px;height:38px;border-radius:11px;background:#EFB63B;display:flex;align-items:center;justify-content:center"><svg width="17" height="17" viewBox="0 0 17 17"><path d="M2.5 8.5h9M8 3.5l6 5-6 5" stroke="#2C2000" stroke-width="1.9" fill="none" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>
+  </div>
+</div>
+</x-import>
+</div>
+
+<div class="fopt" id="s06" data-screen-label="Events list">
+<div class="folabel"><a class="foid" href="#s06">s06</a>Events â€” list</div>
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402,874">
+<div style="height:100%;background:#0E0D0B;display:flex;flex-direction:column;box-sizing:border-box;padding-top:62px;font-family:'Figtree',system-ui,sans-serif;color:#EDEAE3">
+  <div style="display:flex;align-items:center;gap:10px;padding:8px 20px 14px">
+    <div style="flex:1;font-size:24px;font-weight:700;letter-spacing:-.3px">Events</div>
+    <span style="height:36px;border-radius:10px;background:#251E0E;border:1px solid #6B5619;color:#F4CB63;font-size:13.5px;font-weight:700;display:inline-flex;align-items:center;gap:6px;padding:0 13px">âœ¦ Ask</span>
+  </div>
+  <div style="display:flex;gap:8px;padding:0 20px 16px">
+    <span style="height:34px;border-radius:10px;background:#EFB63B;color:#2C2000;font-size:13.5px;font-weight:700;display:inline-flex;align-items:center;padding:0 14px">Upcoming</span>
+    <span style="height:34px;border-radius:10px;background:#1E1B17;border:1px solid rgba(255,255,255,.08);color:#A9A399;font-size:13.5px;font-weight:600;display:inline-flex;align-items:center;padding:0 14px">Past</span>
+    <span style="height:34px;border-radius:10px;background:#1E1B17;border:1px solid rgba(255,255,255,.08);color:#A9A399;font-size:13.5px;font-weight:600;display:inline-flex;align-items:center;padding:0 14px">Mine</span>
+  </div>
+  <div style="flex:1;display:flex;flex-direction:column;gap:12px;padding:0 20px;overflow:hidden">
+    <div style="border-radius:16px;background:#1E1B17;border:1px solid rgba(255,255,255,.08);padding:16px">
+      <div style="display:flex;gap:14px">
+        <div style="width:52px;text-align:center;flex:none"><div style="font-size:11px;font-weight:700;letter-spacing:.6px;color:#F4CB63">THU</div><div style="font-size:24px;font-weight:700;margin-top:1px">14</div></div>
+        <div style="flex:1">
+          <div style="display:flex;align-items:center;gap:8px"><span style="font-size:17px;font-weight:700">Chapter meeting</span><span style="height:22px;border-radius:7px;background:rgba(248,81,73,.13);color:#F85149;font-size:11.5px;font-weight:700;display:inline-flex;align-items:center;padding:0 8px">Mandatory</span></div>
+          <div style="font-size:14px;color:#A9A399;margin-top:3px">6:00 PM Â· Great Hall</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:10px"><span style="height:26px;border-radius:8px;background:#251E0E;border:1px solid #6B5619;color:#F4CB63;font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;padding:0 10px">+10 pts</span><span style="font-size:13px;color:#4BC262;font-weight:600">Going âœ“</span></div>
+        </div>
+      </div>
+    </div>
+    <div style="border-radius:16px;background:#1E1B17;border:1px solid rgba(255,255,255,.08);padding:16px">
+      <div style="display:flex;gap:14px">
+        <div style="width:52px;text-align:center;flex:none"><div style="font-size:11px;font-weight:700;letter-spacing:.6px;color:#F4CB63">SAT</div><div style="font-size:24px;font-weight:700;margin-top:1px">16</div></div>
+        <div style="flex:1">
+          <div style="font-size:17px;font-weight:700">Highway cleanup</div>
+          <div style="font-size:14px;color:#A9A399;margin-top:3px">9:00 AM Â· Route 7 Â· service hours</div>
+          <div style="display:flex;gap:8px;margin-top:12px"><span style="flex:1;height:42px;border-radius:11px;background:#EFB63B;color:#2C2000;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center">Going</span><span style="flex:1;height:42px;border-radius:11px;background:#26221C;border:1px solid rgba(255,255,255,.14);color:#EDEAE3;font-size:14px;font-weight:600;display:flex;align-items:center;justify-content:center">Can't</span></div>
+        </div>
+      </div>
+    </div>
+    <div style="border-radius:16px;background:#1E1B17;border:1px solid rgba(255,255,255,.08);padding:16px">
+      <div style="display:flex;gap:14px">
+        <div style="width:52px;text-align:center;flex:none"><div style="font-size:11px;font-weight:700;letter-spacing:.6px;color:#F4CB63">FRI</div><div style="font-size:24px;font-weight:700;margin-top:1px">22</div></div>
+        <div style="flex:1"><div style="font-size:17px;font-weight:700">Pig Dinner prep night</div><div style="font-size:14px;color:#A9A399;margin-top:3px">7:30 PM Â· House Â· committee only</div></div>
+      </div>
+    </div>
+  </div>
+  <div style="border-top:1px solid rgba(255,255,255,.08);background:#12110E;display:flex;padding:10px 4px 26px">
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M4 6.5A3.5 3.5 0 017.5 3h9A3.5 3.5 0 0120 6.5v6a3.5 3.5 0 01-3.5 3.5H10l-4.5 4v-4A3.5 3.5 0 014 12.5z" fill="rgba(255,255,255,.06)" stroke="#78716A" stroke-width="1.6" stroke-linejoin="round"></path></svg><span style="font-size:10.5px;font-weight:600;color:#78716A">Chat</span></div>
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px"><svg width="24" height="24" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="3.5" fill="rgba(244,203,99,.18)" stroke="#F4CB63" stroke-width="1.6"></rect><path d="M4 9.5h16M8.5 3v4M15.5 3v4" stroke="#F4CB63" stroke-width="1.6"></path></svg><span style="font-size:10.5px;font-weight:700;color:#F4CB63">Events</span></div>
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px"><svg width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="rgba(255,255,255,.06)" stroke="#78716A" stroke-width="1.6"></circle><path d="M8.5 12.2l2.4 2.4 4.6-5" stroke="#78716A" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"></path></svg><span style="font-size:10.5px;font-weight:600;color:#78716A">Tasks</span></div>
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px"><svg width="24" height="24" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="2.4" fill="rgba(255,255,255,.06)" stroke="#78716A" stroke-width="1.6"></rect><rect x="13" y="4" width="7" height="7" rx="2.4" fill="rgba(255,255,255,.06)" stroke="#78716A" stroke-width="1.6"></rect><rect x="4" y="13" width="7" height="7" rx="2.4" fill="rgba(255,255,255,.06)" stroke="#78716A" stroke-width="1.6"></rect><rect x="13" y="13" width="7" height="7" rx="2.4" fill="rgba(255,255,255,.06)" stroke="#78716A" stroke-width="1.6"></rect></svg><span style="font-size:10.5px;font-weight:600;color:#78716A">More</span></div>
+  </div>
+</div>
+</x-import>
+</div>
+
+<div class="fopt" id="s07" data-screen-label="Event detail">
+<div class="folabel"><a class="foid" href="#s07">s07</a>Event detail â€” inline RSVP, check-in when live</div>
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402,874">
+<div style="height:100%;background:#0E0D0B;display:flex;flex-direction:column;box-sizing:border-box;padding-top:62px;font-family:'Figtree',system-ui,sans-serif;color:#EDEAE3">
+  <div style="display:flex;align-items:center;gap:12px;padding:8px 20px 4px"><span style="font-size:16px;color:#F4CB63">â€¹ Events</span></div>
+  <div style="flex:1;padding:16px 20px 0;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:8px"><span style="height:24px;border-radius:8px;background:rgba(248,81,73,.13);color:#F85149;font-size:12px;font-weight:700;display:inline-flex;align-items:center;padding:0 9px">Mandatory</span><span style="height:24px;border-radius:8px;background:#251E0E;border:1px solid #6B5619;color:#F4CB63;font-size:12px;font-weight:600;display:inline-flex;align-items:center;padding:0 9px">+10 pts</span></div>
+    <div style="font-size:28px;font-weight:700;letter-spacing:-.4px;margin-top:12px">Chapter meeting</div>
+    <div style="font-size:15.5px;color:#A9A399;margin-top:6px">Tonight Â· 6:00 â€“ 7:00 PM Â· Great Hall</div>
+    <div style="border-radius:14px;background:#251E0E;border:1px solid #6B5619;padding:16px;margin-top:24px">
+      <div style="display:flex;align-items:center;gap:10px"><span style="width:9px;height:9px;border-radius:50%;background:#4BC262"></span><span style="font-size:15px;font-weight:700;color:#F4CB63">Check-in is open</span><span style="margin-left:auto;font-size:12.5px;color:#A9A399">closes 6:15</span></div>
+      <div style="height:48px;border-radius:12px;background:#EFB63B;color:#2C2000;font-size:15.5px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:14px"><svg width="18" height="18" viewBox="0 0 18 18"><rect x="2" y="2" width="6" height="6" rx="1.5" stroke="#2C2000" stroke-width="1.7" fill="none"></rect><rect x="10" y="2" width="6" height="6" rx="1.5" stroke="#2C2000" stroke-width="1.7" fill="none"></rect><rect x="2" y="10" width="6" height="6" rx="1.5" stroke="#2C2000" stroke-width="1.7" fill="none"></rect><path d="M10 13h3v3M16 10v2" stroke="#2C2000" stroke-width="1.7"></path></svg>Scan QR to check in</div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <span style="flex:1;height:46px;border-radius:12px;background:#26221C;border:1.5px solid #EFB63B;color:#F4CB63;font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:center">Going âœ“</span>
+      <span style="flex:1;height:46px;border-radius:12px;background:#1E1B17;border:1px solid rgba(255,255,255,.14);color:#A9A399;font-size:15px;font-weight:600;display:flex;align-items:center;justify-content:center">Can't make it</span>
+    </div>
+    <div style="margin-top:24px">
+      <div style="font-size:13px;font-weight:700;letter-spacing:.6px;color:#78716A">GOING Â· 31</div>
+      <div style="display:flex;margin-top:10px">
+        <span style="width:34px;height:34px;border-radius:50%;background:#26221C;border:2px solid #0E0D0B;color:#A9A399;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center">JM</span>
+        <span style="width:34px;height:34px;border-radius:50%;background:#3A332A;border:2px solid #0E0D0B;color:#CDC5B4;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-left:-8px">DK</span>
+        <span style="width:34px;height:34px;border-radius:50%;background:#26221C;border:2px solid #0E0D0B;color:#A9A399;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-left:-8px">MR</span>
+        <span style="width:34px;height:34px;border-radius:50%;background:#3A332A;border:2px solid #0E0D0B;color:#CDC5B4;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-left:-8px">AS</span>
+        <span style="width:34px;height:34px;border-radius:50%;background:#251E0E;border:2px solid #0E0D0B;color:#F4CB63;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-left:-8px">+27</span>
+      </div>
+    </div>
+    <div style="margin-top:24px">
+      <div style="font-size:13px;font-weight:700;letter-spacing:.6px;color:#78716A">DETAILS</div>
+      <div style="font-size:15.5px;line-height:24px;color:#A9A399;margin-top:8px">Committee reports, Pig Dinner planning vote, and AM250 fundraiser update. Attendance auto-awards points inside the zone.</div>
+    </div>
+  </div>
+</div>
+</x-import>
+</div>
+
+<div class="fopt" id="s08" data-screen-label="Tasks + points">
+<div class="folabel"><a class="foid" href="#s08">s08</a>Tasks â€” board + points balance</div>
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402,874">
+<div style="height:100%;background:#0E0D0B;display:flex;flex-direction:column;box-sizing:border-box;padding-top:62px;font-family:'Figtree',system-ui,sans-serif;color:#EDEAE3">
+  <div style="display:flex;align-items:center;padding:8px 20px 14px"><div style="flex:1;font-size:24px;font-weight:700;letter-spacing:-.3px">Tasks</div><span style="width:38px;height:38px;border-radius:11px;background:#EFB63B;color:#2C2000;font-size:20px;font-weight:600;display:flex;align-items:center;justify-content:center">+</span></div>
+  <div style="margin:0 20px;border-radius:16px;background:#1E1B17;border:1px solid rgba(255,255,255,.08);padding:16px;display:flex;align-items:center;gap:16px">
+    <div style="flex:1"><div style="font-size:13px;color:#A9A399">Semester points</div><div style="font-size:30px;font-weight:700;letter-spacing:-.5px;color:#F4CB63;margin-top:2px">1,240</div></div>
+    <div style="text-align:right"><div style="font-size:13px;color:#A9A399">House rank</div><div style="font-size:17px;font-weight:700;margin-top:6px">#3 <span style="font-weight:400;color:#78716A">of 42</span></div></div>
+  </div>
+  <div style="flex:1;padding:16px 20px 0;overflow:hidden">
+    <div style="font-size:13px;font-weight:700;letter-spacing:.6px;color:#78716A;margin-bottom:8px">DUE THIS WEEK</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;align-items:center;gap:12px;border-radius:14px;background:#1E1B17;border:1px solid rgba(255,255,255,.08);padding:14px 16px">
+        <span style="width:24px;height:24px;border-radius:8px;border:1.5px solid rgba(255,255,255,.25);flex:none"></span>
+        <div style="flex:1"><div style="font-size:16px;font-weight:600">Submit ride-share list</div><div style="font-size:13px;color:#F85149;margin-top:2px">Due tomorrow</div></div>
+        <span style="height:24px;border-radius:8px;background:#251E0E;border:1px solid #6B5619;color:#F4CB63;font-size:12px;font-weight:600;display:inline-flex;align-items:center;padding:0 9px">+5</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;border-radius:14px;background:#1E1B17;border:1px solid rgba(255,255,255,.08);padding:14px 16px">
+        <span style="width:24px;height:24px;border-radius:8px;border:1.5px solid rgba(255,255,255,.25);flex:none"></span>
+        <div style="flex:1"><div style="font-size:16px;font-weight:600">2 study hours remaining</div><div style="font-size:13px;color:#A9A399;margin-top:2px">4.0 of 6.0 logged Â· Sunday</div></div>
+        <span style="height:24px;border-radius:8px;background:#251E0E;border:1px solid #6B5619;color:#F4CB63;font-size:12px;font-weight:600;display:inline-flex;align-items:center;padding:0 9px">+10</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;border-radius:14px;background:#1E1B17;border:1px solid rgba(255,255,255,.08);padding:14px 16px;opacity:.62">
+        <span style="width:24px;height:24px;border-radius:8px;background:#EFB63B;display:flex;align-items:center;justify-content:center;flex:none"><svg width="13" height="13" viewBox="0 0 14 14"><path d="M2.5 7.5l3 3 6-7" stroke="#2C2000" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>
+        <div style="flex:1"><div style="font-size:16px;font-weight:600;text-decoration:line-through;color:#A9A399">Pay spring dues installment</div><div style="font-size:13px;color:#78716A;margin-top:2px">Done Tuesday</div></div>
+        <span style="font-size:12.5px;font-weight:700;color:#4BC262">+15 âœ“</span>
+      </div>
+    </div>
+    <div style="font-size:13px;font-weight:700;letter-spacing:.6px;color:#78716A;margin:20px 0 8px">LATER</div>
+    <div style="display:flex;align-items:center;gap:12px;border-radius:14px;background:#1E1B17;border:1px solid rgba(255,255,255,.08);padding:14px 16px">
+      <span style="width:24px;height:24px;border-radius:8px;border:1.5px solid rgba(255,255,255,.25);flex:none"></span>
+      <div style="flex:1"><div style="font-size:16px;font-weight:600">Pig Dinner committee sign-up</div><div style="font-size:13px;color:#A9A399;margin-top:2px">Due Aug 22</div></div>
+    </div>
+  </div>
+  <div style="border-top:1px solid rgba(255,255,255,.08);background:#12110E;display:flex;padding:10px 4px 26px">
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M4 6.5A3.5 3.5 0 017.5 3h9A3.5 3.5 0 0120 6.5v6a3.5 3.5 0 01-3.5 3.5H10l-4.5 4v-4A3.5 3.5 0 014 12.5z" fill="rgba(255,255,255,.06)" stroke="#78716A" stroke-width="1.6" stroke-linejoin="round"></path></svg><span style="font-size:10.5px;font-weight:600;color:#78716A">Chat</span></div>
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px"><svg width="24" height="24" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="3.5" fill="rgba(255,255,255,.06)" stroke="#78716A" stroke-width="1.6"></rect><path d="M4 9.5h16M8.5 3v4M15.5 3v4" stroke="#78716A" stroke-width="1.6"></path></svg><span style="font-size:10.5px;font-weight:600;color:#78716A">Events</span></div>
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px"><svg width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="rgba(244,203,99,.18)" stroke="#F4CB63" stroke-width="1.6"></circle><path d="M8.5 12.2l2.4 2.4 4.6-5" stroke="#F4CB63" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"></path></svg><span style="font-size:10.5px;font-weight:700;color:#F4CB63">Tasks</span></div>
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px"><svg width="24" height="24" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="2.4" fill="rgba(255,255,255,.06)" stroke="#78716A" stroke-width="1.6"></rect><rect x="13" y="4" width="7" height="7" rx="2.4" fill="rgba(255,255,255,.06)" stroke="#78716A" stroke-width="1.6"></rect><rect x="4" y="13" width="7" height="7" rx="2.4" fill="rgba(255,255,255,.06)" stroke="#78716A" stroke-width="1.6"></rect><rect x="13" y="13" width="7" height="7" rx="2.4" fill="rgba(255,255,255,.06)" stroke="#78716A" stroke-width="1.6"></rect></svg><span style="font-size:10.5px;font-weight:600;color:#78716A">More</span></div>
+  </div>
+</div>
+</x-import>
+</div>
+
+<div class="fopt" id="s09" data-screen-label="More hub">
+<div class="folabel"><a class="foid" href="#s09">s09</a>More â€” everything else lives here</div>
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402,874">
+<div style="height:100%;background:#0E0D0B;display:flex;flex-direction:column;box-sizing:border-box;padding-top:62px;font-family:'Figtree',system-ui,sans-serif;color:#EDEAE3">
+  <div style="padding:8px 20px 16px;font-size:24px;font-weight:700;letter-spacing:-.3px">More</div>
+  <div style="flex:1;padding:0 20px;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:14px;border-radius:16px;background:#1E1B17;border:1px solid rgba(255,255,255,.08);padding:16px">
+      <span style="width:48px;height:48px;border-radius:50%;background:#251E0E;border:1px solid #6B5619;color:#F4CB63;font-size:17px;font-weight:700;display:flex;align-items:center;justify-content:center">PC</span>
+      <div style="flex:1"><div style="font-size:17px;font-weight:700">Paul Carlson</div><div style="display:flex;align-items:center;gap:6px;margin-top:3px"><span style="height:20px;border-radius:6px;background:#251E0E;border:1px solid #6B5619;color:#F4CB63;font-size:11px;font-weight:700;display:inline-flex;align-items:center;padding:0 7px">President</span><span style="font-size:13px;color:#78716A">1,240 pts</span></div></div>
+      <span style="color:#78716A;font-size:17px">â€º</span>
+    </div>
+    <div style="border-radius:16px;background:#171512;border:1px solid rgba(255,255,255,.08);margin-top:16px;padding:4px 0">
+      <div style="display:flex;align-items:center;gap:14px;padding:13px 16px"><svg width="22" height="22" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="rgba(244,203,99,.14)" stroke="#F4CB63" stroke-width="1.6"></circle><path d="M12 7.5V12l3 2" stroke="#F4CB63" stroke-width="1.6" fill="none" stroke-linecap="round"></path></svg><span style="flex:1;font-size:16px;font-weight:600">Study hours</span><span style="font-size:13px;color:#78716A">4.0 / 6.0</span><span style="color:#78716A">â€º</span></div>
+      <div style="height:1px;background:rgba(255,255,255,.06);margin:0 16px"></div>
+      <div style="display:flex;align-items:center;gap:14px;padding:13px 16px"><svg width="22" height="22" viewBox="0 0 24 24"><rect x="3.5" y="6" width="17" height="12.5" rx="3" fill="rgba(244,203,99,.14)" stroke="#F4CB63" stroke-width="1.6"></rect><path d="M3.5 10h17" stroke="#F4CB63" stroke-width="1.6"></path></svg><span style="flex:1;font-size:16px;font-weight:600">Dues</span><span style="height:22px;border-radius:7px;background:rgba(229,160,0,.14);color:#E5A000;font-size:11.5px;font-weight:700;display:inline-flex;align-items:center;padding:0 8px">Due Sept 15</span><span style="color:#78716A">â€º</span></div>
+      <div style="height:1px;background:rgba(255,255,255,.06);margin:0 16px"></div>
+      <div style="display:flex;align-items:center;gap:14px;padding:13px 16px"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20a1.5 1.5 0 01-1.5 1.5h-10A1.5 1.5 0 015 20V5A1.5 1.5 0 016.5 3.5z" fill="rgba(244,203,99,.14)" stroke="#F4CB63" stroke-width="1.6" stroke-linejoin="round"></path><path d="M14 3.5V8h4.5" stroke="#F4CB63" stroke-width="1.6" fill="none" stroke-linejoin="round"></path></svg><span style="flex:1;font-size:16px;font-weight:600">Documents</span><span style="color:#78716A">â€º</span></div>
+      <div style="height:1px;background:rgba(255,255,255,.06);margin:0 16px"></div>
+      <div style="display:flex;align-items:center;gap:14px;padding:13px 16px"><svg width="22" height="22" viewBox="0 0 24 24"><circle cx="9" cy="9" r="3.4" fill="rgba(244,203,99,.14)" stroke="#F4CB63" stroke-width="1.6"></circle><path d="M3.5 19c.8-3 3-4.5 5.5-4.5s4.7 1.5 5.5 4.5" stroke="#F4CB63" stroke-width="1.6" fill="none" stroke-linecap="round"></path><circle cx="16.5" cy="10" r="2.6" stroke="#F4CB63" stroke-width="1.6" fill="none"></circle><path d="M16 15.5c2.4 0 4 1.4 4.5 3.5" stroke="#F4CB63" stroke-width="1.6" fill="none" stroke-linecap="round"></path></svg><span style="flex:1;font-size:16px;font-weight:600">Directory</span><span style="color:#78716A">â€º</span></div>
+      <div style="height:1px;background:rgba(255,255,255,.06);margin:0 16px"></div>
+      <div style="display:flex;align-items:center;gap:14px;padding:13px 16px"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M12 3a6 6 0 016 6v3.2l1.4 2.8H4.6L6 12.2V9a6 6 0 016-6z" fill="rgba(244,203,99,.14)" stroke="#F4CB63" stroke-width="1.6" stroke-linejoin="round"></path><path d="M9.8 18a2.3 2.3 0 004.4 0" stroke="#F4CB63" stroke-width="1.6" stroke-linecap="round" fill="none"></path></svg><span style="flex:1;font-size:16px;font-weight:600">Notifications</span><span style="min-width:20px;height:20px;border-radius:7px;background:#EFB63B;color:#2C2000;font-size:11.5px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;padding:0 6px">3</span><span style="color:#78716A">â€º</span></div>
+      <div style="height:1px;background:rgba(255,255,255,.06);margin:0 16px"></div>
+      <div style="display:flex;align-items:center;gap:14px;padding:13px 16px"><svg width="22" height="22" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" stroke="#F4CB63" stroke-width="1.6" fill="rgba(244,203,99,.14)"></circle><path d="M19 12a7 7 0 00-.14-1.4l2-1.55-2-3.46-2.35.94A7 7 0 0014.9 5.5L14.55 3h-4l-.35 2.5a7 7 0 00-1.61 1.03l-2.35-.94-2 3.46 2 1.55A7 7 0 006.1 12" stroke="#F4CB63" stroke-width="1.4" fill="none" stroke-linejoin="round" opacity=".85"></path></svg><span style="flex:1;font-size:16px;font-weight:600">Settings</span><span style="color:#78716A">â€º</span></div>
+    </div>
+    <div style="font-size:12px;font-weight:700;letter-spacing:.7px;color:#78716A;margin:18px 0 6px 4px">ADMIN Â· PRESIDENT</div>
+    <div style="border-radius:16px;background:#171512;border:1px solid rgba(255,255,255,.08);padding:4px 0">
+      <div style="display:flex;align-items:center;gap:14px;padding:13px 16px"><svg width="22" height="22" viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="6.5" rx="1.6" stroke="#A9A399" stroke-width="1.6" fill="rgba(255,255,255,.06)"></rect><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.6" stroke="#A9A399" stroke-width="1.6" fill="rgba(255,255,255,.06)"></rect><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.6" stroke="#A9A399" stroke-width="1.6" fill="rgba(255,255,255,.06)"></rect><path d="M13.5 16.5h3.5v3.5M20 13.5v2" stroke="#A9A399" stroke-width="1.6"></path></svg><span style="flex:1;font-size:16px;font-weight:600">Host check-in</span><span style="color:#78716A">â€º</span></div>
+      <div style="height:1px;background:rgba(255,255,255,.06);margin:0 16px"></div>
+      <div style="display:flex;align-items:center;gap:14px;padding:13px 16px"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M5 12h9M5 6.5h14M5 17.5h6" stroke="#A9A399" stroke-width="1.7" stroke-linecap="round"></path><path d="M16 15l2.5 2.5L21 15" stroke="#A9A399" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"></path></svg><span style="flex:1;font-size:16px;font-weight:600">Adjust points</span><span style="color:#78716A">â€º</span></div>
+    </div>
+  </div>
+  <div style="border-top:1px solid rgba(255,255,255,.08);background:#12110E;display:flex;padding:10px 4px 26px">
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M4 6.5A3.5 3.5 0 017.5 3h9A3.5 3.5 0 0120 6.5v6a3.5 3.5 0 01-3.5 3.5H10l-4.5 4v-4A3.5 3.5 0 014 12.5z" fill="rgba(255,255,255,.06)" stroke="#78716A" stroke-width="1.6" stroke-linejoin="round"></path></svg><span style="font-size:10.5px;font-weight:600;color:#78716A">Chat</span></div>
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px"><svg width="24" height="24" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="3.5" fill="rgba(255,255,255,.06)" stroke="#78716A" stroke-width="1.6"></rect><path d="M4 9.5h16M8.5 3v4M15.5 3v4" stroke="#78716A" stroke-width="1.6"></path></svg><span style="font-size:10.5px;font-weight:600;color:#78716A">Events</span></div>
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px"><svg width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="rgba(255,255,255,.06)" stroke="#78716A" stroke-width="1.6"></circle><path d="M8.5 12.2l2.4 2.4 4.6-5" stroke="#78716A" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"></path></svg><span style="font-size:10.5px;font-weight:600;color:#78716A">Tasks</span></div>
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px"><svg width="24" height="24" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="2.4" fill="rgba(244,203,99,.18)" stroke="#F4CB63" stroke-width="1.6"></rect><rect x="13" y="4" width="7" height="7" rx="2.4" fill="rgba(244,203,99,.18)" stroke="#F4CB63" stroke-width="1.6"></rect><rect x="4" y="13" width="7" height="7" rx="2.4" fill="rgba(244,203,99,.18)" stroke="#F4CB63" stroke-width="1.6"></rect><rect x="13" y="13" width="7" height="7" rx="2.4" fill="rgba(244,203,99,.18)" stroke="#F4CB63" stroke-width="1.6"></rect></svg><span style="font-size:10.5px;font-weight:700;color:#F4CB63">More</span></div>
+  </div>
+</div>
+</x-import>
+</div>
+
+</div>
+</section>
+
+<section class="fl" id="f3">
+<div class="fh"><a class="fid" href="#f3">03</a><span class="fname">More â€” sub-screens</span></div>
+<div class="frow">
+
+<div class="fopt" id="s10" data-screen-label="Study hours">
+<div class="folabel"><a class="foid" href="#s10">s10</a>Study hours â€” foreground session, geofenced</div>
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402,874">
+<div style="height:100%;background:#0E0D0B;display:flex;flex-direction:column;box-sizing:border-box;padding-top:62px;font-family:'Figtree',system-ui,sans-serif;color:#EDEAE3">
+  <div style="display:flex;align-items:center;gap:12px;padding:8px 20px 4px"><span style="font-size:16px;color:#F4CB63">â€¹ More</span></div>
+  <div style="flex:1;padding:16px 20px 0;overflow:hidden">
+    <div style="font-size:24px;font-weight:700;letter-spacing:-.3px">Study hours</div>
+    <div style="border-radius:16px;background:#1E1B17;border:1px solid rgba(255,255,255,.08);padding:28px 20px;margin-top:20px;text-align:center">
+      <div style="font-size:13px;font-weight:600;color:#A9A399">Current session</div>
+      <div style="font-size:52px;font-weight:700;letter-spacing:-1px;color:#F4CB63;margin-top:8px;font-variant-numeric:tabular-nums">1:24:36</div>
+      <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:12px"><span style="width:9px;height:9px;border-radius:50%;background:#4BC262"></span><span style="font-size:14.5px;font-weight:600;color:#4BC262">Folsom Library Â· inside zone</span></div>
+      <div style="height:48px;border-radius:12px;background:#26221C;border:1px solid rgba(255,255,255,.14);color:#EDEAE3;font-size:15.5px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:20px">End session</div>
+      <div style="font-size:12.5px;color:#78716A;margin-top:12px">Leaving the zone pauses with a 5-min grace window.</div>
+    </div>
+    <div style="margin-top:24px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:13px;font-weight:700;letter-spacing:.6px;color:#78716A">THIS WEEK</span><span style="font-size:14px;color:#A9A399"><b style="color:#EDEAE3">5.4</b> of 6.0 hrs</span></div>
+      <div style="height:8px;border-radius:999px;background:#26221C;margin-top:10px;overflow:hidden"><span style="display:block;width:90%;height:100%;border-radius:999px;background:#EFB63B"></span></div>
+    </div>
+    <div style="margin-top:24px;display:flex;flex-direction:column;gap:2px">
+      <div style="display:flex;align-items:center;padding:12px 4px;border-bottom:1px solid rgba(255,255,255,.06)"><div style="flex:1"><div style="font-size:15.5px;font-weight:600">Folsom Library</div><div style="font-size:13px;color:#78716A;margin-top:1px">Tue Â· 7:02 â€“ 9:10 PM</div></div><span style="font-size:15px;font-weight:700;color:#EDEAE3">2.1 hrs</span></div>
+      <div style="display:flex;align-items:center;padding:12px 4px;border-bottom:1px solid rgba(255,255,255,.06)"><div style="flex:1"><div style="font-size:15.5px;font-weight:600">Union study room</div><div style="font-size:13px;color:#78716A;margin-top:1px">Mon Â· 3:15 â€“ 5:00 PM</div></div><span style="font-size:15px;font-weight:700;color:#EDEAE3">1.8 hrs</span></div>
+      <div style="display:flex;align-items:center;padding:12px 4px"><div style="flex:1"><div style="font-size:15.5px;font-weight:600">Folsom Library</div><div style="font-size:13px;color:#78716A;margin-top:1px">Sun Â· 1:00 â€“ 2:30 PM</div></div><span style="font-size:15px;font-weight:700;color:#EDEAE3">1.5 hrs</span></div>
+    </div>
+  </div>
+</div>
+</x-import>
+</div>
+
+<div class="fopt" id="s11" data-screen-label="Dues">
+<div class="folabel"><a class="foid" href="#s11">s11</a>Dues â€” Stripe PaymentSheet entry</div>
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402,874">
+<div style="height:100%;background:#0E0D0B;display:flex;flex-direction:column;box-sizing:border-box;padding-top:62px;font-family:'Figtree',system-ui,sans-serif;color:#EDEAE3">
+  <div style="display:flex;align-items:center;gap:12px;padding:8px 20px 4px"><span style="font-size:16px;color:#F4CB63">â€¹ More</span></div>
+  <div style="flex:1;padding:16px 20px 0;overflow:hidden">
+    <div style="font-size:24px;font-weight:700;letter-spacing:-.3px">Dues</div>
+    <div style="border-radius:16px;background:#1E1B17;border:1px solid rgba(255,255,255,.08);padding:20px;margin-top:20px">
+      <div style="display:flex;align-items:center"><span style="font-size:13.5px;color:#A9A399">Fall 2026 Â· balance</span><span style="margin-left:auto;height:24px;border-radius:8px;background:rgba(229,160,0,.14);color:#E5A000;font-size:12px;font-weight:700;display:inline-flex;align-items:center;padding:0 9px">Due Sept 15</span></div>
+      <div style="font-size:40px;font-weight:700;letter-spacing:-.8px;margin-top:10px">$425<span style="font-size:20px;color:#78716A">.00</span></div>
+      <div style="height:50px;border-radius:12px;background:#EFB63B;color:#2C2000;font-size:16px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:18px">Pay now</div>
+      <div style="text-align:center;font-size:13.5px;color:#A9A399;margin-top:12px">or <span style="color:#F4CB63;font-weight:600">request a payment plan</span> â€” needs treasurer approval by Sept 8</div>
+    </div>
+    <div style="font-size:13px;font-weight:700;letter-spacing:.6px;color:#78716A;margin:24px 0 6px">HISTORY</div>
+    <div style="display:flex;flex-direction:column;gap:2px">
+      <div style="display:flex;align-items:center;padding:13px 4px;border-bottom:1px solid rgba(255,255,255,.06)"><div style="flex:1"><div style="font-size:15.5px;font-weight:600">Spring 2026 dues</div><div style="font-size:13px;color:#78716A;margin-top:1px">Paid Feb 3 Â· Visa Â·Â·4242</div></div><span style="height:24px;border-radius:8px;background:rgba(63,185,80,.13);color:#4BC262;font-size:12px;font-weight:700;display:inline-flex;align-items:center;padding:0 9px">Paid</span></div>
+      <div style="display:flex;align-items:center;padding:13px 4px;border-bottom:1px solid rgba(255,255,255,.06)"><div style="flex:1"><div style="font-size:15.5px;font-weight:600">Social fee</div><div style="font-size:13px;color:#78716A;margin-top:1px">Paid Jan 21 Â· Apple Pay</div></div><span style="height:24px;border-radius:8px;background:rgba(63,185,80,.13);color:#4BC262;font-size:12px;font-weight:700;display:inline-flex;align-items:center;padding:0 9px">Paid</span></div>
+      <div style="display:flex;align-items:center;padding:13px 4px"><div style="flex:1"><div style="font-size:15.5px;font-weight:600">Fall 2025 dues</div><div style="font-size:13px;color:#78716A;margin-top:1px">Paid Sep 12 Â· plan (3 of 3)</div></div><span style="height:24px;border-radius:8px;background:rgba(63,185,80,.13);color:#4BC262;font-size:12px;font-weight:700;display:inline-flex;align-items:center;padding:0 9px">Paid</span></div>
+    </div>
+    <div style="font-size:12.5px;color:#78716A;margin-top:18px;line-height:1.6">Receipts go to pdcarlson@rpi.edu. Payments run through the chapter's Stripe account.</div>
+  </div>
+</div>
+</x-import>
+</div>
+
+<div class="fopt" id="s12" data-screen-label="Documents">
+<div class="folabel"><a class="foid" href="#s12">s12</a>Documents</div>
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402,874">
+<div style="height:100%;background:#0E0D0B;display:flex;flex-direction:column;box-sizing:border-box;padding-top:62px;font-family:'Figtree',system-ui,sans-serif;color:#EDEAE3">
+  <div style="display:flex;align-items:center;gap:12px;padding:8px 20px 4px"><span style="font-size:16px;color:#F4CB63">â€¹ More</span><span style="margin-left:auto"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5" stroke="#F4CB63" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"></path><path d="M5 15v3.5A1.5 1.5 0 006.5 20h11a1.5 1.5 0 001.5-1.5V15" stroke="#F4CB63" stroke-width="1.8" fill="none" stroke-linecap="round"></path></svg></span></div>
+  <div style="flex:1;padding:16px 20px 0;overflow:hidden">
+    <div style="font-size:24px;font-weight:700;letter-spacing:-.3px">Documents</div>
+    <div style="height:44px;border-radius:12px;background:#171512;border:1px solid rgba(255,255,255,.14);display:flex;align-items:center;gap:10px;padding:0 14px;color:#78716A;font-size:15px;margin-top:16px"><svg width="17" height="17" viewBox="0 0 22 22"><circle cx="10" cy="10" r="6" stroke="#78716A" stroke-width="1.7" fill="none"></circle><path d="M14.5 14.5L18 18" stroke="#78716A" stroke-width="1.7" stroke-linecap="round"></path></svg>Search â€” or just Ask</div>
+    <div style="font-size:13px;font-weight:700;letter-spacing:.6px;color:#78716A;margin:20px 0 8px">PINNED</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;align-items:center;gap:12px;border-radius:14px;background:#1E1B17;border:1px solid rgba(255,255,255,.08);padding:13px 16px"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20a1.5 1.5 0 01-1.5 1.5h-10A1.5 1.5 0 015 20V5A1.5 1.5 0 016.5 3.5z" fill="rgba(244,203,99,.14)" stroke="#F4CB63" stroke-width="1.6" stroke-linejoin="round"></path><path d="M14 3.5V8h4.5" stroke="#F4CB63" stroke-width="1.6" fill="none" stroke-linejoin="round"></path></svg><div style="flex:1"><div style="font-size:15.5px;font-weight:600">Chapter bylaws</div><div style="font-size:13px;color:#78716A;margin-top:1px">PDF Â· updated Mar 3</div></div><span style="color:#78716A">â€º</span></div>
+      <div style="display:flex;align-items:center;gap:12px;border-radius:14px;background:#1E1B17;border:1px solid rgba(255,255,255,.08);padding:13px 16px"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20a1.5 1.5 0 01-1.5 1.5h-10A1.5 1.5 0 015 20V5A1.5 1.5 0 016.5 3.5z" fill="rgba(244,203,99,.14)" stroke="#F4CB63" stroke-width="1.6" stroke-linejoin="round"></path><path d="M14 3.5V8h4.5" stroke="#F4CB63" stroke-width="1.6" fill="none" stroke-linejoin="round"></path></svg><div style="flex:1"><div style="font-size:15.5px;font-weight:600">AM250 fundraiser plan</div><div style="font-size:13px;color:#78716A;margin-top:1px">Doc Â· updated Aug 9</div></div><span style="color:#78716A">â€º</span></div>
+    </div>
+    <div style="font-size:13px;font-weight:700;letter-spacing:.6px;color:#78716A;margin:20px 0 8px">RECENT</div>
+    <div style="display:flex;flex-direction:column;gap:2px">
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 4px;border-bottom:1px solid rgba(255,255,255,.06)"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20a1.5 1.5 0 01-1.5 1.5h-10A1.5 1.5 0 015 20V5A1.5 1.5 0 016.5 3.5z" fill="rgba(255,255,255,.06)" stroke="#78716A" stroke-width="1.6" stroke-linejoin="round"></path><path d="M14 3.5V8h4.5" stroke="#78716A" stroke-width="1.6" fill="none" stroke-linejoin="round"></path></svg><div style="flex:1"><div style="font-size:15.5px;font-weight:600">Meeting minutes â€” Aug 12</div><div style="font-size:13px;color:#78716A;margin-top:1px">Marcus R Â· notes</div></div></div>
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 4px;border-bottom:1px solid rgba(255,255,255,.06)"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20a1.5 1.5 0 01-1.5 1.5h-10A1.5 1.5 0 015 20V5A1.5 1.5 0 016.5 3.5z" fill="rgba(255,255,255,.06)" stroke="#78716A" stroke-width="1.6" stroke-linejoin="round"></path><path d="M14 3.5V8h4.5" stroke="#78716A" stroke-width="1.6" fill="none" stroke-linejoin="round"></path></svg><div style="flex:1"><div style="font-size:15.5px;font-weight:600">Risk management policy</div><div style="font-size:13px;color:#78716A;margin-top:1px">PDF Â· IHQ</div></div></div>
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 4px"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20a1.5 1.5 0 01-1.5 1.5h-10A1.5 1.5 0 015 20V5A1.5 1.5 0 016.5 3.5z" fill="rgba(255,255,255,.06)" stroke="#78716A" stroke-width="1.6" stroke-linejoin="round"></path><path d="M14 3.5V8h4.5" stroke="#78716A" stroke-width="1.6" fill="none" stroke-linejoin="round"></path></svg><div style="flex:1"><div style="font-size:15.5px;font-weight:600">Budget FY26</div><div style="font-size:13px;color:#78716A;margin-top:1px">Sheet Â· treasurer only</div></div></div>
+    </div>
+  </div>
+</div>
+</x-import>
+</div>
+
+<div class="fopt" id="s13" data-screen-label="Directory">
+<div class="folabel"><a class="foid" href="#s13">s13</a>Directory â€” members + alumni</div>
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402,874">
+<div style="height:100%;background:#0E0D0B;display:flex;flex-direction:column;box-sizing:border-box;padding-top:62px;font-family:'Figtree',system-ui,sans-serif;color:#EDEAE3">
+  <div style="display:flex;align-items:center;gap:12px;padding:8px 20px 4px"><span style="font-size:16px;color:#F4CB63">â€¹ More</span></div>
+  <div style="flex:1;padding:16px 20px 0;overflow:hidden">
+    <div style="font-size:24px;font-weight:700;letter-spacing:-.3px">Directory</div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <span style="height:34px;border-radius:10px;background:#EFB63B;color:#2C2000;font-size:13.5px;font-weight:700;display:inline-flex;align-items:center;padding:0 14px">Actives Â· 42</span>
+      <span style="height:34px;border-radius:10px;background:#1E1B17;border:1px solid rgba(255,255,255,.08);color:#A9A399;font-size:13.5px;font-weight:600;display:inline-flex;align-items:center;padding:0 14px">Alumni Â· 310</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:2px;margin-top:16px">
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 4px;border-bottom:1px solid rgba(255,255,255,.06)"><span style="width:40px;height:40px;border-radius:50%;background:#251E0E;border:1px solid #6B5619;color:#F4CB63;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center">PC</span><div style="flex:1"><div style="font-size:16px;font-weight:600">Paul Carlson</div><div style="font-size:13px;color:#78716A;margin-top:1px">President Â· CS '27</div></div><span style="color:#78716A">â€º</span></div>
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 4px;border-bottom:1px solid rgba(255,255,255,.06)"><span style="width:40px;height:40px;border-radius:50%;background:#26221C;color:#A9A399;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center">MR</span><div style="flex:1"><div style="font-size:16px;font-weight:600">Marcus Reid</div><div style="font-size:13px;color:#78716A;margin-top:1px">Recording Secretary Â· MechE '27</div></div><span style="color:#78716A">â€º</span></div>
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 4px;border-bottom:1px solid rgba(255,255,255,.06)"><span style="width:40px;height:40px;border-radius:50%;background:#26221C;color:#A9A399;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center">JM</span><div style="flex:1"><div style="font-size:16px;font-weight:600">Jake Mercer</div><div style="font-size:13px;color:#78716A;margin-top:1px">Treasurer Â· Business '26</div></div><span style="color:#78716A">â€º</span></div>
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 4px;border-bottom:1px solid rgba(255,255,255,.06)"><span style="width:40px;height:40px;border-radius:50%;background:#26221C;color:#A9A399;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center">DK</span><div style="flex:1"><div style="font-size:16px;font-weight:600">Dev Kapoor</div><div style="font-size:13px;color:#78716A;margin-top:1px">Historian Â· Physics '28</div></div><span style="color:#78716A">â€º</span></div>
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 4px"><span style="width:40px;height:40px;border-radius:50%;background:#26221C;color:#A9A399;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center">AS</span><div style="flex:1"><div style="font-size:16px;font-weight:600">Andre Silva</div><div style="font-size:13px;color:#78716A;margin-top:1px">Corresponding Secretary Â· '28</div></div><span style="color:#78716A">â€º</span></div>
+    </div>
+  </div>
+</div>
+</x-import>
+</div>
+
+<div class="fopt" id="s14" data-screen-label="Notifications">
+<div class="folabel"><a class="foid" href="#s14">s14</a>Notifications</div>
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402,874">
+<div style="height:100%;background:#0E0D0B;display:flex;flex-direction:column;box-sizing:border-box;padding-top:62px;font-family:'Figtree',system-ui,sans-serif;color:#EDEAE3">
+  <div style="display:flex;align-items:center;gap:12px;padding:8px 20px 4px"><span style="font-size:16px;color:#F4CB63">â€¹ More</span><span style="margin-left:auto;font-size:13.5px;font-weight:600;color:#F4CB63">Mark all read</span></div>
+  <div style="flex:1;padding:16px 20px 0;overflow:hidden">
+    <div style="font-size:24px;font-weight:700;letter-spacing:-.3px">Notifications</div>
+    <div style="font-size:13px;font-weight:700;letter-spacing:.6px;color:#78716A;margin:20px 0 6px">TODAY</div>
+    <div style="display:flex;flex-direction:column;gap:2px">
+      <div style="display:flex;gap:12px;padding:13px 4px;border-bottom:1px solid rgba(255,255,255,.06)"><span style="width:8px;height:8px;border-radius:50%;background:#EFB63B;margin-top:7px;flex:none"></span><div style="flex:1"><div style="font-size:15.5px;line-height:22px"><b>Chapter meeting</b> starts in 2 hours â€” check-in opens 5:45</div><div style="font-size:12.5px;color:#78716A;margin-top:2px">Events Â· 4:00 PM</div></div></div>
+      <div style="display:flex;gap:12px;padding:13px 4px;border-bottom:1px solid rgba(255,255,255,.06)"><span style="width:8px;height:8px;border-radius:50%;background:#EFB63B;margin-top:7px;flex:none"></span><div style="flex:1"><div style="font-size:15.5px;line-height:22px"><b>+15 pts</b> â€” dues installment verified by Jake M</div><div style="font-size:12.5px;color:#78716A;margin-top:2px">Points Â· 1:12 PM</div></div></div>
+      <div style="display:flex;gap:12px;padding:13px 4px;border-bottom:1px solid rgba(255,255,255,.06)"><span style="width:8px;height:8px;border-radius:50%;background:#E5484D;margin-top:7px;flex:none"></span><div style="flex:1"><div style="font-size:15.5px;line-height:22px"><b>@channel</b> in #announcements â€” Pig Dinner sign-ups close Friday</div><div style="font-size:12.5px;color:#78716A;margin-top:2px">Chat Â· 4:02 PM</div></div></div>
+    </div>
+    <div style="font-size:13px;font-weight:700;letter-spacing:.6px;color:#78716A;margin:20px 0 6px">EARLIER</div>
+    <div style="display:flex;flex-direction:column;gap:2px;opacity:.7">
+      <div style="display:flex;gap:12px;padding:13px 4px;border-bottom:1px solid rgba(255,255,255,.06)"><span style="width:8px;flex:none"></span><div style="flex:1"><div style="font-size:15.5px;line-height:22px">Study hours reminder â€” 2.0 hrs left this week</div><div style="font-size:12.5px;color:#78716A;margin-top:2px">Study Â· Tue</div></div></div>
+      <div style="display:flex;gap:12px;padding:13px 4px"><span style="width:8px;flex:none"></span><div style="flex:1"><div style="font-size:15.5px;line-height:22px">Marcus R uploaded <b>Meeting minutes â€” Aug 12</b></div><div style="font-size:12.5px;color:#78716A;margin-top:2px">Documents Â· Tue</div></div></div>
+    </div>
+  </div>
+</div>
+</x-import>
+</div>
+
+<div class="fopt" id="s15" data-screen-label="Profile">
+<div class="folabel"><a class="foid" href="#s15">s15</a>Profile</div>
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402,874">
+<div style="height:100%;background:#0E0D0B;display:flex;flex-direction:column;box-sizing:border-box;padding-top:62px;font-family:'Figtree',system-ui,sans-serif;color:#EDEAE3">
+  <div style="display:flex;align-items:center;gap:12px;padding:8px 20px 4px"><span style="font-size:16px;color:#F4CB63">â€¹ More</span><span style="margin-left:auto;font-size:13.5px;font-weight:600;color:#F4CB63">Edit</span></div>
+  <div style="flex:1;padding:24px 20px 0;overflow:hidden">
+    <div style="display:flex;flex-direction:column;align-items:center">
+      <span style="width:84px;height:84px;border-radius:50%;background:#251E0E;border:1.5px solid #6B5619;color:#F4CB63;font-size:28px;font-weight:700;display:flex;align-items:center;justify-content:center">PC</span>
+      <div style="font-size:22px;font-weight:700;margin-top:14px">Paul Carlson</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:6px"><span style="height:22px;border-radius:7px;background:#251E0E;border:1px solid #6B5619;color:#F4CB63;font-size:11.5px;font-weight:700;display:inline-flex;align-items:center;padding:0 8px">President</span><span style="font-size:13.5px;color:#78716A">Tau Nu Â· CS '27</span></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:24px">
+      <div style="flex:1;border-radius:14px;background:#1E1B17;border:1px solid rgba(255,255,255,.08);padding:14px;text-align:center"><div style="font-size:22px;font-weight:700;color:#F4CB63">1,240</div><div style="font-size:12px;color:#78716A;margin-top:2px">points</div></div>
+      <div style="flex:1;border-radius:14px;background:#1E1B17;border:1px solid rgba(255,255,255,.08);padding:14px;text-align:center"><div style="font-size:22px;font-weight:700">18.5</div><div style="font-size:12px;color:#78716A;margin-top:2px">service hrs</div></div>
+      <div style="flex:1;border-radius:14px;background:#1E1B17;border:1px solid rgba(255,255,255,.08);padding:14px;text-align:center"><div style="font-size:22px;font-weight:700">96%</div><div style="font-size:12px;color:#78716A;margin-top:2px">attendance</div></div>
+    </div>
+    <div style="border-radius:16px;background:#171512;border:1px solid rgba(255,255,255,.08);margin-top:16px;padding:4px 0">
+      <div style="display:flex;align-items:center;padding:13px 16px"><span style="flex:1;font-size:15.5px;color:#A9A399">Email</span><span style="font-size:15.5px;font-weight:600">pdcarlson@rpi.edu</span></div>
+      <div style="height:1px;background:rgba(255,255,255,.06);margin:0 16px"></div>
+      <div style="display:flex;align-items:center;padding:13px 16px"><span style="flex:1;font-size:15.5px;color:#A9A399">Phone</span><span style="font-size:15.5px;font-weight:600">(518) 555-0184</span></div>
+      <div style="height:1px;background:rgba(255,255,255,.06);margin:0 16px"></div>
+      <div style="display:flex;align-items:center;padding:13px 16px"><span style="flex:1;font-size:15.5px;color:#A9A399">Pledge class</span><span style="font-size:15.5px;font-weight:600">Fall 2024</span></div>
+      <div style="height:1px;background:rgba(255,255,255,.06);margin:0 16px"></div>
+      <div style="display:flex;align-items:center;padding:13px 16px"><span style="flex:1;font-size:15.5px;color:#A9A399">Big brother</span><span style="font-size:15.5px;font-weight:600">Marcus Reid</span></div>
+    </div>
+  </div>
+</div>
+</x-import>
+</div>
+
+<div class="fopt" id="s16" data-screen-label="Settings">
+<div class="folabel"><a class="foid" href="#s16">s16</a>Settings â€” incl. chapter accent (admin)</div>
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402,874">
+<div style="height:100%;background:#0E0D0B;display:flex;flex-direction:column;box-sizing:border-box;padding-top:62px;font-family:'Figtree',system-ui,sans-serif;color:#EDEAE3">
+  <div style="display:flex;align-items:center;gap:12px;padding:8px 20px 4px"><span style="font-size:16px;color:#F4CB63">â€¹ More</span></div>
+  <div style="flex:1;padding:16px 20px 0;overflow:hidden">
+    <div style="font-size:24px;font-weight:700;letter-spacing:-.3px">Settings</div>
+    <div style="font-size:13px;font-weight:700;letter-spacing:.6px;color:#78716A;margin:20px 0 6px">NOTIFICATIONS</div>
+    <div style="border-radius:16px;background:#171512;border:1px solid rgba(255,255,255,.08);padding:4px 0">
+      <div style="display:flex;align-items:center;padding:12px 16px"><span style="flex:1;font-size:15.5px;font-weight:600">Push notifications</span><span style="width:48px;height:29px;border-radius:999px;background:#EFB63B;position:relative"><span style="position:absolute;top:2.5px;right:3px;width:24px;height:24px;border-radius:50%;background:#2C2000"></span></span></div>
+      <div style="height:1px;background:rgba(255,255,255,.06);margin:0 16px"></div>
+      <div style="display:flex;align-items:center;padding:12px 16px"><span style="flex:1;font-size:15.5px;font-weight:600">Mandatory events only</span><span style="width:48px;height:29px;border-radius:999px;background:#26221C;border:1px solid rgba(255,255,255,.14);position:relative;box-sizing:border-box"><span style="position:absolute;top:1.5px;left:3px;width:24px;height:24px;border-radius:50%;background:#78716A"></span></span></div>
+    </div>
+    <div style="font-size:13px;font-weight:700;letter-spacing:.6px;color:#78716A;margin:20px 0 6px">CHAPTER Â· ADMIN</div>
+    <div style="border-radius:16px;background:#171512;border:1px solid rgba(255,255,255,.08);padding:4px 0">
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 16px">
+        <div style="flex:1"><div style="font-size:15.5px;font-weight:600">Chapter accent</div><div style="font-size:13px;color:#78716A;margin-top:2px">One hex â†’ full safe scale. Raw color never paints.</div></div>
+        <span style="width:28px;height:28px;border-radius:9px;background:#4B2E83;border:1px solid rgba(255,255,255,.18)"></span><span style="color:#78716A">â€º</span>
+      </div>
+      <div style="height:1px;background:rgba(255,255,255,.06);margin:0 16px"></div>
+      <div style="display:flex;align-items:center;padding:12px 16px"><span style="flex:1;font-size:15.5px;font-weight:600">Join code</span><span style="font:600 14px ui-monospace,Menlo,monospace;color:#F4CB63;letter-spacing:2px">TN7-4KQ</span></div>
+      <div style="height:1px;background:rgba(255,255,255,.06);margin:0 16px"></div>
+      <div style="display:flex;align-items:center;padding:12px 16px"><span style="flex:1;font-size:15.5px;font-weight:600">Study zones</span><span style="font-size:13.5px;color:#78716A">3 zones</span></div>
+    </div>
+    <div style="font-size:13px;font-weight:700;letter-spacing:.6px;color:#78716A;margin:20px 0 6px">ACCOUNT</div>
+    <div style="border-radius:16px;background:#171512;border:1px solid rgba(255,255,255,.08);padding:4px 0">
+      <div style="display:flex;align-items:center;padding:12px 16px"><span style="flex:1;font-size:15.5px;font-weight:600">Appearance</span><span style="font-size:13.5px;color:#78716A">Dark</span></div>
+      <div style="height:1px;background:rgba(255,255,255,.06);margin:0 16px"></div>
+      <div style="display:flex;align-items:center;padding:12px 16px"><span style="font-size:15.5px;font-weight:600;color:#F85149">Sign out</span></div>
+    </div>
+  </div>
+</div>
+</x-import>
+</div>
+
+</div>
+</section>
+
+<section class="fl" id="f4">
+<div class="fh"><a class="fid" href="#f4">04</a><span class="fname">Overlays â€” Ask Â· QR scan Â· creation sheets</span></div>
+<div class="frow">
+
+<div class="fopt" id="s17" data-screen-label="Ask sheet">
+<div class="folabel"><a class="foid" href="#s17">s17</a>âœ¦ Ask â€” sourced answer sheet (global entry)</div>
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402,874">
+<div style="height:100%;background:#0E0D0B;display:flex;flex-direction:column;box-sizing:border-box;position:relative;font-family:'Figtree',system-ui,sans-serif;color:#EDEAE3">
+  <div style="position:absolute;inset:0;background:rgba(0,0,0,.55)"></div>
+  <div style="margin-top:auto;position:relative;border-radius:20px 20px 0 0;background:#26221C;border:1px solid rgba(255,255,255,.1);border-bottom:none;padding:10px 20px 34px;max-height:78%">
+    <div style="width:40px;height:4.5px;border-radius:999px;background:rgba(255,255,255,.18);margin:0 auto 16px"></div>
+    <div style="display:flex;align-items:center;gap:8px"><span style="color:#F4CB63;font-size:16px">âœ¦</span><span style="font-size:16px;font-weight:700;color:#F4CB63">Ask Signet</span><span style="margin-left:auto;font-size:12.5px;color:#78716A">answers from your chapter's records</span></div>
+    <div style="border-radius:14px;background:#171512;border:1px solid rgba(255,255,255,.1);padding:14px 16px;margin-top:16px;font-size:16px;color:#EDEAE3">How much are dues this semester?</div>
+    <div style="border-radius:16px;background:#1E1B17;border:1px solid rgba(239,182,59,.35);padding:16px;margin-top:12px">
+      <div style="font-size:16px;line-height:24px">Dues are <b style="color:#F4CB63">$425 per semester</b>, due <b>Sept 15</b>. Payment plans need treasurer approval one week before the deadline.</div>
+      <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:14px">
+        <span style="height:28px;border-radius:9px;background:#251E0E;border:1px solid #6B5619;color:#F4CB63;font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;gap:6px;padding:0 10px"><svg width="12" height="12" viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20a1.5 1.5 0 01-1.5 1.5h-10A1.5 1.5 0 015 20V5A1.5 1.5 0 016.5 3.5z" stroke="#F4CB63" stroke-width="2" fill="none" stroke-linejoin="round"></path></svg>Bylaws Â§4.2</span>
+        <span style="height:28px;border-radius:9px;background:#251E0E;border:1px solid #6B5619;color:#F4CB63;font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;gap:6px;padding:0 10px"><svg width="12" height="12" viewBox="0 0 24 24"><path d="M5 6.5h14M5 12h14M5 17.5h9" stroke="#F4CB63" stroke-width="2" stroke-linecap="round"></path></svg>Minutes Â· Mar 3</span>
+        <span style="height:28px;border-radius:9px;background:#251E0E;border:1px solid #6B5619;color:#F4CB63;font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;gap:6px;padding:0 10px"><svg width="12" height="12" viewBox="0 0 24 24"><path d="M4 6.5A3.5 3.5 0 017.5 3h9A3.5 3.5 0 0120 6.5v6a3.5 3.5 0 01-3.5 3.5H10l-4.5 4v-4A3.5 3.5 0 014 12.5z" stroke="#F4CB63" stroke-width="2" fill="none" stroke-linejoin="round"></path></svg>#treasury</span>
+      </div>
+      <div style="font-size:12.5px;color:#78716A;margin-top:12px">Sources open in-app. Low confidence = refuses, never fabricates.</div>
+    </div>
+    <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:14px">
+      <span style="height:32px;border-radius:10px;background:#171512;border:1px solid rgba(255,255,255,.1);color:#A9A399;font-size:13px;display:inline-flex;align-items:center;padding:0 12px">When's the next mandatory event?</span>
+      <span style="height:32px;border-radius:10px;background:#171512;border:1px solid rgba(255,255,255,.1);color:#A9A399;font-size:13px;display:inline-flex;align-items:center;padding:0 12px">What did we vote on last week?</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:16px">
+      <span style="flex:1;height:46px;border-radius:12px;background:#171512;border:1px solid rgba(255,255,255,.14);display:flex;align-items:center;padding:0 14px;color:#78716A;font-size:15.5px">Ask anythingâ€¦</span>
+      <span style="width:40px;height:40px;border-radius:11px;background:#EFB63B;display:flex;align-items:center;justify-content:center"><svg width="17" height="17" viewBox="0 0 17 17"><path d="M2.5 8.5h9M8 3.5l6 5-6 5" stroke="#2C2000" stroke-width="1.9" fill="none" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>
+    </div>
+  </div>
+</div>
+</x-import>
+</div>
+
+<div class="fopt" id="s18" data-screen-label="QR check-in scanner">
+<div class="folabel"><a class="foid" href="#s18">s18</a>QR check-in â€” member scanner</div>
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402,874">
+<div style="height:100%;background:#080807;display:flex;flex-direction:column;box-sizing:border-box;padding-top:62px;position:relative;font-family:'Figtree',system-ui,sans-serif;color:#EDEAE3">
+  <div style="display:flex;align-items:center;gap:12px;padding:8px 20px"><span style="font-size:16px;color:#EDEAE3">âœ•</span><div style="flex:1;text-align:center;font-size:16px;font-weight:700;margin-right:16px">Check in</div></div>
+  <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 32px">
+    <div style="font-size:15px;color:#A9A399;text-align:center">Point at the code up front</div>
+    <div style="width:240px;height:240px;position:relative;margin-top:20px">
+      <span style="position:absolute;top:0;left:0;width:36px;height:36px;border-top:3px solid #EFB63B;border-left:3px solid #EFB63B;border-radius:10px 0 0 0"></span>
+      <span style="position:absolute;top:0;right:0;width:36px;height:36px;border-top:3px solid #EFB63B;border-right:3px solid #EFB63B;border-radius:0 10px 0 0"></span>
+      <span style="position:absolute;bottom:0;left:0;width:36px;height:36px;border-bottom:3px solid #EFB63B;border-left:3px solid #EFB63B;border-radius:0 0 0 10px"></span>
+      <span style="position:absolute;bottom:0;right:0;width:36px;height:36px;border-bottom:3px solid #EFB63B;border-right:3px solid #EFB63B;border-radius:0 0 10px 0"></span>
+      <div style="position:absolute;inset:22px;background:rgba(255,255,255,.05);border-radius:12px"></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;border-radius:12px;background:#171512;border:1px solid rgba(255,255,255,.1);padding:10px 14px;margin-top:24px"><span style="width:8px;height:8px;border-radius:50%;background:#4BC262"></span><span style="font-size:14px;font-weight:600;color:#4BC262">Inside the Great Hall zone</span></div>
+    <div style="font-size:12.5px;color:#78716A;margin-top:10px;text-align:center;line-height:1.6">Code rotates every 30s. Geofence is the real check â€”<br>screenshots don't work.</div>
+  </div>
+  <div style="display:flex;justify-content:space-between;align-items:center;padding:0 32px 44px">
+    <span style="font-size:14.5px;font-weight:600;color:#F4CB63">Enter code manually</span>
+    <span style="width:44px;height:44px;border-radius:50%;background:#1E1B17;border:1px solid rgba(255,255,255,.14);display:flex;align-items:center;justify-content:center"><svg width="19" height="19" viewBox="0 0 24 24"><path d="M13 3L5 13h5l-1 8 8-10h-5z" fill="rgba(244,203,99,.16)" stroke="#F4CB63" stroke-width="1.6" stroke-linejoin="round"></path></svg></span>
+  </div>
+</div>
+</x-import>
+</div>
+
+<div class="fopt" id="s19" data-screen-label="New task sheet">
+<div class="folabel"><a class="foid" href="#s19">s19</a>Create task â€” bottom sheet</div>
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402,874">
+<div style="height:100%;background:#0E0D0B;display:flex;flex-direction:column;box-sizing:border-box;position:relative;font-family:'Figtree',system-ui,sans-serif;color:#EDEAE3">
+  <div style="position:absolute;inset:0;background:rgba(0,0,0,.55)"></div>
+  <div style="margin-top:auto;position:relative;border-radius:20px 20px 0 0;background:#26221C;border:1px solid rgba(255,255,255,.1);border-bottom:none;padding:10px 20px 34px">
+    <div style="width:40px;height:4.5px;border-radius:999px;background:rgba(255,255,255,.18);margin:0 auto 14px"></div>
+    <div style="display:flex;align-items:center"><span style="font-size:19px;font-weight:700">New task</span><span style="margin-left:auto;font-size:15px;color:#78716A">Cancel</span></div>
+    <div style="height:50px;border-radius:12px;background:#171512;border:1px solid #EFB63B;box-shadow:0 0 0 3px rgba(239,182,59,.22);display:flex;align-items:center;padding:0 16px;font-size:16px;margin-top:16px">Collect ride-share forms<span style="display:inline-block;width:2px;height:18px;background:#EFB63B;margin-left:2px"></span></div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <div style="flex:1;height:50px;border-radius:12px;background:#171512;border:1px solid rgba(255,255,255,.14);display:flex;align-items:center;gap:10px;padding:0 14px"><svg width="17" height="17" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="3" stroke="#A9A399" stroke-width="1.7" fill="none"></rect><path d="M4 9.5h16M8.5 3v4M15.5 3v4" stroke="#A9A399" stroke-width="1.7"></path></svg><span style="font-size:15px;color:#EDEAE3">Fri, Aug 21</span></div>
+      <div style="flex:1;height:50px;border-radius:12px;background:#171512;border:1px solid rgba(255,255,255,.14);display:flex;align-items:center;gap:10px;padding:0 14px"><span style="font-size:14px;font-weight:700;color:#F4CB63">+</span><span style="font-size:15px;color:#EDEAE3">5 pts</span></div>
+    </div>
+    <div style="height:50px;border-radius:12px;background:#171512;border:1px solid rgba(255,255,255,.14);display:flex;align-items:center;gap:10px;padding:0 14px;margin-top:8px">
+      <span style="width:26px;height:26px;border-radius:50%;background:#26221C;color:#A9A399;font-size:10.5px;font-weight:700;display:flex;align-items:center;justify-content:center">DK</span>
+      <span style="font-size:15px;color:#EDEAE3">Dev Kapoor</span><span style="margin-left:auto;font-size:13px;color:#78716A">assignee</span>
+    </div>
+    <div style="height:50px;border-radius:12px;background:#EFB63B;color:#2C2000;font-size:16px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:16px">Create task</div>
+  </div>
+</div>
+</x-import>
+</div>
+
+<div class="fopt" id="s20" data-screen-label="Log service hours sheet">
+<div class="folabel"><a class="foid" href="#s20">s20</a>Log service hours â€” tall sheet</div>
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402,874">
+<div style="height:100%;background:#0E0D0B;display:flex;flex-direction:column;box-sizing:border-box;position:relative;font-family:'Figtree',system-ui,sans-serif;color:#EDEAE3">
+  <div style="position:absolute;inset:0;background:rgba(0,0,0,.55)"></div>
+  <div style="margin-top:auto;position:relative;border-radius:20px 20px 0 0;background:#26221C;border:1px solid rgba(255,255,255,.1);border-bottom:none;padding:10px 20px 34px">
+    <div style="width:40px;height:4.5px;border-radius:999px;background:rgba(255,255,255,.18);margin:0 auto 14px"></div>
+    <div style="display:flex;align-items:center"><span style="font-size:19px;font-weight:700">Log service hours</span><span style="margin-left:auto;font-size:15px;color:#78716A">Cancel</span></div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:24px;margin-top:20px">
+      <span style="width:44px;height:44px;border-radius:12px;background:#171512;border:1px solid rgba(255,255,255,.14);color:#A9A399;font-size:22px;display:flex;align-items:center;justify-content:center">âˆ’</span>
+      <span style="font-size:40px;font-weight:700;letter-spacing:-.5px;font-variant-numeric:tabular-nums">3.5<span style="font-size:17px;color:#78716A;font-weight:600"> hrs</span></span>
+      <span style="width:44px;height:44px;border-radius:12px;background:#171512;border:1px solid rgba(255,255,255,.14);color:#F4CB63;font-size:22px;display:flex;align-items:center;justify-content:center">+</span>
+    </div>
+    <div style="height:50px;border-radius:12px;background:#171512;border:1px solid rgba(255,255,255,.14);display:flex;align-items:center;gap:10px;padding:0 14px;margin-top:20px"><svg width="17" height="17" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="3" stroke="#A9A399" stroke-width="1.7" fill="none"></rect><path d="M4 9.5h16" stroke="#A9A399" stroke-width="1.7"></path></svg><span style="font-size:15px;color:#EDEAE3">Highway cleanup Â· Aug 16</span><span style="margin-left:auto;color:#78716A">â€º</span></div>
+    <div style="display:flex;align-items:center;gap:10px;height:50px;border-radius:12px;background:#171512;border:1px dashed rgba(255,255,255,.2);padding:0 14px;margin-top:8px"><svg width="17" height="17" viewBox="0 0 24 24"><rect x="3.5" y="6.5" width="17" height="13" rx="3" stroke="#F4CB63" stroke-width="1.6" fill="rgba(244,203,99,.1)"></rect><circle cx="12" cy="13" r="3.4" stroke="#F4CB63" stroke-width="1.6" fill="none"></circle><path d="M8.5 6.5L10 4h4l1.5 2.5" stroke="#F4CB63" stroke-width="1.6" fill="none" stroke-linejoin="round"></path></svg><span style="font-size:15px;color:#F4CB63;font-weight:600">Add photo proof</span><span style="margin-left:auto;font-size:13px;color:#78716A">optional</span></div>
+    <div style="height:50px;border-radius:12px;background:#EFB63B;color:#2C2000;font-size:16px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:16px">Submit for approval</div>
+    <div style="text-align:center;font-size:12.5px;color:#78716A;margin-top:10px">Goes to the service chair Â· you'll get a notification</div>
+  </div>
+</div>
+</x-import>
+</div>
+
+<div class="fopt" id="s21" data-screen-label="Upload document sheet">
+<div class="folabel"><a class="foid" href="#s21">s21</a>Upload document â€” sheet</div>
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402,874">
+<div style="height:100%;background:#0E0D0B;display:flex;flex-direction:column;box-sizing:border-box;position:relative;font-family:'Figtree',system-ui,sans-serif;color:#EDEAE3">
+  <div style="position:absolute;inset:0;background:rgba(0,0,0,.55)"></div>
+  <div style="margin-top:auto;position:relative;border-radius:20px 20px 0 0;background:#26221C;border:1px solid rgba(255,255,255,.1);border-bottom:none;padding:10px 20px 34px">
+    <div style="width:40px;height:4.5px;border-radius:999px;background:rgba(255,255,255,.18);margin:0 auto 14px"></div>
+    <div style="display:flex;align-items:center"><span style="font-size:19px;font-weight:700">Upload document</span><span style="margin-left:auto;font-size:15px;color:#78716A">Cancel</span></div>
+    <div style="display:flex;align-items:center;gap:12px;border-radius:14px;background:#171512;border:1px solid rgba(255,255,255,.1);padding:14px 16px;margin-top:16px">
+      <svg width="24" height="24" viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20a1.5 1.5 0 01-1.5 1.5h-10A1.5 1.5 0 015 20V5A1.5 1.5 0 016.5 3.5z" fill="rgba(244,203,99,.14)" stroke="#F4CB63" stroke-width="1.6" stroke-linejoin="round"></path><path d="M14 3.5V8h4.5" stroke="#F4CB63" stroke-width="1.6" fill="none" stroke-linejoin="round"></path></svg>
+      <div style="flex:1"><div style="font-size:15.5px;font-weight:600">Meeting minutes â€” Aug 14.pdf</div><div style="font-size:13px;color:#78716A;margin-top:1px">218 KB Â· from Files</div></div>
+      <span style="font-size:13.5px;color:#F4CB63;font-weight:600">Change</span>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <span style="height:34px;border-radius:10px;background:#EFB63B;color:#2C2000;font-size:13px;font-weight:700;display:inline-flex;align-items:center;padding:0 13px">Minutes</span>
+      <span style="height:34px;border-radius:10px;background:#171512;border:1px solid rgba(255,255,255,.12);color:#A9A399;font-size:13px;font-weight:600;display:inline-flex;align-items:center;padding:0 13px">Bylaws</span>
+      <span style="height:34px;border-radius:10px;background:#171512;border:1px solid rgba(255,255,255,.12);color:#A9A399;font-size:13px;font-weight:600;display:inline-flex;align-items:center;padding:0 13px">Finance</span>
+      <span style="height:34px;border-radius:10px;background:#171512;border:1px solid rgba(255,255,255,.12);color:#A9A399;font-size:13px;font-weight:600;display:inline-flex;align-items:center;padding:0 13px">Other</span>
+    </div>
+    <div style="display:flex;align-items:center;padding:14px 2px 0"><div style="flex:1"><div style="font-size:15.5px;font-weight:600">Officers only</div><div style="font-size:13px;color:#78716A;margin-top:1px">Hide from general members</div></div><span style="width:48px;height:29px;border-radius:999px;background:#26221C;border:1px solid rgba(255,255,255,.14);position:relative;box-sizing:border-box"><span style="position:absolute;top:1.5px;left:3px;width:24px;height:24px;border-radius:50%;background:#78716A"></span></span></div>
+    <div style="height:50px;border-radius:12px;background:#EFB63B;color:#2C2000;font-size:16px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:18px">Upload</div>
+    <div style="text-align:center;font-size:12.5px;color:#78716A;margin-top:10px">Documents feed âœ¦ Ask answers</div>
+  </div>
+</div>
+</x-import>
+</div>
+
+</div>
+</section>
+
+<section class="fl" id="f5">
+<div class="fh"><a class="fid" href="#f5">05</a><span class="fname">Admin-lite â€” host check-in Â· adjust points</span></div>
+<div class="frow">
+
+<div class="fopt" id="s22" data-screen-label="Host check-in (admin)">
+<div class="folabel"><a class="foid" href="#s22">s22</a>Host check-in â€” rotating QR, dark-on-white for scan reliability</div>
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402,874">
+<div style="height:100%;background:#0E0D0B;display:flex;flex-direction:column;box-sizing:border-box;padding-top:62px;font-family:'Figtree',system-ui,sans-serif;color:#EDEAE3">
+  <div style="display:flex;align-items:center;gap:12px;padding:8px 20px"><span style="font-size:16px;color:#F4CB63">âœ• End</span><div style="flex:1;text-align:center;font-size:16px;font-weight:700">Chapter meeting</div><span style="width:44px"></span></div>
+  <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 32px">
+    <div style="background:#FFFFFF;border-radius:16px;padding:22px">
+      <svg width="196" height="196" viewBox="0 0 29 29" shape-rendering="crispEdges">
+        <rect x="0" y="0" width="7" height="7" fill="#111"></rect><rect x="1" y="1" width="5" height="5" fill="#fff"></rect><rect x="2" y="2" width="3" height="3" fill="#111"></rect>
+        <rect x="22" y="0" width="7" height="7" fill="#111"></rect><rect x="23" y="1" width="5" height="5" fill="#fff"></rect><rect x="24" y="2" width="3" height="3" fill="#111"></rect>
+        <rect x="0" y="22" width="7" height="7" fill="#111"></rect><rect x="1" y="23" width="5" height="5" fill="#fff"></rect><rect x="2" y="24" width="3" height="3" fill="#111"></rect>
+        <rect x="9" y="1" width="2" height="2" fill="#111"></rect><rect x="13" y="0" width="2" height="3" fill="#111"></rect><rect x="17" y="1" width="2" height="2" fill="#111"></rect><rect x="10" y="4" width="3" height="2" fill="#111"></rect><rect x="15" y="4" width="2" height="2" fill="#111"></rect>
+        <rect x="1" y="9" width="2" height="2" fill="#111"></rect><rect x="4" y="10" width="2" height="3" fill="#111"></rect><rect x="0" y="14" width="2" height="2" fill="#111"></rect><rect x="3" y="15" width="2" height="2" fill="#111"></rect><rect x="1" y="18" width="3" height="2" fill="#111"></rect>
+        <rect x="9" y="9" width="3" height="3" fill="#111"></rect><rect x="14" y="9" width="2" height="2" fill="#111"></rect><rect x="18" y="10" width="2" height="3" fill="#111"></rect><rect x="10" y="13" width="2" height="2" fill="#111"></rect><rect x="13" y="14" width="3" height="2" fill="#111"></rect><rect x="17" y="14" width="2" height="2" fill="#111"></rect><rect x="9" y="17" width="2" height="2" fill="#111"></rect><rect x="12" y="18" width="2" height="2" fill="#111"></rect><rect x="16" y="17" width="3" height="2" fill="#111"></rect>
+        <rect x="22" y="9" width="2" height="2" fill="#111"></rect><rect x="25" y="10" width="2" height="3" fill="#111"></rect><rect x="27" y="14" width="2" height="2" fill="#111"></rect><rect x="23" y="14" width="2" height="2" fill="#111"></rect><rect x="26" y="17" width="2" height="2" fill="#111"></rect>
+        <rect x="9" y="22" width="2" height="2" fill="#111"></rect><rect x="13" y="23" width="2" height="2" fill="#111"></rect><rect x="16" y="22" width="3" height="2" fill="#111"></rect><rect x="21" y="23" width="2" height="2" fill="#111"></rect><rect x="24" y="22" width="2" height="2" fill="#111"></rect><rect x="22" y="25" width="3" height="2" fill="#111"></rect><rect x="26" y="26" width="2" height="2" fill="#111"></rect><rect x="10" y="26" width="3" height="2" fill="#111"></rect><rect x="15" y="26" width="2" height="2" fill="#111"></rect>
+      </svg>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:18px"><span style="width:8px;height:8px;border-radius:50%;background:#4BC262"></span><span style="font-size:14.5px;font-weight:600;color:#A9A399">Rotates in <b style="color:#EDEAE3;font-variant-numeric:tabular-nums">0:21</b></span></div>
+    <div style="font-size:34px;font-weight:700;letter-spacing:-.5px;color:#F4CB63;margin-top:20px">23<span style="font-size:17px;color:#78716A;font-weight:600"> / 31 checked in</span></div>
+    <div style="height:8px;border-radius:999px;background:#26221C;margin-top:12px;overflow:hidden;width:100%"><span style="display:block;width:74%;height:100%;border-radius:999px;background:#EFB63B"></span></div>
+  </div>
+  <div style="display:flex;justify-content:center;gap:24px;padding:0 32px 44px">
+    <span style="font-size:14.5px;font-weight:600;color:#F4CB63">Manual override</span>
+    <span style="font-size:14.5px;font-weight:600;color:#78716A">Show code: 4KQ-88</span>
+  </div>
+</div>
+</x-import>
+</div>
+
+<div class="fopt" id="s23" data-screen-label="Adjust points sheet (admin)">
+<div class="folabel"><a class="foid" href="#s23">s23</a>Adjust points â€” reason required (audit trail)</div>
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402,874">
+<div style="height:100%;background:#0E0D0B;display:flex;flex-direction:column;box-sizing:border-box;position:relative;font-family:'Figtree',system-ui,sans-serif;color:#EDEAE3">
+  <div style="position:absolute;inset:0;background:rgba(0,0,0,.55)"></div>
+  <div style="margin-top:auto;position:relative;border-radius:20px 20px 0 0;background:#26221C;border:1px solid rgba(255,255,255,.1);border-bottom:none;padding:10px 20px 34px">
+    <div style="width:40px;height:4.5px;border-radius:999px;background:rgba(255,255,255,.18);margin:0 auto 14px"></div>
+    <div style="display:flex;align-items:center"><span style="font-size:19px;font-weight:700">Adjust points</span><span style="margin-left:auto;font-size:15px;color:#78716A">Cancel</span></div>
+    <div style="display:flex;align-items:center;gap:12px;border-radius:14px;background:#171512;border:1px solid rgba(255,255,255,.1);padding:12px 14px;margin-top:16px">
+      <span style="width:36px;height:36px;border-radius:50%;background:#26221C;color:#A9A399;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center">DK</span>
+      <div style="flex:1"><div style="font-size:15.5px;font-weight:600">Dev Kapoor</div><div style="font-size:13px;color:#78716A;margin-top:1px">1,180 pts Â· #5</div></div>
+      <span style="font-size:13.5px;color:#F4CB63;font-weight:600">Change</span>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:24px;margin-top:18px">
+      <span style="width:44px;height:44px;border-radius:12px;background:#171512;border:1px solid rgba(255,255,255,.14);color:#F85149;font-size:22px;display:flex;align-items:center;justify-content:center">âˆ’</span>
+      <span style="font-size:40px;font-weight:700;letter-spacing:-.5px;color:#F4CB63;font-variant-numeric:tabular-nums">+25</span>
+      <span style="width:44px;height:44px;border-radius:12px;background:#171512;border:1px solid rgba(255,255,255,.14);color:#F4CB63;font-size:22px;display:flex;align-items:center;justify-content:center">+</span>
+    </div>
+    <div style="border-radius:12px;background:#171512;border:1px solid rgba(255,255,255,.14);padding:13px 16px;margin-top:18px;font-size:15.5px;color:#EDEAE3;min-height:44px;box-sizing:border-box">Organized AM250 mailing push<span style="display:inline-block;width:2px;height:17px;background:#EFB63B;margin-left:2px;vertical-align:-3px"></span></div>
+    <div style="font-size:12.5px;color:#78716A;margin-top:8px">A reason is required â€” adjustments are logged for the chapter.</div>
+    <div style="height:50px;border-radius:12px;background:#EFB63B;color:#2C2000;font-size:16px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:16px">Apply +25</div>
+  </div>
+</div>
+</x-import>
+</div>
+
+</div>
+</section>
+</x-dc>
+</body>
+</html>

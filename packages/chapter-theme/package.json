@@ -1,0 +1,40 @@
+{
+  "name": "@repo/chapter-theme",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "import": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./accent-vars": {
+      "types": "./dist/accent-vars.d.ts",
+      "require": "./dist/accent-vars.js",
+      "import": "./src/accent-vars.ts",
+      "default": "./dist/accent-vars.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint . --max-warnings 0",
+    "check-types": "tsc --noEmit",
+    "test": "vitest run",
+    "test:cov": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@radix-ui/colors": "3.0.0",
+    "@repo/color": "*",
+    "bezier-easing": "^3.0.1",
+    "colorjs.io": "0.5.2"
+  },
+  "devDependencies": {
+    "@repo/eslint-config": "*",
+    "@repo/typescript-config": "*",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "vitest": "^4.1.10"
+  }
+}

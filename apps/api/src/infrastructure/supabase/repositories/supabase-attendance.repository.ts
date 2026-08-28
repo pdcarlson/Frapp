@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+  TablesUpdate,
+} from '../database.types';
 import { IAttendanceRepository } from '../../../domain/repositories/attendance.repository.interface';
 import { EventAttendance } from '../../../domain/entities/event-attendance.entity';
 
@@ -11,23 +15,13 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
     private readonly supabase: FrappSupabaseClient,
   ) {}
 
-  async findById(id: string): Promise<EventAttendance | null> {
-    const { data, error } = await this.supabase
-      .from('event_attendance')
-      .select('*')
-      .eq('id', id)
-      .maybeSingle();
-    if (error) throw error;
-    return data as EventAttendance | null;
-  }
-
   async findByEvent(eventId: string): Promise<EventAttendance[]> {
     const { data, error } = await this.supabase
       .from('event_attendance')
       .select('*')
       .eq('event_id', eventId);
     if (error) throw error;
-    return (data as EventAttendance[]) || [];
+    return data || [];
   }
 
   async findByEventAndUser(
@@ -41,40 +35,56 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
       .eq('user_id', userId)
       .maybeSingle();
     if (error) throw error;
-    return data as EventAttendance | null;
+    return data;
   }
 
-  async create(data: Partial<EventAttendance>): Promise<EventAttendance> {
-    const { data: created, error } = await this.supabase
+  async createMany(
+    rows: TablesInsert<'event_attendance'>[],
+  ): Promise<EventAttendance[]> {
+    if (rows.length === 0) {
+      return [];
+    }
+    const { data, error } = await this.supabase
       .from('event_attendance')
-      .insert(data as never)
-      .select()
-      .single();
-
+      .insert(rows)
+      .select();
     if (error) throw error;
-    return created as EventAttendance;
+    return data ?? [];
   }
 
   async update(
     id: string,
-    data: Partial<EventAttendance>,
+    data: TablesUpdate<'event_attendance'>,
   ): Promise<EventAttendance> {
     const { data: updated, error } = await this.supabase
       .from('event_attendance')
-      .update(data as never)
+      .update(data)
       .eq('id', id)
       .select()
       .single();
 
     if (error) throw error;
-    return updated as EventAttendance;
+    return updated;
   }
 
-  async delete(id: string): Promise<void> {
-    const { error } = await this.supabase
-      .from('event_attendance')
-      .delete()
-      .eq('id', id);
+  async checkInAtomic(
+    eventId: string,
+    userId: string,
+    chapterId: string,
+    checkInTime: string,
+    pointValue: number,
+    eventName: string,
+  ): Promise<EventAttendance | null> {
+    const { data, error } = await this.supabase.rpc('check_in_event', {
+      p_event_id: eventId,
+      p_user_id: userId,
+      p_chapter_id: chapterId,
+      p_check_in_time: checkInTime,
+      p_point_value: pointValue,
+      p_event_name: eventName,
+    });
     if (error) throw error;
+    const rows = data ?? [];
+    return rows.length > 0 ? rows[0] : null;
   }
 }

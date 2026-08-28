@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { CustomThrottlerGuard } from './interface/guards/custom-throttler.guard';
+import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { SupabaseModule } from './infrastructure/supabase/supabase.module';
 import { HealthModule } from './modules/health/health.module';
@@ -26,6 +28,13 @@ import { PollModule } from './modules/poll/poll.module';
 import { SemesterRolloverModule } from './modules/semester-rollover/semester-rollover.module';
 import { ReportModule } from './modules/report/report.module';
 import { SearchModule } from './modules/search/search.module';
+import { ChapterConfigModule } from './modules/chapter-config/chapter-config.module';
+import { ChapterDirectoryModule } from './modules/chapter-directory/chapter-directory.module';
+import { ChatBridgeWorkerModule } from './modules/chat-bridge-worker/chat-bridge-worker.module';
+import { ChatPushWorkerModule } from './modules/chat-push-worker/chat-push-worker.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { ScheduledJobsModule } from './modules/scheduled-jobs/scheduled-jobs.module';
+import { DiscordImportModule } from './modules/discord-import/discord-import.module';
 import { validateEnv } from './config/env.validation';
 
 @Module({
@@ -64,6 +73,19 @@ import { validateEnv } from './config/env.validation';
     SemesterRolloverModule,
     ReportModule,
     SearchModule,
+    ChapterConfigModule,
+    ChapterDirectoryModule,
+    ChatBridgeWorkerModule,
+    ChatPushWorkerModule,
+    AnalyticsModule,
+    ScheduledJobsModule,
+    DiscordImportModule,
+  ],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: CustomThrottlerGuard,
+    },
   ],
 })
 export class AppModule {}

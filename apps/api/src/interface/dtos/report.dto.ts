@@ -1,5 +1,9 @@
-import { IsOptional, IsString, IsUUID } from 'class-validator';
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  POINTS_WINDOWS,
+  type PointsWindow,
+} from '../../domain/utils/points-window';
 
 export class AttendanceReportDto {
   @ApiPropertyOptional({ description: 'Filter by event ID' })
@@ -27,11 +31,13 @@ export class PointsReportDto {
   user_id?: string;
 
   @ApiPropertyOptional({
-    description: 'Time window (e.g. semester identifier)',
+    description:
+      'Time window for totals (defaults to all-time). Defined identically to the points leaderboard: semester excludes the latest archive period; month is the trailing calendar month.',
+    enum: [...POINTS_WINDOWS],
   })
   @IsOptional()
-  @IsString()
-  window?: string;
+  @IsEnum(POINTS_WINDOWS)
+  window?: PointsWindow;
 }
 
 export class ServiceReportDto {
@@ -51,4 +57,51 @@ export class ServiceReportDto {
   @IsOptional()
   @IsString()
   end_date?: string;
+}
+
+/**
+ * Envelope returned when `format=pdf`. The PDF itself is never streamed
+ * inline — it lands in a private bucket and the caller gets a time-limited
+ * signed URL (spec/behavior/reports.md, "Export Flow").
+ */
+export class ReportExportResponseDto {
+  @ApiProperty({ description: 'Signed download URL, valid for one hour' })
+  url: string;
+
+  @ApiProperty({ description: 'ISO timestamp at which the URL stops working' })
+  expires_at: string;
+
+  @ApiProperty({ description: 'URL lifetime in seconds', example: 3600 })
+  expires_in: number;
+
+  @ApiProperty({ description: 'Suggested download filename' })
+  filename: string;
+
+  @ApiProperty({ description: 'Bucket-relative object path' })
+  storage_path: string;
+
+  @ApiProperty({ description: 'Number of data rows in the document' })
+  row_count: number;
+
+  @ApiProperty({
+    description:
+      'True when the report hit the row ceiling, so the document is not a complete record of the chapter. row_count reports what was printed, not what matched.',
+    example: false,
+  })
+  truncated: boolean;
+
+  @ApiProperty({
+    description: 'The row ceiling that "truncated" refers to',
+    example: 5000,
+  })
+  row_limit: number;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'What was cut, when the row count alone does not say it — a roster whose point balances were summed from a truncated read is the right length, so row_limit on its own would describe a cut the document never took. Absent when the row count is the whole story.',
+    example:
+      'point balances are incomplete — summed from the first 50,000 transactions',
+  })
+  truncation_note?: string;
 }

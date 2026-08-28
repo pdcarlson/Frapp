@@ -1,15 +1,22 @@
 import {
+  ArrayMaxSize,
   IsArray,
   IsBoolean,
   IsIn,
   IsInt,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
   MaxLength,
   Min,
+  MinLength,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { CHAT_MESSAGE_CONTENT_MAX_LENGTH } from '@repo/validation';
+import { CHAT_MESSAGE_KINDS } from '../../domain/entities/chat.entity';
 
 const CHANNEL_TYPES = ['PUBLIC', 'PRIVATE', 'ROLE_GATED'] as const;
 
@@ -120,24 +127,147 @@ export class UpdateCategoryDto {
   display_order?: number;
 }
 
-export class SendMessageDto {
-  @ApiProperty()
+/**
+ * One file the client uploaded to the `chat` bucket and is attaching.
+ *
+ * `storage_path` is validated for shape here and for OWNERSHIP in
+ * `ChatService.validateAttachmentInputs`, which re-checks it against the prefix
+ * the API itself minted. A DTO cannot do that second half — it does not know
+ * which channel the request is for — and the ownership check is the one that
+ * matters, so neither stands alone.
+ */
+export class MessageAttachmentDto {
+  @ApiProperty({ maxLength: 1024 })
   @IsString()
+  @MinLength(1)
+  @MaxLength(1024)
+  storage_path: string;
+
+  @ApiProperty({ maxLength: 255 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(255)
+  filename: string;
+
+  @ApiProperty({ maxLength: 255 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(255)
+  content_type: string;
+
+  /** Reported by the browser; advisory, and never trusted as the stored size. */
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  byte_size?: number;
+}
+
+export class SendMessageDto {
+  /**
+   * Client-generated idempotency key. The server dedupes on
+   * `(channel_id, sender_id, client_message_id)` via the partial unique
+   * index, so a retried POST with the same id returns the existing row
+   * with `deduplicated: true` instead of inserting again.
+   */
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID()
+  client_message_id: string;
+
+  /**
+   * May be empty — but only when `attachments` is not. A message that is nothing
+   * but a file is a real message, and the emptiness rule is therefore a
+   * relationship between two fields, which a per-field validator cannot express;
+   * `ChatService.sendMessage` enforces it.
+   */
+  @ApiProperty({ minLength: 0, maxLength: CHAT_MESSAGE_CONTENT_MAX_LENGTH })
+  @IsString()
+  @MaxLength(CHAT_MESSAGE_CONTENT_MAX_LENGTH)
   content: string;
+
+  /**
+   * Files uploaded through `POST /v1/channels/{id}/upload-url` that belong to
+   * this message.
+   *
+   * Attachments are rows, not text. The composer used to append
+   * `📎 <name> (<path>)` into `content`, which left the object with no link back
+   * to the message it belonged to.
+   */
+  @ApiPropertyOptional({ type: [MessageAttachmentDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @ValidateNested({ each: true })
+  @Type(() => MessageAttachmentDto)
+  attachments?: MessageAttachmentDto[];
+
+  /**
+   * Extended hot-path kind (Chunk 02). Defaults to `text` server-side
+   * when omitted so existing callers stay backward-compatible. The
+   * default is intentionally NOT declared in the OpenAPI schema so the
+   * generated SDK exposes `kind` as a true optional rather than a
+   * "required with default" (openapi-typescript inlines the default and
+   * marks the field non-nullable, which breaks plain `text` callers).
+   */
+  @ApiPropertyOptional({ enum: CHAT_MESSAGE_KINDS })
+  @IsOptional()
+  @IsIn(CHAT_MESSAGE_KINDS)
+  kind?: (typeof CHAT_MESSAGE_KINDS)[number];
+
+  /** Inline card payload for rich kinds (event, poll, task, …). */
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  payload?: Record<string, any>;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsUUID()
   reply_to_id?: string;
 
-  @ApiPropertyOptional()
+  /**
+   * Free-form client annotations, persisted verbatim onto the message row.
+   * `@IsObject` is the type check `payload` above already carries — without it
+   * this was the one request-DTO property in the API with a gate but no
+   * constraint, so a caller could store a bare string or array in a column the
+   * readers treat as an object. Overall size stays bounded by the body parser's
+   * default 100 kB JSON limit.
+   */
+  @ApiPropertyOptional({ type: Object })
   @IsOptional()
+  @IsObject()
   metadata?: Record<string, any>;
 }
 
-export class EditMessageDto {
-  @ApiProperty()
+/**
+ * Per-user reaction / vote / RSVP / card-action. Writes to
+ * `chat_message_actions` (Chunk 02). For `action_type === "vote"` the
+ * server UPSERTS — same row, replaced `payload` — so a poll vote can
+ * be changed without thrashing the Realtime subscription.
+ */
+export class ChatMessageActionDto {
+  @ApiProperty({
+    description:
+      'Action discriminator. `reaction:<emoji>` for emoji reactions, `vote` for poll votes (UPSERT), free-form for card actions.',
+  })
   @IsString()
+  @MinLength(1)
+  @MaxLength(50)
+  action_type: string;
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  payload?: Record<string, any>;
+}
+
+export class EditMessageDto {
+  // Same bound as SendMessageDto.content — without it an edit could grow a
+  // message past the limit its original POST was held to.
+  @ApiProperty({ minLength: 1, maxLength: CHAT_MESSAGE_CONTENT_MAX_LENGTH })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(CHAT_MESSAGE_CONTENT_MAX_LENGTH)
   content: string;
 }
 
@@ -158,4 +288,23 @@ export class RequestChatUploadUrlDto {
   @IsString()
   @MaxLength(255)
   content_type: string;
+}
+
+export class ChannelUnreadCountDto {
+  @ApiProperty({ format: 'uuid' })
+  channel_id: string;
+
+  @ApiProperty({
+    type: Number,
+    description:
+      'Messages in this channel newer than the caller’s read cursor, excluding their own and deleted ones. A channel never opened counts all of them.',
+  })
+  unread_count: number;
+
+  @ApiProperty({
+    type: Number,
+    description:
+      'Subset of unread_count that mentions the caller. Mentions are resolved server-side at send time.',
+  })
+  mention_count: number;
 }

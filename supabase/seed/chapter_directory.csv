@@ -1,0 +1,51 @@
+org_letters,org_name,archetype,chapter_designation,university,university_short,founded_year,default_colors,website,source
+ΣΦΕ,Sigma Phi Epsilon,ifc,California Eta,UCLA,UCLA,1948,"{""accent"":""#C9A56F""}",https://sigmaphiepsilon.org,seed
+ΠΚΑ,Pi Kappa Alpha,ifc,Alpha Chi,University of Tennessee,UTK,1947,"{""accent"":""#BF0A30""}",https://pka.com,seed
+ΣΑΕ,Sigma Alpha Epsilon,ifc,Tennessee Alpha,Vanderbilt University,Vandy,1943,"{""accent"":""#C9A56F""}",https://sae.net,seed
+ΦΔΘ,Phi Delta Theta,ifc,Tennessee Beta,University of Michigan,UMich,1887,"{""accent"":""#C9A56F""}",https://phideltatheta.org,seed
+ΚΑ,Kappa Alpha Order,ifc,Alpha,Washington and Lee,WLU,1865,"{""accent"":""#C9A56F""}",https://kappaalphaorder.org,seed
+ΑΤΩ,Alpha Tau Omega,ifc,Alpha Sigma,Purdue University,Purdue,1922,"{""accent"":""#C9A56F""}",https://ato.org,seed
+ΦΚΨ,Phi Kappa Psi,ifc,Indiana Gamma,Indiana University,IU,1901,"{""accent"":""#C9A56F""}",https://phikappapsi.com,seed
+ΒΘΠ,Beta Theta Pi,ifc,Beta Iota,Ohio State,OSU,1899,"{""accent"":""#C9A56F""}",https://betatheta.pi.org,seed
+ΔΤΔ,Delta Tau Delta,ifc,Gamma Eta,University of Georgia,UGA,1920,"{""accent"":""#C9A56F""}",https://delts.org,seed
+ΛΧΑ,Lambda Chi Alpha,ifc,Zeta Omega,Michigan State,MSU,1915,"{""accent"":""#C9A56F""}",https://lambdachi.org,seed
+ΑΕΠ,Alpha Epsilon Pi,ifc,Epsilon Pi,University of Florida,UF,1960,"{""accent"":""#C9A56F""}",https://aepi.org,seed
+ΑΧΡ,Alpha Chi Rho,ifc,Phi Chi,Rutgers University,Rutgers,1895,"{""accent"":""#C9A56F""}",https://alphachirho.org,seed
+ΣΝ,Sigma Nu,ifc,Gamma Theta,LSU,LSU,1892,"{""accent"":""#C9A56F""}",https://sigmanu.org,seed
+ΦΓΔ,Phi Gamma Delta,ifc,Pi Tau,RPI,RPI,1878,"{""accent"":""#C9A56F""}",https://phigam.org,seed
+ΘΧ,Theta Chi,ifc,Alpha Rho,Northeastern,NEU,1910,"{""accent"":""#C9A56F""}",https://thetachi.org,seed
+ΑΦΑ,Alpha Phi Alpha,nphc,Beta Chapter,Howard University,Howard,1906,"{""accent"":""#C9A56F""}",https://alpha-phi-alpha.org,seed
+ΩΨΦ,Omega Psi Phi,nphc,Chi Chapter,North Carolina A&T,NCAT,1911,"{""accent"":""#C9A56F""}",https://oppf.org,seed
+ΚΑΨ,Kappa Alpha Psi,nphc,Gamma Chapter,Indiana University,IU,1911,"{""accent"":""#C9A56F""}",https://kappaalphapsi1911.com,seed
+ΦΒΣ,Phi Beta Sigma,nphc,Alpha Chapter,Howard University,Howard,1914,"{""accent"":""#C9A56F""}",https://pbs1914.org,seed
+ΙΦΘ,Iota Phi Theta,nphc,Alpha Iota,Morgan State,Morgan,1963,"{""accent"":""#C9A56F""}",https://iotaphitheta.org,seed
+ΑΚΑ,Alpha Kappa Alpha,npc,Beta Chapter,Howard University,Howard,1908,"{""accent"":""#FF69B4""}",https://aka1908.com,seed
+ΔΣΘ,Delta Sigma Theta,npc,Alpha Chapter,Howard University,Howard,1913,"{""accent"":""#C9A56F""}",https://dst1913.org,seed
+ΖΦΒ,Zeta Phi Beta,npc,Alpha Chapter,Howard University,Howard,1920,"{""accent"":""#FFFFFF""}",https://zphib1920.org,seed
+ΣΓΡ,Sigma Gamma Rho,npc,Alpha Chapter,Butler University,Butler,1922,"{""accent"":""#C9A56F""}",https://sgrho1922.org,seed
+ΔΔΔ,Delta Delta Delta,npc,Alpha Alpha,Boston University,BU,1888,"{""accent"":""#C0C0C0""}",https://tridelta.org,seed
+ΑΦ,Alpha Phi,npc,Alpha Alpha,Syracuse University,SU,1872,"{""accent"":""#C9A56F""}",https://alphaphi.org,seed
+ΧΩ,Chi Omega,npc,Alpha Lambda,University of Texas,UT,1905,"{""accent"":""#C9A56F""}",https://chiomega.com,seed
+ΠΒΦ,Pi Beta Phi,npc,Illinois Beta,Northwestern University,NW,1891,"{""accent"":""#C9A56F""}",https://pibetaphi.org,seed
+ΑΔΠ,Alpha Delta Pi,npc,Theta,Emory University,Emory,1897,"{""accent"":""#FFFFFF""}",https://alphadeltapi.org,seed
+ΓΦΒ,Gamma Phi Beta,npc,Alpha Gamma,Michigan,UMich,1874,"{""accent"":""#C9A56F""}",https://gammaphibeta.org,seed
+ΛΘΑ,Lambda Theta Alpha,mgc,Alpha Chapter,Kean University,Kean,1975,"{""accent"":""#C9A56F""}",https://lambdathetaalpha.org,seed
+ΛΥΛ,Lambda Upsilon Lambda,mgc,Beta Chapter,Cornell University,Cornell,1982,"{""accent"":""#C9A56F""}",https://launidad.org,seed
+ΘΔΧ,Theta Delta Chi,mgc,Alpha Xi,UCLA,UCLA,1992,"{""accent"":""#C9A56F""}",https://thetadeltachi.org,seed
+ΑΚΔΦ,Alpha Kappa Delta Phi,mgc,Epsilon Chapter,UC Berkeley,UCB,1990,"{""accent"":""#C9A56F""}",https://akdphi.org,seed
+ΑΣΑ,Alpha Sigma Alpha,npc,Alpha Chi,Indiana State University,ISU,1901,"{""accent"":""#C9A56F""}",https://alphasigmaalpha.org,seed
+ΦΜ,Phi Mu,npc,Alpha Alpha,Wesleyan,Wesleyan,1852,"{""accent"":""#C9A56F""}",https://phimu.org,seed
+ΑΞΔ,Alpha Xi Delta,npc,Alpha Nu,Northwestern,NW,1893,"{""accent"":""#C9A56F""}",https://alphaxidelta.org,seed
+ΔΖ,Delta Zeta,npc,Alpha Pi,Miami University,MU,1902,"{""accent"":""#C9A56F""}",https://deltazeta.org,seed
+ΣΔΤ,Sigma Delta Tau,npc,Alpha Theta,Cornell University,Cornell,1917,"{""accent"":""#C9A56F""}",https://sigmadeltatau.org,seed
+ΤΒΠ,Tau Beta Pi,honor,Alpha Chapter,Lehigh University,Lehigh,1885,"{""accent"":""#C9A56F""}",https://tbp.org,seed
+ΦΒΚ,Phi Beta Kappa,honor,Alpha Chapter,William & Mary,W&M,1776,"{""accent"":""#C9A56F""}",https://pbk.org,seed
+ΠΤΣ,Pi Tau Sigma,honor,Alpha Chapter,University of Illinois,UIUC,1915,"{""accent"":""#C9A56F""}",https://pitausigma.net,seed
+ΘΤ,Theta Tau,professional,Alpha Chapter,University of Minnesota,UMN,1904,"{""accent"":""#C9A56F""}",https://thetatau.org,seed
+ΑΩ,Alpha Omega,professional,Alpha Chapter,New York University,NYU,1907,"{""accent"":""#C9A56F""}",https://alphaomega.com,seed
+ΔΣΠ,Delta Sigma Pi,professional,Alpha Chapter,NYU Stern,NYU,1907,"{""accent"":""#C9A56F""}",https://deltasigmapi.org,seed
+ΑΞΣ,Alpha Chi Sigma,professional,Alpha Chapter,University of Wisconsin,UW,1902,"{""accent"":""#C9A56F""}",https://alphachisigma.org,seed
+ΑΟΠ,Alpha Omicron Pi,npc,Alpha Phi,Northwestern,NW,1897,"{""accent"":""#C9A56F""}",https://alphaomicronpi.org,seed
+ΚΔ,Kappa Delta,npc,Alpha Alpha,Longwood University,Longwood,1897,"{""accent"":""#C9A56F""}",https://kappadelta.org,seed
+ΣΚ,Sigma Kappa,npc,Alpha Delta,Colby College,Colby,1874,"{""accent"":""#C9A56F""}",https://sigmakappa.org,seed
+ΑΓΔ,Alpha Gamma Delta,npc,Alpha Lambda,University of Minnesota,UMN,1904,"{""accent"":""#C9A56F""}",https://alphagammadelta.org,seed

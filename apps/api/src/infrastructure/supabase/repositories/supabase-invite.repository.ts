@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+  TablesUpdate,
+} from '../database.types';
 import { IInviteRepository } from '../../../domain/repositories/invite.repository.interface';
 import { Invite } from '../../../domain/entities/invite.entity';
 
@@ -21,10 +25,10 @@ export class SupabaseInviteRepository implements IInviteRepository {
     return data;
   }
 
-  async createMany(inviteData: Partial<Invite>[]): Promise<Invite[]> {
+  async createMany(inviteData: TablesInsert<'invites'>[]): Promise<Invite[]> {
     const { data, error } = await this.supabase
       .from('invites')
-      .insert(inviteData as never)
+      .insert(inviteData)
       .select();
     if (error) throw error;
     return data || [];
@@ -50,10 +54,10 @@ export class SupabaseInviteRepository implements IInviteRepository {
     return data || [];
   }
 
-  async create(inviteData: Partial<Invite>): Promise<Invite> {
+  async create(inviteData: TablesInsert<'invites'>): Promise<Invite> {
     const { data, error } = await this.supabase
       .from('invites')
-      .insert(inviteData as never)
+      .insert(inviteData)
       .select()
       .single();
     if (error) throw error;
@@ -61,17 +65,23 @@ export class SupabaseInviteRepository implements IInviteRepository {
   }
 
   async markUsed(id: string): Promise<void> {
+    const patch: TablesUpdate<'invites'> = {
+      used_at: new Date().toISOString(),
+    };
     const { error } = await this.supabase
       .from('invites')
-      .update({ used_at: new Date().toISOString() } as never)
+      .update(patch)
       .eq('id', id);
     if (error) throw error;
   }
 
   async markUsedAtomically(id: string): Promise<boolean> {
+    const patch: TablesUpdate<'invites'> = {
+      used_at: new Date().toISOString(),
+    };
     const { data, error } = await this.supabase
       .from('invites')
-      .update({ used_at: new Date().toISOString() } as never)
+      .update(patch)
       .eq('id', id)
       .is('used_at', null)
       .select('id');

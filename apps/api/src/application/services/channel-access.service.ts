@@ -1,0 +1,226 @@
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { CHAT_CHANNEL_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
+import type { IChatChannelRepository } from '../../domain/repositories/chat.repository.interface';
+import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
+import type { ChatChannel } from '../../domain/entities/chat.entity';
+import { canAccessChannel, isAlumniPostableChannel } from '@repo/validation';
+import type { ChannelOperation } from '@repo/validation';
+import { RbacService } from './rbac.service';
+
+/**
+ * The projection `canAccessChannel` decides on. Spelled once so the single-read
+ * path and the batch path cannot drift: adding a gating field to the predicate
+ * and wiring it into only one call site would let the list admit a channel the
+ * single read denies, which is precisely the asymmetry #1001 was.
+ */
+function toPredicateChannel(channel: ChatChannel) {
+  return {
+    type: channel.type,
+    member_ids: channel.member_ids,
+    required_permissions: channel.required_permissions,
+    is_read_only: channel.is_read_only ?? null,
+  };
+}
+
+/**
+ * Single source of truth for chat channel-level authorization. Both the chat
+ * hot path (`ChatService`) and the poll surface (`PollService`) authorize
+ * through this service so the two cannot drift: every read / send / vote is
+ * decided by the shared `canAccessChannel` predicate against the same
+ * channel + membership + effective-permissions lookups.
+ *
+ * Channel-level visibility (PUBLIC / PRIVATE / ROLE_GATED / DM / GROUP_DM) is
+ * decided by `canAccessChannel`, which the retired Edge Functions also reused.
+ */
+@Injectable()
+export class ChannelAccessService {
+  constructor(
+    @Inject(CHAT_CHANNEL_REPOSITORY)
+    private readonly channelRepo: IChatChannelRepository,
+    @Inject(MEMBER_REPOSITORY)
+    private readonly memberRepo: IMemberRepository,
+    private readonly rbac: RbacService,
+  ) {}
+
+  /**
+   * Resolve a channel within the caller's chapter and assert the caller may
+   * `read` or `post` to it. A channel in another chapter resolves to a 404
+   * (the chapter scope holds); a channel the caller cannot see/post to
+   * resolves to a 403. Returns the channel so callers can reuse it.
+   */
+  async assertChannelAccess(
+    channelId: string,
+    chapterId: string,
+    userId: string,
+    operation: ChannelOperation = 'read',
+  ): Promise<ChatChannel> {
+    const channel = await this.channelRepo.findById(channelId, chapterId);
+    if (!channel) {
+      throw new NotFoundException('Channel not found');
+    }
+
+    const member = await this.memberRepo.findByUserAndChapter(
+      userId,
+      chapterId,
+    );
+    const isChapterMember = Boolean(member);
+
+    // Alumni are read-mostly (`spec/behavior/alumni.md`): resolve the lifecycle
+    // flag only when it can change the outcome — an authored post into a
+    // channel alumni are not allowed to write in. Reads, votes, and posts into
+    // alumni-postable channels (DMs, and ROLE_GATED channels requiring
+    // `alumni:post`) skip the lookup, so the chat hot path adds no query for
+    // them. Must use the same predicate the gate does, or the short-circuit
+    // would skip the lookup on the ROLE_GATED channels that now need it.
+    // Reuses the member row already fetched above rather than re-querying it.
+    const alumniRuleCouldApply =
+      isChapterMember &&
+      operation === 'post' &&
+      !isAlumniPostableChannel({
+        type: channel.type,
+        member_ids: channel.member_ids,
+        required_permissions: channel.required_permissions,
+      });
+    const isAlumni = alumniRuleCouldApply
+      ? await this.rbac.hasAlumniRole(chapterId, member?.role_ids)
+      : false;
+
+    // For a write against a read-only channel (#announcements, #chapter-audit)
+    // we need to evaluate the caller's permissions even on a PUBLIC channel
+    // so the announcements:post gate can fire. Alumni posts need them too, so
+    // a President who also carries the Alumni role still bypasses (wildcard).
+    const needsPermissions =
+      isChapterMember &&
+      (channel.type === 'ROLE_GATED' ||
+        (operation !== 'read' && channel.is_read_only === true) ||
+        isAlumni);
+    const permissions = needsPermissions
+      ? await this.rbac.getEffectivePermissions(chapterId, userId)
+      : [];
+
+    const allowed = canAccessChannel({
+      channel: toPredicateChannel(channel),
+      userId,
+      isChapterMember,
+      permissions,
+      operation,
+      isAlumni,
+    });
+
+    if (!allowed) {
+      throw new ForbiddenException('You do not have access to this channel');
+    }
+
+    return channel;
+  }
+
+  /**
+   * Reduce a set of channel ids to those the caller may `read`, decided by the
+   * shared predicate. Mirrors the batch pattern used by search so a chapter-wide
+   * list (e.g. `GET /v1/polls`) cannot become a side-channel that leaks the
+   * content of private, DM, or role-gated channels the caller is not in.
+   *
+   * Loads channels, membership, and effective permissions at most once each;
+   * permissions are only fetched when a ROLE_GATED channel is among the
+   * candidates. Membership resolves *before* the channel load so a caller from
+   * outside the chapter never triggers a chapter-wide read.
+   */
+  async filterAccessibleChannelIds(
+    chapterId: string,
+    userId: string,
+    channelIds: string[],
+  ): Promise<Set<string>> {
+    const wanted = new Set(channelIds);
+    if (wanted.size === 0) return new Set();
+
+    const member = await this.memberRepo.findByUserAndChapter(
+      userId,
+      chapterId,
+    );
+    if (!member) return new Set();
+
+    const channels = await this.channelRepo.findByChapter(chapterId);
+    const candidates = channels.filter((channel) => wanted.has(channel.id));
+    if (candidates.length === 0) return new Set();
+
+    const accessible = await this.applyReadPredicate(
+      chapterId,
+      userId,
+      candidates,
+    );
+    return new Set(accessible.map((channel) => channel.id));
+  }
+
+  /**
+   * The array-taking half of the same guarantee, for callers that have already
+   * loaded the rows. `GET /v1/channels` *is* the chapter's channel list, so
+   * resolving its ids back into rows through `filterAccessibleChannelIds` would
+   * read `chat_channels` twice on every request.
+   *
+   * A channel row is not neutral metadata: `name`, `description`,
+   * `required_permissions` and `member_ids` together describe who is talking to
+   * whom, and a DM is server-named `dm-<userA>-<userB>`, so an unfiltered
+   * chapter-wide list publishes the whole private and direct-message graph.
+   * Filtering here is load-bearing, not defensive.
+   *
+   * Rows are re-scoped to `chapterId` before the predicate runs. The id-taking
+   * sibling gets that for free by loading its own candidates; here the rows come
+   * from the caller, and `applyReadPredicate` asserts `isChapterMember: true` on
+   * the strength of a membership check against `chapterId` alone — which proves
+   * the *caller* belongs to the chapter, not the *channels*. Without this filter
+   * a caller passing rows from anywhere else (a by-id resolver, a join over
+   * messages) would have every foreign `PUBLIC` row returned as accessible.
+   */
+  async filterAccessibleChannels(
+    chapterId: string,
+    userId: string,
+    channels: ChatChannel[],
+  ): Promise<ChatChannel[]> {
+    const inChapter = channels.filter(
+      (channel) => channel.chapter_id === chapterId,
+    );
+    if (inChapter.length === 0) return [];
+
+    const member = await this.memberRepo.findByUserAndChapter(
+      userId,
+      chapterId,
+    );
+    if (!member) return [];
+
+    return this.applyReadPredicate(chapterId, userId, inChapter);
+  }
+
+  /**
+   * Shared predicate loop for both batch entry points. The caller has already
+   * proven chapter membership, so `isChapterMember` holds by construction, and
+   * permissions are resolved only when a ROLE_GATED candidate can consume them.
+   */
+  private async applyReadPredicate(
+    chapterId: string,
+    userId: string,
+    candidates: ChatChannel[],
+  ): Promise<ChatChannel[]> {
+    const needsPermissions = candidates.some(
+      (channel) => channel.type === 'ROLE_GATED',
+    );
+    const permissions = needsPermissions
+      ? await this.rbac.getEffectivePermissions(chapterId, userId)
+      : [];
+
+    return candidates.filter((channel) =>
+      canAccessChannel({
+        channel: toPredicateChannel(channel),
+        userId,
+        isChapterMember: true,
+        permissions,
+        operation: 'read',
+      }),
+    );
+  }
+}

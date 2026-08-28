@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 import { BackworkService } from './backwork.service';
 import {
   BACKWORK_RESOURCE_REPOSITORY,
@@ -86,7 +90,13 @@ describe('BackworkService', () => {
     mockStorageProvider = {
       getSignedUploadUrl: jest.fn(),
       getSignedDownloadUrl: jest.fn(),
+      uploadFile: jest.fn(),
+      downloadFile: jest.fn(),
       deleteFile: jest.fn(),
+      listFiles: jest.fn(),
+      listObjects: jest.fn().mockResolvedValue([]),
+      listFolders: jest.fn().mockResolvedValue([]),
+      deleteFiles: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -129,6 +139,46 @@ describe('BackworkService', () => {
       expect(result.storagePath).toContain('chapters/ch-1/backwork/');
       expect(result.storagePath).toContain('midterm1.pdf');
       expect(result.resourceId).toBeDefined();
+    });
+    it('should throw BadRequestException for disallowed extensions', async () => {
+      await expect(
+        service.requestUploadUrl({
+          chapterId: 'ch-1',
+          filename: 'malicious.exe',
+          contentType: 'application/pdf', // Even with a valid content type
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException for disallowed content types', async () => {
+      await expect(
+        service.requestUploadUrl({
+          chapterId: 'ch-1',
+          filename: 'valid.pdf',
+          contentType: 'application/x-msdownload',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('accepts image/gif (same document kind as chapter files and chat)', async () => {
+      mockStorageProvider.getSignedUploadUrl.mockResolvedValue(
+        'https://storage.supabase.co/upload/signed',
+      );
+
+      const result = await service.requestUploadUrl({
+        chapterId: 'ch-1',
+        filename: 'notes.gif',
+        contentType: 'image/gif',
+      });
+
+      expect(result.signedUrl).toBe(
+        'https://storage.supabase.co/upload/signed',
+      );
+      expect(mockStorageProvider.getSignedUploadUrl).toHaveBeenCalledWith(
+        'backwork',
+        expect.stringContaining('notes.gif'),
+        'image/gif',
+      );
     });
   });
 
@@ -206,6 +256,54 @@ describe('BackworkService', () => {
       ).rejects.toThrow(ConflictException);
     });
 
+    it.each([
+      'chapters/ch-1/backwork/../../../branding/chapters/ch-2/branding/logo.png',
+      'chapters/ch-1/backwork/%2e%2e/%2e%2e/branding/chapters/ch-2/logo.png',
+      'chapters/ch-1/backwork/p%/%2e%2e/branding/chapters/ch-2/logo.png',
+      'chapters/ch-1/backwork/.\t./branding/chapters/ch-2/logo.png',
+    ])(
+      'rejects a prefix-passing traversal in storage_path (%p)',
+      async (storagePath) => {
+        // The startsWith check accepts all of these. Persisting one would let
+        // GET /backwork/:id mint a service-role-signed URL to an arbitrary
+        // object in any bucket, since the value is echoed back to storage.
+        await expect(
+          service.confirmUpload({
+            chapter_id: 'ch-1',
+            uploader_id: 'user-1',
+            storage_path: storagePath,
+            file_hash: 'newhash',
+          }),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockResourceRepo.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it('should reject a storage_path outside the chapter (cross-chapter)', async () => {
+      await expect(
+        service.confirmUpload({
+          chapter_id: 'ch-1',
+          uploader_id: 'user-1',
+          storage_path: 'chapters/other-ch/backwork/res-1/leak.pdf',
+          file_hash: 'newhash',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockResourceRepo.findByFileHash).not.toHaveBeenCalled();
+      expect(mockResourceRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject a storage_path from another module (wrong-module)', async () => {
+      await expect(
+        service.confirmUpload({
+          chapter_id: 'ch-1',
+          uploader_id: 'user-1',
+          storage_path: 'chapters/ch-1/documents/doc-1/leak.pdf',
+          file_hash: 'newhash',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockResourceRepo.create).not.toHaveBeenCalled();
+    });
+
     it('should auto-vivify a new department', async () => {
       mockResourceRepo.findByFileHash.mockResolvedValue(null);
       mockDepartmentRepo.findByCode.mockResolvedValue(null);
@@ -279,7 +377,7 @@ describe('BackworkService', () => {
       await service.confirmUpload({
         chapter_id: 'ch-1',
         uploader_id: 'user-1',
-        storage_path: 'path',
+        storage_path: 'chapters/ch-1/backwork/res-3/file.pdf',
         file_hash: 'uniquehash3',
         department_code: 'CS',
       });
@@ -371,11 +469,30 @@ describe('BackworkService', () => {
         name: 'Computer Science Updated',
       });
 
-      const result = await service.updateDepartment('dept-1', {
+      const result = await service.updateDepartment('dept-1', 'ch-1', {
         name: 'Computer Science Updated',
       });
 
+      expect(mockDepartmentRepo.update).toHaveBeenCalledWith('dept-1', 'ch-1', {
+        name: 'Computer Science Updated',
+      });
       expect(result.name).toBe('Computer Science Updated');
+    });
+
+    it('should not update a department owned by another chapter (404)', async () => {
+      // The chapter-scoped update matched no row, so nothing was written.
+      mockDepartmentRepo.update.mockResolvedValue(null);
+
+      await expect(
+        service.updateDepartment('dept-other-chapter', 'ch-1', {
+          name: 'Hijacked',
+        }),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockDepartmentRepo.update).toHaveBeenCalledWith(
+        'dept-other-chapter',
+        'ch-1',
+        { name: 'Hijacked' },
+      );
     });
   });
 

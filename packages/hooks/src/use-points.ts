@@ -1,14 +1,15 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useFrappClient } from "./use-frapp-client";
+import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 type PointWindow = "all" | "semester" | "month";
 
 export function useMyPoints(window?: PointWindow) {
   const client = useFrappClient();
+  const chapterId = useActiveChapterId();
   return useQuery({
-    queryKey: ["points", "me", window],
+    queryKey: ["points", chapterId, "me", window],
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/points/me", {
         params: { query: { window } },
@@ -17,13 +18,18 @@ export function useMyPoints(window?: PointWindow) {
       return data;
     },
     staleTime: 30_000,
+    // Matches every other read in this file: without an active chapter the
+    // request cannot resolve a scope, and an ungated fetch would surface as a
+    // page-level error rather than the "no chapter selected" empty state.
+    enabled: !!chapterId,
   });
 }
 
 export function useLeaderboard(window?: PointWindow) {
   const client = useFrappClient();
+  const chapterId = useActiveChapterId();
   return useQuery({
-    queryKey: ["points", "leaderboard", window],
+    queryKey: ["points", chapterId, "leaderboard", window],
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/points/leaderboard", {
         params: { query: { window } },
@@ -32,13 +38,57 @@ export function useLeaderboard(window?: PointWindow) {
       return data;
     },
     staleTime: 30_000,
+    enabled: !!chapterId,
+  });
+}
+
+export function usePointsTransactions(options?: {
+  userId?: string;
+  category?:
+    | "ATTENDANCE"
+    | "ACADEMIC"
+    | "SERVICE"
+    | "FINE"
+    | "MANUAL"
+    | "STUDY";
+  flagged?: boolean;
+  before?: string;
+  limit?: number;
+}) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: ["points", chapterId, "transactions", options],
+    queryFn: async () => {
+      const { data, error } = await client.GET("/v1/points/transactions", {
+        params: {
+          query: {
+            user_id: options?.userId,
+            category: options?.category,
+            flagged:
+              options?.flagged === undefined
+                ? undefined
+                : options.flagged
+                  ? "true"
+                  : "false",
+            before: options?.before,
+            limit: options?.limit,
+          },
+        },
+      });
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 30_000,
+    enabled: !!chapterId,
   });
 }
 
 export function useMemberPoints(userId: string, window?: PointWindow) {
   const client = useFrappClient();
+  const chapterId = useActiveChapterId();
   return useQuery({
-    queryKey: ["points", "members", userId, window],
+    queryKey: ["points", chapterId, "members", userId, window],
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/points/members/{userId}", {
         params: { path: { userId }, query: { window } },
@@ -53,6 +103,7 @@ export function useMemberPoints(userId: string, window?: PointWindow) {
 
 export function useAdjustPoints() {
   const client = useFrappClient();
+  const chapterId = useActiveChapterId();
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (body: {
@@ -66,7 +117,7 @@ export function useAdjustPoints() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["points"] });
+      queryClient.invalidateQueries({ queryKey: ["points", chapterId] });
     },
   });
 }

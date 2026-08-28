@@ -8,3 +8,19 @@ export interface ChapterDocument {
   uploaded_by: string;
   created_at: string;
 }
+
+/**
+ * A named, ordered folder within a chapter's documents.
+ *
+ * `ChapterDocument.folder` stores this folder's `name`, not its `id` — see the
+ * note in `20260809120000_chapter_document_folders.sql`. Renaming a folder
+ * therefore has to rewrite the documents filed under it, which
+ * `ChapterDocumentService.updateFolder` does.
+ */
+export interface ChapterDocumentFolder {
+  id: string;
+  chapter_id: string;
+  name: string;
+  sort_order: number;
+  created_at: string;
+}

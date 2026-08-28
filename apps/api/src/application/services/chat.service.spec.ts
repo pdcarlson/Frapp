@@ -4,42 +4,90 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
+import { canAccessChannel } from '@repo/validation';
 import { ChatService } from './chat.service';
 import {
   CHAT_CHANNEL_REPOSITORY,
   CHAT_CATEGORY_REPOSITORY,
   CHAT_MESSAGE_REPOSITORY,
+  CHAT_MESSAGE_ACTION_REPOSITORY,
+  CHAT_MESSAGE_ATTACHMENT_REPOSITORY,
+  ChatMessageActionDuplicateError,
+  ChatMessageDuplicateError,
   MESSAGE_REACTION_REPOSITORY,
   CHANNEL_READ_RECEIPT_REPOSITORY,
 } from '../../domain/repositories/chat.repository.interface';
 import type {
   IChatChannelRepository,
   IChatCategoryRepository,
+  IChatMessageActionRepository,
+  IChatMessageAttachmentRepository,
   IChatMessageRepository,
   IMessageReactionRepository,
   IChannelReadReceiptRepository,
 } from '../../domain/repositories/chat.repository.interface';
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 import type { IStorageProvider } from '../../domain/adapters/storage.interface';
+import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
+import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type {
   ChatChannel,
   ChatMessage,
+  ChatMessageAction,
   ChatChannelCategory,
   MessageReaction,
 } from '../../domain/entities/chat.entity';
 import { NotificationService } from './notification.service';
+import { ActivationService } from './activation.service';
+import { RbacService } from './rbac.service';
+import { ChannelAccessService } from './channel-access.service';
 
 describe('ChatService', () => {
   let service: ChatService;
   let mockChannelRepo: jest.Mocked<IChatChannelRepository>;
   let mockCategoryRepo: jest.Mocked<IChatCategoryRepository>;
   let mockMessageRepo: jest.Mocked<IChatMessageRepository>;
+  let mockActionRepo: jest.Mocked<IChatMessageActionRepository>;
+  let mockAttachmentRepo: jest.Mocked<IChatMessageAttachmentRepository>;
   let mockReactionRepo: jest.Mocked<IMessageReactionRepository>;
   let mockReadReceiptRepo: jest.Mocked<IChannelReadReceiptRepository>;
   let mockStorageProvider: jest.Mocked<IStorageProvider>;
   let mockNotificationService: jest.Mocked<
     Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
   >;
+  let mockMemberRepo: {
+    findByUserAndChapter: jest.Mock;
+    findByChapter: jest.Mock;
+    findChapterMemberIdentities: jest.Mock;
+  };
+  let mockActivation: jest.Mocked<Pick<ActivationService, 'record'>>;
+  let mockRbac: {
+    getEffectivePermissions: jest.Mock;
+    hasAlumniRole: jest.Mock;
+  };
+  /**
+   * The Realtime broadcast goes through `SUPABASE_CLIENT.channel(topic)` →
+   * `channel.send({ ... })` and is best-effort. Wire a fake that records
+   * the topic + payload so `sendMessage` tests can assert the emit.
+   */
+  let mockSupabase: {
+    channel: jest.Mock;
+    removeChannel: jest.Mock;
+  };
+  let broadcasts: Array<{
+    topic: string;
+    payload: { type: string; event: string; payload: unknown };
+  }>;
+
+  const baseMember = {
+    id: 'mem-1',
+    user_id: 'user-1',
+    chapter_id: 'ch-1',
+    role_ids: ['role-1'],
+    has_completed_onboarding: true,
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z',
+  };
 
   const baseChannel: ChatChannel = {
     id: 'ch-chan-1',
@@ -81,6 +129,7 @@ describe('ChatService', () => {
 
     mockCategoryRepo = {
       findByChapter: jest.fn(),
+      findById: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
@@ -91,8 +140,21 @@ describe('ChatService', () => {
       findByChannel: jest.fn(),
       findPinnedByChannel: jest.fn(),
       countPinnedByChannel: jest.fn(),
+      findPollsByChapter: jest.fn(),
+      findByClientMessageId: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+    };
+
+    mockActionRepo = {
+      create: jest.fn(),
+      findOne: jest.fn(),
+      updateForVote: jest.fn(),
+    };
+
+    mockAttachmentRepo = {
+      createMany: jest.fn().mockResolvedValue([]),
+      findByMessage: jest.fn().mockResolvedValue([]),
     };
 
     mockReactionRepo = {
@@ -105,12 +167,19 @@ describe('ChatService', () => {
     mockReadReceiptRepo = {
       findByChannelAndUser: jest.fn(),
       upsert: jest.fn(),
+      getUnreadCounts: jest.fn().mockResolvedValue([]),
     };
 
     mockStorageProvider = {
       getSignedUploadUrl: jest.fn(),
       getSignedDownloadUrl: jest.fn(),
+      uploadFile: jest.fn(),
+      downloadFile: jest.fn(),
       deleteFile: jest.fn(),
+      listFiles: jest.fn(),
+      listObjects: jest.fn().mockResolvedValue([]),
+      listFolders: jest.fn().mockResolvedValue([]),
+      deleteFiles: jest.fn(),
     };
 
     mockNotificationService = {
@@ -118,19 +187,72 @@ describe('ChatService', () => {
       notifyChapter: jest.fn().mockResolvedValue(undefined),
     };
 
+    mockMemberRepo = {
+      findByUserAndChapter: jest.fn(),
+      findByChapter: jest.fn().mockResolvedValue([]),
+      // Mention resolution reads the chapter roster through this one narrow
+      // join (#986). Empty by default so the existing send tests resolve to no
+      // mentions; the mention tests below seed it.
+      findChapterMemberIdentities: jest.fn().mockResolvedValue([]),
+    };
+
+    mockActivation = { record: jest.fn().mockResolvedValue(true) };
+
+    mockRbac = {
+      getEffectivePermissions: jest.fn(),
+      // Active (non-alumni) member by default; alumni posting is covered in
+      // channel-access.service.spec.ts.
+      hasAlumniRole: jest.fn().mockResolvedValue(false),
+    };
+
+    broadcasts = [];
+    mockSupabase = {
+      channel: jest.fn((topic: string) => ({
+        send: jest.fn(async (payload) => {
+          broadcasts.push({ topic, payload });
+          return 'ok';
+        }),
+      })),
+      removeChannel: jest.fn().mockResolvedValue(undefined),
+    };
+
+    // Defaults: caller is a member of the chapter, channel resolves, no special
+    // permissions. Individual tests override to exercise denial paths.
+    mockChannelRepo.findById.mockResolvedValue(baseChannel);
+    mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+    mockMessageRepo.findById.mockResolvedValue(baseMessage);
+    mockRbac.getEffectivePermissions.mockResolvedValue([]);
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ChatService,
         { provide: CHAT_CHANNEL_REPOSITORY, useValue: mockChannelRepo },
         { provide: CHAT_CATEGORY_REPOSITORY, useValue: mockCategoryRepo },
         { provide: CHAT_MESSAGE_REPOSITORY, useValue: mockMessageRepo },
+        {
+          provide: CHAT_MESSAGE_ACTION_REPOSITORY,
+          useValue: mockActionRepo,
+        },
+        {
+          provide: CHAT_MESSAGE_ATTACHMENT_REPOSITORY,
+          useValue: mockAttachmentRepo,
+        },
         { provide: MESSAGE_REACTION_REPOSITORY, useValue: mockReactionRepo },
         {
           provide: CHANNEL_READ_RECEIPT_REPOSITORY,
           useValue: mockReadReceiptRepo,
         },
         { provide: STORAGE_PROVIDER, useValue: mockStorageProvider },
+        { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
+        { provide: SUPABASE_CLIENT, useValue: mockSupabase },
         { provide: NotificationService, useValue: mockNotificationService },
+        { provide: RbacService, useValue: mockRbac },
+        { provide: ActivationService, useValue: mockActivation },
+        // ChatService now authorizes through the shared ChannelAccessService;
+        // wire a real one over the same mocked channel/member/rbac so the
+        // existing PRIVATE / ROLE_GATED rejection tests still exercise the
+        // predicate end-to-end.
+        ChannelAccessService,
       ],
     }).compile();
 
@@ -143,11 +265,14 @@ describe('ChatService', () => {
     it('should create a PUBLIC channel', async () => {
       mockChannelRepo.create.mockResolvedValue(baseChannel);
 
-      const result = await service.createChannel({
-        chapter_id: 'ch-1',
-        name: 'general',
-        type: 'PUBLIC',
-      });
+      const result = await service.createChannel(
+        {
+          chapter_id: 'ch-1',
+          name: 'general',
+          type: 'PUBLIC',
+        },
+        'u-creator',
+      );
 
       expect(result).toEqual(baseChannel);
       expect(mockChannelRepo.create).toHaveBeenCalledWith(
@@ -161,12 +286,424 @@ describe('ChatService', () => {
 
     it('should reject DM/GROUP_DM through createChannel', async () => {
       await expect(
-        service.createChannel({
-          chapter_id: 'ch-1',
-          name: 'dm',
-          type: 'DM',
-        }),
+        service.createChannel(
+          {
+            chapter_id: 'ch-1',
+            name: 'dm',
+            type: 'DM',
+          },
+          'u-creator',
+        ),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    // FRA-321: canAccessChannel denies a ROLE_GATED channel that gates on
+    // nothing, so creating one would strand it. Reject the shape at the door.
+    it.each([undefined, []])(
+      'should reject a ROLE_GATED channel with required_permissions %p',
+      async (required) => {
+        await expect(
+          service.createChannel(
+            {
+              chapter_id: 'ch-1',
+              name: 'exec-board',
+              type: 'ROLE_GATED',
+              required_permissions: required,
+            },
+            'u-creator',
+          ),
+        ).rejects.toThrow(BadRequestException);
+
+        expect(mockChannelRepo.create).not.toHaveBeenCalled();
+      },
+    );
+
+    // #1008: `member_ids` NULL makes a PRIVATE channel unreadable by everyone
+    // including its creator, with no repair path — `updateChannel` cannot write
+    // the column. The row is only reachable from the create response's id.
+    it('should seed a PRIVATE channel with its creator', async () => {
+      mockChannelRepo.create.mockResolvedValue(baseChannel);
+
+      await service.createChannel(
+        {
+          chapter_id: 'ch-1',
+          name: 'exec-private',
+          type: 'PRIVATE',
+        },
+        'u-creator',
+      );
+
+      expect(mockChannelRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'PRIVATE',
+          member_ids: ['u-creator'],
+        }),
+      );
+    });
+
+    // The seeded row must actually satisfy the predicate that reads it —
+    // asserting the insert shape alone would not prove the channel is readable.
+    it('should produce a PRIVATE row its creator can actually read', async () => {
+      mockChannelRepo.create.mockImplementation((data) =>
+        Promise.resolve({ ...baseChannel, ...data } as ChatChannel),
+      );
+
+      const created = await service.createChannel(
+        {
+          chapter_id: 'ch-1',
+          name: 'exec-private',
+          type: 'PRIVATE',
+        },
+        'u-creator',
+      );
+
+      expect(
+        canAccessChannel({
+          channel: created,
+          userId: 'u-creator',
+          isChapterMember: true,
+          permissions: [],
+        }),
+      ).toBe(true);
+    });
+
+    // A PRIVATE channel is not a public one: seeding the creator must not make
+    // it readable by another chapter member.
+    it('should not make a seeded PRIVATE channel readable by anyone else', async () => {
+      mockChannelRepo.create.mockImplementation((data) =>
+        Promise.resolve({ ...baseChannel, ...data } as ChatChannel),
+      );
+
+      const created = await service.createChannel(
+        {
+          chapter_id: 'ch-1',
+          name: 'exec-private',
+          type: 'PRIVATE',
+        },
+        'u-creator',
+      );
+
+      expect(
+        canAccessChannel({
+          channel: created,
+          userId: 'u-other',
+          isChapterMember: true,
+          // Even `*` must not open it: the PRIVATE branch has no wildcard bypass.
+          permissions: ['*'],
+        }),
+      ).toBe(false);
+    });
+
+    // PUBLIC and ROLE_GATED resolve access by chapter membership and by
+    // permissions; a membership list there would imply something that is never
+    // consulted.
+    it.each(['PUBLIC', 'ROLE_GATED'] as const)(
+      'should not seed member_ids on a %s channel',
+      async (type) => {
+        mockChannelRepo.create.mockResolvedValue(baseChannel);
+
+        await service.createChannel(
+          {
+            chapter_id: 'ch-1',
+            name: 'general',
+            type,
+            required_permissions:
+              type === 'ROLE_GATED' ? ['roles:manage'] : undefined,
+          },
+          'u-creator',
+        );
+
+        expect(mockChannelRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ member_ids: null }),
+        );
+      },
+    );
+
+    it('should create a ROLE_GATED channel that specifies requirements', async () => {
+      mockChannelRepo.create.mockResolvedValue(baseChannel);
+
+      await service.createChannel(
+        {
+          chapter_id: 'ch-1',
+          name: 'exec-board',
+          type: 'ROLE_GATED',
+          required_permissions: ['roles:manage'],
+        },
+        'u-creator',
+      );
+
+      expect(mockChannelRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'ROLE_GATED',
+          required_permissions: ['roles:manage'],
+        }),
+      );
+    });
+  });
+
+  describe('updateChannel', () => {
+    const roleGated = {
+      ...baseChannel,
+      type: 'ROLE_GATED' as const,
+      required_permissions: ['roles:manage'],
+    };
+
+    it('should reject clearing required_permissions on a ROLE_GATED channel', async () => {
+      mockChannelRepo.findById.mockResolvedValue(roleGated);
+
+      await expect(
+        service.updateChannel('chan-1', 'ch-1', { required_permissions: [] }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(mockChannelRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('should leave the stored list intact when the field is omitted', async () => {
+      mockChannelRepo.findById.mockResolvedValue(roleGated);
+      mockChannelRepo.update.mockResolvedValue(roleGated);
+
+      await service.updateChannel('chan-1', 'ch-1', { name: 'renamed' });
+
+      expect(mockChannelRepo.update).toHaveBeenCalledWith('chan-1', 'ch-1', {
+        name: 'renamed',
+      });
+    });
+
+    it('should allow clearing required_permissions on a non-ROLE_GATED channel', async () => {
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockChannelRepo.update.mockResolvedValue(baseChannel);
+
+      await service.updateChannel('chan-1', 'ch-1', {
+        required_permissions: [],
+      });
+
+      expect(mockChannelRepo.update).toHaveBeenCalled();
+    });
+  });
+
+  // A channel row is not neutral metadata. `name` + `member_ids` +
+  // the server's `dm-<a>-<b>` naming means one unfiltered row discloses a DM
+  // pair twice over, so these assert on the payload, not on what a UI draws.
+  describe('channel reads are access-filtered', () => {
+    const dmMine: ChatChannel = {
+      ...baseChannel,
+      id: 'ch-dm-mine',
+      name: 'dm-user-1-user-2',
+      type: 'DM',
+      member_ids: ['user-1', 'user-2'],
+    };
+    const dmTheirs: ChatChannel = {
+      ...baseChannel,
+      id: 'ch-dm-theirs',
+      name: 'dm-user-2-user-3',
+      type: 'DM',
+      member_ids: ['user-2', 'user-3'],
+    };
+    const privMine: ChatChannel = {
+      ...baseChannel,
+      id: 'ch-priv-mine',
+      name: 'my-committee',
+      type: 'PRIVATE',
+      member_ids: ['user-1'],
+    };
+    const privTheirs: ChatChannel = {
+      ...baseChannel,
+      id: 'ch-priv-theirs',
+      name: 'exec-secrets',
+      description: 'exec only',
+      type: 'PRIVATE',
+      member_ids: ['user-2'],
+    };
+    const roleGated: ChatChannel = {
+      ...baseChannel,
+      id: 'ch-exec',
+      name: 'exec',
+      type: 'ROLE_GATED',
+      required_permissions: ['roles:manage'],
+    };
+    // The row shape #1008 was about: a PRIVATE channel whose membership is
+    // NULL. `privMine`/`privTheirs` both carry explicit lists, so they encode a
+    // shape the API could produce only *after* the creator seed — this one
+    // covers the orphan. It is unreachable through create now, but #1302's
+    // remove-member route can reproduce it by removing the last member, which
+    // is the hazard that issue's own criteria call out.
+    const privOrphan: ChatChannel = {
+      ...baseChannel,
+      id: 'ch-priv-orphan',
+      name: 'orphaned-committee',
+      type: 'PRIVATE',
+      member_ids: null,
+    };
+    const everything = [
+      baseChannel,
+      dmMine,
+      dmTheirs,
+      privMine,
+      privTheirs,
+      privOrphan,
+      roleGated,
+    ];
+
+    describe('getChannels', () => {
+      it('returns PUBLIC channels, the caller’s own DM, and their own PRIVATE channel', async () => {
+        mockChannelRepo.findByChapter.mockResolvedValue(everything);
+
+        const result = await service.getChannels('ch-1', 'user-1');
+
+        expect(result.map((channel) => channel.id)).toEqual([
+          'ch-chan-1',
+          'ch-dm-mine',
+          'ch-priv-mine',
+        ]);
+      });
+
+      it('hides a PRIVATE channel whose member_ids is NULL from everyone', async () => {
+        mockChannelRepo.findByChapter.mockResolvedValue(everything);
+
+        for (const userId of ['user-1', 'user-2', 'user-3']) {
+          const result = await service.getChannels('ch-1', userId);
+          expect(result.map((channel) => channel.id)).not.toContain(
+            'ch-priv-orphan',
+          );
+        }
+      });
+
+      it('does not return a DM between two other members', async () => {
+        mockChannelRepo.findByChapter.mockResolvedValue(everything);
+
+        const result = await service.getChannels('ch-1', 'user-1');
+
+        // The pair leaks through two independent fields, so assert both: the
+        // uuid pair is in `name` as well as in `member_ids`.
+        expect(result.map((channel) => channel.id)).not.toContain(
+          'ch-dm-theirs',
+        );
+        expect(result.some((channel) => channel.name.includes('user-3'))).toBe(
+          false,
+        );
+        expect(
+          result.some((channel) =>
+            (channel.member_ids ?? []).includes('user-3'),
+          ),
+        ).toBe(false);
+      });
+
+      it('does not return another member’s PRIVATE channel', async () => {
+        mockChannelRepo.findByChapter.mockResolvedValue([
+          baseChannel,
+          privTheirs,
+        ]);
+
+        const result = await service.getChannels('ch-1', 'user-1');
+
+        expect(result.map((channel) => channel.id)).toEqual(['ch-chan-1']);
+        expect(
+          result.some((channel) => channel.description === 'exec only'),
+        ).toBe(false);
+      });
+
+      it('hides a ROLE_GATED channel the caller lacks the permission for', async () => {
+        mockChannelRepo.findByChapter.mockResolvedValue([roleGated]);
+
+        const result = await service.getChannels('ch-1', 'user-1');
+
+        expect(result).toEqual([]);
+      });
+
+      it('returns a ROLE_GATED channel once the caller holds a required permission', async () => {
+        mockChannelRepo.findByChapter.mockResolvedValue([roleGated]);
+        mockRbac.getEffectivePermissions.mockResolvedValue(['roles:manage']);
+
+        const result = await service.getChannels('ch-1', 'user-1');
+
+        expect(result.map((channel) => channel.id)).toEqual(['ch-exec']);
+      });
+
+      it('returns nothing for a caller who is not a chapter member', async () => {
+        mockChannelRepo.findByChapter.mockResolvedValue(everything);
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+        const result = await service.getChannels('ch-1', 'ghost');
+
+        expect(result).toEqual([]);
+      });
+
+      it('returns an empty list without a membership lookup when the chapter has no channels', async () => {
+        mockChannelRepo.findByChapter.mockResolvedValue([]);
+
+        const result = await service.getChannels('ch-1', 'user-1');
+
+        expect(result).toEqual([]);
+        expect(mockMemberRepo.findByUserAndChapter).not.toHaveBeenCalled();
+      });
+
+      it('does not resolve permissions when no ROLE_GATED channel is present', async () => {
+        mockChannelRepo.findByChapter.mockResolvedValue([baseChannel, dmMine]);
+
+        await service.getChannels('ch-1', 'user-1');
+
+        expect(mockRbac.getEffectivePermissions).not.toHaveBeenCalled();
+      });
+
+      it('reads the chapter’s channels exactly once', async () => {
+        // Pins the array-taking filter. Routing this list back through
+        // `filterAccessibleChannelIds` would re-read every channel in the
+        // chapter on a request that already holds the rows.
+        mockChannelRepo.findByChapter.mockResolvedValue(everything);
+
+        await service.getChannels('ch-1', 'user-1');
+
+        expect(mockChannelRepo.findByChapter).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe('getChannel', () => {
+      it('returns a channel the caller can read', async () => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+
+        await expect(
+          service.getChannel('ch-chan-1', 'ch-1', 'user-1'),
+        ).resolves.toEqual(baseChannel);
+      });
+
+      it('rejects a PRIVATE channel the caller is not in', async () => {
+        mockChannelRepo.findById.mockResolvedValue(privTheirs);
+
+        await expect(
+          service.getChannel('ch-priv-theirs', 'ch-1', 'user-1'),
+        ).rejects.toThrow(ForbiddenException);
+      });
+
+      it('404s a channel that does not resolve within the chapter', async () => {
+        mockChannelRepo.findById.mockResolvedValue(null);
+
+        await expect(
+          service.getChannel('ch-nope', 'ch-1', 'user-1'),
+        ).rejects.toThrow(NotFoundException);
+      });
+
+      it('still resolves the channel for updateChannel without a per-user check', async () => {
+        // `channels:manage` authorizes the mutation; membership of the channel
+        // does not. An officer editing a PRIVATE channel they are not in must
+        // keep working even though they can no longer GET it.
+        mockChannelRepo.findById.mockResolvedValue(privTheirs);
+        mockChannelRepo.update.mockResolvedValue(privTheirs);
+
+        await expect(
+          service.updateChannel('ch-priv-theirs', 'ch-1', { name: 'renamed' }),
+        ).resolves.toEqual(privTheirs);
+        expect(mockChannelRepo.update).toHaveBeenCalled();
+      });
+
+      it('still resolves the channel for deleteChannel without a per-user check', async () => {
+        mockChannelRepo.findById.mockResolvedValue(privTheirs);
+        mockChannelRepo.delete.mockResolvedValue(undefined);
+
+        await expect(
+          service.deleteChannel('ch-priv-theirs', 'ch-1'),
+        ).resolves.toBeUndefined();
+        expect(mockChannelRepo.delete).toHaveBeenCalled();
+      });
     });
   });
 
@@ -260,7 +797,199 @@ describe('ChatService', () => {
     });
   });
 
+  describe('deleteCategory', () => {
+    const baseCategory = {
+      id: 'cat-1',
+      chapter_id: 'ch-1',
+      name: 'General',
+      display_order: 0,
+      created_at: '2026-01-01T00:00:00.000Z',
+    };
+
+    it('should delete category by id', async () => {
+      mockCategoryRepo.findById.mockResolvedValue(baseCategory);
+      mockCategoryRepo.delete.mockResolvedValue();
+
+      await service.deleteCategory('cat-1', 'ch-1');
+      expect(mockCategoryRepo.delete).toHaveBeenCalledWith('cat-1', 'ch-1');
+    });
+
+    // chat_channels.category_id is ON DELETE SET NULL, so an unscoped delete
+    // would silently un-categorize another tenant's channels.
+    it('should not delete a category belonging to another chapter', async () => {
+      mockCategoryRepo.findById.mockResolvedValue(null);
+
+      await expect(service.deleteCategory('cat-1', 'ch-other')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(mockCategoryRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('should not update a category belonging to another chapter', async () => {
+      mockCategoryRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.updateCategory('cat-1', 'ch-other', { name: 'Renamed' }),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockCategoryRepo.update).not.toHaveBeenCalled();
+    });
+  });
+
   // ── Messages ─────────────────────────────────────────────────────────
+
+  describe('getMessages', () => {
+    it('should return messages without pagination options', async () => {
+      const messages = [baseMessage];
+      mockMessageRepo.findByChannel.mockResolvedValue(messages);
+
+      const result = await service.getMessages('ch-chan-1', 'ch-1', 'user-1');
+
+      expect(mockMessageRepo.findByChannel).toHaveBeenCalledWith(
+        'ch-chan-1',
+        undefined,
+      );
+      expect(result).toEqual(messages);
+    });
+
+    it('should pass pagination options to repository', async () => {
+      const messages = [baseMessage];
+      mockMessageRepo.findByChannel.mockResolvedValue(messages);
+
+      const options = { limit: 20, before: 'msg-5' };
+      const result = await service.getMessages(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+        options,
+      );
+
+      expect(mockMessageRepo.findByChannel).toHaveBeenCalledWith(
+        'ch-chan-1',
+        options,
+      );
+      expect(result).toEqual(messages);
+    });
+
+    it('should reject reads when the channel is in another chapter', async () => {
+      mockChannelRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.getMessages('ch-chan-x', 'ch-1', 'user-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockMessageRepo.findByChannel).not.toHaveBeenCalled();
+    });
+
+    it('should reject reads from a non-member', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+      await expect(
+        service.getMessages('ch-chan-1', 'ch-1', 'outsider'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockMessageRepo.findByChannel).not.toHaveBeenCalled();
+    });
+
+    it('should reject reads from a non-participant of a private channel', async () => {
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        type: 'PRIVATE',
+        member_ids: ['user-2'],
+      });
+
+      await expect(
+        service.getMessages('ch-chan-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should allow reads of a role-gated channel when the caller holds the permission', async () => {
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        type: 'ROLE_GATED',
+        required_permissions: ['alumni:view'],
+      });
+      mockRbac.getEffectivePermissions.mockResolvedValue(['alumni:view']);
+      mockMessageRepo.findByChannel.mockResolvedValue([baseMessage]);
+
+      const result = await service.getMessages('ch-chan-1', 'ch-1', 'user-1');
+      expect(result).toEqual([baseMessage]);
+    });
+
+    it('should reject reads of a role-gated channel without the permission', async () => {
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        type: 'ROLE_GATED',
+        required_permissions: ['alumni:view'],
+      });
+      mockRbac.getEffectivePermissions.mockResolvedValue(['events:create']);
+
+      await expect(
+        service.getMessages('ch-chan-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('listMessageAttachments', () => {
+    const attachmentRow = {
+      id: 'att-1',
+      message_id: 'msg-1',
+      channel_id: 'ch-chan-1',
+      bucket: 'chat',
+      storage_path: 'chapters/ch-1/chat/ch-chan-1/msg-1/minutes.pdf',
+      filename: 'minutes.pdf',
+      content_type: 'application/pdf',
+      byte_size: 2048,
+      width: null,
+      height: null,
+      external_url: null,
+      created_at: '2026-01-01T00:00:00.000Z',
+    };
+
+    it('refuses to hand out URLs for a deleted message', async () => {
+      // Deletion is soft, so the ON DELETE CASCADE never fires and the rows are
+      // still there. Without this the API keeps minting fresh download URLs for
+      // content the sender believes they removed, and the rule would live only
+      // in the web renderer — which is not where a rule about who may fetch
+      // bytes belongs.
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockMessageRepo.findById.mockResolvedValue({
+        ...baseMessage,
+        is_deleted: true,
+      });
+
+      await expect(
+        service.listMessageAttachments('ch-chan-1', 'ch-1', 'user-1', 'msg-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockStorageProvider.getSignedDownloadUrl).not.toHaveBeenCalled();
+    });
+
+    it('omits an attachment it cannot sign rather than failing the whole list', async () => {
+      // One stale path used to reject the Promise.all and take every intact
+      // attachment on the message down with it — the reader saw "attachments
+      // couldn't be loaded" for files that were perfectly fine.
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockMessageRepo.findById.mockResolvedValue(baseMessage);
+      mockAttachmentRepo.findByMessage.mockResolvedValue([
+        attachmentRow,
+        {
+          ...attachmentRow,
+          id: 'att-2',
+          storage_path: 'chapters/ch-1/chat/ch-chan-1/msg-1/gone.pdf',
+        },
+      ]);
+      mockStorageProvider.getSignedDownloadUrl
+        .mockResolvedValueOnce('https://signed/minutes.pdf')
+        .mockRejectedValueOnce(new Error('Object not found'));
+
+      const rows = await service.listMessageAttachments(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+        'msg-1',
+      );
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0].download_url).toBe('https://signed/minutes.pdf');
+    });
+  });
 
   describe('sendMessage', () => {
     it('should send a message', async () => {
@@ -274,7 +1003,367 @@ describe('ChatService', () => {
         content: 'Hello world',
       });
 
-      expect(result).toEqual(baseMessage);
+      expect(result).toEqual({ message: baseMessage, deduplicated: false });
+    });
+
+    it('records the first-chat-message activation milestone (#267)', async () => {
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      await service.sendMessage({
+        chapter_id: 'ch-1',
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'Hello world',
+      });
+
+      expect(mockActivation.record).toHaveBeenCalledWith(
+        'ch-1',
+        'activation-first-chat-message',
+        { kind: 'text' },
+      );
+    });
+
+    it('does not count a server-originated post as the chapter\u2019s first message (#267)', async () => {
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      // The onboarding welcome post travels this path. If it counted, every
+      // chapter would show as having chatted the instant it was created.
+      await service.sendMessage({
+        chapter_id: 'ch-1',
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'Welcome to your chapter.',
+        kind: 'system_audit',
+        system_originated: true,
+      });
+
+      expect(mockActivation.record).not.toHaveBeenCalled();
+    });
+
+    it('passes client_message_id, kind, and payload into the insert', async () => {
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      await service.sendMessage({
+        chapter_id: 'ch-1',
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'Hello',
+        client_message_id: '11111111-1111-1111-1111-111111111111',
+        kind: 'announcement',
+        payload: { foo: 'bar' },
+      });
+
+      expect(mockMessageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          client_message_id: '11111111-1111-1111-1111-111111111111',
+          kind: 'announcement',
+          payload: { foo: 'bar' },
+        }),
+      );
+    });
+
+    describe('attachments', () => {
+      const ATTACHMENT = {
+        storage_path:
+          'chapters/ch-1/chat/ch-chan-1/aaaaaaaa-0000-4000-8000-000000000001/minutes.pdf',
+        filename: 'minutes.pdf',
+        content_type: 'application/pdf',
+        byte_size: 2048,
+      };
+
+      it('accepts a message that is nothing but a file', async () => {
+        // The client stack allows this — the composer's Send button enables on a
+        // staged chip with an empty editor — so the server has to as well. It
+        // used to 400 on both the DTO's MinLength and the emptiness guard.
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+        await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: '',
+          attachments: [ATTACHMENT],
+        });
+
+        expect(mockAttachmentRepo.createMany).toHaveBeenCalledWith([
+          expect.objectContaining({ storage_path: ATTACHMENT.storage_path }),
+        ]);
+      });
+
+      it('still rejects a message with neither content nor a file', async () => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+
+        await expect(
+          service.sendMessage({
+            chapter_id: 'ch-1',
+            channel_id: 'ch-chan-1',
+            sender_id: 'user-1',
+            content: '   ',
+          }),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('refuses an attachment whose path belongs to another channel', async () => {
+        // The client uploaded through a signed URL, so it is trusted for the
+        // filename and type — never for the location. Without this a caller
+        // could claim any object in the bucket and be handed a signed download
+        // URL for it later.
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+
+        await expect(
+          service.sendMessage({
+            chapter_id: 'ch-1',
+            channel_id: 'ch-chan-1',
+            sender_id: 'user-1',
+            content: 'look',
+            attachments: [
+              {
+                ...ATTACHMENT,
+                storage_path:
+                  'chapters/other-chapter/chat/other-channel/m/secret.pdf',
+              },
+            ],
+          }),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockAttachmentRepo.createMany).not.toHaveBeenCalled();
+      });
+
+      it('stamps attachment_count so a live client knows to fetch', async () => {
+        // A postgres_changes echo cannot carry a join, so this count is the only
+        // way a recipient learns the message has files. Without it an
+        // attachment-only message renders as an empty bubble for everyone but
+        // its sender.
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+        await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'deck attached',
+          attachments: [ATTACHMENT],
+        });
+
+        expect(mockMessageRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            metadata: expect.objectContaining({ attachment_count: 1 }),
+          }),
+        );
+      });
+
+      it('clears attachment_count when the attachment write fails', async () => {
+        // The message row is already committed by the time this can fail —
+        // separate PostgREST calls, no transaction — so the alternative is a
+        // message that promises a file forever and renders as "attachment
+        // couldn't be loaded" to everyone.
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+        mockMessageRepo.findById.mockResolvedValue({
+          ...baseMessage,
+          metadata: { attachment_count: 1 },
+        });
+        mockAttachmentRepo.createMany.mockRejectedValueOnce(
+          new Error('storage write failed'),
+        );
+
+        await expect(
+          service.sendMessage({
+            chapter_id: 'ch-1',
+            channel_id: 'ch-chan-1',
+            sender_id: 'user-1',
+            content: 'deck attached',
+            attachments: [ATTACHMENT],
+          }),
+        ).rejects.toThrow('storage write failed');
+
+        expect(mockMessageRepo.update).toHaveBeenCalledWith(
+          baseMessage.id,
+          expect.objectContaining({
+            metadata: expect.not.objectContaining({ attachment_count: 1 }),
+          }),
+        );
+      });
+
+      it('writes the attachments on the dedupe retry, not just the first attempt', async () => {
+        // A retry reaches the dedupe path precisely when the first attempt
+        // committed the message and then failed writing attachments. Returning
+        // the existing row without them would make that failure permanent: no
+        // later retry ever gets past the duplicate error.
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.create.mockRejectedValue(
+          new ChatMessageDuplicateError(
+            'ch-chan-1',
+            'user-1',
+            '11111111-1111-1111-1111-111111111111',
+          ),
+        );
+        mockMessageRepo.findByClientMessageId.mockResolvedValue(baseMessage);
+
+        const result = await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'deck attached',
+          client_message_id: '11111111-1111-1111-1111-111111111111',
+          attachments: [ATTACHMENT],
+        });
+
+        expect(result.deduplicated).toBe(true);
+        expect(mockAttachmentRepo.createMany).toHaveBeenCalledWith([
+          expect.objectContaining({ message_id: baseMessage.id }),
+        ]);
+      });
+    });
+
+    it('rejects client posts of server-originated kinds (points, system_audit)', async () => {
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      for (const kind of ['points', 'system_audit'] as const) {
+        await expect(
+          service.sendMessage({
+            chapter_id: 'ch-1',
+            channel_id: 'ch-chan-1',
+            sender_id: 'user-1',
+            content: 'forged card',
+            kind,
+          }),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      }
+
+      expect(mockMessageRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('allows server-originated kinds when system_originated is set', async () => {
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      await service.sendMessage({
+        chapter_id: 'ch-1',
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'Granted 5 points to Bob: great work',
+        kind: 'points',
+        payload: { amount: 5 },
+        system_originated: true,
+      });
+
+      expect(mockMessageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'points' }),
+      );
+    });
+
+    it('still allows client posts of the loading placeholder kind', async () => {
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      await service.sendMessage({
+        chapter_id: 'ch-1',
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'Recording points…',
+        kind: 'loading',
+      });
+
+      expect(mockMessageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'loading' }),
+      );
+    });
+
+    it('returns the existing row with deduplicated:true on a client_message_id retry', async () => {
+      const clientId = '22222222-2222-2222-2222-222222222222';
+      mockMessageRepo.create.mockRejectedValue(
+        new ChatMessageDuplicateError('ch-chan-1', 'user-1', clientId),
+      );
+      mockMessageRepo.findByClientMessageId.mockResolvedValue(baseMessage);
+
+      const result = await service.sendMessage({
+        chapter_id: 'ch-1',
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'Hello',
+        client_message_id: clientId,
+      });
+
+      expect(result).toEqual({ message: baseMessage, deduplicated: true });
+      expect(mockMessageRepo.findByClientMessageId).toHaveBeenCalledWith(
+        'ch-chan-1',
+        'user-1',
+        clientId,
+      );
+    });
+
+    it('rethrows when the duplicate-error path cannot re-select an existing row', async () => {
+      const clientId = '33333333-3333-3333-3333-333333333333';
+      mockMessageRepo.create.mockRejectedValue(
+        new ChatMessageDuplicateError('ch-chan-1', 'user-1', clientId),
+      );
+      mockMessageRepo.findByClientMessageId.mockResolvedValue(null);
+
+      await expect(
+        service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'Hello',
+          client_message_id: clientId,
+        }),
+      ).rejects.toBeInstanceOf(ChatMessageDuplicateError);
+    });
+
+    it('emits a Realtime broadcast for new messages on the chapter:<channel_id> topic', async () => {
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      await service.sendMessage({
+        chapter_id: 'ch-1',
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'Hello',
+      });
+
+      expect(broadcasts).toHaveLength(1);
+      expect(broadcasts[0]).toEqual({
+        topic: `chapter:${baseMessage.channel_id}`,
+        payload: {
+          type: 'broadcast',
+          event: 'new_message',
+          payload: baseMessage,
+        },
+      });
+    });
+
+    it('does NOT broadcast (and does NOT insert) when authz denies the send', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+      await expect(
+        service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'outsider',
+          content: 'Hello',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      expect(broadcasts).toHaveLength(0);
+    });
+
+    it('still returns success when the broadcast throws (Postgres Changes is the source of truth)', async () => {
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+      mockSupabase.channel.mockImplementationOnce(() => {
+        throw new Error('boom');
+      });
+
+      const result = await service.sendMessage({
+        chapter_id: 'ch-1',
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'Hello',
+      });
+
+      expect(result.message).toEqual(baseMessage);
     });
 
     it('should reject empty content', async () => {
@@ -302,6 +1391,163 @@ describe('ChatService', () => {
 
       expect(mockMessageRepo.create).not.toHaveBeenCalled();
     });
+
+    it('should reject a non-member sender', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+      await expect(
+        service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'outsider',
+          content: 'Hello world',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockMessageRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject a sender not in a private channel', async () => {
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        type: 'PRIVATE',
+        member_ids: ['user-2'],
+      });
+
+      await expect(
+        service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'Hello world',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockMessageRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject a reply targeting a message in another channel', async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...baseMessage,
+        id: 'msg-other',
+        channel_id: 'ch-chan-OTHER',
+      });
+
+      await expect(
+        service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'Hello world',
+          reply_to_id: 'msg-other',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockMessageRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('should accept a reply targeting a message in the same channel', async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...baseMessage,
+        id: 'msg-same',
+        channel_id: 'ch-chan-1',
+      });
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      const result = await service.sendMessage({
+        chapter_id: 'ch-1',
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'Hello world',
+        reply_to_id: 'msg-same',
+      });
+      expect(result).toEqual({ message: baseMessage, deduplicated: false });
+      expect(mockMessageRepo.create).toHaveBeenCalled();
+    });
+
+    // #734: a read-only channel is a broadcast surface. `canAccessChannel`
+    // decides who may author a top-level announcement; these cover the separate
+    // invariant that nobody threads one, whatever they hold.
+    describe('in-thread replies in a read-only channel', () => {
+      const announcements: ChatChannel = {
+        ...baseChannel,
+        name: 'announcements',
+        is_read_only: true,
+      };
+
+      it('rejects a reply from a sender holding announcements:post', async () => {
+        mockChannelRepo.findById.mockResolvedValue(announcements);
+        mockRbac.getEffectivePermissions.mockResolvedValue([
+          'announcements:post',
+        ]);
+
+        await expect(
+          service.sendMessage({
+            chapter_id: 'ch-1',
+            channel_id: 'ch-chan-1',
+            sender_id: 'user-1',
+            content: 'Threading a broadcast',
+            reply_to_id: 'msg-same',
+          }),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('rejects a reply from the President wildcard too', async () => {
+        mockChannelRepo.findById.mockResolvedValue(announcements);
+        mockRbac.getEffectivePermissions.mockResolvedValue(['*']);
+
+        await expect(
+          service.sendMessage({
+            chapter_id: 'ch-1',
+            channel_id: 'ch-chan-1',
+            sender_id: 'user-1',
+            content: 'Threading a broadcast',
+            reply_to_id: 'msg-same',
+          }),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('rejects before spending a lookup on the replied-to message', async () => {
+        mockChannelRepo.findById.mockResolvedValue(announcements);
+        mockRbac.getEffectivePermissions.mockResolvedValue([
+          'announcements:post',
+        ]);
+
+        await expect(
+          service.sendMessage({
+            chapter_id: 'ch-1',
+            channel_id: 'ch-chan-1',
+            sender_id: 'user-1',
+            content: 'Threading a broadcast',
+            reply_to_id: 'msg-same',
+          }),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockMessageRepo.findById).not.toHaveBeenCalled();
+      });
+
+      it('still accepts a top-level announcement from an authorized officer', async () => {
+        mockChannelRepo.findById.mockResolvedValue(announcements);
+        mockRbac.getEffectivePermissions.mockResolvedValue([
+          'announcements:post',
+        ]);
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+        const result = await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'Chapter meeting moved to 7pm',
+        });
+
+        expect(result).toEqual({ message: baseMessage, deduplicated: false });
+        expect(mockMessageRepo.create).toHaveBeenCalled();
+      });
+
+      // No "reply in a normal channel still works" case here: "should accept a
+      // reply targeting a message in the same channel" above already covers it
+      // with the same channel, payload, and assertions. No mutation of this
+      // guard fails one without failing the other, so a read-only-specific copy
+      // would assert nothing new while implying the split is covered twice.
+    });
   });
 
   describe('editMessage', () => {
@@ -313,7 +1559,12 @@ describe('ChatService', () => {
         edited_at: '2026-01-01T13:00:00.000Z',
       });
 
-      const result = await service.editMessage('msg-1', 'user-1', 'Updated');
+      const result = await service.editMessage(
+        'msg-1',
+        'ch-1',
+        'user-1',
+        'Updated',
+      );
       expect(result.content).toBe('Updated');
       expect(result.edited_at).toBeTruthy();
     });
@@ -322,7 +1573,7 @@ describe('ChatService', () => {
       mockMessageRepo.findById.mockResolvedValue(baseMessage);
 
       await expect(
-        service.editMessage('msg-1', 'user-2', 'Hacked'),
+        service.editMessage('msg-1', 'ch-1', 'user-2', 'Hacked'),
       ).rejects.toThrow(ForbiddenException);
     });
 
@@ -333,8 +1584,23 @@ describe('ChatService', () => {
       });
 
       await expect(
-        service.editMessage('msg-1', 'user-1', 'Updated'),
+        service.editMessage('msg-1', 'ch-1', 'user-1', 'Updated'),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    // An edit writes new member-authored content into the channel, so it must
+    // clear the same post-side gates as sending. Otherwise the alumni rule and
+    // the read-only gate are both bypassable by editing an older message
+    // instead of sending a new one.
+    it('blocks an alumni member from rewriting their own message in an operational channel', async () => {
+      mockMessageRepo.findById.mockResolvedValue(baseMessage);
+      mockRbac.hasAlumniRole.mockResolvedValue(true);
+
+      await expect(
+        service.editMessage('msg-1', 'ch-1', 'user-1', 'Rewritten'),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
     });
   });
 
@@ -347,7 +1613,12 @@ describe('ChatService', () => {
         is_deleted: true,
       });
 
-      const result = await service.deleteMessage('msg-1', 'user-1', false);
+      const result = await service.deleteMessage(
+        'msg-1',
+        'ch-1',
+        'user-1',
+        false,
+      );
       expect(result.is_deleted).toBe(true);
       expect(result.content).toBe('[message deleted]');
     });
@@ -359,7 +1630,7 @@ describe('ChatService', () => {
         is_deleted: true,
       });
 
-      await service.deleteMessage('msg-1', 'user-2', true);
+      await service.deleteMessage('msg-1', 'ch-1', 'user-2', true);
       expect(mockMessageRepo.update).toHaveBeenCalled();
     });
 
@@ -367,7 +1638,7 @@ describe('ChatService', () => {
       mockMessageRepo.findById.mockResolvedValue(baseMessage);
 
       await expect(
-        service.deleteMessage('msg-1', 'user-2', false),
+        service.deleteMessage('msg-1', 'ch-1', 'user-2', false),
       ).rejects.toThrow(ForbiddenException);
     });
   });
@@ -383,7 +1654,7 @@ describe('ChatService', () => {
         is_pinned: true,
       });
 
-      const result = await service.pinMessage('msg-1');
+      const result = await service.pinMessage('msg-1', 'ch-1', 'user-1');
       expect(result.is_pinned).toBe(true);
     });
 
@@ -393,18 +1664,18 @@ describe('ChatService', () => {
         is_pinned: true,
       });
 
-      await expect(service.pinMessage('msg-1')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.pinMessage('msg-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('should reject pinning when at 50 limit', async () => {
       mockMessageRepo.findById.mockResolvedValue(baseMessage);
       mockMessageRepo.countPinnedByChannel.mockResolvedValue(50);
 
-      await expect(service.pinMessage('msg-1')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.pinMessage('msg-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 
@@ -419,16 +1690,70 @@ describe('ChatService', () => {
         is_pinned: false,
       });
 
-      const result = await service.unpinMessage('msg-1');
+      const result = await service.unpinMessage('msg-1', 'ch-1', 'user-1');
       expect(result.is_pinned).toBe(false);
     });
 
     it('should reject unpinning non-pinned message', async () => {
       mockMessageRepo.findById.mockResolvedValue(baseMessage);
 
-      await expect(service.unpinMessage('msg-1')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.unpinMessage('msg-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  // spec/behavior/multi-tenancy.md treats cross-chapter access as a critical
+  // security bug, and spec/behavior/chat/README.md requires every message
+  // surface to authorize through the channel → chapter → membership lookup.
+  // These paths previously mutated straight off a message UUID.
+  describe('cross-chapter message mutations', () => {
+    // The message resolves, but its channel does not exist in the caller's
+    // active chapter — assertMessageAccess normalizes that to a 404 so a
+    // caller cannot probe for message ids in other chapters.
+    const messageInAnotherChapter = () => {
+      mockMessageRepo.findById.mockResolvedValue(baseMessage);
+      mockChannelRepo.findById.mockResolvedValue(null);
+    };
+
+    it('refuses to edit a message from another chapter', async () => {
+      messageInAnotherChapter();
+
+      await expect(
+        service.editMessage('msg-1', 'ch-other', 'user-1', 'Hacked'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses to delete a message from another chapter', async () => {
+      messageInAnotherChapter();
+
+      await expect(
+        service.deleteMessage('msg-1', 'ch-other', 'user-1', true),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses to pin a message from another chapter', async () => {
+      messageInAnotherChapter();
+
+      await expect(
+        service.pinMessage('msg-1', 'ch-other', 'user-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses to unpin a message from another chapter', async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...baseMessage,
+        is_pinned: true,
+      });
+      mockChannelRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.unpinMessage('msg-1', 'ch-other', 'user-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
     });
   });
 
@@ -446,7 +1771,12 @@ describe('ChatService', () => {
       };
       mockReactionRepo.create.mockResolvedValue(newReaction);
 
-      const result = await service.toggleReaction('msg-1', 'user-1', '👍');
+      const result = await service.toggleReaction(
+        'msg-1',
+        'ch-1',
+        'user-1',
+        '👍',
+      );
       expect(result.action).toBe('added');
     });
 
@@ -461,8 +1791,22 @@ describe('ChatService', () => {
       mockReactionRepo.findOne.mockResolvedValue(existing);
       mockReactionRepo.delete.mockResolvedValue();
 
-      const result = await service.toggleReaction('msg-1', 'user-1', '👍');
+      const result = await service.toggleReaction(
+        'msg-1',
+        'ch-1',
+        'user-1',
+        '👍',
+      );
       expect(result.action).toBe('removed');
+    });
+
+    it('should reject reacting to a message the caller cannot access', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+      await expect(
+        service.toggleReaction('msg-1', 'ch-1', 'outsider', '👍'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockReactionRepo.create).not.toHaveBeenCalled();
     });
   });
 
@@ -478,7 +1822,11 @@ describe('ChatService', () => {
         updated_at: '2026-01-01T12:00:00.000Z',
       });
 
-      const result = await service.markChannelRead('ch-chan-1', 'user-1');
+      const result = await service.markChannelRead(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+      );
       expect(result.channel_id).toBe('ch-chan-1');
     });
   });
@@ -494,6 +1842,7 @@ describe('ChatService', () => {
       const result = await service.requestChatUploadUrl(
         'ch-chan-1',
         'ch-1',
+        'user-1',
         'photo.png',
         'image/png',
       );
@@ -514,6 +1863,7 @@ describe('ChatService', () => {
         service.requestChatUploadUrl(
           'ch-chan-1',
           'ch-1',
+          'user-1',
           'virus.exe',
           'application/x-msdownload',
         ),
@@ -525,6 +1875,7 @@ describe('ChatService', () => {
         service.requestChatUploadUrl(
           'ch-chan-1',
           'ch-1',
+          'user-1',
           'script.sh',
           'application/x-sh',
         ),
@@ -536,6 +1887,7 @@ describe('ChatService', () => {
         service.requestChatUploadUrl(
           'ch-chan-1',
           'ch-1',
+          'user-1',
           'run.bat',
           'application/x-bat',
         ),
@@ -547,6 +1899,7 @@ describe('ChatService', () => {
         service.requestChatUploadUrl(
           'ch-chan-1',
           'ch-1',
+          'user-1',
           'file.zip',
           'application/zip',
         ),
@@ -561,6 +1914,7 @@ describe('ChatService', () => {
       const result = await service.requestChatUploadUrl(
         'ch-chan-1',
         'ch-1',
+        'user-1',
         'document.pdf',
         'application/pdf',
       );
@@ -605,9 +1959,16 @@ describe('ChatService', () => {
         ...baseChannel,
         name: 'announcements',
         type: 'PUBLIC',
+        // The seeded shape: everyone reads, only `announcements:post` writes.
+        is_read_only: true,
       };
       mockMessageRepo.create.mockResolvedValue(baseMessage);
       mockChannelRepo.findById.mockResolvedValue(announcementChannel);
+      // A read-only channel is postable only with the permission — which is the
+      // point: `announcements:post` is what authorizes an announcement.
+      mockRbac.getEffectivePermissions.mockResolvedValue([
+        'announcements:post',
+      ]);
 
       await service.sendMessage({
         chapter_id: 'ch-1',
@@ -624,6 +1985,60 @@ describe('ChatService', () => {
           category: 'announcements',
         }),
       );
+    });
+
+    // #1008: the fan-out pushes the message body to EVERY chapter member, so it
+    // is only sound where every member can read the channel. Matching on the
+    // name alone, a PRIVATE channel named `exec-announcements` — newly postable
+    // once its creator is seeded — would have broadcast its contents chapter-wide.
+    it.each(['PRIVATE', 'ROLE_GATED'] as const)(
+      'should not fan an announcement-named %s channel out to the chapter',
+      async (type) => {
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+        mockChannelRepo.findById.mockResolvedValue({
+          ...baseChannel,
+          name: 'exec-announcements',
+          type,
+          member_ids: type === 'PRIVATE' ? ['user-1'] : null,
+          required_permissions: type === 'ROLE_GATED' ? ['roles:manage'] : null,
+        });
+        // The sender must be able to POST for the notification to be reached at
+        // all; the point of the test is what happens after that, not the gate.
+        if (type === 'ROLE_GATED') {
+          mockRbac.getEffectivePermissions.mockResolvedValue(['roles:manage']);
+        }
+
+        await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'Private exec discussion',
+        });
+
+        expect(mockNotificationService.notifyChapter).not.toHaveBeenCalled();
+      },
+    );
+
+    // A PUBLIC channel anyone can post to must not be able to fan an URGENT,
+    // quiet-hours-exempt push to the whole roster just because it is named
+    // `*-announcements`. `announcements:post` is what governs authorship.
+    it('should not fan out from a PUBLIC channel that is not read-only', async () => {
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        name: 'intramural-announcements',
+        type: 'PUBLIC',
+        is_read_only: false,
+      });
+
+      await service.sendMessage({
+        chapter_id: 'ch-1',
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'anyone can post this',
+      });
+
+      expect(mockNotificationService.notifyChapter).not.toHaveBeenCalled();
     });
 
     it('should not fail if notification throws on sendMessage', async () => {
@@ -645,7 +2060,480 @@ describe('ChatService', () => {
         content: 'Hello!',
       });
 
-      expect(result).toEqual(baseMessage);
+      expect(result.message).toEqual(baseMessage);
+    });
+  });
+
+  // ── Hot-path actions (chat_message_actions) ──────────────────────────
+
+  describe('recordMessageAction', () => {
+    const baseAction: ChatMessageAction = {
+      id: 'action-1',
+      message_id: 'msg-1',
+      user_id: 'user-1',
+      action_type: 'reaction:👍',
+      payload: {},
+      created_at: '2026-01-01T12:00:00.000Z',
+    };
+
+    describe('poll-card vote validation (#871)', () => {
+      // The card payload the composer writes (@repo/chat-core/dispatch):
+      // options carry ids, and the deadline is `closes_at`.
+      const pollMessage = {
+        ...baseMessage,
+        kind: 'poll',
+        payload: {
+          question: 'Formal venue?',
+          options: [
+            { id: 'opt-a', label: 'The Lodge' },
+            { id: 'opt-b', label: 'Riverside' },
+          ],
+          closes_at: null,
+        },
+      };
+
+      const vote = (payload: Record<string, unknown>) =>
+        service.recordMessageAction('msg-1', 'ch-1', 'user-1', {
+          action_type: 'vote',
+          payload,
+        });
+
+      it('rejects a vote on a closed poll', async () => {
+        mockMessageRepo.findById.mockResolvedValue({
+          ...pollMessage,
+          payload: {
+            ...pollMessage.payload,
+            closes_at: '2020-01-01T00:00:00.000Z',
+          },
+        });
+
+        await expect(vote({ option_id: 'opt-a' })).rejects.toThrow(
+          BadRequestException,
+        );
+        expect(mockActionRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('rejects an option that is not on the card', async () => {
+        mockMessageRepo.findById.mockResolvedValue(pollMessage);
+
+        await expect(vote({ option_id: 'opt-z' })).rejects.toThrow(
+          /Invalid option/,
+        );
+        expect(mockActionRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('rejects several selections on a single-choice card', async () => {
+        mockMessageRepo.findById.mockResolvedValue(pollMessage);
+
+        await expect(vote({ option_id: ['opt-a', 'opt-b'] })).rejects.toThrow(
+          /exactly one option/,
+        );
+        expect(mockActionRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('still records a valid vote', async () => {
+        mockMessageRepo.findById.mockResolvedValue(pollMessage);
+        mockActionRepo.create.mockResolvedValue({
+          ...baseAction,
+          action_type: 'vote',
+        });
+
+        await expect(vote({ option_id: 'opt-a' })).resolves.toMatchObject({
+          deduplicated: false,
+        });
+        expect(mockActionRepo.create).toHaveBeenCalled();
+      });
+
+      it('leaves non-vote actions on a poll card alone', async () => {
+        // Reactions on a poll card are not votes and must not be rule-checked.
+        mockMessageRepo.findById.mockResolvedValue(pollMessage);
+        mockActionRepo.create.mockResolvedValue(baseAction);
+
+        await expect(
+          service.recordMessageAction('msg-1', 'ch-1', 'user-1', {
+            action_type: 'reaction:👍',
+          }),
+        ).resolves.toMatchObject({ deduplicated: false });
+      });
+    });
+
+    it('records a reaction and returns deduplicated:false on the happy path', async () => {
+      mockActionRepo.create.mockResolvedValue(baseAction);
+
+      const result = await service.recordMessageAction(
+        'msg-1',
+        'ch-1',
+        'user-1',
+        { action_type: 'reaction:👍' },
+      );
+
+      expect(result).toEqual({ action: baseAction, deduplicated: false });
+      expect(mockActionRepo.create).toHaveBeenCalledWith({
+        message_id: 'msg-1',
+        user_id: 'user-1',
+        action_type: 'reaction:👍',
+        payload: {},
+      });
+    });
+
+    it('rejects when the caller cannot access the message', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+      await expect(
+        service.recordMessageAction('msg-1', 'ch-1', 'outsider', {
+          action_type: 'reaction:👍',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockActionRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('on a unique-violation for an emoji reaction, surfaces the existing row as deduplicated:true (no second insert)', async () => {
+      mockActionRepo.create.mockRejectedValue(
+        new ChatMessageActionDuplicateError('msg-1', 'user-1', 'reaction:👍'),
+      );
+      mockActionRepo.findOne.mockResolvedValue(baseAction);
+
+      const result = await service.recordMessageAction(
+        'msg-1',
+        'ch-1',
+        'user-1',
+        { action_type: 'reaction:👍' },
+      );
+
+      expect(result).toEqual({ action: baseAction, deduplicated: true });
+      expect(mockActionRepo.create).toHaveBeenCalledTimes(1);
+      expect(mockActionRepo.findOne).toHaveBeenCalledWith(
+        'msg-1',
+        'user-1',
+        'reaction:👍',
+      );
+      expect(mockActionRepo.updateForVote).not.toHaveBeenCalled();
+    });
+
+    it('on a unique-violation for action_type="vote", UPSERTS the payload and returns updated:true (ADR-07)', async () => {
+      const updatedAction = {
+        ...baseAction,
+        action_type: 'vote',
+        payload: { option: 2 },
+      };
+      mockActionRepo.create.mockRejectedValue(
+        new ChatMessageActionDuplicateError('msg-1', 'user-1', 'vote'),
+      );
+      mockActionRepo.updateForVote.mockResolvedValue(updatedAction);
+
+      const result = await service.recordMessageAction(
+        'msg-1',
+        'ch-1',
+        'user-1',
+        { action_type: 'vote', payload: { option: 2 } },
+      );
+
+      expect(result).toEqual({
+        action: updatedAction,
+        deduplicated: false,
+        updated: true,
+      });
+      expect(mockActionRepo.updateForVote).toHaveBeenCalledWith(
+        'msg-1',
+        'user-1',
+        'vote',
+        { option: 2 },
+      );
+    });
+
+    it('rethrows non-23505 insert errors instead of falsely deduping', async () => {
+      mockActionRepo.create.mockRejectedValue(new Error('schema mismatch'));
+
+      await expect(
+        service.recordMessageAction('msg-1', 'ch-1', 'user-1', {
+          action_type: 'reaction:👍',
+        }),
+      ).rejects.toThrow('schema mismatch');
+    });
+  });
+  describe('getUnreadCounts', () => {
+    const PRIVATE_OTHERS: ChatChannel = {
+      ...baseChannel,
+      id: 'private-not-mine',
+      name: 'their-dm',
+      type: 'PRIVATE',
+      member_ids: ['someone-else', 'another'],
+    };
+
+    it('drops channels the caller cannot read', async () => {
+      // The RPC answers for every channel in the chapter on purpose, so this
+      // filter is the only thing standing between a member and the knowledge
+      // that two other members have an active private conversation. An unread
+      // count alone is enough to leak that.
+      mockChannelRepo.findByChapter.mockResolvedValue([
+        baseChannel,
+        PRIVATE_OTHERS,
+      ]);
+      mockReadReceiptRepo.getUnreadCounts.mockResolvedValue([
+        { channel_id: baseChannel.id, unread_count: 3, mention_count: 1 },
+        { channel_id: PRIVATE_OTHERS.id, unread_count: 9, mention_count: 4 },
+      ]);
+
+      const result = await service.getUnreadCounts('ch-1', 'user-1');
+
+      expect(result).toEqual([
+        { channel_id: baseChannel.id, unread_count: 3, mention_count: 1 },
+      ]);
+    });
+
+    it('keeps a readable channel with nothing unread rather than dropping it', async () => {
+      // The list needs a row per channel to render; a zero is a real answer.
+      mockChannelRepo.findByChapter.mockResolvedValue([baseChannel]);
+      mockReadReceiptRepo.getUnreadCounts.mockResolvedValue([
+        { channel_id: baseChannel.id, unread_count: 0, mention_count: 0 },
+      ]);
+
+      await expect(service.getUnreadCounts('ch-1', 'user-1')).resolves.toEqual([
+        { channel_id: baseChannel.id, unread_count: 0, mention_count: 0 },
+      ]);
+    });
+
+    it('does not consult the access filter when the RPC returns nothing', async () => {
+      mockReadReceiptRepo.getUnreadCounts.mockResolvedValue([]);
+
+      await expect(service.getUnreadCounts('ch-1', 'user-1')).resolves.toEqual(
+        [],
+      );
+      expect(mockChannelRepo.findByChapter).not.toHaveBeenCalled();
+    });
+
+    it('returns nothing for a non-member rather than the whole chapter', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+      mockChannelRepo.findByChapter.mockResolvedValue([baseChannel]);
+      mockReadReceiptRepo.getUnreadCounts.mockResolvedValue([
+        { channel_id: baseChannel.id, unread_count: 5, mention_count: 0 },
+      ]);
+
+      await expect(service.getUnreadCounts('ch-1', 'ghost')).resolves.toEqual(
+        [],
+      );
+    });
+  });
+
+  describe('sendMessage — mention resolution', () => {
+    const roster = [
+      { user_id: 'user-1', display_name: 'Sender One' },
+      { user_id: 'user-2', display_name: 'Jane Doe' },
+      { user_id: 'user-3', display_name: 'Janet Roe' },
+    ];
+
+    function seedRoster() {
+      mockMemberRepo.findChapterMemberIdentities.mockResolvedValue(roster);
+    }
+
+    it('resolves a mention server-side and stores users.id', async () => {
+      seedRoster();
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      await service.sendMessage({
+        channel_id: 'ch-chan-1',
+        chapter_id: 'ch-1',
+        sender_id: 'user-1',
+        content: 'hey @janedoe can you cover?',
+      });
+
+      expect(mockMessageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ mentions: ['user-2'] }),
+      );
+    });
+
+    it('stores no mention when the token is ambiguous', async () => {
+      // "jan" prefixes both Jane and Janet. Guessing would notify the wrong
+      // member, and mentions override a per-channel mute — so it fails closed.
+      seedRoster();
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      await service.sendMessage({
+        channel_id: 'ch-chan-1',
+        chapter_id: 'ch-1',
+        sender_id: 'user-1',
+        content: '@jan you around?',
+      });
+
+      expect(mockMessageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ mentions: [] }),
+      );
+    });
+
+    it('never trusts a client-supplied mention list', async () => {
+      // The whole point of resolving server-side: a forged list would let any
+      // member push to any other member in a channel they had muted.
+      seedRoster();
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      await service.sendMessage({
+        channel_id: 'ch-chan-1',
+        chapter_id: 'ch-1',
+        sender_id: 'user-1',
+        content: 'no mentions here',
+        metadata: { mentions: ['user-2', 'user-3'] },
+      });
+
+      expect(mockMessageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ mentions: [] }),
+      );
+    });
+
+    it('skips the roster lookup entirely when the body has no @', async () => {
+      seedRoster();
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      await service.sendMessage({
+        channel_id: 'ch-chan-1',
+        chapter_id: 'ch-1',
+        sender_id: 'user-1',
+        content: 'plain message',
+      });
+
+      expect(mockMemberRepo.findByChapter).not.toHaveBeenCalled();
+    });
+
+    it('re-resolves mentions on edit', async () => {
+      // Without this the stored list describes text that no longer exists:
+      // editing someone in never counts toward their badge, and editing them
+      // out leaves a mention of a message that no longer names them.
+      seedRoster();
+      mockMessageRepo.update.mockResolvedValue(baseMessage);
+
+      await service.editMessage('msg-1', 'ch-1', 'user-1', 'now with @janedoe');
+
+      expect(mockMessageRepo.update).toHaveBeenCalledWith(
+        'msg-1',
+        expect.objectContaining({ mentions: ['user-2'] }),
+      );
+    });
+
+    it('clears mentions when an edit removes them', async () => {
+      seedRoster();
+      mockMessageRepo.update.mockResolvedValue(baseMessage);
+
+      await service.editMessage('msg-1', 'ch-1', 'user-1', 'never mind');
+
+      expect(mockMessageRepo.update).toHaveBeenCalledWith(
+        'msg-1',
+        expect.objectContaining({ mentions: [] }),
+      );
+    });
+
+    it('still sends when the directory lookup fails', async () => {
+      // Losing a highlight is acceptable; losing the message is not.
+      mockMemberRepo.findChapterMemberIdentities.mockRejectedValue(
+        new Error('directory down'),
+      );
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      await expect(
+        service.sendMessage({
+          channel_id: 'ch-chan-1',
+          chapter_id: 'ch-1',
+          sender_id: 'user-1',
+          content: 'hey @janedoe',
+        }),
+      ).resolves.toBeDefined();
+
+      expect(mockMessageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ mentions: [] }),
+      );
+    });
+
+    // ── #986: the roster fetch is no longer paid per `@` ──────────────────
+
+    it.each([
+      ['an email address', 'ping me at paul@example.com'],
+      ['a bare @ in prose', 'email me @ noon'],
+      ['a leading-@ handle with no letter', 'weird @123 token'],
+    ])('issues no roster query for %s', async (_label, content) => {
+      // The old gate was `content.includes('@')`, so each of these bought a
+      // full chapter roster fetch — plus a second query for every user row —
+      // on the send hot path. None of them can resolve to a member.
+      seedRoster();
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      await service.sendMessage({
+        channel_id: 'ch-chan-1',
+        chapter_id: 'ch-1',
+        sender_id: 'user-1',
+        content,
+      });
+
+      expect(mockMemberRepo.findChapterMemberIdentities).not.toHaveBeenCalled();
+      expect(mockMessageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ mentions: [] }),
+      );
+    });
+
+    it('resolves a mention in exactly one query', async () => {
+      // AC #2. Pinned as a count, not just a shape: the regression this guards
+      // is someone reintroducing a roster-then-hydrate pair, which resolves the
+      // same mentions and would pass every other test in this block.
+      seedRoster();
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      await service.sendMessage({
+        channel_id: 'ch-chan-1',
+        chapter_id: 'ch-1',
+        sender_id: 'user-1',
+        content: 'hey @janedoe can you cover?',
+      });
+
+      expect(mockMemberRepo.findChapterMemberIdentities).toHaveBeenCalledTimes(
+        1,
+      );
+      expect(mockMemberRepo.findChapterMemberIdentities).toHaveBeenCalledWith(
+        'ch-1',
+      );
+      // The wide roster read is gone from this path entirely.
+      expect(mockMemberRepo.findByChapter).not.toHaveBeenCalled();
+    });
+
+    it('scopes candidates to the sending chapter', async () => {
+      // AC #3. The chapter predicate lives in the repository join now, so the
+      // guarantee this pins is that the service still passes the *sending*
+      // chapter and never a wider set — a member must not be able to mention
+      // someone outside their chapter, since a mention overrides a mute.
+      mockMemberRepo.findChapterMemberIdentities.mockResolvedValue([]);
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      await service.sendMessage({
+        channel_id: 'ch-chan-1',
+        chapter_id: 'ch-1',
+        sender_id: 'user-1',
+        content: 'hey @janedoe',
+      });
+
+      expect(mockMemberRepo.findChapterMemberIdentities).toHaveBeenCalledWith(
+        'ch-1',
+      );
+      expect(mockMessageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ mentions: [] }),
+      );
+    });
+
+    it('issues no roster query when an edit removes the last mention', async () => {
+      // The edit path re-resolves against the new body, so it inherits the same
+      // early return. The new body deliberately still contains an `@` — under
+      // the old `content.includes('@')` gate this edit bought a full roster
+      // fetch, so a body without one would let this pass either way.
+      seedRoster();
+      mockMessageRepo.update.mockResolvedValue(baseMessage);
+
+      await service.editMessage(
+        'msg-1',
+        'ch-1',
+        'user-1',
+        'never mind, reach me @ 5pm',
+      );
+
+      expect(mockMemberRepo.findChapterMemberIdentities).not.toHaveBeenCalled();
+      expect(mockMessageRepo.update).toHaveBeenCalledWith(
+        'msg-1',
+        expect.objectContaining({ mentions: [] }),
+      );
     });
   });
 });

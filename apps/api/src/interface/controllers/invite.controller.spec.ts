@@ -105,9 +105,7 @@ describe('InviteController', () => {
       const dto: RedeemInviteDto = { token: 'invite-token-1' };
       const expectedResult = { chapterId: 'chapter-1', memberId: 'member-1' };
 
-      jest
-        .spyOn(inviteService, 'redeem')
-        .mockResolvedValue(expectedResult as any);
+      jest.spyOn(inviteService, 'redeem').mockResolvedValue(expectedResult);
 
       const result = await controller.redeem(userId, dto);
 
@@ -139,7 +137,7 @@ describe('InviteController', () => {
       const chapterId = 'chapter-1';
       const inviteId = 'inv-1';
 
-      jest.spyOn(inviteService, 'revoke').mockResolvedValue(undefined as any);
+      jest.spyOn(inviteService, 'revoke').mockResolvedValue(undefined);
 
       const result = await controller.revoke(chapterId, inviteId);
 

@@ -32,11 +32,35 @@ export interface paths {
         get: operations["UserController_getMe_v1"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete current account (irreversible)
+         * @description Individual account deletion per spec/behavior/data-retention.md: profile media is purged first, PII is scrubbed to a "Deleted User" tombstone, historical records stay preserved anonymized, the analytics forget is confirmed, and the Supabase Auth account is deleted last. A 502 means the flow did not finish — depending on the failing step the account may already be anonymized (sign-in still works until the final step succeeds) — and every step is idempotent, so simply retry until it returns success.
+         */
+        delete: operations["UserController_deleteMe_v1"];
         options?: never;
         head?: never;
         /** Update current user profile */
         patch: operations["UserController_updateMe_v1"];
+        trace?: never;
+    };
+    "/v1/users/me/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get effective permissions for the active chapter
+         * @description Returns the caller's flattened permission set for the chapter identified by the `x-chapter-id` header. Clients use this to render permission-aware UI without duplicating RBAC rules or issuing one request per role.
+         */
+        get: operations["UserController_getMyPermissions_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/users/me/avatar-url": {
@@ -56,7 +80,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/chapters": {
+    "/v1/analytics/identity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the caller's pseudonymous analytics id (HMAC of user id). Lets the client attribute events without ever holding the salt. */
+        get: operations["AnalyticsController_getIdentity_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/analytics/events": {
         parameters: {
             query?: never;
             header?: never;
@@ -65,8 +106,60 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Record a behavioral event. The server verifies chapter membership, keys it pseudonymously, and enforces the per-chapter opt-out. */
+        post: operations["AnalyticsController_track_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/chapters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List chapters for current user */
+        get: operations["ChapterController_listForCurrentUser_v1"];
+        put?: never;
         /** Create a new chapter */
         post: operations["ChapterController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/chapters/onboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create and configure a chapter from the onboarding wizard (archetype, branding, default channels, welcome message) */
+        post: operations["ChapterController_onboard_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/chapters/{id}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set the active chapter for the current user (embedded in subsequent access tokens) */
+        post: operations["ChapterController_activate_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -80,7 +173,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get current chapter */
+        /** Get current chapter (includes a signed logo_url when one is set) */
         get: operations["ChapterController_getCurrent_v1"];
         put?: never;
         post?: never;
@@ -126,6 +219,183 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List chapter roles */
+        get: operations["RbacController_list_v1"];
+        put?: never;
+        /** Create a custom role */
+        post: operations["RbacController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/roles/permissions-catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get system permissions catalog */
+        get: operations["RbacController_catalog_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/roles/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a custom role */
+        delete: operations["RbacController_delete_v1"];
+        options?: never;
+        head?: never;
+        /** Update a role */
+        patch: operations["RbacController_update_v1"];
+        trace?: never;
+    };
+    "/v1/roles/transfer-presidency": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Transfer presidency to another member */
+        post: operations["RbacController_transferPresidency_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/chapters/{id}/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get merged chapter config (archetype defaults + overrides) */
+        get: operations["ChapterConfigController_getConfig_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update chapter config (writes audit log + posts to #chapter-audit) */
+        patch: operations["ChapterConfigController_patchConfig_v1"];
+        trace?: never;
+    };
+    "/v1/chapters/{id}/theme-palette": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Recompute and persist derived theme palette from branding.colors */
+        post: operations["ChapterConfigController_recomputePalette_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/custom-roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the chapter custom roles */
+        get: operations["CustomRoleController_list_v1"];
+        put?: never;
+        /** Create a custom role (audit-logged) */
+        post: operations["CustomRoleController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/custom-roles/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a non-core custom role (audit-logged) */
+        delete: operations["CustomRoleController_remove_v1"];
+        options?: never;
+        head?: never;
+        /** Update a custom role (audit-logged) */
+        patch: operations["CustomRoleController_update_v1"];
+        trace?: never;
+    };
+    "/v1/custom-fields": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the chapter custom fields */
+        get: operations["CustomFieldController_list_v1"];
+        put?: never;
+        /** Create a custom field (audit-logged) */
+        post: operations["CustomFieldController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/custom-fields/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a custom field (audit-logged) */
+        delete: operations["CustomFieldController_remove_v1"];
+        options?: never;
+        head?: never;
+        /** Update a custom field (audit-logged) */
+        patch: operations["CustomFieldController_update_v1"];
+        trace?: never;
+    };
     "/v1/members": {
         parameters: {
             query?: never;
@@ -152,6 +422,23 @@ export interface paths {
         };
         /** Search members by name */
         get: operations["MemberController_search_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/members/roster": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Display roster for the chapter — id, name and avatar only */
+        get: operations["MemberController_roster_v1"];
         put?: never;
         post?: never;
         delete?: never;
@@ -223,76 +510,6 @@ export interface paths {
         get: operations["AlumniController_list_v1"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/roles": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List chapter roles */
-        get: operations["RbacController_list_v1"];
-        put?: never;
-        /** Create a custom role */
-        post: operations["RbacController_create_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/roles/permissions-catalog": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get system permissions catalog */
-        get: operations["RbacController_catalog_v1"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/roles/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Delete a custom role */
-        delete: operations["RbacController_delete_v1"];
-        options?: never;
-        head?: never;
-        /** Update a role */
-        patch: operations["RbacController_update_v1"];
-        trace?: never;
-    };
-    "/v1/roles/transfer-presidency": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Transfer presidency to another member */
-        post: operations["RbacController_transferPresidency_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -526,6 +743,303 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List chapter channels */
+        get: operations["ChatController_listChannels_v1"];
+        put?: never;
+        /** Create a channel */
+        post: operations["ChatController_createChannel_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/unread": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Unread and mention counts for every channel the caller can read */
+        get: operations["ChatController_getUnreadCounts_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get channel by ID */
+        get: operations["ChatController_getChannel_v1"];
+        put?: never;
+        post?: never;
+        /** Delete a channel */
+        delete: operations["ChatController_deleteChannel_v1"];
+        options?: never;
+        head?: never;
+        /** Update a channel */
+        patch: operations["ChatController_updateChannel_v1"];
+        trace?: never;
+    };
+    "/v1/channels/dm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Get or create a 1-on-1 DM channel */
+        post: operations["ChatController_getOrCreateDm_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/group-dm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a group DM channel */
+        post: operations["ChatController_createGroupDm_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/categories/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List channel categories */
+        get: operations["ChatController_listCategories_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a channel category */
+        post: operations["ChatController_createCategory_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/categories/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a channel category */
+        delete: operations["ChatController_deleteCategory_v1"];
+        options?: never;
+        head?: never;
+        /** Update a channel category */
+        patch: operations["ChatController_updateCategory_v1"];
+        trace?: never;
+    };
+    "/v1/channels/{id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get channel message history (supports since= reconnect replay) */
+        get: operations["ChatController_getMessages_v1"];
+        put?: never;
+        /** Send a message (hot path; idempotent on client_message_id) */
+        post: operations["ChatController_sendMessage_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/{id}/messages/{messageId}/attachments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Attachments on a message, with signed download URLs */
+        get: operations["ChatController_listMessageAttachments_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/messages/{messageId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a message (soft delete; own message, or any in an accessible channel with channels:manage) */
+        delete: operations["ChatController_deleteMessage_v1"];
+        options?: never;
+        head?: never;
+        /** Edit a message (own only) */
+        patch: operations["ChatController_editMessage_v1"];
+        trace?: never;
+    };
+    "/v1/channels/{id}/pins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get pinned messages in a channel */
+        get: operations["ChatController_getPinnedMessages_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/messages/{messageId}/pin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pin a message */
+        post: operations["ChatController_pinMessage_v1"];
+        /** Unpin a message */
+        delete: operations["ChatController_unpinMessage_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/messages/{messageId}/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record a reaction / vote / card action (hot path; atomic dedup; vote UPSERTS) */
+        post: operations["ChatController_recordMessageAction_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/messages/{messageId}/reactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get reactions for a message */
+        get: operations["ChatController_getReactions_v1"];
+        put?: never;
+        /** Toggle reaction (add/remove) */
+        post: operations["ChatController_toggleReaction_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/{id}/upload-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate a signed upload URL for a chat file attachment */
+        post: operations["ChatController_requestUploadUrl_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/{id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark channel as read */
+        post: operations["ChatController_markRead_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events/{eventId}/attendance/check-in": {
         parameters: {
             query?: never;
@@ -535,8 +1049,31 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Self check-in to an event */
+        /**
+         * Self check-in to an event
+         * @description Accepts a bare body (plain self check-in, e.g. the chat event card), a rotating `token` scanned from the host QR, or a typed `manualCode`. `lat`/`lng` are required when the event defines a check-in geofence.
+         */
         post: operations["AttendanceController_checkIn_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{eventId}/attendance/check-in-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Mint the rotating check-in code for the host display (s22)
+         * @description Returns the current 30-second token, its QR payload, and the short manual code. Officer-only: the code is what admits members to the attendance record. Returns 503 when the environment has no signing secret configured.
+         */
+        get: operations["AttendanceController_mintCheckInToken_v1"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -620,6 +1157,26 @@ export interface paths {
         };
         /** Get chapter leaderboard */
         get: operations["PointsController_getLeaderboard_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/points/transactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List chapter-wide point transactions
+         * @description Backs the Points admin Audit tab. Filter by user, category, flagged state; paginate via a cursor (`before` ISO8601). Returns newest-first, capped at `limit` (default 50, max 200).
+         */
+        get: operations["PointsController_listTransactions_v1"];
         put?: never;
         post?: never;
         delete?: never;
@@ -737,7 +1294,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List invoices (admin: all, member: own) */
+        /** List invoices (billing: all, member: own) */
         get: operations["FinancialInvoiceController_list_v1"];
         put?: never;
         /** Create a member invoice */
@@ -755,7 +1312,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List overdue invoices (OPEN past due_date) */
+        /** List overdue invoices (OPEN past due_date plus the dues grace period when wf_dues_grace is enabled) */
         get: operations["FinancialInvoiceController_listOverdue_v1"];
         put?: never;
         post?: never;
@@ -794,6 +1351,23 @@ export interface paths {
         put?: never;
         /** Transition invoice status (OPEN, PAID, VOID) */
         post: operations["FinancialInvoiceController_transitionStatus_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/invoices/{id}/payment-intent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create or reuse a Stripe PaymentIntent for paying your own OPEN invoice */
+        post: operations["FinancialInvoiceController_createPaymentIntent_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -921,252 +1495,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/channels": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List chapter channels */
-        get: operations["ChatController_listChannels_v1"];
-        put?: never;
-        /** Create a channel */
-        post: operations["ChatController_createChannel_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/channels/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get channel by ID */
-        get: operations["ChatController_getChannel_v1"];
-        put?: never;
-        post?: never;
-        /** Delete a channel */
-        delete: operations["ChatController_deleteChannel_v1"];
-        options?: never;
-        head?: never;
-        /** Update a channel */
-        patch: operations["ChatController_updateChannel_v1"];
-        trace?: never;
-    };
-    "/v1/channels/dm": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Get or create a 1-on-1 DM channel */
-        post: operations["ChatController_getOrCreateDm_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/channels/group-dm": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Create a group DM channel */
-        post: operations["ChatController_createGroupDm_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/channels/categories/list": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List channel categories */
-        get: operations["ChatController_listCategories_v1"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/channels/categories": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Create a channel category */
-        post: operations["ChatController_createCategory_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/channels/categories/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Delete a channel category */
-        delete: operations["ChatController_deleteCategory_v1"];
-        options?: never;
-        head?: never;
-        /** Update a channel category */
-        patch: operations["ChatController_updateCategory_v1"];
-        trace?: never;
-    };
-    "/v1/channels/{id}/messages": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get channel message history */
-        get: operations["ChatController_getMessages_v1"];
-        put?: never;
-        /** Send a message */
-        post: operations["ChatController_sendMessage_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/channels/messages/{messageId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Delete a message (soft delete) */
-        delete: operations["ChatController_deleteMessage_v1"];
-        options?: never;
-        head?: never;
-        /** Edit a message (own only) */
-        patch: operations["ChatController_editMessage_v1"];
-        trace?: never;
-    };
-    "/v1/channels/{id}/pins": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get pinned messages in a channel */
-        get: operations["ChatController_getPinnedMessages_v1"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/channels/messages/{messageId}/pin": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Pin a message */
-        post: operations["ChatController_pinMessage_v1"];
-        /** Unpin a message */
-        delete: operations["ChatController_unpinMessage_v1"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/channels/messages/{messageId}/reactions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get reactions for a message */
-        get: operations["ChatController_getReactions_v1"];
-        put?: never;
-        /** Toggle reaction (add/remove) */
-        post: operations["ChatController_toggleReaction_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/channels/{id}/upload-url": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Generate a signed upload URL for a chat file attachment */
-        post: operations["ChatController_requestUploadUrl_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/channels/{id}/read": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Mark channel as read */
-        post: operations["ChatController_markRead_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/service-entries": {
         parameters: {
             query?: never;
@@ -1179,6 +1507,26 @@ export interface paths {
         put?: never;
         /** Log a service entry */
         post: operations["ServiceEntryController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/service-entries/leaderboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Chapter-wide service leaderboard (approved hours)
+         * @description Members ranked by total APPROVED service minutes, highest first. Optional inclusive date window filters on the service date; omitting both gives all-time.
+         */
+        get: operations["ServiceEntryController_leaderboard_v1"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1198,6 +1546,40 @@ export interface paths {
         post?: never;
         /** Delete a PENDING service entry (own or any for admins) */
         delete: operations["ServiceEntryController_delete_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/service-entries/proof-upload-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Get signed upload URL for a service proof file */
+        post: operations["ServiceEntryController_requestProofUploadUrl_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/service-entries/{id}/proof-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get signed proof download URL (own entry or admins) */
+        get: operations["ServiceEntryController_getProofUrl_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1377,6 +1759,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/study-sessions/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pause the active session (app backgrounded / tab hidden)
+         * @description Credits foreground time up to now and starts the grace clock. The session stays ACTIVE until the geofence pause_grace_minutes window elapses, then auto-expires as PAUSED_EXPIRED.
+         */
+        post: operations["StudySessionController_pause_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/study-sessions/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume a paused session (with lat/lng)
+         * @description Resumes without resetting accumulated foreground minutes. If the grace window already elapsed, returns the session as PAUSED_EXPIRED.
+         */
+        post: operations["StudySessionController_resume_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/study-sessions/stop": {
         parameters: {
             query?: never;
@@ -1435,7 +1857,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List documents (optional folder filter) */
+        /** List documents (optional folder and title search) */
         get: operations["ChapterDocumentController_list_v1"];
         put?: never;
         /** Confirm upload with metadata */
@@ -1444,6 +1866,42 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List document folders in display order */
+        get: operations["ChapterDocumentController_listFolders_v1"];
+        put?: never;
+        /** Create a document folder */
+        post: operations["ChapterDocumentController_createFolder_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/folders/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a folder (its documents move to the root level) */
+        delete: operations["ChapterDocumentController_deleteFolder_v1"];
+        options?: never;
+        head?: never;
+        /** Rename or reorder a document folder */
+        patch: operations["ChapterDocumentController_updateFolder_v1"];
         trace?: never;
     };
     "/v1/documents/{id}": {
@@ -1494,6 +1952,26 @@ export interface paths {
         post: operations["PollController_vote_v1"];
         /** Remove vote from a poll */
         delete: operations["PollController_removeVote_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/polls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List polls across the chapter
+         * @description Chapter-wide poll list for dashboards (requires polls:view_all; not part of the default Member role). Supports channel filter, active=true|false filter, and limit. Each entry includes aggregate results plus the caller's own selections.
+         */
+        get: operations["PollController_listPolls_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1635,15 +2113,343 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/chapter-directory/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search the chapter directory (autocomplete for onboarding) */
+        get: operations["ChapterDirectoryController_search_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord-imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List this chapter’s Discord imports */
+        get: operations["DiscordImportController_list_v1"];
+        put?: never;
+        /**
+         * Start a Discord archive import
+         * @description Requires the consent acknowledgement. Returns the import to upload an export against.
+         */
+        post: operations["DiscordImportController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord-imports/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Import detail and progress
+         * @description Poll this while an import is running: `imported_messages` / `total_messages` and per-channel status.
+         */
+        get: operations["DiscordImportController_get_v1"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete an import and everything it brought in
+         * @description Removes the imported messages, their attachments, and the uploaded archive objects. The job row survives as the record that it happened.
+         */
+        delete: operations["DiscordImportController_purge_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord-imports/{id}/channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Channel mapping and per-channel progress */
+        get: operations["DiscordImportController_getChannels_v1"];
+        /**
+         * Map each Discord channel onto a Signet channel
+         * @description Every channel needs an explicit choice — create new, merge into an existing one, or skip.
+         */
+        put: operations["DiscordImportController_setChannelMapping_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord-imports/{id}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Uploaded file manifest
+         * @description Rows with a null `uploaded_at` are what an interrupted upload still needs to send.
+         */
+        get: operations["DiscordImportController_getFiles_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord-imports/{id}/upload-urls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mint signed upload URLs for a batch of export files
+         * @description The browser PUTs directly to storage, so no export byte passes through the API.
+         */
+        post: operations["DiscordImportController_requestUploadUrls_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord-imports/{id}/uploads/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark uploaded files as landed */
+        post: operations["DiscordImportController_confirmUploads_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord-imports/{id}/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Record the Discord role → Signet role worksheet
+         * @description Informational only. Nothing reads this to grant a permission and the importer never assigns a role; everyone imports as a name on a message, and the admin promotes people by hand afterwards.
+         */
+        put: operations["DiscordImportController_setRoleMapping_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord-imports/{id}/discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Scan the connected Discord server (bot imports only)
+         * @description Lists every channel and thread the bot can read and records them against this import, all set to `skip` until mapped. Also returns the guild’s roles for the worksheet, and any warnings about what could not be enumerated.
+         */
+        post: operations["DiscordImportController_discover_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord-imports/{id}/discovered-channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Map the scanned Discord channels (bot imports only)
+         * @description Send a decision for each top-level channel the scan found. Threads are not addressable — each one follows its parent’s decision, because the admin was asked about the parent and a thread is part of that conversation. A channel the scan did not return is rejected rather than added.
+         */
+        put: operations["DiscordImportController_setDiscoveredChannelMapping_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord-imports/{id}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Queue the import
+         * @description The background worker picks it up within a minute and reports progress on the detail route.
+         */
+        post: operations["DiscordImportController_start_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord-imports/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop a queued or running import */
+        post: operations["DiscordImportController_cancel_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whether the bot path is configured in this environment
+         * @description The wizard offers "Connect Discord" only when this is true, and always offers the export-upload path regardless.
+         */
+        get: operations["DiscordConnectionController_availability_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord/connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** This chapter’s linked Discord server, if any */
+        get: operations["DiscordConnectionController_getConnection_v1"];
+        put?: never;
+        post?: never;
+        /**
+         * Unlink this chapter’s Discord server
+         * @description Forgets the guild id, so no further import can read that server. Already-imported history is untouched — deleting that is what the per-import purge is for. Remove the bot from the Discord server separately if you want its access gone as well.
+         */
+        delete: operations["DiscordConnectionController_disconnect_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start the "Add to Server" handshake
+         * @description Mints a single-use state bound to this chapter and returns the Discord authorize URL to send the admin to. No credential is returned and none is ever asked for: the only thing this flow stores per chapter is a guild id.
+         */
+        post: operations["DiscordConnectionController_beginConnect_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord/connect/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Activate the Discord server the callback parked
+         * @description The OAuth callback does not link anything by itself: it parks what Discord told it and hands the browser a one-time token. This route is what binds the server, and it binds it only to the chapter this request is scoped to — so an authorization completed by somebody else, for a chapter they are not in, activates nothing.
+         */
+        post: operations["DiscordConnectionController_confirmConnect_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        MyPermissionsDto: {
+            /**
+             * @description Caller's effective permission set for the active chapter. Contains the wildcard `*` for Presidents. Empty array means no active roles.
+             * @example [
+             *       "members:view",
+             *       "events:create"
+             *     ]
+             */
+            permissions: string[];
+        };
         UpdateUserDto: {
             display_name?: string;
             bio?: string;
             avatar_url?: string;
-            graduation_year?: number;
+            graduation_year?: number | null;
             current_city?: string;
             current_company?: string;
         };
@@ -1653,9 +2459,89 @@ export interface components {
             /** @description MIME content type (e.g. image/jpeg, image/png) */
             content_type: string;
         };
+        IdentityResponseDto: {
+            /** @description Pseudonymous analytics id (HMAC of the user id), or null when analytics is unconfigured. */
+            distinct_id: string | null;
+            /** @description Whether analytics is enabled for this caller. */
+            enabled: boolean;
+        };
+        TrackEventDto: {
+            /**
+             * @description Behavioral event name in kebab-case, e.g. "opened-channel", "ran-slash-command". Must describe behavior, never content.
+             * @example opened-channel
+             */
+            name: string;
+            /** @description Chapter the event is attributed to (enables the opt-out gate) */
+            chapter_id?: string;
+            /** @description Behavioral, content-free properties. Values must be scalars (string/number/boolean/null); keys that look like content/PII (content, body, email, name, …) are rejected. */
+            properties?: {
+                [key: string]: (string | number | boolean) | null;
+            };
+        };
+        TrackEventResponseDto: {
+            success: boolean;
+        };
         CreateChapterDto: {
             name: string;
             university: string;
+        };
+        BrandingColorsDto: {
+            /** @example #C9A56F */
+            accent?: string;
+        };
+        BrandingDto: {
+            greek_letters?: string;
+            designation?: string;
+            school_short?: string;
+            founded_at?: number;
+            colors?: components["schemas"]["BrandingColorsDto"];
+        };
+        ChapterOnboardingDto: {
+            /** @description Chapter display name (org name) */
+            name: string;
+            /** @description University / institution name */
+            university: string;
+            /** @description Org archetype key (ifc, npc, nphc, mgc, …). Defaults to ifc. */
+            org_archetype?: string;
+            /** @description chapter_directory row id when the chapter was matched */
+            directory_id?: string;
+            branding?: components["schemas"]["BrandingDto"];
+            /** @description The admin accepted the Terms of Service and Privacy Policy. Must be true (spec/behavior/legal.md). The acceptance timestamp and policy version are recorded server-side from the session — never from this payload. */
+            accept_terms_privacy: boolean;
+        };
+        CurrentChapterResponseDto: {
+            id: string;
+            name: string;
+            university: string;
+            /**
+             * @description Read by the client subscription gate. Load-bearing — see `chapter-member-view.ts`.
+             * @enum {string}
+             */
+            subscription_status: "incomplete" | "active" | "past_due" | "canceled";
+            /** @description Timestamp the chapter entered `past_due`, or null. Drives the 3-day client grace window; the grace predicate fails open without it. */
+            past_due_since: string | null;
+            accent_color: string | null;
+            logo_path: string | null;
+            donation_url: string | null;
+            created_at: string;
+            updated_at: string;
+            org_archetype?: string;
+            enabled_modules?: {
+                [key: string]: boolean;
+            };
+            vocabulary?: {
+                [key: string]: unknown;
+            };
+            branding?: {
+                [key: string]: unknown;
+            };
+            theme_palette?: {
+                [key: string]: unknown;
+            };
+            /** @description Per-chapter opt-out for the pseudonymous analytics pipeline. Mobile reads it off this payload. */
+            analytics_opt_out?: boolean;
+            /** @description Signed URL for the chapter logo, or null when none is set or signing failed. Computed, not a column. */
+            logo_url: string | null;
         };
         UpdateChapterDto: {
             name?: string;
@@ -1673,12 +2559,6 @@ export interface components {
             /** @description Storage path returned from logo-url */
             storage_path: string;
         };
-        UpdateMemberRolesDto: {
-            role_ids: string[];
-        };
-        UpdateOnboardingDto: {
-            has_completed_onboarding: boolean;
-        };
         CreateRoleDto: {
             name: string;
             permissions: string[];
@@ -1692,7 +2572,187 @@ export interface components {
             color?: string;
         };
         TransferPresidencyDto: {
+            /** Format: uuid */
             target_member_id: string;
+        };
+        BetaConfigDto: {
+            enabled?: boolean;
+            /** @enum {string} */
+            style?: "sidebar_pill" | "top_banner" | "corner_badge" | "breadcrumb_pill";
+        };
+        DuesConfigDto: {
+            /** @enum {string} */
+            cadence?: "monthly" | "per_semester" | "per_quarter";
+            /** @description Active member dues in cents */
+            active_amount_cents?: number;
+            /** @description New member dues in cents */
+            new_member_amount_cents?: number;
+            /** @description Alumni dues in cents */
+            alumni_amount_cents?: number;
+            installments_allowed?: boolean;
+            /** @description Number of installments (>= 1) */
+            installment_count?: number;
+            /** @description Late fee in cents */
+            late_fee_cents?: number;
+            grace_days?: number;
+            /** @description Scholarship pool in cents */
+            scholarship_pool_cents?: number;
+        };
+        ServiceConfigDto: {
+            /**
+             * @description Minutes of approved service that earn one SERVICE point (default 60). Must be at least 1 — a rate of 0 would divide by zero when awarding.
+             * @example 60
+             */
+            minutes_per_point?: number;
+        };
+        WorkflowConfigDto: {
+            /** @description Workflow key from the chapter catalog */
+            key?: string;
+            enabled?: boolean;
+            /** @description Optional numeric threshold (guard-parsed; NaN/negative rejected) */
+            threshold?: number;
+        };
+        PatchChapterConfigDto: {
+            org_archetype?: string;
+            enabled_modules?: {
+                [key: string]: boolean;
+            };
+            vocabulary?: {
+                [key: string]: string;
+            };
+            branding?: components["schemas"]["BrandingDto"];
+            beta_config?: components["schemas"]["BetaConfigDto"];
+            dues?: components["schemas"]["DuesConfigDto"];
+            service?: components["schemas"]["ServiceConfigDto"];
+            workflows?: components["schemas"]["WorkflowConfigDto"][];
+            /** @description When true, disables pseudonymous product analytics for this chapter (data-retention.md #analytics-events-pseudonymous). */
+            analytics_opt_out?: boolean;
+        };
+        CustomRoleDto: {
+            id: string;
+            chapter_id: string;
+            key: string;
+            label: string;
+            rank: number;
+            capabilities: string[];
+            core: boolean;
+            created_at: string;
+            updated_at: string;
+        };
+        CreateCustomRoleDto: {
+            /** @description Machine-readable slug, unique per chapter */
+            key: string;
+            label: string;
+            /** @description Hierarchy order; lower ranks first */
+            rank?: number;
+            capabilities?: string[];
+        };
+        UpdateCustomRoleDto: {
+            label?: string;
+            rank?: number;
+            capabilities?: string[];
+        };
+        RemoveCustomRoleResponseDto: {
+            /** @example true */
+            success: boolean;
+        };
+        CustomFieldOptionsDto: {
+            /** @description Option list for select */
+            choices?: string[];
+            /** @description Max length for text fields */
+            max_length?: number;
+        };
+        CustomFieldDto: {
+            id: string;
+            chapter_id: string;
+            key: string;
+            label: string;
+            /** @enum {string} */
+            type: "text" | "number" | "decimal" | "phone" | "select" | "boolean";
+            required: boolean;
+            /** @enum {string} */
+            visibility: "self" | "chapter" | "exec" | "president";
+            sensitive: boolean;
+            options?: components["schemas"]["CustomFieldOptionsDto"] | null;
+            sort: number;
+            created_at: string;
+            updated_at: string;
+        };
+        CreateCustomFieldDto: {
+            /** @description Machine-readable slug, unique per chapter */
+            key: string;
+            label: string;
+            /** @enum {string} */
+            type: "text" | "number" | "decimal" | "phone" | "select" | "boolean";
+            /** @default false */
+            required: boolean;
+            /**
+             * @default chapter
+             * @enum {string}
+             */
+            visibility: "self" | "chapter" | "exec" | "president";
+            /** @default false */
+            sensitive: boolean;
+            options?: components["schemas"]["CustomFieldOptionsDto"];
+            /** @description Display order; lower sorts first */
+            sort?: number;
+        };
+        UpdateCustomFieldDto: {
+            label?: string;
+            required?: boolean;
+            /** @enum {string} */
+            visibility?: "self" | "chapter" | "exec" | "president";
+            sensitive?: boolean;
+            options?: components["schemas"]["CustomFieldOptionsDto"] | null;
+            sort?: number;
+        };
+        RemoveCustomFieldResponseDto: {
+            /** @example true */
+            success: boolean;
+        };
+        MemberCustomFieldValueDto: {
+            field_id: string;
+            key: string;
+            label: string;
+            /** @enum {string} */
+            type: "text" | "number" | "decimal" | "phone" | "select" | "boolean";
+            /** @enum {string} */
+            visibility: "self" | "chapter" | "exec" | "president";
+            value: string | null;
+        };
+        MemberProfileDto: {
+            id: string;
+            user_id: string;
+            chapter_id: string;
+            role_ids: string[];
+            custom_role_ids: string[];
+            has_completed_onboarding: boolean;
+            created_at: string;
+            updated_at: string;
+            display_name: string;
+            avatar_url: string | null;
+            bio: string | null;
+            graduation_year: number | null;
+            current_city: string | null;
+            current_company: string | null;
+            email: string;
+            /** @description Custom-field values, present only on single-member reads and already filtered to the fields the requesting viewer may see. */
+            custom_fields?: components["schemas"]["MemberCustomFieldValueDto"][];
+        };
+        MemberRosterEntryDto: {
+            /** @description users.id — the id chat carries as sender_id */
+            user_id: string;
+            /** @description May be an empty string: the column is NOT NULL DEFAULT '', so clients treat empty as unresolved rather than rendering a blank name. */
+            display_name: string;
+            avatar_url: string | null;
+        };
+        UpdateMemberRolesDto: {
+            role_ids: string[];
+            /** @description Assigned chapter_custom_roles ids. Omit to leave custom-role assignment unchanged; an empty array clears it. */
+            custom_role_ids?: string[];
+        };
+        UpdateOnboardingDto: {
+            has_completed_onboarding: boolean;
         };
         CreateInviteDto: {
             /** @description Role name to assign to invited member */
@@ -1722,17 +2782,21 @@ export interface components {
             is_enabled: boolean;
         };
         UpdateUserSettingsDto: {
-            /** @description Quiet hours start (HH:mm format, e.g. 22:00) */
-            quiet_hours_start?: string;
-            /** @description Quiet hours end (HH:mm format, e.g. 08:00) */
-            quiet_hours_end?: string;
-            /** @description Timezone for quiet hours (e.g. America/New_York) */
-            quiet_hours_tz?: string;
+            /** @description Quiet hours start (HH:mm format, e.g. 22:00). Pass null or an empty string to clear. */
+            quiet_hours_start?: string | null;
+            /** @description Quiet hours end (HH:mm format, e.g. 08:00). Pass null or an empty string to clear. */
+            quiet_hours_end?: string | null;
+            /** @description Time zone for quiet hours — must be a named zone this server can resolve (e.g. America/New_York). A fixed offset such as -05:00 is not portable and is rejected on the deployment runtime. Pass null or an empty string to clear. */
+            quiet_hours_tz?: string | null;
             /**
              * @description Theme preference
              * @enum {string}
              */
             theme?: "light" | "dark" | "system";
+        };
+        GeofenceCoordinateDto: {
+            lat: number;
+            lng: number;
         };
         CreateEventDto: {
             name: string;
@@ -1748,6 +2812,14 @@ export interface components {
             recurrence_rule?: string;
             required_role_ids?: string[];
             notes?: string;
+            /** @description Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. */
+            check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
+            /** @description Human-readable name for `check_in_zone`, shown on the mobile scanner ("Inside the Great Hall zone"). */
+            check_in_zone_name?: string;
+            /** @description When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. */
+            channel_id?: string;
+            /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. */
+            client_message_id?: string;
         };
         UpdateEventDto: {
             name?: string;
@@ -1761,19 +2833,117 @@ export interface components {
             recurrence_rule?: string;
             required_role_ids?: string[];
             notes?: string;
+            /** @description Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. Send an empty array to clear an existing zone. */
+            check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
+            /** @description Human-readable name for `check_in_zone`, shown on the mobile scanner ("Inside the Great Hall zone"). */
+            check_in_zone_name?: string;
         };
-        CheckInDto: Record<string, never>;
+        ChannelUnreadCountDto: {
+            /** Format: uuid */
+            channel_id: string;
+            /** @description Messages in this channel newer than the caller’s read cursor, excluding their own and deleted ones. A channel never opened counts all of them. */
+            unread_count: number;
+            /** @description Subset of unread_count that mentions the caller. Mentions are resolved server-side at send time. */
+            mention_count: number;
+        };
+        CreateChannelDto: {
+            name: string;
+            description?: string;
+            /** @enum {string} */
+            type: "PUBLIC" | "PRIVATE" | "ROLE_GATED";
+            required_permissions?: string[];
+            category_id?: string;
+            /** @default false */
+            is_read_only: boolean;
+        };
+        UpdateChannelDto: {
+            name?: string;
+            description?: string;
+            required_permissions?: string[];
+            category_id?: string;
+            is_read_only?: boolean;
+        };
+        CreateDmDto: {
+            /** @description The other member user ID */
+            member_id: string;
+        };
+        CreateGroupDmDto: {
+            member_ids: string[];
+            name?: string;
+        };
+        CreateCategoryDto: {
+            name: string;
+            /** @default 0 */
+            display_order: number;
+        };
+        UpdateCategoryDto: {
+            name?: string;
+            display_order?: number;
+        };
+        MessageAttachmentDto: {
+            storage_path: string;
+            filename: string;
+            content_type: string;
+            byte_size?: number;
+        };
+        SendMessageDto: {
+            /** Format: uuid */
+            client_message_id: string;
+            content: string;
+            attachments?: components["schemas"]["MessageAttachmentDto"][];
+            /** @enum {string} */
+            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "system_audit" | "imported" | "loading" | "announcement";
+            payload?: Record<string, never>;
+            reply_to_id?: string;
+            metadata?: Record<string, never>;
+        };
+        EditMessageDto: {
+            content: string;
+        };
+        ChatMessageActionDto: {
+            /** @description Action discriminator. `reaction:<emoji>` for emoji reactions, `vote` for poll votes (UPSERT), free-form for card actions. */
+            action_type: string;
+            payload?: Record<string, never>;
+        };
+        ReactionDto: {
+            /** @description Emoji string (e.g. "👍") */
+            emoji: string;
+        };
+        RequestChatUploadUrlDto: {
+            /** @description Original filename */
+            filename: string;
+            /** @description MIME content type (e.g. image/png) */
+            content_type: string;
+        };
+        CheckInDto: {
+            /** @description Rotating token read from the host QR code (s22). Valid for its 30s window and the one immediately before it. */
+            token?: string;
+            /**
+             * @description Short rotating code typed off the host screen when the camera fails (e.g. "4KQ-88").
+             * @example 4KQ-88
+             */
+            manualCode?: string;
+            /** @description Scanner latitude. Required when the event defines a check-in geofence; ignored when it doesn't. */
+            lat?: number;
+            /** @description Scanner longitude. Required when the event defines a check-in geofence; ignored when it doesn't. */
+            lng?: number;
+        };
         UpdateAttendanceDto: {
             /** @enum {string} */
             status: "PRESENT" | "EXCUSED" | "ABSENT" | "LATE";
             excuse_reason?: string;
         };
         AdjustPointsDto: {
+            /** Format: uuid */
             target_user_id: string;
             amount: number;
             /** @enum {string} */
             category: "MANUAL" | "FINE";
             reason: string;
+            /** @description When set with `client_message_id`, posts an append-only points card to this chat channel after the ledger write (the `/points` slash command). Omit for dashboard adjustments. */
+            channel_id?: string;
+            /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. */
+            client_message_id?: string;
         };
         CreateCheckoutDto: {
             /** @description Email for the checkout session */
@@ -1846,56 +3016,10 @@ export interface components {
             /** @description Full department name */
             name?: string;
         };
-        CreateChannelDto: {
-            name: string;
-            description?: string;
-            /** @enum {string} */
-            type: "PUBLIC" | "PRIVATE" | "ROLE_GATED";
-            required_permissions?: string[];
-            category_id?: string;
-            /** @default false */
-            is_read_only: boolean;
-        };
-        UpdateChannelDto: {
-            name?: string;
-            description?: string;
-            required_permissions?: string[];
-            category_id?: string;
-            is_read_only?: boolean;
-        };
-        CreateDmDto: {
-            /** @description The other member user ID */
-            member_id: string;
-        };
-        CreateGroupDmDto: {
-            member_ids: string[];
-            name?: string;
-        };
-        CreateCategoryDto: {
-            name: string;
-            /** @default 0 */
-            display_order: number;
-        };
-        UpdateCategoryDto: {
-            name?: string;
-            display_order?: number;
-        };
-        SendMessageDto: {
-            content: string;
-            reply_to_id?: string;
-            metadata?: Record<string, never>;
-        };
-        EditMessageDto: {
-            content: string;
-        };
-        ReactionDto: {
-            /** @description Emoji string (e.g. "👍") */
-            emoji: string;
-        };
-        RequestChatUploadUrlDto: {
-            /** @description Original filename */
+        RequestProofUploadUrlDto: {
+            /** @description Original filename (image or PDF) */
             filename: string;
-            /** @description MIME content type (e.g. image/png) */
+            /** @description MIME content type (e.g. application/pdf) */
             content_type: string;
         };
         CreateServiceEntryDto: {
@@ -1926,6 +3050,10 @@ export interface components {
             due_date: string;
             /** @description Points to award on completion */
             point_reward?: number;
+            /** @description When set with `client_message_id`, posts an interactive task card to this chat channel after the task is created (the `/task` slash command). Omit for dashboard creates. */
+            channel_id?: string;
+            /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. */
+            client_message_id?: string;
         };
         UpdateTaskStatusDto: {
             /** @enum {string} */
@@ -1934,10 +3062,6 @@ export interface components {
         RejectTaskCompletionDto: {
             /** @description Optional comment for rejection */
             comment?: string;
-        };
-        GeofenceCoordinateDto: {
-            lat: number;
-            lng: number;
         };
         CreateGeofenceDto: {
             name: string;
@@ -1950,6 +3074,11 @@ export interface components {
             points_per_interval: number;
             /** @default 15 */
             min_session_minutes: number;
+            /**
+             * @description Minutes a backgrounded session may stay paused before it auto-expires as PAUSED_EXPIRED.
+             * @default 5
+             */
+            pause_grace_minutes: number;
         };
         UpdateGeofenceDto: {
             name?: string;
@@ -1958,13 +3087,20 @@ export interface components {
             minutes_per_point?: number;
             points_per_interval?: number;
             min_session_minutes?: number;
+            /** @description Minutes a backgrounded session may stay paused before it auto-expires as PAUSED_EXPIRED. */
+            pause_grace_minutes?: number;
         };
         StartStudySessionDto: {
+            /** Format: uuid */
             geofence_id: string;
             lat: number;
             lng: number;
         };
         StudySessionHeartbeatDto: {
+            lat: number;
+            lng: number;
+        };
+        ResumeStudySessionDto: {
             lat: number;
             lng: number;
         };
@@ -1983,6 +3119,18 @@ export interface components {
             description?: string;
             /** @description Folder name (one level, flat structure) */
             folder?: string;
+        };
+        CreateDocumentFolderDto: {
+            /** @description Folder name (unique within the chapter) */
+            name: string;
+            /** @description Display position. Defaults to the end of the list. */
+            sort_order?: number;
+        };
+        UpdateDocumentFolderDto: {
+            /** @description New folder name. Renaming re-files every document in the folder. */
+            name?: string;
+            /** @description New display position */
+            sort_order?: number;
         };
         CreatePollDto: {
             /** @description Poll question */
@@ -2026,6 +3174,38 @@ export interface components {
              */
             end_date: string;
         };
+        ReportExportResponseDto: {
+            /** @description Signed download URL, valid for one hour */
+            url: string;
+            /** @description ISO timestamp at which the URL stops working */
+            expires_at: string;
+            /**
+             * @description URL lifetime in seconds
+             * @example 3600
+             */
+            expires_in: number;
+            /** @description Suggested download filename */
+            filename: string;
+            /** @description Bucket-relative object path */
+            storage_path: string;
+            /** @description Number of data rows in the document */
+            row_count: number;
+            /**
+             * @description True when the report hit the row ceiling, so the document is not a complete record of the chapter. row_count reports what was printed, not what matched.
+             * @example false
+             */
+            truncated: boolean;
+            /**
+             * @description The row ceiling that "truncated" refers to
+             * @example 5000
+             */
+            row_limit: number;
+            /**
+             * @description What was cut, when the row count alone does not say it — a roster whose point balances were summed from a truncated read is the right length, so row_limit on its own would describe a cut the document never took. Absent when the row count is the whole story.
+             * @example point balances are incomplete — summed from the first 50,000 transactions
+             */
+            truncation_note?: string;
+        };
         AttendanceReportDto: {
             /** @description Filter by event ID */
             event_id?: string;
@@ -2037,8 +3217,11 @@ export interface components {
         PointsReportDto: {
             /** @description Filter by user ID (omit for chapter-wide) */
             user_id?: string;
-            /** @description Time window (e.g. semester identifier) */
-            window?: string;
+            /**
+             * @description Time window for totals (defaults to all-time). Defined identically to the points leaderboard: semester excludes the latest archive period; month is the trailing calendar month.
+             * @enum {string}
+             */
+            window?: "all" | "semester" | "month";
         };
         ServiceReportDto: {
             /** @description Filter by user ID (omit for chapter-wide) */
@@ -2047,6 +3230,116 @@ export interface components {
             start_date?: string;
             /** @description End date (YYYY-MM-DD) */
             end_date?: string;
+        };
+        CreateDiscordImportDto: {
+            /** @description The admin confirms they have posted an in-channel notice in their Discord server telling members the history is being archived into Signet. Required — the API refuses without it, and the column is NOT NULL, so no import can exist that was not preceded by this. */
+            consent_acknowledged: boolean;
+            /** @description Discord server name, for display only. */
+            guild_name?: string;
+            /**
+             * @description `upload` (the default) imports a DiscordChatExporter export the admin uploads. `bot` reads the chapter's connected Discord server directly and requires a connection to exist first. Both run the same consent gate, the same channel mapping, and the same purge.
+             * @default upload
+             * @enum {string}
+             */
+            source: "upload" | "bot";
+        };
+        DiscordImportUploadFileDto: {
+            /**
+             * @description `export` is a DiscordChatExporter JSON partition; `media` is a file from its `_Files` folder.
+             * @enum {string}
+             */
+            kind: "export" | "media";
+            /** @description The path as the export names it, relative to the export folder. This is the join key: the importer resolves an attachment by looking this string up, never by rebuilding a storage key. */
+            relative_path: string;
+            content_type: string;
+            byte_size: number;
+            /** @description Order of this JSON partition. Ignored for media. */
+            part_index?: number;
+        };
+        RequestDiscordUploadUrlsDto: {
+            files: components["schemas"]["DiscordImportUploadFileDto"][];
+        };
+        DiscordUploadTicketDto: {
+            relative_path: string;
+            storage_path: string;
+            /** @description Short-lived signed URL; PUT the bytes to it. */
+            upload_url: string;
+            /** @description The content type the API validated. Send exactly this on the PUT — the bucket allowlist judges what the uploader sends, and a browser reports an empty type for several formats a Discord archive carries. */
+            content_type: string;
+        };
+        ConfirmDiscordUploadsDto: {
+            /** @description Storage paths whose PUT completed. */
+            storage_paths: string[];
+        };
+        DiscordChannelMappingDto: {
+            /** @description Discord channel snowflake. */
+            discord_channel_id: string;
+            discord_channel_name: string;
+            discord_category?: string;
+            /**
+             * @description What to do with this Discord channel. Always explicit — `chat_channels` has no unique constraint on (chapter_id, name), so a same-name match is never treated as an answer.
+             * @enum {string}
+             */
+            mapping_action: "create_new" | "use_existing" | "skip";
+            /** Format: uuid */
+            target_channel_id?: string;
+            new_channel_name?: string;
+            /** @default true */
+            new_channel_is_read_only: boolean;
+            message_count?: number;
+        };
+        SetDiscordChannelMappingDto: {
+            channels: components["schemas"]["DiscordChannelMappingDto"][];
+        };
+        DiscordRoleMappingDto: {
+            discord_role_id: string;
+            discord_role_name: string;
+            /** @description Signet role key the admin intends for this Discord role. Informational only — nothing reads this to grant a permission, and the importer never assigns a role. */
+            signet_role_key: string;
+        };
+        SetDiscordRoleMappingDto: {
+            roles: components["schemas"]["DiscordRoleMappingDto"][];
+        };
+        DiscordDiscoveredRoleDto: {
+            discord_role_id: string;
+            discord_role_name: string;
+        };
+        DiscordDiscoveryResponseDto: {
+            /** @description Every channel and thread the bot can read, all recorded as `skip` until the admin says otherwise. Threads carry `parent_discord_channel_id` and are not mapped separately — they follow their parent. */
+            channels: {
+                [key: string]: unknown;
+            }[];
+            roles: components["schemas"]["DiscordDiscoveredRoleDto"][];
+            /** @description What could not be enumerated, in the admin’s words — most often private archived threads, which Discord gates behind a Manage Threads permission this read-only bot deliberately does not request. */
+            warnings: string[];
+        };
+        DiscordAvailabilityDto: {
+            /** @description False when this environment has no Discord application configured. The DiscordChatExporter upload flow is unaffected either way — it is a separate path, not a fallback that switches on. */
+            available: boolean;
+        };
+        DiscordConnectionDto: {
+            /** @description Whether this chapter has a Discord server linked. */
+            connected: boolean;
+            /** @description The linked Discord server id. Always a string — a snowflake exceeds 2^53 and a JSON round trip through a number would name a different server. */
+            guild_id: string | null;
+            guild_name: string | null;
+            connected_at: string | null;
+            /** @description The Discord account that authorized the install. */
+            connected_discord_username: string | null;
+        };
+        BeginDiscordConnectDto: {
+            /** @description Dashboard path to return the browser to once Discord is done, e.g. `/discord-import`. Must be a site-relative path; anything else is replaced with the default. It is stored with the handshake rather than read off the callback, because the callback carries no session to re-authorise against. */
+            return_path?: string;
+        };
+        BeginDiscordConnectResponseDto: {
+            /** @description Send the admin here. Includes the fixed permission bitfield (View Channels + Read Message History) and a single-use state. */
+            authorize_url: string;
+            /** @description When the handshake stops being redeemable. */
+            expires_at: string;
+        };
+        ConfirmDiscordConnectDto: {
+            /** @description The one-time confirmation token the OAuth callback put on the redirect. It is delivered to exactly one place — the browser that completed the authorization — and activates only against a session whose active chapter matches the one that started the handshake. */
+            handshake: string;
         };
     };
     responses: never;
@@ -2091,6 +3384,23 @@ export interface operations {
             };
         };
     };
+    UserController_deleteMe_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     UserController_updateMe_v1: {
         parameters: {
             query?: never;
@@ -2112,6 +3422,25 @@ export interface operations {
             };
         };
     };
+    UserController_getMyPermissions_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyPermissionsDto"];
+                };
+            };
+        };
+    };
     UserController_requestAvatarUploadUrl_v1: {
         parameters: {
             query?: never;
@@ -2126,6 +3455,72 @@ export interface operations {
         };
         responses: {
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AnalyticsController_getIdentity_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityResponseDto"];
+                };
+            };
+        };
+    };
+    AnalyticsController_track_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TrackEventDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackEventResponseDto"];
+                };
+            };
+            /** @description Caller is not a member of the specified chapter */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChapterController_listForCurrentUser_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2154,6 +3549,46 @@ export interface operations {
             };
         };
     };
+    ChapterController_onboard_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChapterOnboardingDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChapterController_activate_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     ChapterController_getCurrent_v1: {
         parameters: {
             query?: never;
@@ -2167,7 +3602,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["CurrentChapterResponseDto"];
+                };
             };
         };
     };
@@ -2237,149 +3674,6 @@ export interface operations {
     ChapterController_deleteLogo_v1: {
         parameters: {
             query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    MemberController_list_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    MemberController_search_v1: {
-        parameters: {
-            query: {
-                /** @description Search query (name) */
-                q: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    MemberController_getOne_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    MemberController_remove_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    MemberController_updateRoles_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateMemberRolesDto"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    MemberController_updateOnboarding_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateOnboardingDto"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    AlumniController_list_v1: {
-        parameters: {
-            query?: {
-                /** @description Filter by graduation year */
-                graduation_year?: string;
-                /** @description Filter by current city (partial match) */
-                city?: string;
-                /** @description Filter by current company (partial match) */
-                company?: string;
-            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2505,6 +3799,432 @@ export interface operations {
         };
         responses: {
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChapterConfigController_getConfig_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChapterConfigController_patchConfig_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchChapterConfigDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChapterConfigController_recomputePalette_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CustomRoleController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomRoleDto"][];
+                };
+            };
+        };
+    };
+    CustomRoleController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCustomRoleDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomRoleDto"];
+                };
+            };
+            /** @description A custom role with this key already exists in this chapter */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CustomRoleController_remove_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoveCustomRoleResponseDto"];
+                };
+            };
+            /** @description Core roles cannot be deleted */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CustomRoleController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCustomRoleDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomRoleDto"];
+                };
+            };
+        };
+    };
+    CustomFieldController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomFieldDto"][];
+                };
+            };
+        };
+    };
+    CustomFieldController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCustomFieldDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomFieldDto"];
+                };
+            };
+            /** @description A custom field with this key already exists in this chapter */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CustomFieldController_remove_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoveCustomFieldResponseDto"];
+                };
+            };
+        };
+    };
+    CustomFieldController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCustomFieldDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomFieldDto"];
+                };
+            };
+        };
+    };
+    MemberController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberProfileDto"][];
+                };
+            };
+        };
+    };
+    MemberController_search_v1: {
+        parameters: {
+            query: {
+                /** @description Search query (name) */
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberProfileDto"][];
+                };
+            };
+        };
+    };
+    MemberController_roster_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberRosterEntryDto"][];
+                };
+            };
+        };
+    };
+    MemberController_getOne_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberProfileDto"];
+                };
+            };
+        };
+    };
+    MemberController_remove_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    MemberController_updateRoles_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMemberRolesDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    MemberController_updateOnboarding_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateOnboardingDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AlumniController_list_v1: {
+        parameters: {
+            query?: {
+                /** @description Filter by graduation year */
+                graduation_year?: string;
+                /** @description Filter by current city (partial match) */
+                city?: string;
+                /** @description Filter by current company (partial match) */
+                company?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2885,6 +4605,520 @@ export interface operations {
             };
         };
     };
+    ChatController_listChannels_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChatController_createChannel_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateChannelDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChatController_getUnreadCounts_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelUnreadCountDto"][];
+                };
+            };
+        };
+    };
+    ChatController_getChannel_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChatController_deleteChannel_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChatController_updateChannel_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateChannelDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChatController_getOrCreateDm_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDmDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChatController_createGroupDm_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateGroupDmDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChatController_listCategories_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChatController_createCategory_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCategoryDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChatController_deleteCategory_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChatController_updateCategory_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCategoryDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChatController_getMessages_v1: {
+        parameters: {
+            query?: {
+                limit?: number;
+                /** @description Cursor for pagination (ISO timestamp) */
+                before?: string;
+                /** @description Message UUID — returns messages created after this message (reconnect replay) */
+                since?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChatController_sendMessage_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendMessageDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChatController_listMessageAttachments_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChatController_deleteMessage_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChatController_editMessage_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditMessageDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChatController_getPinnedMessages_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChatController_pinMessage_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChatController_unpinMessage_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChatController_recordMessageAction_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatMessageActionDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChatController_getReactions_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChatController_toggleReaction_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReactionDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChatController_requestUploadUrl_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestChatUploadUrlDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChatController_markRead_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     AttendanceController_checkIn_v1: {
         parameters: {
             query?: never;
@@ -2901,6 +5135,25 @@ export interface operations {
         };
         responses: {
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AttendanceController_mintCheckInToken_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2993,6 +5246,33 @@ export interface operations {
         parameters: {
             query?: {
                 window?: "all" | "semester" | "month";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PointsController_listTransactions_v1: {
+        parameters: {
+            query?: {
+                /** @description Filter to a single member */
+                user_id?: string;
+                category?: "ATTENDANCE" | "ACADEMIC" | "SERVICE" | "FINE" | "MANUAL" | "STUDY";
+                /** @description Only return transactions flagged by the anomaly threshold. Boolean string: `true`, `false`, `1`, or `0`. */
+                flagged?: "true" | "false" | "1" | "0";
+                /** @description ISO8601 cursor — return transactions created before this timestamp */
+                before?: string;
+                /** @description Max transactions to return. Integers are clamped to 1–200 inclusive; omitted defaults to 50. */
+                limit?: number;
             };
             header?: never;
             path?: never;
@@ -3250,6 +5530,25 @@ export interface operations {
             };
         };
     };
+    FinancialInvoiceController_createPaymentIntent_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     FinancialInvoiceController_getInvoiceTransactions_v1: {
         parameters: {
             query?: never;
@@ -3432,460 +5731,16 @@ export interface operations {
             };
         };
     };
-    ChatController_listChannels_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ChatController_createChannel_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateChannelDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ChatController_getChannel_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ChatController_deleteChannel_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ChatController_updateChannel_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateChannelDto"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ChatController_getOrCreateDm_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateDmDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ChatController_createGroupDm_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateGroupDmDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ChatController_listCategories_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ChatController_createCategory_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateCategoryDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ChatController_deleteCategory_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ChatController_updateCategory_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateCategoryDto"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ChatController_getMessages_v1: {
-        parameters: {
-            query?: {
-                limit?: number;
-                /** @description Cursor for pagination (ISO timestamp) */
-                before?: string;
-            };
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ChatController_sendMessage_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SendMessageDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ChatController_deleteMessage_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                messageId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ChatController_editMessage_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                messageId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["EditMessageDto"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ChatController_getPinnedMessages_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ChatController_pinMessage_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                messageId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ChatController_unpinMessage_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                messageId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ChatController_getReactions_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                messageId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ChatController_toggleReaction_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                messageId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ReactionDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ChatController_requestUploadUrl_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RequestChatUploadUrlDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ChatController_markRead_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     ServiceEntryController_list_v1: {
         parameters: {
             query?: {
-                /** @description Filter by user (admins with service:approve only) */
+                /** @description Filter by review status */
+                status?: "PENDING" | "APPROVED" | "REJECTED";
+                /** @description Inclusive lower bound on the service date (YYYY-MM-DD) */
+                start_date?: string;
+                /** @description Inclusive upper bound on the service date (YYYY-MM-DD) */
+                end_date?: string;
+                /** @description Filter by member (admins with service:approve only) */
                 userId?: string;
             };
             header?: never;
@@ -3923,6 +5778,28 @@ export interface operations {
             };
         };
     };
+    ServiceEntryController_leaderboard_v1: {
+        parameters: {
+            query?: {
+                /** @description Inclusive lower bound on the service date (YYYY-MM-DD) */
+                start_date?: string;
+                /** @description Inclusive upper bound on the service date (YYYY-MM-DD) */
+                end_date?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     ServiceEntryController_getOne_v1: {
         parameters: {
             query?: never;
@@ -3943,6 +5820,46 @@ export interface operations {
         };
     };
     ServiceEntryController_delete_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ServiceEntryController_requestProofUploadUrl_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestProofUploadUrlDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ServiceEntryController_getProofUrl_v1: {
         parameters: {
             query?: never;
             header?: never;
@@ -4247,6 +6164,44 @@ export interface operations {
             };
         };
     };
+    StudySessionController_pause_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    StudySessionController_resume_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResumeStudySessionDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     StudySessionController_stop_v1: {
         parameters: {
             query?: never;
@@ -4306,6 +6261,8 @@ export interface operations {
         parameters: {
             query?: {
                 folder?: string;
+                /** @description Case-insensitive substring match on the document title */
+                search?: string;
             };
             header?: never;
             path?: never;
@@ -4335,6 +6292,86 @@ export interface operations {
         };
         responses: {
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChapterDocumentController_listFolders_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChapterDocumentController_createFolder_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDocumentFolderDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChapterDocumentController_deleteFolder_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChapterDocumentController_updateFolder_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateDocumentFolderDto"];
+            };
+        };
+        responses: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4445,6 +6482,30 @@ export interface operations {
             };
         };
     };
+    PollController_listPolls_v1: {
+        parameters: {
+            query?: {
+                /** @description Scope results to a single channel. */
+                channel_id?: string;
+                /** @description Filter by expiration. Boolean string: `true`, `false`, `1`, or `0`. True values return only polls that haven't expired; false values return only expired polls. */
+                active?: "true" | "false" | "1" | "0";
+                /** @description Max polls to return. Integers are clamped to 1–200 inclusive; omitted defaults to 50. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     PollController_getPoll_v1: {
         parameters: {
             query?: never;
@@ -4504,8 +6565,9 @@ export interface operations {
     };
     ReportController_attendance_v1: {
         parameters: {
-            query: {
-                format: string;
+            query?: {
+                /** @description json (default) returns rows, csv returns an inline CSV body, pdf renders a branded document and returns a signed download URL. */
+                format?: "json" | "csv" | "pdf";
             };
             header?: never;
             path?: never;
@@ -4517,18 +6579,22 @@ export interface operations {
             };
         };
         responses: {
+            /** @description Report rows (json), an inline CSV body (csv), or a signed download envelope (pdf). */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ReportExportResponseDto"] | Record<string, never>[] | string;
+                };
             };
         };
     };
     ReportController_points_v1: {
         parameters: {
-            query: {
-                format: string;
+            query?: {
+                /** @description json (default) returns rows, csv returns an inline CSV body, pdf renders a branded document and returns a signed download URL. */
+                format?: "json" | "csv" | "pdf";
             };
             header?: never;
             path?: never;
@@ -4540,18 +6606,22 @@ export interface operations {
             };
         };
         responses: {
+            /** @description Report rows (json), an inline CSV body (csv), or a signed download envelope (pdf). */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ReportExportResponseDto"] | Record<string, never>[] | string;
+                };
             };
         };
     };
     ReportController_roster_v1: {
         parameters: {
-            query: {
-                format: string;
+            query?: {
+                /** @description json (default) returns rows, csv returns an inline CSV body, pdf renders a branded document and returns a signed download URL. */
+                format?: "json" | "csv" | "pdf";
             };
             header?: never;
             path?: never;
@@ -4559,18 +6629,22 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description Report rows (json), an inline CSV body (csv), or a signed download envelope (pdf). */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ReportExportResponseDto"] | Record<string, never>[] | string;
+                };
             };
         };
     };
     ReportController_service_v1: {
         parameters: {
-            query: {
-                format: string;
+            query?: {
+                /** @description json (default) returns rows, csv returns an inline CSV body, pdf renders a branded document and returns a signed download URL. */
+                format?: "json" | "csv" | "pdf";
             };
             header?: never;
             path?: never;
@@ -4582,11 +6656,14 @@ export interface operations {
             };
         };
         responses: {
+            /** @description Report rows (json), an inline CSV body (csv), or a signed download envelope (pdf). */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ReportExportResponseDto"] | Record<string, never>[] | string;
+                };
             };
         };
     };
@@ -4607,6 +6684,419 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    ChapterDirectoryController_search_v1: {
+        parameters: {
+            query?: {
+                /** @description Search query (org name, letters, designation) */
+                q?: string;
+                /** @description Filter by university short name */
+                university?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DiscordImportController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DiscordImportController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDiscordImportDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DiscordImportController_get_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DiscordImportController_purge_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DiscordImportController_getChannels_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DiscordImportController_setChannelMapping_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetDiscordChannelMappingDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DiscordImportController_getFiles_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DiscordImportController_requestUploadUrls_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestDiscordUploadUrlsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordUploadTicketDto"][];
+                };
+            };
+        };
+    };
+    DiscordImportController_confirmUploads_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmDiscordUploadsDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DiscordImportController_setRoleMapping_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetDiscordRoleMappingDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DiscordImportController_discover_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordDiscoveryResponseDto"];
+                };
+            };
+        };
+    };
+    DiscordImportController_setDiscoveredChannelMapping_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetDiscordChannelMappingDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DiscordImportController_start_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DiscordImportController_cancel_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DiscordConnectionController_availability_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordAvailabilityDto"];
+                };
+            };
+        };
+    };
+    DiscordConnectionController_getConnection_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordConnectionDto"];
+                };
+            };
+        };
+    };
+    DiscordConnectionController_disconnect_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DiscordConnectionController_beginConnect_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BeginDiscordConnectDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BeginDiscordConnectResponseDto"];
+                };
+            };
+        };
+    };
+    DiscordConnectionController_confirmConnect_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmDiscordConnectDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordConnectionDto"];
+                };
             };
         };
     };

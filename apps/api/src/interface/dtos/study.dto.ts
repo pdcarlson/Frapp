@@ -5,11 +5,14 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
+  Max,
   Min,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { POINTS_ADJUSTMENT_MAX } from '@repo/validation';
 
 export class GeofenceCoordinateDto {
   @ApiProperty()
@@ -47,6 +50,11 @@ export class CreateGeofenceDto {
   @IsOptional()
   @IsInt()
   @Min(1)
+  // Multiplied by the interval count into a point_transactions row, so it is a
+  // ledger input. Capping the rate does not bound the product (a long enough
+  // session still multiplies past the ceiling) — clamping the computed award is
+  // #948; this closes the single-input case and the int4 overflow behind it.
+  @Max(POINTS_ADJUSTMENT_MAX)
   points_per_interval?: number;
 
   @ApiPropertyOptional({ default: 15 })
@@ -54,6 +62,16 @@ export class CreateGeofenceDto {
   @IsInt()
   @Min(0)
   min_session_minutes?: number;
+
+  @ApiPropertyOptional({
+    default: 5,
+    description:
+      'Minutes a backgrounded session may stay paused before it auto-expires as PAUSED_EXPIRED.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  pause_grace_minutes?: number;
 }
 
 export class UpdateGeofenceDto {
@@ -84,6 +102,11 @@ export class UpdateGeofenceDto {
   @IsOptional()
   @IsInt()
   @Min(1)
+  // Multiplied by the interval count into a point_transactions row, so it is a
+  // ledger input. Capping the rate does not bound the product (a long enough
+  // session still multiplies past the ceiling) — clamping the computed award is
+  // #948; this closes the single-input case and the int4 overflow behind it.
+  @Max(POINTS_ADJUSTMENT_MAX)
   points_per_interval?: number;
 
   @ApiPropertyOptional()
@@ -91,11 +114,21 @@ export class UpdateGeofenceDto {
   @IsInt()
   @Min(0)
   min_session_minutes?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Minutes a backgrounded session may stay paused before it auto-expires as PAUSED_EXPIRED.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  pause_grace_minutes?: number;
 }
 
 export class StartStudySessionDto {
-  @ApiProperty()
-  @IsString()
+  // Reaches the geofence uuid PK filter; unvalidated it is a 500, not a 400.
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID()
   geofence_id: string;
 
   @ApiProperty()
@@ -108,6 +141,20 @@ export class StartStudySessionDto {
 }
 
 export class StudySessionHeartbeatDto {
+  @ApiProperty()
+  @IsNumber()
+  lat: number;
+
+  @ApiProperty()
+  @IsNumber()
+  lng: number;
+}
+
+/**
+ * Resume carries coordinates because the member may have left the study zone
+ * while backgrounded, and the next heartbeat is up to five minutes out.
+ */
+export class ResumeStudySessionDto {
   @ApiProperty()
   @IsNumber()
   lat: number;

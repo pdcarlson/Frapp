@@ -8,20 +8,23 @@
   "scripts": {
     "build": "tsc",
     "lint": "eslint . --max-warnings 0",
-    "check-types": "tsc --noEmit"
+    "check-types": "tsc --noEmit",
+    "test": "vitest run",
+    "test:cov": "vitest run --coverage"
   },
   "dependencies": {
     "@repo/api-sdk": "*",
-    "@tanstack/react-query": "^5.90.21",
-    "react": "^19.2.0"
+    "@repo/validation": "*",
+    "@tanstack/react-query": "^5.101.4",
+    "react": "19.2.3"
   },
   "devDependencies": {
     "@repo/eslint-config": "*",
     "@repo/typescript-config": "*",
     "@testing-library/react": "^16.3.2",
-    "@testing-library/user-event": "^14.6.1",
-    "jsdom": "^29.0.0",
-    "typescript": "5.9.2",
-    "vitest": "^4.1.0"
+    "@testing-library/user-event": "^14.6.5",
+    "jsdom": "^30.0.1",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "vitest": "^4.1.10"
   }
 }

@@ -1,0 +1,83 @@
+name: PR base sync
+
+# Keeps the open-PR fleet in sync with main (docs/internal/ci-cd/AGENT_INFRA.md
+# § Base-branch sync). Branch protection sets `strict: true`, so every merge to
+# main outdates every other open PR; this sweep either updates each one via the
+# update-branch API (only when the base-sync GitHub App is installed and its two
+# secrets are set — the default GITHUB_TOKEN's pushes trigger no CI, which would
+# strand required checks at "Expected") or, for conflicts and per-PR update
+# failures, posts one wake comment so the watching agent session merges main
+# itself. A missing/failed app token raises ONE alert issue instead of fanning a
+# comment out to every open PR.
+#
+# Deliberately minimal action surface (checkout + the token mint, preinstalled
+# runner Node, no npm ci) and best-effort by design, matching ci-wake.yml: if
+# this run dies, the next push to main re-sweeps, and the babysitting agents'
+# scheduled self-wakes remain the durable fallback.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  # Read-only on purpose: GITHUB_TOKEN only lists/reads PRs and calls the compare
+  # API. update-branch goes through the app token exclusively — routing it
+  # through this token would push without triggering CI (recursion guard) and
+  # strand required checks at "Expected", the exact state the script refuses.
+  pull-requests: read
+  issues: write # wake comments and the alert issue go through the issues API
+
+# Only the newest sweep matters — it re-reads every open PR against the newest
+# base tip, so cancelling a superseded in-progress or pending run loses nothing
+# durable (unlike ci-wake, whose per-workflow wakes must all land). The one thing
+# a cancel can drop is the trailing alert-issue reconciliation, which runs after
+# the per-PR pass; the per-PR wakes themselves are written inline, and the next
+# merge to main re-sweeps and re-raises.
+concurrency:
+  group: pr-base-sync
+  cancel-in-progress: true
+
+jobs:
+  pr-base-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # Mints a short-lived installation token for the base-sync GitHub App.
+      # A GitHub App token is used rather than a fine-grained PAT because it
+      # carries no expiry to renew by hand and is not tied to one person's
+      # account; unlike GITHUB_TOKEN, its pushes DO create workflow runs, which
+      # is the whole point (see the permissions note above).
+      #
+      # continue-on-error is load-bearing: with the secrets absent the mint
+      # fails, and a red workflow here would be exactly the noise this sweep
+      # exists to remove. Instead the token comes out empty, the sweep runs in
+      # comment-only mode, and pr-base-sync.mjs raises one alert issue.
+      - name: Mint base-sync app token
+        id: app-token
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.PR_BASE_SYNC_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PR_BASE_SYNC_APP_PRIVATE_KEY }}
+          # Narrow the installation token to exactly what update-branch needs.
+          # An App granted less than this fails the mint outright rather than
+          # 403-ing per PR halfway through a sweep — but note that continue-on-error
+          # above makes that failure QUIET: the run stays green and the only
+          # signal is the alert issue, whose body names under-granted permissions
+          # as a cause precisely because there is no red workflow to find.
+          permission-contents: write
+          permission-pull-requests: write
+
+      # pr-base-sync.mjs is dependency-free (global fetch + the runner's
+      # preinstalled Node) — no setup-node, no npm ci.
+      - name: Sync open PRs with the moved base
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_BASE_SYNC_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: node scripts/ci/pr-base-sync.mjs

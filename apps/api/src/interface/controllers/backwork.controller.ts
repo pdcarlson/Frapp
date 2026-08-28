@@ -19,7 +19,12 @@ import { BackworkService } from '../../application/services/backwork.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
-import { RequirePermissions } from '../decorators/permissions.decorator';
+import {
+  RequireAnyOfPermissions,
+  RequirePermissions,
+} from '../decorators/permissions.decorator';
+import { RequireModule } from '../decorators/module.decorator';
+import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import {
   CurrentChapterId,
   CurrentUser,
@@ -33,13 +38,18 @@ import {
 
 @ApiTags('Backwork')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard, ChapterGuard)
+@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+@RequireAnyOfPermissions(
+  SystemPermissions.BACKWORK_UPLOAD,
+  SystemPermissions.BACKWORK_ADMIN,
+)
+@RequireModule('backwork')
 @Controller('backwork')
 export class BackworkController {
   constructor(private readonly backworkService: BackworkService) {}
 
   @Post('upload-url')
-  @UseGuards(PermissionsGuard)
+  @ThrottleFanOutWrite()
   @RequirePermissions(SystemPermissions.BACKWORK_UPLOAD)
   @ApiOperation({ summary: 'Request a signed upload URL' })
   async requestUploadUrl(
@@ -54,7 +64,6 @@ export class BackworkController {
   }
 
   @Post()
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.BACKWORK_UPLOAD)
   @ApiOperation({ summary: 'Confirm upload and store resource metadata' })
   async confirmUpload(
@@ -63,9 +72,10 @@ export class BackworkController {
     @Body() dto: ConfirmBackworkUploadDto,
   ) {
     return this.backworkService.confirmUpload({
+      // Server-decided keys last — see the note in event.controller.ts.
+      ...dto,
       chapter_id: chapterId,
       uploader_id: userId,
-      ...dto,
     });
   }
 
@@ -109,14 +119,14 @@ export class BackworkController {
   }
 
   @Patch('departments/:id')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.BACKWORK_ADMIN)
   @ApiOperation({ summary: 'Update department name' })
   async updateDepartment(
+    @CurrentChapterId() chapterId: string,
     @Param('id') id: string,
     @Body() dto: UpdateDepartmentDto,
   ) {
-    return this.backworkService.updateDepartment(id, dto);
+    return this.backworkService.updateDepartment(id, chapterId, dto);
   }
 
   @Get('professors')
@@ -132,7 +142,6 @@ export class BackworkController {
   }
 
   @Delete(':id')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.BACKWORK_ADMIN)
   @ApiOperation({ summary: 'Delete a backwork resource' })
   async delete(@CurrentChapterId() chapterId: string, @Param('id') id: string) {

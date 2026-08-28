@@ -8,12 +8,15 @@ import {
 } from '@nestjs/common';
 import {
   BILLING_PROVIDER,
+  chargeIdFromLatestCharge,
   type IBillingProvider,
   type WebhookEvent,
   type CheckoutSessionWebhookObject,
   type SubscriptionWebhookObject,
   type InvoiceWebhookObject,
+  type PaymentIntentWebhookObject,
 } from '../../domain/adapters/billing.interface';
+import { FinancialInvoiceService } from './financial-invoice.service';
 import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
 import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
 import type {
@@ -24,7 +27,11 @@ import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.i
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
 import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
+import { STRIPE_WEBHOOK_EVENT_REPOSITORY } from '../../domain/repositories/stripe-webhook-event.repository.interface';
+import type { IStripeWebhookEventRepository } from '../../domain/repositories/stripe-webhook-event.repository.interface';
+import { SystemRoleKeys } from '../../domain/constants/permissions';
 import { NotificationService } from './notification.service';
+import { ActivationService } from './activation.service';
 
 export interface CreateCheckoutInput {
   chapterId: string;
@@ -38,10 +45,34 @@ export interface CreatePortalInput {
   returnUrl: string;
 }
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The event types with side effects, and therefore the only ones worth
+ * deduplicating (FRA-23). Anything else is logged and dropped before the
+ * database is touched, so a shared Stripe account's unrelated traffic does not
+ * accumulate claim rows. Keep in sync with the switch in `handleWebhookEvent`.
+ */
+const HANDLED_WEBHOOK_EVENT_TYPES: ReadonlySet<string> = new Set([
+  'checkout.session.completed',
+  'customer.subscription.updated',
+  'customer.subscription.deleted',
+  'invoice.paid',
+  'payment_intent.succeeded',
+]);
+
+/**
+ * How long a claim may sit in `processing` before another delivery may take it
+ * over. Only reached when a worker died mid-handler; a healthy handler
+ * finishes in well under a second. Stripe's own retry cadence starts at
+ * minutes, so this never races a normal redelivery.
+ */
+const WEBHOOK_CLAIM_STALE_SECONDS = 300;
+
 @Injectable()
 export class BillingService {
   private readonly logger = new Logger(BillingService.name);
-  private readonly processedEventIds = new Set<string>();
 
   constructor(
     @Inject(BILLING_PROVIDER)
@@ -52,7 +83,11 @@ export class BillingService {
     private readonly memberRepo: IMemberRepository,
     @Inject(ROLE_REPOSITORY)
     private readonly roleRepo: IRoleRepository,
+    @Inject(STRIPE_WEBHOOK_EVENT_REPOSITORY)
+    private readonly webhookEventRepo: IStripeWebhookEventRepository,
     private readonly notificationService: NotificationService,
+    private readonly financialInvoiceService: FinancialInvoiceService,
+    private readonly activation: ActivationService,
   ) {}
 
   async getChapterBillingStatus(chapterId: string) {
@@ -74,15 +109,50 @@ export class BillingService {
       throw new NotFoundException('Chapter not found');
     }
 
+    // refuse-new (#929, owner-approved 2026-08-20). A chapter that already owns
+    // a *live* subscription recovers through the Customer Portal, which updates
+    // that subscription in place. Minting a second one here would double-bill
+    // the chapter indefinitely and orphan the first where nothing in the app
+    // can surface or cancel it.
+    //
+    // `canceled` is deliberately *not* refused. A canceled subscription is
+    // terminal at Stripe — mapStripeStatus folds both `canceled` and
+    // `incomplete_expired` into it — so the Portal cannot resume it and
+    // checkout is the chapter's only way back. There is also nothing live left
+    // to orphan, and the customer reuse below keeps a returning chapter on one
+    // continuous customer instead of forking a second billing history.
+    //
+    // These refusals ride in `message` rather than a structured `code`, because
+    // AllExceptionsFilter drops `code` from every response today (#1020). Both
+    // strings are stable and distinct so a client can map them to the portal.
     if (chapter.subscription_status === 'active') {
       throw new BadRequestException(
-        'Chapter already has an active subscription',
+        'Chapter already has an active subscription. Manage it from the billing portal.',
       );
     }
 
+    if (chapter.subscription_status === 'past_due') {
+      throw new BadRequestException(
+        'Chapter subscription is past due, not cancelled. Update the payment ' +
+          'method from the billing portal — starting a new checkout would ' +
+          'create a second subscription and bill the chapter twice.',
+      );
+    }
+
+    let checkoutUrl: string;
     try {
-      if (!chapter.stripe_customer_id) {
-        const customerId = await this.billingProvider.createCustomer(
+      // Resolve the customer *before* the session and always pass it down. The
+      // adapter has no email fallback (#929), so there is no remaining path on
+      // which Stripe mints a Customer of its own.
+      //
+      // This also repairs a case the issue did not name: on a first checkout
+      // the customer created here was never attached to the session, so it was
+      // orphaned immediately — and permanently if checkout was abandoned —
+      // leaving `POST /v1/billing/portal` opening a portal for a customer that
+      // owns no subscription.
+      let customerId = chapter.stripe_customer_id;
+      if (!customerId) {
+        customerId = await this.billingProvider.createCustomer(
           input.customerEmail,
           chapter.name,
         );
@@ -91,11 +161,18 @@ export class BillingService {
         });
       }
 
-      return await this.billingProvider.createCheckoutSession({
+      checkoutUrl = await this.billingProvider.createCheckoutSession({
         chapterId: input.chapterId,
-        customerEmail: input.customerEmail,
+        customerId,
         successUrl: input.successUrl,
         cancelUrl: input.cancelUrl,
+        // The trial is once per chapter. Having ever held a subscription is the
+        // durable "already had its trial" mark; status is not, since a chapter
+        // can return to `canceled` repeatedly. Now that the session carries the
+        // chapter's own customer, Stripe can see that history too — but this
+        // stays the boundary rather than a second line of defence, because it
+        // is keyed on our record rather than on what Stripe infers.
+        grantTrial: !chapter.subscription_id,
       });
     } catch (error) {
       this.logger.error(
@@ -106,6 +183,24 @@ export class BillingService {
         'Billing service is temporarily unavailable',
       );
     }
+
+    // Funnel step 6 (#267): intent to pay. Recorded only once Stripe has
+    // actually issued the session — a provider failure throws above and must
+    // not read as a chapter that reached checkout. This is the step whose gap
+    // against step 7 measures checkout abandonment, so counting never-rendered
+    // sessions would understate it.
+    //
+    // Deliberately *outside* the try: `record` swallows its own failures today,
+    // but if that ever stopped being true, a telemetry error inside this catch
+    // would turn a successfully-created Stripe session into a 503 and orphan
+    // it, while the treasurer retries into a second session. Telemetry does not
+    // belong inside a payment path's error handling.
+    await this.activation.record(
+      input.chapterId,
+      'activation-checkout-started',
+    );
+
+    return checkoutUrl;
   }
 
   async createPortalSession(input: CreatePortalInput): Promise<string> {
@@ -136,32 +231,106 @@ export class BillingService {
     }
   }
 
+  /**
+   * Idempotency is durable (FRA-23): the event id is claimed in
+   * `stripe_webhook_events` *before* any side effect runs, so a redelivery
+   * after a deploy, crash, or onto a second instance is skipped rather than
+   * re-applied. This is deliberately at-least-once — a claim that survives its
+   * handler's crash is retried after the stale lease rather than dropped,
+   * because losing a billing event is worse than re-applying one.
+   *
+   * Distinct from FRA-242's `last_stripe_webhook_at` ordering mark, which
+   * treats a same-second redelivery as fresh and so cannot dedup on its own.
+   */
   async handleWebhookEvent(event: WebhookEvent): Promise<void> {
-    if (this.processedEventIds.has(event.id)) {
+    if (!HANDLED_WEBHOOK_EVENT_TYPES.has(event.type)) {
+      this.logger.debug(`Unhandled webhook event type: ${event.type}`);
+      return;
+    }
+
+    const claim = await this.webhookEventRepo.claim(
+      event.id,
+      event.type,
+      WEBHOOK_CLAIM_STALE_SECONDS,
+    );
+
+    if (claim.outcome === 'already_processed') {
       this.logger.debug(`Skipping already-processed event ${event.id}`);
       return;
     }
 
-    this.logger.log(`Processing webhook event: ${event.type} (${event.id})`);
-
-    switch (event.type) {
-      case 'checkout.session.completed':
-        await this.handleCheckoutCompleted(event);
-        break;
-      case 'customer.subscription.updated':
-        await this.handleSubscriptionUpdated(event);
-        break;
-      case 'customer.subscription.deleted':
-        await this.handleSubscriptionDeleted(event);
-        break;
-      case 'invoice.paid':
-        await this.handleInvoicePaid(event);
-        break;
-      default:
-        this.logger.debug(`Unhandled webhook event type: ${event.type}`);
+    if (claim.outcome === 'in_flight') {
+      // Another instance is mid-handler. Deliberately 503 rather than ack:
+      // acking would tell Stripe the event is delivered while its outcome is
+      // still unknown, and if that worker then fails, nothing would ever retry
+      // it — a silently dropped billing event, which is exactly what the
+      // at-least-once posture above exists to prevent. Stripe's retry finds
+      // either `already_processed` (acked) or a failed/stale claim (re-taken).
+      this.logger.warn(
+        `Deferring ${event.type} ${event.id}: another worker holds the claim`,
+      );
+      throw new ServiceUnavailableException(
+        'Webhook event is already being processed; retry shortly',
+      );
     }
 
-    this.processedEventIds.add(event.id);
+    this.logger.log(
+      `Processing webhook event: ${event.type} (${event.id}), attempt ${claim.attempts}`,
+    );
+
+    try {
+      switch (event.type) {
+        case 'checkout.session.completed':
+          await this.handleCheckoutCompleted(event);
+          break;
+        case 'customer.subscription.updated':
+          await this.handleSubscriptionUpdated(event);
+          break;
+        case 'customer.subscription.deleted':
+          await this.handleSubscriptionDeleted(event);
+          break;
+        case 'invoice.paid':
+          await this.handleInvoicePaid(event);
+          break;
+        case 'payment_intent.succeeded':
+          await this.handlePaymentIntentSucceeded(event);
+          break;
+        default:
+          // Unreachable while the switch and HANDLED_WEBHOOK_EVENT_TYPES agree.
+          this.logger.error(
+            `Claimed ${event.id} but no handler for type ${event.type} — ` +
+              'HANDLED_WEBHOOK_EVENT_TYPES is out of sync with the switch',
+          );
+      }
+    } catch (error) {
+      await this.releaseFailedClaim(event, error);
+      // Rethrow so the controller 5xxs and Stripe retries, as before.
+      throw error;
+    }
+
+    await this.webhookEventRepo.markProcessed(event.id);
+  }
+
+  /**
+   * Record the failure and leave the event immediately re-claimable (AC-4).
+   * Never masks the handler's error: a bookkeeping failure here is logged, and
+   * the row simply stays `processing` until its lease expires.
+   */
+  private async releaseFailedClaim(
+    event: WebhookEvent,
+    error: unknown,
+  ): Promise<void> {
+    const message = error instanceof Error ? error.message : String(error);
+    try {
+      await this.webhookEventRepo.markFailed(event.id, message);
+    } catch (markError) {
+      this.logger.error(
+        `Failed to record webhook failure for ${event.id}; the claim will be ` +
+          `retried after its lease expires: ${
+            markError instanceof Error ? markError.message : String(markError)
+          }`,
+      );
+    }
   }
 
   private async handleCheckoutCompleted(event: WebhookEvent): Promise<void> {
@@ -176,6 +345,16 @@ export class BillingService {
       return;
     }
 
+    // Same guard as the payment-intent path: a foreign integration's non-UUID
+    // metadata would otherwise reach a uuid-typed column and 500, which Stripe
+    // retries for days.
+    if (!UUID_PATTERN.test(chapterId)) {
+      this.logger.warn(
+        `checkout.session.completed with non-UUID chapter_id (${chapterId}): ${event.id} — ignoring foreign session`,
+      );
+      return;
+    }
+
     const chapter = await this.chapterRepo.findById(chapterId);
     if (!chapter) {
       this.logger.warn(
@@ -184,11 +363,65 @@ export class BillingService {
       return;
     }
 
+    // FRA-242: ignore a redelivered/late checkout that predates a newer event
+    // (e.g. Stripe retries an old checkout after the API restart cleared the
+    // in-memory idempotency set, when the subscription has since moved on).
+    if (this.isStaleWebhook(chapter, event, 'checkout.session.completed')) {
+      return;
+    }
+
+    // AC-3 (#929): never *silently* discard a reference to another
+    // subscription. With the checkout guard in place this should now be
+    // reachable only for a `canceled` chapter resubscribing — where the prior
+    // subscription is terminal and replacing the reference is correct — or for
+    // a caller that raced the guard. Either way the incoming subscription is
+    // the one now billing the chapter and must be stored: dropping the write
+    // would leave the chapter paying for a subscription the app cannot see,
+    // which is the worse failure. So the reconciliation signal is a loud log,
+    // not a refusal.
+    if (
+      subscriptionId &&
+      chapter.subscription_id &&
+      subscriptionId !== chapter.subscription_id
+    ) {
+      this.logger.error(
+        `Chapter ${chapterId} completed checkout for subscription ` +
+          `${subscriptionId} while still referencing ${chapter.subscription_id}. ` +
+          'Replacing the stored reference — verify in Stripe that ' +
+          `${chapter.subscription_id} is not still live and billing, and cancel ` +
+          'it there if it is.',
+      );
+    }
+
+    // The same signal for the customer. After #929 the session's customer is
+    // the one we sent, so a mismatch here means the chapter has somehow
+    // acquired a second customer record — exactly the condition this issue
+    // exists to prevent, and worth surfacing rather than absorbing.
+    if (
+      session.customer &&
+      chapter.stripe_customer_id &&
+      session.customer !== chapter.stripe_customer_id
+    ) {
+      this.logger.error(
+        `Chapter ${chapterId} completed checkout under customer ` +
+          `${session.customer} while referencing ${chapter.stripe_customer_id}. ` +
+          'A second customer record exists for this chapter; reconcile in Stripe.',
+      );
+    }
+
     await this.chapterRepo.update(chapterId, {
       subscription_status: 'active',
       subscription_id: subscriptionId ?? chapter.subscription_id,
       stripe_customer_id: session.customer ?? chapter.stripe_customer_id,
+      last_stripe_webhook_at: this.eventCreatedAt(event),
     });
+
+    // Funnel step 7 (#267) — the conversion this whole funnel exists to
+    // measure. The stale-webhook and non-existent-chapter guards above have
+    // already returned, and the milestone table's unique key absorbs Stripe's
+    // redeliveries, so a chapter converts exactly once no matter how many times
+    // Stripe replays the event.
+    await this.activation.record(chapterId, 'activation-checkout-completed');
 
     this.logger.log(`Chapter ${chapterId} activated via checkout`);
   }
@@ -219,11 +452,36 @@ export class BillingService {
       return;
     }
 
-    await this.chapterRepo.update(chapter.id, {
-      subscription_status: newStatus,
-    });
+    // FRA-242: an older/retried delivery must not overwrite a newer status.
+    if (this.isStaleWebhook(chapter, event, 'customer.subscription.updated')) {
+      return;
+    }
 
-    await this.notifyChapterPresident(chapter.id, newStatus);
+    const statusChanged = newStatus !== chapter.subscription_status;
+
+    // FRA-109: maintain the past_due grace clock. Start it only on the
+    // into-past_due transition (idempotent across repeated past_due events);
+    // clear it whenever the chapter leaves past_due. Anchor the timestamp to
+    // the Stripe event creation time (Unix seconds), not processing time, so a
+    // delayed/retried webhook delivery can't extend the 3-day grace window.
+    const update: Partial<Chapter> = {
+      subscription_status: newStatus,
+      last_stripe_webhook_at: this.eventCreatedAt(event),
+    };
+    if (newStatus === 'past_due') {
+      if (chapter.subscription_status !== 'past_due') {
+        update.past_due_since = this.eventCreatedAt(event);
+      }
+    } else {
+      update.past_due_since = null;
+    }
+
+    await this.chapterRepo.update(chapter.id, update);
+
+    // AC #4: only notify the president when the status actually changes.
+    if (statusChanged) {
+      await this.notifyChapterPresident(chapter.id, newStatus);
+    }
 
     this.logger.log(
       `Chapter ${chapter.id} subscription updated to ${newStatus}`,
@@ -241,11 +499,23 @@ export class BillingService {
     const chapter = await this.findChapterBySubscription(subscription.id);
     if (!chapter) return;
 
+    // FRA-242: an older/retried delivery must not overwrite a newer status.
+    if (this.isStaleWebhook(chapter, event, 'customer.subscription.deleted')) {
+      return;
+    }
+
+    const wasCanceled = chapter.subscription_status === 'canceled';
+
     await this.chapterRepo.update(chapter.id, {
       subscription_status: 'canceled',
+      past_due_since: null,
+      last_stripe_webhook_at: this.eventCreatedAt(event),
     });
 
-    await this.notifyChapterPresident(chapter.id, 'canceled');
+    // AC #4: only notify the president when the status actually changes.
+    if (!wasCanceled) {
+      await this.notifyChapterPresident(chapter.id, 'canceled');
+    }
 
     this.logger.log(`Chapter ${chapter.id} subscription canceled`);
   }
@@ -258,12 +528,71 @@ export class BillingService {
     const chapter = await this.findChapterBySubscription(subscriptionId);
     if (!chapter) return;
 
+    // FRA-242: a stale invoice payment must not reactivate a chapter whose
+    // subscription has since moved to a newer past_due/canceled state.
+    if (this.isStaleWebhook(chapter, event, 'invoice.paid')) {
+      return;
+    }
+
+    // Advance the ordering mark on every non-stale payment — even a renewal that
+    // doesn't change status — so a later out-of-order dunning event that
+    // predates this payment can't downgrade the chapter (FRA-242).
+    const update: Partial<Chapter> = {
+      last_stripe_webhook_at: this.eventCreatedAt(event),
+    };
     if (chapter.subscription_status === 'past_due') {
-      await this.chapterRepo.update(chapter.id, {
-        subscription_status: 'active',
-      });
+      update.subscription_status = 'active';
+      update.past_due_since = null;
+    }
+
+    await this.chapterRepo.update(chapter.id, update);
+
+    if (update.subscription_status === 'active') {
+      // Reactivation via payment is expected and intentionally silent — president
+      // status-change alerts are limited to the subscription updated/deleted paths.
       this.logger.log(`Chapter ${chapter.id} reactivated via invoice payment`);
     }
+  }
+
+  /**
+   * Member dues payment confirmed (FRA-15). The PaymentIntent's metadata is
+   * written only by our pay endpoint and arrives inside a signature-verified
+   * event, so it is the authoritative invoice reference. Idempotency lives in
+   * the apply_invoice_payment CAS, not the chapter-level staleness mark —
+   * that mark orders *subscription* state and would misorder unrelated
+   * member payments.
+   */
+  private async handlePaymentIntentSucceeded(
+    event: WebhookEvent,
+  ): Promise<void> {
+    const intent = event.data.object as PaymentIntentWebhookObject;
+    const invoiceId = intent.metadata?.invoice_id;
+    const chapterId = intent.metadata?.chapter_id;
+
+    if (!invoiceId || !chapterId) {
+      // Not a member-invoice intent (e.g. a subscription checkout's intent).
+      this.logger.debug(
+        `payment_intent.succeeded without invoice metadata: ${event.id}`,
+      );
+      return;
+    }
+
+    // Other integrations on the same Stripe account can carry arbitrary
+    // metadata; forwarding a non-UUID into the uuid-typed RPC params would
+    // 22P02 → 500 → Stripe retries the event for days. Ack-and-log instead.
+    if (!UUID_PATTERN.test(invoiceId) || !UUID_PATTERN.test(chapterId)) {
+      this.logger.warn(
+        `payment_intent.succeeded with non-UUID invoice metadata (invoice_id: ${invoiceId}, chapter_id: ${chapterId}): ${event.id} — ignoring foreign intent`,
+      );
+      return;
+    }
+
+    await this.financialInvoiceService.applyStripePaymentSuccess({
+      invoiceId,
+      chapterId,
+      paymentIntentId: intent.id,
+      chargeId: chargeIdFromLatestCharge(intent.latest_charge),
+    });
   }
 
   private async findChapterBySubscription(
@@ -281,9 +610,9 @@ export class BillingService {
     newStatus: string,
   ): Promise<void> {
     try {
-      const presidentRole = await this.roleRepo.findByChapterAndName(
+      const presidentRole = await this.roleRepo.findByChapterAndSystemKey(
         chapterId,
-        'President',
+        SystemRoleKeys.PRESIDENT,
       );
       if (!presidentRole) return;
 
@@ -303,6 +632,37 @@ export class BillingService {
     } catch {
       this.logger.warn(`Failed to notify president for chapter ${chapterId}`);
     }
+  }
+
+  /** Stripe `event.created` (Unix seconds) as an ISO timestamp. */
+  private eventCreatedAt(event: WebhookEvent): string {
+    return new Date(event.created * 1000).toISOString();
+  }
+
+  /**
+   * Timestamp-aware ordering (spec/behavior/billing.md, FRA-242): returns true —
+   * and logs — when this event predates the last subscription webhook applied to
+   * the chapter, so the caller must ignore it. Every applied subscription webhook
+   * stamps `last_stripe_webhook_at` with its `event.created`, so the mark is the
+   * newest applied event's time. Two events sharing the same Stripe second are
+   * treated as not-stale (applied in delivery order) since sub-second order is
+   * unknowable.
+   */
+  private isStaleWebhook(
+    chapter: Chapter,
+    event: WebhookEvent,
+    eventType: string,
+  ): boolean {
+    const last = chapter.last_stripe_webhook_at;
+    if (last && event.created * 1000 < new Date(last).getTime()) {
+      this.logger.warn(
+        `Ignoring out-of-order ${eventType} ${event.id} for chapter ` +
+          `${chapter.id} (event ${this.eventCreatedAt(event)} older than ` +
+          `last applied ${last})`,
+      );
+      return true;
+    }
+    return false;
   }
 
   private mapStripeStatus(stripeStatus: string): SubscriptionStatus | null {

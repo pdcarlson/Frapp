@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+  TablesUpdate,
+} from '../database.types';
 import type { IStudySessionRepository } from '../../../domain/repositories/study.repository.interface';
 import type { StudySession } from '../../../domain/entities/study.entity';
 
@@ -10,16 +14,6 @@ export class SupabaseStudySessionRepository implements IStudySessionRepository {
     @Inject(SUPABASE_CLIENT)
     private readonly supabase: FrappSupabaseClient,
   ) {}
-
-  async findById(id: string): Promise<StudySession | null> {
-    const { data, error } = await this.supabase
-      .from('study_sessions')
-      .select('*')
-      .eq('id', id)
-      .maybeSingle();
-    if (error) throw error;
-    return data as StudySession | null;
-  }
 
   async findActiveByUserAndChapter(
     userId: string,
@@ -33,7 +27,7 @@ export class SupabaseStudySessionRepository implements IStudySessionRepository {
       .eq('status', 'ACTIVE')
       .maybeSingle();
     if (error) throw error;
-    return data as StudySession | null;
+    return data;
   }
 
   async findByUserAndChapter(
@@ -47,29 +41,34 @@ export class SupabaseStudySessionRepository implements IStudySessionRepository {
       .eq('chapter_id', chapterId)
       .order('start_time', { ascending: false });
     if (error) throw error;
-    return (data as StudySession[]) || [];
+    return data || [];
   }
 
-  async create(data: Partial<StudySession>): Promise<StudySession> {
+  async create(data: TablesInsert<'study_sessions'>): Promise<StudySession> {
     const { data: created, error } = await this.supabase
       .from('study_sessions')
-      .insert(data as never)
+      .insert(data)
       .select()
       .single();
 
     if (error) throw error;
-    return created as StudySession;
+    return created;
   }
 
-  async update(id: string, data: Partial<StudySession>): Promise<StudySession> {
+  async update(
+    id: string,
+    chapterId: string,
+    data: TablesUpdate<'study_sessions'>,
+  ): Promise<StudySession> {
     const { data: updated, error } = await this.supabase
       .from('study_sessions')
-      .update(data as never)
+      .update(data)
       .eq('id', id)
+      .eq('chapter_id', chapterId)
       .select()
       .single();
 
     if (error) throw error;
-    return updated as StudySession;
+    return updated;
   }
 }

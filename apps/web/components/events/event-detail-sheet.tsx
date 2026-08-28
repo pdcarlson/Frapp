@@ -1,11 +1,21 @@
 "use client";
 
 import { useMemo } from "react";
-import { AlertTriangle, BellRing, CalendarDays, Clock3, Loader2, MapPin, Trash2, UsersRound } from "lucide-react";
-import { useDeleteEvent, useEvent } from "@repo/hooks";
+import { AlertTriangle, Loader2, Trash2 } from "lucide-react";
+import {
+  PointsGlyph,
+  RolesGlyph,
+  ScheduleGlyph,
+  StudyZonesGlyph,
+} from "@/components/events/chapter-ops-glyphs";
+import { useDeleteEvent, useEvent, useRoles } from "@repo/hooks";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  SubscriptionNotice,
+  useSubscriptionGate,
+} from "@/components/shared/subscription-gate";
 import {
   Sheet,
   SheetContent,
@@ -13,22 +23,13 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { AttendancePanel } from "@/components/events/attendance-panel";
+import { normalizeRoleOptions } from "@/lib/roles";
+import { formatLocaleDateTime as formatDateTime } from "@repo/formatting";
+import { getErrorMessage } from "@/lib/utils";
+import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 
 type EventRecord = Record<string, unknown>;
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return "Something went wrong. Please retry.";
-}
-
-function formatDateTime(value: unknown): string {
-  if (typeof value !== "string") return "—";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "—";
-  return parsed.toLocaleString();
-}
 
 type EventDetailSheetProps = {
   open: boolean;
@@ -50,6 +51,13 @@ export function EventDetailSheet({
   const eventId = typeof event?.id === "string" ? event.id : "";
   const eventQuery = useEvent(!usingPreviewData ? eventId : "");
   const deleteEventMutation = useDeleteEvent();
+  // `DELETE /v1/events/:id` and the `PATCH /v1/events/:id` behind "Edit event"
+  // are both paid-ops. Edit is gated here rather than only inside the editor
+  // dialog because this button *is* the trigger for that flow (§5 rule 1) —
+  // gating only the editor's submit would let the user reopen and refill it.
+  const gate = useSubscriptionGate();
+  const { confirm, confirmDialog } = useConfirmDialog();
+  const rolesQuery = useRoles();
   const { toast } = useToast();
 
   const resolvedEvent = useMemo(() => {
@@ -67,24 +75,76 @@ export function EventDetailSheet({
       ? resolvedEvent.name
       : "Untitled event";
   const isMandatory =
-    typeof resolvedEvent?.is_mandatory === "boolean" ? resolvedEvent.is_mandatory : false;
+    typeof resolvedEvent?.is_mandatory === "boolean"
+      ? resolvedEvent.is_mandatory
+      : false;
   const recurrenceRule =
-    typeof resolvedEvent?.recurrence_rule === "string" && resolvedEvent.recurrence_rule.length > 0
+    typeof resolvedEvent?.recurrence_rule === "string" &&
+    resolvedEvent.recurrence_rule.length > 0
       ? resolvedEvent.recurrence_rule
       : "One-time";
   const description =
-    typeof resolvedEvent?.description === "string" ? resolvedEvent.description : "";
-  const notes = typeof resolvedEvent?.notes === "string" ? resolvedEvent.notes : "";
-  const attendanceActionsAvailable = false;
-  const attendanceActionDisabledReason = !canMutate
-    ? "Sign in with chapter permissions to run attendance actions."
-    : "Attendance actions are coming soon.";
+    typeof resolvedEvent?.description === "string"
+      ? resolvedEvent.description
+      : "";
+  const notes =
+    typeof resolvedEvent?.notes === "string" ? resolvedEvent.notes : "";
+  // Three distinct states, not two. A non-empty polygon with fewer than 3 valid
+  // points is not "no zone": `isValidZone` fails closed on the server, so
+  // check-in is rejected outright. Rendering that as "check in from anywhere"
+  // would tell an officer the opposite of what members experience.
+  const checkInZoneEntries = Array.isArray(resolvedEvent?.check_in_zone)
+    ? resolvedEvent.check_in_zone
+    : [];
+  const checkInZonePoints = checkInZoneEntries.filter((point) => {
+    if (!point || typeof point !== "object") return false;
+    const { lat, lng } = point as { lat?: unknown; lng?: unknown };
+    return (
+      typeof lat === "number" &&
+      Number.isFinite(lat) &&
+      typeof lng === "number" &&
+      Number.isFinite(lng)
+    );
+  }).length;
+  // Mirrors `isValidZone` on the server, which requires **every** entry to be a
+  // finite pair — not merely three of them. A 5-entry zone with 2 bad points
+  // fails there and rejects every check-in, so reporting the 3 good ones as a
+  // working zone would recreate the exact misdirection this block exists to
+  // prevent.
+  const hasCheckInZone =
+    checkInZoneEntries.length >= 3 &&
+    checkInZonePoints === checkInZoneEntries.length;
+  const checkInZoneIsMalformed =
+    checkInZoneEntries.length > 0 && !hasCheckInZone;
+  const checkInZoneName =
+    typeof resolvedEvent?.check_in_zone_name === "string"
+      ? resolvedEvent.check_in_zone_name.trim()
+      : "";
+
+  const rawRequiredRoleIds = resolvedEvent?.required_role_ids;
+  const requiredRoleIds = Array.isArray(rawRequiredRoleIds)
+    ? rawRequiredRoleIds.filter((id): id is string => typeof id === "string")
+    : [];
+  const roleNameById = useMemo(
+    () =>
+      new Map(
+        normalizeRoleOptions(rolesQuery.data).map((role) => [
+          role.id,
+          role.name,
+        ]),
+      ),
+    [rolesQuery.data],
+  );
 
   async function handleDelete() {
     if (!eventId) return;
-    const confirmed = window.confirm(
-      `Delete ${eventName}? This action cannot be undone and attendance records may be affected.`,
-    );
+    const confirmed = await confirm({
+      title: `Delete ${eventName}?`,
+      description:
+        "This cannot be undone, and attendance records for the event may be affected.",
+      confirmLabel: "Delete event",
+      tone: "destructive",
+    });
     if (!confirmed) return;
 
     try {
@@ -92,7 +152,10 @@ export function EventDetailSheet({
     } catch (error) {
       toast({
         title: "Could not delete event",
-        description: getErrorMessage(error),
+        description: getErrorMessage(
+          error,
+          "Something went wrong. Please retry.",
+        ),
         variant: "destructive",
       });
       return;
@@ -121,14 +184,18 @@ export function EventDetailSheet({
         <SheetHeader>
           <SheetTitle>{eventName}</SheetTitle>
           <SheetDescription>
-            Review scheduling details, recurrence settings, and attendance policy.
+            Review scheduling details, recurrence settings, and attendance
+            policy.
           </SheetDescription>
         </SheetHeader>
 
         {usingPreviewData ? (
-          <div className="mt-5 flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+          <div className="mt-5 flex items-start gap-3 rounded-md border border-warning/45 bg-warning/[.13] p-3 text-[12.5px] text-warning">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <div>Showing preview event details. Sign in to edit and delete live events.</div>
+            <div>
+              Showing preview event details. Sign in to edit and delete live
+              events.
+            </div>
           </div>
         ) : null}
 
@@ -141,8 +208,8 @@ export function EventDetailSheet({
 
         <div className="mt-4 flex flex-wrap gap-2">
           <Button
-            variant="outline"
-            disabled={!resolvedEvent}
+            variant="secondary"
+            {...gate.controlProps(!resolvedEvent)}
             onClick={() => {
               if (!resolvedEvent) return;
               onRequestEdit(resolvedEvent);
@@ -152,7 +219,7 @@ export function EventDetailSheet({
           </Button>
           <Button
             variant="destructive"
-            disabled={!canMutate || deleteEventMutation.isPending}
+            {...gate.controlProps(!canMutate || deleteEventMutation.isPending)}
             onClick={handleDelete}
           >
             {deleteEventMutation.isPending ? (
@@ -164,60 +231,87 @@ export function EventDetailSheet({
           </Button>
         </div>
 
+        <SubscriptionNotice gate={gate} feature="editing events" />
+
         <div className="mt-5 grid gap-3">
-          <div className="rounded-md border border-border p-3">
-            <p className="mb-2 text-xs text-muted-foreground">Attendance</p>
+          <div className="rounded-lg border border-border p-3">
+            <p className="mb-2 text-[12.5px] text-muted-foreground">
+              Attendance policy
+            </p>
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant={isMandatory ? "default" : "secondary"}>
                 {isMandatory ? "Mandatory" : "Optional"}
               </Badge>
               <Badge variant="outline">{recurrenceRule}</Badge>
             </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={!resolvedEvent || !canMutate || !attendanceActionsAvailable}
-                title={attendanceActionDisabledReason}
-                aria-label={`Open attendance queue. ${attendanceActionDisabledReason}`}
-              >
-                <UsersRound className="h-4 w-4" />
-                Open attendance queue
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={!resolvedEvent || !canMutate || !attendanceActionsAvailable}
-                title={attendanceActionDisabledReason}
-                aria-label={`Send check-in reminder. ${attendanceActionDisabledReason}`}
-              >
-                <BellRing className="h-4 w-4" />
-                Send check-in reminder
-              </Button>
-            </div>
-            {!attendanceActionsAvailable || !canMutate ? (
-              <p className="mt-2 text-xs text-muted-foreground">
-                {attendanceActionDisabledReason}
+            <div className="mt-3">
+              <p className="mb-1 flex items-center gap-1 text-[12.5px] text-muted-foreground">
+                <RolesGlyph className="h-3.5 w-3.5" />
+                Required roles
               </p>
-            ) : null}
+              {requiredRoleIds.length === 0 ? (
+                <p className="text-sm text-muted-foreground">All members</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {requiredRoleIds.map((id) => (
+                    <Badge key={id} variant="outline">
+                      {roleNameById.get(id) ?? `Role ${id.slice(0, 8)}`}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="mt-3">
+              <p className="mb-1 flex items-center gap-1 text-[12.5px] text-muted-foreground">
+                <StudyZonesGlyph className="h-3.5 w-3.5" />
+                Check-in zone
+              </p>
+              {hasCheckInZone ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="default">
+                    {checkInZoneName ? checkInZoneName : "Zone set"}
+                  </Badge>
+                  <span className="text-sm text-muted-foreground">
+                    {checkInZonePoints} points — members must be inside to check
+                    in
+                  </span>
+                </div>
+              ) : checkInZoneIsMalformed ? (
+                <div className="flex items-start gap-2 rounded-md border border-warning/45 bg-warning/[.13] p-3 text-[12.5px] text-warning">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <div>
+                    This event&apos;s zone is incomplete, so every check-in is
+                    rejected. Edit the event to finish or clear it.
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No zone — members can check in from anywhere
+                </p>
+              )}
+            </div>
           </div>
 
-          <div className="rounded-md border border-border p-3">
-            <p className="mb-2 text-xs text-muted-foreground">Schedule</p>
+          <div className="rounded-lg border border-border p-3">
+            <p className="mb-2 text-[12.5px] text-muted-foreground">Schedule</p>
             <div className="space-y-2 text-sm">
               <div className="flex items-start gap-2">
-                <Clock3 className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                <ScheduleGlyph className="mt-0.5 h-4 w-4 text-muted-foreground" />
                 <div>
                   <p>Starts: {formatDateTime(resolvedEvent?.start_time)}</p>
                   <p>Ends: {formatDateTime(resolvedEvent?.end_time)}</p>
                 </div>
               </div>
               <div className="flex items-start gap-2">
-                <MapPin className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                <p>{typeof resolvedEvent?.location === "string" ? resolvedEvent.location : "TBD"}</p>
+                <StudyZonesGlyph className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                <p>
+                  {typeof resolvedEvent?.location === "string"
+                    ? resolvedEvent.location
+                    : "TBD"}
+                </p>
               </div>
               <div className="flex items-start gap-2">
-                <CalendarDays className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                <PointsGlyph className="mt-0.5 h-4 w-4 text-muted-foreground" />
                 <p>
                   {typeof resolvedEvent?.point_value === "number"
                     ? `${resolvedEvent.point_value} point(s)`
@@ -228,19 +322,28 @@ export function EventDetailSheet({
           </div>
 
           {description ? (
-            <div className="rounded-md border border-border p-3">
-              <p className="mb-1 text-xs text-muted-foreground">Description</p>
+            <div className="rounded-lg border border-border p-3">
+              <p className="mb-1 text-[12.5px] text-muted-foreground">
+                Description
+              </p>
               <p className="text-sm">{description}</p>
             </div>
           ) : null}
 
           {notes ? (
-            <div className="rounded-md border border-border p-3">
-              <p className="mb-1 text-xs text-muted-foreground">Internal notes</p>
+            <div className="rounded-lg border border-border p-3">
+              <p className="mb-1 text-[12.5px] text-muted-foreground">
+                Internal notes
+              </p>
               <p className="text-sm">{notes}</p>
             </div>
           ) : null}
+
+          {eventId && !usingPreviewData ? (
+            <AttendancePanel eventId={eventId} />
+          ) : null}
         </div>
+        {confirmDialog}
       </SheetContent>
     </Sheet>
   );

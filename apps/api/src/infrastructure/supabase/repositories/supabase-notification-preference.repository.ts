@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type { INotificationPreferenceRepository } from '../../../domain/repositories/notification.repository.interface';
 import type { NotificationPreference } from '../../../domain/entities/notification.entity';
 
@@ -22,7 +22,7 @@ export class SupabaseNotificationPreferenceRepository implements INotificationPr
       .eq('chapter_id', chapterId);
 
     if (error) throw error;
-    return (data as NotificationPreference[]) ?? [];
+    return data ?? [];
   }
 
   async findByUserChapterCategory(
@@ -39,31 +39,29 @@ export class SupabaseNotificationPreferenceRepository implements INotificationPr
       .maybeSingle();
 
     if (error) throw error;
-    return data as NotificationPreference | null;
+    return data;
   }
 
   async upsert(
-    data: Partial<NotificationPreference>,
+    data: TablesInsert<'notification_preferences'>,
   ): Promise<NotificationPreference> {
+    const row: TablesInsert<'notification_preferences'> = {
+      user_id: data.user_id,
+      chapter_id: data.chapter_id,
+      category: data.category,
+      is_enabled: data.is_enabled ?? true,
+      updated_at: new Date().toISOString(),
+    };
     const { data: result, error } = await this.supabase
       .from('notification_preferences')
-      .upsert(
-        {
-          user_id: data.user_id,
-          chapter_id: data.chapter_id,
-          category: data.category,
-          is_enabled: data.is_enabled ?? true,
-          updated_at: new Date().toISOString(),
-        } as never,
-        {
-          onConflict: 'user_id,chapter_id,category',
-          ignoreDuplicates: false,
-        },
-      )
+      .upsert(row, {
+        onConflict: 'user_id,chapter_id,category',
+        ignoreDuplicates: false,
+      })
       .select()
       .single();
 
     if (error) throw error;
-    return result as NotificationPreference;
+    return result;
   }
 }

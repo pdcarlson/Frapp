@@ -41,13 +41,19 @@ function resolveDocsSyncBase(baseRef) {
   }
 }
 
-function runDocsSyncCheck(baseRef) {
-  const baseSha = resolveDocsSyncBase(baseRef);
-  const headSha = execSync("git rev-parse HEAD", { encoding: "utf8" }).trim();
-
+function runDocsSyncCheck(baseSha, headSha) {
   runCommand(
     `node scripts/check-docs-impact.mjs --base "${baseSha}" --head "${headSha}"`,
     "Run docs/spec sync check",
+  );
+}
+
+function runSecretScan(baseSha, headSha) {
+  // gitleaks over the branch's commit range (ADR-13 push-protection mitigation).
+  // --soft-missing keeps an offline dev unblocked; the CI secret-scan job is the hard gate.
+  runCommand(
+    `node scripts/scan-secrets.mjs --base "${baseSha}" --head "${headSha}" --soft-missing`,
+    "Run secret scan (gitleaks)",
   );
 }
 
@@ -57,16 +63,30 @@ function runLocalGate() {
 
   console.log("Running local CI gate...");
   console.log(`Base ref: ${baseRef}`);
-  runDocsSyncCheck(baseRef);
+
+  const baseSha = resolveDocsSyncBase(baseRef);
+  const headSha = execSync("git rev-parse HEAD", { encoding: "utf8" }).trim();
+  runDocsSyncCheck(baseSha, headSha);
+  runSecretScan(baseSha, headSha);
 
   const gateChecks = [
     ["npm run lint", "Run monorepo lint"],
     ["npm run check-types", "Run monorepo type-check"],
     ["npm run test -w apps/api", "Run API unit tests"],
     ["npm run check:api-contract", "Run API contract freshness check"],
-    ["npm run check:migration-safety", "Run migration safety check"],
-    ["npm run build -w docs", "Build docs app"],
-    ["npm run lint -w docs", "Lint docs app"],
+    // Thread the SHAs, as the docs-sync and secret-scan calls above already do.
+    // Bare, `getChangedFiles` sees no range and returns `[]`, so
+    // `validatePromotionDocs` early-returns and the "a migration needs a
+    // promotion/rollback doc" half of the check never runs — the local gate goes
+    // green on exactly the change CI fails. Filename validation still runs
+    // either way, which is why the gap was easy to miss (#980).
+    [
+      `npm run check:migration-safety -- --base ${baseSha} --head ${headSha}`,
+      "Run migration safety check",
+    ],
+    // --soft-network keeps an offline dev unblocked (registry unreachable →
+    // warn, not fail); the CI dependency-audit job is the hard gate.
+    ["npm run check:npm-audit -- --soft-network", "Run npm audit gate (high/critical)"],
   ];
 
   for (const [command, label] of gateChecks) {

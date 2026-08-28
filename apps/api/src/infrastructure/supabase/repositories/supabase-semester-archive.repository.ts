@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type { ISemesterArchiveRepository } from '../../../domain/repositories/semester-archive.repository.interface';
 import type { SemesterArchive } from '../../../domain/entities/semester-archive.entity';
 
@@ -18,7 +18,7 @@ export class SupabaseSemesterArchiveRepository implements ISemesterArchiveReposi
       .eq('chapter_id', chapterId)
       .order('end_date', { ascending: false });
     if (error) throw error;
-    return (data as SemesterArchive[]) || [];
+    return data || [];
   }
 
   async findLatestByChapter(
@@ -32,16 +32,18 @@ export class SupabaseSemesterArchiveRepository implements ISemesterArchiveReposi
       .limit(1)
       .maybeSingle();
     if (error) throw error;
-    return data as SemesterArchive | null;
+    return data;
   }
 
-  async create(data: Partial<SemesterArchive>): Promise<SemesterArchive> {
+  async create(
+    data: TablesInsert<'semester_archives'>,
+  ): Promise<SemesterArchive> {
     const { data: created, error } = await this.supabase
       .from('semester_archives')
-      .insert(data as never)
+      .insert(data)
       .select()
       .single();
     if (error) throw error;
-    return created as SemesterArchive;
+    return created;
   }
 }

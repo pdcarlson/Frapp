@@ -3,23 +3,21 @@ import { TaskService } from '../../application/services/task.service';
 import { TaskController } from '../../interface/controllers/task.controller';
 import { SupabaseTaskRepository } from '../../infrastructure/supabase/repositories/supabase-task.repository';
 import { TASK_REPOSITORY } from '../../domain/repositories/task.repository.interface';
-import { POINT_TRANSACTION_REPOSITORY } from '../../domain/repositories/point-transaction.repository.interface';
-import { SupabasePointTransactionRepository } from '../../infrastructure/supabase/repositories/supabase-point-transaction.repository';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import { SupabaseMemberRepository } from '../../infrastructure/supabase/repositories/supabase-member.repository';
 import { RbacModule } from '../rbac/rbac.module';
 import { NotificationModule } from '../notification/notification.module';
+import { ChatModule } from '../chat/chat.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [RbacModule, NotificationModule],
+  // ChatModule → ChatService (posts the /task card); AuthModule → USER_REPOSITORY
+  // (resolves assigner/assignee display names embedded in the card payload).
+  imports: [RbacModule, NotificationModule, ChatModule, AuthModule],
   controllers: [TaskController],
   providers: [
     TaskService,
     { provide: TASK_REPOSITORY, useClass: SupabaseTaskRepository },
-    {
-      provide: POINT_TRANSACTION_REPOSITORY,
-      useClass: SupabasePointTransactionRepository,
-    },
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
   ],
   exports: [TaskService, TASK_REPOSITORY],

@@ -4,9 +4,11 @@ import { EventController } from '../../interface/controllers/event.controller';
 import { SupabaseEventRepository } from '../../infrastructure/supabase/repositories/supabase-event.repository';
 import { EVENT_REPOSITORY } from '../../domain/repositories/event.repository.interface';
 import { NotificationModule } from '../notification/notification.module';
+import { ChatModule } from '../chat/chat.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [NotificationModule],
+  imports: [NotificationModule, ChatModule, AuthModule],
   controllers: [EventController],
   providers: [
     EventService,

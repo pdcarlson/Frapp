@@ -1,0 +1,223 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Signet design tokens — the dark-first warm charcoal system.
+ *
+ * This stylesheet is the Signet counterpart of `globals.css`, which keeps the
+ * legacy bone/bronze values for the still-frozen `apps/landing`. A surface
+ * imports exactly one of the two — `apps/web` imports this file, `apps/landing`
+ * imports the legacy one — because the two systems must not mix on one surface
+ * (`spec/ui/design-system/foundations.md` §1). `signet.css.spec.ts` pins that
+ * wiring in both directions.
+ *
+ * Values are the fixed foundations from `spec/ui/design-system/foundations.md`
+ * (source-of-truth constants: `signet.ts`, asserted equal by the spec) plus the
+ * ShadCN-compat pairs the shared Tailwind preset reads. Signet defines a single
+ * appearance: there is deliberately NO `.dark` block and no light palette —
+ * dark is the only mode (`brand-identity.md` §1), which is also why the web
+ * reskin deleted `next-themes`.
+ *
+ * ONE VALUE FORMAT LIVES HERE, same rule as the legacy file: every color token
+ * is a complete color (`#0E0D0B`, `rgba(255,255,255,0.08)`), read through the
+ * preset's `colorVar()` as a bare `var(--token)`. `hsl(var(--token))` around
+ * one is a defect (#1151) and fails `tailwind.config.spec.ts`.
+ *
+ * The accent slot (`--primary` … `--accent-text`) holds the HOUSE DEFAULT —
+ * the `#F2B72E` seed run through `deriveSignetPalette`, exactly as a chapter
+ * with no accent of its own resolves (`accent-engine.md` §3). A chapter that
+ * chose a seed overrides these at runtime: `use-chapter-theme.ts` maps the
+ * persisted `--signet-accent-*` tokens onto these names via
+ * `signetAccentSemanticVars`. The raw seed never paints UI.
+ */
+
+@layer base {
+  :root {
+    /* ── Surface ladder (fixed for every chapter; foundations §2) ── */
+    --background: #0E0D0B;
+    --surface-1: #171512;
+    --card: #1E1B17;
+    --card-foreground: #EDEAE3;
+    --popover: #26221C;
+    --popover-foreground: #EDEAE3;
+
+    /* ── Borders & hairlines (foundations §3) ─────────────────────
+     * Low-opacity white only, so a hairline tracks whatever surface
+     * it sits on. Fixed-hex border colors are banned. */
+    --border: rgba(255,255,255,0.08);
+    --input: rgba(255,255,255,0.14);
+
+    /* ── Text ladder (foundations §4) ─────────────────────────────
+     * NOTE the ShadCN-era name collision, resolved in foundations'
+     * favor: `--muted` is muted TEXT (#78716A), not a fill. Subtle
+     * fills use `--secondary` / the surface ladder instead; the web
+     * reskin retargeted every `bg-muted` call site accordingly. */
+    --foreground: #EDEAE3;
+    --muted-foreground: #A9A399;
+    --muted: #78716A;
+    --disabled: #57534C;
+
+    /* ── Semantic status (foundations §5; status-only, never decorative) ──
+     * Foregrounds are for text ON a solid semantic fill; measured against
+     * WCAG AA — near-black wins on every one of these hues (white loses on
+     * success 2.54:1 and destructive 3.35:1). On dark surfaces, prefer the
+     * tint recipe (13% alpha fill + hue text) over solid fills. */
+    --success: #3FB950;
+    --success-foreground: #0E0D0B;
+    --warning: #E5A000;
+    --warning-foreground: #0E0D0B;
+    --destructive: #F85149;
+    --destructive-foreground: #0E0D0B;
+    /* The AA-lifted tone for danger text ON a danger tint, which components.md
+     * §5 sanctions explicitly ("implementations MAY lift the text tone for AA
+     * contrast, but the hue is the fixed semantic") and the reference already
+     * does for success and info (#4BC262, #4C93F8). Measured: #F85149 on its
+     * own 13% tint is 4.39:1 over --card and 4.04:1 over --popover, i.e. below
+     * the 4.5:1 release gate in the design-system README §6 on exactly the two
+     * surfaces destructive badges and buttons actually sit on. #FF7B72 is the
+     * same hue lifted and clears 4.86:1 at its worst (over the 20% hover tint
+     * on --popover). The solid `--destructive` stays the fill and the border. */
+    --destructive-text: #FF7B72;
+    --info: #2F81F7;
+    --info-foreground: #0E0D0B;
+    /* "You were addressed" — @-mention or DM. Fixed and semantic: never the
+     * chapter accent, never any other status. White foreground is locked by
+     * foundations §5. */
+    --mention: #E5484D;
+    --mention-foreground: #FFFFFF;
+
+    /* ── Neutral interactive fills (ShadCN compat) ────────────────
+     * `secondary` is the Secondary-button recipe (components.md §3):
+     * card fill with the stronger input hairline. `accent` is the
+     * neutral hover/highlight fill for menus and undrawn primitives
+     * (components.md §2): one ladder step up. Chapter-accent tints
+     * are a different thing — `--accent-subtle` below. */
+    --secondary: #1E1B17;
+    --secondary-foreground: #EDEAE3;
+    --accent: #26221C;
+    --accent-foreground: #EDEAE3;
+
+    /* ── Accent slot — house default (accent-engine.md §2/§3) ─────
+     * deriveSignetPalette("#F2B72E") output, pinned by signet.css.spec.ts.
+     * Overridden per chapter at runtime; never edit by hand. */
+    --primary: #F2B72E;
+    --primary-hover: #E7AC1A;
+    --primary-foreground: #2B2009;
+    --ring: #86692B;
+    --accent-subtle: #2C210B;
+    --accent-border: #6A5220;
+    --accent-text: #FFC64A;
+
+    /* ── Derived accent steps (components.md §3 states) ───────────
+     * NOT a second accent source: each is a `color-mix` of the slot
+     * above, so a chapter that overrides the slot at runtime moves
+     * these with it and nothing has to be re-derived or re-persisted.
+     * They exist because §3's state table names two steps the engine
+     * does not emit — the engine's seven roles are accent 3/7/8/9/10/11
+     * plus the contrast color (accent-engine.md §2).
+     *
+     * `--primary-pressed` is §3's "fill accent-10 + 8% black overlay".
+     * `--accent-subtle-hover` is the Tinted hover, which §3 calls
+     * accent-4: a fifth of the way from accent-3 toward accent-7,
+     * which lands between the two steps rather than on a named one.
+     * Both are stated as approximations here rather than pretending
+     * to a scale step the generator never produced. */
+    --primary-pressed: color-mix(in srgb, rgb(0 0 0) 8%, var(--primary-hover));
+    --accent-subtle-hover: color-mix(in srgb, var(--accent-border) 22%, var(--accent-subtle));
+
+    /* ── House gold (brand-identity.md; never retints per chapter) ── */
+    --gold-house: #EFB63B;
+    --gold-on-house: #2C2000;
+    --gold-ask-fill: #251E0E;
+    --gold-ask-border: #6B5619;
+    --gold-ask-text: #F4CB63;
+
+    /* ── Radius (foundations §8 map onto the preset's scale keys) ──
+     * xs = chip/badge 8 · sm = nav item/large chip 10 · md/DEFAULT =
+     * controls 12 · lg = card 14 · xl = large card 16 · 2xl = sheets,
+     * dialogs and the AI answer card 20 (the ceiling). */
+    --radius-xs: 8px;
+    --radius-sm: 10px;
+    --radius: 12px;
+    --radius-md: 12px;
+    --radius-lg: 14px;
+    --radius-xl: 16px;
+    --radius-2xl: 20px;
+
+    /* ── Skeleton shimmer highlight (components.md §10) ───────────
+     * The one neutral above the ladder's top step, used only by the
+     * shimmer sweep below. Neutral by rule: skeletons are never
+     * accent and never semantic. */
+    --skeleton-highlight: #332E26;
+
+    /* ── Shadows are banned on Signet surfaces (foundations §10) ──
+     * Elevation is a lighter surface step. The tokens exist because
+     * the shared preset reads them; `none` neutralizes every legacy
+     * `shadow-*` utility that has not been deleted yet. */
+    --shadow-xs: none;
+    --shadow-sm: none;
+    --shadow: none;
+    --shadow-lg: none;
+
+    /* ── Font stacks ──────────────────────────────────────────────
+     * Sans is Figtree, loaded by the app's Next font loader as
+     * `--font-figtree` (architecture: mono is a system stack, never
+     * a bundled webfont — spec/architecture/README.md §15). */
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+      "Liberation Mono", "Courier New", monospace;
+  }
+
+  * {
+    border-color: var(--border);
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer components {
+  /*
+   * Skeleton shimmer — components.md §10, verbatim: a 90° gradient of the
+   * elevated step at 25%/75% with the highlight neutral at 50%, sized 260px
+   * and swept 1.4s linear. It is one class rather than a Tailwind utility
+   * chain so the phase is shared across every block on a surface, which is
+   * what makes a multi-block skeleton read as one sheet of content rather
+   * than as N independently pulsing rectangles.
+   *
+   * Reduced motion drops the sweep and holds the gradient's midpoint —
+   * README §7 requires reduced-motion compatibility, and a skeleton that
+   * stops animating still has to look like a placeholder rather than an
+   * empty box.
+   */
+  .skeleton-shimmer {
+    background-image: linear-gradient(
+      90deg,
+      var(--popover) 25%,
+      var(--skeleton-highlight) 50%,
+      var(--popover) 75%
+    );
+    background-size: 260px 100%;
+    background-repeat: repeat-x;
+    animation: skeleton-sweep 1.4s linear infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton-shimmer {
+      animation: none;
+      background-position: 130px 0;
+    }
+  }
+}
+
+@keyframes skeleton-sweep {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 260px 0;
+  }
+}

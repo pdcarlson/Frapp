@@ -1,0 +1,176 @@
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import {
+  REPORT_PDF_RENDERER,
+  type IReportPdfRenderer,
+  type ReportPdfColumn,
+} from '../../domain/adapters/pdf.interface';
+import {
+  STORAGE_PROVIDER,
+  type IStorageProvider,
+} from '../../domain/adapters/storage.interface';
+import {
+  CHAPTER_REPOSITORY,
+  type IChapterRepository,
+} from '../../domain/repositories/chapter.repository.interface';
+import {
+  REPORT_TITLES,
+  type ReportKind,
+} from '../../interface/controllers/report-columns';
+import {
+  REPORTS_BUCKET,
+  reportsFolderPrefix,
+} from '../../domain/constants/storage';
+import { REPORT_MAX_ROWS } from './report.service';
+
+/**
+ * Private bucket holding generated report artifacts (see the reports_bucket
+ * migration). Re-exported from the shared storage constants so the writer and
+ * the retention purges cannot drift apart — see `domain/constants/storage.ts`.
+ */
+export { REPORTS_BUCKET };
+
+/** spec/behavior/reports.md: "API returns a signed download URL (valid for 1 hour)". */
+export const REPORT_URL_TTL_SECONDS = 3600;
+
+const BRANDING_BUCKET = 'branding';
+
+export interface ReportExportResult {
+  /** Signed, time-limited download URL. Never a public object URL. */
+  url: string;
+  /** ISO timestamp at which `url` stops working. */
+  expires_at: string;
+  expires_in: number;
+  /** Suggested download filename for the browser. */
+  filename: string;
+  /** Bucket-relative object path, for support/debugging. */
+  storage_path: string;
+  row_count: number;
+  /**
+   * True when the report hit the row ceiling and the document is **not** a
+   * complete record. `row_count` describes what was printed either way, so it
+   * cannot answer this on its own.
+   */
+  truncated: boolean;
+  /** The ceiling `truncated` refers to. */
+  row_limit: number;
+  /**
+   * What was cut, when the row count alone does not say it — a roster whose
+   * balances were summed from a truncated read is the right length, so
+   * `row_limit` on its own would describe a cut the document never took.
+   * Absent when the row count is the whole story.
+   */
+  truncation_note?: string;
+}
+
+@Injectable()
+export class ReportExportService {
+  private readonly logger = new Logger(ReportExportService.name);
+
+  constructor(
+    @Inject(CHAPTER_REPOSITORY)
+    private readonly chapterRepo: IChapterRepository,
+    @Inject(STORAGE_PROVIDER) private readonly storage: IStorageProvider,
+    @Inject(REPORT_PDF_RENDERER) private readonly renderer: IReportPdfRenderer,
+  ) {}
+
+  /**
+   * Render `rows` into a branded PDF, store it in the private reports bucket,
+   * and hand back a one-hour signed URL.
+   *
+   * The object is written under a chapter-scoped prefix with a random suffix:
+   * the bucket has no RLS policies and is reached only through API-issued
+   * signed URLs, so an unguessable key keeps one chapter's export from being
+   * reachable by another even if a path were ever leaked into a log.
+   */
+  async exportPdf(
+    chapterId: string,
+    kind: ReportKind,
+    columns: ReportPdfColumn[],
+    rows: Record<string, unknown>[],
+    subtitle?: string,
+    truncated = false,
+    rowLimit: number = REPORT_MAX_ROWS,
+    truncationNote?: string,
+  ): Promise<ReportExportResult> {
+    const chapter = await this.chapterRepo.findById(chapterId);
+    if (!chapter) throw new NotFoundException('Chapter not found');
+
+    const generatedAt = new Date();
+    const bytes = await this.renderer.render({
+      title: REPORT_TITLES[kind],
+      subtitle,
+      generatedAt:
+        generatedAt.toISOString().replace('T', ' ').slice(0, 19) + ' UTC',
+      columns,
+      rows,
+      branding: {
+        chapterName: chapter.name,
+        university: chapter.university,
+        logo: await this.loadLogo(chapter.logo_path),
+      },
+    });
+
+    const day = generatedAt.toISOString().slice(0, 10);
+    const filename = `frapp-${kind}-report-${day}.pdf`;
+    const storagePath = `${reportsFolderPrefix(chapterId)}/${kind}-${day}-${randomUUID()}.pdf`;
+
+    await this.storage.uploadFile(
+      REPORTS_BUCKET,
+      storagePath,
+      bytes,
+      'application/pdf',
+    );
+    const url = await this.storage.getSignedDownloadUrl(
+      REPORTS_BUCKET,
+      storagePath,
+      REPORT_URL_TTL_SECONDS,
+      filename,
+    );
+
+    return {
+      url,
+      expires_at: new Date(
+        generatedAt.getTime() + REPORT_URL_TTL_SECONDS * 1000,
+      ).toISOString(),
+      expires_in: REPORT_URL_TTL_SECONDS,
+      filename,
+      storage_path: storagePath,
+      row_count: rows.length,
+      truncated,
+      row_limit: rowLimit,
+      truncation_note: truncationNote,
+    };
+  }
+
+  /**
+   * Fetch the chapter logo for the PDF header. The logo is decorative: if it is
+   * missing, unreadable, or storage is having a bad day, the report still ships
+   * without it rather than failing an officer's export.
+   */
+  private async loadLogo(
+    logoPath: string | null,
+  ): Promise<{ bytes: Uint8Array } | null> {
+    if (!logoPath) return null;
+    try {
+      const bytes = await this.storage.downloadFile(BRANDING_BUCKET, logoPath);
+      if (!bytes) {
+        // The chapter believes it has a logo but the object is gone. Silence
+        // here would leave "our logo stopped appearing" with nothing to
+        // correlate against.
+        this.logger.warn(
+          `Chapter logo "${logoPath}" is recorded but missing from storage; rendering report without it.`,
+        );
+        return null;
+      }
+      return { bytes };
+    } catch (error) {
+      this.logger.warn(
+        `Could not load chapter logo "${logoPath}" for report export: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
+  }
+}

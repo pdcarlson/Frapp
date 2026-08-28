@@ -2,7 +2,6 @@ import {
   CanActivate,
   ExecutionContext,
   INestApplication,
-  VersioningType,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
@@ -12,8 +11,10 @@ import { SupabaseAuthGuard } from '../src/interface/guards/supabase-auth.guard';
 import { ChapterGuard } from '../src/interface/guards/chapter.guard';
 import { PermissionsGuard } from '../src/interface/guards/permissions.guard';
 import { createSupabaseMock } from './helpers/supabase-mock.factory';
+import { configureApp } from '../src/bootstrap';
 
 const V1 = '/v1';
+const TARGET_MEMBER_ID = '44444444-4444-4444-8444-444444444444';
 
 class AuthGuardStub implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
@@ -79,7 +80,7 @@ describe('Membership + roles (e2e)', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
-    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
+    configureApp(app);
     await app.init();
   });
 
@@ -102,14 +103,14 @@ describe('Membership + roles (e2e)', () => {
       .post(`${V1}/roles/transfer-presidency`)
       .set('authorization', 'Bearer token')
       .set('x-chapter-id', 'chapter-1')
-      .send({ target_member_id: 'member-2' })
+      .send({ target_member_id: TARGET_MEMBER_ID })
       .expect(201)
       .expect({ success: true });
 
     expect(rbacServiceMock.transferPresidency).toHaveBeenCalledWith(
       'chapter-1',
       'member-1',
-      'member-2',
+      TARGET_MEMBER_ID,
     );
   });
 });

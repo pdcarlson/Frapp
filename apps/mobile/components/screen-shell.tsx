@@ -1,23 +1,44 @@
 import { ReactNode } from "react";
-import { SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
-import { FrappTokens } from "@repo/theme/tokens";
-import { useFrappTheme } from "@/lib/theme";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { SignetTokens } from "@repo/theme/signet";
+import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 type ScreenShellProps = {
   title: string;
   subtitle: string;
+  /**
+   * Trailing control rendered on the title row, right-aligned and vertically
+   * centred against the title.
+   *
+   * Added in S2 because this file freezes afterwards (#937's hotspot protocol)
+   * and three drawn screens need it: the ✦ Ask pill on s04 and s06, and the `+`
+   * on s08 (spec/ui/mobile/navigation.md:44). Optional, so every existing call
+   * site is unaffected.
+   */
+  headerAction?: ReactNode;
   children: ReactNode;
 };
 
-export function ScreenShell({ title, subtitle, children }: ScreenShellProps) {
+export function ScreenShell({
+  title,
+  subtitle,
+  headerAction,
+  children,
+}: ScreenShellProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.header}>
-          <Text style={styles.title}>{title}</Text>
+          <View style={styles.headerRow}>
+            <Text style={styles.title}>{title}</Text>
+            {headerAction ? (
+              <View style={styles.headerAction}>{headerAction}</View>
+            ) : null}
+          </View>
           <Text style={styles.subtitle}>{subtitle}</Text>
         </View>
         {children}
@@ -51,66 +72,70 @@ export function InfoCard({
   );
 }
 
-function createStyles(tokens: FrappTokens) {
+function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     safeArea: {
       flex: 1,
-      backgroundColor: tokens.color.surface.canvas,
+      backgroundColor: tokens.color.surface.background,
     },
     content: {
       width: "100%",
       maxWidth: 880,
       alignSelf: "center",
-      paddingHorizontal: 16,
-      paddingVertical: 18,
-      gap: 12,
+      paddingHorizontal: tokens.spacing.lg,
+      paddingVertical: tokens.spacing.lg,
+      gap: tokens.spacing.md,
     },
     header: {
-      marginBottom: 6,
+      marginBottom: tokens.spacing.xs,
+    },
+    headerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
     },
     title: {
-      color: tokens.color.text.primary,
-      fontSize: tokens.type.title,
-      fontWeight: "800",
+      flex: 1,
+      color: tokens.color.text.foreground,
+      ...typeRole(tokens.typography.role.title),
       letterSpacing: -0.4,
     },
+    headerAction: {
+      flexShrink: 0,
+    },
     subtitle: {
-      marginTop: 6,
-      color: tokens.color.text.secondary,
-      fontSize: tokens.type.body,
-      lineHeight: 22,
+      marginTop: tokens.spacing.xs,
+      color: tokens.color.text.mutedForeground,
+      ...typeRole(tokens.typography.role.body),
     },
     card: {
-      borderRadius: tokens.radius.lg,
+      borderRadius: tokens.radius.card,
       borderWidth: 1,
-      borderColor: tokens.color.surface.border,
+      borderColor: tokens.color.border.hairline,
       backgroundColor: tokens.color.surface.card,
       padding: tokens.spacing.lg,
-      gap: 8,
+      gap: tokens.spacing.sm,
     },
     badge: {
       alignSelf: "flex-start",
-      borderRadius: 999,
-      backgroundColor: tokens.color.feedback.infoBackgroundStrong,
-      paddingHorizontal: 10,
-      paddingVertical: 4,
+      borderRadius: tokens.radius.chip,
+      backgroundColor: tint(tokens.color.semantic.info),
+      paddingHorizontal: tokens.spacing.sm,
+      paddingVertical: tokens.spacing.xs,
     },
     badgeText: {
-      color: tokens.color.feedback.infoTextInteractive,
-      fontSize: tokens.type.label - 1,
-      fontWeight: "700",
+      color: tokens.color.semantic.info,
+      ...typeRole(tokens.typography.role.caption),
       letterSpacing: 0.2,
       textTransform: "uppercase",
     },
     cardTitle: {
-      color: tokens.color.text.primary,
-      fontSize: tokens.type.section - 2,
-      fontWeight: "700",
+      color: tokens.color.text.foreground,
+      ...typeRole(tokens.typography.role.label),
     },
     cardBody: {
-      color: tokens.color.text.secondary,
-      fontSize: tokens.type.body - 1,
-      lineHeight: 20,
+      color: tokens.color.text.mutedForeground,
+      ...typeRole(tokens.typography.role.body),
     },
   });
 }

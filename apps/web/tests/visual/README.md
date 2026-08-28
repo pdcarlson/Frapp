@@ -1,0 +1,160 @@
+# Dashboard browser suite
+
+Playwright tests that drive the app's routes against a real `next dev`. Two
+suites, both in the **required** `web-responsive-floor` job:
+
+| Suite | Covers |
+| --- | --- |
+| `responsive-floor.spec.ts` | the fifteen `DASHBOARD_ROUTES` at 375px |
+| `pre-auth-floor.spec.ts` | the four `PRE_AUTH_ROUTES` at 375px, plus one guard |
+
+Both read `routes.ts`. Add a screen there and the matching spec picks it up.
+
+**Why two suites and not one list.** The dashboard suite asserts each route did
+*not* end up on `/sign-in` — the guard that stops a regressed
+`SUPABASE_AUTH_BYPASS` from turning all fifteen tests into green measurements
+of the sign-in card. For a pre-auth route that assertion is backwards, so those
+carry a per-route expected URL instead.
+
+**Two things here are not covered**, and both are worth naming rather than
+leaving to be discovered.
+
+`/join` is the first. It sits in `proxy.ts`'s
+protected prefixes *and* calls `getSessionUser()` itself, redirecting a
+sessionless harness to `/sign-in?redirectTo=/join` — so nothing here can
+measure it. That needs a seeded session, which is the same piece of work the
+last section of this file scopes. Measured by hand at 375px meanwhile: the
+column measures 375 with a widest child of 327, the same as `/sign-in`, which
+is expected — all five pre-auth routes compose one column.
+
+The **onboarding wizard** is the second, and it is the harder one. It is never
+a route: `ChapterWizardGate` mounts it as a full-screen overlay when
+`GET /v1/chapters` comes back empty, so no `page.goto` reaches it and neither
+suite can. `spec/ui/web-dashboard/README.md` asserted it held the floor for
+some time on nothing at all; that claim now says what is true instead.
+
+**The second suite pays for itself in a guard.** `playwright.config.ts` warns
+that with two specs in this directory, deleting or renaming the floor spec lets
+the run pass on the survivor and exit 0 with the floor silently unmeasured.
+`pre-auth-floor.spec.ts` closes that: it reads `responsive-floor.spec.ts` off
+disk and asserts both that the file exists and that `DASHBOARD_ROUTES` still
+holds fifteen entries. That is strictly stronger than the guard it replaces,
+which only fired when the directory collected no tests at all.
+
+## There used to be a snapshot suite here
+
+`dashboard-routes.spec.ts` photographed each route at 1440×960 and compared it
+to a committed PNG, running as the advisory `web-visual-regression` job. It has
+been **deleted**, along with its sixteen baselines and the `test:visual` script.
+
+The reason is the reason it was advisory in the first place. Baselines were
+pinned to the exact Chromium build CI installs, so they drifted with every
+Playwright bump, and refreshing one correctly required either CI's own browser
+revision or a local `npx playwright install chromium` plus a careful check that
+the revision matched. A gate that cannot block, and whose red X is usually
+answered by regenerating the fixture, is not measuring anything — it is a tax on
+every UI change. The 375px floor gate was split out of it in #1152 precisely
+because it is the half worth keeping.
+
+If pixel coverage comes back, it should come back as a hosted service with
+per-PR review and accepted-baseline management (Percy, Chromatic, Argos), not as
+PNGs in the repo.
+
+## Running locally
+
+```bash
+npm run test:floor -w apps/web   # the 375px floor gate; boots its own dev server
+```
+
+`test:floor` runs the whole directory rather than a `--grep` slice, so a new spec
+added here joins the required job by default instead of falling into no job at
+all. Don't reintroduce a filter without a second job to catch what it excludes.
+
+In **GitHub Actions**, `playwright.config.ts` sets `workers: 1` and `forbidOnly`
+only when `CI=true`. Prefix with `CI=true` to reproduce a CI failure exactly.
+
+### If the browser will not launch (cloud sandboxes)
+
+Agent sandboxes preinstall a Chromium under `PLAYWRIGHT_BROWSERS_PATH`
+(`/opt/pw-browsers`) whose revision may not match the one the pinned
+`@playwright/test` expects — r1194 against r1234, at the time of writing — and
+`playwright test` then fails to find a browser at all. **Do not run
+`playwright install`**: the point of the preinstalled build is that the sandbox
+has no egress for it.
+
+Because this suite stores no baseline and compares no pixels, the revision skew
+cannot affect its *result* — it only has to launch. An uncommitted config that
+extends the real one is enough:
+
+```ts
+// apps/web/playwright.sandbox.config.ts — do NOT commit
+import base from "./playwright.config";
+
+export default {
+  ...base,
+  use: {
+    ...(base as { use?: Record<string, unknown> }).use,
+    launchOptions: {
+      executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
+    },
+  },
+};
+```
+
+```bash
+cd apps/web && CI=true npx playwright test --config=playwright.sandbox.config.ts
+```
+
+Keep it uncommitted: it hardcodes one sandbox's revision path, and CI installs
+the pinned browser properly. Check the actual directory name under
+`/opt/pw-browsers` rather than copying the revision above.
+
+**Delete it once the run is done.** `check-types` compiles everything under
+`apps/web`, and this file fails it — `TS4082: Default export of the module has
+or is using private name 'TestConfigWebServer'`, because spreading the base
+config widens the inferred type past what the package exports. It is not in
+`.gitignore` either, so leaving it behind turns both `npm run check-types` and
+`git status` red for reasons that have nothing to do with the branch.
+
+## What the harness does and does not exercise
+
+Every spec here runs with **no session and no active chapter**: Playwright opens
+a fresh context with empty `localStorage`, so the persisted
+`frapp-active-chapter` key is missing and `useChapterStore.activeChapterId` is
+`null` (`apps/web/lib/stores/chapter-store.ts`). Several routes therefore render
+an empty state or a "Select an active chapter" card rather than their populated
+content — `/chat` and `/backwork` early-return before their real surfaces mount,
+and `/points` is the one route whose fix for #1142 lives inside `<main>` and does
+render for real.
+
+That is a real limit, not a formality: a route whose *populated* table overflows
+at 375px while its empty state does not would still pass. Seeding an active
+chapter would flip every route that gates on `activeChapterId` at once and is its
+own piece of work, not a side effect of a test change.
+
+It is not a hole for the defect the floor gate was built for. The shell is
+identical on every route, and it was the shell — one missing `min-w-0` — that
+broke six of the seven routes in #1142.
+
+## Why `webServer.env` has benign defaults
+
+`playwright.config.ts` boots `npm run dev` when no `PLAYWRIGHT_BASE_URL` is
+exported. In CI the job has no Supabase credentials, so the merged
+`webServer.env` injects non-routable stand-ins for:
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `NEXT_PUBLIC_API_URL`
+
+These make Next.js finish its boot handshake and point at no real service. The
+env also sets `SUPABASE_AUTH_BYPASS=true`, which tells the proxy
+(`apps/web/proxy.ts`) to skip auth redirects so protected routes render their
+actual pages instead of `/sign-in`. Real deployments always receive production
+values via Vercel + Infisical and never set the bypass flag.
+
+If you export real values locally (`.env.local` or the shell), those win — the
+defaults only fill gaps.
+
+`responsive-floor.spec.ts` asserts the landed URL still matches the route it
+requested, which is what stops a regressed bypass from silently turning the whole
+suite into fifteen green measurements of the sign-in card.

@@ -1,31 +1,113 @@
-import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
-import { Link } from "expo-router";
-import { FrappTokens } from "@repo/theme/tokens";
+import { useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useEvent } from "@repo/hooks";
+import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
-import { TaskLoopCard } from "@/components/task-loop-card";
 import { exportEventToCalendar } from "@/lib/calendar-export";
-import { useFrappTheme } from "@/lib/theme";
+import { useChapterBranding } from "@/lib/chapter-branding";
+import {
+  CHECK_IN_GRACE_MINUTES,
+  formatClock,
+  formatEventWindow,
+  resolveCheckInWindow,
+} from "@/lib/events/format";
+import { selectEventDetail } from "@/lib/events/select";
+import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+
+/**
+ * s07 — Event detail (`canvas-screens.dc.html:246`).
+ *
+ * **This filename is a contract and must never be renamed**: `frapp://event-details`
+ * is baked into `.ics` files already exported to members' calendars, so a
+ * rename orphans every one of them (`spec/ui/mobile/screens.md:29`).
+ *
+ * Reached with an `id` param from s06 and from the Chat home UP NEXT strip.
+ * Without one there is no event to render — the screen says so rather than
+ * inventing a placeholder, which is what it used to do: until C2 this file was
+ * a hardcoded "Frapp Chapter Meeting" with a fabricated date.
+ *
+ * ## RSVP is drawn but deliberately inert
+ *
+ * The reference draws a "Going ✓ / Can't make it" row and a "GOING · 31" count.
+ * Neither has a server behind it: `spec/behavior/events.md` records that
+ * "pre-event RSVP intent (going / maybe / not-going, ahead of the window) is
+ * not yet modelled". So the row renders in its drawn position, disabled, with
+ * one honest line — and the count is omitted entirely rather than filled with a
+ * number no endpoint could produce. Tracked for a real endpoint; see the PR.
+ */
 
 export default function EventDetailsScreen() {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const { accent } = useChapterBranding();
+  const styles = createStyles(tokens, accent);
+  const router = useRouter();
+  const params = useLocalSearchParams<{ id?: string | string[] }>();
+  const eventId = Array.isArray(params.id) ? params.id[0] : (params.id ?? "");
+
+  const eventQuery = useEvent(eventId);
+  const event = useMemo(
+    () => selectEventDetail(eventQuery.data),
+    [eventQuery.data],
+  );
+
   const [calendarState, setCalendarState] = useState<
     "ready" | "exporting" | "exported" | "failed"
   >("ready");
 
+  /*
+    A ticking clock, not one frozen at mount.
+    `apps/web/components/chat/renderers/event-card.tsx` carries the same tick for
+    the same reason: this screen is often opened *before* check-in opens — a
+    member arriving early taps through from UP NEXT — and a `new Date()` captured
+    once would leave "Check-in hasn't opened / Opens at 6:00" on screen through
+    6:00, 6:15 and past the close, with no way to reach the scanner but to back
+    out and re-enter.
+
+    30s granularity matches the web card and is well inside the 15-minute grace
+    window; the interval stops once the window has fully closed so a detail
+    screen left open overnight is not re-rendering forever. The server enforces
+    the real window regardless — this is UX only.
+  */
+  const [now, setNow] = useState(() => new Date());
+  const endTime = event?.end_time;
+  useEffect(() => {
+    if (!endTime) return;
+    const closesAt =
+      new Date(endTime).getTime() + CHECK_IN_GRACE_MINUTES * 60_000;
+    if (!Number.isFinite(closesAt) || Date.now() > closesAt) return;
+
+    const id = setInterval(() => {
+      setNow(new Date());
+      if (Date.now() > closesAt) clearInterval(id);
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [endTime]);
+
+  const window = event
+    ? resolveCheckInWindow(event.start_time, event.end_time, now)
+    : null;
+
   async function handleCalendarExport() {
+    if (!event) return;
     setCalendarState("exporting");
 
     try {
       const exportStarted = await exportEventToCalendar({
-        title: "Frapp Chapter Meeting",
-        description:
-          "Check-in window, role requirements, and chapter follow-up actions.",
-        location: "Chapter House — Main Meeting Room",
-        startAtIso: "2026-03-10T18:00:00-05:00",
-        endAtIso: "2026-03-10T19:00:00-05:00",
-        deepLinkUrl: "frapp://event-details",
+        title: event.name,
+        description: event.description ?? "",
+        location: event.location ?? "",
+        startAtIso: event.start_time,
+        endAtIso: event.end_time,
+        // The deep link the filename contract exists for. Carries the id so a
+        // calendar entry opens *this* event, not a bare screen.
+        deepLinkUrl: `frapp://event-details?id=${event.id}`,
       });
 
       setCalendarState(exportStarted ? "exported" : "failed");
@@ -34,142 +116,358 @@ export default function EventDetailsScreen() {
     }
   }
 
+  if (!eventId) {
+    return (
+      <ScreenShell title="Event" subtitle="No event selected.">
+        <View style={styles.stateBlock}>
+          <Text style={styles.stateTitle}>Nothing to show</Text>
+          <Text style={styles.stateBody}>
+            Open an event from the Events tab to see its details.
+          </Text>
+        </View>
+      </ScreenShell>
+    );
+  }
+
+  if (eventQuery.isPending) {
+    return (
+      <ScreenShell title="Event" subtitle="Loading…">
+        <View style={styles.stateBlock}>
+          <ActivityIndicator color={tokens.color.text.muted} />
+          <Text style={styles.stateBody}>Loading event…</Text>
+        </View>
+      </ScreenShell>
+    );
+  }
+
+  if (eventQuery.isError || !event) {
+    return (
+      <ScreenShell title="Event" subtitle="This event couldn't be loaded.">
+        <View style={styles.stateBlock}>
+          <Text style={styles.stateTitle}>Couldn&apos;t load this event</Text>
+          <Text style={styles.stateBody}>
+            It may have been cancelled, or the server is unreachable.
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Try loading this event again"
+            disabled={eventQuery.isFetching}
+            onPress={() => void eventQuery.refetch()}
+            style={({ pressed }) => [
+              styles.retryButton,
+              pressed ? styles.pressed : null,
+            ]}
+          >
+            <Text style={styles.retryText}>
+              {eventQuery.isFetching ? "Retrying…" : "Try again"}
+            </Text>
+          </Pressable>
+        </View>
+      </ScreenShell>
+    );
+  }
+
   return (
     <ScreenShell
-      title="Chapter Meeting"
-      subtitle="Check-in window, role requirements, and calendar export readiness."
+      title={event.name}
+      subtitle={formatEventWindow(event.start_time, event.end_time, now)}
     >
-      <View style={styles.summaryCard}>
-        <Text style={styles.summaryLabel}>Check-in window</Text>
-        <Text style={styles.summaryValue}>5:45 PM → 6:15 PM</Text>
-        <Text style={styles.summaryMeta}>Required for Executive Board roles</Text>
+      <View style={styles.badgeRow}>
+        {event.is_mandatory ? (
+          <View style={styles.mandatoryBadge}>
+            <Text style={styles.mandatoryText}>Mandatory</Text>
+          </View>
+        ) : null}
+        {event.point_value ? (
+          <View style={styles.pointsBadge}>
+            <Text style={styles.pointsText}>+{event.point_value} pts</Text>
+          </View>
+        ) : null}
+        {event.location ? (
+          <Text style={styles.location}>{event.location}</Text>
+        ) : null}
       </View>
 
-      <TaskLoopCard
-        category="Calendar export"
-        state={calendarState === "failed" ? "retry" : "synced"}
-        title={
-          calendarState === "exported"
-            ? ".ics download started"
-            : ".ics file is ready"
-        }
-        body={
-          calendarState === "failed"
-            ? "Calendar export could not start from this device context."
-            : "Add this event to your device calendar with start/end, location, and Frapp deep link metadata."
-        }
-        meta={
-          calendarState === "exported"
-            ? "Calendar handoff started just now"
-            : "Last exported: 2 minutes ago"
-        }
-      />
-      <TaskLoopCard
-        category="Attendance"
-        state="pending"
-        title="Self check-in queued for open window"
-        body="Frapp will validate your role-targeted eligibility when the attendance window opens."
-        meta="Window opens in 11 minutes"
-      />
-      <TaskLoopCard
-        category="Resilience"
-        state="cached"
-        title="Event details available offline"
-        body="Location, notes, and role requirements are cached to avoid losing context in low-connectivity venues."
-        meta="Cached at 5:34 PM"
-      />
+      {/* Check-in card — the drawn "Check-in is open · closes 6:15". */}
+      <View style={styles.checkInCard}>
+        {window?.state === "open" ? (
+          <>
+            <View style={styles.checkInHeader}>
+              <Text style={styles.checkInTitle}>Check-in is open</Text>
+              <Text style={styles.checkInMeta}>
+                closes {formatClock(window.closesAt)}
+              </Text>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Scan the check-in code"
+              onPress={() =>
+                router.push({
+                  pathname: "/check-in",
+                  params: { eventId: event.id },
+                })
+              }
+              style={({ pressed }) => [
+                styles.primaryButton,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <Text style={styles.primaryButtonText}>Scan QR to check in</Text>
+            </Pressable>
+          </>
+        ) : window?.state === "upcoming" ? (
+          <>
+            <Text style={styles.checkInTitle}>Check-in hasn&apos;t opened</Text>
+            <Text style={styles.checkInMeta}>
+              Opens at {formatClock(window.opensAt)}.
+            </Text>
+          </>
+        ) : (
+          <>
+            <Text style={styles.checkInTitle}>Check-in is closed</Text>
+            <Text style={styles.checkInMeta}>
+              {window?.state === "closed"
+                ? "This event's check-in window has ended."
+                : "This event's times are unavailable."}
+            </Text>
+          </>
+        )}
+      </View>
+
+      {/*
+        RSVP: drawn, disabled, and honest about why. See the file header — there
+        is no RSVP model server-side, so a working-looking control here would be
+        a lie about what tapping it does.
+      */}
+      <View style={styles.rsvpCard}>
+        <View style={styles.rsvpRow}>
+          <View
+            accessible
+            accessibilityRole="button"
+            accessibilityState={{ disabled: true }}
+            accessibilityLabel="Going. RSVP is not available yet."
+            style={[styles.rsvpButton, styles.rsvpDisabled]}
+          >
+            <Text style={styles.rsvpText}>Going</Text>
+          </View>
+          <View
+            accessible
+            accessibilityRole="button"
+            accessibilityState={{ disabled: true }}
+            accessibilityLabel="Can't make it. RSVP is not available yet."
+            style={[styles.rsvpButton, styles.rsvpDisabled]}
+          >
+            <Text style={styles.rsvpText}>Can&apos;t make it</Text>
+          </View>
+        </View>
+        <Text style={styles.rsvpNote}>
+          RSVP isn&apos;t available yet — check in at the event to be counted.
+        </Text>
+      </View>
+
+      {event.hasCheckInZone ? (
+        <View style={styles.zoneNote}>
+          <Text style={styles.zoneText}>
+            {event.check_in_zone_name
+              ? `Check-in requires you to be inside the ${event.check_in_zone_name} zone.`
+              : "Check-in requires you to be at the event location."}
+          </Text>
+        </View>
+      ) : null}
+
+      {event.description ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>DETAILS</Text>
+          <Text style={styles.sectionBody}>{event.description}</Text>
+        </View>
+      ) : null}
 
       <Pressable
         accessibilityRole="button"
-        accessibilityState={{ disabled: calendarState === "exporting" }}
+        accessibilityLabel="Add this event to your calendar"
         disabled={calendarState === "exporting"}
-        onPress={() => {
-          void handleCalendarExport();
-        }}
-        style={[
-          styles.primaryButton,
-          calendarState === "exporting" ? styles.primaryButtonDisabled : null,
+        onPress={() => void handleCalendarExport()}
+        style={({ pressed }) => [
+          styles.secondaryButton,
+          pressed ? styles.pressed : null,
         ]}
       >
-        <Text style={styles.primaryButtonText}>
+        <Text style={styles.secondaryButtonText}>
           {calendarState === "exporting"
-            ? "Preparing calendar file..."
-            : "Add to Calendar (.ics)"}
+            ? "Adding…"
+            : calendarState === "exported"
+              ? "Added to calendar"
+              : calendarState === "failed"
+                ? "Couldn't add — try again"
+                : "Add to calendar"}
         </Text>
       </Pressable>
-      {calendarState === "failed" ? (
-        <Text style={styles.feedbackText}>
-          Calendar export failed. Retry from a stable network connection.
-        </Text>
-      ) : null}
-      <Link href="/events" asChild>
-        <Pressable style={styles.secondaryButton}>
-          <Text style={styles.secondaryButtonText}>Back to events</Text>
-        </Pressable>
-      </Link>
     </ScreenShell>
   );
 }
 
-function createStyles(tokens: FrappTokens) {
+function createStyles(tokens: SignetTokens, accent: string) {
   return StyleSheet.create({
-    summaryCard: {
-      borderRadius: tokens.radius.lg,
+    badgeRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      flexWrap: "wrap",
+      gap: tokens.spacing.xs,
+    },
+    mandatoryBadge: {
+      borderRadius: tokens.radius.chip,
+      backgroundColor: tint(tokens.color.semantic.warning),
+      paddingHorizontal: tokens.spacing.sm,
+      paddingVertical: tokens.spacing.xs,
+    },
+    mandatoryText: {
+      color: tokens.color.semantic.warning,
+      ...typeRole(tokens.typography.role.caption),
+    },
+    pointsBadge: {
+      borderRadius: tokens.radius.chip,
       borderWidth: 1,
-      borderColor: tokens.color.feedback.infoBorder,
-      backgroundColor: tokens.color.feedback.infoBackground,
+      borderColor: tokens.color.border.hairline,
+      paddingHorizontal: tokens.spacing.sm,
+      paddingVertical: tokens.spacing.xs,
+    },
+    pointsText: {
+      color: tokens.color.text.mutedForeground,
+      ...typeRole(tokens.typography.role.caption),
+    },
+    location: {
+      color: tokens.color.text.mutedForeground,
+      ...typeRole(tokens.typography.role.body),
+    },
+    checkInCard: {
+      borderRadius: tokens.radius.card,
+      borderWidth: 1,
+      borderColor: tokens.color.border.hairline,
+      backgroundColor: tokens.color.surface.card,
       padding: tokens.spacing.lg,
-      gap: 6,
+      gap: tokens.spacing.sm,
     },
-    summaryLabel: {
-      fontSize: 12,
-      fontWeight: "700",
-      letterSpacing: 0.3,
-      textTransform: "uppercase",
-      color: tokens.color.feedback.infoText,
+    checkInHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: tokens.spacing.sm,
     },
-    summaryValue: {
-      fontSize: 22,
-      fontWeight: "800",
-      color: tokens.color.feedback.infoTextStrong,
-      letterSpacing: -0.3,
+    checkInTitle: {
+      color: tokens.color.text.foreground,
+      ...typeRole(tokens.typography.role.label),
     },
-    summaryMeta: {
-      fontSize: 13,
-      color: tokens.color.feedback.infoText,
+    checkInMeta: {
+      color: tokens.color.text.mutedForeground,
+      ...typeRole(tokens.typography.role.caption),
     },
     primaryButton: {
-      marginTop: 4,
-      borderRadius: tokens.radius.md,
-      backgroundColor: tokens.color.brand.royalBlue,
-      paddingVertical: 12,
+      borderRadius: tokens.radius.chip,
+      backgroundColor: accent,
+      paddingHorizontal: tokens.spacing.md,
+      paddingVertical: tokens.spacing.sm,
       alignItems: "center",
     },
-    primaryButtonDisabled: {
-      opacity: 0.6,
-    },
     primaryButtonText: {
-      fontSize: 14,
-      fontWeight: "700",
-      color: tokens.color.text.inverse,
+      color: tokens.color.surface.background,
+      ...typeRole(tokens.typography.role.label),
     },
-    feedbackText: {
-      marginTop: 6,
-      fontSize: 12,
-      color: tokens.color.feedback.errorText,
+    rsvpCard: {
+      borderRadius: tokens.radius.card,
+      borderWidth: 1,
+      borderColor: tokens.color.border.hairline,
+      backgroundColor: tokens.color.surface.card,
+      padding: tokens.spacing.lg,
+      gap: tokens.spacing.sm,
+    },
+    rsvpRow: {
+      flexDirection: "row",
+      gap: tokens.spacing.sm,
+    },
+    rsvpButton: {
+      flex: 1,
+      borderRadius: tokens.radius.chip,
+      borderWidth: 1,
+      borderColor: tokens.color.border.hairline,
+      paddingVertical: tokens.spacing.sm,
+      alignItems: "center",
+    },
+    rsvpDisabled: {
+      opacity: 0.45,
+    },
+    rsvpText: {
+      color: tokens.color.text.mutedForeground,
+      ...typeRole(tokens.typography.role.label),
+    },
+    rsvpNote: {
+      color: tokens.color.text.muted,
+      ...typeRole(tokens.typography.role.caption),
+    },
+    zoneNote: {
+      borderRadius: tokens.radius.card,
+      backgroundColor: tint(tokens.color.semantic.info),
+      padding: tokens.spacing.md,
+    },
+    zoneText: {
+      color: tokens.color.semantic.info,
+      ...typeRole(tokens.typography.role.caption),
+    },
+    section: {
+      gap: tokens.spacing.xs,
+    },
+    sectionLabel: {
+      ...typeRole(tokens.typography.role.caption),
+      letterSpacing: 0.8,
+      textTransform: "uppercase",
+      color: tokens.color.text.muted,
+    },
+    sectionBody: {
+      color: tokens.color.text.mutedForeground,
+      ...typeRole(tokens.typography.role.body),
     },
     secondaryButton: {
-      borderRadius: tokens.radius.md,
+      borderRadius: tokens.radius.chip,
       borderWidth: 1,
-      borderColor: tokens.color.surface.border,
-      backgroundColor: tokens.color.surface.card,
-      paddingVertical: 12,
+      borderColor: tokens.color.border.hairline,
+      paddingHorizontal: tokens.spacing.md,
+      paddingVertical: tokens.spacing.sm,
       alignItems: "center",
     },
     secondaryButtonText: {
-      fontSize: 14,
-      fontWeight: "700",
-      color: tokens.color.text.primary,
+      color: tokens.color.text.foreground,
+      ...typeRole(tokens.typography.role.label),
+    },
+    pressed: {
+      opacity: 0.7,
+    },
+    stateBlock: {
+      borderRadius: tokens.radius.card,
+      borderWidth: 1,
+      borderColor: tokens.color.border.hairline,
+      backgroundColor: tokens.color.surface.card,
+      padding: tokens.spacing.lg,
+      gap: tokens.spacing.sm,
+      alignItems: "flex-start",
+    },
+    stateTitle: {
+      color: tokens.color.text.foreground,
+      ...typeRole(tokens.typography.role.label),
+    },
+    stateBody: {
+      color: tokens.color.text.mutedForeground,
+      ...typeRole(tokens.typography.role.body),
+    },
+    retryButton: {
+      marginTop: tokens.spacing.xs,
+      borderRadius: tokens.radius.chip,
+      borderWidth: 1,
+      borderColor: tokens.color.border.hairline,
+      paddingHorizontal: tokens.spacing.md,
+      paddingVertical: tokens.spacing.sm,
+    },
+    retryText: {
+      color: tokens.color.text.foreground,
+      ...typeRole(tokens.typography.role.label),
     },
   });
 }

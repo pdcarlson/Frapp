@@ -1,0 +1,29 @@
+{
+  "name": "@repo/formatting",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shared date, time, and duration display helpers. DOM-free so web and mobile share one implementation.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "import": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint . --max-warnings 0",
+    "check-types": "tsc --noEmit",
+    "test": "TZ=America/Los_Angeles vitest run",
+    "test:cov": "TZ=America/Los_Angeles vitest run --coverage"
+  },
+  "devDependencies": {
+    "@repo/eslint-config": "*",
+    "@repo/typescript-config": "*",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "vitest": "^4.1.10"
+  }
+}

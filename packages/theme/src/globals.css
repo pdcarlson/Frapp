@@ -2,100 +2,218 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Frapp design tokens — bone / bronze / ink palette. LEGACY: serves only the
+ * still-frozen `apps/landing` since the #920 reskin moved `apps/web` onto
+ * `signet.css` (the dark-first Signet system). A surface imports exactly one
+ * of the two stylesheets; `signet.css.spec.ts` pins the wiring.
+ *
+ * The shadcn-style variable names (`--background`, `--primary`, etc.) are
+ * preserved so the Tailwind preset and the landing surface keep resolving.
+ * The values map to the legacy warm-stone / ink / bronze system (the retired
+ * prototype's styles.css that defined it lives in git history). The `--side-*`
+ * sidebar family that used to live here died with the legacy web shell — the
+ * Signet sidebar runs the neutral ladder plus engine accent roles, and landing
+ * never used a `side-*` class.
+ *
+ * ONE VALUE FORMAT LIVES HERE. Every color token is a **complete color** —
+ * `hsl(30 8% 10%)`, `#C49A3A`, `rgba(255,255,255,.08)` — read through the
+ * preset's `colorVar()` helper and usable raw as `var(--token)` anywhere,
+ * including a Tailwind arbitrary value (`text-[color:var(--foreground)]`, with
+ * the type hint; `hsl(var(--token))` is a defect, see below).
+ *
+ * It was two formats until the #920 groundwork. The legacy ShadCN convention
+ * stored a **bare HSL triple** (`30 8% 10%`) that the preset wrapped in
+ * `hsl(...)`, and the `--side-*` family plus `--ring` moved off it first
+ * (#1143): chapter branding persists **hex**, so an injected `#C49A3A` became
+ * the invalid `hsl(#C49A3A)` and every surface silently kept its default. The
+ * rest of the file followed, because Signet's `--border` is
+ * `rgba(255,255,255,.08)` and cannot be expressed as a triple at all — the
+ * conversion had to land before any Signet value could.
+ *
+ * The move changed formats, never values, so the frozen pre-Signet
+ * `apps/landing` (which imports this file wholesale) renders identically.
+ *
+ * `packages/theme/src/tailwind.config.spec.ts` holds both halves: every token
+ * the preset reads is defined as a complete color, and nothing — here or in
+ * any app — hand-writes `hsl(var(--token))` around one (#1151). A token added
+ * in the wrong format, or a wrapper reintroduced anywhere, fails the build
+ * rather than rendering nothing.
+ */
+
 @layer base {
   :root {
-    /* ── Surface ─────────────────────────────────────────── */
-    --background: 210 40% 98%; /* #F8FAFC Slate-50 */
-    --foreground: 222 47% 11%; /* #0F172A Navy */
-    --card: 0 0% 100%; /* #FFFFFF */
-    --card-foreground: 222 47% 11%; /* #0F172A */
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    /* ── Surface (bone / warm stone) ─────────────────────── */
+    --background: hsl(40 20% 97%);          /* bone */
+    --foreground: hsl(30 10% 12%);          /* ink */
+    --card: hsl(0 0% 100%);
+    --card-foreground: hsl(30 10% 12%);
+    --popover: hsl(0 0% 100%);
+    --popover-foreground: hsl(30 10% 12%);
 
-    /* ── Primary (Royal Blue — CTAs, links, active states) ─ */
-    --primary: 217 91% 60%; /* #2563EB */
-    --primary-foreground: 210 40% 98%;
+    /* ── Primary (bronze — replaces royal blue) ──────────── */
+    --primary: hsl(30 45% 32%);             /* deep bronze */
+    --primary-foreground: hsl(40 30% 97%);
 
-    /* ── Primary scale ────────────────────────────────────── */
-    --primary-50: 214 100% 97%; /* #EFF6FF */
-    --primary-100: 214 95% 93%; /* #DBEAFE */
-    --primary-200: 213 97% 87%; /* #BFDBFE */
-    --primary-300: 212 96% 78%; /* #93C5FD */
-    --primary-400: 213 94% 68%; /* #60A5FA */
-    --primary-500: 217 91% 60%; /* #2563EB */
-    --primary-600: 221 83% 53%; /* #2563EB */
-    --primary-700: 224 76% 48%; /* #1D4ED8 */
-    --primary-800: 226 71% 40%; /* #1E40AF */
-    --primary-900: 224 64% 33%; /* #1E3A8A */
-    --primary-950: 226 57% 21%; /* #172554 */
+    /* The bronze `--primary-50…950` ramp is gone: the preset dropped its
+     * scale keys when the #920 shell cutover retargeted the last five
+     * `bg-primary-50` call sites, and landing never used a step. */
 
-    /* ── Success (Emerald — positive actions, growth) ───── */
-    --success: 160 84% 39%; /* #10B981 */
-    --success-foreground: 210 40% 98%;
+    /* ── Success (moss — replaces emerald) ───────────────── */
+    --success: hsl(145 35% 32%);
+    --success-foreground: hsl(40 20% 97%);
 
-    /* ── Muted ────────────────────────────────────────────── */
-    --muted: 210 40% 96%; /* #F1F5F9 Slate-100 */
-    --muted-foreground: 215 16% 47%; /* #64748B Slate-500 */
+    /* ── Muted ───────────────────────────────────────────── */
+    --muted: hsl(36 14% 94%);
+    --muted-foreground: hsl(30 6% 42%);
 
-    /* ── Accent ───────────────────────────────────────────── */
-    --accent: 210 40% 96%;
-    --accent-foreground: 222 47% 11%;
+    /* ── Secondary (filled neutral chip / low-emphasis button) ──
+     * The ShadCN scaffold ships `secondary` variants on `button` and `badge`
+     * and reaches for `bg-secondary` in `toast` and `sheet`. This file was
+     * rewritten for bone/bronze and dropped the pair, so every one of those
+     * rendered with no background at all — a `secondary` badge was
+     * indistinguishable from bare text (#1145). Twenty-odd live call sites
+     * depend on the variant, so the token is defined rather than the variant
+     * deleted.
+     *
+     * The surface is the muted bone step; the text is full-strength ink rather
+     * than `--muted-foreground`, because these carry short status words
+     * ("Optional", "Overdue") that have to stay readable at badge size.
+     */
+    --secondary: hsl(36 14% 94%);
+    --secondary-foreground: hsl(30 10% 12%);
 
-    /* ── Destructive ──────────────────────────────────────── */
-    --destructive: 0 84% 60%; /* #EF4444 Red-500 */
-    --destructive-foreground: 0 0% 98%;
+    /* ── Accent (soft bronze tint) ───────────────────────── */
+    --accent: hsl(36 40% 94%);
+    --accent-foreground: hsl(30 10% 12%);
 
-    /* ── Borders & inputs ─────────────────────────────────── */
-    --border: 214 32% 91%; /* #E2E8F0 Slate-200 */
-    --input: 214 32% 91%;
-    --ring: 217 91% 60%; /* Royal Blue focus ring */
+    /* ── Destructive (brick) ─────────────────────────────── */
+    --destructive: hsl(8 72% 48%);
+    --destructive-foreground: hsl(40 20% 97%);
 
-    /* ── Radius ───────────────────────────────────────────── */
-    --radius: 0.625rem; /* 10px — slightly tighter for dashboard density */
+    /* ── Borders & inputs ────────────────────────────────── */
+    --border: hsl(30 10% 89%);
+    --input: hsl(30 10% 89%);
+    --ring: hsl(30 45% 32%);
+
+    /* ── Radius scale (tight, ledger-like) ───────────────── */
+    /* xs 3 / sm 5 / md 7 / lg 9 / xl 12 per redesign brief.    */
+    --radius-xs: 3px;
+    --radius-sm: 5px;
+    --radius: 7px;
+    --radius-md: 7px;
+    --radius-lg: 9px;
+    --radius-xl: 12px;
+
+    /* ── Shadows ─────────────────────────────────────────── */
+    --shadow-xs: 0 1px 2px hsl(30 10% 12% / 0.04);
+    --shadow-sm: 0 1px 3px hsl(30 10% 12% / 0.06),
+      0 1px 2px hsl(30 10% 12% / 0.04);
+    --shadow: 0 4px 12px -2px hsl(30 10% 12% / 0.08),
+      0 2px 4px -2px hsl(30 10% 12% / 0.04);
+    --shadow-lg: 0 20px 40px -12px hsl(30 10% 12% / 0.18);
+
+    /* ── Frapp app mark backdrop (light) ─────────────────── */
+    --brand-lockup-bg: hsl(30 8% 10%);
+
+    /* ── Font family stacks ──────────────────────────────── */
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+      "Liberation Mono", "Courier New", monospace;
   }
 
   .dark {
     /* ── Surface ─────────────────────────────────────────── */
-    --background: 222 47% 11%; /* #0F172A Navy */
-    --foreground: 210 40% 98%; /* #F8FAFC */
-    --card: 217 33% 17%; /* #1E293B Slate-800 */
-    --card-foreground: 210 40% 98%;
-    --popover: 217 33% 17%;
-    --popover-foreground: 210 40% 98%;
+    --background: hsl(30 8% 9%);
+    --foreground: hsl(40 20% 94%);
+    --card: hsl(30 7% 13%);
+    --card-foreground: hsl(40 20% 94%);
+    --popover: hsl(30 7% 13%);
+    --popover-foreground: hsl(40 20% 94%);
 
-    /* ── Primary (Royal Blue — brighter for dark bg) ─────── */
-    --primary: 213 94% 68%; /* #60A5FA Blue-400 */
-    --primary-foreground: 222 47% 11%;
+    /* ── Primary (bone-bronze, legible on dark) ──────────── */
+    --primary: hsl(34 55% 68%);
+    --primary-foreground: hsl(30 20% 10%);
 
-    /* ── Success (Emerald — brighter for dark bg) ─────────── */
-    --success: 160 67% 52%; /* #34D399 Emerald-400 */
-    --success-foreground: 222 47% 11%;
+    /* ── Success (warm green) ────────────────────────────── */
+    --success: hsl(140 40% 58%);
+    --success-foreground: hsl(30 20% 10%);
 
-    /* ── Muted ────────────────────────────────────────────── */
-    --muted: 217 33% 17%; /* Slate-800 */
-    --muted-foreground: 215 20% 65%; /* Slate-400 */
+    /* ── Muted ───────────────────────────────────────────── */
+    --muted: hsl(30 7% 11%);
+    --muted-foreground: hsl(36 8% 68%);
 
-    /* ── Accent ───────────────────────────────────────────── */
-    --accent: 217 33% 17%;
-    --accent-foreground: 210 40% 98%;
+    /* ── Secondary ───────────────────────────────────────── */
+    /* Lifted clear of both `--background` (9%) and `--card` (13%) so a filled
+     * chip still reads as filled on either surface; dark `--muted` sits at 11%
+     * and would disappear against the card. */
+    --secondary: hsl(30 7% 18%);
+    --secondary-foreground: hsl(40 20% 94%);
 
-    /* ── Destructive ──────────────────────────────────────── */
-    --destructive: 0 63% 31%;
-    --destructive-foreground: 0 0% 98%;
+    /* ── Accent ──────────────────────────────────────────── */
+    --accent: hsl(30 7% 11%);
+    --accent-foreground: hsl(40 20% 94%);
 
-    /* ── Borders & inputs ─────────────────────────────────── */
-    --border: 217 33% 17%;
-    --input: 217 33% 17%;
-    --ring: 213 94% 68%;
+    /* ── Destructive ─────────────────────────────────────── */
+    --destructive: hsl(8 70% 60%);
+    --destructive-foreground: hsl(40 20% 97%);
+
+    /* ── Borders & inputs ────────────────────────────────── */
+    --border: hsl(30 6% 20%);
+    --input: hsl(30 6% 20%);
+    --ring: hsl(34 55% 68%);
+
+    /* ── Shadows (heavier on dark) ───────────────────────── */
+    --shadow-sm: 0 1px 3px hsl(0 0% 0% / 0.35);
+    --shadow: 0 4px 12px -2px hsl(0 0% 0% / 0.45);
+    --shadow-lg: 0 20px 40px -12px hsl(0 0% 0% / 0.6);
+
+    --brand-lockup-bg: hsl(30 8% 5%);
   }
 
   * {
-    border-color: hsl(var(--border));
+    border-color: var(--border);
   }
   body {
-    background-color: hsl(var(--background));
-    color: hsl(var(--foreground));
+    background-color: var(--background);
+    color: var(--foreground);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+@layer components {
+  /*
+   * Eyebrow micro-label — small uppercase tag that sits above titles in
+   * the chat-first shell. Pairs with `.h-display` headlines for the
+   * "micro-label + display headline" motif from the legacy Frapp brand
+   * system (pre-Signet; see spec/ui/brand-identity.md for current identity).
+   */
+  .eyebrow {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--muted-foreground);
+  }
+
+  /*
+   * Ledger line — full-width hairline divider with a primary dot.
+   * Anchors section titles to ledger-style rules; matches the retired
+   * design-reference prototype's `.ledger-line` motif (see git history).
+   */
+  .ledger-line {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding-bottom: 8px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .ledger-line__dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background: var(--primary);
   }
 }

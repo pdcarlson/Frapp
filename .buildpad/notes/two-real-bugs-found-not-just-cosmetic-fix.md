@@ -1,0 +1,1 @@
+Two real bugs found (not just cosmetic), fix regardless of reskin timing: /polls spins forever for any member without polls:view_all (disabled query, isPending never resolves). /backwork has the same shape (missing chapter-ID guard). Both need an "enabled-but-false" check, not just a skin change.

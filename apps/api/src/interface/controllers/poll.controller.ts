@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -13,22 +14,25 @@ import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
+import { RequireModule } from '../decorators/module.decorator';
 import {
   CurrentChapterId,
   CurrentUser,
 } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '../../domain/constants/permissions';
-import { CreatePollDto, VoteDto } from '../dtos/poll.dto';
+import { CreatePollDto, ListPollsQueryDto, VoteDto } from '../dtos/poll.dto';
+import { parseBooleanQueryParam } from '../utils/query-boolean';
 
 @ApiTags('Polls')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard, ChapterGuard)
+@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+@RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+@RequireModule('polls')
 @Controller()
 export class PollController {
   constructor(private readonly pollService: PollService) {}
 
   @Post('channels/:channelId/polls')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.POLLS_CREATE)
   @ApiOperation({ summary: 'Create a poll in a channel' })
   async createPoll(
@@ -49,6 +53,7 @@ export class PollController {
   }
 
   @Post('polls/:messageId/vote')
+  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   @ApiOperation({ summary: 'Cast vote on a poll' })
   async vote(
     @Param('messageId') messageId: string,
@@ -64,6 +69,7 @@ export class PollController {
   }
 
   @Delete('polls/:messageId/vote')
+  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   @ApiOperation({ summary: 'Remove vote from a poll' })
   async removeVote(
     @Param('messageId') messageId: string,
@@ -74,7 +80,28 @@ export class PollController {
     return { success: true };
   }
 
+  @Get('polls')
+  @RequirePermissions(SystemPermissions.POLLS_VIEW_ALL)
+  @ApiOperation({
+    summary: 'List polls across the chapter',
+    description:
+      "Chapter-wide poll list for dashboards (requires polls:view_all; not part of the default Member role). Supports channel filter, active=true|false filter, and limit. Each entry includes aggregate results plus the caller's own selections.",
+  })
+  async listPolls(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Query() query: ListPollsQueryDto,
+  ) {
+    return this.pollService.listPolls(chapterId, {
+      channelId: query.channel_id,
+      active: parseBooleanQueryParam(query.active),
+      limit: query.limit,
+      userId,
+    });
+  }
+
   @Get('polls/:messageId')
+  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   @ApiOperation({ summary: 'Get poll with results' })
   async getPoll(
     @Param('messageId') messageId: string,

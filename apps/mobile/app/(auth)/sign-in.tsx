@@ -1,61 +1,74 @@
-import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { FrappTokens } from "@repo/theme/tokens";
-import { PreviewAuthMethod, usePreviewSession } from "@/lib/preview-session";
-import { useFrappTheme } from "@/lib/theme";
+import { SignetTokens } from "@repo/theme/signet";
+import { AuthMethod, useAuthSession } from "@/lib/auth-session";
+import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
-type SessionReadinessRowProps = {
-  label: string;
-  value: string;
-  tone: "ready" | "warning" | "error";
-  styles: ReturnType<typeof createStyles>;
-};
-
-function SessionReadinessRow({ label, value, tone, styles }: SessionReadinessRowProps) {
-  const toneStyle =
-    tone === "ready"
-      ? styles.readyTone
-      : tone === "warning"
-        ? styles.warningTone
-        : styles.errorTone;
-
-  return (
-    <View style={styles.readinessRow}>
-      <Text style={styles.readinessLabel}>{label}</Text>
-      <Text style={[styles.readinessValue, toneStyle]}>{value}</Text>
-    </View>
-  );
+/**
+ * Supabase auth errors are safe to show verbatim — they are deliberately
+ * non-enumerating ("Invalid login credentials" regardless of whether the email
+ * exists). Anything without a message falls back to generic copy.
+ */
+function toAuthErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+  return "Sign-in failed. Retry in a moment.";
 }
 
 export default function SignIn() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const router = useRouter();
-  const { signIn } = usePreviewSession();
-  const [email, setEmail] = useState("officer@university.edu");
-  const [authMode, setAuthMode] = useState<PreviewAuthMethod>("password");
+  const { callbackError, isConfigured, sendMagicLink, signInWithPassword, status } =
+    useAuthSession();
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [authMode, setAuthMode] = useState<AuthMethod>("password");
   const [submitting, setSubmitting] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [magicLinkSentTo, setMagicLinkSentTo] = useState<string | null>(null);
+
+  if (status === "authenticated") {
+    // The auth gate owns the next hop (join / welcome / tabs). Rendering the
+    // form for one more frame is the flash this used to paper over by jumping
+    // straight to `(tabs)` — which skipped s03.
+    return null;
+  }
 
   function isValidEmailAddress(value: string): boolean {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
   }
 
-  async function handlePreviewSignIn(method: PreviewAuthMethod) {
-    if (!isValidEmailAddress(email.trim())) {
+  async function handleSignIn(method: AuthMethod) {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!isValidEmailAddress(normalizedEmail)) {
       setAuthError("Enter a valid chapter email before continuing.");
+      return;
+    }
+    if (method === "password" && password.length === 0) {
+      setAuthError("Enter your password before continuing.");
       return;
     }
 
     setSubmitting(true);
     setAuthError(null);
+    setMagicLinkSentTo(null);
 
     try {
-      await signIn({ email: email.trim().toLowerCase(), method });
-      router.replace("/(tabs)");
-    } catch {
-      setAuthError("Sign-in preview failed. Retry in a moment.");
+      if (method === "password") {
+        await signInWithPassword({ email: normalizedEmail, password });
+        // Do not send them to `(tabs)` from here. The auth gate decides join /
+        // welcome / tabs from `has_completed_onboarding` and the chapters list;
+        // skipping it is how s03 stayed unreachable after #957.
+        return;
+      }
+
+      await sendMagicLink({ email: normalizedEmail });
+      setMagicLinkSentTo(normalizedEmail);
+    } catch (error) {
+      setAuthError(toAuthErrorMessage(error));
     } finally {
       setSubmitting(false);
     }
@@ -63,14 +76,21 @@ export default function SignIn() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Frapp</Text>
-      <Text style={styles.subtitle}>
-        The Operating System for Greek Life
-      </Text>
+      <View
+        style={styles.mark}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      >
+        <Text style={styles.markGlyph}>S</Text>
+      </View>
+      <Text style={styles.title}>Signet</Text>
+      <Text style={styles.subtitle}>Ask your chapter anything.</Text>
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Sign in to your chapter</Text>
         <Text style={styles.cardBody}>
-          Session-ready preview mode validates auth states, persistence, and chapter handoff before full Supabase integration.
+          Use your chapter email. Most accounts resolve to a single chapter
+          automatically; if yours belongs to more than one, you will pick after
+          signing in.
         </Text>
 
         <Text style={styles.inputLabel}>Chapter email</Text>
@@ -81,7 +101,9 @@ export default function SignIn() {
           placeholderTextColor={tokens.color.text.muted}
           autoCapitalize="none"
           autoComplete="email"
+          autoCorrect={false}
           keyboardType="email-address"
+          textContentType="username"
           style={styles.input}
         />
 
@@ -124,236 +146,205 @@ export default function SignIn() {
           </Pressable>
         </View>
 
-        <Text style={styles.helperText}>
-          In preview mode, this action simulates chapter session handoff.
-        </Text>
+        {authMode === "password" ? (
+          <>
+            <Text style={styles.inputLabel}>Password</Text>
+            <TextInput
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Your password"
+              placeholderTextColor={tokens.color.text.muted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry
+              textContentType="password"
+              style={styles.input}
+            />
+          </>
+        ) : (
+          <Text style={styles.helperText}>
+            We&apos;ll email you a link that signs you in on this device.
+          </Text>
+        )}
+
         {authError ? <Text style={styles.errorText}>{authError}</Text> : null}
+        {/* A dead magic link lands back here; without this the member cannot
+            tell a broken link from one they never tapped. */}
+        {!authError && callbackError ? (
+          <Text style={styles.errorText}>{callbackError}</Text>
+        ) : null}
+        {magicLinkSentTo ? (
+          <Text style={styles.successText}>
+            Link sent to {magicLinkSentTo}. Open it on this device to finish
+            signing in.
+          </Text>
+        ) : null}
 
         <Pressable
           accessibilityRole="button"
           accessibilityState={{ disabled: submitting }}
           disabled={submitting}
-          onPress={() => handlePreviewSignIn(authMode)}
+          onPress={() => {
+            void handleSignIn(authMode);
+          }}
           style={[
             styles.primaryButton,
             submitting ? styles.primaryButtonDisabled : null,
           ]}
         >
           <Text style={styles.primaryButtonText}>
-            {submitting ? "Preparing session..." : "Continue with email"}
+            {submitting
+              ? "Signing in..."
+              : authMode === "password"
+                ? "Sign in"
+                : "Email me a link"}
           </Text>
         </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityState={{ disabled: submitting }}
-          disabled={submitting}
-          onPress={() => handlePreviewSignIn("magic_link")}
-          style={styles.secondaryButton}
-        >
-          <Text style={styles.secondaryButtonText}>Use magic link</Text>
-        </Pressable>
 
-        <View style={styles.readinessCard}>
-          <Text style={styles.readinessTitle}>Session readiness</Text>
-          <SessionReadinessRow
-            label="Network"
-            value="Connected"
-            tone="ready"
-            styles={styles}
-          />
-          <SessionReadinessRow
-            label="Email validation"
-            value="Valid format"
-            tone="ready"
-            styles={styles}
-          />
-          <SessionReadinessRow
-            label="Storage"
-            value="Provisioning"
-            tone="warning"
-            styles={styles}
-          />
-          <SessionReadinessRow
-            label="Chapter context"
-            value="Resolves after sign-in"
-            tone="warning"
-            styles={styles}
-          />
-        </View>
+        {!isConfigured ? (
+          <Text style={styles.errorText}>
+            EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY are not
+            set for this build, so sign-in is unavailable.
+          </Text>
+        ) : null}
       </View>
     </View>
   );
 }
 
-function createStyles(tokens: FrappTokens) {
+function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     container: {
       flex: 1,
       justifyContent: "center",
       alignItems: "center",
-      padding: 24,
-      backgroundColor: tokens.color.surface.canvas,
+      padding: tokens.spacing.xl,
+      backgroundColor: tokens.color.surface.background,
+    },
+    // brand-identity.md §2: the placeholder mark is a house-gold rounded-square
+    // tile carrying a bold "S". s01 draws it at 52px on radius 14 — `radius.card`
+    // is exactly 14, so this stays token-only. House gold, never the chapter
+    // accent: the mark MUST NOT take a chapter's colour.
+    mark: {
+      width: 52,
+      height: 52,
+      borderRadius: tokens.radius.card,
+      backgroundColor: tokens.color.gold.house,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: tokens.spacing.lg,
+    },
+    markGlyph: {
+      // Sized off the tile, not the type ladder: this is a drawn mark, not text.
+      fontSize: 27,
+      fontWeight: "700",
+      color: tokens.color.gold.onHouse,
     },
     title: {
-      fontSize: 36,
-      fontWeight: "800",
-      color: tokens.color.text.primary,
-      marginBottom: 8,
+      ...typeRole(tokens.typography.role.display),
+      color: tokens.color.text.foreground,
+      marginBottom: tokens.spacing.sm,
     },
     subtitle: {
-      fontSize: 16,
+      ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.muted,
-      marginBottom: 24,
+      marginBottom: tokens.spacing.xl,
       textAlign: "center",
     },
+    // Elevation is a lighter surface, never a shadow (foundations.md §10).
     card: {
       backgroundColor: tokens.color.surface.card,
-      borderRadius: tokens.radius.lg,
+      borderRadius: tokens.radius.cardLarge,
       borderWidth: 1,
-      borderColor: tokens.color.surface.border,
-      padding: 20,
+      borderColor: tokens.color.border.hairline,
+      padding: tokens.spacing.lg,
       width: "100%",
       maxWidth: 340,
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.08,
-      shadowRadius: 6,
-      elevation: 3,
     },
     cardTitle: {
-      fontSize: 18,
-      fontWeight: "700",
-      color: tokens.color.text.primary,
+      ...typeRole(tokens.typography.role.title),
+      color: tokens.color.text.foreground,
     },
     cardBody: {
-      marginTop: 8,
-      fontSize: 14,
-      lineHeight: 20,
-      color: tokens.color.text.secondary,
+      marginTop: tokens.spacing.sm,
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.mutedForeground,
     },
     inputLabel: {
-      marginTop: 14,
-      fontSize: 12,
-      fontWeight: "700",
+      marginTop: tokens.spacing.md,
+      ...typeRole(tokens.typography.role.label),
       letterSpacing: 0.3,
       textTransform: "uppercase",
       color: tokens.color.text.muted,
     },
     input: {
-      marginTop: 8,
-      borderRadius: tokens.radius.md,
+      marginTop: tokens.spacing.sm,
+      borderRadius: tokens.radius.control,
       borderWidth: 1,
-      borderColor: tokens.color.surface.border,
-      backgroundColor: tokens.color.surface.card,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-      fontSize: 15,
-      color: tokens.color.text.primary,
+      borderColor: tokens.color.border.input,
+      backgroundColor: tokens.color.surface.surface1,
+      paddingHorizontal: tokens.spacing.md,
+      paddingVertical: tokens.spacing.sm,
+      minHeight: tokens.touch.minimum,
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.foreground,
     },
     modeRow: {
-      marginTop: 10,
+      marginTop: tokens.spacing.sm,
       flexDirection: "row",
-      borderRadius: tokens.radius.md,
+      borderRadius: tokens.radius.control,
       borderWidth: 1,
-      borderColor: tokens.color.surface.border,
+      borderColor: tokens.color.border.hairline,
       overflow: "hidden",
     },
     modeButton: {
       flex: 1,
       alignItems: "center",
       justifyContent: "center",
-      paddingVertical: 10,
-      backgroundColor: tokens.color.surface.muted,
+      paddingVertical: tokens.spacing.sm,
+      minHeight: tokens.touch.minimum,
+      backgroundColor: tokens.color.surface.surface1,
     },
     modeButtonActive: {
-      backgroundColor: tokens.color.feedback.infoBackgroundStrong,
+      backgroundColor: tint(tokens.color.semantic.info),
     },
     modeButtonText: {
-      fontSize: 13,
-      fontWeight: "600",
-      color: tokens.color.text.secondary,
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.mutedForeground,
     },
     modeButtonTextActive: {
-      color: tokens.color.feedback.infoTextInteractive,
+      color: tokens.color.semantic.info,
     },
     errorText: {
-      marginTop: 10,
-      fontSize: 12,
-      fontWeight: "600",
-      color: tokens.color.feedback.errorText,
+      marginTop: tokens.spacing.sm,
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.destructive,
+    },
+    successText: {
+      marginTop: tokens.spacing.sm,
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.success,
     },
     helperText: {
-      marginTop: 10,
-      fontSize: 12,
-      color: tokens.color.text.secondary,
+      marginTop: tokens.spacing.sm,
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
     },
     primaryButton: {
-      marginTop: 16,
-      borderRadius: tokens.radius.md,
-      backgroundColor: tokens.color.brand.royalBlue,
-      paddingVertical: 12,
+      marginTop: tokens.spacing.lg,
+      borderRadius: tokens.radius.control,
+      backgroundColor: tokens.color.gold.house,
+      paddingVertical: tokens.spacing.md,
+      minHeight: tokens.touch.button,
       alignItems: "center",
+      justifyContent: "center",
     },
     primaryButtonDisabled: {
       opacity: 0.55,
     },
     primaryButtonText: {
-      color: tokens.color.text.inverse,
-      fontWeight: "700",
-      fontSize: 14,
-    },
-    secondaryButton: {
-      marginTop: 10,
-      borderRadius: tokens.radius.md,
-      borderWidth: 1,
-      borderColor: tokens.color.surface.border,
-      paddingVertical: 12,
-      alignItems: "center",
-      backgroundColor: tokens.color.surface.card,
-    },
-    secondaryButtonText: {
-      color: tokens.color.text.primary,
-      fontWeight: "700",
-      fontSize: 14,
-    },
-    readinessCard: {
-      marginTop: 14,
-      borderRadius: tokens.radius.md,
-      borderWidth: 1,
-      borderColor: tokens.color.feedback.infoBorder,
-      backgroundColor: tokens.color.feedback.infoBackground,
-      padding: 12,
-      gap: 8,
-    },
-    readinessTitle: {
-      fontSize: 12,
-      fontWeight: "700",
-      color: tokens.color.feedback.infoTextStrong,
-      textTransform: "uppercase",
-      letterSpacing: 0.3,
-    },
-    readinessRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: 10,
-    },
-    readinessLabel: {
-      fontSize: 12,
-      color: tokens.color.text.secondary,
-    },
-    readinessValue: {
-      fontSize: 12,
-      fontWeight: "700",
-    },
-    readyTone: {
-      color: tokens.color.feedback.successText,
-    },
-    warningTone: {
-      color: tokens.color.feedback.warningText,
-    },
-    errorTone: {
-      color: tokens.color.feedback.errorText,
+      color: tokens.color.gold.onHouse,
+      ...typeRole(tokens.typography.role.label),
     },
   });
 }

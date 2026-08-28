@@ -62,6 +62,53 @@
         "tags": [
           "Users"
         ]
+      },
+      "delete": {
+        "description": "Individual account deletion per spec/behavior/data-retention.md: profile media is purged first, PII is scrubbed to a \"Deleted User\" tombstone, historical records stay preserved anonymized, the analytics forget is confirmed, and the Supabase Auth account is deleted last. A 502 means the flow did not finish — depending on the failing step the account may already be anonymized (sign-in still works until the final step succeeds) — and every step is idempotent, so simply retry until it returns success.",
+        "operationId": "UserController_deleteMe_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete current account (irreversible)",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/v1/users/me/permissions": {
+      "get": {
+        "description": "Returns the caller's flattened permission set for the chapter identified by the `x-chapter-id` header. Clients use this to render permission-aware UI without duplicating RBAC rules or issuing one request per role.",
+        "operationId": "UserController_getMyPermissions_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyPermissionsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get effective permissions for the active chapter",
+        "tags": [
+          "Users"
+        ]
       }
     },
     "/v1/users/me/avatar-url": {
@@ -94,6 +141,73 @@
         ]
       }
     },
+    "/v1/analytics/identity": {
+      "get": {
+        "operationId": "AnalyticsController_getIdentity_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get the caller's pseudonymous analytics id (HMAC of user id). Lets the client attribute events without ever holding the salt.",
+        "tags": [
+          "Analytics"
+        ]
+      }
+    },
+    "/v1/analytics/events": {
+      "post": {
+        "operationId": "AnalyticsController_track_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrackEventDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackEventResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not a member of the specified chapter"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Record a behavioral event. The server verifies chapter membership, keys it pseudonymously, and enforces the per-chapter opt-out.",
+        "tags": [
+          "Analytics"
+        ]
+      }
+    },
     "/v1/chapters": {
       "post": {
         "operationId": "ChapterController_create_v1",
@@ -122,11 +236,9 @@
         "tags": [
           "Chapters"
         ]
-      }
-    },
-    "/v1/chapters/current": {
+      },
       "get": {
-        "operationId": "ChapterController_getCurrent_v1",
+        "operationId": "ChapterController_listForCurrentUser_v1",
         "parameters": [],
         "responses": {
           "200": {
@@ -138,7 +250,93 @@
             "bearer": []
           }
         ],
-        "summary": "Get current chapter",
+        "summary": "List chapters for current user",
+        "tags": [
+          "Chapters"
+        ]
+      }
+    },
+    "/v1/chapters/onboard": {
+      "post": {
+        "operationId": "ChapterController_onboard_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChapterOnboardingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create and configure a chapter from the onboarding wizard (archetype, branding, default channels, welcome message)",
+        "tags": [
+          "Chapters"
+        ]
+      }
+    },
+    "/v1/chapters/{id}/activate": {
+      "post": {
+        "operationId": "ChapterController_activate_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set the active chapter for the current user (embedded in subsequent access tokens)",
+        "tags": [
+          "Chapters"
+        ]
+      }
+    },
+    "/v1/chapters/current": {
+      "get": {
+        "operationId": "ChapterController_getCurrent_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentChapterResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get current chapter (includes a signed logo_url when one is set)",
         "tags": [
           "Chapters"
         ]
@@ -247,229 +445,6 @@
         "summary": "Remove chapter logo",
         "tags": [
           "Chapters"
-        ]
-      }
-    },
-    "/v1/members": {
-      "get": {
-        "operationId": "MemberController_list_v1",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "List chapter members",
-        "tags": [
-          "Members"
-        ]
-      }
-    },
-    "/v1/members/search": {
-      "get": {
-        "operationId": "MemberController_search_v1",
-        "parameters": [
-          {
-            "name": "q",
-            "required": true,
-            "in": "query",
-            "description": "Search query (name)",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Search members by name",
-        "tags": [
-          "Members"
-        ]
-      }
-    },
-    "/v1/members/{id}": {
-      "get": {
-        "operationId": "MemberController_getOne_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Get member profile by ID",
-        "tags": [
-          "Members"
-        ]
-      },
-      "delete": {
-        "operationId": "MemberController_remove_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Remove member from chapter",
-        "tags": [
-          "Members"
-        ]
-      }
-    },
-    "/v1/members/{id}/roles": {
-      "patch": {
-        "operationId": "MemberController_updateRoles_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateMemberRolesDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Update member roles",
-        "tags": [
-          "Members"
-        ]
-      }
-    },
-    "/v1/members/me/onboarding": {
-      "patch": {
-        "operationId": "MemberController_updateOnboarding_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateOnboardingDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Update onboarding status",
-        "tags": [
-          "Members"
-        ]
-      }
-    },
-    "/v1/alumni": {
-      "get": {
-        "operationId": "AlumniController_list_v1",
-        "parameters": [
-          {
-            "name": "graduation_year",
-            "required": false,
-            "in": "query",
-            "description": "Filter by graduation year",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "city",
-            "required": false,
-            "in": "query",
-            "description": "Filter by current city (partial match)",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "company",
-            "required": false,
-            "in": "query",
-            "description": "Filter by current company (partial match)",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "List alumni members",
-        "tags": [
-          "Alumni"
         ]
       }
     },
@@ -634,6 +609,680 @@
         "summary": "Transfer presidency to another member",
         "tags": [
           "Roles & Permissions"
+        ]
+      }
+    },
+    "/v1/chapters/{id}/config": {
+      "get": {
+        "operationId": "ChapterConfigController_getConfig_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get merged chapter config (archetype defaults + overrides)",
+        "tags": [
+          "Chapter Config"
+        ]
+      },
+      "patch": {
+        "operationId": "ChapterConfigController_patchConfig_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchChapterConfigDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update chapter config (writes audit log + posts to #chapter-audit)",
+        "tags": [
+          "Chapter Config"
+        ]
+      }
+    },
+    "/v1/chapters/{id}/theme-palette": {
+      "post": {
+        "operationId": "ChapterConfigController_recomputePalette_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Recompute and persist derived theme palette from branding.colors",
+        "tags": [
+          "Chapter Config"
+        ]
+      }
+    },
+    "/v1/custom-roles": {
+      "get": {
+        "operationId": "CustomRoleController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CustomRoleDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the chapter custom roles",
+        "tags": [
+          "Chapter Custom Roles"
+        ]
+      },
+      "post": {
+        "operationId": "CustomRoleController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCustomRoleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomRoleDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A custom role with this key already exists in this chapter"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a custom role (audit-logged)",
+        "tags": [
+          "Chapter Custom Roles"
+        ]
+      }
+    },
+    "/v1/custom-roles/{id}": {
+      "patch": {
+        "operationId": "CustomRoleController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCustomRoleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomRoleDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update a custom role (audit-logged)",
+        "tags": [
+          "Chapter Custom Roles"
+        ]
+      },
+      "delete": {
+        "operationId": "CustomRoleController_remove_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoveCustomRoleResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Core roles cannot be deleted"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a non-core custom role (audit-logged)",
+        "tags": [
+          "Chapter Custom Roles"
+        ]
+      }
+    },
+    "/v1/custom-fields": {
+      "get": {
+        "operationId": "CustomFieldController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CustomFieldDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the chapter custom fields",
+        "tags": [
+          "Chapter Custom Fields"
+        ]
+      },
+      "post": {
+        "operationId": "CustomFieldController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCustomFieldDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomFieldDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A custom field with this key already exists in this chapter"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a custom field (audit-logged)",
+        "tags": [
+          "Chapter Custom Fields"
+        ]
+      }
+    },
+    "/v1/custom-fields/{id}": {
+      "patch": {
+        "operationId": "CustomFieldController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCustomFieldDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomFieldDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update a custom field (audit-logged)",
+        "tags": [
+          "Chapter Custom Fields"
+        ]
+      },
+      "delete": {
+        "operationId": "CustomFieldController_remove_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoveCustomFieldResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a custom field (audit-logged)",
+        "tags": [
+          "Chapter Custom Fields"
+        ]
+      }
+    },
+    "/v1/members": {
+      "get": {
+        "operationId": "MemberController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MemberProfileDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List chapter members",
+        "tags": [
+          "Members"
+        ]
+      }
+    },
+    "/v1/members/search": {
+      "get": {
+        "operationId": "MemberController_search_v1",
+        "parameters": [
+          {
+            "name": "q",
+            "required": true,
+            "in": "query",
+            "description": "Search query (name)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MemberProfileDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Search members by name",
+        "tags": [
+          "Members"
+        ]
+      }
+    },
+    "/v1/members/roster": {
+      "get": {
+        "operationId": "MemberController_roster_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MemberRosterEntryDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Display roster for the chapter — id, name and avatar only",
+        "tags": [
+          "Members"
+        ]
+      }
+    },
+    "/v1/members/{id}": {
+      "get": {
+        "operationId": "MemberController_getOne_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberProfileDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get member profile by ID",
+        "tags": [
+          "Members"
+        ]
+      },
+      "delete": {
+        "operationId": "MemberController_remove_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove member from chapter",
+        "tags": [
+          "Members"
+        ]
+      }
+    },
+    "/v1/members/{id}/roles": {
+      "patch": {
+        "operationId": "MemberController_updateRoles_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMemberRolesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update member roles",
+        "tags": [
+          "Members"
+        ]
+      }
+    },
+    "/v1/members/me/onboarding": {
+      "patch": {
+        "operationId": "MemberController_updateOnboarding_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateOnboardingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update onboarding status",
+        "tags": [
+          "Members"
+        ]
+      }
+    },
+    "/v1/alumni": {
+      "get": {
+        "operationId": "AlumniController_list_v1",
+        "parameters": [
+          {
+            "name": "graduation_year",
+            "required": false,
+            "in": "query",
+            "description": "Filter by graduation year",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "city",
+            "required": false,
+            "in": "query",
+            "description": "Filter by current city (partial match)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "company",
+            "required": false,
+            "in": "query",
+            "description": "Filter by current company (partial match)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List alumni members",
+        "tags": [
+          "Alumni"
         ]
       }
     },
@@ -1166,8 +1815,809 @@
         ]
       }
     },
+    "/v1/channels": {
+      "get": {
+        "operationId": "ChatController_listChannels_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List chapter channels",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "post": {
+        "operationId": "ChatController_createChannel_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateChannelDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a channel",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/unread": {
+      "get": {
+        "operationId": "ChatController_getUnreadCounts_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChannelUnreadCountDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Unread and mention counts for every channel the caller can read",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/{id}": {
+      "get": {
+        "operationId": "ChatController_getChannel_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get channel by ID",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "patch": {
+        "operationId": "ChatController_updateChannel_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateChannelDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update a channel",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "delete": {
+        "operationId": "ChatController_deleteChannel_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a channel",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/dm": {
+      "post": {
+        "operationId": "ChatController_getOrCreateDm_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDmDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get or create a 1-on-1 DM channel",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/group-dm": {
+      "post": {
+        "operationId": "ChatController_createGroupDm_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGroupDmDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a group DM channel",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/categories/list": {
+      "get": {
+        "operationId": "ChatController_listCategories_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List channel categories",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/categories": {
+      "post": {
+        "operationId": "ChatController_createCategory_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCategoryDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a channel category",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/categories/{id}": {
+      "patch": {
+        "operationId": "ChatController_updateCategory_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCategoryDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update a channel category",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "delete": {
+        "operationId": "ChatController_deleteCategory_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a channel category",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/{id}/messages": {
+      "get": {
+        "operationId": "ChatController_getMessages_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "before",
+            "required": false,
+            "in": "query",
+            "description": "Cursor for pagination (ISO timestamp)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "required": false,
+            "in": "query",
+            "description": "Message UUID — returns messages created after this message (reconnect replay)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get channel message history (supports since= reconnect replay)",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "post": {
+        "operationId": "ChatController_sendMessage_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendMessageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Send a message (hot path; idempotent on client_message_id)",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/{id}/messages/{messageId}/attachments": {
+      "get": {
+        "operationId": "ChatController_listMessageAttachments_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Attachments on a message, with signed download URLs",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/messages/{messageId}": {
+      "patch": {
+        "operationId": "ChatController_editMessage_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditMessageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Edit a message (own only)",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "delete": {
+        "operationId": "ChatController_deleteMessage_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a message (soft delete; own message, or any in an accessible channel with channels:manage)",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/{id}/pins": {
+      "get": {
+        "operationId": "ChatController_getPinnedMessages_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get pinned messages in a channel",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/messages/{messageId}/pin": {
+      "post": {
+        "operationId": "ChatController_pinMessage_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Pin a message",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "delete": {
+        "operationId": "ChatController_unpinMessage_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Unpin a message",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/messages/{messageId}/actions": {
+      "post": {
+        "operationId": "ChatController_recordMessageAction_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatMessageActionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Record a reaction / vote / card action (hot path; atomic dedup; vote UPSERTS)",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/messages/{messageId}/reactions": {
+      "post": {
+        "operationId": "ChatController_toggleReaction_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReactionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Toggle reaction (add/remove)",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "get": {
+        "operationId": "ChatController_getReactions_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get reactions for a message",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/{id}/upload-url": {
+      "post": {
+        "operationId": "ChatController_requestUploadUrl_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestChatUploadUrlDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Generate a signed upload URL for a chat file attachment",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/{id}/read": {
+      "post": {
+        "operationId": "ChatController_markRead_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Mark channel as read",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/events/{eventId}/attendance/check-in": {
       "post": {
+        "description": "Accepts a bare body (plain self check-in, e.g. the chat event card), a rotating `token` scanned from the host QR, or a typed `manualCode`. `lat`/`lng` are required when the event defines a check-in geofence.",
         "operationId": "AttendanceController_checkIn_v1",
         "parameters": [
           {
@@ -1200,6 +2650,36 @@
           }
         ],
         "summary": "Self check-in to an event",
+        "tags": [
+          "Attendance"
+        ]
+      }
+    },
+    "/v1/events/{eventId}/attendance/check-in-token": {
+      "get": {
+        "description": "Returns the current 30-second token, its QR payload, and the short manual code. Officer-only: the code is what admits members to the attendance record. Returns 503 when the environment has no signing secret configured.",
+        "operationId": "AttendanceController_mintCheckInToken_v1",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Mint the rotating check-in code for the host display (s22)",
         "tags": [
           "Attendance"
         ]
@@ -1375,6 +2855,91 @@
           }
         ],
         "summary": "Get chapter leaderboard",
+        "tags": [
+          "Points"
+        ]
+      }
+    },
+    "/v1/points/transactions": {
+      "get": {
+        "description": "Backs the Points admin Audit tab. Filter by user, category, flagged state; paginate via a cursor (`before` ISO8601). Returns newest-first, capped at `limit` (default 50, max 200).",
+        "operationId": "PointsController_listTransactions_v1",
+        "parameters": [
+          {
+            "name": "user_id",
+            "required": false,
+            "in": "query",
+            "description": "Filter to a single member",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "category",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ATTENDANCE",
+                "ACADEMIC",
+                "SERVICE",
+                "FINE",
+                "MANUAL",
+                "STUDY"
+              ]
+            }
+          },
+          {
+            "name": "flagged",
+            "required": false,
+            "in": "query",
+            "description": "Only return transactions flagged by the anomaly threshold. Boolean string: `true`, `false`, `1`, or `0`.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false",
+                "1",
+                "0"
+              ]
+            }
+          },
+          {
+            "name": "before",
+            "required": false,
+            "in": "query",
+            "description": "ISO8601 cursor — return transactions created before this timestamp",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Max transactions to return. Integers are clamped to 1–200 inclusive; omitted defaults to 50.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "example": 50,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List chapter-wide point transactions",
         "tags": [
           "Points"
         ]
@@ -1580,7 +3145,7 @@
             "bearer": []
           }
         ],
-        "summary": "List invoices (admin: all, member: own)",
+        "summary": "List invoices (billing: all, member: own)",
         "tags": [
           "Financial Invoices"
         ]
@@ -1628,7 +3193,7 @@
             "bearer": []
           }
         ],
-        "summary": "List overdue invoices (OPEN past due_date)",
+        "summary": "List overdue invoices (OPEN past due_date plus the dues grace period when wf_dues_grace is enabled)",
         "tags": [
           "Financial Invoices"
         ]
@@ -1734,6 +3299,35 @@
           }
         ],
         "summary": "Transition invoice status (OPEN, PAID, VOID)",
+        "tags": [
+          "Financial Invoices"
+        ]
+      }
+    },
+    "/v1/invoices/{id}/payment-intent": {
+      "post": {
+        "operationId": "FinancialInvoiceController_createPaymentIntent_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create or reuse a Stripe PaymentIntent for paying your own OPEN invoice",
         "tags": [
           "Financial Invoices"
         ]
@@ -2046,700 +3640,49 @@
         ]
       }
     },
-    "/v1/channels": {
-      "get": {
-        "operationId": "ChatController_listChannels_v1",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "List chapter channels",
-        "tags": [
-          "Chat"
-        ]
-      },
-      "post": {
-        "operationId": "ChatController_createChannel_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateChannelDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Create a channel",
-        "tags": [
-          "Chat"
-        ]
-      }
-    },
-    "/v1/channels/{id}": {
-      "get": {
-        "operationId": "ChatController_getChannel_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Get channel by ID",
-        "tags": [
-          "Chat"
-        ]
-      },
-      "patch": {
-        "operationId": "ChatController_updateChannel_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateChannelDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Update a channel",
-        "tags": [
-          "Chat"
-        ]
-      },
-      "delete": {
-        "operationId": "ChatController_deleteChannel_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Delete a channel",
-        "tags": [
-          "Chat"
-        ]
-      }
-    },
-    "/v1/channels/dm": {
-      "post": {
-        "operationId": "ChatController_getOrCreateDm_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateDmDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Get or create a 1-on-1 DM channel",
-        "tags": [
-          "Chat"
-        ]
-      }
-    },
-    "/v1/channels/group-dm": {
-      "post": {
-        "operationId": "ChatController_createGroupDm_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateGroupDmDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Create a group DM channel",
-        "tags": [
-          "Chat"
-        ]
-      }
-    },
-    "/v1/channels/categories/list": {
-      "get": {
-        "operationId": "ChatController_listCategories_v1",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "List channel categories",
-        "tags": [
-          "Chat"
-        ]
-      }
-    },
-    "/v1/channels/categories": {
-      "post": {
-        "operationId": "ChatController_createCategory_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateCategoryDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Create a channel category",
-        "tags": [
-          "Chat"
-        ]
-      }
-    },
-    "/v1/channels/categories/{id}": {
-      "patch": {
-        "operationId": "ChatController_updateCategory_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateCategoryDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Update a channel category",
-        "tags": [
-          "Chat"
-        ]
-      },
-      "delete": {
-        "operationId": "ChatController_deleteCategory_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Delete a channel category",
-        "tags": [
-          "Chat"
-        ]
-      }
-    },
-    "/v1/channels/{id}/messages": {
-      "get": {
-        "operationId": "ChatController_getMessages_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "number"
-            }
-          },
-          {
-            "name": "before",
-            "required": false,
-            "in": "query",
-            "description": "Cursor for pagination (ISO timestamp)",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Get channel message history",
-        "tags": [
-          "Chat"
-        ]
-      },
-      "post": {
-        "operationId": "ChatController_sendMessage_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SendMessageDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Send a message",
-        "tags": [
-          "Chat"
-        ]
-      }
-    },
-    "/v1/channels/messages/{messageId}": {
-      "patch": {
-        "operationId": "ChatController_editMessage_v1",
-        "parameters": [
-          {
-            "name": "messageId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/EditMessageDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Edit a message (own only)",
-        "tags": [
-          "Chat"
-        ]
-      },
-      "delete": {
-        "operationId": "ChatController_deleteMessage_v1",
-        "parameters": [
-          {
-            "name": "messageId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Delete a message (soft delete)",
-        "tags": [
-          "Chat"
-        ]
-      }
-    },
-    "/v1/channels/{id}/pins": {
-      "get": {
-        "operationId": "ChatController_getPinnedMessages_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Get pinned messages in a channel",
-        "tags": [
-          "Chat"
-        ]
-      }
-    },
-    "/v1/channels/messages/{messageId}/pin": {
-      "post": {
-        "operationId": "ChatController_pinMessage_v1",
-        "parameters": [
-          {
-            "name": "messageId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Pin a message",
-        "tags": [
-          "Chat"
-        ]
-      },
-      "delete": {
-        "operationId": "ChatController_unpinMessage_v1",
-        "parameters": [
-          {
-            "name": "messageId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Unpin a message",
-        "tags": [
-          "Chat"
-        ]
-      }
-    },
-    "/v1/channels/messages/{messageId}/reactions": {
-      "post": {
-        "operationId": "ChatController_toggleReaction_v1",
-        "parameters": [
-          {
-            "name": "messageId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ReactionDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Toggle reaction (add/remove)",
-        "tags": [
-          "Chat"
-        ]
-      },
-      "get": {
-        "operationId": "ChatController_getReactions_v1",
-        "parameters": [
-          {
-            "name": "messageId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Get reactions for a message",
-        "tags": [
-          "Chat"
-        ]
-      }
-    },
-    "/v1/channels/{id}/upload-url": {
-      "post": {
-        "operationId": "ChatController_requestUploadUrl_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RequestChatUploadUrlDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Generate a signed upload URL for a chat file attachment",
-        "tags": [
-          "Chat"
-        ]
-      }
-    },
-    "/v1/channels/{id}/read": {
-      "post": {
-        "operationId": "ChatController_markRead_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Mark channel as read",
-        "tags": [
-          "Chat"
-        ]
-      }
-    },
     "/v1/service-entries": {
       "get": {
         "operationId": "ServiceEntryController_list_v1",
         "parameters": [
           {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "Filter by review status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "PENDING",
+                "APPROVED",
+                "REJECTED"
+              ]
+            }
+          },
+          {
+            "name": "start_date",
+            "required": false,
+            "in": "query",
+            "description": "Inclusive lower bound on the service date (YYYY-MM-DD)",
+            "schema": {
+              "example": "2026-01-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "end_date",
+            "required": false,
+            "in": "query",
+            "description": "Inclusive upper bound on the service date (YYYY-MM-DD)",
+            "schema": {
+              "example": "2026-05-31",
+              "type": "string"
+            }
+          },
+          {
             "name": "userId",
             "required": false,
             "in": "query",
-            "description": "Filter by user (admins with service:approve only)",
+            "description": "Filter by member (admins with service:approve only)",
             "schema": {
               "type": "string"
             }
@@ -2784,6 +3727,48 @@
           }
         ],
         "summary": "Log a service entry",
+        "tags": [
+          "Service Entries"
+        ]
+      }
+    },
+    "/v1/service-entries/leaderboard": {
+      "get": {
+        "description": "Members ranked by total APPROVED service minutes, highest first. Optional inclusive date window filters on the service date; omitting both gives all-time.",
+        "operationId": "ServiceEntryController_leaderboard_v1",
+        "parameters": [
+          {
+            "name": "start_date",
+            "required": false,
+            "in": "query",
+            "description": "Inclusive lower bound on the service date (YYYY-MM-DD)",
+            "schema": {
+              "example": "2026-01-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "end_date",
+            "required": false,
+            "in": "query",
+            "description": "Inclusive upper bound on the service date (YYYY-MM-DD)",
+            "schema": {
+              "example": "2026-05-31",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Chapter-wide service leaderboard (approved hours)",
         "tags": [
           "Service Entries"
         ]
@@ -2840,6 +3825,65 @@
           }
         ],
         "summary": "Delete a PENDING service entry (own or any for admins)",
+        "tags": [
+          "Service Entries"
+        ]
+      }
+    },
+    "/v1/service-entries/proof-upload-url": {
+      "post": {
+        "operationId": "ServiceEntryController_requestProofUploadUrl_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestProofUploadUrlDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get signed upload URL for a service proof file",
+        "tags": [
+          "Service Entries"
+        ]
+      }
+    },
+    "/v1/service-entries/{id}/proof-url": {
+      "get": {
+        "operationId": "ServiceEntryController_getProofUrl_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get signed proof download URL (own entry or admins)",
         "tags": [
           "Service Entries"
         ]
@@ -3269,6 +4313,58 @@
         ]
       }
     },
+    "/v1/study-sessions/pause": {
+      "post": {
+        "description": "Credits foreground time up to now and starts the grace clock. The session stays ACTIVE until the geofence pause_grace_minutes window elapses, then auto-expires as PAUSED_EXPIRED.",
+        "operationId": "StudySessionController_pause_v1",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Pause the active session (app backgrounded / tab hidden)",
+        "tags": [
+          "Study Hours"
+        ]
+      }
+    },
+    "/v1/study-sessions/resume": {
+      "post": {
+        "description": "Resumes without resetting accumulated foreground minutes. If the grace window already elapsed, returns the session as PAUSED_EXPIRED.",
+        "operationId": "StudySessionController_resume_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResumeStudySessionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Resume a paused session (with lat/lng)",
+        "tags": [
+          "Study Hours"
+        ]
+      }
+    },
     "/v1/study-sessions/stop": {
       "post": {
         "operationId": "StudySessionController_stop_v1",
@@ -3378,6 +4474,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Case-insensitive substring match on the document title",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -3390,7 +4495,121 @@
             "bearer": []
           }
         ],
-        "summary": "List documents (optional folder filter)",
+        "summary": "List documents (optional folder and title search)",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
+    "/v1/documents/folders": {
+      "get": {
+        "operationId": "ChapterDocumentController_listFolders_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List document folders in display order",
+        "tags": [
+          "Documents"
+        ]
+      },
+      "post": {
+        "operationId": "ChapterDocumentController_createFolder_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDocumentFolderDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a document folder",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
+    "/v1/documents/folders/{id}": {
+      "patch": {
+        "operationId": "ChapterDocumentController_updateFolder_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateDocumentFolderDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Rename or reorder a document folder",
+        "tags": [
+          "Documents"
+        ]
+      },
+      "delete": {
+        "operationId": "ChapterDocumentController_deleteFolder_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a folder (its documents move to the root level)",
         "tags": [
           "Documents"
         ]
@@ -3557,6 +4776,66 @@
         ]
       }
     },
+    "/v1/polls": {
+      "get": {
+        "description": "Chapter-wide poll list for dashboards (requires polls:view_all; not part of the default Member role). Supports channel filter, active=true|false filter, and limit. Each entry includes aggregate results plus the caller's own selections.",
+        "operationId": "PollController_listPolls_v1",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "required": false,
+            "in": "query",
+            "description": "Scope results to a single channel.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "active",
+            "required": false,
+            "in": "query",
+            "description": "Filter by expiration. Boolean string: `true`, `false`, `1`, or `0`. True values return only polls that haven't expired; false values return only expired polls.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false",
+                "1",
+                "0"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Max polls to return. Integers are clamped to 1–200 inclusive; omitted defaults to 50.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "example": 50,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List polls across the chapter",
+        "tags": [
+          "Polls"
+        ]
+      }
+    },
     "/v1/polls/{messageId}": {
       "get": {
         "operationId": "PollController_getPoll_v1",
@@ -3642,11 +4921,17 @@
         "parameters": [
           {
             "name": "format",
-            "required": true,
+            "required": false,
             "in": "query",
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "enum": [
+                "json",
+                "csv",
+                "pdf"
+              ]
+            },
+            "description": "json (default) returns rows, csv returns an inline CSV body, pdf renders a branded document and returns a signed download URL."
           }
         ],
         "requestBody": {
@@ -3661,7 +4946,27 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "Report rows (json), an inline CSV body (csv), or a signed download envelope (pdf).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ReportExportResponseDto"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3681,11 +4986,17 @@
         "parameters": [
           {
             "name": "format",
-            "required": true,
+            "required": false,
             "in": "query",
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "enum": [
+                "json",
+                "csv",
+                "pdf"
+              ]
+            },
+            "description": "json (default) returns rows, csv returns an inline CSV body, pdf renders a branded document and returns a signed download URL."
           }
         ],
         "requestBody": {
@@ -3700,7 +5011,27 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "Report rows (json), an inline CSV body (csv), or a signed download envelope (pdf).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ReportExportResponseDto"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3720,16 +5051,42 @@
         "parameters": [
           {
             "name": "format",
-            "required": true,
+            "required": false,
             "in": "query",
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "enum": [
+                "json",
+                "csv",
+                "pdf"
+              ]
+            },
+            "description": "json (default) returns rows, csv returns an inline CSV body, pdf renders a branded document and returns a signed download URL."
           }
         ],
         "responses": {
           "201": {
-            "description": ""
+            "description": "Report rows (json), an inline CSV body (csv), or a signed download envelope (pdf).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ReportExportResponseDto"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3749,11 +5106,17 @@
         "parameters": [
           {
             "name": "format",
-            "required": true,
+            "required": false,
             "in": "query",
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "enum": [
+                "json",
+                "csv",
+                "pdf"
+              ]
+            },
+            "description": "json (default) returns rows, csv returns an inline CSV body, pdf renders a branded document and returns a signed download URL."
           }
         ],
         "requestBody": {
@@ -3768,7 +5131,27 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "Report rows (json), an inline CSV body (csv), or a signed download envelope (pdf).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ReportExportResponseDto"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3811,6 +5194,664 @@
           "Search"
         ]
       }
+    },
+    "/v1/chapter-directory/search": {
+      "get": {
+        "operationId": "ChapterDirectoryController_search_v1",
+        "parameters": [
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Search query (org name, letters, designation)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "university",
+            "required": false,
+            "in": "query",
+            "description": "Filter by university short name",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Search the chapter directory (autocomplete for onboarding)",
+        "tags": [
+          "Chapter Directory"
+        ]
+      }
+    },
+    "/v1/discord-imports": {
+      "post": {
+        "description": "Requires the consent acknowledgement. Returns the import to upload an export against.",
+        "operationId": "DiscordImportController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDiscordImportDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Start a Discord archive import",
+        "tags": [
+          "Discord Import"
+        ]
+      },
+      "get": {
+        "operationId": "DiscordImportController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List this chapter’s Discord imports",
+        "tags": [
+          "Discord Import"
+        ]
+      }
+    },
+    "/v1/discord-imports/{id}": {
+      "get": {
+        "description": "Poll this while an import is running: `imported_messages` / `total_messages` and per-channel status.",
+        "operationId": "DiscordImportController_get_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Import detail and progress",
+        "tags": [
+          "Discord Import"
+        ]
+      },
+      "delete": {
+        "description": "Removes the imported messages, their attachments, and the uploaded archive objects. The job row survives as the record that it happened.",
+        "operationId": "DiscordImportController_purge_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete an import and everything it brought in",
+        "tags": [
+          "Discord Import"
+        ]
+      }
+    },
+    "/v1/discord-imports/{id}/channels": {
+      "get": {
+        "operationId": "DiscordImportController_getChannels_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Channel mapping and per-channel progress",
+        "tags": [
+          "Discord Import"
+        ]
+      },
+      "put": {
+        "description": "Every channel needs an explicit choice — create new, merge into an existing one, or skip.",
+        "operationId": "DiscordImportController_setChannelMapping_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetDiscordChannelMappingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Map each Discord channel onto a Signet channel",
+        "tags": [
+          "Discord Import"
+        ]
+      }
+    },
+    "/v1/discord-imports/{id}/files": {
+      "get": {
+        "description": "Rows with a null `uploaded_at` are what an interrupted upload still needs to send.",
+        "operationId": "DiscordImportController_getFiles_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Uploaded file manifest",
+        "tags": [
+          "Discord Import"
+        ]
+      }
+    },
+    "/v1/discord-imports/{id}/upload-urls": {
+      "post": {
+        "description": "The browser PUTs directly to storage, so no export byte passes through the API.",
+        "operationId": "DiscordImportController_requestUploadUrls_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestDiscordUploadUrlsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DiscordUploadTicketDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Mint signed upload URLs for a batch of export files",
+        "tags": [
+          "Discord Import"
+        ]
+      }
+    },
+    "/v1/discord-imports/{id}/uploads/confirm": {
+      "post": {
+        "operationId": "DiscordImportController_confirmUploads_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmDiscordUploadsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Mark uploaded files as landed",
+        "tags": [
+          "Discord Import"
+        ]
+      }
+    },
+    "/v1/discord-imports/{id}/roles": {
+      "put": {
+        "description": "Informational only. Nothing reads this to grant a permission and the importer never assigns a role; everyone imports as a name on a message, and the admin promotes people by hand afterwards.",
+        "operationId": "DiscordImportController_setRoleMapping_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetDiscordRoleMappingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Record the Discord role → Signet role worksheet",
+        "tags": [
+          "Discord Import"
+        ]
+      }
+    },
+    "/v1/discord-imports/{id}/discover": {
+      "post": {
+        "description": "Lists every channel and thread the bot can read and records them against this import, all set to `skip` until mapped. Also returns the guild’s roles for the worksheet, and any warnings about what could not be enumerated.",
+        "operationId": "DiscordImportController_discover_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordDiscoveryResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Scan the connected Discord server (bot imports only)",
+        "tags": [
+          "Discord Import"
+        ]
+      }
+    },
+    "/v1/discord-imports/{id}/discovered-channels": {
+      "put": {
+        "description": "Send a decision for each top-level channel the scan found. Threads are not addressable — each one follows its parent’s decision, because the admin was asked about the parent and a thread is part of that conversation. A channel the scan did not return is rejected rather than added.",
+        "operationId": "DiscordImportController_setDiscoveredChannelMapping_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetDiscordChannelMappingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Map the scanned Discord channels (bot imports only)",
+        "tags": [
+          "Discord Import"
+        ]
+      }
+    },
+    "/v1/discord-imports/{id}/start": {
+      "post": {
+        "description": "The background worker picks it up within a minute and reports progress on the detail route.",
+        "operationId": "DiscordImportController_start_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Queue the import",
+        "tags": [
+          "Discord Import"
+        ]
+      }
+    },
+    "/v1/discord-imports/{id}/cancel": {
+      "post": {
+        "operationId": "DiscordImportController_cancel_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Stop a queued or running import",
+        "tags": [
+          "Discord Import"
+        ]
+      }
+    },
+    "/v1/discord/availability": {
+      "get": {
+        "description": "The wizard offers \"Connect Discord\" only when this is true, and always offers the export-upload path regardless.",
+        "operationId": "DiscordConnectionController_availability_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordAvailabilityDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Whether the bot path is configured in this environment",
+        "tags": [
+          "Discord Connection"
+        ]
+      }
+    },
+    "/v1/discord/connection": {
+      "get": {
+        "operationId": "DiscordConnectionController_getConnection_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordConnectionDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "This chapter’s linked Discord server, if any",
+        "tags": [
+          "Discord Connection"
+        ]
+      },
+      "delete": {
+        "description": "Forgets the guild id, so no further import can read that server. Already-imported history is untouched — deleting that is what the per-import purge is for. Remove the bot from the Discord server separately if you want its access gone as well.",
+        "operationId": "DiscordConnectionController_disconnect_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Unlink this chapter’s Discord server",
+        "tags": [
+          "Discord Connection"
+        ]
+      }
+    },
+    "/v1/discord/connect": {
+      "post": {
+        "description": "Mints a single-use state bound to this chapter and returns the Discord authorize URL to send the admin to. No credential is returned and none is ever asked for: the only thing this flow stores per chapter is a guild id.",
+        "operationId": "DiscordConnectionController_beginConnect_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BeginDiscordConnectDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BeginDiscordConnectResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Start the \"Add to Server\" handshake",
+        "tags": [
+          "Discord Connection"
+        ]
+      }
+    },
+    "/v1/discord/connect/confirm": {
+      "post": {
+        "description": "The OAuth callback does not link anything by itself: it parks what Discord told it and hands the browser a one-time token. This route is what binds the server, and it binds it only to the chapter this request is scoped to — so an authorization completed by somebody else, for a chapter they are not in, activates nothing.",
+        "operationId": "DiscordConnectionController_confirmConnect_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmDiscordConnectDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordConnectionDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Activate the Discord server the callback parked",
+        "tags": [
+          "Discord Connection"
+        ]
+      }
     }
   },
   "info": {
@@ -3835,6 +5876,25 @@
       }
     },
     "schemas": {
+      "MyPermissionsDto": {
+        "type": "object",
+        "properties": {
+          "permissions": {
+            "description": "Caller's effective permission set for the active chapter. Contains the wildcard `*` for Presidents. Empty array means no active roles.",
+            "example": [
+              "members:view",
+              "events:create"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "permissions"
+        ]
+      },
       "UpdateUserDto": {
         "type": "object",
         "properties": {
@@ -3848,7 +5908,8 @@
             "type": "string"
           },
           "graduation_year": {
-            "type": "number"
+            "type": "number",
+            "nullable": true
           },
           "current_city": {
             "type": "string"
@@ -3875,6 +5936,70 @@
           "content_type"
         ]
       },
+      "IdentityResponseDto": {
+        "type": "object",
+        "properties": {
+          "distinct_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "Pseudonymous analytics id (HMAC of the user id), or null when analytics is unconfigured."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether analytics is enabled for this caller."
+          }
+        },
+        "required": [
+          "distinct_id",
+          "enabled"
+        ]
+      },
+      "TrackEventDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Behavioral event name in kebab-case, e.g. \"opened-channel\", \"ran-slash-command\". Must describe behavior, never content.",
+            "example": "opened-channel"
+          },
+          "chapter_id": {
+            "type": "string",
+            "description": "Chapter the event is attributed to (enables the opt-out gate)"
+          },
+          "properties": {
+            "type": "object",
+            "description": "Behavioral, content-free properties. Values must be scalars (string/number/boolean/null); keys that look like content/PII (content, body, email, name, …) are rejected.",
+            "additionalProperties": {
+              "nullable": true,
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "TrackEventResponseDto": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success"
+        ]
+      },
       "CreateChapterDto": {
         "type": "object",
         "properties": {
@@ -3888,6 +6013,159 @@
         "required": [
           "name",
           "university"
+        ]
+      },
+      "BrandingColorsDto": {
+        "type": "object",
+        "properties": {
+          "accent": {
+            "type": "string",
+            "example": "#C9A56F",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+          }
+        }
+      },
+      "BrandingDto": {
+        "type": "object",
+        "properties": {
+          "greek_letters": {
+            "type": "string"
+          },
+          "designation": {
+            "type": "string"
+          },
+          "school_short": {
+            "type": "string"
+          },
+          "founded_at": {
+            "type": "number"
+          },
+          "colors": {
+            "$ref": "#/components/schemas/BrandingColorsDto"
+          }
+        }
+      },
+      "ChapterOnboardingDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Chapter display name (org name)"
+          },
+          "university": {
+            "type": "string",
+            "description": "University / institution name"
+          },
+          "org_archetype": {
+            "type": "string",
+            "description": "Org archetype key (ifc, npc, nphc, mgc, …). Defaults to ifc."
+          },
+          "directory_id": {
+            "type": "string",
+            "description": "chapter_directory row id when the chapter was matched"
+          },
+          "branding": {
+            "$ref": "#/components/schemas/BrandingDto"
+          },
+          "accept_terms_privacy": {
+            "type": "boolean",
+            "description": "The admin accepted the Terms of Service and Privacy Policy. Must be true (spec/behavior/legal.md). The acceptance timestamp and policy version are recorded server-side from the session — never from this payload."
+          }
+        },
+        "required": [
+          "name",
+          "university",
+          "accept_terms_privacy"
+        ]
+      },
+      "CurrentChapterResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "university": {
+            "type": "string"
+          },
+          "subscription_status": {
+            "type": "string",
+            "enum": [
+              "incomplete",
+              "active",
+              "past_due",
+              "canceled"
+            ],
+            "description": "Read by the client subscription gate. Load-bearing — see `chapter-member-view.ts`."
+          },
+          "past_due_since": {
+            "type": "string",
+            "nullable": true,
+            "description": "Timestamp the chapter entered `past_due`, or null. Drives the 3-day client grace window; the grace predicate fails open without it."
+          },
+          "accent_color": {
+            "type": "string",
+            "nullable": true
+          },
+          "logo_path": {
+            "type": "string",
+            "nullable": true
+          },
+          "donation_url": {
+            "type": "string",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "org_archetype": {
+            "type": "string"
+          },
+          "enabled_modules": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "boolean"
+            }
+          },
+          "vocabulary": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "branding": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "theme_palette": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "analytics_opt_out": {
+            "type": "boolean",
+            "description": "Per-chapter opt-out for the pseudonymous analytics pipeline. Mobile reads it off this payload."
+          },
+          "logo_url": {
+            "type": "string",
+            "nullable": true,
+            "description": "Signed URL for the chapter logo, or null when none is set or signing failed. Computed, not a column."
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "university",
+          "subscription_status",
+          "past_due_since",
+          "accent_color",
+          "logo_path",
+          "donation_url",
+          "created_at",
+          "updated_at",
+          "logo_url"
         ]
       },
       "UpdateChapterDto": {
@@ -3936,36 +6214,12 @@
           "storage_path"
         ]
       },
-      "UpdateMemberRolesDto": {
-        "type": "object",
-        "properties": {
-          "role_ids": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "role_ids"
-        ]
-      },
-      "UpdateOnboardingDto": {
-        "type": "object",
-        "properties": {
-          "has_completed_onboarding": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "has_completed_onboarding"
-        ]
-      },
       "CreateRoleDto": {
         "type": "object",
         "properties": {
           "name": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100
           },
           "permissions": {
             "type": "array",
@@ -3989,7 +6243,8 @@
         "type": "object",
         "properties": {
           "name": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100
           },
           "permissions": {
             "type": "array",
@@ -4009,11 +6264,620 @@
         "type": "object",
         "properties": {
           "target_member_id": {
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           }
         },
         "required": [
           "target_member_id"
+        ]
+      },
+      "BetaConfigDto": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "style": {
+            "type": "string",
+            "enum": [
+              "sidebar_pill",
+              "top_banner",
+              "corner_badge",
+              "breadcrumb_pill"
+            ]
+          }
+        }
+      },
+      "DuesConfigDto": {
+        "type": "object",
+        "properties": {
+          "cadence": {
+            "type": "string",
+            "enum": [
+              "monthly",
+              "per_semester",
+              "per_quarter"
+            ]
+          },
+          "active_amount_cents": {
+            "type": "number",
+            "description": "Active member dues in cents"
+          },
+          "new_member_amount_cents": {
+            "type": "number",
+            "description": "New member dues in cents"
+          },
+          "alumni_amount_cents": {
+            "type": "number",
+            "description": "Alumni dues in cents"
+          },
+          "installments_allowed": {
+            "type": "boolean"
+          },
+          "installment_count": {
+            "type": "number",
+            "description": "Number of installments (>= 1)"
+          },
+          "late_fee_cents": {
+            "type": "number",
+            "description": "Late fee in cents"
+          },
+          "grace_days": {
+            "type": "number"
+          },
+          "scholarship_pool_cents": {
+            "type": "number",
+            "description": "Scholarship pool in cents"
+          }
+        }
+      },
+      "ServiceConfigDto": {
+        "type": "object",
+        "properties": {
+          "minutes_per_point": {
+            "type": "number",
+            "description": "Minutes of approved service that earn one SERVICE point (default 60). Must be at least 1 — a rate of 0 would divide by zero when awarding.",
+            "minimum": 1,
+            "example": 60
+          }
+        }
+      },
+      "WorkflowConfigDto": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Workflow key from the chapter catalog"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "threshold": {
+            "type": "number",
+            "description": "Optional numeric threshold (guard-parsed; NaN/negative rejected)"
+          }
+        }
+      },
+      "PatchChapterConfigDto": {
+        "type": "object",
+        "properties": {
+          "org_archetype": {
+            "type": "string"
+          },
+          "enabled_modules": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "boolean"
+            }
+          },
+          "vocabulary": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "branding": {
+            "$ref": "#/components/schemas/BrandingDto"
+          },
+          "beta_config": {
+            "$ref": "#/components/schemas/BetaConfigDto"
+          },
+          "dues": {
+            "$ref": "#/components/schemas/DuesConfigDto"
+          },
+          "service": {
+            "$ref": "#/components/schemas/ServiceConfigDto"
+          },
+          "workflows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowConfigDto"
+            }
+          },
+          "analytics_opt_out": {
+            "type": "boolean",
+            "description": "When true, disables pseudonymous product analytics for this chapter (data-retention.md #analytics-events-pseudonymous)."
+          }
+        }
+      },
+      "CustomRoleDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "chapter_id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "rank": {
+            "type": "number"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "core": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "key",
+          "label",
+          "rank",
+          "capabilities",
+          "core",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "CreateCustomRoleDto": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Machine-readable slug, unique per chapter",
+            "maxLength": 64
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "rank": {
+            "type": "number",
+            "description": "Hierarchy order; lower ranks first"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ]
+      },
+      "UpdateCustomRoleDto": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "rank": {
+            "type": "number"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RemoveCustomRoleResponseDto": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          }
+        },
+        "required": [
+          "success"
+        ]
+      },
+      "CustomFieldOptionsDto": {
+        "type": "object",
+        "properties": {
+          "choices": {
+            "description": "Option list for select",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "max_length": {
+            "type": "number",
+            "description": "Max length for text fields"
+          }
+        }
+      },
+      "CustomFieldDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "chapter_id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "text",
+              "number",
+              "decimal",
+              "phone",
+              "select",
+              "boolean"
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "self",
+              "chapter",
+              "exec",
+              "president"
+            ]
+          },
+          "sensitive": {
+            "type": "boolean"
+          },
+          "options": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CustomFieldOptionsDto"
+              }
+            ]
+          },
+          "sort": {
+            "type": "number"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "key",
+          "label",
+          "type",
+          "required",
+          "visibility",
+          "sensitive",
+          "sort",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "CreateCustomFieldDto": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Machine-readable slug, unique per chapter"
+          },
+          "label": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "text",
+              "number",
+              "decimal",
+              "phone",
+              "select",
+              "boolean"
+            ]
+          },
+          "required": {
+            "type": "boolean",
+            "default": false
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "self",
+              "chapter",
+              "exec",
+              "president"
+            ],
+            "default": "chapter"
+          },
+          "sensitive": {
+            "type": "boolean",
+            "default": false
+          },
+          "options": {
+            "$ref": "#/components/schemas/CustomFieldOptionsDto"
+          },
+          "sort": {
+            "type": "number",
+            "description": "Display order; lower sorts first"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "type"
+        ]
+      },
+      "UpdateCustomFieldDto": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "self",
+              "chapter",
+              "exec",
+              "president"
+            ]
+          },
+          "sensitive": {
+            "type": "boolean"
+          },
+          "options": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CustomFieldOptionsDto"
+              }
+            ]
+          },
+          "sort": {
+            "type": "number"
+          }
+        }
+      },
+      "RemoveCustomFieldResponseDto": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          }
+        },
+        "required": [
+          "success"
+        ]
+      },
+      "MemberCustomFieldValueDto": {
+        "type": "object",
+        "properties": {
+          "field_id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "text",
+              "number",
+              "decimal",
+              "phone",
+              "select",
+              "boolean"
+            ]
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "self",
+              "chapter",
+              "exec",
+              "president"
+            ]
+          },
+          "value": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "field_id",
+          "key",
+          "label",
+          "type",
+          "visibility",
+          "value"
+        ]
+      },
+      "MemberProfileDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string"
+          },
+          "chapter_id": {
+            "type": "string"
+          },
+          "role_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "custom_role_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "has_completed_onboarding": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "avatar_url": {
+            "type": "string",
+            "nullable": true
+          },
+          "bio": {
+            "type": "string",
+            "nullable": true
+          },
+          "graduation_year": {
+            "type": "number",
+            "nullable": true
+          },
+          "current_city": {
+            "type": "string",
+            "nullable": true
+          },
+          "current_company": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string"
+          },
+          "custom_fields": {
+            "description": "Custom-field values, present only on single-member reads and already filtered to the fields the requesting viewer may see.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MemberCustomFieldValueDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "chapter_id",
+          "role_ids",
+          "custom_role_ids",
+          "has_completed_onboarding",
+          "created_at",
+          "updated_at",
+          "display_name",
+          "avatar_url",
+          "bio",
+          "graduation_year",
+          "current_city",
+          "current_company",
+          "email"
+        ]
+      },
+      "MemberRosterEntryDto": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "users.id — the id chat carries as sender_id"
+          },
+          "display_name": {
+            "type": "string",
+            "description": "May be an empty string: the column is NOT NULL DEFAULT '', so clients treat empty as unresolved rather than rendering a blank name."
+          },
+          "avatar_url": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "user_id",
+          "display_name",
+          "avatar_url"
+        ]
+      },
+      "UpdateMemberRolesDto": {
+        "type": "object",
+        "properties": {
+          "role_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "custom_role_ids": {
+            "description": "Assigned chapter_custom_roles ids. Omit to leave custom-role assignment unchanged; an empty array clears it.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "role_ids"
+        ]
+      },
+      "UpdateOnboardingDto": {
+        "type": "object",
+        "properties": {
+          "has_completed_onboarding": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "has_completed_onboarding"
         ]
       },
       "CreateInviteDto": {
@@ -4099,15 +6963,18 @@
         "properties": {
           "quiet_hours_start": {
             "type": "string",
-            "description": "Quiet hours start (HH:mm format, e.g. 22:00)"
+            "description": "Quiet hours start (HH:mm format, e.g. 22:00). Pass null or an empty string to clear.",
+            "nullable": true
           },
           "quiet_hours_end": {
             "type": "string",
-            "description": "Quiet hours end (HH:mm format, e.g. 08:00)"
+            "description": "Quiet hours end (HH:mm format, e.g. 08:00). Pass null or an empty string to clear.",
+            "nullable": true
           },
           "quiet_hours_tz": {
             "type": "string",
-            "description": "Timezone for quiet hours (e.g. America/New_York)"
+            "description": "Time zone for quiet hours — must be a named zone this server can resolve (e.g. America/New_York). A fixed offset such as -05:00 is not portable and is rejected on the deployment runtime. Pass null or an empty string to clear.",
+            "nullable": true
           },
           "theme": {
             "type": "string",
@@ -4119,6 +6986,21 @@
             ]
           }
         }
+      },
+      "GeofenceCoordinateDto": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number"
+          },
+          "lng": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "lat",
+          "lng"
+        ]
       },
       "CreateEventDto": {
         "type": "object",
@@ -4158,6 +7040,25 @@
           },
           "notes": {
             "type": "string"
+          },
+          "check_in_zone": {
+            "description": "Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeofenceCoordinateDto"
+            }
+          },
+          "check_in_zone_name": {
+            "type": "string",
+            "description": "Human-readable name for `check_in_zone`, shown on the mobile scanner (\"Inside the Great Hall zone\")."
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates."
+          },
+          "client_message_id": {
+            "type": "string",
+            "description": "Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`."
           }
         },
         "required": [
@@ -4202,12 +7103,309 @@
           },
           "notes": {
             "type": "string"
+          },
+          "check_in_zone": {
+            "description": "Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. Send an empty array to clear an existing zone.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeofenceCoordinateDto"
+            }
+          },
+          "check_in_zone_name": {
+            "type": "string",
+            "description": "Human-readable name for `check_in_zone`, shown on the mobile scanner (\"Inside the Great Hall zone\")."
           }
         }
       },
+      "ChannelUnreadCountDto": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "unread_count": {
+            "type": "number",
+            "description": "Messages in this channel newer than the caller’s read cursor, excluding their own and deleted ones. A channel never opened counts all of them."
+          },
+          "mention_count": {
+            "type": "number",
+            "description": "Subset of unread_count that mentions the caller. Mentions are resolved server-side at send time."
+          }
+        },
+        "required": [
+          "channel_id",
+          "unread_count",
+          "mention_count"
+        ]
+      },
+      "CreateChannelDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "PUBLIC",
+              "PRIVATE",
+              "ROLE_GATED"
+            ]
+          },
+          "required_permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "category_id": {
+            "type": "string"
+          },
+          "is_read_only": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ]
+      },
+      "UpdateChannelDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "required_permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "category_id": {
+            "type": "string"
+          },
+          "is_read_only": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CreateDmDto": {
+        "type": "object",
+        "properties": {
+          "member_id": {
+            "type": "string",
+            "description": "The other member user ID"
+          }
+        },
+        "required": [
+          "member_id"
+        ]
+      },
+      "CreateGroupDmDto": {
+        "type": "object",
+        "properties": {
+          "member_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "member_ids"
+        ]
+      },
+      "CreateCategoryDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "display_order": {
+            "type": "number",
+            "default": 0
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "UpdateCategoryDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "display_order": {
+            "type": "number"
+          }
+        }
+      },
+      "MessageAttachmentDto": {
+        "type": "object",
+        "properties": {
+          "storage_path": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "filename": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "content_type": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "byte_size": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "storage_path",
+          "filename",
+          "content_type"
+        ]
+      },
+      "SendMessageDto": {
+        "type": "object",
+        "properties": {
+          "client_message_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "content": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 10000
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MessageAttachmentDto"
+            }
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text",
+              "event",
+              "task",
+              "poll",
+              "dues",
+              "points",
+              "hours",
+              "system_audit",
+              "imported",
+              "loading",
+              "announcement"
+            ]
+          },
+          "payload": {
+            "type": "object"
+          },
+          "reply_to_id": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "client_message_id",
+          "content"
+        ]
+      },
+      "EditMessageDto": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "ChatMessageActionDto": {
+        "type": "object",
+        "properties": {
+          "action_type": {
+            "type": "string",
+            "description": "Action discriminator. `reaction:<emoji>` for emoji reactions, `vote` for poll votes (UPSERT), free-form for card actions."
+          },
+          "payload": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "action_type"
+        ]
+      },
+      "ReactionDto": {
+        "type": "object",
+        "properties": {
+          "emoji": {
+            "type": "string",
+            "description": "Emoji string (e.g. \"👍\")"
+          }
+        },
+        "required": [
+          "emoji"
+        ]
+      },
+      "RequestChatUploadUrlDto": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "description": "Original filename"
+          },
+          "content_type": {
+            "type": "string",
+            "description": "MIME content type (e.g. image/png)"
+          }
+        },
+        "required": [
+          "filename",
+          "content_type"
+        ]
+      },
       "CheckInDto": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Rotating token read from the host QR code (s22). Valid for its 30s window and the one immediately before it."
+          },
+          "manualCode": {
+            "type": "string",
+            "description": "Short rotating code typed off the host screen when the camera fails (e.g. \"4KQ-88\").",
+            "example": "4KQ-88"
+          },
+          "lat": {
+            "type": "number",
+            "description": "Scanner latitude. Required when the event defines a check-in geofence; ignored when it doesn't."
+          },
+          "lng": {
+            "type": "number",
+            "description": "Scanner longitude. Required when the event defines a check-in geofence; ignored when it doesn't."
+          }
+        }
       },
       "UpdateAttendanceDto": {
         "type": "object",
@@ -4233,10 +7431,13 @@
         "type": "object",
         "properties": {
           "target_user_id": {
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "amount": {
-            "type": "number"
+            "type": "number",
+            "minimum": -100000,
+            "maximum": 100000
           },
           "category": {
             "type": "string",
@@ -4246,7 +7447,16 @@
             ]
           },
           "reason": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 500
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "When set with `client_message_id`, posts an append-only points card to this chat channel after the ledger write (the `/points` slash command). Omit for dashboard adjustments."
+          },
+          "client_message_id": {
+            "type": "string",
+            "description": "Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`."
           }
         },
         "required": [
@@ -4299,14 +7509,18 @@
           },
           "title": {
             "type": "string",
-            "description": "Invoice title (e.g. \"Fall 2026 Dues\")"
+            "description": "Invoice title (e.g. \"Fall 2026 Dues\")",
+            "maxLength": 255
           },
           "description": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 2000
           },
           "amount": {
             "type": "number",
-            "description": "Amount in cents (e.g. 15000 = $150.00)"
+            "description": "Amount in cents (e.g. 15000 = $150.00)",
+            "minimum": 1,
+            "maximum": 99999999
           },
           "due_date": {
             "type": "string",
@@ -4324,14 +7538,18 @@
         "type": "object",
         "properties": {
           "title": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 255
           },
           "description": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 2000
           },
           "amount": {
             "type": "number",
-            "description": "Amount in cents"
+            "description": "Amount in cents",
+            "minimum": 1,
+            "maximum": 99999999
           },
           "due_date": {
             "type": "string"
@@ -4461,170 +7679,16 @@
           }
         }
       },
-      "CreateChannelDto": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "type": {
-            "type": "string",
-            "enum": [
-              "PUBLIC",
-              "PRIVATE",
-              "ROLE_GATED"
-            ]
-          },
-          "required_permissions": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "category_id": {
-            "type": "string"
-          },
-          "is_read_only": {
-            "type": "boolean",
-            "default": false
-          }
-        },
-        "required": [
-          "name",
-          "type"
-        ]
-      },
-      "UpdateChannelDto": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "required_permissions": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "category_id": {
-            "type": "string"
-          },
-          "is_read_only": {
-            "type": "boolean"
-          }
-        }
-      },
-      "CreateDmDto": {
-        "type": "object",
-        "properties": {
-          "member_id": {
-            "type": "string",
-            "description": "The other member user ID"
-          }
-        },
-        "required": [
-          "member_id"
-        ]
-      },
-      "CreateGroupDmDto": {
-        "type": "object",
-        "properties": {
-          "member_ids": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "name": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "member_ids"
-        ]
-      },
-      "CreateCategoryDto": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "display_order": {
-            "type": "number",
-            "default": 0
-          }
-        },
-        "required": [
-          "name"
-        ]
-      },
-      "UpdateCategoryDto": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "display_order": {
-            "type": "number"
-          }
-        }
-      },
-      "SendMessageDto": {
-        "type": "object",
-        "properties": {
-          "content": {
-            "type": "string"
-          },
-          "reply_to_id": {
-            "type": "string"
-          },
-          "metadata": {
-            "type": "object"
-          }
-        },
-        "required": [
-          "content"
-        ]
-      },
-      "EditMessageDto": {
-        "type": "object",
-        "properties": {
-          "content": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "content"
-        ]
-      },
-      "ReactionDto": {
-        "type": "object",
-        "properties": {
-          "emoji": {
-            "type": "string",
-            "description": "Emoji string (e.g. \"👍\")"
-          }
-        },
-        "required": [
-          "emoji"
-        ]
-      },
-      "RequestChatUploadUrlDto": {
+      "RequestProofUploadUrlDto": {
         "type": "object",
         "properties": {
           "filename": {
             "type": "string",
-            "description": "Original filename"
+            "description": "Original filename (image or PDF)"
           },
           "content_type": {
             "type": "string",
-            "description": "MIME content type (e.g. image/png)"
+            "description": "MIME content type (e.g. application/pdf)"
           }
         },
         "required": [
@@ -4699,6 +7763,14 @@
           "point_reward": {
             "type": "number",
             "description": "Points to award on completion"
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "When set with `client_message_id`, posts an interactive task card to this chat channel after the task is created (the `/task` slash command). Omit for dashboard creates."
+          },
+          "client_message_id": {
+            "type": "string",
+            "description": "Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`."
           }
         },
         "required": [
@@ -4733,21 +7805,6 @@
           }
         }
       },
-      "GeofenceCoordinateDto": {
-        "type": "object",
-        "properties": {
-          "lat": {
-            "type": "number"
-          },
-          "lng": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "lat",
-          "lng"
-        ]
-      },
       "CreateGeofenceDto": {
         "type": "object",
         "properties": {
@@ -4775,6 +7832,11 @@
           "min_session_minutes": {
             "type": "number",
             "default": 15
+          },
+          "pause_grace_minutes": {
+            "type": "number",
+            "default": 5,
+            "description": "Minutes a backgrounded session may stay paused before it auto-expires as PAUSED_EXPIRED."
           }
         },
         "required": [
@@ -4805,6 +7867,10 @@
           },
           "min_session_minutes": {
             "type": "number"
+          },
+          "pause_grace_minutes": {
+            "type": "number",
+            "description": "Minutes a backgrounded session may stay paused before it auto-expires as PAUSED_EXPIRED."
           }
         }
       },
@@ -4812,7 +7878,8 @@
         "type": "object",
         "properties": {
           "geofence_id": {
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "lat": {
             "type": "number"
@@ -4828,6 +7895,21 @@
         ]
       },
       "StudySessionHeartbeatDto": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number"
+          },
+          "lng": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "lat",
+          "lng"
+        ]
+      },
+      "ResumeStudySessionDto": {
         "type": "object",
         "properties": {
           "lat": {
@@ -4883,6 +7965,35 @@
           "storage_path",
           "title"
         ]
+      },
+      "CreateDocumentFolderDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Folder name (unique within the chapter)"
+          },
+          "sort_order": {
+            "type": "number",
+            "description": "Display position. Defaults to the end of the list."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "UpdateDocumentFolderDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "New folder name. Renaming re-files every document in the folder."
+          },
+          "sort_order": {
+            "type": "number",
+            "description": "New display position"
+          }
+        }
       },
       "CreatePollDto": {
         "type": "object",
@@ -4962,6 +8073,61 @@
           "end_date"
         ]
       },
+      "ReportExportResponseDto": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Signed download URL, valid for one hour"
+          },
+          "expires_at": {
+            "type": "string",
+            "description": "ISO timestamp at which the URL stops working"
+          },
+          "expires_in": {
+            "type": "number",
+            "description": "URL lifetime in seconds",
+            "example": 3600
+          },
+          "filename": {
+            "type": "string",
+            "description": "Suggested download filename"
+          },
+          "storage_path": {
+            "type": "string",
+            "description": "Bucket-relative object path"
+          },
+          "row_count": {
+            "type": "number",
+            "description": "Number of data rows in the document"
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when the report hit the row ceiling, so the document is not a complete record of the chapter. row_count reports what was printed, not what matched.",
+            "example": false
+          },
+          "row_limit": {
+            "type": "number",
+            "description": "The row ceiling that \"truncated\" refers to",
+            "example": 5000
+          },
+          "truncation_note": {
+            "type": "string",
+            "description": "What was cut, when the row count alone does not say it — a roster whose point balances were summed from a truncated read is the right length, so row_limit on its own would describe a cut the document never took. Absent when the row count is the whole story.",
+            "example": "point balances are incomplete — summed from the first 50,000 transactions"
+          }
+        },
+        "required": [
+          "url",
+          "expires_at",
+          "expires_in",
+          "filename",
+          "storage_path",
+          "row_count",
+          "truncated",
+          "row_limit"
+        ]
+      },
       "AttendanceReportDto": {
         "type": "object",
         "properties": {
@@ -4988,7 +8154,12 @@
           },
           "window": {
             "type": "string",
-            "description": "Time window (e.g. semester identifier)"
+            "description": "Time window for totals (defaults to all-time). Defined identically to the points leaderboard: semester excludes the latest archive period; month is the trailing calendar month.",
+            "enum": [
+              "all",
+              "semester",
+              "month"
+            ]
           }
         }
       },
@@ -5008,6 +8179,339 @@
             "description": "End date (YYYY-MM-DD)"
           }
         }
+      },
+      "CreateDiscordImportDto": {
+        "type": "object",
+        "properties": {
+          "consent_acknowledged": {
+            "type": "boolean",
+            "description": "The admin confirms they have posted an in-channel notice in their Discord server telling members the history is being archived into Signet. Required — the API refuses without it, and the column is NOT NULL, so no import can exist that was not preceded by this."
+          },
+          "guild_name": {
+            "type": "string",
+            "description": "Discord server name, for display only."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "upload",
+              "bot"
+            ],
+            "default": "upload",
+            "description": "`upload` (the default) imports a DiscordChatExporter export the admin uploads. `bot` reads the chapter's connected Discord server directly and requires a connection to exist first. Both run the same consent gate, the same channel mapping, and the same purge."
+          }
+        },
+        "required": [
+          "consent_acknowledged"
+        ]
+      },
+      "DiscordImportUploadFileDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "export",
+              "media"
+            ],
+            "description": "`export` is a DiscordChatExporter JSON partition; `media` is a file from its `_Files` folder."
+          },
+          "relative_path": {
+            "type": "string",
+            "description": "The path as the export names it, relative to the export folder. This is the join key: the importer resolves an attachment by looking this string up, never by rebuilding a storage key."
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "byte_size": {
+            "type": "number"
+          },
+          "part_index": {
+            "type": "number",
+            "description": "Order of this JSON partition. Ignored for media."
+          }
+        },
+        "required": [
+          "kind",
+          "relative_path",
+          "content_type",
+          "byte_size"
+        ]
+      },
+      "RequestDiscordUploadUrlsDto": {
+        "type": "object",
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscordImportUploadFileDto"
+            }
+          }
+        },
+        "required": [
+          "files"
+        ]
+      },
+      "DiscordUploadTicketDto": {
+        "type": "object",
+        "properties": {
+          "relative_path": {
+            "type": "string"
+          },
+          "storage_path": {
+            "type": "string"
+          },
+          "upload_url": {
+            "type": "string",
+            "description": "Short-lived signed URL; PUT the bytes to it."
+          },
+          "content_type": {
+            "type": "string",
+            "description": "The content type the API validated. Send exactly this on the PUT — the bucket allowlist judges what the uploader sends, and a browser reports an empty type for several formats a Discord archive carries."
+          }
+        },
+        "required": [
+          "relative_path",
+          "storage_path",
+          "upload_url",
+          "content_type"
+        ]
+      },
+      "ConfirmDiscordUploadsDto": {
+        "type": "object",
+        "properties": {
+          "storage_paths": {
+            "description": "Storage paths whose PUT completed.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "storage_paths"
+        ]
+      },
+      "DiscordChannelMappingDto": {
+        "type": "object",
+        "properties": {
+          "discord_channel_id": {
+            "type": "string",
+            "description": "Discord channel snowflake."
+          },
+          "discord_channel_name": {
+            "type": "string"
+          },
+          "discord_category": {
+            "type": "string"
+          },
+          "mapping_action": {
+            "type": "string",
+            "enum": [
+              "create_new",
+              "use_existing",
+              "skip"
+            ],
+            "description": "What to do with this Discord channel. Always explicit — `chat_channels` has no unique constraint on (chapter_id, name), so a same-name match is never treated as an answer."
+          },
+          "target_channel_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "new_channel_name": {
+            "type": "string"
+          },
+          "new_channel_is_read_only": {
+            "type": "boolean",
+            "default": true
+          },
+          "message_count": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "discord_channel_id",
+          "discord_channel_name",
+          "mapping_action"
+        ]
+      },
+      "SetDiscordChannelMappingDto": {
+        "type": "object",
+        "properties": {
+          "channels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscordChannelMappingDto"
+            }
+          }
+        },
+        "required": [
+          "channels"
+        ]
+      },
+      "DiscordRoleMappingDto": {
+        "type": "object",
+        "properties": {
+          "discord_role_id": {
+            "type": "string"
+          },
+          "discord_role_name": {
+            "type": "string"
+          },
+          "signet_role_key": {
+            "type": "string",
+            "description": "Signet role key the admin intends for this Discord role. Informational only — nothing reads this to grant a permission, and the importer never assigns a role."
+          }
+        },
+        "required": [
+          "discord_role_id",
+          "discord_role_name",
+          "signet_role_key"
+        ]
+      },
+      "SetDiscordRoleMappingDto": {
+        "type": "object",
+        "properties": {
+          "roles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscordRoleMappingDto"
+            }
+          }
+        },
+        "required": [
+          "roles"
+        ]
+      },
+      "DiscordDiscoveredRoleDto": {
+        "type": "object",
+        "properties": {
+          "discord_role_id": {
+            "type": "string"
+          },
+          "discord_role_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "discord_role_id",
+          "discord_role_name"
+        ]
+      },
+      "DiscordDiscoveryResponseDto": {
+        "type": "object",
+        "properties": {
+          "channels": {
+            "type": "array",
+            "description": "Every channel and thread the bot can read, all recorded as `skip` until the admin says otherwise. Threads carry `parent_discord_channel_id` and are not mapped separately — they follow their parent.",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscordDiscoveredRoleDto"
+            }
+          },
+          "warnings": {
+            "description": "What could not be enumerated, in the admin’s words — most often private archived threads, which Discord gates behind a Manage Threads permission this read-only bot deliberately does not request.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "channels",
+          "roles",
+          "warnings"
+        ]
+      },
+      "DiscordAvailabilityDto": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "description": "False when this environment has no Discord application configured. The DiscordChatExporter upload flow is unaffected either way — it is a separate path, not a fallback that switches on."
+          }
+        },
+        "required": [
+          "available"
+        ]
+      },
+      "DiscordConnectionDto": {
+        "type": "object",
+        "properties": {
+          "connected": {
+            "type": "boolean",
+            "description": "Whether this chapter has a Discord server linked."
+          },
+          "guild_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "The linked Discord server id. Always a string — a snowflake exceeds 2^53 and a JSON round trip through a number would name a different server."
+          },
+          "guild_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "connected_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "connected_discord_username": {
+            "type": "string",
+            "nullable": true,
+            "description": "The Discord account that authorized the install."
+          }
+        },
+        "required": [
+          "connected",
+          "guild_id",
+          "guild_name",
+          "connected_at",
+          "connected_discord_username"
+        ]
+      },
+      "BeginDiscordConnectDto": {
+        "type": "object",
+        "properties": {
+          "return_path": {
+            "type": "string",
+            "description": "Dashboard path to return the browser to once Discord is done, e.g. `/discord-import`. Must be a site-relative path; anything else is replaced with the default. It is stored with the handshake rather than read off the callback, because the callback carries no session to re-authorise against."
+          }
+        }
+      },
+      "BeginDiscordConnectResponseDto": {
+        "type": "object",
+        "properties": {
+          "authorize_url": {
+            "type": "string",
+            "description": "Send the admin here. Includes the fixed permission bitfield (View Channels + Read Message History) and a single-use state."
+          },
+          "expires_at": {
+            "type": "string",
+            "description": "When the handshake stops being redeemable."
+          }
+        },
+        "required": [
+          "authorize_url",
+          "expires_at"
+        ]
+      },
+      "ConfirmDiscordConnectDto": {
+        "type": "object",
+        "properties": {
+          "handshake": {
+            "type": "string",
+            "description": "The one-time confirmation token the OAuth callback put on the redirect. It is delivered to exactly one place — the browser that completed the authorization — and activates only against a session whose active chapter matches the one that started the handshake."
+          }
+        },
+        "required": [
+          "handshake"
+        ]
       }
     }
   }

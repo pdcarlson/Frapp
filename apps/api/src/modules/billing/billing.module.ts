@@ -6,14 +6,18 @@ import { StripeBillingService } from '../../infrastructure/billing/stripe.servic
 import { SupabaseChapterRepository } from '../../infrastructure/supabase/repositories/supabase-chapter.repository';
 import { SupabaseMemberRepository } from '../../infrastructure/supabase/repositories/supabase-member.repository';
 import { SupabaseRoleRepository } from '../../infrastructure/supabase/repositories/supabase-role.repository';
+import { SupabaseStripeWebhookEventRepository } from '../../infrastructure/supabase/repositories/supabase-stripe-webhook-event.repository';
 import { BILLING_PROVIDER } from '../../domain/adapters/billing.interface';
 import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
+import { STRIPE_WEBHOOK_EVENT_REPOSITORY } from '../../domain/repositories/stripe-webhook-event.repository.interface';
 import { NotificationModule } from '../notification/notification.module';
+import { FinancialInvoiceModule } from '../financial-invoice/financial-invoice.module';
+import { ActivationModule } from '../activation/activation.module';
 
 @Module({
-  imports: [NotificationModule],
+  imports: [NotificationModule, FinancialInvoiceModule, ActivationModule],
   controllers: [BillingController, WebhookController],
   providers: [
     BillingService,
@@ -21,6 +25,10 @@ import { NotificationModule } from '../notification/notification.module';
     { provide: CHAPTER_REPOSITORY, useClass: SupabaseChapterRepository },
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
     { provide: ROLE_REPOSITORY, useClass: SupabaseRoleRepository },
+    {
+      provide: STRIPE_WEBHOOK_EVENT_REPOSITORY,
+      useClass: SupabaseStripeWebhookEventRepository,
+    },
   ],
   exports: [BillingService, BILLING_PROVIDER],
 })

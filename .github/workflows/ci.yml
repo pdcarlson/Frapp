@@ -11,20 +11,66 @@ concurrency:
   cancel-in-progress: true
 
 # ---------------------------------------------------------------------------
-# Domain-specific parallel jobs. Each is an independent required status check.
-# The `packages-build` job runs first (shared dependency), then all others
-# run in parallel.
+# Domain-specific parallel jobs. `packages-build` runs first (shared
+# dependency). web-tests, web-responsive-floor, and pglite-migrations are
+# path-gated on PRs via the `changes` job and run unconditionally on push;
+# everything else always runs.
+#
+# Path-gated does NOT mean advisory. web-tests and web-responsive-floor are both
+# REQUIRED checks — a job skipped by a job-level `if:` reports Success, which
+# satisfies one. That is also why `changes` is itself required: a required job
+# skipped because a `needs:` parent FAILED also reports skipped, so a
+# non-required parent would be a hole. See scripts/configure-branch-protection.mjs.
+#
+# `clean-checkout-typecheck` is the deliberate exception: it depends on nothing
+# and prebuilds nothing, so it alone exercises the bare `npm install` path.
 # ---------------------------------------------------------------------------
 
 jobs:
+  # Change detection: path-gates the web/pglite jobs (Lever D). Itself required —
+  # see the header above and scripts/configure-branch-protection.mjs.
+  # The filter runs only on pull_request; on push the gated jobs run
+  # unconditionally (full validation on protected branches), so a shallow
+  # checkout here can never fail the gate.
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      web: ${{ steps.filter.outputs.web }}
+      pglite: ${{ steps.filter.outputs.pglite }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Detect changed paths
+        id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            web:
+              - 'apps/web/**'
+              - 'packages/**'
+              - 'package-lock.json'
+              - 'turbo.json'
+            pglite:
+              - 'supabase/migrations/**'
+              - 'scripts/check-pglite-migrations.mjs'
+              - 'packages/validation/**'
+              - 'package-lock.json'
+              # The PGlite job also loads the chapter directory seed, so a change
+              # to the seed or its loader must re-run it.
+              - 'supabase/seed/**'
+              - 'scripts/load-chapter-directory.mjs'
+              - 'scripts/lib/chapter-directory-seed.mjs'
+
   # ── Shared packages build (dependency for downstream jobs) ──────────────
   packages-build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -34,6 +80,14 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Cache turbo build outputs
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
+          restore-keys: |
+            turbo-pkgbuild-${{ runner.os }}-
 
       - name: Build shared packages
         run: npx turbo run build --filter='./packages/*'
@@ -42,6 +96,8 @@ jobs:
   lint-and-typecheck:
     needs: packages-build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -56,6 +112,14 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Restore turbo build outputs
+        uses: actions/cache/restore@v4
+        with:
+          path: .turbo
+          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
+          restore-keys: |
+            turbo-pkgbuild-${{ runner.os }}-
 
       - name: Build shared packages
         run: npx turbo run build --filter='./packages/*'
@@ -63,18 +127,119 @@ jobs:
       - name: Type check
         run: npm run check-types
 
+      - name: API production build (nest build / Render parity)
+        run: npm run build -w apps/api
+
       - name: Lint
         run: npm run lint
 
-  # ── API unit tests ──────────────────────────────────────────────────────
+      - name: Landing unit tests
+        run: npm run test -w apps/landing
+
+      # `@repo/validation` is consumed by the API, web, and mobile, so a
+      # regression in it ships to all three. It had no suite until #687 added
+      # one, and an unrun suite protects nothing.
+      - name: Shared validation package tests
+        run: npm run test -w @repo/validation
+
+      # Same reasoning as above. The contrast math here is imported by both
+      # `packages/theme` and `packages/chapter-theme`; each now has a suite of
+      # its own (below), but those pin their callers' behaviour, not this
+      # package's, so it still needs its own step.
+      - name: Shared color package tests
+        run: npm run test -w @repo/color
+
+      # Locale date/datetime helpers plus the three protected clusters
+      # (stopwatch padding, bare-date timezone parsing, minute rounding)
+      # that must not fold into the generic formatter.
+      - name: Shared formatting package tests
+        run: npm run test -w @repo/formatting
+
+      # The accent engine. Its contrast guarantee is only as good as the exact
+      # behaviour of the vendored generator, so a dependency bump is precisely
+      # what this suite exists to catch.
+      - name: Chapter theme package tests
+        run: npm run test -w @repo/chapter-theme
+
+      # `@repo/theme` owns every token value in the app — the legacy bone/bronze
+      # set, the Signet dark set, and the shared Tailwind preset — and until
+      # #1144 its only gate was `tsc`, which proves the fields are `string` and
+      # `number` and nothing about what they contain. The suite compares them
+      # against `spec/ui/design-system/foundations.md`, so it fails whichever
+      # side drifts. `lint` needs no step here: it arrives through `turbo run
+      # lint` in the `Lint` step above as soon as the package declares a script.
+      - name: Theme package tests
+        run: npm run test -w @repo/theme
+
+      # Hand-written `statusOf` / `serverMessageOf` / `codeOf` live in
+      # `@repo/api-sdk` (consumed by API + web + mobile). Same trap as
+      # validation: an unrun suite protects nothing. The package uses the
+      # hoisted workspace vitest; this step does not add a lockfile entry.
+      - name: Shared api-sdk package tests
+        run: npm run test -w @repo/api-sdk
+
+      - name: Brand assets (icon sync)
+        run: npm run check:brand-assets
+
+      # The docs/spec sync gate used to run here too, a second copy of the same
+      # script `docs.yml` runs for the required `docs-spec-sync` check. It was
+      # removed rather than kept in sync.
+      #
+      # Two copies of one rule across two required checks means every exemption
+      # has to be duplicated exactly, and the copies had already drifted once:
+      # only `docs.yml` carried the Dependabot exemption, so this step failed
+      # every Dependabot PR while `docs-spec-sync` went green. The
+      # `no-doc-change-needed` waiver made the duplication actively expensive —
+      # honouring it here would mean re-running this entire workflow, Docker
+      # build included, on every label mutation on every PR.
+      #
+      # The gate now has exactly one home: `docs.yml`.
+
+  # ── Clean-checkout guard (fresh-install path) ───────────────────────────
+  # Reproduces a bare `npm install && npm run check-types` on a cold machine.
+  # Deliberately has NO `needs: packages-build`, NO turbo cache restore, and NO
+  # `turbo run build --filter='./packages/*'` step — every other Node job has one,
+  # which is exactly why they are all structurally blind to this failure mode.
+  #
+  # The shared packages publish their types as `dist/index.d.ts`, and `dist/` is
+  # gitignored, so a consumer resolving the `types` condition (`apps/api`, via
+  # NodeNext) sees nothing until those packages are built. That is why `turbo.json`
+  # makes `check-types` and `lint` depend on `^build` rather than on themselves.
+  # Revert either one and this job goes red while the rest of CI stays green.
+  #
+  # Keep this job free of build/cache steps — adding one silently disarms it.
+  clean-checkout-typecheck:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # `cache: npm` above only restores the ~/.npm download cache, never
+      # node_modules or packages/*/dist — the clean-checkout property holds.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check with no prebuilt packages
+        run: npm run check-types
+
+      - name: Lint with no prebuilt packages
+        run: npm run lint
+
+  # ── API unit + E2E tests ────────────────────────────────────────────────
   api-tests:
     needs: packages-build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -85,11 +250,171 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Restore turbo build outputs
+        uses: actions/cache/restore@v4
+        with:
+          path: .turbo
+          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
+          restore-keys: |
+            turbo-pkgbuild-${{ runner.os }}-
+
       - name: Build shared packages
         run: npx turbo run build --filter='./packages/*'
 
       - name: Run API tests
         run: npm run test -w apps/api
+
+      - name: Run API E2E tests
+        run: npm run test:e2e -w apps/api
+
+      # Adversarial AI evals (spec §13 → Evals). Required to run on any change
+      # to prompts, retrieval or the tool registry; run unconditionally instead,
+      # which is a superset and costs ~1.5s. A separate path-gated job would add
+      # a checkout + `npm ci` + package build — minutes, against ADR-15's budget,
+      # to gate seconds of tests.
+      - name: Run AI evals
+        run: npm run test:ai-evals -w apps/api
+
+  # ── Web unit tests (Vitest / jsdom) ─────────────────────────────────────
+  web-tests:
+    needs: [packages-build, changes]
+    if: ${{ github.event_name == 'push' || needs.changes.outputs.web == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Restore turbo build outputs
+        uses: actions/cache/restore@v4
+        with:
+          path: .turbo
+          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
+          restore-keys: |
+            turbo-pkgbuild-${{ runner.os }}-
+
+      - name: Build shared packages
+        run: npx turbo run build --filter='./packages/*'
+
+      - name: Run web unit tests
+        run: npm run test -w apps/web
+
+      # The shared packages consumed by apps/web that nothing else covers. They
+      # live here rather than in their own job because the `changes` filter
+      # above already covers `packages/**`, so they run on the right paths
+      # without adding a branch-protection entry.
+      #
+      # `if: !cancelled()` because these are independent suites, not follow-on
+      # phases: without it a red apps/web test skips them and hides more
+      # failures until the next push. Not `always()` — this workflow sets
+      # `cancel-in-progress`, and `always()` keeps running after a cancellation,
+      # so every superseded run would still pay for those suites.
+      #
+      # This job IS a required check as of the ADR-15 amendment — it is the only
+      # suite covering packages/hooks. The path gate above is compatible with
+      # that: GitHub reports a job skipped by a job-level conditional as
+      # "Success". See scripts/configure-branch-protection.mjs for the full
+      # reasoning and the caveat about skipped-because-a-parent-failed.
+      - name: Run shared hooks package tests
+        if: ${{ !cancelled() }}
+        run: npm run test -w packages/hooks
+
+      - name: Run chat-core package tests
+        if: ${{ !cancelled() }}
+        run: npm run test -w packages/chat-core
+
+      - name: Run chat-integrations package tests
+        if: ${{ !cancelled() }}
+        run: npm run test -w packages/chat-integrations
+
+  # ── API Docker image (same path as Render native Dockerfile builds) ─────
+  api-docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build API image (Dockerfile)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: false
+          # `load: true` (was false) so the next step has an image to run.
+          load: true
+          tags: frapp-api:ci
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+
+      # A successful build is NOT evidence the image can start, and the gap
+      # between the two is not hypothetical: in #1160 `colorjs.io` and later
+      # `zod` stopped hoisting to the root node_modules, the runner stage never
+      # copied the workspace trees holding them, and `verify-render-api` failed
+      # on 67 consecutive pushes to main -- while this job stayed green on every
+      # one of them. Render reports that as `update_failed`, a post-build state;
+      # the runtime logs show MODULE_NOT_FOUND on first require().
+      # Booting the container is the only gate that sees this class of failure.
+      - name: Boot the image and probe /health
+        run: |
+          set -euo pipefail
+
+          # /health answers 200 whether or not the database is reachable -- it
+          # reports `database: error` / `status: degraded` rather than throwing
+          # (apps/api/src/interface/controllers/health.controller.ts). So these
+          # obviously-fake values satisfy the boot-time env validation in
+          # apps/api/src/config/env.validation.ts without needing any secret,
+          # and a 200 proves the process booted and Nest is serving.
+          docker run -d --name frapp-api-ci -p 3001:3001 \
+            -e SUPABASE_URL=http://127.0.0.1:1 \
+            -e SUPABASE_SERVICE_ROLE_KEY=ci-not-a-real-key \
+            -e SUPABASE_ANON_KEY=ci-not-a-real-key \
+            -e STRIPE_SECRET_KEY=sk_test_ci_not_real \
+            -e STRIPE_WEBHOOK_SECRET=whsec_ci_not_real \
+            -e STRIPE_PRICE_ID=price_ci_not_real \
+            frapp-api:ci
+
+          # --max-time must clear the unreachable-database path, not the happy
+          # one. /health still answers 200 with no database, but only after the
+          # Supabase client gives up: measured at ~7s locally against a dead
+          # SUPABASE_URL. A short per-request timeout therefore fails on every
+          # attempt and turns this gate into a permanent red on all PRs.
+          # Bounded by a total deadline instead, so one slow request cannot
+          # multiply into a ten-minute hang.
+          deadline=$(( SECONDS + 180 ))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            # No --show-error: a connection-refused line per attempt would bury
+            # the real failure. `docker logs` below is the diagnostic that matters.
+            if curl --fail --silent --max-time 25 http://127.0.0.1:3001/health; then
+              echo
+              echo "::notice::API image booted and answered /health"
+              exit 0
+            fi
+            if [ -z "$(docker ps -q -f name=frapp-api-ci)" ]; then
+              echo "::error::Container exited before answering /health -- the image cannot start"
+              docker logs frapp-api-ci
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "::error::/health did not answer within 180s"
+          docker logs frapp-api-ci
+          exit 1
+
+      - name: Remove the probe container
+        if: always()
+        run: docker rm -f frapp-api-ci >/dev/null 2>&1 || true
 
   # ── API contract freshness check ────────────────────────────────────────
   api-contract-check:
@@ -110,6 +435,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Restore turbo build outputs
+        uses: actions/cache/restore@v4
+        with:
+          path: .turbo
+          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
+          restore-keys: |
+            turbo-pkgbuild-${{ runner.os }}-
+
+      - name: Build shared packages
+        run: npx turbo run build --filter='./packages/*'
+
       - name: Check API contract freshness (PR)
         if: github.event_name == 'pull_request'
         run: npm run check:api-contract -- --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
@@ -117,6 +453,129 @@ jobs:
       - name: Check API contract freshness (push)
         if: github.event_name == 'push'
         run: npm run check:api-contract
+
+      # Breaking-change detection lives HERE, in the existing contract job,
+      # rather than in a job of its own — because a separate "SDK-drift" gate
+      # would have been entirely redundant. `check:api-contract` above already
+      # regenerates BOTH openapi.json and packages/api-sdk/src/types.ts and
+      # fails on any diff, and it is already a required check. What was missing
+      # is not drift detection but compatibility: deleting an endpoint or
+      # removing a response field regenerates perfectly cleanly and breaks every
+      # client.
+      #
+      # ADVISORY (no --fail-on-breaking): every consumer (apps/web, apps/mobile)
+      # regenerates from this repo and ships with the change, and the project is
+      # mid-rebuild where removing endpoints is the intended work. It annotates
+      # the run rather than blocking it. Revisit if an independently deployed
+      # consumer ever appears.
+      #
+      # `continue-on-error` on BOTH steps, and it is load-bearing: this job is a
+      # REQUIRED check, and these steps fetch a binary from the GitHub releases
+      # CDN at run time. Without it, a rate limit or a 5xx on that download turns
+      # an advisory signal into a merge block on every PR — a required gate whose
+      # availability depends on a third-party download.
+      - name: Install oasdiff
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        run: bash scripts/install-oasdiff.sh
+
+      - name: Detect breaking API changes (advisory)
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        run: npm run check:api-breaking -- --base "${{ github.event.pull_request.base.sha }}"
+
+  # ── Architectural boundary linting (dependency-cruiser) ─────────────────
+  # HARD GATE from day one, made survivable by a committed baseline:
+  # `.dependency-cruiser-known-violations.json` grandfathers the 7 violations
+  # that existed when this landed, and any NEW violation fails.
+  #
+  # Needs the shared packages built — the cruise resolves workspace imports
+  # through the node_modules symlinks npm workspaces creates.
+  dependency-cruiser:
+    needs: packages-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Restore turbo build outputs
+        uses: actions/cache/restore@v4
+        with:
+          path: .turbo
+          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
+          restore-keys: |
+            turbo-pkgbuild-${{ runner.os }}-
+
+      - name: Build shared packages
+        run: npx turbo run build --filter='./packages/*'
+
+      - name: Check architectural boundaries
+        run: npm run check:dep-cruiser
+
+  # ── Duplicate detection (jscpd) ─────────────────────────────────────────
+  # ADVISORY on purpose — deliberately NOT in configure-branch-protection.mjs.
+  #
+  # jscpd has no clone-level baseline the way dependency-cruiser does, so the
+  # only lever is a repo-wide duplication percentage. `.jscpd.json` pins it at
+  # 4.5%, just above the 4.37% measured when this landed, which catches net-new
+  # duplication but cannot distinguish "one bad copy-paste" from "the number
+  # drifted". That is too coarse to block a merge on, and the ratchet only ever
+  # moves down as the consolidation work lands.
+  #
+  # The job is simply allowed to FAIL when the threshold is breached. That is
+  # what "advisory" means here: `duplicate-detection` is deliberately absent
+  # from CI_CHECKS, so a red X reports loudly and blocks nothing.
+  #
+  # It must NOT be `continue-on-error`. That key rewrites the step's conclusion
+  # to success, so the job goes green and a breached threshold is invisible —
+  # an advisory gate nobody can see is not advisory, it is off.
+  duplicate-detection:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check duplication against the repo-wide threshold
+        run: npm run check:duplication
+
+      # The console reporter prints the summary table only; the clone-by-clone
+      # detail lives in the JSON report, which is the thing you actually need to
+      # act on a threshold breach — so `always()`, or the artifact is missing in
+      # precisely the run that needed it.
+      - name: Upload duplication report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jscpd-report
+          path: .jscpd/
+          if-no-files-found: ignore
+          retention-days: 14
 
   # ── Migration safety ────────────────────────────────────────────────────
   migration-safety:
@@ -144,10 +603,31 @@ jobs:
         if: github.event_name == 'push'
         run: npm run check:migration-safety
 
-  # ── Mobile app validation ───────────────────────────────────────────────
-  mobile-validate:
-    needs: packages-build
+  # ── Migration lock safety (ADVISORY) ────────────────────────────────────
+  # Squawk over the migrations this change touches, looking for the patterns
+  # that take a heavy lock on a live table: a constraint added without
+  # NOT VALID, a column added with a volatile default, a UNIQUE constraint that
+  # builds its index under ACCESS EXCLUSIVE. Instant on an empty staging table;
+  # a write outage on a production one.
+  #
+  # ADVISORY ON PURPOSE, and `continue-on-error` is the whole mechanism.
+  # Squawk's default rules report 403 issues across 44 of this repo's 51
+  # migrations. `.squawk.toml` excludes the five rules responsible for 390 of
+  # them — two flag a fix that is IMPOSSIBLE under Supabase, which runs each
+  # migration inside a transaction where CONCURRENTLY is illegal — leaving 13
+  # real findings across 8 files. Those 13 are on already-deployed tables, so
+  # blocking today would fail PRs for findings they did not introduce.
+  # Promoting this to a gate needs a baseline of the existing 13, the same move
+  # `.dependency-cruiser-known-violations.json` makes for the architecture gate.
+  # `check-migration-lock-safety.mjs --strict` is the switch when that lands.
+  #
+  # NOT in scripts/configure-branch-protection.mjs, deliberately: an advisory
+  # job that is also a required check is just a confusing gate.
+  migration-lock-safety:
     runs-on: ubuntu-latest
+    # Reports; never blocks. Removing this line makes it a merge gate — do not
+    # do that without the baseline described above.
+    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -160,8 +640,73 @@ jobs:
           node-version: 20
           cache: npm
 
+      # squawk-cli is a pinned devDependency (exact version, no caret) so a new
+      # Squawk release cannot change what CI reports without a lockfile change.
       - name: Install dependencies
         run: npm ci
+
+      - name: Lint changed migrations (PR)
+        if: github.event_name == 'pull_request'
+        run: npm run check:migration-lock-safety -- --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
+
+      - name: Lint changed migrations (push)
+        if: github.event_name == 'push'
+        run: npm run check:migration-lock-safety -- --base "${{ github.event.before }}" --head "${{ github.sha }}"
+
+  # ── Chapter directory seed validation ───────────────────────────────────
+  # Guards supabase/seed/chapter_directory.csv: canonical #RRGGBB colors,
+  # archetypes that exist in the ArchetypeKey union, no duplicate natural keys.
+  #
+  # The colors are the reason this is blocking. The seed shipped with 50 of its
+  # 100 values missing a leading `#` (#840), and nothing caught it because the
+  # accent engine answers an unparseable hex with the house seed rather than an
+  # error — so a bad value produces a plausible wrong brand color, not a failure.
+  #
+  # No `npm ci` step: the checker imports only node: builtins, so installing the
+  # workspace would be pure latency. The loader's actual execution against a real
+  # database is covered in `pglite-migrations` instead, the one job here with one.
+  chapter-directory-seed:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Validate the chapter directory seed
+        run: npm run check:chapter-directory-seed
+
+  # ── Mobile app validation ───────────────────────────────────────────────
+  mobile-validate:
+    needs: packages-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Restore turbo build outputs
+        uses: actions/cache/restore@v4
+        with:
+          path: .turbo
+          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
+          restore-keys: |
+            turbo-pkgbuild-${{ runner.os }}-
 
       - name: Build shared packages
         run: npx turbo run build --filter='./packages/*'
@@ -172,12 +717,60 @@ jobs:
       - name: Type check mobile
         run: npm run check-types -w apps/mobile
 
-  # ── Web visual regression snapshots ─────────────────────────────────────
-  web-visual-regression:
-    needs: packages-build
+      # The mobile suite existed but ran nowhere, so its guards were free to
+      # regress silently — #687 found one that had (reverting the quiet-hours
+      # zone guard left every test green).
+      - name: Mobile unit tests
+        run: npm run test -w apps/mobile
+
+  # ── Deploy-gate script unit tests ───────────────────────────────────────
+  ci-scripts-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run deploy-gate script tests
+        # No npm ci needed — these tests have no dependencies beyond node:test.
+        run: npm run test:ci-scripts
+
+  # ── Dependency audit gate (issue #618) ──────────────────────────────────
+  # Fast, standalone gate: no `npm ci` (the script audits the lockfile via
+  # --package-lock-only). Fails on any HIGH/CRITICAL advisory not explicitly
+  # allowlisted in scripts/npm-audit-allowlist.json — entries need a reason, a
+  # tracking issue, and an expiry, so known debt is visible and time-boxed
+  # while new advisories block immediately. See
+  # docs/internal/security/SECURITY_FIXES.md § npm audit sweep + CI gate.
+  dependency-audit:
+    runs-on: ubuntu-latest
     permissions:
       contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: npm audit gate (high/critical block unless allowlisted)
+        run: npm run check:npm-audit
+
+  # ── Secret scanning (gitleaks; ADR-13 push-protection replacement) ──────
+  # Fast, standalone gate: no `npm ci` (gitleaks is a single pinned binary). Scans
+  # only the PR/push commit range against .gitleaks.toml. The pre-commit hook is the
+  # local primary; this is the enforced server-side net that replaces the secret
+  # push-protection lost when the repo went private. See docs/internal/ci-cd/SECRET_SCANNING.md.
+  secret-scan:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -188,19 +781,150 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+
+      # scan-secrets.mjs fetches the pinned gitleaks binary on first run (no npm ci needed).
+      - name: Scan PR commit range for secrets
+        if: github.event_name == 'pull_request'
+        run: node scripts/scan-secrets.mjs --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
+
+      - name: Scan pushed commit range for secrets
+        if: github.event_name == 'push'
+        run: node scripts/scan-secrets.mjs --base "${{ github.event.before }}" --head "${{ github.sha }}"
+
+  # ── PGlite migration + RLS smoke validator (ADR-11 / ADR-12) ────────────
+  # Applies every `supabase/migrations/*.sql` to a fresh Postgres-in-WASM
+  # and asserts structural landmarks (unique indexes, generated columns) plus
+  # an RLS smoke tier: every public table enables RLS (default-deny invariant)
+  # and the chat hot-path RLS posture holds (default-deny channels/messages;
+  # ownership-scoped reaction policies). Covers what static
+  # `check:migration-safety` can't: the SQL actually runs and the schema lands.
+  # Out of reach: Realtime, Presence, GoTrue with real JWTs, and RLS
+  # *enforcement* as the authenticated role (#423) — those live in the NestJS
+  # Jest tier (see ADR-11/ADR-12 + AGENT_INFRA.md).
+  pglite-migrations:
+    needs: changes
+    if: ${{ github.event_name == 'push' || needs.changes.outputs.pglite == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
+      - name: Apply migrations to PGlite + assert schema landmarks
+        run: npm run check:pglite-migrations
+
+  # ── 375px responsive floor (REQUIRED) ───────────────────────────────────
+  #
+  # The only Playwright job in this workflow. It was split out of the advisory
+  # `web-visual-regression` snapshot job in #1152 precisely so it could be
+  # required, and that snapshot job has since been deleted outright — baselines
+  # pinned to CI's Chromium build drifted with every bump, and an advisory gate
+  # nobody could act on was costing more than it caught.
+  #
+  # This suite has none of those failure modes: it stores no baseline and
+  # compares no pixels, reading one integer per route and comparing it to 375.
+  # `spec/ui/web-dashboard/README.md` states the floor as a MUST; this job is
+  # what makes that word mean something.
+  #
+  # Selection is by directory, not by tag. With the snapshot suite gone,
+  # `test:floor` runs everything under `apps/web/tests/visual/`, so a NEW spec
+  # added there joins this required job by default rather than falling through
+  # into no job at all. Do not reintroduce a `--grep` filter without a second
+  # job to catch what it excludes.
+  #
+  # No `continue-on-error`, per docs/internal/ci-cd/QUALITY_GATES.md: that key
+  # rewrites the step's conclusion to success, which would leave this job green
+  # on a breached floor — a required check that cannot fail is not a gate.
+  #
+  # The other way a gate goes hollow is running zero tests and exiting 0, which
+  # would be worse: green, required, and asserting nothing. Playwright exits **1**
+  # when a run collects no tests — verified by running it against the 1.62.1 that
+  # `npm ci` resolves, not assumed; `apps/web/package.json` asks for `^1.62.1`, so
+  # re-check on any upgrade that moves the lockfile. Note the narrowing that came
+  # with directory selection: `--grep @floor` exited 1 whenever the FLOOR SUITE
+  # went missing, while directory selection keys on the collected-test count, so a
+  # SECOND spec added here would mask the floor spec's removal. See
+  # apps/web/playwright.config.ts.
+  #
+  # Path-gated like the jobs around it. That does NOT conflict with being
+  # required: the gate is a JOB-level `if:`, and GitHub reports a job skipped by
+  # a conditional as Success. Both `needs:` parents are themselves required
+  # checks, which is the invariant scripts/configure-branch-protection.mjs
+  # spells out for `web-tests` — a required check whose parent is not required
+  # is a hole, because a job skipped for a FAILED parent also reports skipped.
+  web-responsive-floor:
+    needs: [packages-build, changes]
+    if: ${{ github.event_name == 'push' || needs.changes.outputs.web == 'true' }}
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Restore turbo build outputs
+        uses: actions/cache/restore@v4
+        with:
+          path: .turbo
+          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
+          restore-keys: |
+            turbo-pkgbuild-${{ runner.os }}-
+
       - name: Build shared packages
         run: npx turbo run build --filter='./packages/*'
 
-      - name: Install Playwright browser
-        run: npx playwright install --with-deps chromium
+      - name: Resolve Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
 
-      - name: Run dashboard visual regression suite
-        run: npm run test:visual -w apps/web
+      # Keyed on the resolved Playwright version, so a version bump is a cold
+      # key and this job downloads Chromium once before repopulating the cache.
+      # This used to share the entry with `web-visual-regression`, which ran
+      # concurrently; with that job deleted there is no second writer, so the
+      # harmless "Unable to reserve cache" annotation that race produced should
+      # no longer appear here.
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+
+      - name: Install Playwright OS deps
+        run: npx playwright install-deps chromium
+
+      - name: Install Playwright browser
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install chromium
+
+      - name: Assert every dashboard route holds the 375px floor
+        run: npm run test:floor -w apps/web
+
+      # No artifact upload, deliberately. The retired snapshot job needed one
+      # because a pixel diff cannot be read from its logs; this suite's failure
+      # message already names the offending route, the widest element inside
+      # `<main>`, its width against the budget, and its classes.
 
   # ── Branch policy enforcement (PRs to production only) ─────────────────
   branch-policy:

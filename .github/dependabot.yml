@@ -1,0 +1,161 @@
+# Dependabot configuration — automated npm dependency updates.
+#
+# Scope: ONE `npm` entry at the repo root. The npm workspaces (`apps/*`,
+# `packages/*`) all resolve through the single root `package-lock.json`, so one
+# ecosystem entry covers the whole monorepo. Adding per-workspace entries would
+# produce duplicate PRs against the same lockfile.
+#
+# Noise floor: every Dependabot PR costs agent babysitting (the normal PR
+# lifecycle in AGENTS.md), so minor+patch updates are collapsed into a single
+# weekly PR. Majors stay individual — they need to be read one at a time.
+#
+# Safety net: CI (`npm ci`, lint, type-check, unit + E2E suites) plus the
+# blocking high/critical audit gate (`npm run check:npm-audit`, #618) is what
+# makes auto-updates safe to merge. Docs: docs/internal/ci-cd/AGENT_INFRA.md.
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Etc/UTC
+    # Grouped minor+patch = 1 PR; anything left is a major, and majors are
+    # deliberately ungrouped so each gets its own reviewable diff.
+    open-pull-requests-limit: 5
+    labels:
+      - "area:deps"
+    # `include: scope` makes Dependabot append the scope itself — "(deps)" for
+    # runtime deps, "(deps-dev)" for devDependencies — so the prefix here must
+    # stay bare "chore", not "chore(deps)", or the scope renders twice.
+    # Yields: `chore(deps): bump …` / `chore(deps-dev): bump …`.
+    commit-message:
+      prefix: "chore"
+      prefix-development: "chore"
+      include: scope
+    groups:
+      npm-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+    # ── The React pin ────────────────────────────────────────────────────
+    # React is pinned to an EXACT 19.1.0 in every workspace plus a root
+    # `overrides` entry. React Native 0.81.5 bundles react-native-renderer
+    # 19.1.0, which asserts exact version equality with `react` at runtime;
+    # its peer range (^19.1.0) does not express that, so npm would accept a
+    # newer React silently, hoist it, and kill apps/mobile on first render
+    # with "Invalid hook call". Only booting the app on a device catches it.
+    # See AGENTS.md § Gotchas and PR #842.
+    #
+    # These families therefore move only as a version-locked set, via a
+    # planned Expo SDK upgrade (#289) — never as an isolated Dependabot bump.
+    #
+    # KNOWN, DELIBERATE GAP: ignore conditions apply to Dependabot *security*
+    # updates as well as version updates, so a CVE in one of these packages
+    # will NOT open a PR automatically. That is the accepted trade — an
+    # isolated security bump here breaks the runtime — but it means these
+    # families need a human/agent to carry a CVE through the SDK-upgrade path.
+    # `npm run check:npm-audit` still fails CI on such an advisory, so it
+    # surfaces loudly rather than silently.
+    ignore:
+      - dependency-name: "react"
+      - dependency-name: "react-dom"
+      # Pinned to a bare 19.1.0 in apps/mobile alongside react itself — the
+      # same exact-equality constraint, so it belongs to the same locked set.
+      - dependency-name: "react-test-renderer"
+      - dependency-name: "react-native"
+      - dependency-name: "react-native-*"
+      - dependency-name: "@react-native/*"
+      - dependency-name: "@react-native-community/*"
+      - dependency-name: "@react-native-async-storage/*"
+      - dependency-name: "expo"
+      - dependency-name: "@expo/*"
+      # NOTE: the Expo client packages are listed one by one on purpose — do
+      # NOT collapse them into `expo-*`. That glob also matches
+      # `expo-server-sdk`, which is an apps/api server dependency (the push
+      # delivery client) with no tie to the mobile SDK lock; globbing would
+      # freeze it silently and forever. If an Expo SDK upgrade adds a new
+      # client package here, add it to this list.
+      - dependency-name: "expo-constants"
+      - dependency-name: "expo-file-system"
+      - dependency-name: "expo-font"
+      - dependency-name: "expo-linking"
+      - dependency-name: "expo-network"
+      - dependency-name: "expo-router"
+      - dependency-name: "expo-secure-store"
+      - dependency-name: "expo-sharing"
+      - dependency-name: "expo-splash-screen"
+      - dependency-name: "expo-status-bar"
+      - dependency-name: "expo-web-browser"
+
+      # ── The vendored-generator pins ──────────────────────────────────────
+      # `packages/chapter-theme/src/vendor/generate-radix-colors.ts` is upstream
+      # Radix code held byte-for-byte (see that directory's README). Its runtime
+      # deps are pinned to match upstream's own package.json exactly, because
+      # the generator is written and tested against those versions and the
+      # colour math is the whole point — `spec/ui/design-system/accent-engine.md`
+      # §8 guarantees accent contrast *by construction*, and the construction
+      # has to be the one the guarantee was written against.
+      #
+      # `colorjs.io` is the pin that Dependabot kept trying to move: 0.5.2 ->
+      # 0.7.1 arrives as a *minor* under 0.x semver, so it landed in the
+      # grouped PR, and it changed `Coords` to `[number | null, ...]` for CSS
+      # Color 4 `none` components. That broke `@repo/chapter-theme`'s build with
+      # 24 type errors and took `packages-build`, `clean-checkout-typecheck` and
+      # `api-docker-build` down with it (PR #1003).
+      #
+      # That failure is the gate working, not a gate to route around: the
+      # `noUncheckedIndexedAccess: false` note in that package's tsconfig.json
+      # says in as many words that typechecking the vendored file is what
+      # surfaces "a breaking change in colorjs.io's API, found on resync".
+      # Moving this pin means re-vendoring the generator from upstream at a
+      # commit that itself moved, then re-running `signet.spec.ts` — a resync,
+      # not a bump. Ignoring it here keeps that decision a human one.
+      #
+      # Only `colorjs.io` is listed. The generator's two other pins are left
+      # under Dependabot on purpose: `@radix-ui/colors` is exact-pinned but its
+      # scales are exactly what `signet.spec.ts` checks, so a bad bump fails
+      # loudly, and `bezier-easing` is a caret range upstream chose itself
+      # (`^2.1.0`) — only its 3.x is unusable here, and a major arrives as its
+      # own reviewable PR rather than inside the group.
+      - dependency-name: "colorjs.io"
+
+      # ── The ESLint 10 hold ───────────────────────────────────────────────
+      # Majors only. ESLint 10 is blocked on a plugin, not on our own code:
+      # `eslint-plugin-react` has no v10-compatible release — 7.37.5 is the
+      # newest published version and its peer range still ends at `^9.7`. Under
+      # v10 it throws `contextOrFilename.getFilename is not a function` from its
+      # React-version *detection* path, because v10 removed the deprecated
+      # `context` methods it calls.
+      #
+      # Measured, so the re-evaluation is cheap when the plugin ships v10:
+      # pinning `settings.react.version` in `packages/eslint-config` skips the
+      # detection path and the whole monorepo lints clean on v10. That was
+      # rejected for now — it runs a core plugin outside its declared peer range
+      # and hardcodes a React version that then has to be hand-synced — but it
+      # means the upgrade is a small change, not an unknown.
+      #
+      # The two move as a set: `@eslint/js@10` peer-requires `eslint@^10`, so
+      # bumping either alone fails `npm ci` with ERESOLVE. Ignoring only the
+      # major keeps 9.x minors and patches flowing. Reopen #943/#944's work when
+      # `eslint-plugin-react` declares v10.
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@eslint/js"
+        update-types: ["version-update:semver-major"]
+
+      # ── TypeScript 7 dual-install ────────────────────────────────────────
+      # TypeScript 7 is native tsc with no JS compiler API. The `typescript`
+      # package is aliased to `@typescript/typescript6@6.0.2` (Nest CLI,
+      # typescript-eslint peer <6.1.0, ts-jest peer <7). Native 7 lives at
+      # `@typescript/native` (`npm:typescript@7.0.2`) and provides `tsc`.
+      # Flattening `typescript` to 7.x is what failed #1031. Do not ignore
+      # these — 7.x patches on `@typescript/native` and 6.0.x patches on the
+      # alias should still flow — but do not "fix" the alias back to
+      # typescript@7. Canonical write-up:
+      # docs/internal/ci-cd/AGENT_INFRA.md § TypeScript 7.

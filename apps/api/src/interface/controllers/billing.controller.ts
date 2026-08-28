@@ -5,27 +5,27 @@ import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
+import { SubscriptionExempt } from '../decorators/subscription.decorator';
 import { CurrentChapterId } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '../../domain/constants/permissions';
 import { CreateCheckoutDto, CreatePortalDto } from '../dtos/billing.dto';
 
 @ApiTags('Billing')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard, ChapterGuard)
+@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+@RequirePermissions(SystemPermissions.BILLING_VIEW)
+@SubscriptionExempt()
 @Controller('billing')
 export class BillingController {
   constructor(private readonly billingService: BillingService) {}
 
   @Get('status')
-  @UseGuards(PermissionsGuard)
-  @RequirePermissions(SystemPermissions.BILLING_VIEW)
   @ApiOperation({ summary: 'Get chapter billing status' })
   async getStatus(@CurrentChapterId() chapterId: string) {
     return this.billingService.getChapterBillingStatus(chapterId);
   }
 
   @Post('checkout')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.BILLING_MANAGE)
   @ApiOperation({ summary: 'Create Stripe Checkout session' })
   async createCheckout(
@@ -42,7 +42,6 @@ export class BillingController {
   }
 
   @Post('portal')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.BILLING_MANAGE)
   @ApiOperation({ summary: 'Create Stripe Customer Portal session' })
   async createPortal(

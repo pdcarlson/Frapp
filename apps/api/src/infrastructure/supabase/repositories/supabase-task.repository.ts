@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+  TablesUpdate,
+} from '../database.types';
 import { ITaskRepository } from '../../../domain/repositories/task.repository.interface';
 import { Task } from '../../../domain/entities/task.entity';
 
@@ -19,7 +23,7 @@ export class SupabaseTaskRepository implements ITaskRepository {
       .eq('chapter_id', chapterId)
       .maybeSingle();
     if (error) throw error;
-    return data as Task | null;
+    return data;
   }
 
   async findByChapter(chapterId: string): Promise<Task[]> {
@@ -29,7 +33,7 @@ export class SupabaseTaskRepository implements ITaskRepository {
       .eq('chapter_id', chapterId)
       .order('created_at', { ascending: false });
     if (error) throw error;
-    return (data as Task[]) || [];
+    return data || [];
   }
 
   async findByAssignee(chapterId: string, assigneeId: string): Promise<Task[]> {
@@ -40,35 +44,48 @@ export class SupabaseTaskRepository implements ITaskRepository {
       .eq('assignee_id', assigneeId)
       .order('created_at', { ascending: false });
     if (error) throw error;
-    return (data as Task[]) || [];
+    return data || [];
   }
 
-  async create(data: Partial<Task>): Promise<Task> {
+  async create(data: TablesInsert<'tasks'>): Promise<Task> {
     const { data: created, error } = await this.supabase
       .from('tasks')
-      .insert(data as never)
+      .insert(data)
       .select()
       .single();
 
     if (error) throw error;
-    return created as Task;
+    return created;
   }
 
   async update(
     id: string,
     chapterId: string,
-    data: Partial<Task>,
+    data: TablesUpdate<'tasks'>,
   ): Promise<Task> {
     const { data: updated, error } = await this.supabase
       .from('tasks')
-      .update(data as never)
+      .update(data)
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .select()
       .single();
 
     if (error) throw error;
-    return updated as Task;
+    return updated;
+  }
+
+  async confirmCompletionAtomic(
+    id: string,
+    chapterId: string,
+  ): Promise<Task | null> {
+    const { data, error } = await this.supabase.rpc('confirm_task_completion', {
+      p_task_id: id,
+      p_chapter_id: chapterId,
+    });
+    if (error) throw error;
+    const rows = data ?? [];
+    return rows.length > 0 ? rows[0] : null;
   }
 
   async delete(id: string, chapterId: string): Promise<void> {

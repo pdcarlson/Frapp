@@ -5,7 +5,18 @@ import React from "react";
 import { useRoles, useCreateRole } from "./use-roles";
 import { FrappClientProvider } from "./use-frapp-client";
 
-const createWrapper = (queryClient: QueryClient, mockClient: unknown) => {
+const CHAPTER_ID = "chapter-abc";
+// The role hooks are chapter-scoped: they read `useActiveChapterId()`, gate the
+// queries on `enabled: !!chapterId`, and invalidate `["roles", chapterId]`. A
+// provider without a chapter id leaves that null, so the queries never run and
+// the mutations invalidate a key these assertions would not match.
+const ROLES_QUERY_KEY = ["roles", CHAPTER_ID];
+
+const createWrapper = (
+  queryClient: QueryClient,
+  mockClient: unknown,
+  chapterId: string | null = CHAPTER_ID,
+) => {
   const Wrapper = ({ children }: { children: React.ReactNode }) => (
     <FrappClientProvider
       client={
@@ -13,6 +24,7 @@ const createWrapper = (queryClient: QueryClient, mockClient: unknown) => {
           typeof import("@repo/api-sdk").createFrappClient
         >
       }
+      chapterId={chapterId}
     >
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     </FrappClientProvider>
@@ -75,6 +87,26 @@ describe("useRoles", () => {
     expect(mockGet).toHaveBeenCalledWith("/v1/roles");
     expect(result.current.error).toEqual(mockError);
   });
+
+  // Pins the `enabled: !!chapterId` gate. Without it the hook would fetch
+  // during the window before a chapter is selected — no x-chapter-id header,
+  // so an unscoped or 403 response cached under ["roles", null]. Every other
+  // test here supplies a chapter, so this is the only one that can catch a
+  // dropped gate.
+  it("does not fetch before a chapter is active", async () => {
+    const mockGet = vi.fn().mockResolvedValue({ data: [], error: null });
+
+    const { result } = renderHook(() => useRoles(), {
+      wrapper: createWrapper(queryClient, { GET: mockGet }, null),
+    });
+
+    await waitFor(() => {
+      expect(result.current.fetchStatus).toBe("idle");
+    });
+
+    expect(result.current.isPending).toBe(true);
+    expect(mockGet).not.toHaveBeenCalled();
+  });
 });
 
 describe("useCreateRole", () => {
@@ -117,7 +149,7 @@ describe("useCreateRole", () => {
 
     await waitFor(() => {
       expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
-        queryKey: ["roles"],
+        queryKey: ROLES_QUERY_KEY,
       });
     });
   });
@@ -146,7 +178,7 @@ describe("useCreateRole", () => {
 
     await waitFor(() => {
       expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
-        queryKey: ["roles"],
+        queryKey: ROLES_QUERY_KEY,
       });
     });
   });

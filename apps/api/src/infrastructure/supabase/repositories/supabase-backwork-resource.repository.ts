@@ -1,11 +1,17 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { escapeFilterValue } from '../supabase.utils';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type {
   IBackworkResourceRepository,
   BackworkResourceFilter,
 } from '../../../domain/repositories/backwork.repository.interface';
 import { BackworkResource } from '../../../domain/entities/backwork.entity';
+import type {
+  AssignmentType,
+  DocumentVariant,
+  Semester,
+} from '../../../domain/entities/backwork.entity';
 
 @Injectable()
 export class SupabaseBackworkResourceRepository implements IBackworkResourceRepository {
@@ -25,7 +31,7 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
       .eq('chapter_id', chapterId)
       .maybeSingle();
     if (error) throw error;
-    return data as BackworkResource | null;
+    return data;
   }
 
   async findByChapter(
@@ -49,18 +55,32 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
     if (filters?.year) {
       query = query.eq('year', filters.year);
     }
+    // `semester`, `assignment_type` and `document_variant` are enum columns,
+    // but `BackworkResourceFilter` types them as plain strings because they
+    // arrive as unvalidated `@Query` params on `GET /v1/backwork/resources`.
+    // Narrowing them here keeps behavior identical — an out-of-range value
+    // still just matches no rows, as it does today. Validating them at the
+    // controller (so a bad value 400s instead of returning an empty list) is a
+    // behavior change, tracked separately in #787.
     if (filters?.semester) {
-      query = query.eq('semester', filters.semester);
+      query = query.eq('semester', filters.semester as Semester);
     }
     if (filters?.assignment_type) {
-      query = query.eq('assignment_type', filters.assignment_type);
+      query = query.eq(
+        'assignment_type',
+        filters.assignment_type as AssignmentType,
+      );
     }
     if (filters?.document_variant) {
-      query = query.eq('document_variant', filters.document_variant);
+      query = query.eq(
+        'document_variant',
+        filters.document_variant as DocumentVariant,
+      );
     }
     if (filters?.search) {
+      const safePattern = escapeFilterValue(`%${filters.search}%`);
       query = query.or(
-        `title.ilike.%${filters.search}%,course_number.ilike.%${filters.search}%`,
+        `title.ilike.${safePattern},course_number.ilike.${safePattern}`,
       );
     }
 
@@ -68,7 +88,7 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
       ascending: false,
     });
     if (error) throw error;
-    return (data as BackworkResource[]) || [];
+    return data || [];
   }
 
   async findByFileHash(
@@ -82,17 +102,19 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
       .eq('file_hash', fileHash)
       .maybeSingle();
     if (error) throw error;
-    return data as BackworkResource | null;
+    return data;
   }
 
-  async create(data: Partial<BackworkResource>): Promise<BackworkResource> {
+  async create(
+    data: TablesInsert<'backwork_resources'>,
+  ): Promise<BackworkResource> {
     const { data: created, error } = await this.supabase
       .from('backwork_resources')
-      .insert(data as never)
+      .insert(data)
       .select()
       .single();
     if (error) throw error;
-    return created as BackworkResource;
+    return created;
   }
 
   async delete(id: string, chapterId: string): Promise<void> {

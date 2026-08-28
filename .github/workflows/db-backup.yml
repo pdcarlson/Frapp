@@ -1,0 +1,186 @@
+name: Nightly DB Backup
+
+# Offsite logical backup of the staging database (#852).
+#
+# This is not redundancy on top of a provider snapshot. The `Frapp Live` org is on
+# the Supabase FREE plan, which gets no dashboard-accessible daily backups and no
+# PITR — so until that changes, this workflow produces the only restorable backup
+# either project has. Supabase's own free-tier guidance is exactly this:
+# https://supabase.com/docs/guides/platform/backups
+#
+# Production is deliberately out of scope for now (#814 / `scope:production`).
+# Adding it is a config change — a second job with `environment: production` — not
+# a rewrite, which is why every value below comes from the environment.
+#
+# Restoring what this produces: docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md.
+
+on:
+  schedule:
+    # 07:00 UTC — 03:00 ET, off-peak for a US-college user base, and clear of the
+    # deploy pipeline so a dump never races a migration apply.
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Never let two dumps of the same database overlap. `cancel-in-progress: false`
+  # because a half-uploaded dump that got cancelled is worse than a late one.
+  group: db-backup-staging
+  cancel-in-progress: false
+
+jobs:
+  backup-staging:
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify Infisical credentials are configured
+        env:
+          CLIENT_ID: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+        run: |
+          MISSING=""
+          [ -n "$CLIENT_ID" ] || MISSING="$MISSING INFISICAL_MACHINE_IDENTITY_ID"
+          [ -n "$CLIENT_SECRET" ] || MISSING="$MISSING INFISICAL_CLIENT_SECRET"
+          if [ -n "$MISSING" ]; then
+            echo "::error::Infisical credentials are not configured for the staging environment. Missing or empty:$MISSING. See docs/internal/environment/SECRETS_MANAGEMENT.md."
+            exit 1
+          fi
+
+      - name: Inject staging secrets from Infisical
+        uses: Infisical/secrets-action@v1.0.12
+        with:
+          method: "universal"
+          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: "frapp-live-ej-ls"
+          env-slug: "staging"
+          secret-path: "/"
+          include-imports: true
+
+      # Checked BEFORE the dump so an unconfigured destination fails in seconds
+      # rather than after several minutes of pg_dump. The failure is deliberate:
+      # a backup job that goes green without writing a backup anywhere is the
+      # precise illusion #852 exists to destroy.
+      - name: Check the offsite destination is configured
+        run: |
+          MISSING=""
+          [ -n "${BACKUP_S3_ENDPOINT:-}" ]          || MISSING="$MISSING BACKUP_S3_ENDPOINT"
+          [ -n "${BACKUP_S3_BUCKET:-}" ]            || MISSING="$MISSING BACKUP_S3_BUCKET"
+          [ -n "${BACKUP_S3_ACCESS_KEY_ID:-}" ]     || MISSING="$MISSING BACKUP_S3_ACCESS_KEY_ID"
+          [ -n "${BACKUP_S3_SECRET_ACCESS_KEY:-}" ] || MISSING="$MISSING BACKUP_S3_SECRET_ACCESS_KEY"
+          if [ -n "$MISSING" ]; then
+            {
+              echo "## Nightly DB backup did not run"
+              echo
+              echo "The offsite destination secrets did not reach this job. Missing:"
+              echo
+              for s in $MISSING; do echo "- \`$s\`"; done
+              echo
+              echo "These were provisioned on 2026-08-27 (#1287: Cloudflare R2 bucket +"
+              echo "bucket-scoped token) and live in Infisical \`staging\` at \`/\` — so this is"
+              echo "a **regression**, not first-time setup. Do not re-provision the bucket."
+              echo "Check that the four secrets still exist in Infisical staging and that the"
+              echo "injection step above authenticated; see"
+              echo "docs/internal/environment/SECRETS_MANAGEMENT.md and"
+              echo "docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md § Backups: what exists."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::Offsite backup secrets missing from the job env (missing:$MISSING). Provisioned 2026-08-27 (#1287) — check Infisical staging, do not re-provision."
+            exit 1
+          fi
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v2
+        with:
+          version: 2.77.0
+
+      # `supabase link` rather than a connection string: GitHub runners are
+      # IPv4-only and Supabase direct connections are IPv6-only without the IPv4
+      # add-on, so this has to go through the session pooler — whose hostname
+      # Supabase has renamed before. Letting the CLI resolve it means a pooler
+      # rename cannot silently break the only backup this project has.
+      # SUPABASE_DB_PASSWORD is read from the environment by the CLI; it is
+      # already provisioned for staging and exercised by every migration run.
+      - name: Link to the staging project
+        run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Dump
+        id: dump
+        run: |
+          set -euo pipefail
+          LABEL="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+          echo "label=$LABEL" >> "$GITHUB_OUTPUT"
+          scripts/db-backup.sh --linked --out-dir "$RUNNER_TEMP/backups" --label "$LABEL"
+
+      - name: Upload offsite
+        env:
+          AWS_ACCESS_KEY_ID: ${{ env.BACKUP_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ env.BACKUP_S3_SECRET_ACCESS_KEY }}
+          # `auto` is correct for Cloudflare R2 and harmless elsewhere; override
+          # with BACKUP_S3_REGION for a provider that pins a real region.
+          AWS_DEFAULT_REGION: ${{ env.BACKUP_S3_REGION || 'auto' }}
+        run: |
+          set -euo pipefail
+          LABEL="${{ steps.dump.outputs.label }}"
+          DEST="s3://$BACKUP_S3_BUCKET/staging/$LABEL/"
+          aws s3 cp "$RUNNER_TEMP/backups/$LABEL/" "$DEST" \
+            --endpoint-url "$BACKUP_S3_ENDPOINT" --recursive --only-show-errors
+          echo "Uploaded to $DEST"
+
+          # Read it straight back. `aws s3 cp` exiting 0 proves the request was
+          # accepted, not that four objects are retrievable from the bucket you
+          # think you configured — and an unverified backup is the thing this
+          # whole issue is about.
+          COUNT="$(aws s3 ls "$DEST" --endpoint-url "$BACKUP_S3_ENDPOINT" | wc -l)"
+          if [ "$COUNT" -lt 4 ]; then
+            echo "::error::Read-back found $COUNT objects at $DEST, expected 4 (roles, schema, data, manifest)."
+            exit 1
+          fi
+          echo "Read-back verified: $COUNT objects."
+
+      - name: Prune backups past the retention window
+        env:
+          AWS_ACCESS_KEY_ID: ${{ env.BACKUP_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ env.BACKUP_S3_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ env.BACKUP_S3_REGION || 'auto' }}
+        run: |
+          set -euo pipefail
+          DAYS="${BACKUP_RETENTION_DAYS:-30}"
+          CUTOFF="$(date -u -d "$DAYS days ago" +%Y-%m-%d)"
+          echo "Pruning staging/ prefixes older than $CUTOFF"
+          # Prefixes are the UTC dump timestamps db-backup.sh generates, so a
+          # lexical comparison is a chronological one — which is why the label
+          # format is fixed rather than cosmetic. Never trust object mtimes here:
+          # they record upload order, not dump order.
+          aws s3 ls "s3://$BACKUP_S3_BUCKET/staging/" \
+            --endpoint-url "$BACKUP_S3_ENDPOINT" \
+            | awk '{print $2}' | tr -d '/' \
+            | while read -r P; do
+                [ -n "$P" ] || continue
+                if [ "${P%%T*}" \< "$CUTOFF" ]; then
+                  echo "  removing $P"
+                  aws s3 rm "s3://$BACKUP_S3_BUCKET/staging/$P/" \
+                    --endpoint-url "$BACKUP_S3_ENDPOINT" --recursive --only-show-errors
+                fi
+              done
+
+      - name: Summary
+        if: success()
+        run: |
+          {
+            echo "## Nightly DB backup"
+            echo
+            echo "- Source: \`frapp-staging\`"
+            echo "- Label: \`${{ steps.dump.outputs.label }}\`"
+            echo "- Destination: \`$BACKUP_S3_BUCKET/staging/\`"
+            echo "- Read-back verified against the bucket."
+            echo
+            echo "Covers application data only. Storage objects are **not** included —"
+            echo "see DB_ROLLBACK_PLAYBOOK.md § What this backup does not cover."
+          } >> "$GITHUB_STEP_SUMMARY"

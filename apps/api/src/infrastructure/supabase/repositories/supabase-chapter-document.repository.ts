@@ -1,11 +1,16 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+  TablesUpdate,
+} from '../database.types';
 import type {
   IChapterDocumentRepository,
   ChapterDocumentFilter,
 } from '../../../domain/repositories/chapter-document.repository.interface';
 import type { ChapterDocument } from '../../../domain/entities/chapter-document.entity';
+import { escapeLikePattern } from '../supabase.utils';
 
 @Injectable()
 export class SupabaseChapterDocumentRepository implements IChapterDocumentRepository {
@@ -25,7 +30,7 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
       .eq('chapter_id', chapterId)
       .maybeSingle();
     if (error) throw error;
-    return data as ChapterDocument | null;
+    return data;
   }
 
   async findByChapter(
@@ -45,21 +50,27 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
       }
     }
 
+    if (filter?.search) {
+      query = query.ilike('title', `%${escapeLikePattern(filter.search)}%`);
+    }
+
     const { data, error } = await query.order('created_at', {
       ascending: false,
     });
     if (error) throw error;
-    return (data as ChapterDocument[]) || [];
+    return data || [];
   }
 
-  async create(data: Partial<ChapterDocument>): Promise<ChapterDocument> {
+  async create(
+    data: TablesInsert<'chapter_documents'>,
+  ): Promise<ChapterDocument> {
     const { data: created, error } = await this.supabase
       .from('chapter_documents')
-      .insert(data as never)
+      .insert(data)
       .select()
       .single();
     if (error) throw error;
-    return created as ChapterDocument;
+    return created;
   }
 
   async delete(id: string, chapterId: string): Promise<void> {
@@ -72,11 +83,26 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
   }
 
   async moveToRoot(folder: string, chapterId: string): Promise<void> {
+    const patch: TablesUpdate<'chapter_documents'> = { folder: null };
     const { error } = await this.supabase
       .from('chapter_documents')
-      .update({ folder: null } as never)
+      .update(patch)
       .eq('chapter_id', chapterId)
       .eq('folder', folder);
+    if (error) throw error;
+  }
+
+  async renameFolder(
+    fromFolder: string,
+    toFolder: string,
+    chapterId: string,
+  ): Promise<void> {
+    const patch: TablesUpdate<'chapter_documents'> = { folder: toFolder };
+    const { error } = await this.supabase
+      .from('chapter_documents')
+      .update(patch)
+      .eq('chapter_id', chapterId)
+      .eq('folder', fromFolder);
     if (error) throw error;
   }
 }

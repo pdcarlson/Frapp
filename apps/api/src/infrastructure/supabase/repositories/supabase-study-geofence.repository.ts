@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient } from '../database.types';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+  TablesUpdate,
+} from '../database.types';
 import type { IStudyGeofenceRepository } from '../../../domain/repositories/study.repository.interface';
 import type { StudyGeofence } from '../../../domain/entities/study.entity';
 
@@ -19,7 +23,7 @@ export class SupabaseStudyGeofenceRepository implements IStudyGeofenceRepository
       .eq('chapter_id', chapterId)
       .maybeSingle();
     if (error) throw error;
-    return data as StudyGeofence | null;
+    return data;
   }
 
   async findByChapter(chapterId: string): Promise<StudyGeofence[]> {
@@ -29,35 +33,35 @@ export class SupabaseStudyGeofenceRepository implements IStudyGeofenceRepository
       .eq('chapter_id', chapterId)
       .order('created_at', { ascending: false });
     if (error) throw error;
-    return (data as StudyGeofence[]) || [];
+    return data || [];
   }
 
-  async create(data: Partial<StudyGeofence>): Promise<StudyGeofence> {
+  async create(data: TablesInsert<'study_geofences'>): Promise<StudyGeofence> {
     const { data: created, error } = await this.supabase
       .from('study_geofences')
-      .insert(data as never)
+      .insert(data)
       .select()
       .single();
 
     if (error) throw error;
-    return created as StudyGeofence;
+    return created;
   }
 
   async update(
     id: string,
     chapterId: string,
-    data: Partial<StudyGeofence>,
+    data: TablesUpdate<'study_geofences'>,
   ): Promise<StudyGeofence> {
     const { data: updated, error } = await this.supabase
       .from('study_geofences')
-      .update(data as never)
+      .update(data)
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .select()
       .single();
 
     if (error) throw error;
-    return updated as StudyGeofence;
+    return updated;
   }
 
   async delete(id: string, chapterId: string): Promise<void> {

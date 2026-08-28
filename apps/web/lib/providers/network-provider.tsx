@@ -1,6 +1,14 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+  useSyncExternalStore,
+} from "react";
+import { normalizeApiBaseUrl } from "@repo/api-sdk";
 
 export type ConnectionState = "ONLINE" | "DEGRADED" | "OFFLINE";
 
@@ -18,34 +26,56 @@ const NetworkContext = createContext<NetworkContextValue>({
   isOffline: false,
 });
 
+/*
+ * `/health` is the one route that is not under `/v1`, so the poll needs the
+ * bare origin. That is the same normalization the SDK applies to its own
+ * baseUrl, so it comes from the shared helper rather than a second local copy
+ * of the rule — the two drifting apart is what let a doubled `/v1` 404 every
+ * data request while this health poll kept reporting ONLINE.
+ */
 function getHealthCheckUrl() {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL;
   if (!apiUrl) {
     return null;
   }
-  const normalizedApiUrl = apiUrl.replace(/\/$/, "");
-  if (normalizedApiUrl.endsWith("/v1")) {
-    return `${normalizedApiUrl.slice(0, -3)}/health`;
-  }
-  return `${normalizedApiUrl}/health`;
+  return `${normalizeApiBaseUrl(apiUrl)}/health`;
 }
 
 const DEGRADED_THRESHOLD = 3;
 
+function subscribeLinkOnline(onStoreChange: () => void): () => void {
+  window.addEventListener("online", onStoreChange);
+  window.addEventListener("offline", onStoreChange);
+  return () => {
+    window.removeEventListener("online", onStoreChange);
+    window.removeEventListener("offline", onStoreChange);
+  };
+}
+
+function getLinkOnline(): boolean {
+  return navigator.onLine;
+}
+
+function getLinkOnlineServer(): boolean {
+  return true;
+}
+
 export function NetworkProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<ConnectionState>("ONLINE");
+  const linkOnline = useSyncExternalStore(
+    subscribeLinkOnline,
+    getLinkOnline,
+    getLinkOnlineServer,
+  );
   const [failureCount, setFailureCount] = useState(0);
 
   const checkHealth = useCallback(async () => {
     if (!navigator.onLine) {
-      setState("OFFLINE");
       return;
     }
 
     const healthCheckUrl = getHealthCheckUrl();
     if (!healthCheckUrl) {
       setFailureCount(0);
-      setState("ONLINE");
       return;
     }
 
@@ -61,7 +91,6 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
 
         if (res.ok) {
           setFailureCount(0);
-          setState("ONLINE");
         } else {
           setFailureCount((prev) => prev + 1);
         }
@@ -74,35 +103,21 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (failureCount >= DEGRADED_THRESHOLD) {
-      setState("DEGRADED");
-    }
-  }, [failureCount]);
-
-  useEffect(() => {
     const interval = setInterval(checkHealth, 30_000);
     return () => clearInterval(interval);
   }, [checkHealth]);
 
   useEffect(() => {
-    const handleOnline = () => {
-      setState("ONLINE");
-      setFailureCount(0);
-    };
-    const handleOffline = () => setState("OFFLINE");
-
+    const handleOnline = () => setFailureCount(0);
     window.addEventListener("online", handleOnline);
-    window.addEventListener("offline", handleOffline);
-
-    if (!navigator.onLine) {
-      setState("OFFLINE");
-    }
-
-    return () => {
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
-    };
+    return () => window.removeEventListener("online", handleOnline);
   }, []);
+
+  const state: ConnectionState = !linkOnline
+    ? "OFFLINE"
+    : failureCount >= DEGRADED_THRESHOLD
+      ? "DEGRADED"
+      : "ONLINE";
 
   const value: NetworkContextValue = {
     state,
