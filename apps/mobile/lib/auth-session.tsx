@@ -12,6 +12,7 @@ import {
 } from "react";
 import { AppState } from "react-native";
 import { clearAuthToken, writeAuthToken } from "./auth-token";
+import { queryClient } from "./query-client";
 import { getSupabaseClient, isSupabaseConfigured } from "./supabase";
 
 /**
@@ -421,6 +422,22 @@ export function AuthSessionProvider({
     // in SecureStore would keep the SDK sending a Bearer header for a session
     // the member believes they ended.
     await clearAuthToken();
+    // Drop every cached query on the way out, for every sign-out path.
+    //
+    // Mobile's `QueryClient` is a module singleton, and the rest of this
+    // function clears only SecureStore and React state — so without this the
+    // next member to sign in on the same device is served the previous one's
+    // rows until each entry goes stale. Several keys are not account-scoped at
+    // all (`["settings"]`, `["user","me"]`), so they would never re-key their
+    // way out of it.
+    //
+    // This lives here rather than in the screens because there are three
+    // sign-out paths (`(tabs)/preferences.tsx`, `(auth)/chapter-picker.tsx`,
+    // `(auth)/join.tsx`) and each had to remember the clear for itself; the
+    // picker's landed only after the leak was noticed a second time. Owning it
+    // at the single point every path already funnels through is what stops a
+    // fourth path from reintroducing it.
+    queryClient.clear();
     setSession(null);
     setClaimedChapter({ userId: null, chapterId: null });
     setClaimReadForUserId(null);

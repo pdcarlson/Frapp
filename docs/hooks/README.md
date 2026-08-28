@@ -17,9 +17,11 @@ before adding a family of your own:
 
 - The old keys were `["tasks", assigneeId]` and `["tasks", id]`, neither
   chapter-scoped. On web the bleed was masked by the wholesale
-  `queryClient.clear()` in `apps/web/lib/providers/frapp-client-provider.tsx`;
-  **mobile has no such clear**, so an unscoped key there really does serve the
-  outgoing chapter's rows after a switch. Do not rely on the web clear.
+  `queryClient.clear()` in `apps/web/lib/providers/frapp-client-provider.tsx`.
+  Mobile's `FrappProvider` now runs the same clear (#1042), so both platforms
+  hold the invariant — but **do not rely on either clear**: it is defense in
+  depth, not the scoping. A key without the chapter id in it is still a bug, and
+  `createChapterQueryKeys` is what makes that a type error.
 - `["tasks", undefined]` (the list) and `["tasks", "<uuid>"]` (a detail) are
   structurally indistinguishable, so no prefix could mean "every list" without
   also matching every detail. The explicit `"list"` / `"detail"` segment is what
@@ -156,5 +158,5 @@ twins and fails (#762).
 ## Testing Additions
 
 - **`useCreateRole`**: Added test case in `use-roles.spec.tsx` ensuring that creating a role with only the required fields properly maps the request body and executes the correct query invalidation behavior.
-Update: Added tests for useCheckIn hook
+  Update: Added tests for useCheckIn hook
 - **`useSearch`**: `use-search.spec.tsx` covers success wiring, disabled states without a chapter or query, and cache isolation per chapter for the same search string.
