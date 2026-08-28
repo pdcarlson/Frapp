@@ -44,7 +44,7 @@ GitHub Issues (canonical: planning, status, Triage intake)
   default branch** (#962) — that is issue-close
   semantics when the code still reaches `main` via a parent. Squash-merging a PR whose base is
   a feature branch is a **different, worse bug**: CI never runs (`pull_request.branches` is
-  `[main, production]`) and the work never reaches `main` even though GitHub shows MERGED.
+  `[main]`) and the work never reaches `main` even though GitHub shows MERGED.
   Playbook: [`AGENT_INFRA.md`](AGENT_INFRA.md#ci-branch-filters-never-target-a-feature-branch)
   (incidents #1120, #1123–#1125). Agents may also close an issue directly when it's done,
   obsolete, or a duplicate — see the state table below.

@@ -27,7 +27,7 @@ Change SUPABASE_URL → both references update instantly.
 | ----------- | ------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | Development | **`dev`**     | Running the app on your machine against local Docker Supabase        | `npm run dev:stack` (API + web + landing); per-app: see [`LOCAL_DEV.md`](./LOCAL_DEV.md) |
 | Staging     | **`staging`** | Deployed to staging infra when code merges to `main` branch          | Vercel Preview, Render staging, Supabase staging project                                 |
-| Production  | **`prod`**    | Deployed to production infra when code merges to `production` branch | Vercel Production, Render production, Supabase production project                        |
+| Production  | **`prod`**    | Deployed to production infra when a commit is dispatched through `deploy-production.yml` | Vercel Production, Render production, Supabase production project                        |
 
 > **Always use the slug, never the UI name.** Two of the three differ: the environment shown as
 > “Development” is `dev`, and the one shown as “Production” is `prod`. Every

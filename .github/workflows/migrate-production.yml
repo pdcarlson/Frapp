@@ -1,60 +1,62 @@
 name: Migrate production
 
-# The deliberate production migration path: a human opens Actions, picks this
-# workflow, types a confirmation phrase, and runs it. Nothing about it fires on
-# its own.
+# Apply production migrations WITHOUT shipping code. A human opens Actions,
+# picks this workflow, types a confirmation phrase, and runs it. Nothing about
+# it fires on its own.
 #
-# ── This is NOT the only way production migrations get applied ──────────────
-# `deploy-api.yml`'s `migrate-production` job still auto-applies on merge to the
-# `production` branch. That was kept on purpose. The two paths share the
-# `db-migrate-production` concurrency group so they serialize against each other
-# — if you rename the group in one file, rename it in the other or the lock
-# silently stops existing.
+# ── How this differs from `deploy-production.yml` ───────────────────────────
+# `deploy-production.yml` is the ordinary path: it names a commit, rehearses the
+# migration, applies it, and then deploys that same commit to Render and Vercel.
+# Migrations and code move together, which is what you want almost every time.
 #
-# Why have both: the auto path covers the ordinary promotion, where the human
-# gate is the main->production PR (branch protection: CI + approving review).
-# This path covers everything else — re-running an apply that failed, applying a
-# backlog without shipping code, or promoting on a schedule a merge does not
-# match. Before this workflow existed, all of those meant a human running
-# `supabase db push` from a laptop against production, which is untracked,
-# unlogged, and unserialized against CI.
+# This workflow is the escape hatch for the cases where they must not:
+#
+#   * re-running an apply that failed partway, without redeploying;
+#   * applying a backlog of migrations ahead of the code that needs them;
+#   * applying on a schedule that no deploy matches.
+#
+# Before it existed, all of those meant a human running `supabase db push`
+# against production from a laptop, which is untracked, unlogged, and
+# unserialised against CI.
+#
+# It shares the `db-migrate-production` concurrency group with
+# `deploy-production.yml`. That is what stops the two paths interleaving two
+# `db push` runs against one database — if you rename the group in one file,
+# rename it in the other or the lock silently stops existing.
+#
+# ── What used to be here ────────────────────────────────────────────────────
+# This header used to describe a third path: `deploy-api.yml`'s
+# `migrate-production` job, which auto-applied on merge to the `production`
+# branch. That branch and that job were both retired in #1340 — the `ref` input
+# below therefore defaults to `main`, not `production`.
 #
 # ── On the `production` environment ─────────────────────────────────────────
-# CORRECTED 2026-08-28. This block used to say `environment: production` did NOT
-# gate the run — that required-reviewer protection is GitHub Enterprise-only on
-# private repos, so the only gates were the typed confirmation and the fact that
-# a person pressed the button. Measurement says otherwise: both runs of this
-# workflow sat between being created and being started, while jobs with no
-# environment (and jobs scoped to `staging`) start in about two seconds.
+# `environment: production` does two things: it scopes the Infisical secrets
+# this job reads, and it gates the run behind the environment's Required
+# reviewers. The gating was established by measurement rather than by reading
+# the settings (that API path is not reachable from an agent sandbox): both runs
+# of this workflow sat between being created and being started, while jobs with
+# no environment, and jobs scoped to `staging`, start in about two seconds.
 #
 #   run 32789194139  job created 23:24:32 → started 23:39:51   15m19s
 #   run 32790550501  job created 23:42:41 → started 23:45:54    3m13s
 #
-# Two different durations rules out a `wait_timer`; `deploy-api.yml`'s
-# `migrate-production` parked 29m52s the same way on 2026-08-28. That is a human
-# clicking Approve on the `production` environment. See the longer note in
-# `.github/workflows/deploy-api.yml` for the full comparison and for what was
-# NOT verified directly (the environment's protection rules are not readable
-# from an agent sandbox; the conclusion rests on timing).
+# Two different durations rules out a `wait_timer`. See
+# `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap
+# secrets for the canonical statement and the limits of that evidence.
 #
 # For THIS workflow the approval is largely redundant with the typed
-# confirmation above — a person is already here, on purpose. It is the
-# post-merge `deploy-api.yml` job where the same click has nobody waiting on it.
+# confirmation above — a person is already here, on purpose. It carries its
+# weight on `deploy-production.yml`, where it is the only human gate left.
 #
-# ── State of production as of 2026-08-28 ────────────────────────────────────
-# Reconciled and current: production reports 52 applied migrations, exactly
-# matching `supabase/migrations/` on `main` — nothing pending, and no foreign
-# version. The hand-applied `20260228000000_enable_rls_on_remaining_tables` that
-# used to block `supabase db push` outright is gone from the history (#832).
-#
-# The previous version of this block described that blocked state as current and
-# warned the workflow would fail on the dry run. It no longer will. Keeping the
-# warning would have sent the next reader to a runbook for a problem that had
-# already been fixed — which is its own kind of failure. If a foreign version
-# ever reappears, `migration-replay` (migration-drift-gate.yml) now fails the PR
-# that would have walked into it, and DB_ROLLBACK_PLAYBOOK.md still owns the
-# recovery. Do not run `migration repair` to make such an error go away without
-# first reading what the row did.
+# ── A migration applied here is NOT rehearsed ───────────────────────────────
+# `deploy-production.yml` runs `check-migration-replay.mjs` against production's
+# live applied state before it applies anything. This workflow does not: it is
+# the path you reach for when something has already gone wrong, and rebuilding
+# production's state on a disposable stack is exactly what you cannot rely on in
+# that situation. The dry run below is the substitute, and it is weaker — it
+# lists what is pending, it does not prove it applies. Prefer
+# `deploy-production.yml` whenever it is available to you.
 
 on:
   workflow_dispatch:
@@ -66,7 +68,7 @@ on:
       ref:
         description: "Git ref whose migrations to apply"
         required: false
-        default: "production"
+        default: "main"
         type: string
       dry_run_only:
         description: "Stop after the dry run (show what would be applied, change nothing)"
@@ -78,7 +80,7 @@ permissions:
   contents: read
 
 concurrency:
-  # SHARED with deploy-api.yml's migrate-production job. See the note above.
+  # SHARED with deploy-production.yml's `deploy` job. See the note above.
   group: db-migrate-production
   cancel-in-progress: false
 

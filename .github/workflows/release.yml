@@ -1,25 +1,99 @@
 name: Release
 
-# Automatically creates a version tag and GitHub Release when main merges into production.
+# Create the version tag and GitHub Release for a commit that is LIVE in
+# production.
+#
+# ── What changed ────────────────────────────────────────────────────────────
+# This used to fire on `push: [production]`, filter for a merge commit, and read
+# one PR number out of the promotion merge-commit message. With the `production`
+# branch retired there is no such push and no such message, so the trigger is
+# now `workflow_call` — `deploy-production.yml` invokes it as its last job,
+# after Render and Vercel have both reported healthy.
+#
+# The ordering change matters more than the plumbing: a tag is now created only
+# once the commit is actually serving traffic. `vX.Y.Z` means "this is live",
+# where it used to mean "this was merged and we hoped it would ship".
+#
+# `workflow_dispatch` is kept as the manual retry path, for the one case
+# deploy-production.yml calls out explicitly: production updated, tagging
+# failed. Re-run this with the same SHA.
+#
+# ── Three traps this file used to walk into ────────────────────────────────
+#   1. The old job carried
+#        if: contains(github.event.head_commit.message, 'Merge pull request')
+#      Under `workflow_call`, `github.event` is the CALLER's payload — a
+#      `workflow_dispatch` with no `head_commit`. `contains(null, ...)` is
+#      false, so the job would be SKIPPED, the caller would report success, and
+#      no tag would ever be created. Silently. The guard is gone.
+#   2. Checkout had no `ref:`, which under `workflow_call` resolves to the
+#      caller's branch tip — so it would tag whatever main happened to be
+#      rather than what was deployed. It now checks out `inputs.sha`.
+#   3. `v0.1.0` dereferences to the old `production` head, which is NOT an
+#      ancestor of main: `git describe --tags` from a main commit fails
+#      outright. Tag discovery therefore uses `git tag --list`, which needs no
+#      reachability, and the checkout explicitly fetches tags — without them the
+#      bump would restart at 0.0.0 and mint a duplicate `v0.1.0`, which the
+#      "already exists" guard below would then skip, producing a deploy with no
+#      release at all.
+#
+# Bump semantics (including why the PR number is parsed from the SUBJECT line
+# only) live in `scripts/ci/resolve-release-bump.mjs`. Unit tests:
+# `scripts/ci/__tests__/resolve-release-bump.test.mjs`.
+
 on:
-  push:
-    branches: [production]
+  workflow_call:
+    inputs:
+      sha:
+        description: "The commit that is live in production"
+        required: true
+        type: string
+      bump:
+        description: "auto | patch | minor | major"
+        required: false
+        default: auto
+        type: string
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "The commit that is live in production"
+        required: true
+        type: string
+      bump:
+        description: "Version bump ('auto' reads release:* labels since the last tag)"
+        required: false
+        default: auto
+        type: choice
+        options: [auto, patch, minor, major]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   release:
-    # Run for merge commits only, and skip self-triggered runs from the bot.
-    if: >-
-      contains(github.event.head_commit.message, 'Merge pull request') &&
-      github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
+    permissions:
+      # A `permissions:` block is exhaustive — every scope not named here is set
+      # to `none`. `contents: write` alone is what the tag and Release need, and
+      # it is NOT what reads a PR's labels: `resolve-release-bump.mjs` calls
+      # `GET /repos/{repo}/pulls/{n}`, which is gated on `pull-requests`. Without
+      # this line the default `bump: auto` path is the one that breaks, and it
+      # breaks after Render and Vercel have already deployed.
+      #
+      # `pr-base-sync.yml` grants exactly this for exactly this endpoint.
+      contents: write
+      pull-requests: read
     steps:
-      - name: Checkout
+      - name: Checkout the deployed commit
         uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.sha }}
           fetch-depth: 0
+
+      # `fetch-depth: 0` fetches tags in most cases, but not reliably for a
+      # detached SHA checkout — and a missing tag list is not a visible failure,
+      # it is a version that silently restarts at 0.0.0.
+      - name: Fetch tags
+        run: git fetch --tags --force origin
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -29,116 +103,91 @@ jobs:
       - name: Get current version
         id: current
         run: |
+          set -euo pipefail
+          # `git tag --list` rather than `git describe`: v0.1.0 sits on the old
+          # production head and is unreachable from main, so `describe` fails.
           VERSION=$(git tag --list 'v*' --sort=-version:refname | head -n1 | sed 's/^v//')
           VERSION="${VERSION:-0.0.0}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Current version: $VERSION"
 
-      - name: Determine version bump
+      - name: Resolve the version bump
         id: bump
         env:
-          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          CURRENT_VERSION: ${{ steps.current.outputs.version }}
+          BUMP_OVERRIDE: ${{ inputs.bump }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ inputs.sha }}
         run: |
-          PR_NUMBER=$(echo "$COMMIT_MSG" | grep -oP '#\K[0-9]+' | head -1)
+          set -euo pipefail
+          LAST_TAG=$(git tag --list 'v*' --sort=-version:refname | head -n1)
 
-          BUMP="patch"  # Default
-
-          if [ -n "$PR_NUMBER" ]; then
-            # Fetch PR labels using GitHub API
-            LABELS=$(curl --fail --silent --show-error \
-              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER" \
-              | node -e "
-                const data = require('fs').readFileSync('/dev/stdin', 'utf8');
-                const pr = JSON.parse(data);
-                if (!Array.isArray(pr.labels)) {
-                  console.error('Unexpected pull request payload');
-                  process.exit(1);
-                }
-                const labels = pr.labels.map(l => l.name);
-                console.log(labels.join(','));
-              ")
-
-            echo "PR #$PR_NUMBER labels: $LABELS"
-
-            if echo "$LABELS" | grep -q "release:major"; then
-              BUMP="major"
-            elif echo "$LABELS" | grep -q "release:minor"; then
-              BUMP="minor"
-            fi
+          # Subjects only (%s), and through stdin rather than argv so nothing in
+          # a commit subject can be re-read as an argument.
+          if [ -n "$LAST_TAG" ]; then
+            git log --format=%s "$LAST_TAG..$SHA" > "${RUNNER_TEMP:-/tmp}/subjects.txt"
+          else
+            git log --format=%s -20 "$SHA" > "${RUNNER_TEMP:-/tmp}/subjects.txt"
           fi
 
-          echo "bump=$BUMP" >> "$GITHUB_OUTPUT"
-          echo "Version bump: $BUMP"
-
-      - name: Calculate new version
-        id: new
-        run: |
-          CURRENT="${{ steps.current.outputs.version }}"
-          BUMP="${{ steps.bump.outputs.bump }}"
-
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
-
-          case "$BUMP" in
-            major)
-              MAJOR=$((MAJOR + 1))
-              MINOR=0
-              PATCH=0
-              ;;
-            minor)
-              MINOR=$((MINOR + 1))
-              PATCH=0
-              ;;
-            patch)
-              PATCH=$((PATCH + 1))
-              ;;
-          esac
-
-          NEW_VERSION="$MAJOR.$MINOR.$PATCH"
-          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
-          echo "New version: $NEW_VERSION"
+          echo "Commits in range: $(wc -l < "${RUNNER_TEMP:-/tmp}/subjects.txt")"
+          node scripts/ci/resolve-release-bump.mjs < "${RUNNER_TEMP:-/tmp}/subjects.txt"
 
       - name: Create tag
+        id: tag
+        env:
+          SHA: ${{ inputs.sha }}
+          VERSION: ${{ steps.bump.outputs.version }}
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          TAG="v${{ steps.new.outputs.version }}"
+          TAG="v$VERSION"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           if git ls-remote --tags origin "refs/tags/$TAG" | grep -q "$TAG"; then
+            echo "created=false" >> "$GITHUB_OUTPUT"
             echo "Tag $TAG already exists on remote — skipping (likely a re-run)."
           else
-            git tag -a "$TAG" -m "Release $TAG"
+            # Explicitly on the deployed SHA rather than on HEAD. HEAD is that
+            # commit today; naming it means a future refactor of the checkout
+            # cannot quietly move the tag.
+            git tag -a "$TAG" -m "Release $TAG" "$SHA"
             git push origin "$TAG"
-            echo "Created and pushed tag $TAG"
+            echo "created=true" >> "$GITHUB_OUTPUT"
+            echo "Created and pushed tag $TAG on $SHA."
           fi
 
       - name: Generate changelog
-        id: changelog
+        env:
+          SHA: ${{ inputs.sha }}
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          # Get commits since last tag (exclude the current tag)
-          LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          set -euo pipefail
+          # The tag just created is excluded from the range, so this lists what
+          # is new in THIS release.
+          PREVIOUS=$(git tag --list 'v*' --sort=-version:refname | grep -v "^${TAG}$" | head -n1 || true)
 
-          if [ -n "$LAST_TAG" ]; then
-            COMMITS=$(git log --oneline "$LAST_TAG"..HEAD)
-          else
-            COMMITS=$(git log --oneline -20)
-          fi
+          {
+            echo "## Changes"
+            echo ""
+            if [ -n "$PREVIOUS" ]; then
+              git log --oneline "$PREVIOUS..$SHA" | sed 's/^/- /'
+            else
+              git log --oneline -20 "$SHA" | sed 's/^/- /'
+            fi
+            echo ""
+            echo "Deployed commit: \`$SHA\`"
+          } > /tmp/changelog.md
 
-          # Write to file for the release body
-          echo "## Changes" > /tmp/changelog.md
-          echo "" >> /tmp/changelog.md
-          echo "$COMMITS" | while IFS= read -r line; do
-            echo "- $line" >> /tmp/changelog.md
-          done
-
-          echo "Changelog generated."
           cat /tmp/changelog.md
 
       - name: Create GitHub Release
+        if: steps.tag.outputs.created == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          gh release create "v${{ steps.new.outputs.version }}" \
-            --title "v${{ steps.new.outputs.version }}" \
+          gh release create "$TAG" \
+            --title "$TAG" \
             --notes-file /tmp/changelog.md \
             --latest

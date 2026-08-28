@@ -66,7 +66,7 @@ billing/usage view is authoritative if you need the number for a plan decision.
 | ----------- | ----------- | ------------------------------------- |
 | Development | `dev`       | Local development via `infisical run` |
 | Staging     | `staging`   | `main` branch deploys                 |
-| Production  | `prod`      | `production` branch deploys           |
+| Production  | `prod`      | Production deploys — a dispatched commit, not a branch (#1340) |
 
 The **slug** is what every tool takes — `infisical run --env=`, the workflows' `env-slug:`, and
 `.infisical.json`. Two of the three differ from the UI name. Verify against
@@ -159,7 +159,8 @@ The branch filter is the field that keeps going wrong. A Vercel Preview env var 
 `(environment, git branch)`, so a sync pointed at a branch that does not exist writes rows no
 deployment will ever read — or fails outright, depending on how Vercel validates that day. Both
 staging syncs originally targeted a branch literally named `preview`, which has never existed in this
-repository (branches are `main` and `production`). Never set that value again.
+repository (the only branch is `main`; `production` was retired in #1340). Never set that
+value again.
 
 `vercel-web-staging` was read in the Infisical UI on 2026-08-12 and targets `main`, which is correct —
 `main` is the branch staging deploys from. **`vercel-landing-staging` was not opened that day**; its

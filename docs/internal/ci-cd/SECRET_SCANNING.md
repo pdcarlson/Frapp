@@ -14,7 +14,7 @@ ruleset) drive three layers, all routed through `scripts/scan-secrets.mjs`:
 | --- | --- | --- | --- |
 | **Pre-commit hook** (`.githooks/pre-commit`) | `git commit` | staged changes | local primary; bypass with `--no-verify` |
 | **Local gate** (`npm run ci:local-gate`) | before opening a PR | branch range (`merge-base..HEAD`) | local; warns if gitleaks is missing |
-| **CI `secret-scan` job** (`.github/workflows/ci.yml`) | every PR + push to `main`/`production` | the PR/push commit range | **required check** — the real push-protection replacement |
+| **CI `secret-scan` job** (`.github/workflows/ci.yml`) | every PR + push to `main` | the PR/push commit range | **required check** — the real push-protection replacement |
 
 The hook and local gate pass `--soft-missing`, so a contributor without the binary (e.g. offline) gets a
 warning instead of a hard block — **CI is the authoritative gate**.

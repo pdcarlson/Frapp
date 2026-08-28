@@ -197,7 +197,13 @@ function requireEnv(name) {
 async function main() {
   const apiKey = requireEnv("VERCEL_API_KEY");
   const projectId = requireEnv("VERCEL_PROJECT_ID");
-  const sha = requireEnv("GITHUB_SHA");
+  // DEPLOY_SHA wins over GITHUB_SHA so a `workflow_dispatch` caller can name the
+  // commit it is deploying. `github.sha` on a dispatch is the tip of the ref the
+  // workflow was dispatched on, which is NOT the commit being shipped — and
+  // overriding GITHUB_SHA in a step-level `env:` collides with GitHub's reserved
+  // prefix rule, so it reads correct and is undefined. An explicit variable does
+  // not have that problem.
+  const sha = process.env.DEPLOY_SHA || requireEnv("GITHUB_SHA");
   const label = process.env.SERVICE_LABEL ?? projectId;
 
   const result = await verifyVercelDeploy({ apiKey, projectId, sha, label });

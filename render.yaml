@@ -1,11 +1,24 @@
 services:
   # ─── Production API ───────────────────────────────────────────
+  # `autoDeploy: false` and `branch: main` record INTENT, not live state. Blueprint
+  # edits do not reach an already-created service (see the staging note below and
+  # DEPLOYMENT.md), so both of these still have to be set by hand in the Render
+  # dashboard. `scripts/ci/production-guardrails.mjs` asserts the live values, on
+  # a schedule and again as a preflight inside `deploy-production.yml` — note it
+  # compares against the Render API's string form (`"no"`), not this boolean.
+  #
+  # Both matter, and the ORDER in which they are changed matters more:
+  # `autoDeploy: yes` (this service's live setting before #1340, with
+  # `autoDeployTrigger: commit`) combined with `branch: main` means every merge
+  # to main deploys production with no CI gate, no migration gate, and no
+  # approval. Turn auto-deploy OFF first, then change the branch.
   - type: web
     name: frapp-api-prod
     runtime: docker
     dockerfilePath: apps/api/Dockerfile
     dockerContext: .
-    branch: production
+    branch: main
+    autoDeploy: false
     plan: starter
     healthCheckPath: /health
     envVars:

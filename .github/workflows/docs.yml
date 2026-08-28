@@ -2,7 +2,7 @@ name: Docs spec sync
 
 on:
   pull_request:
-    branches: [main, production]
+    branches: [main]
     # `labeled`/`unlabeled` are load-bearing, not tidiness. `no-doc-change-needed`
     # waives the sync gate, and the default trigger set (opened/synchronize/
     # reopened) does not fire on a label change — so without these the label
@@ -16,7 +16,7 @@ on:
     # this gate was removed from ci.yml rather than given the same trigger.
     types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
-    branches: [main, production]
+    branches: [main]
 
 concurrency:
   group: docs-${{ github.ref }}

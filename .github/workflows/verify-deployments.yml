@@ -1,10 +1,17 @@
 name: Verify deployments
 
-# Observer workflow. After a push to main or production, confirm that the
-# Render API deploy and the Vercel web/landing deployments for the pushed SHA
-# reached a healthy terminal state. Failure surfaces as a red GitHub check.
-# On pushes to main only, a follow-up step re-points staging custom domains to
-# the new deployment when Vercel omits that alias (see ensure-vercel-staging-alias.mjs).
+# STAGING observer. After a push to `main`, confirm that the Render API deploy
+# and the Vercel web/landing deployments for the pushed SHA reached a healthy
+# terminal state. Failure surfaces as a red GitHub check. A follow-up step
+# re-points the staging custom domains to the new deployment when Vercel omits
+# that alias (see ensure-vercel-staging-alias.mjs).
+#
+# It no longer watches production. Production is not pushed to: since #1340 it
+# is deployed by `deploy-production.yml`, which creates each deploy through the
+# provider APIs and verifies the deployment ID it was handed, synchronously,
+# where a failure can still stop the release. An observer reacting to a push
+# cannot do that, and after the cutover it could not even identify the right
+# deployment — one SHA now has both a `main` preview and a production build.
 #
 # Semantics live in:
 #   scripts/ci/verify-render-deploy.mjs
@@ -14,7 +21,7 @@ name: Verify deployments
 
 on:
   push:
-    branches: [main, production]
+    branches: [main]
 
 permissions:
   contents: read
@@ -40,8 +47,8 @@ jobs:
       - name: Verify Render API deploy
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          RENDER_SERVICE_ID: ${{ github.ref_name == 'production' && 'srv-d6lqu41aae7s73f62df0' || 'srv-d6lqsq75r7bs73c2fdc0' }}
-          SERVICE_LABEL: ${{ github.ref_name == 'production' && 'frapp-api-prod' || 'frapp-api-staging' }}
+          RENDER_SERVICE_ID: srv-d6lqsq75r7bs73c2fdc0
+          SERVICE_LABEL: frapp-api-staging
           GITHUB_SHA: ${{ github.sha }}
         run: node scripts/ci/verify-render-deploy.mjs
 
@@ -66,7 +73,6 @@ jobs:
 
       # Skips gracefully when verify step was neutral (CANCELED / no deploy for SHA); see ensure-vercel-staging-alias.mjs.
       - name: Point staging domain at latest main deployment (web)
-        if: github.ref_name == 'main'
         env:
           VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
           VERCEL_PROJECT_ID: prj_xkn32taKrJCgYRZoN6pZRfGfPT9T
@@ -96,7 +102,6 @@ jobs:
 
       # Skips gracefully when verify step was neutral (CANCELED / no deploy for SHA); see ensure-vercel-staging-alias.mjs.
       - name: Point staging domain at latest main deployment (landing)
-        if: github.ref_name == 'main'
         env:
           VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
           VERCEL_PROJECT_ID: prj_aAkER9EZJcxR51vUY0mwNDnCf8vy
