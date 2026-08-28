@@ -8,7 +8,6 @@ import { queryClient } from "./query-client";
 
 export { AUTH_TOKEN_STORAGE_KEY } from "./auth-token";
 export { useIsApiAuthenticated } from "./use-is-api-authenticated";
-export { queryClient } from "./query-client";
 
 export function FrappProvider({ children }: { children: React.ReactNode }) {
   const { chapterId } = useAuthSession();
