@@ -342,7 +342,10 @@ packages set `"rootDir": "src"` in their own `tsconfig.json` (not in
 `@repo/typescript-config/base.json`: TypeScript resolves `rootDir` relative to the file that
 declares it, so a shared `./src` would point at `packages/typescript-config/src`). The emitting
 set is `@repo/validation`, `@repo/hooks`, `@repo/color`, `@repo/formatting`, `@repo/chapter-theme`,
-`@repo/org-archetypes`, `@repo/chat-integrations` (each `"build": "tsc"`), and `@repo/api-sdk`
+`@repo/org-archetypes`, `@repo/chat-integrations` (each `"build": "tsc"`, except `@repo/hooks`,
+which builds via `tsc -p tsconfig.build.json` so its `*.spec.tsx` / `*.test.tsx` files stay out of
+the build — they import `vitest` and `@testing-library/react`, which Vercel's production install
+omits; `tsconfig.json` still includes them so `check-types` keeps covering them), and `@repo/api-sdk`
 (`outDir` is set even though `check-types` passes `--noEmit` and there is no `build` script —
 do not add a build as a side effect of this pin). Non-emitting packages (`@repo/theme`,
 `@repo/chat-core`) and the Next / Expo apps stay `noEmit`. `apps/api` sets `"rootDir": "./src"`
