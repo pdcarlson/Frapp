@@ -596,6 +596,15 @@ export function TasksBoard() {
                       // `isMine` false for every row and put Confirm back on
                       // your own task — the flip-and-revert this gate exists to
                       // stop. Treat an unknown viewer as "might be me".
+                      //
+                      // Note the cost, which is deliberate but not free: the
+                      // board has no early return for `currentUser`, so if
+                      // `GET /v1/users/me` fails terminally, Confirm stays
+                      // hidden on *every* row with no notice saying why, and an
+                      // officer may read it as a revoked grant. Hiding a
+                      // control the server would accept is the safer failure
+                      // than offering one it will refuse, but the missing
+                      // explanation is tracked in #1346.
                       const viewerUnknown = myUserId === "";
                       const isMine = task.assignee_id === myUserId;
                       const cannotConfirm = isMine || viewerUnknown;

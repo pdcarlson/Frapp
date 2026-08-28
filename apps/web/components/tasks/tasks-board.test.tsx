@@ -140,6 +140,26 @@ describe("TasksBoard subscription gating", () => {
     expect(rejectButton()).toBeEnabled();
   });
 
+  it("keeps the disabled Confirmed indicator on your own awarded task", () => {
+    // Hiding the awarded button too would leave an assignee-admin no sign that
+    // another admin confirmed their task. It is disabled and reads "Confirmed",
+    // so it reports state rather than offering the refused action.
+    chapter.active();
+    tasksRef.current = [
+      {
+        ...TASKS[2],
+        id: "task-mine-awarded",
+        assignee_id: ME,
+        points_awarded: true,
+      },
+    ];
+    render(<TasksBoard />);
+
+    const confirmed = screen.getByRole("button", { name: /confirmed/i });
+    expect(confirmed).toBeInTheDocument();
+    expect(confirmed).toBeDisabled();
+  });
+
   it("hides Confirm while the viewer is unknown, rather than failing open", () => {
     // `myUserId` is "" until `useCurrentUser` resolves. If the gate keyed on
     // `isMine` alone, every row would read as someone else's during that window
