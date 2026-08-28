@@ -38,7 +38,7 @@ name: Migration drift gate
 
 on:
   pull_request:
-    branches: [main, production]
+    branches: [main]
   push:
     branches: [main]
   # On demand, so `migration-replay`'s expensive path can be exercised without

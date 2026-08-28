@@ -76,8 +76,8 @@ Three things about it are load-bearing:
   `and d.source = 'seed'`, so a hand-curated or `nic_2024` row keeps its values (the
   `insert` half matches on the natural key without `source`, so such a row is not
   duplicated either). And that SQL only runs where someone applies it: the command
-  above prints to stdout, the local bootstrap scripts pipe it in, and the promotion
-  path does not. That is all fine — nothing reads the key. Treat it as inert data,
+  above prints to stdout, the local bootstrap scripts pipe it in, and neither the
+  staging nor the production deploy path does. That is all fine — nothing reads the key. Treat it as inert data,
   not as something a deploy will tidy up.
 
   > The job is listed in `scripts/configure-branch-protection.mjs`, but listing it is

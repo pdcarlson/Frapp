@@ -27,7 +27,7 @@ Large infrastructure PRs are hard to review, hard to debug, and can leave checks
 
 1. **Author opens PR to `main`**
    - Run the local gate before opening: `npm run ci:local-gate`
-   - If targeting a different base branch, use `npm run ci:local-gate -- --base-ref origin/production`.
+   - If targeting a different base branch, use `npm run ci:local-gate -- --base-ref <ref>`.
    - Ensure the PR includes docs/spec changes that explain every non-doc code change.
    - Fill out `.github/pull_request_template.md` completely.
    - Include a rollback note for infra changes.

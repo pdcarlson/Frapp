@@ -6,21 +6,28 @@ This guide walks through the complete deployment setup: Vercel for frontends, Re
 
 - ✅ Landing and web are configured in Vercel with Preview and Production environments.
 - ✅ CI pipeline uses domain-specific parallel jobs with required status checks.
-- ✅ Branch protection enforced on `main` and `production`.
-- ✅ API deployment is automated on Render: `frapp-api-staging` deploys from `main`,
-  `frapp-api-prod` from `production`, and `.github/workflows/deploy-api.yml` additionally
-  triggers gated deploys and applies staging migrations after green CI. ⚠️ Verified against the
-  Render API 2026-08-27: both services also have **Render-side auto-deploy set to trigger on
-  commit**, which deploys on push _without waiting for CI_ (the latest staging deploy started
-  seconds after its commit). The workflow's green-CI gate governs only its own deploy hook;
-  reconciling the two is a Render-dashboard-only setting — "After CI checks pass" is the mode
-  that keeps the gate honest _without_ breaking `verify-render-api` (§ Deploy verification),
-  which treats "no deploy created for this SHA" as a failure and so rules out turning
+- ✅ Branch protection enforced on `main`, the only long-lived branch (#1340).
+- ✅ Staging API deployment is automated on Render: `frapp-api-staging` deploys from `main`,
+  and `.github/workflows/deploy-api.yml` triggers a gated deploy and applies staging
+  migrations after green CI. ⚠️ Verified against the Render API 2026-08-27: the staging
+  service also has **Render-side auto-deploy set to trigger on commit**, which deploys on
+  push _without waiting for CI_ (the latest staging deploy started seconds after its
+  commit). The workflow's green-CI gate governs only its own deploy hook; reconciling the
+  two is a Render-dashboard-only setting — "After CI checks pass" is the mode that keeps
+  the gate honest _without_ breaking `verify-render-api` (§ Deploy verification), which
+  treats "no deploy created for this SHA" as a failure and so rules out turning
   auto-deploy fully off.
+- 🚧 Production API deployment does **not** use auto-deploy. `deploy-production.yml` calls
+  the Render API with an explicit `commitId`, so what ships is the commit a human named.
+  This requires `frapp-api-prod` to have auto-deploy **off** and to track `main`;
+  `scripts/ci/production-guardrails.mjs` asserts both, on a schedule and again as a
+  preflight before every deploy. Until those dashboard settings are changed by hand, the
+  guardrail check fails by design — see § 5.5.
 - ✅ Infisical is the central secrets store; deploy workflows inject secrets from it, and provider
   syncs are inventoried in [`../environment/SECRETS_MANAGEMENT.md`](../environment/SECRETS_MANAGEMENT.md).
 - ✅ Staging database migrations apply automatically on every green `main` run (`migrate-staging`
-  in `deploy-api.yml`, since #1265). Production migrations are gated —
+  in `deploy-api.yml`, since #1265). Production migrations run inside `deploy-production.yml`,
+  after a replay against production's live applied state —
   [`DB_PROMOTION_RUNBOOK.md`](DB_PROMOTION_RUNBOOK.md) has the current production state.
 - 🚧 Mobile store distribution is planned; local and EAS workflows are documented.
 
@@ -81,37 +88,47 @@ You also need the `frapp.live` domain registered and DNS managed (Squarespace Do
 
 ## 2. Git Branching Model
 
-Two long-lived branches map to environments:
+**One** long-lived branch maps to an environment. Production maps to a *commit*.
 
-| Branch       | Environment    | Vercel                            | Render              | Supabase           |
-| ------------ | -------------- | --------------------------------- | ------------------- | ------------------ |
-| `main`       | **Staging**    | Preview deploys → staging domains | `frapp-api-staging` | Staging project    |
-| `production` | **Production** | Production deploys → prod domains | `frapp-api-prod`    | Production project |
-| `feature/*`  | **Ephemeral**  | No automatic Vercel deploys       | —                   | —                  |
+| Branch      | Environment   | Vercel                            | Render              | Supabase        |
+| ----------- | ------------- | --------------------------------- | ------------------- | --------------- |
+| `main`      | **Staging**   | Preview deploys → staging domains | `frapp-api-staging` | Staging project |
+| `feature/*` | **Ephemeral** | No automatic Vercel deploys       | —                   | —               |
 
 **How it flows:**
 
 ```
-feature/xyz ──PR──▶ main (staging) ──PR──▶ production (production)
+feature/xyz ──PR──▶ main (staging) ──Deploy production (dispatch a SHA)──▶ production
 ```
 
 1. Feature branches are typically created from `main`.
 2. Feature PRs target `main`. Merging triggers staging deployments.
 3. Test on staging domains (e.g. `app.staging.frapp.live`).
-4. When ready for production, open a promotion PR from `main` → `production`.
-5. Merging to `production` triggers production deployments.
+4. When ready for production, run the **Deploy production** workflow and give it the
+   commit SHA you want live.
+5. The workflow refuses any SHA that is not an ancestor of `main` or whose CI was not
+   green, then migrates, deploys, and tags that exact commit.
 
-> `develop` is not used. `main` is the active staging integration branch. See `CONTRIBUTING.md` for the full branch model, merge strategy, and required checks.
+> `develop` is not used, and neither is `production`. The `production` branch was retired
+> in #1340: merging into it never named a commit, and Render's auto-deploy-on-commit meant
+> a push shipped whatever was at the tip without waiting for CI. See `CONTRIBUTING.md` for
+> the full branch model, merge strategy, and required checks.
 
 **Vercel environment mapping:**
 
-| Vercel environment           | Git trigger           | Domain example                                 |
-| ---------------------------- | --------------------- | ---------------------------------------------- |
-| **Production**               | Push to `production`  | `app.frapp.live`, `frapp.live`                 |
-| **Preview** (pre-production) | Push to `main`        | `app.staging.frapp.live`, `staging.frapp.live` |
-| **Disabled**                 | Any other branch / PR | No auto deployment                             |
+| Vercel environment           | Trigger                                      | Domain example                                 |
+| ---------------------------- | -------------------------------------------- | ---------------------------------------------- |
+| **Production**               | `deploy-production.yml` (API, `target: production`) | `app.frapp.live`, `frapp.live`          |
+| **Preview** (pre-production) | Push to `main`                               | `app.staging.frapp.live`, `staging.frapp.live` |
+| **Disabled**                 | Any other branch / PR                        | No auto deployment                             |
 
-The `main` branch's staging domain is configured by assigning the domain to the Preview environment and filtering to the `main` branch in Vercel's domain settings. Each app's `vercel.json` also uses `git.deploymentEnabled` so only `main` and `production` auto-deploy (`"**": false` is used to match feature branch names that include `/`).
+The `main` branch's staging domain is configured by assigning the domain to the Preview environment and filtering to the `main` branch in Vercel's domain settings. Each app's `vercel.json` also uses `git.deploymentEnabled` so only `main` auto-deploys (`"**": false` is used to match feature branch names that include `/`).
+
+Production deployments are **built fresh from the named commit**, not promoted from its
+`main` preview. `NEXT_PUBLIC_*` values are inlined at build time, so a preview build
+carries the staging API URL and staging Supabase keys; promoting one would put the
+production dashboard on staging infrastructure. See the header of
+[`scripts/ci/deploy-vercel-production.mjs`](../../../scripts/ci/deploy-vercel-production.mjs).
 
 ---
 
@@ -180,7 +197,7 @@ The `vercel.json` in each app adds `git.deploymentEnabled` (deploy only `main`/`
 
 ### 4.2 Environment Variables per Project
 
-Vercel scopes env vars to **Production** and **Preview**. The `main` branch triggers Preview deploys, which use Preview env vars. The `production` branch triggers Production deploys.
+Vercel scopes env vars to **Production** and **Preview**. The `main` branch triggers Preview deploys, which use Preview env vars. Production deploys are created by `deploy-production.yml` with `target: production`, so they build against Production env vars — which is the whole reason the workflow rebuilds a commit rather than promoting its preview.
 
 #### `frapp-web` (Web Dashboard)
 
@@ -260,18 +277,31 @@ A future public documentation site is possible post-launch; treat as a separate 
 
 For each project, verify:
 
-- **Settings → Git → Production Branch**: `production`
+- **Settings → Git → Production Branch**: anything **except `main`**.
+
+That reads oddly, so: since #1340 nothing is supposed to auto-promote. Leaving the setting
+pointed at the retired `production` branch is the **safe** state — no push can ever match
+a branch that does not exist, so the only way to a production deployment is
+`deploy-production.yml`. Setting it to `main` would make **every merge to `main` a
+production deploy**, bypassing the migration gate, the approval, and the commit pin. That
+is the single worst outcome available in this repo's deploy configuration.
+
+An unset value is equally dangerous: Vercel falls back to the repository's default branch,
+which is `main`. `scripts/ci/production-guardrails.mjs` therefore asserts "not `main`, and
+not absent" rather than asserting a particular value.
 
 > **Operational note (2026-03-19):** The public Vercel REST API exposes `link.productionBranch` as a readable field but does not currently provide a documented/working write field to update it via `PATCH /v9|v10/projects/{idOrName}`.  
-> In practice, changing the production branch must be done in the Vercel dashboard UI.
+> In practice, changing the production branch must be done in the Vercel dashboard UI. That
+> is precisely why it is asserted rather than enforced.
 
 ### 4.6 Vercel Branch Wiring Verification
 
-After setting Production Branch to `production` for each project, validate:
+Validate, for each project:
 
-1. Push to `production` branch → deployment target should be `production`.
-2. Push to `main` branch → deployment target should be `preview`.
-3. Feature branches should stay disabled by `vercel.json` (`"**": false`).
+1. Push to `main` → deployment target should be `preview`.
+2. Feature branches should stay disabled by `vercel.json` (`"**": false`).
+3. `link.productionBranch` is not `main` and not absent (the read check below).
+4. A production deployment appears only when `deploy-production.yml` runs.
 
 Quick API read check (requires valid `VERCEL_API_KEY`):
 
@@ -295,7 +325,8 @@ Create **two** Render Web Services: one for production, one for staging.
 | Setting             | Production                                | Staging               |
 | ------------------- | ----------------------------------------- | --------------------- |
 | **Name**            | `frapp-api-prod`                          | `frapp-api-staging`   |
-| **Branch**          | `production`                              | `main`                |
+| **Branch**          | `main`                                    | `main`                |
+| **Auto-Deploy**     | **No** — deploys are API-driven by commit | Yes (on commit)       |
 | **Root Directory**  | (leave empty — Dockerfile uses repo root) | (same)                |
 | **Runtime**         | Docker                                    | Docker                |
 | **Dockerfile Path** | `apps/api/Dockerfile`                     | `apps/api/Dockerfile` |
@@ -539,12 +570,13 @@ of the three secrets or `API_URL` / `APP_URL` is unset in that environment — s
 ### Phase 2: Production
 
 - [ ] Create Supabase production project, apply migrations
-- [ ] Create Render production service (`production` branch), add env vars
+- [ ] Create Render production service (`main` branch, **Auto-Deploy: No**), add env vars
 - [ ] Add Production env vars to each Vercel project
 - [ ] Assign production domains in Vercel
 - [ ] Configure DNS records for production domains
 - [ ] Set up Stripe live mode (after business verification)
-- [ ] Merge `main` → `production` via PR
+- [ ] Enable **Required reviewers** on the `production` GitHub Environment
+- [ ] Run **Deploy production** with a green `main` SHA (start with *Stop after the dry run*)
 - [ ] Verify all production sites deploy
 - [ ] Set up Sentry for error tracking (API + web)
 - [ ] Build production mobile app with EAS
@@ -575,14 +607,29 @@ of the three secrets or `API_URL` / `APP_URL` is unset in that environment — s
 
 ### How Deployments Are Gated
 
-All deployments are gated behind CI success. The flow is:
+**Staging** is gated behind CI success and runs on its own:
 
 1. **PR created** → CI runs domain-specific jobs in parallel. Vercel deployments do not run for feature/PR branches.
 2. **All checks pass** → PR is mergeable (branch protection enforced).
-3. **PR merged** → Push event triggers deploy pipeline (`workflow_run` waits for CI).
-4. **Deploy pipeline**: DB migration (dry-run → apply) → API deploy (Render) → Frontends auto-deploy (Vercel).
+3. **PR merged** → Push event triggers the staging deploy pipeline (`workflow_run` waits for CI).
+4. **Staging pipeline**: DB migration (dry-run → apply) → API deploy (Render) → frontends auto-deploy to Preview (Vercel).
 
-Production deploys run automatically after the `main` → `production` promotion PR merges and CI passes, **except that the `production` environment's required reviewer does pause them** — corrected 2026-08-28, after `migrate-production` was measured sitting 29m52s awaiting an approval click (evidence: `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets). The control point for production is the promotion PR itself (branch protection: CI + an approving review + conversation resolution). This used to be explained as required-reviewer environment rules being Enterprise-only _on private repositories_; **that reason is wrong — this repo is public** (corrected 2026-08-21, see `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets). The gate is unchanged; whether to add environment reviewers on top is an open question, not a correction.
+**Production** is gated behind a person, and runs only when asked. Dispatch **Deploy
+production** with a commit SHA:
+
+1. **Typed confirmation** (`DEPLOY TO PRODUCTION`) — checked before any secret is read.
+2. **Commit validation** — the SHA must be an ancestor of `main` *and* have green CI, asserted against the same required-check list branch protection uses (`scripts/ci/validate-deploy-sha.mjs`).
+3. **Provider preflight** — Render auto-deploy is off; neither Vercel project promotes from `main` (`scripts/ci/production-guardrails.mjs`).
+4. **Environment approval** — the job pauses on the `production` environment's Required reviewers. This is the only human gate, and it fires here, on a run that names the commit.
+5. **Migration rehearsal** → fence → dry-run → apply.
+6. **Render deploy by `commitId`** → health smoke check → **Vercel production builds** → **tag**.
+
+There used to be two human gates: the `main` → `production` promotion PR's required
+review, and then this environment approval after merge, on a click nobody was paged for.
+That second click was measured holding a one-migration apply for 29m52s (evidence:
+`docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets). #1340
+kept the approval and dropped the promotion PR, so the surviving gate is the one where a
+human is actually looking at what is about to ship.
 
 ### Required Status Checks
 
@@ -621,12 +668,14 @@ Two consequences worth carrying:
 
 ### Deploy verification (observer workflow)
 
-After a push to `main` or `production`, `.github/workflows/verify-deployments.yml` polls Render and Vercel to confirm the deploy for that SHA reached a healthy terminal state:
+After a push to `main`, `.github/workflows/verify-deployments.yml` polls Render and Vercel to confirm the **staging** deploy for that SHA reached a healthy terminal state:
 
 - **Render** (`verify-render-api`): fails on `build_failed` / `update_failed` / `pre_deploy_failed` or on "no deploy created for this SHA within 5 minutes" (autoDeploy-wiring red flag). Treats `canceled` / `deactivated` as neutral (superseded).
 - **Vercel web** (`verify-vercel-web`) and **Vercel landing** (`verify-vercel-landing`): fail on `ERROR`. Treat `CANCELED` as neutral **only when the same branch already has an earlier successful deployment** for turbo-ignore to have skipped against; a cancel with no such baseline is a failure, because turbo-ignore only skips by diffing against a branch's last successful deploy — with nothing to diff against, the cancel came from something else (a superseded push, a manual stop, a concurrency limit) and the project was never built. Treat "no deployment for this SHA within 3 minutes" as neutral, because turbo-ignore legitimately skips builds when nothing in the app tree changed.
 
-The workflow is currently advisory (not a required check). When a failure shows up in the Actions UI, the failure message will name the commit SHA and last observed state; open the linked Render / Vercel dashboard to read full deploy logs. Recipe for marking it required on `production` later: [`docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](GITHUB_BRANCH_PROTECTION_RUNBOOK.md#future-require-deploy-verification-on-production).
+The workflow is currently advisory (not a required check). When a failure shows up in the Actions UI, the failure message will name the commit SHA and last observed state; open the linked Render / Vercel dashboard to read full deploy logs.
+
+Production verification is **not** this workflow's job. `deploy-production.yml` verifies its own deploys inline, polling the Render deploy id and the Vercel deployment ids it was handed, so a bad production deploy fails the release rather than being reported after the fact. It also applies stricter semantics than the observer: on the production path a `CANCELED` Vercel deployment or a `canceled` Render deploy is a **failure**, because there is no newer push for it to have been superseded by — see the header of [`scripts/ci/deploy-vercel-production.mjs`](../../../scripts/ci/deploy-vercel-production.mjs).
 
 Script implementations and unit tests live under [`scripts/ci/`](../../../scripts/ci/).
 
@@ -634,7 +683,7 @@ Script implementations and unit tests live under [`scripts/ci/`](../../../script
 
 **CI (lint, typecheck, tests)** does **not** use any runtime secrets. No Supabase, Stripe, or Vercel credentials are needed.
 
-**CD (deploy workflows)** uses Infisical-injected runtime secrets in `deploy-api.yml`. Variable names are **unified** — no `_STAGING` / `_PRODUCTION` suffixes. The workflow resolves secrets at runtime from Infisical using the environment slug that matches the target branch (`staging` for `main`, `prod` for `production`):
+**CD (deploy workflows)** uses Infisical-injected runtime secrets in `deploy-api.yml` (staging) and `deploy-production.yml` (production). Variable names are **unified** — no `_STAGING` / `_PRODUCTION` suffixes. Each workflow resolves secrets at runtime from Infisical using the environment slug for its target (`staging` for `main`, `prod` for a production deploy):
 
 | Variable                 | Purpose                                                  |
 | ------------------------ | -------------------------------------------------------- |

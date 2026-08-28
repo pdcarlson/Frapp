@@ -8,7 +8,7 @@
 | ------------ | --------------------------------- | --------------------------------------- | ------------------------------------- |
 | **Landing**  | localhost:3002                    | Vercel preview / staging.frapp.live     | frapp.live                            |
 | **Web App**  | localhost:3000                    | Vercel preview / app.staging.frapp.live | app.frapp.live                        |
-| **API**      | localhost:3001                    | Render (`main` branch service)          | Render (`production` branch service)  |
+| **API**      | localhost:3001                    | Render (`main` branch service)          | Render (deployed by commit id)        |
 | **Mobile**   | Expo Go (local network)           | EAS internal distribution               | App Store / Google Play               |
 | **Database** | Supabase local (`supabase start`) | Supabase staging project                | Supabase production project           |
 | **Auth**     | Supabase Auth (local)             | Supabase Auth (staging project)         | Supabase Auth (production project)    |
@@ -20,11 +20,15 @@ Each Supabase project (local, staging, production) is fully isolated: separate d
 
 ### Branch-to-environment mapping
 
-| Branch       | Purpose                              | Deployment behavior                                    |
-| ------------ | ------------------------------------ | ------------------------------------------------------ |
-| `main`       | Pre-production / staging integration | Triggers staging and Vercel Preview domain deployments |
-| `production` | Production                           | Triggers production deployments                        |
-| `feature/*`  | Short-lived feature work             | No automatic Vercel deployments; merged into `main`    |
+| Branch      | Purpose                              | Deployment behavior                                    |
+| ----------- | ------------------------------------ | ------------------------------------------------------ |
+| `main`      | Pre-production / staging integration | Triggers staging and Vercel Preview domain deployments |
+| `feature/*` | Short-lived feature work             | No automatic Vercel deployments; merged into `main`    |
+
+Production is **not** mapped to a branch. It is deployed by running the **Deploy
+production** workflow against a named commit, which must already be an ancestor of `main`
+with green CI. The `production` branch that used to occupy this table was retired in
+#1340.
 
 ---
 
@@ -134,11 +138,16 @@ npm run generate -w packages/api-sdk
 
 ## 4. Production
 
-- **Git branch:** `production` — pushes trigger production deployments.
+- **Git branch:** none. Production is deployed from a **named commit on `main`** by
+  `.github/workflows/deploy-production.yml` (`workflow_dispatch`, typed confirmation,
+  and the `production` environment's Required reviewers).
 - **Supabase:** Dedicated production project. Fully isolated users, database, storage.
-- **Web App:** `app.frapp.live` (Vercel, production deploy from `production`).
-- **Landing:** `frapp.live` (Vercel, production deploy from `production`).
-- **API:** Render production service (`frapp-api-prod`), auto-deploys from `production`, pointing at Supabase production + Stripe live keys.
+- **Web App:** `app.frapp.live` (Vercel, production deployment created by the workflow
+  through the API with `target: production`).
+- **Landing:** `frapp.live` (Vercel, same).
+- **API:** Render production service (`frapp-api-prod`), deployed by commit id through
+  the Render API, pointing at Supabase production + Stripe live keys. Render-side
+  auto-deploy must stay **off** — `scripts/ci/production-guardrails.mjs` asserts it.
 - **Mobile:** App Store and Google Play via EAS Submit.
 - **Stripe:** Live mode (`sk_live_`). Requires business verification (KYC) before launch.
 - **Monitoring:** Error tracking (Sentry or equivalent), structured logging, uptime checks.
@@ -172,7 +181,6 @@ CI runs as domain-specific parallel jobs on every PR to `main` or `production`. 
 | `web-responsive-floor` | Every dashboard route holds the 375px floor — no horizontal scroll (`apps/web/tests/visual/responsive-floor.spec.ts`, #1152) | Yes |
 | `dependency-cruiser` | Architectural boundaries — API layer direction, package/app separation, cycles — against a committed baseline | Yes |
 | `duplicate-detection` | jscpd against a repo-wide duplication threshold                                                     | **No — advisory** |
-| `branch-policy`      | PRs to `production` must come from `main`                                                            | Yes — `production` only |
 
 `web-tests` and `web-responsive-floor` are **path-gated and still required**, which is only a contradiction if you assume a skip blocks. It does not: GitHub reports a job skipped by a *job-level* conditional as *Success*, and `success` / `skipped` / `neutral` all satisfy a required check. `changes` is required for a different and less obvious reason — a required check whose `needs:` parent fails is skipped and *may not block merging*, so a non-required parent would leave both satisfiable without ever running. See the ADR-15 amendment in [`../architecture/README.md`](../architecture/README.md) and the comments in [`scripts/configure-branch-protection.mjs`](../../scripts/configure-branch-protection.mjs).
 
@@ -212,7 +220,7 @@ session model (Opus). There is no `claude-review-gate` required check, no `claud
 `CLAUDE_CODE_OAUTH_TOKEN` secret.
 
 - On `main`, conversation resolution is not required, so unresolved review threads do not block merge.
-- On `production`, the promotion PR also requires one approving review plus conversation resolution.
+- There is no second branch with a stricter policy. The human gate on what reaches users is the `production` **environment**'s Required reviewers, which pauses the deploy itself (#1340).
 - Full runbook: [`AI_CODE_REVIEW_RUNBOOK.md`](../../docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
 
 ### Key Design Decisions
@@ -233,16 +241,28 @@ GitHub Actions-managed deploy steps are gated by CI. After CI succeeds, the depl
 ### Deploy Pipeline (on merge)
 
 ```text
-CI passes → DB migration (dry-run then apply) → API deploy (Render)
-Vercel preview/production deployments are push-triggered from `main`/`production` and can proceed in parallel
+staging:     merge to main → CI passes → DB migration (dry-run then apply) → API deploy (Render)
+             Vercel preview deployments are push-triggered from `main` and proceed in parallel
+production:  dispatch a SHA → validate (ancestor of main + CI green) → provider preflight
+             → migration replay → apply → Render deploy by commit → Vercel production
+             build → tag
 ```
 
-Production deployments run after the `main` → `production` promotion PR merges and CI passes, and then **pause on the `production` environment's required reviewer** — corrected 2026-08-28 (`docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets). Beyond that approval, the control point for production is the promotion PR itself (branch protection: CI + an approving review + conversation resolution). This was previously justified by required-reviewer environment rules being Enterprise-only *on private repositories* — **that premise is false, the repo is public** (corrected 2026-08-21, `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets). The gate itself is unchanged.
+Production deployments run only when a human dispatches **Deploy production** with a
+commit SHA, types the confirmation phrase, and approves the `production` environment.
+That environment approval is now the **single** human gate — it replaced the promotion
+PR's required review, and it fires at the moment of deploy rather than before anyone
+knew whether the migration applied. Evidence that the environment gate really does pause
+jobs is in `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap
+secrets.
 
 ### Web and Landing (Vercel)
 
-- Push to `production` triggers **production** Vercel deployments (custom domains).
 - Push to `main` triggers **preview** Vercel deployments (staging domains).
+- Production deployments are **created by the workflow**, not by a push: a fresh build of
+  the named commit with `target: production`, so it compiles against Production
+  environment variables. Promoting a `main` preview instead would ship a bundle with the
+  staging API URL and staging Supabase keys inlined at build time.
 - Feature/PR branches do not auto-deploy on Vercel.
 - Each app uses `turbo-ignore` to skip rebuilds when its files haven't changed.
 - Branch filtering is controlled with `git.deploymentEnabled` in each app's `vercel.json` (`main` and `production` enabled, all others disabled).
@@ -278,11 +298,17 @@ Because Vercel deploys are push-triggered, hold frontend merges until the API is
 
 ### Release labels for version tags
 
-Version bumps are derived from labels on the `main` → `production` promotion PR (the PR merged into `production`):
+Version bumps are derived from the `release:*` labels on **every PR merged since the last
+`v*` tag**, taking the highest. The label belongs on each ordinary PR — there is no
+promotion PR to carry it any more.
 
-- No release label → patch bump
-- `release:minor` → minor bump
-- `release:major` → major bump
+- No release label on any PR in range → patch bump
+- Any `release:minor` in range → minor bump
+- Any `release:major` in range → major bump
+
+The **Deploy production** dispatch also accepts an explicit `bump` input that overrides
+the scan. The tag is created *after* Render and Vercel report healthy, so a `v*` tag
+names a commit that is live.
 
 ---
 
@@ -356,7 +382,19 @@ Migrations run automatically as part of the deploy pipeline, after CI passes and
 2. **Dry run** (CD): `supabase db push --dry-run` shows what will change before applying.
 3. **Apply** (CD): `supabase db push` applies pending migrations.
 4. **Failure handling**: If migration fails, the pipeline stops — no app deploy happens.
-5. **Production gate**: TWO gates, not one — the `main` → `production` promotion PR (branch protection: CI + an approving review + conversation resolution), and then a GitHub Actions environment-approval pause on the `production` environment. The claim that environment-approval rules do **not** gate production was corrected 2026-08-28: they do, and they held a one-migration apply for 29m52s (`docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets). The "Enterprise-only on private repos" reason given here until 2026-08-21 was false: the repo is public. See `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets.
+5. **Production gate**: ONE gate, deliberately. The `production` environment's Required
+   reviewers pause `deploy-production.yml` before it applies anything. There used to be
+   two — the `main` → `production` promotion PR's required review, and then this approval
+   after merge on a click nobody was paged for. The promotion PR went with the branch
+   (#1340); the environment approval stayed, because it is the one that happens while a
+   human is actually looking at the run. Evidence that it pauses jobs (it held a
+   one-migration apply for 29m52s) is in `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub
+   environments and bootstrap secrets.
+6. **Production rehearsal**: before applying, `deploy-production.yml` runs
+   `scripts/ci/check-migration-replay.mjs` against production's live applied state —
+   rebuilding it on a disposable stack and running the pending tail through the same CLI
+   path. A rehearsal that finds nothing pending verified nothing, and the run's summary
+   says which it was.
 
 ### Safety Rules
 

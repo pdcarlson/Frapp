@@ -1,0 +1,64 @@
+name: Production guardrails
+
+# Watchdog for the two provider settings that make deploy-off-`main` safe.
+#
+# Since #1340, `deploy-production.yml` is meant to be the ONLY way code reaches
+# production. That is true only while two dashboard settings stay put, and both
+# of them fail OPEN — if either drifts, ordinary merges to `main` start shipping
+# to production with no CI gate, no migration gate and no approval, and nothing
+# anywhere turns red on its own.
+#
+#   * Render `frapp-api-prod` must have auto-deploy OFF and track `main`.
+#   * Vercel's Production Branch must not be `main`, for web and landing.
+#
+# Neither is expressible in this repository: `render.yaml` is not applied to the
+# already-created service, and Vercel exposes `link.productionBranch` read-only.
+# So they cannot be enforced, only asserted — which is what this does.
+#
+# `deploy-production.yml` runs the same script as a preflight, so a deploy
+# cannot proceed against drifted settings. This schedule is for the gap between
+# deploys, which is where the drift would otherwise sit unnoticed.
+#
+# Semantics live in scripts/ci/production-guardrails.mjs.
+# Unit tests: scripts/ci/__tests__/ (run via `npm run test:ci-scripts`).
+
+on:
+  schedule:
+    # 07:15 UTC daily, a quarter past the migration-drift watchdog so the two
+    # do not report at the same moment.
+    - cron: "15 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: production-guardrails
+  cancel-in-progress: false
+
+jobs:
+  guardrails:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Dependency-free (global fetch + the alert-issue helper), so no npm ci —
+      # matching ci-wake.yml's deliberately minimal action surface.
+      - name: Assert production deploy guardrails
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
+          VERCEL_TEAM_ID: team_j9XLIANou5EpvALrr4bM9Nee
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/ci/production-guardrails.mjs

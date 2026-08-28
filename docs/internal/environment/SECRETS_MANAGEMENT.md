@@ -66,7 +66,7 @@ billing/usage view is authoritative if you need the number for a plan decision.
 | ----------- | ----------- | ------------------------------------- |
 | Development | `dev`       | Local development via `infisical run` |
 | Staging     | `staging`   | `main` branch deploys                 |
-| Production  | `prod`      | `production` branch deploys           |
+| Production  | `prod`      | Production deploys — a dispatched commit, not a branch (#1340) |
 
 The **slug** is what every tool takes — `infisical run --env=`, the workflows' `env-slug:`, and
 `.infisical.json`. Two of the three differ from the UI name. Verify against

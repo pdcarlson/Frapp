@@ -34,7 +34,7 @@ Frapp is a Turborepo + npm workspaces monorepo (**4 apps, 13 shared packages**).
 
 ## Branch model
 
-`main` = staging, `production` = production. Feature branches from `main` → PR to `main`. Promotion: PR `main` → `production`. Direct pushes to `main` / `production` are blocked. PRs to `production` from branches other than `main` are rejected by CI. Details: `CONTRIBUTING.md`.
+`main` is the only long-lived branch and deploys to staging on every merge. Feature branches from `main` → PR to `main`; `main` is the only legal PR base. Direct pushes to `main` are blocked. Production is deployed by dispatching the **Deploy production** workflow with a commit SHA — it refuses any commit that is not an ancestor of `main` with green CI. There is no `production` branch (retired #1340). Details: `CONTRIBUTING.md`.
 
 ## Documentation sync mandate (non-optional)
 
@@ -172,7 +172,7 @@ When the user supplies durable environment hints or tool workarounds not documen
 
 A task is not "done" when the code is pushed — it's done when the PR is ready to merge (`doneMeansMerged: true` in `.claude/settings.json`). After completing the requested work:
 
-1. **Open a PR** against the right base (feature → `main`; promotion → `production`). Don't wait to be asked.
+1. **Open a PR** against `main` — the only legal base. Don't wait to be asked.
 2. **Subscribe to PR activity** (`subscribe_pr_activity`). The webhook fires on CI **failure**, **successful check-suite rollups**, comments, and reviews — not cancelled, timed-out, or merge-conflict. (The success half was observed on 2026-08-21 — four `check_suite.completed` envelopes with `"conclusion":"success"`; see [`AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md) § Wake coverage.)
 3. **Do not call `send_later`, and do not add it to `permissions.allow`.** It still prompts the owner. Wake coverage is the PR-activity webhook, `CI wake` comments, and `PR base sync` comments. Anything that needs a schedule is a Routine in the UI.
 4. **Triage CI failures before "fixing" them.** A job that died before its first repo step is GitHub Actions infra, not code — re-run it (`actions_run_trigger`), don't patch. **No `CI wake` comment does not mean no failure:** that watchdog now comments only on a cancelled or timed-out run, or an infra failure its auto-requeue could not absorb. An ordinary red CI reaches you through the webhook and is yours to diagnose from the run itself.

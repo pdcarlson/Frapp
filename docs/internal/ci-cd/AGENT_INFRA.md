@@ -49,23 +49,25 @@ it. Design + policy: [`GITHUB_PM.md`](GITHUB_PM.md).
 | Item                | Location / notes                                                                                                                                      |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | CI                  | `.github/workflows/ci.yml` — parallel jobs (`lint-and-typecheck` includes `nest build` for `apps/api` + landing, `@repo/validation`, `@repo/color`, `@repo/formatting`, `@repo/chapter-theme`, and `@repo/api-sdk` unit tests; `api-tests` runs `apps/api` Jest unit + E2E suites (`test` then `test:e2e`); `web-tests` runs `apps/web` Vitest plus the `packages/hooks`, `packages/chat-core`, and `packages/chat-integrations` suites; `api-docker-build` runs `apps/api/Dockerfile`) |
-| API deploy          | `.github/workflows/deploy-api.yml` — after CI (`workflow_run`)                                                                                        |
+| API deploy (staging) | `.github/workflows/deploy-api.yml` — after CI (`workflow_run`) on `main`. Staging only since #1340. |
+| Production deploy   | `.github/workflows/deploy-production.yml` — `workflow_dispatch` ONLY, takes a `sha`. Validates the commit is an ancestor of `main` with green CI (`scripts/ci/validate-deploy-sha.mjs`), preflights the provider guardrails, replays the migration against production's live applied state, applies, deploys that commit to Render by `commitId` and to Vercel with `target: production`, then calls `release.yml`. One job under `environment: production`, so one approval click. |
+| Production guardrails | `.github/workflows/production-guardrails.yml` — **scheduled** (daily 07:15 UTC) + `workflow_dispatch`, and re-run as a preflight inside the production deploy. Asserts Render `frapp-api-prod` has auto-deploy **off** and tracks `main`, and that neither Vercel project's Production Branch is `main`. Both settings are dashboard-only and fail OPEN, so they can only be asserted, never enforced. Logic in `scripts/ci/production-guardrails.mjs`. **Not** a required check. |
 | Deploy outcome      | `.github/workflows/deploy-api.yml` → terminal `deploy-outcome` job — the only job in that workflow with a write scope (job-scoped `issues: write`; the workflow-level grant stays `contents: read`). Writes a step summary + annotation saying whether the run **deployed** or **declined to deploy**, and upserts one `routine-state` alert issue on failure, closing it on the next successful deploy. Logic in `scripts/ci/deploy-alert.mjs` (tests: `scripts/ci/__tests__/deploy-alert.test.mjs`). **Not** a required check. See "Deploy visibility" below. |
-| Deploy verification | `.github/workflows/verify-deployments.yml` — post-push Render + Vercel state polling                                                                  |
+| Deploy verification | `.github/workflows/verify-deployments.yml` — post-push Render + Vercel state polling, **staging only**. Production verifies itself inline inside `deploy-production.yml`, polling the deploy/deployment IDs it created, with stricter semantics: a `CANCELED` Vercel deployment is a failure there, not a neutral turbo-ignore skip. |
 | Migration drift     | `.github/workflows/check-migration-drift.yml` — **scheduled** (daily 07:00 UTC) + `workflow_dispatch`. Compares each deployed database's `schema_migrations` against `supabase/migrations/` and upserts one `routine-state` alert issue, closing it when every environment is back in sync. Job-scoped `issues: write`; workflow-level grant stays `contents: read`. Logic in `scripts/ci/check-migration-drift.mjs` (tests: `scripts/ci/__tests__/check-migration-drift.test.mjs`). **Not** a required check. See "Schema drift detection" below. |
 | Staging conformance | `.github/workflows/staging-conformance.yml` — **scheduled** (daily 07:00 UTC) + `workflow_dispatch`. Asserts live `frapp-staging` state rather than a push: project `ACTIVE_HEALTHY`, `custom_access_token_hook` enabled *and* pointed at the right function, every Infisical secret sync succeeded, and an end-to-end sign-in whose JWT carries `active_chapter_id`. **Migration parity is deliberately NOT checked here** — `check-migration-drift.yml` above owns it end to end; see "Scheduled conformance" below. Upserts its own `routine-state` alert issue on drift and closes it on recovery. Logic in `scripts/ci/staging-conformance.mjs` (tests: `scripts/ci/__tests__/staging-conformance.test.mjs`). **Not** a required check — it verifies an environment, not a diff. |
-| Release tags        | `.github/workflows/release.yml` — main → production merge                                                                                             |
+| Release tags        | `.github/workflows/release.yml` — `workflow_call` from `deploy-production.yml` (plus `workflow_dispatch` for retry). Tags the deployed commit AFTER Render and Vercel report healthy, so a `v*` tag names something live. Bump is the highest `release:*` label across every PR merged since the last tag (`scripts/ci/resolve-release-bump.mjs`), overridable by a dispatch input. |
 | Docs                | `.github/workflows/docs.yml` — PR docs/spec sync (`check-docs-impact.mjs`)                                                                            |
 | CI wake             | `.github/workflows/ci-wake.yml` — `workflow_run` on CI / Docs spec sync / Links completion (PR runs only): classifies infra-vs-code failure, auto-requeues infra failures (≤3 total attempts), and upserts one PR wake comment **only for an outcome the PR-activity webhook does not already carry** — a cancelled or timed-out run, or an infra failure the re-queue could not absorb. Success and real failures clear the stale wake and say nothing. Logic in `scripts/ci/ci-wake.mjs` (tests: `scripts/ci/__tests__/ci-wake.test.mjs`). **Not** a required check. See "PR babysitting" below. |
 | PR base sync        | `.github/workflows/pr-base-sync.yml` — `push` to `main`: sweeps open PRs targeting it (cap 20, logged); behind + clean PRs are auto-updated via the update-branch API **only when the base-sync GitHub App token mints** (default-token pushes trigger no CI). Conflicts and per-PR update failures upsert one `<!-- frapp-base-sync -->` wake comment telling the watching agent to merge `main` itself; a missing or rejected token is repo-wide, so it raises **one** `routine-state` alert issue instead of the same comment on every PR. Logic in `scripts/ci/pr-base-sync.mjs` (tests: `scripts/ci/__tests__/pr-base-sync.test.mjs`). **Not** a required check. See "Base-branch sync" below. |
-| PR base guard       | `.github/workflows/pr-base-guard.yml` — the **only** workflow with no `on.pull_request.branches` filter, so it runs on every PR whatever the base. Fails when the base is not `main` or `production`, which is the one check a stacked PR would otherwise never get. No checkout, no npm, no third-party action; reads `pull_request.base.ref` off the event payload. Fires on `edited` too, so retargeting a base cannot leave a stale green. **Not** yet a required check — see "CI branch filters" below. |
-| PR CI branch filter | `ci.yml` / `docs.yml` / `links.yml` set `on.pull_request.branches: [main, production]`. GitHub matches that list against the PR **base**. A PR whose base is a feature branch skips every required check. See "CI branch filters" under PR babysitting. |
+| PR base guard       | `.github/workflows/pr-base-guard.yml` — the **only** workflow with no `on.pull_request.branches` filter, so it runs on every PR whatever the base. Fails when the base is not `main`, which is the one check a stacked PR would otherwise never get. No checkout, no npm, no third-party action; reads `pull_request.base.ref` off the event payload. Fires on `edited` too, so retargeting a base cannot leave a stale green. **Not** yet a required check — see "CI branch filters" below. |
+| PR CI branch filter | `ci.yml` / `docs.yml` / `links.yml` set `on.pull_request.branches: [main]`. GitHub matches that list against the PR **base**. A PR whose base is anything else skips every required check. See "CI branch filters" under PR babysitting. |
 | Branch protection   | `npm run configure:branch-protection` (prefers `GITHUB_PAT`); see `CONTRIBUTING.md`                                                                   |
 | AI code review      | **Local pre-push gate**, not CI — `.claude/hooks/pre-push-review-gate.sh` blocks pushing a HEAD until that HEAD has been reviewed (keyed on a `.cache/diff-review/<SHA>` marker, not on attempt count) — `/diff-review` (always agent-invocable; writes the marker) or `/code-review` (richer, but model-invocable only when the turn's prompt carries `/code-review` whitespace-delimited on both sides, which backticks and trailing punctuation defeat; does not write the marker) (ADR-14 2026-06-04 amendment; the `claude-review.yml` CI workflow was removed). See `AI_CODE_REVIEW_RUNBOOK.md` |
 | Dependency updates  | `.github/dependabot.yml` — one root `npm` entry (the workspaces share the root lockfile), **weekly** on Monday 09:00 UTC. Minor+patch collapse into a single grouped PR; majors stay individual. The React/React Native/Expo families are ignored — they move only via a planned SDK upgrade. **Not** a required check (it opens PRs, it doesn't gate them). See "Dependency updates (Dependabot)" below. |
-| Vercel              | Deploys from `main` / `production` only (PR previews disabled via repo config)                                                                        |
+| Vercel              | Auto-deploys from `main` only (PR previews disabled via repo config). Production deployments are created by `deploy-production.yml` through the API, not by a push. |
 
-**PR review policy:** `main` — no required human approval; `production` — required approval + resolved conversations.
+**PR review policy:** `main` — no required human approval (review is the local pre-push gate). There is no second branch. The human gate on what reaches users is the `production` **environment**'s Required reviewers, which pauses `deploy-production.yml`.
 
 **Branch protection script (dry run / apply):**
 
@@ -95,11 +97,11 @@ Project ID is documented in [`SECRETS_MANAGEMENT.md`](../environment/SECRETS_MAN
 | Environment  | Protection        | Purpose                             |
 | ------------ | ----------------- | ----------------------------------- |
 | `staging`    | None              | Staging deploys (`main`)            |
-| `production` | Promotion-PR gate **+ a required reviewer that actually pauses jobs** (see the note below) | Production deploys + migrations |
+| `production` | **A required reviewer that actually pauses jobs** (see the note below) — since #1340 this is the ONLY human gate on production | Production deploys + migrations |
 
 > **Environment-protection note — premise corrected 2026-08-21.** This note used to read "GitHub *environment* required-reviewer protection rules are Enterprise-only on private repos, so they do **not** gate this (private, Pro) repo." **The repo is public**, verified 2026-08-21 by fetching the README over raw.githubusercontent.com with no credentials: HTTP 200, against a 404 control for a nonexistent repo. So the private-repo exemption that sentence rested on does not apply, and the conclusion no longer follows from its stated reason.
 >
-> Nothing was changed on the strength of that, and the gate is unchanged: production is gated by the `main` → `production` promotion PR (branch protection: CI + an approving review + conversation resolution), with the `production` environment existing for job scoping. Whether environment required reviewers are actually available on this plan, and whether to add them on top of the promotion-PR gate, is an **open question for the owner** — check the repo's environment settings rather than trusting either version of this note. Found while reviewing the base-sync App credential, which needed to know the repo's visibility for a different reason.
+> Nothing was changed on the strength of that at the time, and the gate then was the `main` → `production` promotion PR (branch protection: CI + an approving review + conversation resolution), with the `production` environment existing for job scoping. Whether environment required reviewers were available on this plan was left as an **open question for the owner**. Found while reviewing the base-sync App credential, which needed to know the repo's visibility for a different reason.
 >
 > **Open question ANSWERED 2026-08-28: they are available, they are configured, and they pause production jobs today.** This is the canonical statement; every other doc that describes production's approval posture should defer to this paragraph rather than restate it.
 >
@@ -118,11 +120,15 @@ Project ID is documented in [`SECRETS_MANAGEMENT.md`](../environment/SECRETS_MAN
 >
 > **Not verified directly, and worth saying plainly:** the environment's protection rules themselves were not read. `GET /repos/{owner}/{repo}/environments/production` is not reachable from an agent sandbox — the proxy answers `403` — so the conclusion above rests on timing evidence, which is strong but indirect. Anyone with repo settings access settles it in one look at **Settings → Environments → production**, and that look is worth taking before acting on this.
 >
-> **Consequence.** Production migrations are gated by a human twice: once at the promotion PR, and again after merge, on an approval click that nobody is paged for. The second gate is the one that parked a one-migration apply for 29m52s on 2026-08-28 — an apply the dry run had already shown to be clean. `migration-replay` (`.github/workflows/migration-drift-gate.yml`) now rehearses that apply at PR time, which is what makes removing the second gate a reasonable trade rather than a loss of safety. Removing it is a repo-settings change; CI cannot make it for itself.
+> **Consequence, and what #1340 did with it.** Production migrations used to be gated by a human twice: once at the promotion PR, and again after merge, on an approval click nobody was paged for. The second gate is the one that parked a one-migration apply for 29m52s on 2026-08-28.
+>
+> The resolution was not to remove the second gate but to remove the **first**. The promotion PR was the weaker of the two: it approved a branch merge, before anyone knew whether the migration applied, and it did not name the commit that would ship (Render auto-deployed the branch tip on commit, without waiting for CI). The environment approval happens on a run that names the SHA, after the replay has rehearsed the apply against production's live state, with a person watching. So `production` still has Required reviewers **on purpose**, and `deploy-production.yml` is unusable without them.
+>
+> One consequence worth stating plainly: `deploy-production.yml` is a **single job** precisely because each environment-scoped job costs its own Approve click. Splitting it would silently turn one approval into four.
 
 Repository secrets for Infisical bootstrap: `INFISICAL_MACHINE_IDENTITY_ID`, `INFISICAL_CLIENT_SECRET`, `INFISICAL_PROJECT_ID`.
 
-Additional repo-level secrets used by the deploy-verification workflow: `RENDER_API_KEY`, `VERCEL_API_KEY`. These are read-only API keys used only by `.github/workflows/verify-deployments.yml` to poll deploy state — they never carry runtime values.
+Additional repo-level secrets: `RENDER_API_KEY`, `VERCEL_API_KEY`. `verify-deployments.yml` and `production-guardrails.yml` use them read-only, to poll deploy state and provider settings. `deploy-production.yml` uses the same two keys to **create** deploys — a Render deploy by `commitId` and a Vercel deployment with `target: production`. They still never carry runtime values.
 
 Deploy workflow resolves all runtime secrets (including `SUPABASE_ACCESS_TOKEN`) from Infisical at workflow time via `Infisical/secrets-action`. No GitHub environment-scoped runtime secrets are required beyond the Infisical bootstrap listed above.
 
@@ -133,6 +139,11 @@ Deploy workflow resolves all runtime secrets (including `SUPABASE_ACCESS_TOKEN`)
 | `release:major` | Major                  |
 | `release:minor` | Minor                  |
 | `release:patch` | Patch (default)        |
+
+Put the label on **every** PR. Before #1340 it went on the single `main` → `production`
+promotion PR, whose labels decided the version on their own. There is no promotion PR now:
+`deploy-production.yml` scans the `release:*` labels on every PR merged since the last `v*`
+tag and takes the highest, so an unlabelled `release:major` change ships as a patch.
 
 ## Lint, test, build (repo root)
 
@@ -434,7 +445,7 @@ watching session was never woken — the PR sat silent for ~2h until a human not
 
 ### CI branch filters: never target a feature branch
 
-`on.pull_request.branches` on `ci.yml`, `docs.yml`, and `links.yml` is `[main, production]`.
+`on.pull_request.branches` on `ci.yml`, `docs.yml`, and `links.yml` is `[main]`.
 GitHub matches that list against the PR **base**, not the head. A PR whose base is another
 feature branch therefore never runs CI, docs-spec-sync, or Links. GitHub still allows a
 squash-merge; the UI shows MERGED; the commits exist only on the base feature branch.
@@ -447,8 +458,10 @@ marked each MERGED; none reached `main`; CI never ran. Recovery is cherry-pick o
 
 **Playbook** (GitHub MCP down, opening area PRs, or any PR-opening path):
 
-1. **Never open a PR whose base is not `main` or `production`.** Feature work → `main`.
-   Promotion → `production` from `main` only. There is no sanctioned third base.
+1. **Never open a PR whose base is not `main`.** Since #1340 `main` is the only long-lived
+   branch, so it is also the only legal base — there is no promotion PR any more, and no
+   sanctioned second base. Production is reached by dispatching **Deploy production** with
+   a SHA, not by opening a PR.
 2. **Never squash-merge into a feature branch** to "land" a stacked slice. GitHub's MERGED
    badge is not evidence the work is on `main`.
 3. **If it already happened:** cherry-pick the slice onto current `origin/main` and open a
@@ -459,8 +472,8 @@ marked each MERGED; none reached `main`; CI never ran. Recovery is cherry-pick o
 must remember, and #1124 and #1125 landed the same way #1120 and #1123 did *after* the
 first two were noticed — so the rule alone demonstrably does not hold. The guard is a
 single job on `on: pull_request` with **no** `branches:` filter, which is what lets it see
-the PRs every other workflow is blind to. It passes on `main` / `production` and fails
-otherwise, with the retarget instructions in the log.
+the PRs every other workflow is blind to. It passes on `main` and fails otherwise, with the
+retarget instructions in the log.
 
 Why this and not the alternatives:
 
@@ -480,18 +493,23 @@ one — a PR that used to carry zero checks now carries one red X — but a dete
 can still override it. Making `PR base guard / base-branch` required on `main` is a
 branch-protection change and is tracked separately; it is not what closes this gap.
 
-**Not the same check as `branch-policy`, and do not merge them.** `ci.yml`'s `branch-policy`
-job guards the *head* of a `production` PR (`base_ref == 'production'` → head must be
-`main`); `pr-base-guard` guards the *base* of every PR. `branch-policy` also lives inside
-`ci.yml`, so it inherits the `[main, production]` filter and structurally cannot see the
-feature-base PRs this guard exists for — which is why it shows as `skipped` on a normal
-`main` PR. They compose; deleting either as a "duplicate" reopens a gap.
+**There used to be a sibling check here, and it is worth knowing why it is gone.**
+`ci.yml`'s `branch-policy` job guarded the *head* of a `production` PR
+(`base_ref == 'production'` → head must be `main`), where `pr-base-guard` guards the *base*
+of every PR. The two composed, and this section used to warn against merging them as
+"duplicates". #1340 deleted `branch-policy` along with the branch it policed — not as a
+tidy-up, but because the assertion moved: `scripts/ci/validate-deploy-sha.mjs` now runs
+`git merge-base --is-ancestor <sha> origin/main` before any production deploy, which
+enforces the same "only main-derived code reaches production" rule at the point where it
+actually matters. `pr-base-guard` is unaffected and still the only workflow that sees a
+feature-base PR.
 
 Verifying the guard: it is pure shell over one payload field, so it is exercised by the
-four incident bases directly — `main` and `production` exit 0; `cursor/...`, `main-ish`,
-`release/1.0`, and an empty ref all exit 1 (fails closed on anything unrecognised). It
-also passed on its own PR (#1132, check run `base-branch`), which is the end-to-end proof
-that a no-`branches` workflow does fire.
+incident bases directly — `main` exits 0; `cursor/...`, `main-ish`, `release/1.0`, and an
+empty ref all exit 1 (fails closed on anything unrecognised). `production` now exits 1 too,
+which is correct: since #1340 a PR targeting it is a mistake. It also passed on its own PR
+(#1132, check run `base-branch`), which is the end-to-end proof that a no-`branches`
+workflow does fire.
 
 #962 is adjacent and **not** this bug:
 GitHub honours `Fixes #N` only on merge into the **default** branch, so a stacked PR can
@@ -793,11 +811,13 @@ receives the private key. A compromised tag executes in exactly the job that hol
 deviation — but it is the shortest path to the key, and SHA-pinning at least the token minter is
 the cheapest hardening available if that trade is ever revisited.
 
-One pre-existing property this rests on: `main` requires **zero** approving reviews (only
-`production` requires one — the PR review policy near the top of this file, and
-`docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`). So "only reviewed code runs with the App
-token" is really "only code merged by someone with write access" — fine for a single-maintainer
-repo, and the thing to revisit first if collaborators are ever added.
+One pre-existing property this rests on: `main` requires **zero** approving reviews — and since
+#1340 it is the only branch, so there is no branch anywhere that requires one (the PR review
+policy near the top of this file, and `docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`).
+So "only reviewed code runs with the App token" is really "only code merged by someone with
+write access" — fine for a single-maintainer repo, and the thing to revisit first if
+collaborators are ever added. Note this is about the App token, not about what ships: the
+production deploy still requires a human to approve the `production` environment.
 
 ### Deploy visibility (`scripts/ci/deploy-alert.mjs`)
 
