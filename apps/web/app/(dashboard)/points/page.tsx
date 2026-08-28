@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { AdjustGlyph, SearchGlyph } from "@/components/points/points-glyphs";
-import { useLeaderboard, useMyPoints } from "@repo/hooks";
+import { useLeaderboard, useMemberDisplayNames, useMyPoints } from "@repo/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -64,8 +64,21 @@ export default function PointsPage() {
   const adjustDialog = useGatedDialog(adjustGate);
   const leaderboardQuery = useLeaderboard(window);
   const summaryQuery = useMyPoints(window);
+  // `GET /v1/points/leaderboard` returns `{ user_id, total }` and no name, so the
+  // roster is what turns a rank into a person (#1197). `useMemberDisplayNames`
+  // rather than `useMembers`: this cell needs one string per row, and the full
+  // profile route would ship every member's email, bio, graduation year, city
+  // and company to everyone who opens /points — see the note on
+  // `useChapterRoster` in `packages/hooks/src/use-members.ts` (#1000, #986).
+  const { nameFor, isPending: isRosterPending } = useMemberDisplayNames();
 
-  const isLoading = leaderboardQuery.isLoading || summaryQuery.isLoading;
+  // The roster joins the loading gate so ranks do not render as UUIDs for a
+  // frame and then re-label. It deliberately does NOT join `hasError`: a failed
+  // roster degrades names to ids, and the board is still accurate and usable, so
+  // replacing it with an error card would be the worse outcome (#1209 owns
+  // surfacing that degradation, and names /points as a call site).
+  const isLoading =
+    leaderboardQuery.isLoading || summaryQuery.isLoading || isRosterPending;
   const hasError = leaderboardQuery.isError || summaryQuery.isError;
 
   const leaderboard = useMemo(() => {
@@ -80,13 +93,29 @@ export default function PointsPage() {
   const transactions = useMemo(() => {
     return Array.isArray(summary?.transactions) ? summary.transactions : [];
   }, [summary]);
+  // One projection drives the cell, its type treatment and the search needle, so
+  // a row can never display one string and match another.
+  const leaderboardRows = useMemo(() => {
+    return leaderboard.map((entry) => {
+      // `null` for an unset name as well as a missing member: `display_name` is
+      // `NOT NULL DEFAULT ''`, so `resolveDisplayName` treats '' as unresolved
+      // rather than rendering a blank cell. Someone who has left the chapter is
+      // off the roster but keeps their points, so a raw id is a real outcome.
+      const name = nameFor(entry.user_id);
+      return { ...entry, label: name ?? entry.user_id, isNamed: name !== null };
+    });
+    // `nameFor` and not the whole hook result: `useMemberDisplayNames` returns a
+    // fresh object every render, so depending on it would rebuild this list each
+    // time. `nameFor` is a `useCallback` keyed on the roster data itself.
+  }, [leaderboard, nameFor]);
+
   const filteredLeaderboard = useMemo(() => {
     const query = leaderboardSearch.trim().toLowerCase();
-    if (!query) return leaderboard;
-    return leaderboard.filter((entry) =>
-      entry.user_id.toLowerCase().includes(query),
+    if (!query) return leaderboardRows;
+    return leaderboardRows.filter((entry) =>
+      entry.label.toLowerCase().includes(query),
     );
-  }, [leaderboard, leaderboardSearch]);
+  }, [leaderboardRows, leaderboardSearch]);
   const filteredTransactions = useMemo(() => {
     const query = transactionSearch.trim().toLowerCase();
     return transactions.filter((transaction) => {
@@ -256,7 +285,7 @@ export default function PointsPage() {
               <Input
                 value={leaderboardSearch}
                 onChange={(event) => setLeaderboardSearch(event.target.value)}
-                placeholder="Search by user id"
+                placeholder="Search by member name"
                 className="h-11 pl-9"
               />
             </div>
@@ -278,8 +307,19 @@ export default function PointsPage() {
                   {filteredLeaderboard.map((entry, index) => (
                     <TableRow key={entry.user_id}>
                       <TableCell className="font-mono tabular-nums">#{index + 1}</TableCell>
-                      <TableCell className="font-mono text-[12.5px]">
-                        {entry.user_id}
+                      {/*
+                        foundations §7 reserves mono for ids, tokens, keys and
+                        points cells — a member's name is none of those, so the
+                        family follows the value rather than the column.
+                      */}
+                      <TableCell
+                        className={
+                          entry.isNamed
+                            ? "text-[12.5px]"
+                            : "font-mono text-[12.5px]"
+                        }
+                      >
+                        {entry.label}
                       </TableCell>
                       <TableCell className="font-mono font-semibold tabular-nums">
                         {entry.total}

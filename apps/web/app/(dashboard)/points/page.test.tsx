@@ -31,6 +31,21 @@ const { mockCurrentChapter } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
 }));
 
+/**
+ * The roster projection behind the leaderboard's User column (#1197).
+ *
+ * Mocked at `useMemberDisplayNames`' real contract boundary — `nameFor` returns
+ * a name or `null` — rather than by restating the resolution rule. Whether a
+ * blank `display_name` or a missing id becomes `null` belongs to
+ * `resolveDisplayName`, which `packages/hooks/src/display-names.spec.ts`
+ * already covers; what the page owes is correct handling of the `null`.
+ */
+const rosterState: {
+  names: Record<string, string | null>;
+  isPending: boolean;
+  isError: boolean;
+} = { names: {}, isPending: false, isError: false };
+
 vi.mock("@repo/hooks", () => ({
   // Paid-ops writes on this surface now read the chapter subscription (#841);
   // these cases predate the gate, so they run against an active chapter.
@@ -42,6 +57,12 @@ vi.mock("@repo/hooks", () => ({
   }),
   useLeaderboard: () => leaderboardQuery,
   useMyPoints: () => summaryQuery,
+  useMemberDisplayNames: () => ({
+    byId: rosterState.names,
+    nameFor: (userId: string) => rosterState.names[userId] ?? null,
+    isPending: rosterState.isPending,
+    isError: rosterState.isError,
+  }),
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
@@ -74,6 +95,7 @@ function setQueries(overrides: {
   leaderboard?: Partial<QueryState>;
   summary?: Partial<QueryState>;
   offline?: boolean;
+  roster?: Partial<typeof rosterState>;
 }) {
   Object.assign(leaderboardQuery, {
     data: [],
@@ -88,6 +110,12 @@ function setQueries(overrides: {
     ...overrides.summary,
   });
   networkState.isOffline = overrides.offline ?? false;
+  Object.assign(rosterState, {
+    names: {},
+    isPending: false,
+    isError: false,
+    ...overrides.roster,
+  });
 }
 
 // The preview rows this page used to fabricate on error (FRA-235). None of
@@ -208,6 +236,158 @@ describe("PointsPage success state", () => {
     expect(screen.getByText("No leaderboard entries")).toBeInTheDocument();
     expect(screen.getByText("No transactions in this window")).toBeInTheDocument();
     expectNoFabricatedData();
+  });
+});
+
+
+describe("PointsPage leaderboard naming (#1197)", () => {
+  const ALICE = "8f14e45f-ceea-467a-9f1c-1a2b3c4d5e6f";
+  const BOB = "c9f0f895-fb98-4b41-9b8e-7d2a1c0b3e4d";
+
+  function withLeaderboard(
+    rows: { user_id: string; total: number }[],
+    names: Record<string, string | null>,
+  ) {
+    setQueries({ leaderboard: { data: rows }, roster: { names } });
+  }
+
+  const userCell = (text: string) => screen.getByRole("cell", { name: text });
+
+  it("names each member instead of showing a raw uuid", () => {
+    withLeaderboard(
+      [
+        { user_id: ALICE, total: 42 },
+        { user_id: BOB, total: 17 },
+      ],
+      { [ALICE]: "Alice Chen", [BOB]: "Bob Ruiz" },
+    );
+
+    render(<PointsPage />);
+
+    expect(screen.getByText("Alice Chen")).toBeInTheDocument();
+    expect(screen.getByText("Bob Ruiz")).toBeInTheDocument();
+    // The whole point of the issue: the uuid is gone from the surface.
+    expect(screen.queryByText(ALICE)).not.toBeInTheDocument();
+    expect(screen.queryByText(BOB)).not.toBeInTheDocument();
+  });
+
+  it("falls back to the raw id for a member who has left the chapter", () => {
+    // They are off the roster but keep their points, so the row must still
+    // render — identified by the only handle left rather than dropped.
+    withLeaderboard(
+      [
+        { user_id: ALICE, total: 42 },
+        { user_id: BOB, total: 17 },
+      ],
+      { [ALICE]: "Alice Chen" },
+    );
+
+    render(<PointsPage />);
+
+    expect(screen.getByText("Alice Chen")).toBeInTheDocument();
+    expect(screen.getByText(BOB)).toBeInTheDocument();
+  });
+
+  it("treats an unset display name as unresolved rather than rendering a blank cell", () => {
+    // `display_name` is `NOT NULL DEFAULT ''`, so `nameFor` answers null and the
+    // id has to win — a blank cell would read as a broken layout.
+    withLeaderboard([{ user_id: ALICE, total: 42 }], { [ALICE]: null });
+
+    render(<PointsPage />);
+
+    expect(userCell(ALICE)).toBeInTheDocument();
+  });
+
+  it("carries mono only where the cell still holds an id", () => {
+    // foundations §7 reserves mono for ids, tokens, keys and points cells. A
+    // name is none of those, so the family follows the value, not the column.
+    withLeaderboard(
+      [
+        { user_id: ALICE, total: 42 },
+        { user_id: BOB, total: 17 },
+      ],
+      { [ALICE]: "Alice Chen" },
+    );
+
+    render(<PointsPage />);
+
+    expect(userCell("Alice Chen")).not.toHaveClass("font-mono");
+    expect(userCell(BOB)).toHaveClass("font-mono");
+  });
+
+  it("keeps rank and total on mono tabular numerals", () => {
+    // #920's Directory & Finance slice added these and they must survive.
+    withLeaderboard([{ user_id: ALICE, total: 42 }], { [ALICE]: "Alice Chen" });
+
+    render(<PointsPage />);
+
+    expect(userCell("#1")).toHaveClass("font-mono", "tabular-nums");
+    expect(userCell("42")).toHaveClass("font-mono", "tabular-nums");
+  });
+
+  it("searches by name", () => {
+    withLeaderboard(
+      [
+        { user_id: ALICE, total: 42 },
+        { user_id: BOB, total: 17 },
+      ],
+      { [ALICE]: "Alice Chen", [BOB]: "Bob Ruiz" },
+    );
+
+    render(<PointsPage />);
+    fireEvent.change(screen.getByPlaceholderText("Search by member name"), {
+      target: { value: "alice" },
+    });
+
+    expect(screen.getByText("Alice Chen")).toBeInTheDocument();
+    expect(screen.queryByText("Bob Ruiz")).not.toBeInTheDocument();
+  });
+
+  it("still matches the id of a row that has no name to match", () => {
+    // Search filters on whatever the row displays, so no row is unsearchable.
+    withLeaderboard(
+      [
+        { user_id: ALICE, total: 42 },
+        { user_id: BOB, total: 17 },
+      ],
+      { [ALICE]: "Alice Chen" },
+    );
+
+    render(<PointsPage />);
+    fireEvent.change(screen.getByPlaceholderText("Search by member name"), {
+      target: { value: BOB.slice(0, 8) },
+    });
+
+    expect(screen.getByText(BOB)).toBeInTheDocument();
+    expect(screen.queryByText("Alice Chen")).not.toBeInTheDocument();
+  });
+
+  it("waits for the roster rather than rendering ids that then re-label", () => {
+    setQueries({
+      leaderboard: { data: [{ user_id: ALICE, total: 42 }] },
+      roster: { isPending: true },
+    });
+
+    render(<PointsPage />);
+
+    expect(screen.getByText("Loading points ledger...")).toBeInTheDocument();
+    expect(screen.queryByText(ALICE)).not.toBeInTheDocument();
+  });
+
+  it("keeps the board usable when the roster fails, degrading names to ids", () => {
+    // Deliberately NOT an error card: the totals came from the leaderboard read
+    // and are still accurate, so replacing a working board would be worse.
+    // Surfacing the degradation to the member is #1209's job, not this page's.
+    setQueries({
+      leaderboard: { data: [{ user_id: ALICE, total: 42 }] },
+      roster: { isError: true },
+    });
+
+    render(<PointsPage />);
+
+    expect(screen.queryByText("Couldn't load the points ledger")).not.toBeInTheDocument();
+    expect(userCell(ALICE)).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "42" })).toBeInTheDocument();
   });
 });
 
