@@ -2,9 +2,9 @@ name: Links
 
 on:
   pull_request:
-    branches: [main, production]
+    branches: [main]
   push:
-    branches: [main, production]
+    branches: [main]
 
 concurrency:
   group: links-${{ github.ref }}

@@ -97,7 +97,7 @@ The current target platform for the API is **Render**.
 - Use `apps/api/Dockerfile`.
 - Set root build context to the monorepo root.
 - Configure required env vars in Render service settings.
-- Keep staging (`main`) and production (`production`) services isolated.
+- Keep staging (deployed from `main`) and production (deployed from a named commit) services isolated.
 
 For the full rollout checklist (including current status and pending items), use the repository runbook: `docs/internal/ops/DEPLOYMENT.md`.
 

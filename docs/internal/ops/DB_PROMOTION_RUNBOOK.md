@@ -14,7 +14,7 @@ looking for the command to push migrations to staging, there isn't one any more
 | ----------- | -------------------------- | --------------- |
 | **Local** | `npx supabase db push --local` | You, while developing |
 | **Staging** | **Automatic.** The `migrate-staging` job in [`deploy-api.yml`](../../../.github/workflows/deploy-api.yml) runs on every successful CI run on `main` | Nobody — merging to `main` is the trigger |
-| **Production** | **Manual.** Either merging the `main` → `production` promotion PR (the `migrate-production` job in the same workflow), or running the [`Migrate production`](../../../.github/workflows/migrate-production.yml) workflow by hand | A human, deliberately |
+| **Production** | **Manual.** Normally the [`Deploy production`](../../../.github/workflows/deploy-production.yml) workflow, which migrates and deploys one named commit together. [`Migrate production`](../../../.github/workflows/migrate-production.yml) applies migrations *without* shipping code, for recovery and backlogs | A human, deliberately |
 
 ### Staging: do not push by hand
 
@@ -40,34 +40,47 @@ workflow against the latest commit on `main`.
 
 ### Production: two paths, both human
 
-Production is applied by a person, either way:
+There is no `production` branch and no promotion PR. Both were retired in #1340 —
+merging into a branch never named a commit, and Render's auto-deploy-on-commit
+meant a push shipped whatever was at the tip without waiting for CI.
 
-1. **Promotion PR** — merging `main` → `production` runs `migrate-production`.
-   The human gate is the PR itself (branch protection: CI + an approving
-   review + conversation resolution).
-2. **`Migrate production` workflow** — Actions → *Migrate production* → Run
-   workflow. Requires typing `APPLY TO PRODUCTION` to confirm, and offers a
-   **dry-run-only** mode that reports what would be applied and changes nothing.
-   Use this to re-run a failed apply, to apply a backlog without shipping code,
-   or to promote on a schedule no merge matches.
+1. **`Deploy production` workflow — the ordinary path.** Actions → *Deploy
+   production* → Run workflow. Give it the commit SHA you want live and type
+   `DEPLOY TO PRODUCTION`. It refuses any SHA that is not an ancestor of `main`
+   or whose CI was not green, **rehearses the migration against production's
+   live applied state**, applies it, then deploys that same commit to Render and
+   Vercel and tags it. Migrations and the code that needs them move together,
+   which is what you want almost every time. It also offers a **dry-run-only**
+   mode that validates and rehearses, then stops.
+2. **`Migrate production` workflow — the escape hatch.** Actions → *Migrate
+   production* → Run workflow. Requires typing `APPLY TO PRODUCTION`, and offers
+   its own dry-run-only mode. Use it to re-run an apply that failed partway, to
+   apply a backlog ahead of the code that needs it, or on a schedule no deploy
+   matches.
+
+   **It does not rehearse.** `Deploy production` runs
+   `check-migration-replay.mjs` against production's live state before applying;
+   this one only lists what is pending. That is deliberate — you reach for it
+   when something has already gone wrong, which is exactly when rebuilding
+   production's state on a disposable stack is least dependable — but it means
+   the apply is less proven. Prefer `Deploy production` whenever you can.
 
 Both share the `db-migrate-production` concurrency group, so they queue behind
 each other instead of interleaving two `db push` runs against one database.
 
-> **`environment: production` DOES gate both paths — corrected 2026-08-28.**
-> This block used to say the opposite, on the reasoning that required-reviewer
-> environment protection is Enterprise-only on private repos and this repo is
-> private on Pro. Both halves were wrong: the repo is public (corrected
-> 2026-08-21), and measurement now shows production-scoped jobs waiting minutes
-> to start while `staging`-scoped and unscoped jobs start in about two seconds.
-> On 2026-08-28 `migrate-production` sat **29m52s** waiting to apply a single
-> migration the dry run had already shown to be clean.
+> **The `production` environment's Required reviewers is now the ONLY human
+> gate, and it pauses the run.** Production migrations used to be gated by a
+> human twice — at the promotion PR, and again after merge on an approval click
+> nobody was paged for. On 2026-08-28 that second click held `migrate-production`
+> for **29m52s** waiting to apply a single migration the dry run had already
+> shown to be clean. #1340 kept the approval and dropped the promotion PR, so
+> the surviving gate is the one where a person is looking at the run that names
+> the commit.
 >
-> So production migrations are gated by a human twice: at the promotion PR, and
-> again after merge on an approval click nobody is paged for. Evidence, the
-> alternatives it rules out, and the one thing that was *not* verified directly
-> are all in `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets — read that rather than trusting a restatement
-> here. The typed confirmation on the dispatch path is unchanged.
+> The evidence that environment protection really does pause jobs (and the one
+> thing that was *not* verified directly) is in
+> `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap
+> secrets — read that rather than trusting a restatement here.
 
 > **✅ Production is reconciled and current (verified 2026-08-28).** The
 > Management API reports **52** applied migrations, exactly matching
@@ -155,9 +168,26 @@ paired with a deployed API that expects the new schema.
 
 ## Production promotion
 
-Pick a deploy window and notify stakeholders first. Then either merge the
-`main` → `production` promotion PR, or run the `Migrate production` workflow —
-start with **dry-run-only** to read the pending list before applying it.
+Pick a deploy window and notify stakeholders first. Then run **Deploy production**
+with the SHA you want live — start with **Stop after the dry run** checked, to
+read the pending list and let the replay rehearse the apply before anything
+touches the database.
+
+```text
+Actions → Deploy production → Run workflow
+  sha           <full 40-char SHA, already merged to main and CI-green>
+  confirm       DEPLOY TO PRODUCTION
+  dry_run_only  ✔ first pass, ✗ for the real one
+  bump          auto (or patch/minor/major to force it)
+```
+
+The dry-run pass is not ceremony: it runs the same validation, the same provider
+preflight, and the same migration replay as the real deploy, so a red dry run
+tells you what a real one would have done to the database before it did it.
+
+If you need to apply migrations *without* shipping code — recovering a failed
+apply, or clearing a backlog — use `Migrate production` instead, and read the
+caveat above: it does not rehearse.
 
 Before you promote — the API does not boot without these:
 
@@ -190,7 +220,10 @@ Post-apply production checks:
 
 - Do not apply production migrations before staging validation. Staging applies
   itself on merge to `main`, so in practice this means: let the merge land, let
-  `migrate-staging` go green, then promote.
+  `migrate-staging` go green, then deploy that commit to production.
+- Deploy the commit you validated on staging. `Deploy production` takes a SHA
+  rather than a branch precisely so "what we tested" and "what shipped" are the
+  same object — `main` may have moved on since.
 - Do not merge migration PRs without rollback instructions.
 - If any post-apply check fails, stop and execute `DB_ROLLBACK_PLAYBOOK.md`.
 - **Promoting migrations does not carry reference data.** `chapter_directory` is

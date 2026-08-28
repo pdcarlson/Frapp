@@ -33,7 +33,6 @@
 - [ ] If I changed API source, I regenerated `openapi.json` and `packages/api-sdk/src/types.ts`.
 - [ ] If I moved or deleted a file docs cite, `npm run check:doc-paths` still passes (it is merge-blocking and whole-tree, so it can fail on a doc this PR never touched).
 - [ ] If I changed CI job names or the required-check arrays, `npm run check:doc-tables` still passes (the docs restating those rosters were updated too).
-- [ ] If targeting `production`, this PR source branch is `main`.
 - [ ] If I changed `supabase/migrations/**`, I also updated rollback docs.
 - [ ] No secrets committed (`.env*`, credentials, private keys).
 - [ ] No placeholder secrets in CI/CD workflows.
@@ -50,6 +49,15 @@
 - [ ] Fail fast on entitlements: if a route this UI calls carries a permission, subscription, or module gate, the control that starts the flow mirrors that gate (disabled + reason + recovery path) rather than letting the user complete a form the server will reject. See the fail-fast entitlement gating standard in `spec/ui/design-system/README.md`.
 - [ ] If this PR changes UX patterns, `spec/ui/design-system/README.md` and/or `spec/ui/design-system/writing.md` were updated.
 
-## Release label (main → production only)
+## Release label
+
+Every PR carries one. The next production deploy reads the `release:*` labels on
+every PR merged since the last `v*` tag and takes the highest — so a missing
+label is read as `release:patch`, and a `release:major` change that forgets its
+label ships as a patch.
+
+(Before #1340 this section applied only to the `main` → `production` promotion
+PR, because that single PR's labels decided the version. There is no promotion
+PR any more: `deploy-production.yml` tags the commit it deployed.)
 
 - [ ] `release:patch` (default) / `release:minor` / `release:major`

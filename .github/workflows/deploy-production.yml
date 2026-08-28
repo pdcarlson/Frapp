@@ -1,0 +1,434 @@
+name: Deploy production
+
+# The ONLY path to production. A human opens Actions, names a commit, types a
+# confirmation, and approves the `production` environment. Nothing here fires on
+# its own.
+#
+# ── What this replaced ──────────────────────────────────────────────────────
+# Until #1340, production was a git branch. Merging `main` -> `production`
+# triggered everything: Render auto-deployed the branch, Vercel treated it as
+# its Production Branch, `deploy-api.yml` applied migrations off
+# `head_branch == 'production'`, and `release.yml` tagged a version off the
+# merge-commit message.
+#
+# The problem was never that the model was complicated; it was that nothing in
+# it named a commit. Render's own setting was `autoDeploy: yes` with
+# `autoDeployTrigger: commit`, so a push deployed WITHOUT waiting for CI — the
+# workflow's green-CI gate governed only its own deploy hook. What shipped was
+# whatever happened to be at a branch tip.
+#
+# Here the artifact is an input. The same SHA is migrated, deployed to Render,
+# built for Vercel production, and tagged.
+#
+# ── Where the old gates went ────────────────────────────────────────────────
+# Branch protection on `production` did two things, and both come back as steps
+# rather than as repository settings:
+#
+#   * `branch-policy` (ci.yml) enforced that a PR into `production` came from
+#     `main`. That is now `git merge-base --is-ancestor` in
+#     `scripts/ci/validate-deploy-sha.mjs`.
+#   * Required status checks gated the merge. A dispatch has no PR and therefore
+#     no required checks, so the same script asks the checks API directly,
+#     against the very list `configure-branch-protection.mjs` writes to GitHub.
+#
+# The human gate is the `production` environment's Required reviewers. It is now
+# the ONLY approval, and it happens at the moment of deploy on a run that names
+# the commit — rather than at a promotion PR opened before anyone knew whether
+# the migration applied.
+#
+# ── One job, deliberately ───────────────────────────────────────────────────
+# Every environment-scoped job costs its own Approve click. Migrate + deploy +
+# verify live in ONE job so a production release is one approval, not four. The
+# `release` and `report` jobs are unscoped and add no clicks.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Full 40-character commit SHA to deploy (must be on main and CI-green)"
+        required: true
+        type: string
+      confirm:
+        description: "Type exactly: DEPLOY TO PRODUCTION"
+        required: true
+        type: string
+      dry_run_only:
+        description: "Validate, rehearse the migration, and stop. Applies nothing, deploys nothing."
+        required: false
+        default: false
+        type: boolean
+      bump:
+        description: "Version bump. 'auto' reads release:* labels on the PRs merged since the last tag."
+        required: false
+        default: auto
+        type: choice
+        options: [auto, patch, minor, major]
+
+permissions:
+  contents: read
+
+env:
+  # Not secrets — the same identifiers `verify-deployments.yml` already hardcodes.
+  RENDER_PROD_SERVICE_ID: srv-d6lqu41aae7s73f62df0
+  VERCEL_WEB_PROJECT_ID: prj_xkn32taKrJCgYRZoN6pZRfGfPT9T
+  VERCEL_LANDING_PROJECT_ID: prj_aAkER9EZJcxR51vUY0mwNDnCf8vy
+  VERCEL_TEAM_ID: team_j9XLIANou5EpvALrr4bM9Nee
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 75
+    # SHARED with migrate-production.yml. Two paths can apply a production
+    # migration, so they must take the same lock or they can interleave two
+    # `db push` runs against one database. The same group name in both files is
+    # what makes that hold — renaming it here without renaming it there
+    # silently removes the lock.
+    #
+    # `cancel-in-progress: false` is the important half: cancelling a run
+    # mid-`db push` is how a database ends up half-migrated.
+    concurrency:
+      group: db-migrate-production
+      cancel-in-progress: false
+    outputs:
+      render-deploy-id: ${{ steps.render.outputs.deploy_id }}
+      replay-outcome: ${{ steps.replay.outputs.outcome }}
+      applied: ${{ steps.apply.outcome }}
+    steps:
+      # First step on purpose: a mistyped confirmation must cost nothing. No
+      # checkout, no secrets injected, no CLI installed before this passes.
+      - name: Verify confirmation phrase
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [ "$CONFIRM" != "DEPLOY TO PRODUCTION" ]; then
+            echo "::error::Confirmation phrase did not match. Type exactly: DEPLOY TO PRODUCTION"
+            exit 1
+          fi
+
+      # Checked out at the DISPATCHED ref (main), not at `inputs.sha`. The
+      # validation below decides whether that SHA is trustworthy, so it has to
+      # run from code that is already trusted — validating a commit using its
+      # own copy of the validator proves nothing. The tree moves to the SHA
+      # after it passes.
+      - name: Checkout (trusted ref)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch main
+        run: git fetch --no-tags origin main:refs/remotes/origin/main
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Ancestry + CI-green. Both assertions are fatal, and an unreadable checks
+      # API is a failure rather than a pass.
+      - name: Validate the commit
+        env:
+          DEPLOY_SHA: ${{ inputs.sha }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/ci/validate-deploy-sha.mjs
+
+      # Also from trusted code, and before anything is applied or built. Both
+      # settings fail OPEN: if Render's auto-deploy is back on, or a Vercel
+      # project's Production Branch has become `main`, ordinary merges are
+      # already shipping to production and this workflow is not the only path.
+      - name: Provider guardrail preflight
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
+          # The SAME identifiers the deploy steps below use. Passing them rather
+          # than letting the script default means the preflight can only ever
+          # assert against the services this run actually deploys to.
+          RENDER_SERVICE_ID: ${{ env.RENDER_PROD_SERVICE_ID }}
+          VERCEL_WEB_PROJECT_ID: ${{ env.VERCEL_WEB_PROJECT_ID }}
+          VERCEL_LANDING_PROJECT_ID: ${{ env.VERCEL_LANDING_PROJECT_ID }}
+          VERCEL_TEAM_ID: ${{ env.VERCEL_TEAM_ID }}
+        run: node scripts/ci/production-guardrails.mjs --preflight
+
+      # Proven to be an ancestor of main, so this is already-reviewed code.
+      - name: Check out the commit being deployed
+        env:
+          DEPLOY_SHA: ${{ inputs.sha }}
+        run: |
+          git checkout --detach "$DEPLOY_SHA"
+          git --no-pager log -1 --format='Deploying %H%n%s'
+
+      - name: Verify Infisical credentials are configured
+        env:
+          CLIENT_ID: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+        run: |
+          MISSING=""
+          [ -n "$CLIENT_ID" ] || MISSING="$MISSING INFISICAL_MACHINE_IDENTITY_ID"
+          [ -n "$CLIENT_SECRET" ] || MISSING="$MISSING INFISICAL_CLIENT_SECRET"
+          if [ -n "$MISSING" ]; then
+            echo "::error::Infisical credentials are not configured for the production environment. Missing or empty:$MISSING. See docs/internal/environment/SECRETS_MANAGEMENT.md."
+            exit 1
+          fi
+          case "$CLIENT_ID$CLIENT_SECRET" in
+            *[[:space:]]*) echo "::warning::An Infisical credential secret contains whitespace. A trailing newline picked up when pasting the value into GitHub is a common cause of 401 Invalid credentials — re-paste both secrets before concluding the credential was revoked." ;;
+          esac
+
+      # NOTE: the Infisical slug for production is `prod`, not `production`.
+      - name: Inject production secrets from Infisical
+        uses: Infisical/secrets-action@v1.0.12
+        with:
+          method: "universal"
+          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: "frapp-live-ej-ls"
+          env-slug: "prod"
+          secret-path: "/"
+          include-imports: true
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v2
+        with:
+          version: 2.77.0
+
+      # Only what the migrations need a real server for. The exclusion list is
+      # copied verbatim from migration-drift-gate.yml — a different list is a
+      # different rehearsal.
+      - name: Start disposable Supabase stack
+        run: supabase start -x studio,imgproxy,edge-runtime,logflare,vector,pooler,mailpit
+
+      # The #1332 gate, run here against LIVE production state rather than at PR
+      # time: rebuild production's applied set on the disposable stack, then
+      # apply exactly the pending tail through the same CLI path the real apply
+      # uses. Read-only against production (one GET to the Management API).
+      #
+      # REPLAY_SUPABASE_CLI is not optional. Without it the script falls back to
+      # `npx --yes supabase` and fetches whatever is latest, while the apply
+      # below uses the pinned 2.77.0 from PATH — and "the same CLI code path" is
+      # the entire premise of the rehearsal.
+      - name: Rehearse the migration against production's applied state
+        id: replay
+        env:
+          REPLAY_SUPABASE_CLI: supabase
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_PROJECT_REF:-}" ]; then
+            echo "::error::SUPABASE_PROJECT_REF is not set in the Infisical 'prod' environment. See docs/internal/environment/SECRETS_MANAGEMENT.md."
+            exit 1
+          fi
+          node scripts/ci/check-migration-replay.mjs | tee "${RUNNER_TEMP:-/tmp}/replay.log"
+
+          # `nothing-pending` exits 0 having rehearsed NOTHING, and that must not
+          # read as "the apply was rehearsed" in the run summary. The script
+          # prints a machine-readable `replay_outcome=<code>` line for exactly
+          # this; do not go back to grepping its human message, which is where
+          # this went wrong the first time.
+          OUTCOME="$(grep -oP '^replay_outcome=\K.*' "${RUNNER_TEMP:-/tmp}/replay.log" | tail -n1 || true)"
+          if [ -z "$OUTCOME" ]; then
+            echo "::error::The replay produced no replay_outcome line. Refusing to report an unknown rehearsal state as a pass."
+            exit 1
+          fi
+          echo "outcome=$OUTCOME" >> "$GITHUB_OUTPUT"
+
+      # ── The fence ────────────────────────────────────────────────────────
+      # Its own step so that no `continue-on-error` anywhere can swallow it.
+      #
+      # `check-migration-replay.mjs` MOVES pending migrations out of
+      # `supabase/migrations/` into `supabase/.migrations-replay-parked/` and
+      # restores them in a `finally`. A `finally` survives a thrown error; it
+      # does not survive SIGKILL (job cancellation, a runner timeout, the OOM
+      # killer). In migration-drift-gate.yml that is harmless — a throwaway
+      # runner that never speaks to production. Here the very next step runs
+      # `supabase db push` against the real database, and `run-migration.mjs`
+      # counts the BASELINE files still on disk, sees a non-zero total, does not
+      # bail, pushes NOTHING, and prints "Migrations applied successfully".
+      #
+      # A production deploy that reports "migrations applied" having applied
+      # zero is worse than one that fails. So: prove the tree is intact first.
+      - name: Fence — the working tree must be intact before anything is applied
+        run: |
+          set -euo pipefail
+
+          if [ -e supabase/.migrations-replay-parked ]; then
+            echo "::error::supabase/.migrations-replay-parked still exists — the replay did not restore the migrations it parked. Applying now would push an incomplete set and report success. Re-run the workflow."
+            ls -la supabase/.migrations-replay-parked || true
+            exit 1
+          fi
+
+          # Scoped to supabase/, not just supabase/migrations/: a leaked park
+          # shows up as BOTH an untracked directory and as ` D` deletions.
+          DIRTY="$(git status --porcelain -- supabase/)"
+          if [ -n "$DIRTY" ]; then
+            echo "::error::The working tree under supabase/ is dirty after the replay. Refusing to apply migrations from an unknown state."
+            echo "$DIRTY"
+            exit 1
+          fi
+
+          # Asserted BEFORE the stack is torn down, so a missing secret fails
+          # while the stack a re-run would need is still up.
+          if [ -z "${SUPABASE_DB_PASSWORD:-}" ]; then
+            echo "::error::SUPABASE_DB_PASSWORD is not set in the Infisical 'prod' environment. Every migration job fails without it (supabase/cli#5091). See docs/internal/environment/ENV_REFERENCE.md."
+            exit 1
+          fi
+
+          echo "Fence holds: migrations intact, tree clean, DB password present."
+
+      # Not `|| true`. A local stack still running while the CLI is linked to a
+      # remote project is the one configuration where a CLI change could
+      # silently retarget, so a failure to tear down stops the deploy.
+      - name: Stop the disposable Supabase stack
+        run: supabase stop --no-backup
+
+      # Always runs, including when this is not a dry run: the log then records
+      # what WAS pending immediately before the apply, so a failure in the next
+      # step is readable without guessing at the prior state.
+      - name: Run migrations (dry-run)
+        run: node scripts/run-migration.mjs --env production --dry-run
+
+      - name: Stop here (dry run only)
+        if: ${{ inputs.dry_run_only }}
+        run: |
+          {
+            echo "### Dry run only — nothing was applied and nothing was deployed"
+            echo ""
+            echo "Commit: \`${{ inputs.sha }}\`"
+            echo ""
+            echo "The commit passed validation, the migration replay ran against production's"
+            echo "applied state, and the pending set is listed in the previous step's log."
+            echo "Re-run with **Stop after the dry run** unchecked to deploy it."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run migrations (apply)
+        id: apply
+        if: ${{ !inputs.dry_run_only }}
+        run: node scripts/run-migration.mjs --env production
+
+      # `supabase link` has rewritten config.toml in some CLI lines. If it did,
+      # the tree no longer matches the commit we validated.
+      - name: Assert supabase config was not rewritten by link
+        if: ${{ !inputs.dry_run_only }}
+        run: git diff --quiet HEAD -- supabase/config.toml
+
+      # Deploy-by-commit through the Render API, not the deploy hook: a hook
+      # builds whatever is at the tip of the tracked branch, and that branch is
+      # now `main`, which moves on every merge.
+      - name: Deploy the commit to Render
+        id: render
+        if: ${{ !inputs.dry_run_only }}
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ env.RENDER_PROD_SERVICE_ID }}
+          SERVICE_LABEL: frapp-api-prod
+          DEPLOY_SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          node scripts/ci/deploy-render-production.mjs | tee "${RUNNER_TEMP:-/tmp}/render.log"
+          ID="$(grep -oP '^render_deploy_id=\K.*' "${RUNNER_TEMP:-/tmp}/render.log" || true)"
+          echo "deploy_id=$ID" >> "$GITHUB_OUTPUT"
+
+      # Render's `live` means the container started and opened its port. The
+      # live service has `healthCheckPath: ""` — the blueprint's `/health` was
+      # never applied to it — so this loop is the only thing asserting the app
+      # actually answers. Unlike deploy-api.yml, a missing URL FAILS rather than
+      # warning and exiting 0: a health check that silently does not run is
+      # indistinguishable from one that passed.
+      - name: Health smoke check
+        if: ${{ !inputs.dry_run_only }}
+        run: |
+          if [ -z "${API_HEALTHCHECK_URL:-}" ]; then
+            echo "::error::API_HEALTHCHECK_URL is not set in the Infisical 'prod' environment. Refusing to call a deploy healthy without checking it."
+            exit 1
+          fi
+          echo "Waiting for the production API to become healthy..."
+          for i in 1 2 3 4 5 6; do
+            if curl --fail --silent --show-error --location --connect-timeout 2 --max-time 5 "$API_HEALTHCHECK_URL" >/dev/null 2>&1; then
+              echo "✅ Production API is healthy."
+              exit 0
+            fi
+            echo "Attempt $i/6 — retrying in 20s..."
+            sleep 20
+          done
+          echo "::error::Production health check failed after 6 attempts (2 min)."
+          exit 1
+
+      # A fresh production BUILD of this commit, not a promotion of its main
+      # preview: NEXT_PUBLIC_* are inlined at build time, so promoting a preview
+      # would put the production dashboard on the staging API and staging
+      # Supabase keys. See the header of deploy-vercel-production.mjs.
+      - name: Deploy the commit to Vercel production (web + landing)
+        if: ${{ !inputs.dry_run_only }}
+        env:
+          VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
+          VERCEL_WEB_PROJECT_ID: ${{ env.VERCEL_WEB_PROJECT_ID }}
+          VERCEL_LANDING_PROJECT_ID: ${{ env.VERCEL_LANDING_PROJECT_ID }}
+          VERCEL_TEAM_ID: ${{ env.VERCEL_TEAM_ID }}
+          GITHUB_REPO_ID: ${{ github.event.repository.id }}
+          DEPLOY_SHA: ${{ inputs.sha }}
+        run: node scripts/ci/deploy-vercel-production.mjs
+
+  # Tagging is a separate job only because `workflow_call` cannot be a step. It
+  # carries no `environment:`, so it costs no second approval click.
+  #
+  # The tag is created AFTER Render and Vercel report healthy, on the exact SHA
+  # that was deployed — so `vX.Y.Z` now means "this is live", where it used to
+  # mean "this was merged and we hoped it would ship".
+  release:
+    needs: deploy
+    if: ${{ needs.deploy.result == 'success' && !inputs.dry_run_only }}
+    uses: ./.github/workflows/release.yml
+    permissions:
+      # A called workflow's job permissions are intersected with what the caller
+      # grants, so both sides need `pull-requests: read` — see the note in
+      # release.yml. Granting it only there would still leave the token unable
+      # to read the `release:*` labels.
+      contents: write
+      pull-requests: read
+    with:
+      sha: ${{ inputs.sha }}
+      bump: ${{ inputs.bump }}
+
+  # Terminal reporting. A `workflow_dispatch` failure reds one row in the
+  # Actions list and emails the actor, which is thin for the only path to
+  # production — and it cannot express "deployed fine, then failed to tag".
+  report:
+    needs: [deploy, release]
+    if: always() && needs.deploy.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Summarise what actually happened
+        env:
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+          RELEASE_RESULT: ${{ needs.release.result }}
+          RENDER_DEPLOY_ID: ${{ needs.deploy.outputs.render-deploy-id }}
+          REPLAY_OUTCOME: ${{ needs.deploy.outputs.replay-outcome }}
+          DRY_RUN: ${{ inputs.dry_run_only }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          {
+            echo "### Production deploy — \`$SHA\`"
+            echo ""
+            echo "| Phase | Result |"
+            echo "| --- | --- |"
+            echo "| Migrate + deploy | \`$DEPLOY_RESULT\` |"
+            echo "| Migration rehearsal | \`${REPLAY_OUTCOME:-not reached}\` |"
+            echo "| Render deploy id | \`${RENDER_DEPLOY_ID:-none}\` |"
+            echo "| Release tag | \`${RELEASE_RESULT:-skipped}\` |"
+            echo ""
+            if [ "$REPLAY_OUTCOME" = "nothing-pending" ]; then
+              echo "> The migration rehearsal found nothing pending, so it verified nothing."
+              echo "> That is the ordinary case and is not evidence that an apply would work."
+              echo ""
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$DEPLOY_RESULT" != "success" ]; then
+            echo "::error::Production deploy did not succeed ($DEPLOY_RESULT). Read the failing step above; if migrations were applied, docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md owns recovery."
+            exit 1
+          fi
+
+          # The quiet failure this job exists for: production is updated and no
+          # tag exists, so nothing records what is live.
+          if [ "$DRY_RUN" != "true" ] && [ "$RELEASE_RESULT" != "success" ]; then
+            echo "::error::Deploy succeeded but the release tag did not ($RELEASE_RESULT). Production IS updated. Re-run the 'Release' workflow manually with sha=$SHA to record it."
+            exit 1
+          fi

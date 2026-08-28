@@ -383,6 +383,13 @@ export async function runReplayGate({
   const heading = outcome.ok ? "### Migration replay: PASS" : "### Migration replay: FAIL";
   writeSummary(`${heading}\n\n${outcome.message}\n\n\`\`\`\n${describePartition(partition, label)}\n\`\`\``);
 
+  // Machine-readable, on purpose. A caller needs to distinguish "rehearsed the
+  // pending set" from "there was nothing to rehearse" — both exit 0, and only
+  // one of them verified anything. deploy-production.yml reads this line for its
+  // run summary; parsing the human message instead is how that summary silently
+  // started claiming a rehearsal that never happened.
+  console.log(`replay_outcome=${outcome.code}`);
+
   if (!outcome.ok) {
     console.error(`::error::${outcome.message.split("\n")[0]}`);
     console.error(outcome.message);
