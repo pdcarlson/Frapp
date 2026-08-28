@@ -55,15 +55,41 @@ jobs:
         run: |
           set -euo pipefail
 
-          if CHANGED=$(git diff --name-only HEAD~1); then
+          # The changed-file list goes to a FILE, and every filter greps that
+          # file directly. It must never go back to being `echo "$CHANGED" |
+          # grep -q`, which is how the production promotion (#1330) silently
+          # skipped its API deploy:
+          #
+          #   `grep -q` exits the moment it matches. That closes the pipe while
+          #   `echo` is still writing the remaining paths, `echo` dies with
+          #   EPIPE, and `pipefail` promotes that EPIPE to the pipeline's exit
+          #   status — so a SUCCESSFUL match reported failure and the filter
+          #   answered "nothing changed".
+          #
+          #   It is a race, which is why it stayed hidden: it needs a list
+          #   bigger than the 64KiB pipe buffer AND `grep` to exit before
+          #   `echo` drains. #1330's diff was 1674 paths / 82KiB, matching
+          #   `apps/api/` at line 202 and `supabase/migrations/` at line 1621
+          #   — so the early API match left ~20KiB unwritten and reproduced in
+          #   roughly one run in five, while the late migrations match had
+          #   almost nothing left to write and effectively never did. That run
+          #   lost the coin flip: migrations were detected, the API was not.
+          #
+          # Grepping a file has no writer process to kill, so an early `-q`
+          # exit is harmless and match order cannot change the answer.
+          CHANGED_FILE="${RUNNER_TEMP:-/tmp}/deploy-api-changed-paths.txt"
+
+          if git diff --name-only HEAD~1 > "$CHANGED_FILE"; then
             DIFF_OK=1
           else
             DIFF_OK=0
-            CHANGED=""
+            : > "$CHANGED_FILE"
             echo "::warning::Could not diff HEAD~1 for ${{ github.event.workflow_run.head_sha }}. Assuming all deploy-relevant paths changed rather than skipping the deploy."
           fi
 
-          if [ "$DIFF_OK" -eq 0 ] || echo "$CHANGED" | grep -qE '^(apps/api/|packages/validation/|packages/typescript-config/)'; then
+          echo "Changed paths in this push: $(wc -l < "$CHANGED_FILE")"
+
+          if [ "$DIFF_OK" -eq 0 ] || grep -qE '^(apps/api/|packages/validation/|packages/typescript-config/)' "$CHANGED_FILE"; then
             echo "api-changed=true" >> "$GITHUB_OUTPUT"
             echo "API-related files changed (or the diff was unreadable)."
           else
@@ -71,7 +97,7 @@ jobs:
             echo "No API-related files changed."
           fi
 
-          if [ "$DIFF_OK" -eq 0 ] || echo "$CHANGED" | grep -qE '^supabase/migrations/'; then
+          if [ "$DIFF_OK" -eq 0 ] || grep -qE '^supabase/migrations/' "$CHANGED_FILE"; then
             echo "migrations-changed=true" >> "$GITHUB_OUTPUT"
             echo "Migration files changed (or the diff was unreadable)."
           else
@@ -174,11 +200,49 @@ jobs:
         run: node scripts/run-migration.mjs --env staging
 
   # ── Run database migrations (production) ───────────────────────────────
-  # NOTE: The "production" environment is used for job scoping only. Required-reviewer
-  # environment protection rules are GitHub Enterprise-only on PRIVATE repos, so on this
-  # (private, Pro) repo this job does NOT pause for manual approval — it runs straight
-  # through once CI passes. The human gate is the main->production promotion PR
-  # (branch protection: CI + approving review + conversation resolution).
+  # ── CORRECTION (2026-08-28): this job DOES pause for manual approval ───
+  # This comment used to say the opposite — that required-reviewer environment
+  # protection is GitHub Enterprise-only on private repos, so `environment:
+  # production` here was job scoping and nothing more, and the job "runs
+  # straight through once CI passes". That is not what happens, and the
+  # confidence of the claim is why nobody went looking.
+  #
+  # Measured on the #1330 promotion, run 33184010470:
+  #
+  #   check-changes       (no environment)  created 15:12:35 → started 15:12:37   2s
+  #   migrate-production  (production)      created 15:12:46 → started 15:42:38  29m52s
+  #   deploy-outcome      (no environment)  created 15:43:01 → started 15:43:04   3s
+  #
+  # and in the sibling run 33188671688 on the same day:
+  #
+  #   migrate-staging     (staging)         created 16:10:21 → started 16:10:23   2s
+  #
+  # So it is not runner queueing (siblings in the same run got runners in
+  # seconds), not `needs:` (check-changes had already finished), not the
+  # concurrency lock (nothing else held `db-migrate-production`), and not
+  # `environment:` as a mechanism (staging, which is also environment-scoped,
+  # starts immediately). The two `workflow_dispatch` runs in
+  # migrate-production.yml parked 15m19s and 3m13s the same way — three
+  # different durations, which also rules out a fixed `wait_timer`. Variable
+  # multi-minute delays on exactly the production-scoped jobs is a human
+  # clicking Approve.
+  #
+  # Not verified directly: the `production` environment's protection rules
+  # themselves. `GET /repos/{owner}/{repo}/environments/production` is not
+  # reachable from an agent sandbox (the proxy answers 403), so the conclusion
+  # above rests on timing, which is strong but indirect. Anyone with repo
+  # settings access can confirm it in one look at Settings → Environments →
+  # production.
+  #
+  # The human gate was ALSO meant to be the main->production promotion PR
+  # (branch protection: CI + approving review + conversation resolution), which
+  # means production migrations are gated by a human twice: once at the PR, and
+  # again here, after merge, on a click nobody is paged for.
+  #
+  # Removing the second gate is issue-tracked and needs a repo-settings change
+  # (remove the required reviewer from the `production` environment) that CI
+  # cannot make for itself. Do NOT remove `environment: production` to work
+  # around it — that is what scopes the Infisical secrets this job reads.
   #
   # This is the AUTOMATIC production path, and it is not the only one:
   # `.github/workflows/migrate-production.yml` applies the same migrations from a

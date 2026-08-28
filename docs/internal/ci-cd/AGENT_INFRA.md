@@ -23,7 +23,7 @@ The agent **may** use `GITHUB_PAT` for: creating/closing agent-owned PRs, labels
 
 The agent **must not** use it to: merge without explicit approval, delete branches without approval, broaden repo settings beyond branch protection/environments, create/modify GitHub Secrets, force-push, or create releases/tags outside the automated release workflow.
 
-Node scripts (e.g. `configure-branch-protection.mjs`) read `GITHUB_PAT` directly. For `gh`/git, export it as `GH_TOKEN` first — `gh` only auto-reads `GH_TOKEN`/`GITHUB_TOKEN`, not `GITHUB_PAT`. The value must be a PAT with the required repository permissions; do not assume the GitHub Actions runtime token has branch-administration scope.
+Node scripts (e.g. `configure-branch-protection.mjs`) read `GITHUB_PAT` directly — that script also accepts it from `.env.local` or `.env` at the repo root, with an exported variable still winning over both (details: [`../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md)). For `gh`/git, export it as `GH_TOKEN` first — `gh` only auto-reads `GH_TOKEN`/`GITHUB_TOKEN`, not `GITHUB_PAT`. The value must be a PAT with the required repository permissions; do not assume the GitHub Actions runtime token has branch-administration scope.
 
 ```bash
 export GITHUB_PAT=<token>
@@ -95,11 +95,30 @@ Project ID is documented in [`SECRETS_MANAGEMENT.md`](../environment/SECRETS_MAN
 | Environment  | Protection        | Purpose                             |
 | ------------ | ----------------- | ----------------------------------- |
 | `staging`    | None              | Staging deploys (`main`)            |
-| `production` | Promotion-PR gate | Production deploys + migrations |
+| `production` | Promotion-PR gate **+ a required reviewer that actually pauses jobs** (see the note below) | Production deploys + migrations |
 
 > **Environment-protection note — premise corrected 2026-08-21.** This note used to read "GitHub *environment* required-reviewer protection rules are Enterprise-only on private repos, so they do **not** gate this (private, Pro) repo." **The repo is public**, verified 2026-08-21 by fetching the README over raw.githubusercontent.com with no credentials: HTTP 200, against a 404 control for a nonexistent repo. So the private-repo exemption that sentence rested on does not apply, and the conclusion no longer follows from its stated reason.
 >
 > Nothing was changed on the strength of that, and the gate is unchanged: production is gated by the `main` → `production` promotion PR (branch protection: CI + an approving review + conversation resolution), with the `production` environment existing for job scoping. Whether environment required reviewers are actually available on this plan, and whether to add them on top of the promotion-PR gate, is an **open question for the owner** — check the repo's environment settings rather than trusting either version of this note. Found while reviewing the base-sync App credential, which needed to know the repo's visibility for a different reason.
+>
+> **Open question ANSWERED 2026-08-28: they are available, they are configured, and they pause production jobs today.** This is the canonical statement; every other doc that describes production's approval posture should defer to this paragraph rather than restate it.
+>
+> Production-scoped jobs sit between being created and being started, while jobs with no environment — and jobs scoped to `staging` — start in about two seconds:
+>
+> | Run | Job | Environment | Created → started |
+> | --- | --- | --- | --- |
+> | [33184010470](https://github.com/pdcarlson/Frapp/actions/runs/33184010470) | `check-changes` | none | 2s |
+> | [33184010470](https://github.com/pdcarlson/Frapp/actions/runs/33184010470) | **`migrate-production`** | **production** | **29m 52s** |
+> | [33184010470](https://github.com/pdcarlson/Frapp/actions/runs/33184010470) | `deploy-outcome` | none | 3s |
+> | [33188671688](https://github.com/pdcarlson/Frapp/actions/runs/33188671688) | `migrate-staging` | staging | 2s |
+> | [32789194139](https://github.com/pdcarlson/Frapp/actions/runs/32789194139) | `migrate-production` (dispatch) | production | 15m 19s |
+> | [32790550501](https://github.com/pdcarlson/Frapp/actions/runs/32790550501) | `migrate-production` (dispatch) | production | 3m 13s |
+>
+> What that rules out: runner queueing (siblings in the same run got runners in seconds), `needs:` (the parent job had already finished), the `db-migrate-production` concurrency lock (nothing else held it), `environment:` as a mechanism (staging is environment-scoped and does not wait), and a `wait_timer` (a fixed timer cannot produce 3m13s, 15m19s and 29m52s). Variable multi-minute delays on exactly the production-scoped jobs is a person clicking **Approve**.
+>
+> **Not verified directly, and worth saying plainly:** the environment's protection rules themselves were not read. `GET /repos/{owner}/{repo}/environments/production` is not reachable from an agent sandbox — the proxy answers `403` — so the conclusion above rests on timing evidence, which is strong but indirect. Anyone with repo settings access settles it in one look at **Settings → Environments → production**, and that look is worth taking before acting on this.
+>
+> **Consequence.** Production migrations are gated by a human twice: once at the promotion PR, and again after merge, on an approval click that nobody is paged for. The second gate is the one that parked a one-migration apply for 29m52s on 2026-08-28 — an apply the dry run had already shown to be clean. `migration-replay` (`.github/workflows/migration-drift-gate.yml`) now rehearses that apply at PR time, which is what makes removing the second gate a reasonable trade rather than a loss of safety. Removing it is a repo-settings change; CI cannot make it for itself.
 
 Repository secrets for Infisical bootstrap: `INFISICAL_MACHINE_IDENTITY_ID`, `INFISICAL_CLIENT_SECRET`, `INFISICAL_PROJECT_ID`.
 
@@ -342,7 +361,10 @@ packages set `"rootDir": "src"` in their own `tsconfig.json` (not in
 `@repo/typescript-config/base.json`: TypeScript resolves `rootDir` relative to the file that
 declares it, so a shared `./src` would point at `packages/typescript-config/src`). The emitting
 set is `@repo/validation`, `@repo/hooks`, `@repo/color`, `@repo/formatting`, `@repo/chapter-theme`,
-`@repo/org-archetypes`, `@repo/chat-integrations` (each `"build": "tsc"`), and `@repo/api-sdk`
+`@repo/org-archetypes`, `@repo/chat-integrations` (each `"build": "tsc"`, except `@repo/hooks`,
+which builds via `tsc -p tsconfig.build.json` so its `*.spec.tsx` / `*.test.tsx` files stay out of
+the build — they import `vitest` and `@testing-library/react`, which Vercel's production install
+omits; `tsconfig.json` still includes them so `check-types` keeps covering them), and `@repo/api-sdk`
 (`outDir` is set even though `check-types` passes `--noEmit` and there is no `build` script —
 do not add a build as a side effect of this pin). Non-emitting packages (`@repo/theme`,
 `@repo/chat-core`) and the Next / Expo apps stay `noEmit`. `apps/api` sets `"rootDir": "./src"`

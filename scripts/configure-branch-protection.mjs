@@ -8,13 +8,18 @@
  *   GITHUB_PAT=github_pat_xxx node scripts/configure-branch-protection.mjs --dry-run
  *   GITHUB_PAT=github_pat_xxx node scripts/configure-branch-protection.mjs --repo owner/repo
  *
+ * The token may also sit in `.env.local` or `.env` at the repo root instead of being
+ * exported — see resolveToken(). An exported variable still wins over the file.
+ *
  * The PAT needs "repo" scope for public repos or "admin:repo" for private repos.
  *
  * Required status checks map to emitted GitHub check-run names.
  */
 
 import { execSync } from "node:child_process";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+import { loadEnvFiles } from "./lib/env-file.mjs";
 
 // ── Required status checks ──────────────────────────────────────────────────
 // These must match check-run names exactly as reported on PRs.
@@ -176,6 +181,29 @@ const DRIFT_CHECKS = [
   // migration-drift job exists on the target branch and has run green,
   // otherwise every PR blocks on a missing required check.
   "migration-drift",
+  // Do the migrations a PR adds actually APPLY to the database they are heading
+  // for? Rebuilds production's currently-applied state on a disposable Supabase
+  // stack and runs the pending set against it, through the same CLI path
+  // `run-migration.mjs` uses for real. Read-only against production (one GET to
+  // the Management API); every apply lands on the throwaway stack.
+  //
+  // The gap it closes: `pglite-migrations` applies the corpus from ZERO, which
+  // is a different question from applying the tail to a database that is
+  // already at some version, and `migration-safety` / `migration-lock-safety`
+  // read the SQL without running it. Until this job existed, the first real
+  // execution of an incremental production apply was the production apply.
+  //
+  // Required rather than advisory for the same reason `migration-drift` is: a
+  // migration that cannot apply is not a style opinion, and the failure it
+  // prevents is one that is discovered mid-deploy with a half-migrated
+  // database. Unlike `migration-drift` it CANNOT block a PR over unrelated
+  // state — it does real work only when the PR touches
+  // `supabase/migrations/**`, and passes in seconds otherwise.
+  //
+  // ROLLOUT: same caveat as secret-scan — required only once the
+  // migration-replay job exists on the target branch and has run green,
+  // otherwise every PR blocks on a missing required check.
+  "migration-replay",
 ];
 
 const ALL_REQUIRED_CHECKS = [...CI_CHECKS, ...DOCS_CHECKS, ...DRIFT_CHECKS];
@@ -213,6 +241,11 @@ function resolveRepoSlug() {
 
   return `${httpsMatch[1]}/${httpsMatch[2]}`;
 }
+
+// Resolved from this file rather than `process.cwd()`, so the token is found the
+// same way whether the script runs via `npm run configure:branch-protection`
+// (cwd = repo root) or by path from some subdirectory.
+const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 function resolveToken() {
   const explicitTokenEnv = getArg("--token-env");
@@ -293,6 +326,23 @@ function buildProtectionPayload(branch) {
 // ── Main ────────────────────────────────────────────────────────────────────
 
 async function main() {
+  // Loading the env files HERE — at the one entry point, before anything reads
+  // `process.env` — rather than at module scope, which is the constraint the
+  // entry guard at the bottom of this file exists for: importing this module
+  // must not do anything, and mutating `process.env` on import is exactly such
+  // a side effect, reaching every other module in the process.
+  //
+  // It has to precede `resolveRepoSlug()` and not merely sit next to the token
+  // lookup. Both the slug (`GITHUB_REPOSITORY`) and the token are read from the
+  // environment, so loading between them would honour a `.env` for one and
+  // silently ignore it for the other — and the failure that hides is writing
+  // branch protection to whatever `origin` happens to be rather than to the
+  // repository the operator named.
+  //
+  // Anything already in the environment still wins over the files, so exporting
+  // continues to override a checked-out `.env`.
+  loadEnvFiles({ dir: REPO_ROOT });
+
   const repoSlug = resolveRepoSlug();
   const dryRun = hasFlag("--dry-run");
 
@@ -325,7 +375,8 @@ async function main() {
       const token = resolveToken();
       if (!token) {
         throw new Error(
-          "Missing GitHub token. Set GITHUB_PAT, or one of the aliases: GITHUB_TOKEN, GH_PAT, GH_TOKEN.",
+          "Missing GitHub token. Set GITHUB_PAT (or one of the aliases GITHUB_TOKEN, " +
+            "GH_PAT, GH_TOKEN) in the environment, or put it in .env.local or .env at the repo root.",
         );
       }
 

@@ -13,17 +13,33 @@ Configure merge-blocking branch protections for `main` and `production`. This en
 1. A GitHub Personal Access Token (PAT) with repository administration permissions:
    - **Fine-grained PAT:** Repository administration: Read & write
    - **Classic PAT:** `repo` scope
-2. Export the token in your shell using the canonical hosted-agent name. The token must have the permissions above; do not rely on the GitHub Actions runtime token unless it has equivalent administration scope.
+2. Provide the token using the canonical hosted-agent name, either by exporting it or by putting it in an env file at the repo root. The token must have the permissions above; do not rely on the GitHub Actions runtime token unless it has equivalent administration scope.
 
 ```bash
 export GITHUB_PAT=<token>
 export GH_TOKEN="$GITHUB_PAT"   # gh/git read GH_TOKEN, not GITHUB_PAT
 ```
 
+Or, to avoid re-exporting every shell — both files are gitignored:
+
+```bash
+echo 'GITHUB_PAT=<token>' >> .env
+```
+
 > **Which env var the script reads.** `scripts/configure-branch-protection.mjs` resolves the token from,
 > in order: `GITHUB_PAT` → `GITHUB_TOKEN` → `GH_PAT` → `GH_TOKEN` (or `--token-env <NAME>` to name a
 > custom var). `GITHUB_PAT` is the canonical name. The repo slug comes from `--repo owner/repo`,
 > `GITHUB_REPOSITORY`, or the `origin` remote.
+>
+> **The value may come from `.env.local` or `.env` at the repo root**, not just from an exported
+> variable — the script loads them through `scripts/lib/env-file.mjs`. Precedence is the one
+> `apps/api/src/app.module.ts` already uses for the API: an **exported variable beats both files**,
+> and `.env.local` beats `.env`. So a stale `.env` left in a checkout can never shadow a token you
+> exported deliberately. Before this loading existed, a token sitting in `.env` failed with
+> "Missing GitHub token" and only worked once exported by hand.
+>
+> The same files also supply `GITHUB_REPOSITORY`, since they are loaded before the slug is
+> resolved — `--repo` still overrides both.
 
 > **This script cannot be run from a Claude Code hosted session — it is a human step.** The hosted
 > environment does inject `GITHUB_PAT`, which is why this runbook used to claim the script "works there
@@ -132,11 +148,12 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 | `doc-paths`      | Backticked repo-path citations resolve to real files (`check-doc-paths.mjs`, whole-tree) |
 | `doc-tables`     | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml` (`check-doc-tables.mjs`) — **not required yet**, see [`DOCS_CI.md`](../ci-cd/DOCS_CI.md) |
 
-**Migration drift check (from `.github/workflows/migration-drift-gate.yml`):**
+**Migration checks (from `.github/workflows/migration-drift-gate.yml`):**
 
 | Check name         | What it validates                                                     |
 | ------------------ | --------------------------------------------------------------------- |
 | `migration-drift`  | Staging holds every migration on `main` (`check-migration-drift-gate.mjs`). The only required check about a **deployed database** rather than about the code — everything else stays green while staging sits migrations behind |
+| `migration-replay` | Pending migrations apply cleanly to a disposable Supabase stack rebuilt at **production's** currently-applied state (`check-migration-replay.mjs`). Rehearses the incremental apply that `migrate-production` is about to perform for real; production itself is only read, never written |
 
 This is the gate that would have caught the incident where two migrations merged to `main` and were never applied to staging. It compares `origin/main` against staging's applied migration history, **not** the PR head — a PR that adds a migration is not failed by its own unmerged file. A migration is tolerated for 30 minutes from the moment it landed on `main`, which is the window `migrate-staging` needs to apply it.
 
