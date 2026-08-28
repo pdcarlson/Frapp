@@ -13,17 +13,33 @@ Configure merge-blocking branch protections for `main` and `production`. This en
 1. A GitHub Personal Access Token (PAT) with repository administration permissions:
    - **Fine-grained PAT:** Repository administration: Read & write
    - **Classic PAT:** `repo` scope
-2. Export the token in your shell using the canonical hosted-agent name. The token must have the permissions above; do not rely on the GitHub Actions runtime token unless it has equivalent administration scope.
+2. Provide the token using the canonical hosted-agent name, either by exporting it or by putting it in an env file at the repo root. The token must have the permissions above; do not rely on the GitHub Actions runtime token unless it has equivalent administration scope.
 
 ```bash
 export GITHUB_PAT=<token>
 export GH_TOKEN="$GITHUB_PAT"   # gh/git read GH_TOKEN, not GITHUB_PAT
 ```
 
+Or, to avoid re-exporting every shell — both files are gitignored:
+
+```bash
+echo 'GITHUB_PAT=<token>' >> .env
+```
+
 > **Which env var the script reads.** `scripts/configure-branch-protection.mjs` resolves the token from,
 > in order: `GITHUB_PAT` → `GITHUB_TOKEN` → `GH_PAT` → `GH_TOKEN` (or `--token-env <NAME>` to name a
 > custom var). `GITHUB_PAT` is the canonical name. The repo slug comes from `--repo owner/repo`,
 > `GITHUB_REPOSITORY`, or the `origin` remote.
+>
+> **The value may come from `.env.local` or `.env` at the repo root**, not just from an exported
+> variable — the script loads them through `scripts/lib/env-file.mjs`. Precedence is the one
+> `apps/api/src/app.module.ts` already uses for the API: an **exported variable beats both files**,
+> and `.env.local` beats `.env`. So a stale `.env` left in a checkout can never shadow a token you
+> exported deliberately. Before this loading existed, a token sitting in `.env` failed with
+> "Missing GitHub token" and only worked once exported by hand.
+>
+> The same files also supply `GITHUB_REPOSITORY`, since they are loaded before the slug is
+> resolved — `--repo` still overrides both.
 
 > **This script cannot be run from a Claude Code hosted session — it is a human step.** The hosted
 > environment does inject `GITHUB_PAT`, which is why this runbook used to claim the script "works there

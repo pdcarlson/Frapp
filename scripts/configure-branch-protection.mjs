@@ -8,13 +8,18 @@
  *   GITHUB_PAT=github_pat_xxx node scripts/configure-branch-protection.mjs --dry-run
  *   GITHUB_PAT=github_pat_xxx node scripts/configure-branch-protection.mjs --repo owner/repo
  *
+ * The token may also sit in `.env.local` or `.env` at the repo root instead of being
+ * exported — see resolveToken(). An exported variable still wins over the file.
+ *
  * The PAT needs "repo" scope for public repos or "admin:repo" for private repos.
  *
  * Required status checks map to emitted GitHub check-run names.
  */
 
 import { execSync } from "node:child_process";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+import { loadEnvFiles } from "./lib/env-file.mjs";
 
 // ── Required status checks ──────────────────────────────────────────────────
 // These must match check-run names exactly as reported on PRs.
@@ -237,6 +242,11 @@ function resolveRepoSlug() {
   return `${httpsMatch[1]}/${httpsMatch[2]}`;
 }
 
+// Resolved from this file rather than `process.cwd()`, so the token is found the
+// same way whether the script runs via `npm run configure:branch-protection`
+// (cwd = repo root) or by path from some subdirectory.
+const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
+
 function resolveToken() {
   const explicitTokenEnv = getArg("--token-env");
   if (explicitTokenEnv && process.env[explicitTokenEnv]) {
@@ -316,6 +326,23 @@ function buildProtectionPayload(branch) {
 // ── Main ────────────────────────────────────────────────────────────────────
 
 async function main() {
+  // Loading the env files HERE — at the one entry point, before anything reads
+  // `process.env` — rather than at module scope, which is the constraint the
+  // entry guard at the bottom of this file exists for: importing this module
+  // must not do anything, and mutating `process.env` on import is exactly such
+  // a side effect, reaching every other module in the process.
+  //
+  // It has to precede `resolveRepoSlug()` and not merely sit next to the token
+  // lookup. Both the slug (`GITHUB_REPOSITORY`) and the token are read from the
+  // environment, so loading between them would honour a `.env` for one and
+  // silently ignore it for the other — and the failure that hides is writing
+  // branch protection to whatever `origin` happens to be rather than to the
+  // repository the operator named.
+  //
+  // Anything already in the environment still wins over the files, so exporting
+  // continues to override a checked-out `.env`.
+  loadEnvFiles({ dir: REPO_ROOT });
+
   const repoSlug = resolveRepoSlug();
   const dryRun = hasFlag("--dry-run");
 
@@ -348,7 +375,8 @@ async function main() {
       const token = resolveToken();
       if (!token) {
         throw new Error(
-          "Missing GitHub token. Set GITHUB_PAT, or one of the aliases: GITHUB_TOKEN, GH_PAT, GH_TOKEN.",
+          "Missing GitHub token. Set GITHUB_PAT (or one of the aliases GITHUB_TOKEN, " +
+            "GH_PAT, GH_TOKEN) in the environment, or put it in .env.local or .env at the repo root.",
         );
       }
 
