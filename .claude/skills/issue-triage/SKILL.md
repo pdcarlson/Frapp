@@ -68,7 +68,8 @@ But **destructive** actions (close, mark duplicate, re-body) are limited to **`s
 issues:
 
 - **Organize (any `triage` item):** fill an *absent* priority label (never overwrite a human-set
-  one), record Blocked-by (as a comment — see Pass A step 4), attach to an epic where it clearly
+  one), record Blocked-by (body line on a body you authored, comment otherwise — and note a
+  comment does **not** gate `/next`; see Pass A step 4), attach to an epic where it clearly
   belongs, promote to Backlog (remove `triage`).
 - **Destroy (`suggestion`-owned only):** close as junk/obsolete (`not_planned`), mark duplicate
   (`duplicate` + `duplicate_of`), edit the body (including adding an Agent brief). **Never** close
@@ -101,12 +102,27 @@ each:
    round-tripping that body through a lossy read. `/next` reads the brief either way — including a
    correction a previous run already commented, so check for one first
    ([comment once](#comment-once-not-once-per-run)).
-4. **Blocked-by.** Record `Blocked by #N` where a dependency is obvious. **Deliver it as a
-   comment**, not as a body edit, for exactly the reason step 3 does: adding a line to an existing
-   body means round-tripping that body through a lossy read, and most `triage` items were authored
-   by someone else. Writing the line into the body is correct only for a body you authored this
-   run. `/next` §1.1 verifies blockers against the repo rather than the tracker, so a commented
-   blocker is honored either way.
+4. **Blocked-by.** Record `Blocked by #N` where a dependency is obvious — but know what a comment
+   can and cannot buy you here, because this is **not** symmetric with the Agent brief in step 3.
+
+   **`/next` reads blockers from the body only.** [§0.2 condition 3](../../commands/next.md)
+   disqualifies a candidate on *"a `Blocked by #N` **body line** whose #N is still open"*, and §1.1
+   then re-verifies **those body lines** against the repo. It does not discover blockers from
+   comments. So a commented `Blocked by` is **not** honored by the selection filter: the issue
+   still ranks as claimable on every run. (Verified 2026-08-28 against `next.md:193` and `:329`.)
+
+   That leaves two cases:
+   - **A body you authored this run** — write the line into the body. This is the only delivery
+     that actually gates `/next`.
+   - **Anyone else's body** — you may not rewrite it (step 3's read-fidelity hazard, plus the
+     ownership boundary on non-`suggestion` issues). Leave the comment anyway, since a `/next`
+     session reads it during §1.2 verification and it saves that session the re-derivation — but
+     **do not treat the comment as the fix**, and surface the issue in the
+     [board-health report](#board-health-report) as needing an owner body edit.
+
+   This is the failure #1293 documents: #460 presupposes an AI request path that does not exist,
+   carries no `Blocked by` body line, and has burned repeated ranked sessions that each re-derive
+   the same blocker and release. A comment would not have stopped it.
 5. **Epic attach.** Attach as a sub-issue (`sub_issue_write`) when it clearly belongs to an open
    `[Epic]`. If none fit, leave it standalone.
 6. **Promote or hold:**

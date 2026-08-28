@@ -82,6 +82,17 @@ this block. Policy detail: [`GITHUB_PM.md` → Ownership boundary](GITHUB_PM.md#
    routine writes. Worked example, evidence, and the triage-specific procedure:
    [`issue-triage` → Comment once](../../../.claude/skills/issue-triage/SKILL.md#comment-once-not-once-per-run).
 
+7. **A `Blocked by #N` comment does not gate `/next`.** Unlike an Agent brief — which `/next` reads
+   from a comment as readily as from the body — the blocker filter is body-only:
+   [`next.md`](../../../.claude/commands/next.md) §0.2 condition 3 disqualifies a candidate on
+   *"a `Blocked by #N` **body line** whose #N is still open"*, and §1.1 re-verifies **those body
+   lines** against the repo. Nothing reads blockers out of comments. So rule 2's re-body
+   restriction has a real cost here: on an issue a routine may not re-body, a blocker can only be
+   *reported*, never enforced, and the issue keeps ranking as claimable. Comment anyway (a `/next`
+   session sees it during §1.2 and saves the re-derivation), then surface it in the run report as
+   needing an owner body edit. #1293 is the standing example — #460 has burned repeated ranked
+   sessions for exactly this reason. Verified 2026-08-28 against `next.md:193` and `:329`.
+
 Triage (only) may *organize* any `triage` item (priority, `Blocked by`, promote). That exception
 is spelled in the triage skill; it does not widen destructive writes.
 
