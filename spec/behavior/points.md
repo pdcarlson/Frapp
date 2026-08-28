@@ -38,6 +38,21 @@ When a user checks into an event:
 ## Leaderboard
 
 - Chapter-scoped. Shows rank, member name, and total points.
+- **Names are resolved client-side against the chapter roster**, not joined onto
+  the leaderboard response: `GET /v1/points/leaderboard` aggregates
+  `point_transactions` and returns `{ user_id, total }` only. The web dashboard
+  resolves each row at render from the display roster, whose payload is owned by
+  [`chat/README.md`](chat/README.md) — deliberately not the full member profile.
+- A row whose `user_id` does not resolve renders the shared `Member <first six
+  hex>` label (`memberFallbackLabel`, `packages/hooks/src/display-names.ts`)
+  rather than a bare uuid or a blank cell. Two cases reach it: a member who has
+  left the chapter (see *Edge Cases*), and one who has never set a display name
+  — `users.display_name` is `NOT NULL DEFAULT ''`, so an empty string means "no
+  name set" and counts as unresolved.
+- The **audit list** is the exception and keeps the full `user_id` on an
+  unresolved row: it is a record officers read ids out of, not a name slot.
+- Rank is the member's position on the **whole** board for the selected window.
+  Filtering the view — by name or by pasted user id — never renumbers it.
 - Configurable time window: all-time, this semester, this month.
 - Visible to all members.
 - Admins see the full transaction ledger for all members. Members see only their own transactions plus the leaderboard rankings.
@@ -57,7 +72,7 @@ When a user checks into an event:
 ## Edge Cases
 
 - Negative balances are allowed. The system does not block fines even if the balance would go negative.
-- If a member is removed from a chapter, their point history is preserved for audit purposes but they no longer appear on the leaderboard.
+- If a member is removed from a chapter, their point history is preserved for audit purposes **and they keep their leaderboard row**. `getLeaderboard` aggregates `point_transactions` by chapter and does not join `members`, so removing someone does not silently move everyone ranked below them. They are no longer on the roster, so their row resolves no name and renders the `Member <first six hex>` label described under *Leaderboard*.
 - Points awarded for study sessions and events cannot be manually reversed by the recipient; only admins can create offsetting transactions.
 
 ## Chat Integration

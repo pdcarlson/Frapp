@@ -2,7 +2,12 @@
 
 import { useMemo, useState } from "react";
 import { AdjustGlyph, SearchGlyph } from "@/components/points/points-glyphs";
-import { useLeaderboard, useMyPoints } from "@repo/hooks";
+import {
+  memberFallbackLabel,
+  useLeaderboard,
+  useMemberDisplayNames,
+  useMyPoints,
+} from "@repo/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,6 +45,12 @@ type LeaderboardRow = {
   total: number;
 };
 
+/**
+ * A search needle long enough, and narrow enough, to be a pasted user id rather
+ * than a name. Hex and dashes only, so it cannot fire on ordinary typing.
+ */
+const ID_SHAPED_QUERY = /^[0-9a-f-]{8,}$/;
+
 type PointTransactionRow = {
   id: string;
   amount: number;
@@ -64,7 +75,21 @@ export default function PointsPage() {
   const adjustDialog = useGatedDialog(adjustGate);
   const leaderboardQuery = useLeaderboard(window);
   const summaryQuery = useMyPoints(window);
+  // `GET /v1/points/leaderboard` returns `{ user_id, total }` and no name, so the
+  // roster is what turns a rank into a person (#1197). `useMemberDisplayNames`
+  // rather than `useMembers`: this cell needs one string per row, and the full
+  // profile route carries every member's email, bio, graduation year, city and
+  // company — see the note on `useChapterRoster` in
+  // `packages/hooks/src/use-members.ts` (#1000, #986).
+  const { nameFor, refetch: refetchRoster } = useMemberDisplayNames();
 
+  // The roster gates nothing, at either scope. It feeds one column, and a query
+  // stays `isLoading` across its whole retry sequence — with `retry: 3` and
+  // 1s/2s/4s backoff, waiting on it would hide a board that is already in memory
+  // for the better part of ten seconds and then show the fallback labels anyway.
+  // Rows render as soon as their totals arrive and names land when they land;
+  // the unresolved label is a real, permanent state for departed members, so an
+  // unnamed row is never a broken-looking one.
   const isLoading = leaderboardQuery.isLoading || summaryQuery.isLoading;
   const hasError = leaderboardQuery.isError || summaryQuery.isError;
 
@@ -74,19 +99,63 @@ export default function PointsPage() {
       : [];
   }, [leaderboardQuery.data]);
 
+
   const summary = summaryQuery.data as
     | { balance?: number; transactions?: PointTransactionRow[] }
     | undefined;
   const transactions = useMemo(() => {
     return Array.isArray(summary?.transactions) ? summary.transactions : [];
   }, [summary]);
+  // One projection drives the label and the rank, so neither can disagree with
+  // what the row is.
+  const leaderboardRows = useMemo(() => {
+    return leaderboard.map((entry, index) => {
+      // Rank belongs to the board, not to the filtered view. It used to be the
+      // render index, which was survivable while the search only matched uuids
+      // that nobody typed; naming the rows makes filtering an everyday action,
+      // and a rank renumbered from #1 per search would misreport chapter
+      // standing on the surface officers read it off.
+      const rank = index + 1;
+      // `null` for an unset name as well as a missing member: `display_name` is
+      // `NOT NULL DEFAULT ''`, so `resolveDisplayName` treats '' as unresolved
+      // rather than rendering a blank cell. Someone who has left the chapter is
+      // off the roster but keeps their points (`spec/behavior/points.md`), so an
+      // unresolved row is a permanent state for them rather than a fault.
+      //
+      // `memberFallbackLabel` is the shared spelling, which chat already uses
+      // via `resolveAuthorLabel`. The task board hand-rolls the identical six
+      // characters and the member directory hand-rolls *eight* — that
+      // divergence is why this now lives in one place (#1197 follow-up tracks
+      // migrating those two).
+      const name = nameFor(entry.user_id);
+      return {
+        ...entry,
+        rank,
+        label: name ?? memberFallbackLabel(entry.user_id),
+      };
+    });
+    // `nameFor` and not the whole hook result: `useMemberDisplayNames` returns a
+    // fresh object every render, so depending on it would rebuild this list each
+    // time. `nameFor` is a `useCallback` keyed on the roster data itself.
+  }, [leaderboard, nameFor]);
+
   const filteredLeaderboard = useMemo(() => {
     const query = leaderboardSearch.trim().toLowerCase();
-    if (!query) return leaderboard;
-    return leaderboard.filter((entry) =>
-      entry.user_id.toLowerCase().includes(query),
+    if (!query) return leaderboardRows;
+    // The id stays a needle alongside the name — officers paste user ids out of
+    // audit rows and support tickets, and that was the only thing this box
+    // matched before names existed. But only for a query that looks like one:
+    // the id is no longer rendered, so matching it on any input means matching
+    // invisible text. A uuid is 32 hex characters, so "a" occurs in ~87% of
+    // them and the first keystroke of a name search would leave the whole board
+    // standing with nothing on screen explaining why.
+    const byId = ID_SHAPED_QUERY.test(query);
+    return leaderboardRows.filter(
+      (entry) =>
+        entry.label.toLowerCase().includes(query) ||
+        (byId && entry.user_id.toLowerCase().includes(query)),
     );
-  }, [leaderboard, leaderboardSearch]);
+  }, [leaderboardRows, leaderboardSearch]);
   const filteredTransactions = useMemo(() => {
     const query = transactionSearch.trim().toLowerCase();
     return transactions.filter((transaction) => {
@@ -156,6 +225,13 @@ export default function PointsPage() {
         onRetry={() => {
           void leaderboardQuery.refetch();
           void summaryQuery.refetch();
+          // Names are refreshed alongside the reads that raised this card, so a
+          // retry that fixes the board fixes the labels too. Not the only path
+          // and not a complete one: a roster that fails while the points reads
+          // succeed renders no card at all, and recovers on window focus or
+          // reconnect (`query-provider.tsx`) rather than from any control here.
+          // Giving that case a visible signal is #1209's.
+          refetchRoster();
         }}
       />
     );
@@ -179,6 +255,13 @@ export default function PointsPage() {
         onRetry={() => {
           void leaderboardQuery.refetch();
           void summaryQuery.refetch();
+          // Names are refreshed alongside the reads that raised this card, so a
+          // retry that fixes the board fixes the labels too. Not the only path
+          // and not a complete one: a roster that fails while the points reads
+          // succeed renders no card at all, and recovers on window focus or
+          // reconnect (`query-provider.tsx`) rather than from any control here.
+          // Giving that case a visible signal is #1209's.
+          refetchRoster();
         }}
       />
     );
@@ -256,15 +339,27 @@ export default function PointsPage() {
               <Input
                 value={leaderboardSearch}
                 onChange={(event) => setLeaderboardSearch(event.target.value)}
-                placeholder="Search by user id"
+                placeholder="Search by member name"
                 className="h-11 pl-9"
               />
             </div>
             {filteredLeaderboard.length === 0 ? (
-              <NestedEmpty
-                title={stateMicrocopy.points.emptyLeaderboardTitle}
-                description={stateMicrocopy.points.emptyLeaderboardDescription}
-              />
+              // A search that matches nothing is not an empty board — saying
+              // "point activity will populate after..." there would assert
+              // something false about the chapter's data.
+              leaderboardRows.length > 0 ? (
+                <NestedEmpty
+                  title={stateMicrocopy.points.noLeaderboardMatchesTitle}
+                  description={
+                    stateMicrocopy.points.noLeaderboardMatchesDescription
+                  }
+                />
+              ) : (
+                <NestedEmpty
+                  title={stateMicrocopy.points.emptyLeaderboardTitle}
+                  description={stateMicrocopy.points.emptyLeaderboardDescription}
+                />
+              )
             ) : (
               <Table>
                 <TableHeader>
@@ -275,11 +370,17 @@ export default function PointsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredLeaderboard.map((entry, index) => (
+                  {filteredLeaderboard.map((entry) => (
                     <TableRow key={entry.user_id}>
-                      <TableCell className="font-mono tabular-nums">#{index + 1}</TableCell>
-                      <TableCell className="font-mono text-[12.5px]">
-                        {entry.user_id}
+                      <TableCell className="font-mono tabular-nums">#{entry.rank}</TableCell>
+                      {/*
+                        foundations §7 reserves mono for ids, tokens, keys and
+                        points cells. This cell now holds a person, not an id —
+                        even the unresolved fallback is a `Member …` label — so
+                        it is no longer one of them.
+                      */}
+                      <TableCell className="text-[12.5px]">
+                        {entry.label}
                       </TableCell>
                       <TableCell className="font-mono font-semibold tabular-nums">
                         {entry.total}
