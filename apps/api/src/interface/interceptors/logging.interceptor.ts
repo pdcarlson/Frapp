@@ -13,18 +13,28 @@ import type { RequestContext } from '../types/request-context.types';
  * Shape of the `X-Forwarded-For` chain, carrying no address.
  *
  * `spec/behavior/observability.md` § Structured Logging forbids logging IP
- * addresses unconditionally, so this records only the two facts needed to
- * choose an Express `trust proxy` hop count (#864): how many entries the chain
- * carries, and whether the socket peer is the last of them. The addresses
- * themselves are compared in-process and never emitted.
+ * addresses unconditionally, so this records only what is needed to choose an
+ * Express `trust proxy` hop count (#864). The addresses themselves are compared
+ * in process and never emitted.
  */
 export interface ForwardedShape {
-  /** Entries in `x-forwarded-for`; `0` when the header is absent or empty. */
+  /**
+   * Entries in `x-forwarded-for`; `0` when the header is absent or empty.
+   *
+   * This is the field that determines the hop count: probe with a known number
+   * of forged entries and subtract, and the remainder is what the proxies in
+   * front actually appended.
+   */
   xffCount: number;
   /**
-   * Whether `socket.remoteAddress` equals the final chain entry — i.e. whether
-   * the nearest proxy appended its own peer rather than passing one through.
-   * `false` when the header is absent, so it is only meaningful with a count.
+   * Whether the socket peer *also* appears as the chain's final entry.
+   *
+   * Normally `false`, and that is not a problem: each proxy appends the peer it
+   * received from, so the nearest proxy's own address is the one address the
+   * chain does not contain. It does **not** discriminate a one-hop chain from a
+   * two-hop one — `xffCount` does that. A `true` here flags a non-standard
+   * chain (something echoing its own address) and means the count should be
+   * sanity-checked before `trust proxy` is set from it.
    */
   xffSocketIsLast: boolean;
 }
@@ -36,6 +46,10 @@ function normalizeAddress(value: string): string {
 }
 
 export function forwardedShape(request: Partial<Request>): ForwardedShape {
+  // Read the header directly rather than `req.ips`, which Express leaves empty
+  // until `trust proxy` is set — the very setting this exists to inform. Also
+  // not `getHeaderValue`, which takes only the first value of a repeated header
+  // and would undercount a chain split across several `X-Forwarded-For` lines.
   const header = request.headers?.['x-forwarded-for'];
   const raw = Array.isArray(header) ? header.join(',') : (header ?? '');
   const entries = raw
