@@ -54,19 +54,39 @@ Production is applied by a person, either way:
 Both share the `db-migrate-production` concurrency group, so they queue behind
 each other instead of interleaving two `db push` runs against one database.
 
-> **`environment: production` does not gate either path.** Required-reviewer
-> environment protection is GitHub Enterprise-only on private repos, and this
-> repo is private on Pro. The environment is declared for secret scoping and as
-> forward wiring; the actual gates are the promotion PR's review and the typed
-> confirmation. Do not read the environment name as an approval step.
+> **`environment: production` DOES gate both paths — corrected 2026-08-28.**
+> This block used to say the opposite, on the reasoning that required-reviewer
+> environment protection is Enterprise-only on private repos and this repo is
+> private on Pro. Both halves were wrong: the repo is public (corrected
+> 2026-08-21), and measurement now shows production-scoped jobs waiting minutes
+> to start while `staging`-scoped and unscoped jobs start in about two seconds.
+> On 2026-08-28 `migrate-production` sat **29m52s** waiting to apply a single
+> migration the dry run had already shown to be clean.
+>
+> So production migrations are gated by a human twice: at the promotion PR, and
+> again after merge on an approval click nobody is paged for. Evidence, the
+> alternatives it rules out, and the one thing that was *not* verified directly
+> are all in `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets — read that rather than trusting a restatement
+> here. The typed confirmation on the dispatch path is unchanged.
 
-> **⚠️ Production is currently blocked.** As of 2026-08-24 production is ~49
-> migrations behind `main` and carries `20260228000000_enable_rls_on_remaining_tables`,
-> a version that exists in no branch of this repo (hand-applied in February).
-> `supabase db push` refuses to run at all in that state, so both paths above
-> will fail on the dry run until it is reconciled. Issue #832 owns that work.
-> Do not run `migration repair` to make the error go away without first reading
-> what the row did — see [`DB_ROLLBACK_PLAYBOOK.md`](./DB_ROLLBACK_PLAYBOOK.md).
+> **✅ Production is reconciled and current (verified 2026-08-28).** The
+> Management API reports **52** applied migrations, exactly matching
+> `supabase/migrations/` on `main`: nothing pending, and no foreign version.
+> The hand-applied `20260228000000_enable_rls_on_remaining_tables` that used to
+> block `supabase db push` outright is gone from the history (#832).
+>
+> This block previously warned that production was ~49 migrations behind and
+> that both paths above would fail on the dry run. That was true on 2026-08-24
+> and is not true now — left here as a correction rather than deleted, because
+> a stale blocker is the kind of warning that sends the next reader to a runbook
+> for a problem somebody already fixed.
+>
+> If a foreign version ever reappears, the `migration-replay` check
+> ([`migration-drift-gate.yml`](../../../.github/workflows/migration-drift-gate.yml))
+> now fails the PR that would walk into it, instead of the failure surfacing
+> mid-deploy. Do not run `migration repair` to make such an error go away
+> without first reading what the row did — see
+> [`DB_ROLLBACK_PLAYBOOK.md`](./DB_ROLLBACK_PLAYBOOK.md).
 
 ## What catches drift
 

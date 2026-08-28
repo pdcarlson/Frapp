@@ -4,7 +4,7 @@
 
 Migrations are now applied automatically in the deploy pipeline (see `.github/workflows/deploy-api.yml`):
 - **Staging:** Runs automatically on merge to `main` (no approval needed)
-- **Production:** Runs automatically after the `main` → `production` promotion PR merges and CI passes. (No GitHub Actions environment-approval pause; the gate is the promotion PR itself: branch protection requires CI + an approving review + conversation resolution. The old justification — Enterprise-only environment rules *on private repos* — was corrected 2026-08-21: this repo is public. See `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets.)
+- **Production:** Runs after the `main` → `production` promotion PR merges and CI passes, but **pauses on the `production` environment's required reviewer** before it applies — corrected 2026-08-28 (`docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets). (The gate is not only the promotion PR; the gate is the promotion PR itself: branch protection requires CI + an approving review + conversation resolution. The old justification — Enterprise-only environment rules *on private repos* — was corrected 2026-08-21: this repo is public. See `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets.)
 
 If an automated migration fails, the entire deploy pipeline halts — no API deploy happens. Check the GitHub Actions run for the error output.
 

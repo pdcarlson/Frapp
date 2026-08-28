@@ -199,6 +199,7 @@ All three run in `.github/workflows/docs.yml`. **Required?** below is the *inten
 | `docs-spec-sync` | GitHub Actions | Docs/spec sync **and** structure on PRs (`check-docs-impact.mjs` + `check-docs-structure.mjs`) | Yes |
 | `doc-paths`      | GitHub Actions | Backticked repo-path citations in docs resolve (`check-doc-paths.mjs`, whole-tree) | Yes — listed in `DOCS_CHECKS`. Whole-tree, so it can block a PR over a citation in a doc that PR never touched; that trade was taken deliberately ([`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md)) |
 | `migration-drift` | GitHub Actions | Staging holds every migration on `main` (`check-migration-drift-gate.mjs`, read-only against the Supabase Management API) | Yes — listed in `DRIFT_CHECKS`. Compares `origin/main` against staging, so a PR's own unmerged migration cannot fail it; 30-minute grace from merge time covers the `migrate-staging` apply window |
+| `migration-replay` | GitHub Actions | Pending migrations apply cleanly to a disposable Supabase stack rebuilt at production's applied state (`check-migration-replay.mjs`; production access is one read-only Management API call) | Yes — listed in `DRIFT_CHECKS`. Runs the replay only when the PR touches `supabase/migrations/**` and passes in seconds otherwise, so it cannot block a PR over unrelated state. A migration applied on production but missing from the repo is a hard failure: the state cannot be reconstructed, and `db push` would refuse anyway |
 | `doc-tables`     | GitHub Actions | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml` (`check-doc-tables.mjs`, whole-tree) | Not yet — reports only, pending the same promotion step |
 
 **Code review is a local pre-push gate, not a CI check** (ADR-14 2026-06-04 amendment). The
@@ -236,7 +237,7 @@ CI passes → DB migration (dry-run then apply) → API deploy (Render)
 Vercel preview/production deployments are push-triggered from `main`/`production` and can proceed in parallel
 ```
 
-Production deployments run automatically after the `main` → `production` promotion PR merges and CI passes. There is no separate GitHub Actions environment-approval pause; the control point for production is the promotion PR itself (branch protection: CI + an approving review + conversation resolution). This was previously justified by required-reviewer environment rules being Enterprise-only *on private repositories* — **that premise is false, the repo is public** (corrected 2026-08-21, `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets). The gate itself is unchanged.
+Production deployments run after the `main` → `production` promotion PR merges and CI passes, and then **pause on the `production` environment's required reviewer** — corrected 2026-08-28 (`docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets). Beyond that approval, the control point for production is the promotion PR itself (branch protection: CI + an approving review + conversation resolution). This was previously justified by required-reviewer environment rules being Enterprise-only *on private repositories* — **that premise is false, the repo is public** (corrected 2026-08-21, `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets). The gate itself is unchanged.
 
 ### Web and Landing (Vercel)
 
@@ -355,7 +356,7 @@ Migrations run automatically as part of the deploy pipeline, after CI passes and
 2. **Dry run** (CD): `supabase db push --dry-run` shows what will change before applying.
 3. **Apply** (CD): `supabase db push` applies pending migrations.
 4. **Failure handling**: If migration fails, the pipeline stops — no app deploy happens.
-5. **Production gate**: The gate is the `main` → `production` promotion PR (branch protection: CI + an approving review + conversation resolution). GitHub Actions environment-approval rules do **not** gate production on this repo — as a matter of current configuration, not capability. The "Enterprise-only on private repos" reason given here until 2026-08-21 was false: the repo is public. See `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets.
+5. **Production gate**: TWO gates, not one — the `main` → `production` promotion PR (branch protection: CI + an approving review + conversation resolution), and then a GitHub Actions environment-approval pause on the `production` environment. The claim that environment-approval rules do **not** gate production was corrected 2026-08-28: they do, and they held a one-migration apply for 29m52s (`docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets). The "Enterprise-only on private repos" reason given here until 2026-08-21 was false: the repo is public. See `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets.
 
 ### Safety Rules
 

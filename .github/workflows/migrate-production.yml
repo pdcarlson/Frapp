@@ -20,23 +20,41 @@ name: Migrate production
 # unlogged, and unserialized against CI.
 #
 # ── On the `production` environment ─────────────────────────────────────────
-# `environment: production` is declared for job scoping (it resolves the right
-# secrets) and as forward wiring. It does NOT gate this run: required-reviewer
-# environment protection is GitHub Enterprise-only on private repos, and this
-# repo is private on Pro. The gate here is the typed confirmation below plus the
-# fact that a person had to come here and press the button. If the repo ever
-# moves to a plan with environment reviewers, this is where that gate lands with
-# no further change.
+# CORRECTED 2026-08-28. This block used to say `environment: production` did NOT
+# gate the run — that required-reviewer protection is GitHub Enterprise-only on
+# private repos, so the only gates were the typed confirmation and the fact that
+# a person pressed the button. Measurement says otherwise: both runs of this
+# workflow sat between being created and being started, while jobs with no
+# environment (and jobs scoped to `staging`) start in about two seconds.
 #
-# ── State of production as of 2026-08-24 ────────────────────────────────────
-# Production is ~49 migrations behind `main` AND carries
-# `20260228000000_enable_rls_on_remaining_tables`, a version that exists in no
-# branch of this repo (hand-applied in February). `supabase db push` REFUSES TO
-# RUN AT ALL in that state, so this workflow will fail on the dry run until that
-# row is reconciled. That is correct behaviour, not a bug in this file — see
-# issue #832, which owns the remediation, and DB_ROLLBACK_PLAYBOOK.md. Do not
-# run `migration repair` to make the error go away without first reading what
-# the row did.
+#   run 32789194139  job created 23:24:32 → started 23:39:51   15m19s
+#   run 32790550501  job created 23:42:41 → started 23:45:54    3m13s
+#
+# Two different durations rules out a `wait_timer`; `deploy-api.yml`'s
+# `migrate-production` parked 29m52s the same way on 2026-08-28. That is a human
+# clicking Approve on the `production` environment. See the longer note in
+# `.github/workflows/deploy-api.yml` for the full comparison and for what was
+# NOT verified directly (the environment's protection rules are not readable
+# from an agent sandbox; the conclusion rests on timing).
+#
+# For THIS workflow the approval is largely redundant with the typed
+# confirmation above — a person is already here, on purpose. It is the
+# post-merge `deploy-api.yml` job where the same click has nobody waiting on it.
+#
+# ── State of production as of 2026-08-28 ────────────────────────────────────
+# Reconciled and current: production reports 52 applied migrations, exactly
+# matching `supabase/migrations/` on `main` — nothing pending, and no foreign
+# version. The hand-applied `20260228000000_enable_rls_on_remaining_tables` that
+# used to block `supabase db push` outright is gone from the history (#832).
+#
+# The previous version of this block described that blocked state as current and
+# warned the workflow would fail on the dry run. It no longer will. Keeping the
+# warning would have sent the next reader to a runbook for a problem that had
+# already been fixed — which is its own kind of failure. If a foreign version
+# ever reappears, `migration-replay` (migration-drift-gate.yml) now fails the PR
+# that would have walked into it, and DB_ROLLBACK_PLAYBOOK.md still owns the
+# recovery. Do not run `migration repair` to make such an error go away without
+# first reading what the row did.
 
 on:
   workflow_dispatch:

@@ -1,0 +1,208 @@
+{
+  "migrations": [
+    {
+      "version": "00000000000000",
+      "name": "initial_schema"
+    },
+    {
+      "version": "20250226120000",
+      "name": "add_get_points_report_rpc"
+    },
+    {
+      "version": "20260417120000",
+      "name": "point_transactions_chapter_created_at_idx"
+    },
+    {
+      "version": "20260417140000",
+      "name": "backfill_polls_view_all_system_roles"
+    },
+    {
+      "version": "20260417150000",
+      "name": "backfill_members_view_vp_secretary"
+    },
+    {
+      "version": "20260417180000",
+      "name": "add_poll_list_vote_aggregate_rpcs"
+    },
+    {
+      "version": "20260523120000",
+      "name": "chapter_customization"
+    },
+    {
+      "version": "20260523130000",
+      "name": "audit_log"
+    },
+    {
+      "version": "20260523140000",
+      "name": "chapter_directory"
+    },
+    {
+      "version": "20260523150000",
+      "name": "chat_hotpath"
+    },
+    {
+      "version": "20260524120000",
+      "name": "chapter_directory_requests"
+    },
+    {
+      "version": "20260527120000",
+      "name": "chat_notification_preferences"
+    },
+    {
+      "version": "20260530180000",
+      "name": "chapter_analytics_opt_out"
+    },
+    {
+      "version": "20260530193000",
+      "name": "chapter_dues_config_align_spec"
+    },
+    {
+      "version": "20260531120000",
+      "name": "member_custom_field_values"
+    },
+    {
+      "version": "20260602120000",
+      "name": "chapter_past_due_since"
+    },
+    {
+      "version": "20260602210000",
+      "name": "add_confirm_task_completion_rpc"
+    },
+    {
+      "version": "20260603120000",
+      "name": "add_approve_service_entry_rpc"
+    },
+    {
+      "version": "20260603140000",
+      "name": "add_check_in_event_rpc"
+    },
+    {
+      "version": "20260604120000",
+      "name": "add_transfer_presidency_rpc"
+    },
+    {
+      "version": "20260604121000",
+      "name": "chapter_last_stripe_webhook_at"
+    },
+    {
+      "version": "20260604130000",
+      "name": "chapter_legal_acceptance"
+    },
+    {
+      "version": "20260604140000",
+      "name": "get_points_report_window_filter"
+    },
+    {
+      "version": "20260802120000",
+      "name": "active_chapter_jwt_claim"
+    },
+    {
+      "version": "20260803120000",
+      "name": "invoice_payment_rpc_and_indexes"
+    },
+    {
+      "version": "20260803140000",
+      "name": "account_deletion_anonymize_user_rpc"
+    },
+    {
+      "version": "20260803150000",
+      "name": "chat_message_actions_membership_rls"
+    },
+    {
+      "version": "20260803231500",
+      "name": "service_proof_bucket"
+    },
+    {
+      "version": "20260804230000",
+      "name": "member_custom_role_ids"
+    },
+    {
+      "version": "20260805133000",
+      "name": "reports_bucket"
+    },
+    {
+      "version": "20260805140000",
+      "name": "scheduled_notification_dispatches"
+    },
+    {
+      "version": "20260805150000",
+      "name": "stripe_webhook_events"
+    },
+    {
+      "version": "20260806220000",
+      "name": "role_system_key"
+    },
+    {
+      "version": "20260807150000",
+      "name": "study_session_pause_grace"
+    },
+    {
+      "version": "20260807220000",
+      "name": "role_gated_required_permissions"
+    },
+    {
+      "version": "20260808204500",
+      "name": "declare_dashboard_created_buckets"
+    },
+    {
+      "version": "20260809001500",
+      "name": "chapter_activation_milestones"
+    },
+    {
+      "version": "20260809120000",
+      "name": "chapter_document_folders"
+    },
+    {
+      "version": "20260809124500",
+      "name": "service_hours_config_and_leaderboard"
+    },
+    {
+      "version": "20260814120000",
+      "name": "backfill_chapter_accent_color_from_branding"
+    },
+    {
+      "version": "20260816140000",
+      "name": "realtime_carrier_repair"
+    },
+    {
+      "version": "20260816190000",
+      "name": "chat_unread_and_mentions"
+    },
+    {
+      "version": "20260817170000",
+      "name": "event_check_in_zone"
+    },
+    {
+      "version": "20260823120000",
+      "name": "chat_message_authors"
+    },
+    {
+      "version": "20260823121000",
+      "name": "chat_message_attachments"
+    },
+    {
+      "version": "20260823122000",
+      "name": "chat_message_search_vector"
+    },
+    {
+      "version": "20260823123000",
+      "name": "chat_imported_kind_semantics"
+    },
+    {
+      "version": "20260823124000",
+      "name": "chat_archive_bucket"
+    },
+    {
+      "version": "20260824120000",
+      "name": "discord_import"
+    },
+    {
+      "version": "20260824140000",
+      "name": "discord_bot_connection"
+    },
+    {
+      "version": "20260824150000",
+      "name": "discord_connect_confirm"
+    }
+  ]
+}
