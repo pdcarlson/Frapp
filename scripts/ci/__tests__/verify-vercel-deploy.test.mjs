@@ -53,20 +53,36 @@ function okJson(body) {
   };
 }
 
+// `branch: null` models a deployment whose branch Vercel did not report.
 function vercelDeployment({
   sha = SHA,
   state,
   uid = `dpl_${state}`,
   createdAt = "2026-04-16T00:00:00Z",
+  branch = "main",
 } = {}) {
+  const meta = { githubCommitSha: sha };
+  if (branch !== null) meta.githubCommitRef = branch;
   return {
     uid,
     url: `${uid}.vercel.app`,
     state,
     readyState: state,
     createdAt,
-    meta: { githubCommitSha: sha },
+    meta,
   };
+}
+
+// A successful earlier deployment on `branch` — the baseline turbo-ignore
+// diffs against when it decides a project is unaffected.
+function priorSuccess({ branch = "main", createdAt = "2026-04-15T00:00:00Z" } = {}) {
+  return vercelDeployment({
+    sha: "0ldc0mm1t",
+    state: "READY",
+    uid: `dpl_prior_${branch}`,
+    createdAt,
+    branch,
+  });
 }
 
 const silentLogger = { log: () => {} };
@@ -123,7 +139,28 @@ describe("verifyVercelDeploy", () => {
     assert.match(result.message, /ERROR/);
   });
 
-  it("returns neutral on CANCELED (turbo-ignore skip)", async () => {
+  it("returns neutral on CANCELED when the branch has an earlier successful deployment", async () => {
+    const { fetchImpl } = makeFetchStub([
+      okJson({
+        deployments: [vercelDeployment({ state: "CANCELED" }), priorSuccess()],
+      }),
+    ]);
+    const { clock } = makeFakeClock();
+
+    const result = await verifyVercelDeploy({ ...defaults, clock, fetchImpl });
+
+    assert.equal(result.status, "neutral");
+    assert.match(result.message, /turbo-ignore/);
+  });
+
+  // ── CANCELED without a baseline ───────────────────────────────────────────
+  // The gap this closes: a CANCELED deployment was an automatic pass, so a
+  // project that never built could report green. turbo-ignore can only skip
+  // against an earlier successful deployment on the same branch; with no such
+  // deployment the cancel came from something else (superseded push, manual
+  // stop, concurrency limit) and nothing was verified.
+
+  it("fails on CANCELED when no prior deployment exists at all", async () => {
     const { fetchImpl } = makeFetchStub([
       okJson({ deployments: [vercelDeployment({ state: "CANCELED" })] }),
     ]);
@@ -131,8 +168,80 @@ describe("verifyVercelDeploy", () => {
 
     const result = await verifyVercelDeploy({ ...defaults, clock, fetchImpl });
 
+    assert.equal(result.status, "failure");
+    assert.match(result.message, /no earlier successful deployment/);
+    assert.match(result.message, /CANCELED/);
+  });
+
+  it("fails on CANCELED when the only earlier success is on another branch", async () => {
+    const { fetchImpl } = makeFetchStub([
+      okJson({
+        deployments: [
+          vercelDeployment({ state: "CANCELED", branch: "production" }),
+          priorSuccess({ branch: "main" }),
+        ],
+      }),
+    ]);
+    const { clock } = makeFakeClock();
+
+    const result = await verifyVercelDeploy({ ...defaults, clock, fetchImpl });
+
+    assert.equal(result.status, "failure");
+    assert.match(result.message, /branch production/);
+  });
+
+  it("fails on CANCELED when earlier deployments on the branch were themselves CANCELED", async () => {
+    const { fetchImpl } = makeFetchStub([
+      okJson({
+        deployments: [
+          vercelDeployment({ state: "CANCELED" }),
+          vercelDeployment({
+            sha: "0ldc0mm1t",
+            state: "CANCELED",
+            uid: "dpl_older_cancel",
+            createdAt: "2026-04-15T00:00:00Z",
+          }),
+        ],
+      }),
+    ]);
+    const { clock } = makeFakeClock();
+
+    const result = await verifyVercelDeploy({ ...defaults, clock, fetchImpl });
+
+    assert.equal(result.status, "failure");
+    assert.match(result.message, /no earlier successful deployment/);
+  });
+
+  it("fails on CANCELED when the only success on the branch is newer than the cancel", async () => {
+    const { fetchImpl } = makeFetchStub([
+      okJson({
+        deployments: [
+          vercelDeployment({ state: "CANCELED", createdAt: "2026-04-16T00:00:00Z" }),
+          priorSuccess({ createdAt: "2026-04-17T00:00:00Z" }),
+        ],
+      }),
+    ]);
+    const { clock } = makeFakeClock();
+
+    const result = await verifyVercelDeploy({ ...defaults, clock, fetchImpl });
+
+    assert.equal(result.status, "failure");
+  });
+
+  it("falls back to any earlier success when Vercel reports no branch", async () => {
+    const { fetchImpl } = makeFetchStub([
+      okJson({
+        deployments: [
+          vercelDeployment({ state: "CANCELED", branch: null }),
+          priorSuccess({ branch: "some-other-branch" }),
+        ],
+      }),
+    ]);
+    const { clock } = makeFakeClock();
+
+    const result = await verifyVercelDeploy({ ...defaults, clock, fetchImpl });
+
     assert.equal(result.status, "neutral");
-    assert.match(result.message, /turbo-ignore|CANCELED/);
   });
 
   it("returns neutral when no deployment for the SHA exists within the grace window", async () => {
@@ -160,6 +269,42 @@ describe("verifyVercelDeploy", () => {
     const result = await verifyVercelDeploy({ ...defaults, clock, fetchImpl });
 
     assert.equal(result.status, "success");
+  });
+
+  // Replay of the real frapp-web page around PR #1330's preview, in the shape
+  // the v6 endpoint actually returns (`created` as epoch ms, not `createdAt`).
+  // That preview was a genuine turbo-ignore skip on a branch with a real
+  // deployment history, so it must stay neutral — the stricter CANCELED rule
+  // must not turn every legitimate skip red.
+  it("stays neutral for a real turbo-ignore skip on a branch with history", async () => {
+    const canceledPreview = {
+      uid: "dpl_DMZsRAr8kvDuzAtfsAgFzJ3xa2Wg",
+      url: "frapp-5odpw2a0f.vercel.app",
+      state: "CANCELED",
+      created: 1787928128939,
+      meta: { githubCommitSha: SHA, githubCommitRef: "main" },
+    };
+    const olderCancel = {
+      uid: "dpl_cancel_a52da32d",
+      state: "CANCELED",
+      created: 1787866887000,
+      meta: { githubCommitSha: "a52da32d", githubCommitRef: "main" },
+    };
+    const olderReady = {
+      uid: "dpl_6uU9xmnd54nqhqarsvdTya6ETF72",
+      state: "READY",
+      created: 1787867621695,
+      meta: { githubCommitSha: "1f4263fb", githubCommitRef: "main" },
+    };
+    const { fetchImpl } = makeFetchStub([
+      okJson({ deployments: [canceledPreview, olderCancel, olderReady] }),
+    ]);
+    const { clock } = makeFakeClock();
+
+    const result = await verifyVercelDeploy({ ...defaults, clock, fetchImpl });
+
+    assert.equal(result.status, "neutral");
+    assert.match(result.message, /branch main/);
   });
 
   it("returns failure when Vercel API responds with HTTP 500", async () => {

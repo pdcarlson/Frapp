@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 // Polls the Vercel deployments API until a deployment matching $GITHUB_SHA
 // reaches a terminal state. Fails on `ERROR`. Treats `CANCELED` as neutral
-// (turbo-ignore skipped the build), and treats "no deployment for this SHA
-// after the grace window" as neutral for the same reason (landing often has
-// no changes to deploy).
+// ONLY when the same branch already has a successful deployment that
+// turbo-ignore could have skipped against; a cancel with nothing behind it
+// means the code was never built, which is a failure rather than a no-op.
+// Treats "no deployment for this SHA after the grace window" as neutral
+// (landing often has no changes to deploy).
 //
 // Env inputs:
 //   VERCEL_API_KEY    — required
@@ -19,14 +21,58 @@ import { fetchVercelDeployments } from "./lib/providers.mjs";
 // ── State semantics ─────────────────────────────────────────────────────────
 export const VERCEL_TERMINAL_SUCCESS_STATES = new Set(["READY"]);
 export const VERCEL_TERMINAL_FAILURE_STATES = new Set(["ERROR"]);
-// CANCELED is Vercel's turbo-ignore short-circuit (nothing in the project
-// changed since the last deploy). Treat it as a legitimate no-op.
+// Terminal states that are neither a successful build nor a build failure:
+// Vercel produced no deployed output, without erroring. `verify-vercel-deploy`
+// treats these as neutral only conditionally (see the CANCELED branch below);
+// `ensure-vercel-staging-alias` treats them as "nothing to alias", which holds
+// unconditionally.
 export const VERCEL_NEUTRAL_TERMINAL_STATES = new Set(["CANCELED"]);
 
 // ── Timing ──────────────────────────────────────────────────────────────────
 export const VERCEL_NO_DEPLOY_GRACE_MS = 3 * 60 * 1000;
 export const VERCEL_POLL_INTERVAL_MS = 20 * 1000;
 export const VERCEL_OVERALL_TIMEOUT_MS = 15 * 60 * 1000;
+
+// ── Deployment helpers ──────────────────────────────────────────────────────
+
+/** Vercel's list endpoint returns `created` (epoch ms); tests and some
+ *  responses carry `createdAt` (ISO). `new Date` handles both. */
+function deploymentCreatedAt(deployment) {
+  return new Date(deployment?.createdAt ?? deployment?.created ?? 0).getTime();
+}
+
+function deploymentState(deployment) {
+  // Vercel's v6 deployments endpoint uses `state` (with `readyState` as a
+  // legacy alias). Prefer `state`; fall back to `readyState`.
+  return deployment?.state ?? deployment?.readyState;
+}
+
+/**
+ * Did this branch already have a successful deployment that turbo-ignore could
+ * have compared `candidate` against?
+ *
+ * turbo-ignore decides "unaffected, skip the build" by diffing the commit
+ * against the branch's last successful deployment. With no such deployment it
+ * has no baseline, logs `No previous deployments found for "<app>" on branch
+ * "<branch>"`, and builds for real — so a CANCELED with nothing behind it was
+ * cancelled for some other reason (superseded push, manual stop, concurrency
+ * limit) and verified nothing.
+ *
+ * Scoped to the candidate's branch because that is what turbo-ignore scopes to.
+ * When the branch is unknown, fall back to any earlier success rather than
+ * failing a deployment we simply cannot classify.
+ */
+export function hasPriorSuccessfulDeployment(deployments, candidate) {
+  const branch = candidate?.meta?.githubCommitRef;
+  const candidateAt = deploymentCreatedAt(candidate);
+
+  return deployments.some((deployment) => {
+    if (deployment === candidate) return false;
+    if (!VERCEL_TERMINAL_SUCCESS_STATES.has(deploymentState(deployment))) return false;
+    if (branch && deployment?.meta?.githubCommitRef !== branch) return false;
+    return deploymentCreatedAt(deployment) < candidateAt;
+  });
+}
 
 /**
  * Pure verifier. See verifyRenderDeploy for the return shape.
@@ -80,15 +126,11 @@ export async function verifyVercelDeploy({
 
     // Pick the most recently created match (Vercel can record multiple
     // attempts per SHA if a deploy is retried).
-    const latest = [...matches].sort((a, b) => {
-      const aAt = new Date(a.createdAt ?? a.created ?? 0).getTime();
-      const bAt = new Date(b.createdAt ?? b.created ?? 0).getTime();
-      return bAt - aAt;
-    })[0];
+    const latest = [...matches].sort(
+      (a, b) => deploymentCreatedAt(b) - deploymentCreatedAt(a),
+    )[0];
 
-    // Vercel's v6 deployments endpoint uses `state` (with `readyState` as a
-    // legacy alias). Prefer `state`; fall back to `readyState`.
-    const state = latest.state ?? latest.readyState;
+    const state = deploymentState(latest);
     lastObservedState = state;
 
     if (VERCEL_TERMINAL_SUCCESS_STATES.has(state)) {
@@ -106,11 +148,26 @@ export async function verifyVercelDeploy({
     }
 
     if (VERCEL_NEUTRAL_TERMINAL_STATES.has(state)) {
+      const branch = latest?.meta?.githubCommitRef;
+      const branchLabel = branch ? `branch ${branch}` : "this branch";
+
+      if (!hasPriorSuccessfulDeployment(deployments, latest)) {
+        return {
+          status: "failure",
+          message:
+            `Vercel deployment ${latest.uid ?? latest.url} for ${label} was ${state}, ` +
+            `but ${branchLabel} has no earlier successful deployment for turbo-ignore ` +
+            `to have skipped against. Nothing was built for ${sha}, so this is an ` +
+            `unverified project, not a no-op.`,
+        };
+      }
+
       return {
         status: "neutral",
         message:
           `Vercel deployment ${latest.uid ?? latest.url} for ${label} was ${state} ` +
-          `(turbo-ignore skip). Treating as neutral.`,
+          `(turbo-ignore skip against an earlier successful deployment on ` +
+          `${branchLabel}). Treating as neutral.`,
       };
     }
 

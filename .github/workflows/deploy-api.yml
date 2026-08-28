@@ -55,15 +55,41 @@ jobs:
         run: |
           set -euo pipefail
 
-          if CHANGED=$(git diff --name-only HEAD~1); then
+          # The changed-file list goes to a FILE, and every filter greps that
+          # file directly. It must never go back to being `echo "$CHANGED" |
+          # grep -q`, which is how the production promotion (#1330) silently
+          # skipped its API deploy:
+          #
+          #   `grep -q` exits the moment it matches. That closes the pipe while
+          #   `echo` is still writing the remaining paths, `echo` dies with
+          #   EPIPE, and `pipefail` promotes that EPIPE to the pipeline's exit
+          #   status — so a SUCCESSFUL match reported failure and the filter
+          #   answered "nothing changed".
+          #
+          #   It is a race, which is why it stayed hidden: it needs a list
+          #   bigger than the 64KiB pipe buffer AND `grep` to exit before
+          #   `echo` drains. #1330's diff was 1674 paths / 82KiB, matching
+          #   `apps/api/` at line 202 and `supabase/migrations/` at line 1621
+          #   — so the early API match left ~20KiB unwritten and reproduced in
+          #   roughly one run in five, while the late migrations match had
+          #   almost nothing left to write and effectively never did. That run
+          #   lost the coin flip: migrations were detected, the API was not.
+          #
+          # Grepping a file has no writer process to kill, so an early `-q`
+          # exit is harmless and match order cannot change the answer.
+          CHANGED_FILE="${RUNNER_TEMP:-/tmp}/deploy-api-changed-paths.txt"
+
+          if git diff --name-only HEAD~1 > "$CHANGED_FILE"; then
             DIFF_OK=1
           else
             DIFF_OK=0
-            CHANGED=""
+            : > "$CHANGED_FILE"
             echo "::warning::Could not diff HEAD~1 for ${{ github.event.workflow_run.head_sha }}. Assuming all deploy-relevant paths changed rather than skipping the deploy."
           fi
 
-          if [ "$DIFF_OK" -eq 0 ] || echo "$CHANGED" | grep -qE '^(apps/api/|packages/validation/|packages/typescript-config/)'; then
+          echo "Changed paths in this push: $(wc -l < "$CHANGED_FILE")"
+
+          if [ "$DIFF_OK" -eq 0 ] || grep -qE '^(apps/api/|packages/validation/|packages/typescript-config/)' "$CHANGED_FILE"; then
             echo "api-changed=true" >> "$GITHUB_OUTPUT"
             echo "API-related files changed (or the diff was unreadable)."
           else
@@ -71,7 +97,7 @@ jobs:
             echo "No API-related files changed."
           fi
 
-          if [ "$DIFF_OK" -eq 0 ] || echo "$CHANGED" | grep -qE '^supabase/migrations/'; then
+          if [ "$DIFF_OK" -eq 0 ] || grep -qE '^supabase/migrations/' "$CHANGED_FILE"; then
             echo "migrations-changed=true" >> "$GITHUB_OUTPUT"
             echo "Migration files changed (or the diff was unreadable)."
           else
