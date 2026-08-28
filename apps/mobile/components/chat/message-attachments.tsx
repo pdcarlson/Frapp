@@ -176,6 +176,12 @@ function createStyles(tokens: SignetTokens) {
     },
     preview: {
       width: "100%",
+      // Capped, matching web's `max-h-64`. Without it a tall screenshot — a
+      // 400x2000 phone capture is the ordinary case — derives its height from
+      // the aspect ratio and renders many times the bubble's width, pushing the
+      // rest of the thread off screen. `contain` letterboxes inside the cap
+      // rather than distorting.
+      maxHeight: 240,
       borderRadius: tokens.radius.control,
     },
     previewUnsized: {

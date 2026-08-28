@@ -163,6 +163,26 @@ describe("rendering", () => {
     expect(style).toContain('"aspectRatio":2');
   });
 
+  it("caps a tall preview so it cannot push the thread off screen", () => {
+    // A 400x2000 phone screenshot is the ordinary case, not a pathological one:
+    // width:100% plus its aspect ratio would derive a height many times the
+    // bubble's width.
+    hookState.result = {
+      isPending: false,
+      isError: false,
+      data: [
+        attachment({ content_type: "image/png", width: 400, height: 2000 }),
+      ],
+    };
+
+    const tree = render();
+    const image = tree.root.findAllByType(
+      "Image" as unknown as React.ElementType,
+    )[0]!;
+
+    expect(JSON.stringify(image.props.style)).toContain('"maxHeight":240');
+  });
+
   it("falls back to a fixed height when the dimensions are null", () => {
     // `chat_message_attachments` allows both to be null, so an aspect ratio
     // computed from nothing would be NaN.
