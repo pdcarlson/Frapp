@@ -591,7 +591,14 @@ export function TasksBoard() {
                       const assigneeName =
                         membersByUserId.get(task.assignee_id) ??
                         `Member ${task.assignee_id.slice(0, 6)}`;
+                      // Fails closed. `myUserId` is "" while `useCurrentUser`
+                      // is in flight or errored, which would otherwise make
+                      // `isMine` false for every row and put Confirm back on
+                      // your own task — the flip-and-revert this gate exists to
+                      // stop. Treat an unknown viewer as "might be me".
+                      const viewerUnknown = myUserId === "";
                       const isMine = task.assignee_id === myUserId;
+                      const cannotConfirm = isMine || viewerUnknown;
                       return (
                         <div
                           key={task.id}
@@ -647,16 +654,22 @@ export function TasksBoard() {
                               {actionStatus(task) === "COMPLETED" ? (
                                 <>
                                   {/*
-                                   * Confirm is hidden on your own task: the API
-                                   * refuses a self-confirmation (#1056), so
-                                   * rendering it would offer an action that is
-                                   * guaranteed to 403 — and the optimistic write
-                                   * would flip the label to "Confirmed" and snap
-                                   * back. Reject stays: it withholds points
-                                   * rather than awarding them, so the server
-                                   * rule deliberately does not cover it.
+                                   * The *live* Confirm is hidden on your own
+                                   * task: the API refuses a self-confirmation
+                                   * (#1056), so rendering it would offer an
+                                   * action guaranteed to 403 — and the optimistic
+                                   * write would flip the label to "Confirmed"
+                                   * and snap back. The already-awarded button is
+                                   * kept: it is disabled and reads "Confirmed",
+                                   * so it reports state rather than offering an
+                                   * action, and an assignee-admin would
+                                   * otherwise lose any sign their task was
+                                   * confirmed. Reject stays throughout: it
+                                   * withholds points rather than awarding them,
+                                   * so the server rule does not cover it.
                                    */}
-                                  {isMine ? null : (
+                                  {cannotConfirm &&
+                                  !task.points_awarded ? null : (
                                     <Button
                                       size="sm"
                                       onClick={() =>

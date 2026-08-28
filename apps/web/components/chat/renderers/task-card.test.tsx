@@ -247,6 +247,30 @@ describe("TaskCard", () => {
     expect(screen.getByRole("button", { name: /reject/i })).toBeInTheDocument();
   });
 
+  it("keeps the disabled Confirmed indicator for an assignee-admin", () => {
+    // Once another admin confirms, the assignee-admin must still be able to see
+    // that it happened. The button is disabled and reads "Confirmed", so it
+    // reports state rather than offering the refused action — and it is what
+    // keeps the card from rendering a lone SubscriptionNotice on a lapsed
+    // chapter, which is why the subscription is inactive here.
+    chapter.incomplete();
+    canManage = true;
+    mockUseTask.mockReturnValue({
+      data: { id: "task-1", status: "COMPLETED", points_awarded: true },
+    });
+    render(
+      <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
+    );
+
+    const confirmed = screen.getByRole("button", { name: /confirmed/i });
+    expect(confirmed).toBeInTheDocument();
+    expect(confirmed).toBeDisabled();
+    // Reject is gone once points are awarded — that gate is pre-existing.
+    expect(
+      screen.queryByRole("button", { name: /reject/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("disables actions while the chat row is unconfirmed", () => {
     render(
       <TaskCard

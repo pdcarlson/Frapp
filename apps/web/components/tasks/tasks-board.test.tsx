@@ -3,10 +3,13 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
-const { mockCurrentChapter, tasksRef } = vi.hoisted(() => ({
+const { mockCurrentChapter, tasksRef, currentUserRef } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
   // Mutable so a test can swap the rows the board renders.
   tasksRef: { current: [] as unknown[] },
+  // Mutable so a test can simulate `useCurrentUser` still in flight or errored,
+  // which is when the Confirm gate has to fail closed.
+  currentUserRef: { current: undefined as { id?: string } | undefined },
 }));
 
 // Only the chapter payload is stubbed — `useSubscriptionWriteState` and
@@ -71,7 +74,7 @@ vi.mock("@repo/hooks", () => ({
     refetch: vi.fn(),
   }),
   useMembers: () => ({ data: [] }),
-  useCurrentUser: () => ({ data: { id: ME } }),
+  useCurrentUser: () => ({ data: currentUserRef.current }),
   useCreateTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateTaskStatus: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useConfirmTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -107,6 +110,7 @@ describe("TasksBoard subscription gating", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     tasksRef.current = TASKS;
+    currentUserRef.current = { id: ME };
   });
 
   it("leaves every task write alone on an active chapter", () => {
@@ -134,6 +138,20 @@ describe("TasksBoard subscription gating", () => {
       screen.queryByRole("button", { name: /^confirm$/i }),
     ).not.toBeInTheDocument();
     expect(rejectButton()).toBeEnabled();
+  });
+
+  it("hides Confirm while the viewer is unknown, rather than failing open", () => {
+    // `myUserId` is "" until `useCurrentUser` resolves. If the gate keyed on
+    // `isMine` alone, every row would read as someone else's during that window
+    // and Confirm would come back on your own task.
+    chapter.active();
+    currentUserRef.current = undefined;
+    tasksRef.current = [{ ...TASKS[2], id: "task-mine", assignee_id: ME }];
+    render(<TasksBoard />);
+
+    expect(
+      screen.queryByRole("button", { name: /^confirm$/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("still offers Confirm on someone else's completed task", () => {

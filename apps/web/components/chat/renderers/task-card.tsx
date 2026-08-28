@@ -219,9 +219,13 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   // the exact repetition this variable exists to prevent.
   const canManageTasks = can("tasks:manage", permissionsPayload?.permissions);
   // Confirm is refused server-side on your own task (#1056), so the assignee
-  // sees no confirm affordance here. Reject is unaffected — it withholds points
-  // rather than awarding them — so a COMPLETED card still shows an action to a
-  // `tasks:manage` assignee, and this stays true for them.
+  // gets no *live* confirm control. The already-confirmed button is a different
+  // thing — it is disabled and reads "Confirmed", so it is a state indicator
+  // rather than an action, and hiding it would leave an assignee-admin unable to
+  // see that their task was confirmed at all. Keeping it also means a COMPLETED
+  // card always carries exactly one control for a `tasks:manage` assignee
+  // (Reject before confirmation, the Confirmed indicator after), so
+  // `showsAnyAction` stays honest and the notice never renders alone.
   const showsAnyAction =
     (isAssignee &&
       (storedStatus === "TODO" || storedStatus === "IN_PROGRESS")) ||
@@ -310,7 +314,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
         ) : null}
         {storedStatus === "COMPLETED" ? (
           <Can permission="tasks:manage">
-            {isAssignee ? null : (
+            {isAssignee && !pointsAwarded ? null : (
               <Button
                 size="sm"
                 {...gate.controlProps(actionsDisabled || pointsAwarded)}
