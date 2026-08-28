@@ -76,6 +76,20 @@ describe('configureApp — trust proxy (#864)', () => {
     expect(res.body.ips[0]).toBe('198.51.100.5');
   });
 
+  // Documents the boundary rather than asserting it is safe: a hop count
+  // trusts N entries whether or not N proxies appended them, so where the real
+  // chain is shorter than TRUST_PROXY_HOPS — local dev, or any route that
+  // bypasses Render's edge — the leftmost entry wins and a client can set its
+  // own `req.ip`. Deployed traffic always carries the measured three (#864).
+  // If this ever starts failing, the trust model changed and #864 needs
+  // re-reading before the number is touched.
+  it('over-trusts a chain shorter than the hop count (known boundary)', async () => {
+    const res = await get('1.2.3.4').expect(200);
+
+    expect(res.body.ip).toBe('1.2.3.4');
+    expect(res.body.ips).toEqual(['1.2.3.4']);
+  });
+
   it('falls back to the socket address when no chain is present', async () => {
     const res = await get().expect(200);
 

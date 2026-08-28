@@ -47,6 +47,21 @@ import { LoggingInterceptor } from './interface/interceptors/logging.interceptor
  * and `2` to Cloudflare's edge, so both keep every unauthenticated caller in
  * one shared bucket while looking like a fix.
  *
+ * Both public hostnames — `api-staging.frapp.live` and the default
+ * `frapp-api-staging.onrender.com` — share one DNS record pointing at the same
+ * Cloudflare-fronted Render addresses, so neither public path is a shorter
+ * chain that would leave this over-trusting.
+ *
+ * **The limit of a hop count, stated rather than left sharp:** it trusts N
+ * entries whether or not N proxies actually appended them. Where the real
+ * chain is shorter — local dev, or any future direct-to-origin route — Express
+ * returns the leftmost entry, so a client can set `req.ip` by sending one
+ * `X-Forwarded-For` header (pinned by a test in `bootstrap.spec.ts`). That is
+ * inert for the rate limiter locally and correct in the deployed environments
+ * measured above, but a new ingress that bypasses Render's edge would need
+ * this re-measured, not inherited. Trusting by address range instead of a
+ * count would remove the assumption entirely — considered in #1341.
+ *
  * This is the **staging** figure. `frapp-api-prod` is a separate service whose
  * chain has never been observed (#1273 — it has never deployed), so the value
  * is unverified there.
