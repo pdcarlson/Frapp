@@ -23,9 +23,12 @@ describe('EventService', () => {
     mockEventRepo = {
       findById: jest.fn(),
       findByChapter: jest.fn(),
+      findChildren: jest.fn().mockResolvedValue([]),
       create: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn().mockResolvedValue([]),
       delete: jest.fn(),
+      deleteMany: jest.fn().mockResolvedValue(undefined),
     };
 
     mockNotificationService = {
@@ -544,6 +547,272 @@ describe('EventService', () => {
       const result = await service.create(chatInput);
 
       expect(result).toEqual(baseEvent);
+    });
+  });
+
+  describe('recurring series lifecycle', () => {
+    // A fixed clock so "past" and "future" are properties of the fixtures, not
+    // of when the suite happens to run. Only `Date.now()` is stubbed — the
+    // service compares stored `start_time` values against it.
+    const NOW = new Date('2026-03-15T00:00:00.000Z').getTime();
+    let nowSpy: jest.SpyInstance<number, []>;
+
+    beforeEach(() => {
+      nowSpy = jest.spyOn(Date, 'now').mockReturnValue(NOW);
+    });
+    afterEach(() => nowSpy.mockRestore());
+
+    const parent: Event = {
+      ...baseEvent,
+      id: 'parent-1',
+      recurrence_rule: 'WEEKLY',
+      start_time: '2026-03-01T18:00:00.000Z',
+      end_time: '2026-03-01T19:00:00.000Z',
+    };
+    const pastChild: Event = {
+      ...baseEvent,
+      id: 'child-past',
+      parent_event_id: 'parent-1',
+      start_time: '2026-03-08T18:00:00.000Z',
+      end_time: '2026-03-08T19:00:00.000Z',
+    };
+    const futureChild1: Event = {
+      ...baseEvent,
+      id: 'child-future-1',
+      parent_event_id: 'parent-1',
+      start_time: '2026-03-22T18:00:00.000Z',
+      end_time: '2026-03-22T19:00:00.000Z',
+    };
+    const futureChild2: Event = {
+      ...baseEvent,
+      id: 'child-future-2',
+      parent_event_id: 'parent-1',
+      start_time: '2026-03-29T18:00:00.000Z',
+      end_time: '2026-03-29T19:00:00.000Z',
+    };
+    const wholeSeries = [pastChild, futureChild1, futureChild2];
+
+    describe('series update', () => {
+      it('applies the edit to future instances only', async () => {
+        mockEventRepo.findById.mockResolvedValue(parent);
+        mockEventRepo.findChildren.mockResolvedValue(wholeSeries);
+        mockEventRepo.update.mockResolvedValue({ ...parent, name: 'Renamed' });
+
+        await service.update('parent-1', 'ch-1', { name: 'Renamed' }, 'series');
+
+        expect(mockEventRepo.updateMany).toHaveBeenCalledWith(
+          ['child-future-1', 'child-future-2'],
+          'ch-1',
+          { name: 'Renamed' },
+        );
+        expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
+      });
+
+      it('never includes a past instance in the write set', async () => {
+        mockEventRepo.findById.mockResolvedValue(parent);
+        mockEventRepo.findChildren.mockResolvedValue(wholeSeries);
+        mockEventRepo.update.mockResolvedValue(parent);
+
+        await service.update('parent-1', 'ch-1', { name: 'Renamed' }, 'series');
+
+        const [ids] = mockEventRepo.updateMany.mock.calls[0];
+        expect(ids).not.toContain('child-past');
+      });
+
+      it('regenerates future instances when the recurrence rule changes', async () => {
+        mockEventRepo.findById.mockResolvedValue(parent);
+        mockEventRepo.findChildren.mockResolvedValue(wholeSeries);
+        mockEventRepo.update.mockResolvedValue({
+          ...parent,
+          recurrence_rule: 'MONTHLY',
+        });
+        mockEventRepo.create.mockResolvedValue(baseEvent);
+
+        await service.update(
+          'parent-1',
+          'ch-1',
+          { recurrence_rule: 'MONTHLY' },
+          'series',
+        );
+
+        expect(mockEventRepo.deleteMany).toHaveBeenCalledWith(
+          ['child-future-1', 'child-future-2'],
+          'ch-1',
+        );
+        expect(mockEventRepo.create).toHaveBeenCalledTimes(6);
+      });
+
+      // The web editor PATCHes the whole event back on every save, so an
+      // unchanged rule arrives on the wire constantly. Regenerating on presence
+      // rather than on change would delete and rebuild future rows each time —
+      // and `event_attendance` is `on delete cascade`.
+      it('does not regenerate when an unchanged rule is resent', async () => {
+        mockEventRepo.findById.mockResolvedValue(parent);
+        mockEventRepo.findChildren.mockResolvedValue([futureChild1]);
+        mockEventRepo.update.mockResolvedValue(parent);
+
+        await service.update(
+          'parent-1',
+          'ch-1',
+          { name: 'Same', recurrence_rule: 'WEEKLY' },
+          'series',
+        );
+
+        expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
+        expect(mockEventRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('treats an equivalent timestamp spelling as unchanged', async () => {
+        mockEventRepo.findById.mockResolvedValue(parent);
+        mockEventRepo.findChildren.mockResolvedValue([futureChild1]);
+        mockEventRepo.update.mockResolvedValue(parent);
+
+        // Same instant as the stored `...18:00:00.000Z`, different spelling.
+        await service.update(
+          'parent-1',
+          'ch-1',
+          { start_time: '2026-03-01T18:00:00+00:00' },
+          'series',
+        );
+
+        expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
+      });
+
+      it('resolves a series edit issued against a child to its parent', async () => {
+        mockEventRepo.findById.mockImplementation(async (id: string) =>
+          id === 'parent-1'
+            ? parent
+            : id === 'child-future-1'
+              ? futureChild1
+              : null,
+        );
+        mockEventRepo.findChildren.mockResolvedValue([futureChild2]);
+        mockEventRepo.update.mockResolvedValue(parent);
+
+        await service.update('child-future-1', 'ch-1', { name: 'X' }, 'series');
+
+        expect(mockEventRepo.update).toHaveBeenCalledWith(
+          'parent-1',
+          'ch-1',
+          expect.objectContaining({ name: 'X' }),
+        );
+        expect(mockEventRepo.findChildren).toHaveBeenCalledWith(
+          'parent-1',
+          'ch-1',
+        );
+      });
+    });
+
+    describe('series delete', () => {
+      it('deletes future occurrences and preserves ones that already happened', async () => {
+        mockEventRepo.findById.mockResolvedValue(parent);
+        mockEventRepo.findChildren.mockResolvedValue(wholeSeries);
+
+        await service.delete('parent-1', 'ch-1', 'series');
+
+        expect(mockEventRepo.deleteMany).toHaveBeenCalledWith(
+          ['child-future-1', 'child-future-2'],
+          'ch-1',
+        );
+        // The head already happened, so it survives with the series ended.
+        expect(mockEventRepo.delete).not.toHaveBeenCalled();
+        expect(mockEventRepo.update).toHaveBeenCalledWith('parent-1', 'ch-1', {
+          recurrence_rule: null,
+        });
+      });
+
+      // The point of preserving past rows: `event_attendance.event_id` is
+      // `on delete cascade`, so deleting a past occurrence destroys the record
+      // that the meeting happened and who was there.
+      it('never deletes a past occurrence, so its attendance survives', async () => {
+        mockEventRepo.findById.mockResolvedValue(parent);
+        mockEventRepo.findChildren.mockResolvedValue(wholeSeries);
+
+        await service.delete('parent-1', 'ch-1', 'series');
+
+        const deletedIds = mockEventRepo.deleteMany.mock.calls.flatMap(
+          ([ids]) => ids,
+        );
+        expect(deletedIds).not.toContain('child-past');
+        expect(deletedIds).not.toContain('parent-1');
+      });
+
+      it('detaches surviving past occurrences so none is left orphaned', async () => {
+        mockEventRepo.findById.mockResolvedValue(parent);
+        mockEventRepo.findChildren.mockResolvedValue(wholeSeries);
+
+        await service.delete('parent-1', 'ch-1', 'series');
+
+        expect(mockEventRepo.updateMany).toHaveBeenCalledWith(
+          ['child-past'],
+          'ch-1',
+          { parent_event_id: null },
+        );
+      });
+
+      it('deletes the head too when the whole series is still upcoming', async () => {
+        const upcoming: Event = {
+          ...parent,
+          start_time: '2026-04-01T18:00:00.000Z',
+          end_time: '2026-04-01T19:00:00.000Z',
+        };
+        mockEventRepo.findById.mockResolvedValue(upcoming);
+        mockEventRepo.findChildren.mockResolvedValue([futureChild1]);
+
+        await service.delete('parent-1', 'ch-1', 'series');
+
+        expect(mockEventRepo.deleteMany).toHaveBeenCalledWith(
+          ['child-future-1'],
+          'ch-1',
+        );
+        expect(mockEventRepo.delete).toHaveBeenCalledWith('parent-1', 'ch-1');
+      });
+    });
+
+    describe('instance delete of a series head', () => {
+      it('promotes the next occurrence instead of orphaning the series', async () => {
+        mockEventRepo.findById.mockResolvedValue(parent);
+        mockEventRepo.findChildren.mockResolvedValue(wholeSeries);
+
+        await service.delete('parent-1', 'ch-1');
+
+        expect(mockEventRepo.update).toHaveBeenCalledWith(
+          'child-past',
+          'ch-1',
+          {
+            recurrence_rule: 'WEEKLY',
+            parent_event_id: null,
+          },
+        );
+        expect(mockEventRepo.updateMany).toHaveBeenCalledWith(
+          ['child-future-1', 'child-future-2'],
+          'ch-1',
+          { parent_event_id: 'child-past' },
+        );
+        expect(mockEventRepo.delete).toHaveBeenCalledWith('parent-1', 'ch-1');
+      });
+
+      it('leaves a non-recurring event as a plain single-row delete', async () => {
+        mockEventRepo.findById.mockResolvedValue(baseEvent);
+
+        await service.delete('evt-1', 'ch-1');
+
+        expect(mockEventRepo.findChildren).not.toHaveBeenCalled();
+        expect(mockEventRepo.delete).toHaveBeenCalledWith('evt-1', 'ch-1');
+      });
+    });
+
+    describe('instance scope is the default', () => {
+      it('keeps an update single-row when no scope is given', async () => {
+        mockEventRepo.findById.mockResolvedValue(parent);
+        mockEventRepo.update.mockResolvedValue(parent);
+
+        await service.update('parent-1', 'ch-1', { name: 'Solo' });
+
+        expect(mockEventRepo.findChildren).not.toHaveBeenCalled();
+        expect(mockEventRepo.updateMany).not.toHaveBeenCalled();
+        expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
+      });
     });
   });
 });
