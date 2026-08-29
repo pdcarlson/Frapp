@@ -24,10 +24,22 @@ export function useSemesterRollover() {
       label: string;
       start_date: string;
       end_date: string;
+      /**
+       * Bulk-promote the chapter's New Members to Member alongside the archive.
+       * Optional here and defaulted below; the API treats an absent flag as
+       * false, and the generated SDK type is non-optional only because
+       * openapi-typescript drops `?` from any property carrying a `default`.
+       */
+      promote_new_members?: boolean;
     }) => {
       const { data, error } = await client.POST(
         "/v1/chapters/current/rollover",
-        { body },
+        {
+          body: {
+            ...body,
+            promote_new_members: body.promote_new_members ?? false,
+          },
+        },
       );
       if (error) throw error;
       return data;
@@ -35,6 +47,9 @@ export function useSemesterRollover() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["semesters"] });
       queryClient.invalidateQueries({ queryKey: ["chapters"] });
+      // Promotion rewrites members.role_ids across the chapter, so any cached
+      // roster or permission-derived view is stale once this succeeds.
+      queryClient.invalidateQueries({ queryKey: ["members"] });
     },
   });
 }
