@@ -217,13 +217,14 @@ export function ChatShell() {
 
   const channel = useChatChannel(activeChannelId);
 
+  const setNotificationLevel = useSetChannelNotificationLevel();
+
   // Opening a channel stamps the read cursor — the only thing that moves it, and
   // the only thing that clears the badges above. Without it the rail lights up
   // on first load and never goes out, which is worse than the dead badge this
   // slice replaced: it would show every channel as permanently unread.
   // `spec/behavior/chat/README.md` § Read Receipts: opening stamps to server
   // `now()`; there is no mark-read-to-a-message.
-  const setNotificationLevel = useSetChannelNotificationLevel();
   const markRead = useMarkChannelRead();
   const markReadMutate = markRead.mutate;
   useEffect(() => {
