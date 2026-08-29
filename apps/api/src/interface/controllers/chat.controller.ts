@@ -496,7 +496,9 @@ export class ChatController {
    * `assertChannelAccess` in the service, not a chapter-wide permission.
    */
   @Put(':id/notification-preference')
-  @ApiOperation({ summary: "Set the caller's notification level for a channel" })
+  @ApiOperation({
+    summary: "Set the caller's notification level for a channel",
+  })
   @ApiOkResponse({ type: ChannelNotificationPreferenceDto })
   async setChannelNotificationLevel(
     @Param('id', ParseUUIDPipe) channelId: string,

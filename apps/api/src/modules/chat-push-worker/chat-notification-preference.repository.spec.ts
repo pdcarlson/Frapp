@@ -90,18 +90,16 @@ describe('ChatNotificationPreferenceRepository — tenant scope', () => {
    */
   it('the UI read throws on error where the worker read degrades', async () => {
     const failing = createTenantHarness({ tables: seed() });
-    jest
-      .spyOn(failing.client, 'from')
-      .mockReturnValue({
-        select: () => ({
+    jest.spyOn(failing.client, 'from').mockReturnValue({
+      select: () => ({
+        eq: () => ({
           eq: () => ({
-            eq: () => ({
-              eq: () =>
-                Promise.resolve({ data: null, error: { message: 'boom' } }),
-            }),
+            eq: () =>
+              Promise.resolve({ data: null, error: { message: 'boom' } }),
           }),
         }),
-      } as unknown as ReturnType<typeof failing.client.from>);
+      }),
+    });
     const failingRepo = new ChatNotificationPreferenceRepository(
       failing.client,
     );

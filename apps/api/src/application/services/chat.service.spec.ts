@@ -1938,24 +1938,26 @@ describe('ChatService', () => {
      * a caller enumerate channel ids they can no longer read.
      */
     it('drops rows for channels the caller can no longer access', async () => {
-      mockChatNotificationPrefs.findChannelPreferencesForUser.mockResolvedValue([
-        {
-          user_id: 'user-1',
-          chapter_id: 'ch-1',
-          scope: 'channel',
-          scope_id: 'ch-chan-1',
-          scope_kind: null,
-          level: 'off',
-        },
-        {
-          user_id: 'user-1',
-          chapter_id: 'ch-1',
-          scope: 'channel',
-          scope_id: 'ch-gone',
-          scope_kind: null,
-          level: 'all',
-        },
-      ]);
+      mockChatNotificationPrefs.findChannelPreferencesForUser.mockResolvedValue(
+        [
+          {
+            user_id: 'user-1',
+            chapter_id: 'ch-1',
+            scope: 'channel',
+            scope_id: 'ch-chan-1',
+            scope_kind: null,
+            level: 'off',
+          },
+          {
+            user_id: 'user-1',
+            chapter_id: 'ch-1',
+            scope: 'channel',
+            scope_id: 'ch-gone',
+            scope_kind: null,
+            level: 'all',
+          },
+        ],
+      );
       // `ch-gone` is absent from the accessible set.
       mockChannelRepo.findByChapter.mockResolvedValue([baseChannel]);
 
