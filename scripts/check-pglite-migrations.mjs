@@ -311,6 +311,40 @@ const LANDMARKS = [
       rows.length === 1 && rows[0].attgenerated && rows[0].attgenerated !== "",
   },
   {
+    // The other three `GET /v1/search` sources (#284). `chat_messages` got its
+    // index first because the archive import made it urgent; these finish the
+    // set, and each replaces an `ILIKE '%q%'` the planner could only answer with
+    // a sequential scan. `users.display_name_search` is the one to protect
+    // hardest: `users` is GLOBAL, so its scan cost is shared across every
+    // chapter and grows with total signups rather than with any one chapter.
+    //
+    // Pinned as generated-column + GIN together, because losing either half
+    // silently returns the source to a sequential scan while search still works.
+    name: "backwork/events/users full-text search: generated tsvector + GIN index",
+    sql: `select
+            (select count(*) from pg_attribute
+              where attrelid = 'backwork_resources'::regclass
+                and attname = 'search_vector' and attgenerated <> '')::int as bw_gen,
+            (select count(*) from pg_attribute
+              where attrelid = 'events'::regclass
+                and attname = 'search_vector' and attgenerated <> '')::int as ev_gen,
+            (select count(*) from pg_attribute
+              where attrelid = 'users'::regclass
+                and attname = 'display_name_search' and attgenerated <> '')::int as us_gen,
+            (select count(*) from pg_indexes
+              where indexname in (
+                'idx_backwork_resources_search',
+                'idx_events_search',
+                'idx_users_display_name_search'
+              ) and indexdef ilike '%using gin%')::int as gin_indexes`,
+    ok: (rows) =>
+      rows.length === 1 &&
+      rows[0].bw_gen === 1 &&
+      rows[0].ev_gen === 1 &&
+      rows[0].us_gen === 1 &&
+      rows[0].gin_indexes === 3,
+  },
+  {
     name: "anonymize_user RPC present, security invoker (FRA-40)",
     sql: `select prosecdef from pg_proc p
             join pg_namespace n on n.oid = p.pronamespace
