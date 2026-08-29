@@ -56,6 +56,8 @@ import type {
 import { NotificationService } from './notification.service';
 import { ChannelAccessService } from './channel-access.service';
 import { ActivationService } from './activation.service';
+import { ChatNotificationPreferenceRepository } from '../../modules/chat-push-worker/chat-notification-preference.repository';
+import type { ChatNotificationLevel } from '../../modules/chat-push-worker/chat-notification-preference.repository';
 
 const MAX_PINNED_MESSAGES = 50;
 const MAX_GROUP_DM_MEMBERS = 10;
@@ -256,6 +258,7 @@ export class ChatService {
     private readonly notificationService: NotificationService,
     private readonly channelAccess: ChannelAccessService,
     private readonly activation: ActivationService,
+    private readonly chatNotificationPrefs: ChatNotificationPreferenceRepository,
   ) {}
 
   // ── Channels ─────────────────────────────────────────────────────────
@@ -1108,6 +1111,74 @@ export class ChatService {
       userId,
       new Date().toISOString(),
     );
+  }
+
+  // ── Per-channel notification level (mute) ────────────────────────────
+
+  /**
+   * The caller's own channel-scoped notification levels (#296).
+   *
+   * Returned as its own collection rather than folded into the channel payload,
+   * matching how unread counts are served. `channel-list.tsx` documents why: an
+   * `unread_count?` field once sat on the channel type "populated by future
+   * unread tracking", nothing ever populated it, and the badge reading it could
+   * never render. `muted` was the second field in that state until this slice.
+   *
+   * Only rows the caller can still see are returned. A preference row survives
+   * losing access to its channel — leaving a private channel does not delete the
+   * mute row — so returning them unfiltered would let a caller enumerate channel
+   * ids they can no longer read. `filterAccessibleChannelIds` is the same batch
+   * predicate `getUnreadCounts` uses for exactly this reason.
+   */
+  async getChannelNotificationPreferences(chapterId: string, userId: string) {
+    const rows = await this.chatNotificationPrefs.findChannelPreferencesForUser(
+      userId,
+      chapterId,
+    );
+    if (rows.length === 0) return [];
+
+    const channelIds = rows
+      .map((row) => row.scope_id)
+      .filter((id): id is string => id !== null);
+    const accessible = await this.channelAccess.filterAccessibleChannelIds(
+      chapterId,
+      userId,
+      channelIds,
+    );
+    const allowed = new Set(accessible);
+
+    return rows
+      .filter((row) => row.scope_id !== null && allowed.has(row.scope_id))
+      .map((row) => ({ channel_id: row.scope_id as string, level: row.level }));
+  }
+
+  /**
+   * Set the caller's notification level for one channel.
+   *
+   * `assertChannelAccess` first, for the same reason `markChannelRead` does it:
+   * `chat_channels` has RLS enabled with no policies (#1009) and the API holds
+   * the `service_role` key, so this application-layer check is the only thing
+   * stopping a caller from writing a preference row about a private channel or
+   * a DM they are not part of — which would confirm that channel id exists.
+   *
+   * The row is keyed on `userId` from the authenticated request, never from the
+   * body: a mute is per-user, and accepting a caller-supplied user id would let
+   * any member silence another member's notifications.
+   */
+  async setChannelNotificationLevel(
+    channelId: string,
+    chapterId: string,
+    userId: string,
+    level: ChatNotificationLevel,
+  ) {
+    await this.assertChannelAccess(channelId, chapterId, userId);
+    const row = await this.chatNotificationPrefs.upsertChannelLevel(
+      userId,
+      chapterId,
+      channelId,
+      level,
+    );
+    return { channel_id: channelId, level: row.level };
   }
 
   /**

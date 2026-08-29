@@ -13,8 +13,10 @@ import {
 } from "@/components/shared/async-states";
 import {
   directChannelDisplayName,
+  useChannelNotificationPreferences,
   useChannelUnreadCounts,
   useChannels,
+  useSetChannelNotificationLevel,
   useMarkChannelRead,
   useCategories,
   useChapterRoster,
@@ -35,8 +37,10 @@ import { MessageTimeline, type MessageTimelineHandle } from "./message-timeline"
 import { Composer } from "./composer";
 import { ThreadPanel } from "./thread-panel";
 import { PinsPopover } from "./pins-popover";
+import { NotificationLevelPopover } from "./notification-level-popover";
 import { ReconnectPill } from "./reconnect-pill";
 import type { SlashCommand } from "@repo/chat-integrations";
+import type { ChatNotificationLevel } from "@repo/hooks";
 
 interface DirectoryMember {
   user_id: string;
@@ -130,9 +134,36 @@ export function ChatShell() {
   // Names for message authors and DM titles. Shares its query key with the
   // roster read below, so react-query serves both from one fetch.
   const { byId: memberNames, nameFor } = useMemberDisplayNames();
+  // Per-channel notification levels, from their own endpoint rather than the
+  // channel payload — the same split unread counts use, and for the same
+  // recorded reason (see `channel-list.tsx`, which explains how a `muted` field
+  // nothing populated stayed permanently falsy).
+  const notificationPrefsQuery = useChannelNotificationPreferences();
+  const levelByChannelId = useMemo(() => {
+    const map = new Map<string, ChatNotificationLevel>();
+    // On error, leave the map empty rather than guessing. Every channel then
+    // reads at its default (`mentions`), which is what an un-configured account
+    // genuinely looks like — the failure mode is a control that shows the
+    // default, not one that claims a channel is muted when it is not.
+    if (notificationPrefsQuery.isError || !notificationPrefsQuery.data) {
+      return map;
+    }
+    for (const row of notificationPrefsQuery.data) {
+      map.set(row.channel_id, row.level);
+    }
+    return map;
+  }, [notificationPrefsQuery.data, notificationPrefsQuery.isError]);
+
   const channels = useMemo(
-    () => asArray<ChatChannel>(channelsQuery.data),
-    [channelsQuery.data],
+    () =>
+      asArray<ChatChannel>(channelsQuery.data).map((ch) => ({
+        ...ch,
+        // `muted` finally has a writer. It has been on this type since the
+        // channel list was built and was populated nowhere until now, so the
+        // "muted" indicator it gates could never render.
+        muted: levelByChannelId.get(ch.id) === "off",
+      })),
+    [channelsQuery.data, levelByChannelId],
   );
 
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(
@@ -192,6 +223,7 @@ export function ChatShell() {
   // slice replaced: it would show every channel as permanently unread.
   // `spec/behavior/chat/README.md` § Read Receipts: opening stamps to server
   // `now()`; there is no mark-read-to-a-message.
+  const setNotificationLevel = useSetChannelNotificationLevel();
   const markRead = useMarkChannelRead();
   const markReadMutate = markRead.mutate;
   useEffect(() => {
@@ -356,6 +388,22 @@ export function ChatShell() {
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <ReconnectPill status={channel.connection} />
+              <NotificationLevelPopover
+                level={
+                  activeChannel
+                    ? (levelByChannelId.get(activeChannel.id) ?? "mentions")
+                    : "mentions"
+                }
+                disabled={!activeChannel}
+                isSaving={setNotificationLevel.isPending}
+                onChange={(level) => {
+                  if (!activeChannel) return;
+                  setNotificationLevel.mutate({
+                    channelId: activeChannel.id,
+                    level,
+                  });
+                }}
+              />
               <PinsPopover
                 messages={channel.messages}
                 nameFor={nameFor}

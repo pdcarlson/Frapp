@@ -211,3 +211,23 @@ export function ThreadGlyph({ className }: ChatGlyphProps) {
     </Svg>
   );
 }
+
+/**
+ * Notification level (#296). A bell; `active` means muted, and the slash is a
+ * detail stroke so the muted state reads at a glance rather than only through
+ * the label beside it. Same construction as {@link OfflineGlyph}, whose slash
+ * carries the equivalent "this is off" meaning.
+ */
+export function MuteGlyph({ className, active }: ChatGlyphProps) {
+  return (
+    <Svg className={className}>
+      <path
+        d="M6.5 10.5a5.5 5.5 0 0111 0c0 3.2.8 4.7 1.6 5.6.4.5.1 1.2-.6 1.2H5.5c-.7 0-1-.7-.6-1.2.8-.9 1.6-2.4 1.6-5.6z"
+        {...stroke}
+        {...fillProps(active)}
+      />
+      <path d="M10.2 20a2 2 0 003.6 0" {...detail} />
+      {active ? <path d="M4.5 4.5l15 15" {...detail} /> : null}
+    </Svg>
+  );
+}
