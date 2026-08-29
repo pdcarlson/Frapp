@@ -1768,6 +1768,19 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "scope",
+            "required": false,
+            "in": "query",
+            "description": "Which occurrences this applies to. `instance` (default) affects only this event. `series` affects the whole recurring series from now forward — occurrences that have already started are never modified or deleted, so attendance history is preserved.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "instance",
+                "series"
+              ]
+            }
           }
         ],
         "responses": {
@@ -1780,7 +1793,7 @@
             "bearer": []
           }
         ],
-        "summary": "Delete an event",
+        "summary": "Delete an event, or cancel a recurring series from now forward",
         "tags": [
           "Events"
         ]
@@ -7114,6 +7127,14 @@
           "check_in_zone_name": {
             "type": "string",
             "description": "Human-readable name for `check_in_zone`, shown on the mobile scanner (\"Inside the Great Hall zone\")."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "instance",
+              "series"
+            ],
+            "description": "Which occurrences this applies to. `instance` (default) affects only this event. `series` affects the whole recurring series from now forward — occurrences that have already started are never modified or deleted, so attendance history is preserved."
           }
         }
       },
