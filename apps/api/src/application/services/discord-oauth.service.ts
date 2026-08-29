@@ -420,11 +420,10 @@ export class DiscordOAuthService {
       // `DiscordConnectCode`.
       //
       // Both values come off the callback's query string, which is public and
-      // unauthenticated, so they are attacker-chosen. Every other record in
-      // this stream is one JSON object per line, so an unescaped newline here
-      // would let a caller forge a whole log line — a fabricated
-      // `security_event` in the stream the auth-failure spike investigation
-      // reads (#1260). `logSafe` strips control characters and caps length.
+      // unauthenticated, so they are attacker-chosen. A record is one line, so
+      // an unescaped newline here would let a caller write an extra line of
+      // their choosing into the stream an incident investigation reads
+      // (#1260). `logSafe` strips control characters and caps length.
       this.logger.log(
         `Discord connect declined for chapter ${consumed.chapter_id}: ${logSafe(query.error)} ${logSafe(query.error_description)}`.trim(),
       );
@@ -556,9 +555,13 @@ export class DiscordOAuthService {
         },
       );
       if (!parked) {
+        // No state id in this message: it is caught below and interpolated
+        // into a `logger.log` line, so an id here reaches the application log
+        // stream by a second route (#1260). The chapter id in that line is
+        // what identifies the event; the handshake id is the credential.
         throw new DiscordConnectFailure(
           'expired',
-          `Handshake ${stateId} could not be parked; it already carries a pending connection.`,
+          'Handshake could not be parked; it already carries a pending connection.',
         );
       }
       return confirmToken;
