@@ -102,13 +102,19 @@ describe('SearchService', () => {
         ],
         error: null,
       });
+      // Member search is one query now, so this chain carries the joined user
+      // rather than a bare roster row awaiting a second `users` lookup.
       const membersChain = makeChain({
         data: [
           {
             id: 'm-1',
             user_id: 'user-1',
             chapter_id: 'ch-1',
-            role_ids: ['role-1'],
+            users: {
+              id: 'user-1',
+              display_name: 'Ann Meeting',
+              email: 'ann@test.dev',
+            },
           },
         ],
         error: null,
@@ -147,7 +153,8 @@ describe('SearchService', () => {
       expect(result.backwork).toHaveLength(0);
       expect(result.events).toHaveLength(1);
       expect(result.events[0].name).toBe('Chapter Meeting');
-      expect(result.members).toHaveLength(0);
+      expect(result.members).toHaveLength(1);
+      expect(result.members[0].display_name).toBe('Ann Meeting');
       expect(result.messages).toHaveLength(0);
     });
 
@@ -262,71 +269,145 @@ describe('SearchService', () => {
       expect(fromCalls).not.toContain('chat_messages');
     });
 
-    it('should escape filter values in .or queries', async () => {
-      let backworkOrCall = '';
-      let eventsOrCall = '';
+    /**
+     * These two replace a pair of tests that asserted `escapeFilterValue`
+     * quoting inside hand-built `.or(title.ilike.X,course_number.ilike.X)`
+     * strings. That construct is gone: backwork and events now match through a
+     * generated tsvector, so there is no filter expression to inject into.
+     *
+     * The property still worth pinning is the one that replaced it — the raw
+     * query reaches PostgREST as ONE opaque parameter value and is never
+     * concatenated into a filter grammar. Verified against the local stack: a
+     * `test,id.eq.secret` query serialises to
+     * `search_vector=wfts%28english%29.test%2Cid.eq.secret`, with the comma
+     * percent-encoded inside the single value, so it cannot become a second
+     * filter.
+     */
+    it('passes a hostile query to text search as one opaque value, never a filter expression', async () => {
+      const hostile = 'test,id.eq.secret';
+      const chains: Record<string, Record<string, unknown>> = {};
 
       (mockSupabase.from as jest.Mock).mockImplementation((table: string) => {
-        const chain: Record<string, unknown> = {};
-        Object.assign(chain, {
-          select: jest.fn().mockReturnValue(chain),
-          eq: jest.fn().mockReturnValue(chain),
-          in: jest.fn().mockReturnValue(chain),
-          ilike: jest.fn().mockReturnValue(chain),
-          or: jest.fn().mockImplementation((query) => {
-            if (table === 'backwork_resources') backworkOrCall = query;
-            if (table === 'events') eventsOrCall = query;
-            return chain;
-          }),
-          limit: jest.fn().mockReturnValue(chain),
-          order: jest.fn().mockReturnValue(chain),
-          then: (resolve: (v: unknown) => void) =>
-            Promise.resolve({ data: [], error: null }).then(resolve),
-          catch: () => Promise.reject().catch(() => {}),
-        });
+        const chain = makeChain({ data: [], error: null });
+        chains[table] = chain;
         return chain;
       });
 
-      await service.search('ch-1', 'user-1', 'test\\query"()');
+      await service.search('ch-1', 'user-1', hostile);
 
-      // Given the pattern is `%test\query"()%`
-      // The expected escaped pattern would be `"%test\\query\"()%"`
-      const expectedSafePattern = '"%test\\\\query\\"()%"';
-
-      expect(backworkOrCall).toBe(
-        `title.ilike.${expectedSafePattern},course_number.ilike.${expectedSafePattern}`,
-      );
-      expect(eventsOrCall).toBe(
-        `name.ilike.${expectedSafePattern},description.ilike.${expectedSafePattern}`,
-      );
+      for (const [table, column] of [
+        ['backwork_resources', 'search_vector'],
+        ['events', 'search_vector'],
+        ['members', 'users.display_name_search'],
+      ] as const) {
+        expect(chains[table].textSearch).toHaveBeenCalledWith(
+          column,
+          // the raw query, unescaped and unwrapped — no `%…%`, no quoting
+          hostile,
+          { type: 'websearch', config: 'english' },
+        );
+        // the injection vector this replaces: no filter string is built at all
+        expect(chains[table].or).not.toHaveBeenCalled();
+        expect(chains[table].ilike).not.toHaveBeenCalled();
+      }
     });
 
-    it('should escape commas in filter values to prevent PostgREST injection', async () => {
-      let backworkOrCall = '';
+    it('never raises on punctuation that would break to_tsquery', async () => {
+      // `websearch` parse mode is what makes this true; `to_tsquery` would
+      // raise a syntax error and turn a stray "?" in the search box into a 500.
+      // Confirmed end to end against the local stack for `!!! ???`,
+      // `a & b | c`, a quoted phrase, `budget -draft` and `'; drop table
+      // users;--` — every one returned an empty result set, none an error.
+      (mockSupabase.from as jest.Mock).mockImplementation(() =>
+        makeChain({ data: [], error: null }),
+      );
+
+      await expect(
+        service.search('ch-1', 'user-1', "'; drop table users;--"),
+      ).resolves.toEqual({
+        backwork: [],
+        events: [],
+        members: [],
+        messages: [],
+      });
+    });
+
+    /**
+     * #1085. The old implementation selected EVERY `members` row for the
+     * chapter and then filtered `users` with `.in(rosterIds).ilike(...)`, so a
+     * search cost O(roster) before it could match anything.
+     */
+    it('member search never loads the chapter roster', async () => {
+      const fromCalls: string[] = [];
+      let membersChain: Record<string, unknown> | undefined;
 
       (mockSupabase.from as jest.Mock).mockImplementation((table: string) => {
-        const chain: Record<string, unknown> = {};
-        Object.assign(chain, {
-          select: jest.fn().mockReturnValue(chain),
-          eq: jest.fn().mockReturnValue(chain),
-          in: jest.fn().mockReturnValue(chain),
-          ilike: jest.fn().mockReturnValue(chain),
-          or: jest.fn().mockImplementation((query) => {
-            if (table === 'backwork_resources') backworkOrCall = query;
-            return chain;
-          }),
-          limit: jest.fn().mockReturnValue(chain),
-          order: jest.fn().mockReturnValue(chain),
-          then: (resolve: (v: unknown) => void) =>
-            Promise.resolve({ data: [], error: null }).then(resolve),
-          catch: () => Promise.reject().catch(() => {}),
-        });
+        fromCalls.push(table);
+        const chain = makeChain({ data: [], error: null });
+        if (table === 'members') membersChain = chain;
         return chain;
       });
 
-      await service.search('ch-1', 'user-1', 'test,id.eq.secret');
+      await service.search('ch-1', 'user-1', 'budgetson');
 
-      expect(backworkOrCall).toContain('"%test,id.eq.secret%"');
+      // one query, with the join and the match both pushed into SQL
+      expect(membersChain?.select).toHaveBeenCalledWith(
+        'id, user_id, chapter_id, users!inner(id, display_name, email)',
+      );
+      expect(membersChain?.eq).toHaveBeenCalledWith('chapter_id', 'ch-1');
+      expect(membersChain?.limit).toHaveBeenCalled();
+      // the roster fan-out is gone: no standalone `users` read, no `.in()` list
+      expect(fromCalls).not.toContain('users');
+      expect(membersChain?.in).not.toHaveBeenCalled();
+    });
+
+    it('maps the member embed whether it arrives as an object or an array', async () => {
+      // PostgREST returns a to-one embed as an object; looser typings and some
+      // client versions hand back a single-element array. Neither shape should
+      // decide whether member search returns anything.
+      const rows = [
+        {
+          id: 'm-1',
+          user_id: 'u-1',
+          chapter_id: 'ch-1',
+          users: { id: 'u-1', display_name: 'Bob Budgetson', email: 'b@x.dev' },
+        },
+        {
+          id: 'm-2',
+          user_id: 'u-2',
+          chapter_id: 'ch-1',
+          users: [
+            { id: 'u-2', display_name: 'Ann Budgetson', email: 'a@x.dev' },
+          ],
+        },
+        // an embed that came back empty must be dropped, not returned blank
+        { id: 'm-3', user_id: 'u-3', chapter_id: 'ch-1', users: null },
+      ];
+
+      (mockSupabase.from as jest.Mock).mockImplementation((table: string) =>
+        table === 'members'
+          ? makeChain({ data: rows, error: null })
+          : makeChain({ data: [], error: null }),
+      );
+
+      const result = await service.search('ch-1', 'user-1', 'budgetson');
+
+      expect(result.members).toEqual([
+        {
+          id: 'm-1',
+          user_id: 'u-1',
+          chapter_id: 'ch-1',
+          display_name: 'Bob Budgetson',
+          email: 'b@x.dev',
+        },
+        {
+          id: 'm-2',
+          user_id: 'u-2',
+          chapter_id: 'ch-1',
+          display_name: 'Ann Budgetson',
+          email: 'a@x.dev',
+        },
+      ]);
     });
   });
 

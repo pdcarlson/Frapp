@@ -7,7 +7,6 @@ import {
 import { canAccessChannel } from '@repo/validation';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
-import { escapeFilterValue } from '../../infrastructure/supabase/supabase.utils';
 import { RbacService } from './rbac.service';
 import type { BackworkResource } from '../../domain/entities/backwork.entity';
 import type { Event } from '../../domain/entities/event.entity';
@@ -37,11 +36,25 @@ export type SearchSource = keyof SearchResult;
 const SEARCH_LIMIT = 10;
 const MIN_QUERY_LENGTH = 3;
 const SEARCH_TIMEOUT_MS = 500;
+
 /**
- * `ILIKE` needle for the three sources that still scan prose columns.
- * `chat_messages` no longer uses it — see {@link SearchService.searchMessages}.
+ * Every source now matches through a generated `tsvector` behind a GIN index,
+ * so they all share one parse mode and one text-search configuration.
+ *
+ * `websearch`, not `plain` or `to_tsquery`: it accepts what people actually type
+ * into a search box (quoted phrases, `or`, a leading `-` for negation) and never
+ * raises a syntax error on stray punctuation — so a query is never a 500. A
+ * query that reduces to no lexemes at all (a lone stop word) matches nothing,
+ * which is the honest answer rather than an error.
+ *
+ * `config` must stay in step with the `to_tsvector('english', …)` in the
+ * migrations that define these columns: a query parsed under a different
+ * configuration than the one that built the vector silently under-matches.
  */
-const PATTERN = (q: string) => `%${q}%`;
+const TEXT_SEARCH = {
+  type: 'websearch',
+  config: 'english',
+} as const;
 
 function emptyResult(): SearchResult {
   return { backwork: [], events: [], members: [], messages: [] };
@@ -209,93 +222,133 @@ export class SearchService {
     q: string,
     wrap: SourceWrapper,
   ): Promise<SearchResult> {
-    const pattern = PATTERN(q);
+    // Every source takes the raw query: all four parse it as a full-text query
+    // rather than matching it as a substring.
     const [backwork, events, members, messages] = await Promise.all([
-      wrap('backwork', this.searchBackwork(chapterId, pattern), []),
-      wrap('events', this.searchEvents(chapterId, pattern), []),
-      wrap('members', this.searchMembers(chapterId, pattern), []),
-      // The raw query, not the ILIKE pattern: this source parses it as a
-      // full-text query rather than matching it as a substring.
+      wrap('backwork', this.searchBackwork(chapterId, q), []),
+      wrap('events', this.searchEvents(chapterId, q), []),
+      wrap('members', this.searchMembers(chapterId, q), []),
       wrap('messages', this.searchMessages(chapterId, userId, q), []),
     ]);
     return { backwork, events, members, messages };
   }
 
+  /**
+   * Backwork search over the generated `search_vector` (title + course_number),
+   * backed by `idx_backwork_resources_search`
+   * (20260829002000_search_vectors_backwork_events_members.sql).
+   *
+   * It used to be `.or(title.ilike.%q%, course_number.ilike.%q%)` — two
+   * leading-wildcard scans no index can serve. The vector covers exactly those
+   * two columns, so the result set is unchanged apart from the stemming trade
+   * documented in the migration and in `spec/behavior/search.md`.
+   */
   private async searchBackwork(
     chapterId: string,
-    pattern: string,
+    query: string,
   ): Promise<BackworkResource[]> {
-    const safePattern = escapeFilterValue(pattern);
     const { data, error } = (await this.supabase
       .from('backwork_resources')
-      .select('*')
+      // Not `*`: `search_vector` is the STORED tsvector this matches on, and
+      // PostgREST's `*` would ship the whole index payload back per hit.
+      .select(
+        'id, chapter_id, department_id, course_number, professor_id, uploader_id, title, year, semester, assignment_type, assignment_number, document_variant, storage_path, file_hash, is_redacted, tags, created_at',
+      )
       .eq('chapter_id', chapterId)
-      .or(`title.ilike.${safePattern},course_number.ilike.${safePattern}`)
+      .textSearch('search_vector', query, TEXT_SEARCH)
       .limit(SEARCH_LIMIT)) as QueryResult<BackworkResource>;
     throwIfError(error);
     return data ?? [];
   }
 
+  /**
+   * Event search over the generated `search_vector` (name + description),
+   * backed by `idx_events_search` (same migration).
+   *
+   * Measured on the local stack at 20k events in one chapter, selective term:
+   * the `ILIKE` pair this replaces ran a 20,001-row sequential scan in ~35.7 ms;
+   * the tsquery form is a Bitmap Index Scan at ~0.07 ms.
+   */
   private async searchEvents(
     chapterId: string,
-    pattern: string,
+    query: string,
   ): Promise<Event[]> {
-    const safePattern = escapeFilterValue(pattern);
     const { data, error } = (await this.supabase
       .from('events')
-      .select('*')
+      .select(
+        'id, chapter_id, name, description, location, start_time, end_time, point_value, is_mandatory, recurrence_rule, parent_event_id, required_role_ids, notes, created_at',
+      )
       .eq('chapter_id', chapterId)
-      .or(`name.ilike.${safePattern},description.ilike.${safePattern}`)
+      .textSearch('search_vector', query, TEXT_SEARCH)
       .limit(SEARCH_LIMIT)) as QueryResult<Event>;
     throwIfError(error);
     return data ?? [];
   }
 
+  /**
+   * Member search: one query, indexed, with the roster never materialised.
+   *
+   * This used to be two round trips, and the first was unbounded — it selected
+   * EVERY `members` row for the chapter, then passed the whole roster to
+   * `users` as an `.in()` list filtered by `ILIKE '%q%'`. So every keystroke-ish
+   * search read the entire chapter into memory and then substring-scanned the
+   * global `users` table (#1085). At 20 req/min per caller that is O(roster) of
+   * pure waste on a hot path.
+   *
+   * Both halves collapse into a single PostgREST query. `users!inner(…)` makes
+   * the embed an INNER JOIN, which is what allows a filter on an embedded
+   * column to restrict the parent rows; `users.display_name_search` then matches
+   * through `idx_users_display_name_search`. The roster is never fetched, the
+   * match happens in SQL, and `SEARCH_LIMIT` is applied by the database instead
+   * of by the length of whatever the previous query happened to return.
+   *
+   * Chapter scoping is unchanged and still the outer `.eq('chapter_id', …)`:
+   * the join filters WITHIN the chapter's members, so a name that matches in
+   * another chapter cannot surface here. `users` is a global table, and this is
+   * the only thing keeping this source chapter-local — verified against the
+   * local stack with the same query run for two chapters holding same-surnamed
+   * members, each returning only its own.
+   *
+   * `email` is selected because the result shape has always carried it, and it
+   * is NOT part of `display_name_search` — the vector covers `display_name`
+   * alone, deliberately, so this path can never become an address lookup.
+   */
   private async searchMembers(
     chapterId: string,
-    pattern: string,
+    query: string,
   ): Promise<SearchMemberResult[]> {
-    const { data: members, error: memError } = (await this.supabase
+    const { data, error } = (await this.supabase
       .from('members')
-      .select('id, user_id, chapter_id')
-      .eq('chapter_id', chapterId)) as QueryResult<{
+      .select('id, user_id, chapter_id, users!inner(id, display_name, email)')
+      .eq('chapter_id', chapterId)
+      .textSearch('users.display_name_search', query, TEXT_SEARCH)
+      .limit(SEARCH_LIMIT)) as QueryResult<{
       id: string;
       user_id: string;
       chapter_id: string;
+      // PostgREST returns a to-one embed as an object, but older/looser typings
+      // and the mocked client in tests can hand back a single-element array.
+      // Accept both rather than letting the shape decide whether search works.
+      users:
+        | { id: string; display_name: string; email: string }
+        | { id: string; display_name: string; email: string }[]
+        | null;
     }>;
-    throwIfError(memError);
-    if (!members?.length) return [];
+    throwIfError(error);
+    if (!data?.length) return [];
 
-    const userIds = members.map((m) => m.user_id);
-    const { data: users, error: userError } = (await this.supabase
-      .from('users')
-      .select('id, display_name, email')
-      .in('id', userIds)
-      .ilike('display_name', pattern)) as QueryResult<{
-      id: string;
-      display_name: string;
-      email: string;
-    }>;
-    throwIfError(userError);
-    if (!users?.length) return [];
-
-    const userMap = new Map(
-      users.map((u) => [
-        u.id,
-        { display_name: u.display_name, email: u.email },
-      ]),
-    );
-    const memberMap = new Map(members.map((m) => [m.user_id, m]));
-
-    return users.map((u) => {
-      const m = memberMap.get(u.id);
-      return {
-        id: m?.id ?? '',
-        user_id: u.id,
-        chapter_id: chapterId,
-        display_name: userMap.get(u.id)?.display_name ?? '',
-        email: userMap.get(u.id)?.email ?? '',
-      };
+    return data.flatMap((row) => {
+      const user = Array.isArray(row.users) ? row.users[0] : row.users;
+      if (!user) return [];
+      return [
+        {
+          id: row.id,
+          user_id: row.user_id,
+          chapter_id: row.chapter_id,
+          display_name: user.display_name ?? '',
+          email: user.email ?? '',
+        },
+      ];
     });
   }
 
