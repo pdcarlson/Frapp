@@ -286,9 +286,12 @@ jobs:
       # Note that neither is decided by the dependencies/devDependencies split
       # alone -- npm keeps a package the prune would otherwise drop when it is
       # reachable as an optional peer, which the lockfile marks `devOptional`.
-      # `typescript` is in that position today (it satisfies Next's optional
-      # peer), which is exactly why Vercel's production install still has a
-      # type-checker. So treat a failure here as "the tree changed shape",
+      # `typescript` is in that position today, and NOT via Next, which declares
+      # no typescript peer at all: the non-dev packages carrying an optional
+      # typescript peer are `frimousse` (a direct apps/web dependency) and
+      # `@expo/require-utils`. That is a thin thread -- dropping a UI dependency
+      # could strip the type-checker from Vercel's production install too -- so
+      # treat a failure here as "the tree changed shape",
       # investigate which mechanism moved, and fix that -- do not delete the
       # check to get green, and do not assume the answer is a misfiled
       # dependency.
@@ -300,7 +303,7 @@ jobs:
             exit 1
           fi
           if [ ! -d node_modules/typescript ]; then
-            echo "::error::typescript did not survive --omit=dev. Vercel's production build would lose its type-checker too, so this is a real parity finding, not a CI-only problem: check what stopped keeping it reachable (it survives today as an optional peer of next)."
+            echo "::error::typescript did not survive --omit=dev. Vercel's production build would lose its type-checker too, so this is a real parity finding, not a CI-only problem: check what stopped keeping it reachable (today it is an optional peer of frimousse and @expo/require-utils -- NOT of next, which declares no typescript peer)."
             exit 1
           fi
           echo "::notice::Production-shaped tree confirmed (vitest pruned, typescript present)"
@@ -342,6 +345,25 @@ jobs:
           TURBO_VERSION="$(node -p "require('./package-lock.json').packages['node_modules/turbo'].version")"
           echo "Using turbo@${TURBO_VERSION}"
           npx --yes "turbo@${TURBO_VERSION}" run build --filter=web --filter=landing
+
+      # `turbo run --filter` exits 0 when a filtered package simply has no
+      # `build` script -- only an unknown PACKAGE name is an error. So renaming
+      # or rerouting either app's `build` script would leave this required check
+      # green having built one app, silently uncovering the landing half of the
+      # #1372 class that the job exists to cover. Assert the output instead of
+      # trusting the exit code.
+      - name: Assert both apps actually built
+        run: |
+          set -euo pipefail
+          missing=0
+          for app in web landing; do
+            if [ ! -f "apps/$app/.next/BUILD_ID" ]; then
+              echo "::error::apps/$app/.next/BUILD_ID is absent, so $app was not built even though turbo exited 0. Check that apps/$app/package.json still defines a 'build' script and that the turbo filter still matches its package name."
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ]
+          echo "::notice::web and landing both produced a production build"
 
   # ── API unit + E2E tests ────────────────────────────────────────────────
   api-tests:

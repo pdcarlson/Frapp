@@ -278,9 +278,6 @@ A future public documentation site is possible post-launch; treat as a separate 
 For each project, verify:
 
 - **Settings → Git → Production Branch**: anything **except `main`**.
-- **Settings → Git → Ignored Build Step**: whatever it says, each app's `vercel.json` pins
-  `ignoreCommand: "exit 1"` and that **overrides** the dashboard value, so no build is ever
-  skipped.
 
 That reads oddly, so: since #1340 nothing is supposed to auto-promote. Leaving the setting
 pointed at the retired `production` branch is the **safe** state — no push can ever match
@@ -296,6 +293,10 @@ not absent" rather than asserting a particular value.
 > **Operational note (2026-03-19):** The public Vercel REST API exposes `link.productionBranch` as a readable field but does not currently provide a documented/working write field to update it via `PATCH /v9|v10/projects/{idOrName}`.  
 > In practice, changing the production branch must be done in the Vercel dashboard UI. That
 > is precisely why it is asserted rather than enforced.
+
+- **Settings → Git → Ignored Build Step**: whatever it says, each app's `vercel.json` pins
+  `ignoreCommand: "exit 1"` and that **overrides** the dashboard value, so no build is ever
+  skipped.
 
 **Why `ignoreCommand` is set to `exit 1` rather than removed.** Vercel reads exit code 0 as
 "ignore this build" and exit code 1 as "continue", so `exit 1` is an explicit *always build*.

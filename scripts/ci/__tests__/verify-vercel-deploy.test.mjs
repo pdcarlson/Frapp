@@ -228,6 +228,71 @@ describe("verifyVercelDeploy", () => {
     assert.match(result.message, /no later deployment/);
   });
 
+  // The cancel and the superseding deployment are two unordered writes, so the
+  // cancel can be visible before the newer row is. Failing on first sight would
+  // red a normally-superseded push.
+  it("keeps polling a CANCELED build until the superseding deployment appears", async () => {
+    const cancelled = vercelDeployment({ state: "CANCELED" });
+    const { fetchImpl, calls } = makeFetchStub([
+      okJson({ deployments: [cancelled] }),
+      okJson({ deployments: [cancelled, laterDeployment()] }),
+    ]);
+    const { clock } = makeFakeClock();
+
+    const result = await verifyVercelDeploy({ ...defaults, clock, fetchImpl });
+
+    assert.equal(result.status, "neutral");
+    assert.match(result.message, /superseded/);
+    assert.ok(calls.length >= 2, "should have polled again rather than failing on first sight");
+  });
+
+  // `deploy-vercel-production.mjs` hardcodes `gitSource.ref = "main"`, so a
+  // dispatched release of some OTHER commit lands on the same project with
+  // `githubCommitRef: "main"` and a later timestamp. It verifies nothing about
+  // a cancelled preview, so it must not excuse one.
+  it("does not treat a later production deployment as superseding a preview", async () => {
+    const { fetchImpl } = makeFetchStub([
+      okJson({
+        deployments: [
+          vercelDeployment({ state: "CANCELED" }),
+          {
+            ...laterDeployment(),
+            uid: "dpl_production_release",
+            target: "production",
+            meta: { githubCommitSha: "re1ea5ed", githubCommitRef: "main" },
+          },
+        ],
+      }),
+    ]);
+    const { clock } = makeFakeClock();
+
+    const result = await verifyVercelDeploy({ ...defaults, clock, fetchImpl });
+
+    assert.equal(result.status, "failure");
+    assert.match(result.message, /no later deployment/);
+  });
+
+  // A retried build of the same commit is not a superseding push.
+  it("does not treat a retry of the same commit as supersession", async () => {
+    const { fetchImpl } = makeFetchStub([
+      okJson({
+        deployments: [
+          vercelDeployment({ state: "CANCELED", uid: "dpl_first_attempt" }),
+          vercelDeployment({
+            state: "CANCELED",
+            uid: "dpl_retry",
+            createdAt: "2026-04-17T00:00:00Z",
+          }),
+        ],
+      }),
+    ]);
+    const { clock } = makeFakeClock();
+
+    const result = await verifyVercelDeploy({ ...defaults, clock, fetchImpl });
+
+    assert.equal(result.status, "failure");
+  });
+
   it("fails on CANCELED when the only later deployment is on another branch", async () => {
     const { fetchImpl } = makeFetchStub([
       okJson({

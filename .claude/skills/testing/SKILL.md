@@ -36,6 +36,7 @@ description: >
 | Contract check | `npm run check:api-contract` |
 | Migration check | `npm run check:migration-safety` |
 | npm audit gate (high/critical) | `npm run check:npm-audit` (offline: `-- --soft-network`) |
+| Vercel-parity production build | `npm ci --omit=dev && npx turbo run build --filter=web --filter=landing` — **destroys your dev tree**; `npm ci` to restore |
 | 375px responsive floor (Playwright, blocking gate once rolled out) | `npm run test:floor -w apps/web` |
 
 ---
@@ -283,6 +284,32 @@ Before pushing, verify these pass locally (mirrors the CI pipeline):
    baselines pinned to CI's Chromium build drifted with every bump, so the red X
    was usually answered by regenerating the fixture. **Never re-add a
    `--update-snapshots` step to a checklist** — there are no baselines to update.
+
+13. **Vercel-parity production build** → `CI / web-production-build` (**required**).
+   Builds `apps/web` and `apps/landing` on a devDependency-pruned tree, which is
+   the only place anything runs the program `next build` type-checks in
+   production. Two production outages came from this gap (#1331, #1372) and both
+   were invisible to every other check.
+
+   ```sh
+   npm ci --omit=dev
+   npx turbo run build --filter=web --filter=landing
+   npm ci            # restore the dev tree afterwards
+   ```
+
+   Two traps, both of which produced a false pass while this job was being
+   written:
+   - **`apps/web/.env.local`.** `next build` prerenders `/chat`, which
+     constructs a Supabase browser client, so the build needs `NEXT_PUBLIC_*`
+     set. The cloud sandbox's bringup writes that file, so a local run passes
+     using env CI does not have. Move it aside, or export the stand-ins from
+     [`apps/web/playwright.config.ts`](../../../apps/web/playwright.config.ts).
+   - **Stale `packages/*/dist` and the turbo cache.** A previous dev-tree build
+     leaves both behind, so the package builds can be cache hits and never
+     exercise the pruned tree. Add `--force` when you want to be sure.
+
+   Neither is exotic: a local run is only evidence when it fails for the reason
+   CI would.
 
 ---
 

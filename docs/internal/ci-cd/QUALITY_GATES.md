@@ -1,6 +1,6 @@
 # Quality gates
 
-The four gates added in Wave 0 Phase 1, plus the coverage tooling they sit alongside. Branch
+The four gates added in Wave 0 Phase 1, the Vercel-parity build gate added with #1371, plus the coverage tooling they sit alongside. Branch
 protection and the docs/spec gate are documented separately, in
 [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md) and
 [`DOCS_CI.md`](DOCS_CI.md).
@@ -19,6 +19,7 @@ baseline story actually supports.
 | `nestjs-typed` response schema | `npm run lint -w apps/api` | step in `lint-and-typecheck` | **`warn`** | 142 findings and no ESLint baseline mechanism |
 | jscpd duplication | `npm run check:duplication` | `duplicate-detection` | **Advisory** | No clone-level baseline exists; a repo-wide % is too coarse to block on |
 | 375px responsive floor | `npm run test:floor -w apps/web` | `web-responsive-floor` | **Required** | No baseline at all — it reads one integer per route. Nothing to grandfather and nothing to drift |
+| Vercel-parity production build | `npm ci --omit=dev` + `turbo run build --filter=web --filter=landing` | `web-production-build` | **Required** | Nothing to grandfather: the build either succeeds on a pruned tree or it does not, and it was already succeeding when the job landed. Advisory was never on the table — the two failures it catches (#1331, #1372) both reached production precisely because nothing blocked on them |
 
 **The dashboard visual snapshot gate used to sit in this table and is gone.** `web-visual-regression`
 shot each dashboard route at 1440×960 and compared it to one of sixteen committed PNGs. It was

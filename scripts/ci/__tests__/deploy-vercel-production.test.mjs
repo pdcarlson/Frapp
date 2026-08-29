@@ -81,10 +81,13 @@ describe("CANCELED on main: the production path is stricter than the observer", 
     createdAt: "2026-08-28T20:00:00Z",
     meta: { githubCommitSha: "deadbeef", githubCommitRef: "main" },
   };
+  // Same channel as the candidate: supersession is per-channel, so a preview
+  // landing later would NOT excuse a cancelled production build (and vice
+  // versa). Models the next production dispatch overtaking this one.
   const laterDeploymentOnMain = {
     uid: "dpl_later",
     state: "READY",
-    target: null,
+    target: "production",
     createdAt: "2026-08-28T22:00:00Z",
     meta: { githubCommitSha: "feedbeef", githubCommitRef: "main" },
   };
