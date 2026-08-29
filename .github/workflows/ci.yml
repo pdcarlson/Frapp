@@ -233,6 +233,81 @@ jobs:
       - name: Lint with no prebuilt packages
         run: npm run lint
 
+  # ── Production-shaped frontend build (Vercel parity) ────────────────────
+  # Builds apps/web and apps/landing the way Vercel's PRODUCTION deploy does:
+  # a dependency tree with devDependencies pruned. Nothing else in CI does
+  # this, and the gap has taken production down twice -- #1331 (@repo/hooks
+  # compiled its own test files) and #1372 (both apps' tsconfig pulled
+  # tests/, vitest.config.ts and playwright.config.ts into the `next build`
+  # type-check program). Both surfaced first as a failed production deploy.
+  #
+  # Why the existing jobs cannot see this class:
+  #   - `web-tests` / `lint-and-typecheck` run on a full dev install, where
+  #     vitest and friends are on disk.
+  #   - `clean-checkout-typecheck` is a cold install but a *dev* one; it
+  #     guards unbuilt package types, not pruned devDependencies.
+  #   - A green Vercel preview is not evidence either: previews restore a
+  #     build cache (`up to date, audited 1958 packages`) while production
+  #     installs cold (`added 1126 packages, and audited 1144`).
+  #
+  # Deliberately has NO `needs:`, NO turbo cache restore and NO path filter:
+  #   - `needs: packages-build` would put prebuilt package `dist/` on disk
+  #     from a dev tree and hide a package that cannot build under the prune.
+  #   - the `changes.web` filter covers `apps/web/**` and `packages/**` but
+  #     NOT `apps/landing/**`, so gating on it would have skipped this job on
+  #     the landing half of #1372 -- the exact half #1352 failed to record.
+  # Keep this job free of cache and prebuilt-package steps; adding one
+  # silently disarms it.
+  web-production-build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # `npm ci` rather than Vercel's `npm install --prefix=../..`: it is
+      # lockfile-exact and never writes package-lock.json, and it reproduces
+      # the same tree -- measured at 1128 packages / 1146 audited against the
+      # production build log's 1126 / 1144.
+      - name: Install production dependencies only
+        run: npm ci --omit=dev
+
+      # The prune is this job's entire premise, so assert it rather than
+      # assume it. If a devDependency is ever promoted to `dependencies`,
+      # this job would quietly become another dev-tree build and keep
+      # reporting green while covering nothing.
+      - name: Assert the tree is actually pruned
+        run: |
+          set -euo pipefail
+          if [ -d node_modules/vitest ]; then
+            echo "::error::node_modules/vitest exists after --omit=dev, so this is not a production-shaped tree. This job's premise is broken -- fix the dependency classification rather than deleting this check."
+            exit 1
+          fi
+          if [ ! -d node_modules/typescript ]; then
+            echo "::error::typescript is missing, so 'next build' could not type-check at all and a pass here would mean nothing."
+            exit 1
+          fi
+          echo "::notice::Production-shaped tree confirmed (vitest pruned, typescript present)"
+
+      # turbo is a root devDependency and is therefore pruned too, so it is
+      # fetched the way Vercel's build step gets it. The version is read from
+      # package.json rather than pinned here a second time -- one source of
+      # truth, so a Renovate bump cannot leave this workflow building with a
+      # different turbo than the repo uses.
+      - name: Build web and landing as production
+        run: |
+          set -euo pipefail
+          TURBO_VERSION="$(node -p "require('./package.json').devDependencies.turbo.replace(/^[^0-9]*/, '')")"
+          echo "Using turbo@${TURBO_VERSION}"
+          npx --yes "turbo@${TURBO_VERSION}" run build --filter=web --filter=landing
+
   # ── API unit + E2E tests ────────────────────────────────────────────────
   api-tests:
     needs: packages-build

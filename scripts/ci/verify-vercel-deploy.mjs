@@ -1,11 +1,18 @@
 #!/usr/bin/env node
 // Polls the Vercel deployments API until a deployment matching $GITHUB_SHA
 // reaches a terminal state. Fails on `ERROR`. Treats `CANCELED` as neutral
-// ONLY when the same branch already has a successful deployment that
-// turbo-ignore could have skipped against; a cancel with nothing behind it
-// means the code was never built, which is a failure rather than a no-op.
-// Treats "no deployment for this SHA after the grace window" as neutral
-// (landing often has no changes to deploy).
+// ONLY when the same branch already has an earlier successful deployment —
+// the signature of Vercel auto-cancelling a build that a newer push
+// superseded. A cancel with nothing behind it means the code was never built,
+// which is a failure rather than a no-op.
+//
+// "No deployment for this SHA after the grace window" is a FAILURE. It was
+// neutral while each app's `vercel.json` carried `ignoreCommand:
+// "npx turbo-ignore <app>"`, which legitimately suppressed a build when the
+// app tree was unchanged. That was removed (both apps now pin
+// `ignoreCommand: "exit 1"`), so with `git.deploymentEnabled.main = true` and
+// no skip step, every push to `main` must produce a deployment row for both
+// projects. A missing one is a broken Git integration, not a quiet no-op.
 //
 // Env inputs:
 //   VERCEL_API_KEY    — required
@@ -48,19 +55,21 @@ function deploymentState(deployment) {
 }
 
 /**
- * Did this branch already have a successful deployment that turbo-ignore could
- * have compared `candidate` against?
+ * Did this branch already have a successful deployment behind `candidate`?
  *
- * turbo-ignore decides "unaffected, skip the build" by diffing the commit
- * against the branch's last successful deployment. With no such deployment it
- * has no baseline, logs `No previous deployments found for "<app>" on branch
- * "<branch>"`, and builds for real — so a CANCELED with nothing behind it was
- * cancelled for some other reason (superseded push, manual stop, concurrency
- * limit) and verified nothing.
+ * This separates the one benign cancel from every other kind. Vercel's default
+ * `github.autoJobCancelation` cancels an in-flight build when a newer commit
+ * lands on the same branch, so a CANCELED deployment sitting behind an earlier
+ * success on that branch is a superseded push: the branch is still verified, by
+ * the build that overtook it.
  *
- * Scoped to the candidate's branch because that is what turbo-ignore scopes to.
- * When the branch is unknown, fall back to any earlier success rather than
- * failing a deployment we simply cannot classify.
+ * A cancel with NOTHING behind it has no such story — nothing on this branch
+ * ever built — so it is a manual stop, a concurrency limit, or a broken
+ * integration, and the project is unverified.
+ *
+ * Scoped to the candidate's branch because supersession is per-branch. When the
+ * branch is unknown, fall back to any earlier success rather than failing a
+ * deployment we simply cannot classify.
  */
 export function hasPriorSuccessfulDeployment(deployments, candidate) {
   const branch = candidate?.meta?.githubCommitRef;
@@ -112,11 +121,13 @@ export async function verifyVercelDeploy({
       const elapsed = clock.now() - startedAt;
       if (elapsed >= noDeployGraceMs) {
         return {
-          status: "neutral",
+          status: "failure",
           message:
             `No Vercel deployment found for ${sha} on ${label} within ` +
-            `${Math.round(noDeployGraceMs / 1000)}s. ` +
-            `Likely a turbo-ignore skip (no project changes). Treating as neutral.`,
+            `${Math.round(noDeployGraceMs / 1000)}s. Nothing suppresses a build ` +
+            `any more — both apps pin \`ignoreCommand: "exit 1"\` and deploy on ` +
+            `\`main\` — so a missing deployment row means the Git integration did ` +
+            `not fire, not that there was nothing to build.`,
         };
       }
       logger.log?.(`[${label}] Waiting for Vercel to create a deployment for ${sha}...`);
@@ -156,9 +167,9 @@ export async function verifyVercelDeploy({
           status: "failure",
           message:
             `Vercel deployment ${latest.uid ?? latest.url} for ${label} was ${state}, ` +
-            `but ${branchLabel} has no earlier successful deployment for turbo-ignore ` +
-            `to have skipped against. Nothing was built for ${sha}, so this is an ` +
-            `unverified project, not a no-op.`,
+            `but ${branchLabel} has no earlier successful deployment behind it, so ` +
+            `this was not a superseded push. Nothing was built for ${sha}, so this ` +
+            `is an unverified project, not a no-op.`,
         };
       }
 
@@ -166,8 +177,8 @@ export async function verifyVercelDeploy({
         status: "neutral",
         message:
           `Vercel deployment ${latest.uid ?? latest.url} for ${label} was ${state} ` +
-          `(turbo-ignore skip against an earlier successful deployment on ` +
-          `${branchLabel}). Treating as neutral.`,
+          `(superseded by a later push, with an earlier successful deployment on ` +
+          `${branchLabel} behind it). Treating as neutral.`,
       };
     }
 

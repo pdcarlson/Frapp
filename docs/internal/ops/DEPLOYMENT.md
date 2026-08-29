@@ -193,7 +193,7 @@ You import the **same GitHub repo twice** — once per Next.js app (`apps/web`, 
 - **Build:** `turbo run build` (auto-scoped to the current workspace)
 - **Output:** Next.js default (`.next`)
 
-The `vercel.json` in each app adds `git.deploymentEnabled` (auto-deploy only `main`, disable all others with `"**": false`), `turbo-ignore` (skip rebuilds when files haven't changed), and security headers. Production deployments are not covered by this setting at all — `deploy-production.yml` creates them through the API.
+The `vercel.json` in each app adds `git.deploymentEnabled` (auto-deploy only `main`, disable all others with `"**": false`), `ignoreCommand: "exit 1"` (an explicit *always build* — see §4.5), and security headers. Production deployments are not covered by this setting at all — `deploy-production.yml` creates them through the API.
 
 ### 4.2 Environment Variables per Project
 
@@ -240,7 +240,7 @@ In each Vercel project → Settings → Domains:
 
 **To set this up:** In each project, go to Settings → Domains → Add the staging domain → Connect to environment: **Preview** → set the branch filter to `main`.
 
-**Operational note:** The dashboard branch link is correct, but Vercel does not always attach the custom hostname to every Preview deployment on `main` (GitHub and the deployment list may still show the unique `*.vercel.app` URL while `app.staging.frapp.live` lags on an older build). The repo mitigates this: after each push to `main`, `.github/workflows/verify-deployments.yml` runs `scripts/ci/ensure-vercel-staging-alias.mjs`, which calls `POST /v2/deployments/{id}/aliases` so `app.staging.frapp.live` and `staging.frapp.live` alias the deployment for the pushed commit once it is `READY`. When turbo-ignore cancels a build (`CANCELED`) or there is no deployment row for the SHA, the alias step exits successfully without assigning — either way there is no deployment to point the hostname at. (`verify-vercel-deploy.mjs` reads `CANCELED` more strictly, because for it a cancel can mean the project was never built; see "Deploy verification (observer workflow)" below.) Manual recovery: `vercel alias set <deployment-url> app.staging.frapp.live` (same idea as the API).
+**Operational note:** The dashboard branch link is correct, but Vercel does not always attach the custom hostname to every Preview deployment on `main` (GitHub and the deployment list may still show the unique `*.vercel.app` URL while `app.staging.frapp.live` lags on an older build). The repo mitigates this: after each push to `main`, `.github/workflows/verify-deployments.yml` runs `scripts/ci/ensure-vercel-staging-alias.mjs`, which calls `POST /v2/deployments/{id}/aliases` so `app.staging.frapp.live` and `staging.frapp.live` alias the deployment for the pushed commit once it is `READY`. When a build is cancelled (`CANCELED`) or there is no deployment row for the SHA, the alias step exits successfully without assigning — either way there is no deployment to point the hostname at. It is not the gate for that case: `verify-vercel-deploy.mjs` runs first in the same workflow and now FAILS when no deployment exists for the SHA. (`verify-vercel-deploy.mjs` reads `CANCELED` more strictly, because for it a cancel can mean the project was never built; see "Deploy verification (observer workflow)" below.) Manual recovery: `vercel alias set <deployment-url> app.staging.frapp.live` (same idea as the API).
 
 ### 4.4 DNS Records (Squarespace Domains)
 
@@ -278,6 +278,9 @@ A future public documentation site is possible post-launch; treat as a separate 
 For each project, verify:
 
 - **Settings → Git → Production Branch**: anything **except `main`**.
+- **Settings → Git → Ignored Build Step**: whatever it says, each app's `vercel.json` pins
+  `ignoreCommand: "exit 1"` and that **overrides** the dashboard value, so no build is ever
+  skipped.
 
 That reads oddly, so: since #1340 nothing is supposed to auto-promote. Leaving the setting
 pointed at the retired `production` branch is the **safe** state — no push can ever match
@@ -293,6 +296,22 @@ not absent" rather than asserting a particular value.
 > **Operational note (2026-03-19):** The public Vercel REST API exposes `link.productionBranch` as a readable field but does not currently provide a documented/working write field to update it via `PATCH /v9|v10/projects/{idOrName}`.  
 > In practice, changing the production branch must be done in the Vercel dashboard UI. That
 > is precisely why it is asserted rather than enforced.
+
+**Why `ignoreCommand` is set to `exit 1` rather than removed.** Vercel reads exit code 0 as
+"ignore this build" and exit code 1 as "continue", so `exit 1` is an explicit *always build*.
+Both apps previously ran `npx turbo-ignore <app>`, which decides "unaffected, skip" by diffing
+against the branch's last deployment. Because `deploy-vercel-production.mjs` deliberately sets
+`gitSource.ref` to `main` (Vercel wants a branch for the ref and the commit in `sha`), the
+baseline for a production release became the `main` **preview of the same commit** — identical
+by construction — so the release was skipped. That is run 33275321347: migrations and the API
+shipped, both frontends were `CANCELED`, the release job skipped, and nothing recorded what was
+live. Vercel's own build log had also been printing `"turbo-ignore" is deprecated. Use Vercel's
+built-in project skipping instead.`
+
+The key is **set**, not deleted, because `ignoreCommand` overrides the project's dashboard
+Ignored Build Step. Deleting it would hand the decision back to unversioned dashboard state —
+the same fail-open class as Production Branch and Render auto-deploy above, which this repo can
+only assert after the fact. Pinning it in `vercel.json` keeps the decision in git.
 
 ### 4.6 Vercel Branch Wiring Verification
 
@@ -671,7 +690,7 @@ Two consequences worth carrying:
 After a push to `main`, `.github/workflows/verify-deployments.yml` polls Render and Vercel to confirm the **staging** deploy for that SHA reached a healthy terminal state:
 
 - **Render** (`verify-render-api`): fails on `build_failed` / `update_failed` / `pre_deploy_failed` or on "no deploy created for this SHA within 5 minutes" (autoDeploy-wiring red flag). Treats `canceled` / `deactivated` as neutral (superseded).
-- **Vercel web** (`verify-vercel-web`) and **Vercel landing** (`verify-vercel-landing`): fail on `ERROR`. Treat `CANCELED` as neutral **only when the same branch already has an earlier successful deployment** for turbo-ignore to have skipped against; a cancel with no such baseline is a failure, because turbo-ignore only skips by diffing against a branch's last successful deploy — with nothing to diff against, the cancel came from something else (a superseded push, a manual stop, a concurrency limit) and the project was never built. Treat "no deployment for this SHA within 3 minutes" as neutral, because turbo-ignore legitimately skips builds when nothing in the app tree changed.
+- **Vercel web** (`verify-vercel-web`) and **Vercel landing** (`verify-vercel-landing`): fail on `ERROR`. Treat `CANCELED` as neutral **only when the same branch already has an earlier successful deployment** behind it — the signature of Vercel auto-cancelling a build that a newer push superseded, where the branch is still verified by the build that overtook it. A cancel with no such baseline is a failure: nothing on that branch ever built, so it was a manual stop, a concurrency limit, or a broken integration. "No deployment for this SHA within 3 minutes" is also a **failure**. It was neutral while `ignoreCommand` ran `turbo-ignore`, which legitimately suppressed a build for an unchanged app tree; both apps now pin `ignoreCommand: "exit 1"`, so with `git.deploymentEnabled.main = true` every push to `main` must produce a deployment row for both projects and a missing one means the Git integration did not fire.
 
 The workflow is currently advisory (not a required check). When a failure shows up in the Actions UI, the failure message will name the commit SHA and last observed state; open the linked Render / Vercel dashboard to read full deploy logs.
 

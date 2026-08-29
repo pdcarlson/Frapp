@@ -93,7 +93,7 @@ describe("CANCELED on main: the observer's neutral verdict does not survive the 
     });
 
     assert.equal(result.status, "neutral");
-    assert.match(result.message, /turbo-ignore skip/);
+    assert.match(result.message, /superseded/);
   });
 
   it("the production path reports FAILURE for the same deployment", async () => {

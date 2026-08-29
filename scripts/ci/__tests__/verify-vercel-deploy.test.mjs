@@ -73,8 +73,8 @@ function vercelDeployment({
   };
 }
 
-// A successful earlier deployment on `branch` — the baseline turbo-ignore
-// diffs against when it decides a project is unaffected.
+// A successful earlier deployment on `branch` — what makes a later CANCELED
+// readable as a superseded push rather than an unverified project.
 function priorSuccess({ branch = "main", createdAt = "2026-04-15T00:00:00Z" } = {}) {
   return vercelDeployment({
     sha: "0ldc0mm1t",
@@ -139,7 +139,7 @@ describe("verifyVercelDeploy", () => {
     assert.match(result.message, /ERROR/);
   });
 
-  it("returns neutral on CANCELED when the branch has an earlier successful deployment", async () => {
+  it("returns neutral on CANCELED superseded by a later push on the same branch", async () => {
     const { fetchImpl } = makeFetchStub([
       okJson({
         deployments: [vercelDeployment({ state: "CANCELED" }), priorSuccess()],
@@ -150,14 +150,14 @@ describe("verifyVercelDeploy", () => {
     const result = await verifyVercelDeploy({ ...defaults, clock, fetchImpl });
 
     assert.equal(result.status, "neutral");
-    assert.match(result.message, /turbo-ignore/);
+    assert.match(result.message, /superseded/);
   });
 
   // ── CANCELED without a baseline ───────────────────────────────────────────
   // The gap this closes: a CANCELED deployment was an automatic pass, so a
-  // project that never built could report green. turbo-ignore can only skip
-  // against an earlier successful deployment on the same branch; with no such
-  // deployment the cancel came from something else (superseded push, manual
+  // project that never built could report green. Vercel only auto-cancels
+  // against a newer push on the same branch; with no earlier successful
+  // deployment the cancel came from something else (manual
   // stop, concurrency limit) and nothing was verified.
 
   it("fails on CANCELED when no prior deployment exists at all", async () => {
@@ -244,7 +244,10 @@ describe("verifyVercelDeploy", () => {
     assert.equal(result.status, "neutral");
   });
 
-  it("returns neutral when no deployment for the SHA exists within the grace window", async () => {
+  // Was neutral while `ignoreCommand: "npx turbo-ignore <app>"` could legitimately
+  // suppress a build. Both apps now pin `ignoreCommand: "exit 1"`, so nothing
+  // suppresses one and a missing deployment row is a broken Git integration.
+  it("fails when no deployment for the SHA exists within the grace window", async () => {
     const otherSha = "feedbeef1234";
     const { fetchImpl } = makeFetchStub([
       okJson({ deployments: [vercelDeployment({ sha: otherSha, state: "READY" })] }),
@@ -253,8 +256,8 @@ describe("verifyVercelDeploy", () => {
 
     const result = await verifyVercelDeploy({ ...defaults, clock, fetchImpl });
 
-    assert.equal(result.status, "neutral");
-    assert.match(result.message, /turbo-ignore|No Vercel deployment/);
+    assert.equal(result.status, "failure");
+    assert.match(result.message, /No Vercel deployment/);
   });
 
   it("succeeds when a deployment for the SHA appears after some polling", async () => {
@@ -273,10 +276,12 @@ describe("verifyVercelDeploy", () => {
 
   // Replay of the real frapp-web page around PR #1330's preview, in the shape
   // the v6 endpoint actually returns (`created` as epoch ms, not `createdAt`).
-  // That preview was a genuine turbo-ignore skip on a branch with a real
-  // deployment history, so it must stay neutral — the stricter CANCELED rule
-  // must not turn every legitimate skip red.
-  it("stays neutral for a real turbo-ignore skip on a branch with history", async () => {
+  // Kept as real captured data: the fixture predates the removal of
+  // `turbo-ignore`, so that cancel was a skip rather than a supersession, but
+  // the rule under test does not depend on which — a CANCELED deployment with
+  // an earlier success behind it on the same branch stays neutral either way.
+  // The stricter CANCELED rule must not turn a whole page of real history red.
+  it("stays neutral for a CANCELED deployment on a branch with real history", async () => {
     const canceledPreview = {
       uid: "dpl_DMZsRAr8kvDuzAtfsAgFzJ3xa2Wg",
       url: "frapp-5odpw2a0f.vercel.app",

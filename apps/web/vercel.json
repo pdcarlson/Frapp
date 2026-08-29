@@ -7,7 +7,7 @@
       "**": false
     }
   },
-  "ignoreCommand": "npx turbo-ignore web",
+  "ignoreCommand": "exit 1",
   "headers": [
     {
       "source": "/(.*)",

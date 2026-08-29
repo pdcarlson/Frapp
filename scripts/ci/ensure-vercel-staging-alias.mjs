@@ -11,8 +11,13 @@
 //   GITHUB_SHA           — required
 //   VERCEL_STAGING_ALIAS — required (hostname only, e.g. app.staging.frapp.live)
 //
-// Exits 0 on success or skip (no deployment for SHA, CANCELED / turbo-ignore, or
-// other verifier-neutral terminal states). Exits 1 on failure.
+// Exits 0 on success or skip (no deployment for SHA, CANCELED, or other
+// verifier-neutral terminal states). Exits 1 on failure.
+//
+// Skipping stays non-fatal here because this script only points a hostname at a
+// build; it is not the gate. `verify-vercel-deploy.mjs` runs first in the same
+// workflow and FAILS when no deployment exists for the SHA, which is the check
+// that a missing build has to trip.
 
 import { fetchVercelDeployments } from "./lib/providers.mjs";
 import { VERCEL_NEUTRAL_TERMINAL_STATES } from "./verify-vercel-deploy.mjs";
@@ -54,7 +59,9 @@ export async function ensureVercelStagingAlias({
   if (matches.length === 0) {
     return {
       status: "skipped",
-      message: `No deployment for commit ${sha}; skipping staging alias (likely turbo-ignore).`,
+      message:
+        `No deployment for commit ${sha}; nothing to alias, skipping. ` +
+        `verify-vercel-deploy reports this case as a failure.`,
     };
   }
 
