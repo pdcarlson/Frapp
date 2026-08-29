@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { View } from "react-native";
+import * as Sentry from "@sentry/react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
@@ -19,10 +20,33 @@ import { AnalyticsProvider } from "@/lib/analytics-provider";
 import { AuthSessionProvider } from "@/lib/auth-session";
 import { KeyboardProviderGuarded } from "@/lib/keyboard";
 import { FrappThemeProvider, useFrappTheme } from "@/lib/theme";
+import { buildMobileSentryOptions, mobileSentryDsn } from "@/lib/sentry/options";
 
 // Hold the splash until Figtree is registered, so no screen ever paints in the
 // system font and then re-renders. hideAsync runs on error too — a failed font
 // load falls back to the system face rather than stranding the splash.
+/**
+ * Error reporting for the mobile app (issue #1299), reporting to the
+ * `frapp-mobile` Sentry project.
+ *
+ * Initialized at module scope so the SDK is installed before expo-router
+ * renders anything — an exception thrown while the first screen mounts is still
+ * captured.
+ *
+ * **No DSN means no initialization at all**, matching `apps/web`'s
+ * `instrumentation-client.ts` and the API's `main.ts`. That is what keeps
+ * `expo start`, Expo Go, CI and vitest reporting nowhere, and it is why no
+ * placeholder DSN exists anywhere in the repo: a missing deployment setting is
+ * reported, never papered over (`spec/ui/mobile/patterns.md`).
+ *
+ * `EXPO_PUBLIC_SENTRY_DSN` is set per build profile in the EAS dashboard —
+ * there is no Infisical→EAS sync, so it does not arrive by itself.
+ */
+const sentryDsn = mobileSentryDsn();
+if (sentryDsn) {
+  Sentry.init(buildMobileSentryOptions(sentryDsn));
+}
+
 void SplashScreen.preventAutoHideAsync();
 
 function RootLayoutContent() {
@@ -51,7 +75,7 @@ function RootLayoutContent() {
   );
 }
 
-export default function RootLayout() {
+function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
     Figtree_400Regular,
     Figtree_600SemiBold,
@@ -96,3 +120,12 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
+
+/**
+ * `Sentry.wrap` adds the touch-breadcrumb boundary and the app-start profiler.
+ *
+ * Applied only when Sentry was actually initialized, so a build with no DSN
+ * mounts the plain tree — "initializes Sentry not at all" covers the component
+ * wrapper too, not just the `init` call.
+ */
+export default sentryDsn ? Sentry.wrap(RootLayout) : RootLayout;
