@@ -233,6 +233,138 @@ jobs:
       - name: Lint with no prebuilt packages
         run: npm run lint
 
+  # ── Production-shaped frontend build (Vercel parity) ────────────────────
+  # Builds apps/web and apps/landing the way Vercel's PRODUCTION deploy does:
+  # a dependency tree with devDependencies pruned. Nothing else in CI does
+  # this, and the gap has taken production down twice -- #1331 (@repo/hooks
+  # compiled its own test files) and #1372 (both apps' tsconfig pulled
+  # tests/, vitest.config.ts and playwright.config.ts into the `next build`
+  # type-check program). Both surfaced first as a failed production deploy.
+  #
+  # Why the existing jobs cannot see this class:
+  #   - `web-tests` / `lint-and-typecheck` run on a full dev install, where
+  #     vitest and friends are on disk.
+  #   - `clean-checkout-typecheck` is a cold install but a *dev* one; it
+  #     guards unbuilt package types, not pruned devDependencies.
+  #   - A green Vercel preview is not evidence either: previews restore a
+  #     build cache (`up to date, audited 1958 packages`) while production
+  #     installs cold (`added 1126 packages, and audited 1144`).
+  #
+  # Deliberately has NO `needs:`, NO turbo cache restore and NO path filter:
+  #   - `needs: packages-build` would put prebuilt package `dist/` on disk
+  #     from a dev tree and hide a package that cannot build under the prune.
+  #   - the `changes.web` filter covers `apps/web/**` and `packages/**` but
+  #     NOT `apps/landing/**`, so gating on it would have skipped this job on
+  #     the landing half of #1372 -- the exact half #1352 failed to record.
+  # Keep this job free of cache and prebuilt-package steps; adding one
+  # silently disarms it.
+  web-production-build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # `npm ci` rather than Vercel's `npm install --prefix=../..`: it is
+      # lockfile-exact and never writes package-lock.json, and it reproduces
+      # the same tree -- measured at 1128 packages / 1146 audited against the
+      # production build log's 1126 / 1144.
+      - name: Install production dependencies only
+        run: npm ci --omit=dev
+
+      # The prune is this job's entire premise, so assert it rather than assume
+      # it. Two probes, one per direction: something dev-only must be gone, and
+      # the type-checker must survive.
+      #
+      # Note that neither is decided by the dependencies/devDependencies split
+      # alone -- npm keeps a package the prune would otherwise drop when it is
+      # reachable as an optional peer, which the lockfile marks `devOptional`.
+      # `typescript` is in that position today, and NOT via Next, which declares
+      # no typescript peer at all: the non-dev packages carrying an optional
+      # typescript peer are `frimousse` (a direct apps/web dependency) and
+      # `@expo/require-utils`. That is a thin thread -- dropping a UI dependency
+      # could strip the type-checker from Vercel's production install too -- so
+      # treat a failure here as "the tree changed shape",
+      # investigate which mechanism moved, and fix that -- do not delete the
+      # check to get green, and do not assume the answer is a misfiled
+      # dependency.
+      - name: Assert the tree is actually pruned
+        run: |
+          set -euo pipefail
+          if [ -d node_modules/vitest ]; then
+            echo "::error::node_modules/vitest survived --omit=dev, so this is not a production-shaped tree and this job is silently covering nothing. Check whether vitest became a production dependency or gained an optional-peer path (lockfile 'devOptional')."
+            exit 1
+          fi
+          if [ ! -d node_modules/typescript ]; then
+            echo "::error::typescript did not survive --omit=dev. Vercel's production build would lose its type-checker too, so this is a real parity finding, not a CI-only problem: check what stopped keeping it reachable (today it is an optional peer of frimousse and @expo/require-utils -- NOT of next, which declares no typescript peer)."
+            exit 1
+          fi
+          echo "::notice::Production-shaped tree confirmed (vitest pruned, typescript present)"
+
+      # turbo is a root devDependency and is therefore pruned too, so it is
+      # fetched the way Vercel's build step gets it. The version is read rather
+      # than pinned here a second time -- one source of truth, so a bump cannot
+      # leave this workflow building with a different turbo than the repo uses.
+      #
+      # Read from package-lock.json, not package.json: the lock records what
+      # `npm ci` actually installs everywhere else, while the manifest records a
+      # RANGE. A lockfile-maintenance bump inside `^2.10.11` would otherwise
+      # leave every other job on the new turbo and this one on 2.10.11 -- the
+      # exact drift this is meant to prevent. It also does not care whether
+      # turbo sits in `dependencies` or `devDependencies`, so moving it (a
+      # plausible edit, since this job prunes devDependencies) cannot break the
+      # required check for every open PR.
+      - name: Build web and landing as production
+        # `next build` prerenders, and `/chat` constructs a Supabase browser
+        # client while doing so, so the build needs NEXT_PUBLIC_* present or it
+        # dies with "@supabase/ssr: Your project's URL and API key are required".
+        # These are the stand-ins from `apps/web/playwright.config.ts` — a valid
+        # HTTP URL and a well-formed JWT-ish string, enough for the client to be
+        # constructible — kept identical so the repo has one placeholder shape.
+        #
+        # Deliberately NOT the real values, even though Vercel's production
+        # build has them via the Infisical sync: `NEXT_PUBLIC_*` is inlined at
+        # build time, so real values would bake a live URL and key into a CI
+        # artifact that is then thrown away. This job exists to check the
+        # dependency shape of the build, not its env — the env only has to be
+        # present enough to let the program run. Do not "fix" this by wiring in
+        # secrets.
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321"
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiJ9.playwright-stand-in.signature"
+          NEXT_PUBLIC_API_URL: "http://127.0.0.1:3001"
+        run: |
+          set -euo pipefail
+          TURBO_VERSION="$(node -p "require('./package-lock.json').packages['node_modules/turbo'].version")"
+          echo "Using turbo@${TURBO_VERSION}"
+          npx --yes "turbo@${TURBO_VERSION}" run build --filter=web --filter=landing
+
+      # `turbo run --filter` exits 0 when a filtered package simply has no
+      # `build` script -- only an unknown PACKAGE name is an error. So renaming
+      # or rerouting either app's `build` script would leave this required check
+      # green having built one app, silently uncovering the landing half of the
+      # #1372 class that the job exists to cover. Assert the output instead of
+      # trusting the exit code.
+      - name: Assert both apps actually built
+        run: |
+          set -euo pipefail
+          missing=0
+          for app in web landing; do
+            if [ ! -f "apps/$app/.next/BUILD_ID" ]; then
+              echo "::error::apps/$app/.next/BUILD_ID is absent, so $app was not built even though turbo exited 0. Check that apps/$app/package.json still defines a 'build' script and that the turbo filter still matches its package name."
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ]
+          echo "::notice::web and landing both produced a production build"
+
   # ── API unit + E2E tests ────────────────────────────────────────────────
   api-tests:
     needs: packages-build

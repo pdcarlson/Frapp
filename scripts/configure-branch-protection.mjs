@@ -149,6 +149,23 @@ const CI_CHECKS = [
   // ROLLOUT: same caveat as secret-scan — required only once the dependency-cruiser
   // job exists on the target branch and has run green.
   "dependency-cruiser",
+  // Vercel-parity production build (issue #1371): builds apps/web and apps/landing
+  // on a `npm ci --omit=dev` tree, which is the only place in CI that executes the
+  // program `next build` actually type-checks in production. Two production outages
+  // came from this gap — #1331 and #1372 — and both were invisible to every other
+  // check: the dev-tree jobs have the pruned packages on disk, and a Vercel preview
+  // restores a build cache rather than installing cold, so a green preview is not
+  // evidence about a production build.
+  //
+  // Required rather than advisory, and unfiltered by path: the `changes.web` filter
+  // does not cover `apps/landing/**`, which is exactly the half of #1372 that went
+  // unrecorded until the production deploy failed on it.
+  //
+  // ROLLOUT: same caveat as secret-scan — required only once the
+  // web-production-build job exists on the target branch and has run green. Run
+  // `npm run configure:branch-protection` AFTER the PR adding the job merges, not
+  // before, or every open PR blocks on a check that does not exist yet.
+  "web-production-build",
   // NOT here on purpose: `duplicate-detection` (jscpd). jscpd has no clone-level
   // baseline, so the only lever is a repo-wide duplication percentage — too coarse
   // to block a merge on, since it cannot tell one bad copy-paste from ordinary

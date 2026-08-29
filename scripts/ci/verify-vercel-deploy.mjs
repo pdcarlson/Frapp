@@ -1,11 +1,19 @@
 #!/usr/bin/env node
 // Polls the Vercel deployments API until a deployment matching $GITHUB_SHA
 // reaches a terminal state. Fails on `ERROR`. Treats `CANCELED` as neutral
-// ONLY when the same branch already has a successful deployment that
-// turbo-ignore could have skipped against; a cancel with nothing behind it
-// means the code was never built, which is a failure rather than a no-op.
-// Treats "no deployment for this SHA after the grace window" as neutral
-// (landing often has no changes to deploy).
+// ONLY when a LATER deployment in the same channel on the same branch overtook
+// it — the signature of Vercel auto-cancelling a build that a newer push
+// superseded, where that newer build carries the verification. A cancel that
+// nothing overtook means the code was never built, which is a failure rather
+// than a no-op.
+//
+// "No deployment for this SHA after the grace window" is a FAILURE. It was
+// neutral while each app's `vercel.json` carried `ignoreCommand:
+// "npx turbo-ignore <app>"`, which legitimately suppressed a build when the
+// app tree was unchanged. That was removed (both apps now pin
+// `ignoreCommand: "exit 1"`), so with `git.deploymentEnabled.main = true` and
+// no skip step, every push to `main` must produce a deployment row for both
+// projects. A missing one is a broken Git integration, not a quiet no-op.
 //
 // Env inputs:
 //   VERCEL_API_KEY    — required
@@ -31,7 +39,14 @@ export const VERCEL_NEUTRAL_TERMINAL_STATES = new Set(["CANCELED"]);
 // ── Timing ──────────────────────────────────────────────────────────────────
 export const VERCEL_NO_DEPLOY_GRACE_MS = 3 * 60 * 1000;
 export const VERCEL_POLL_INTERVAL_MS = 20 * 1000;
-export const VERCEL_OVERALL_TIMEOUT_MS = 15 * 60 * 1000;
+// 30 minutes, matching the production deploy path. Was 15 while `turbo-ignore`
+// skipped at least one app on most pushes; pinning `ignoreCommand: "exit 1"`
+// means every push to `main` now queues a web build AND a landing build, and
+// this account is on a Hobby plan with limited build concurrency — so a burst
+// of merges can leave a real build QUEUED well past the old budget. Timing out
+// is a failure here, and it also ends the job before the staging-alias step, so
+// an over-tight budget would leave the alias pointing at the previous build.
+export const VERCEL_OVERALL_TIMEOUT_MS = 30 * 60 * 1000;
 
 // ── Deployment helpers ──────────────────────────────────────────────────────
 
@@ -48,29 +63,49 @@ function deploymentState(deployment) {
 }
 
 /**
- * Did this branch already have a successful deployment that turbo-ignore could
- * have compared `candidate` against?
+ * Was `candidate` overtaken by a later deployment on the same branch?
  *
- * turbo-ignore decides "unaffected, skip the build" by diffing the commit
- * against the branch's last successful deployment. With no such deployment it
- * has no baseline, logs `No previous deployments found for "<app>" on branch
- * "<branch>"`, and builds for real — so a CANCELED with nothing behind it was
- * cancelled for some other reason (superseded push, manual stop, concurrency
- * limit) and verified nothing.
+ * This separates the one benign cancel from every other kind. Vercel's default
+ * `github.autoJobCancelation` cancels an in-flight build when a newer commit
+ * lands on the same branch, so a CANCELED deployment with a LATER deployment
+ * behind it on that branch is a superseded push: the branch is still verified,
+ * by the build that overtook it, and that build has its own verify run.
  *
- * Scoped to the candidate's branch because that is what turbo-ignore scopes to.
- * When the branch is unknown, fall back to any earlier success rather than
- * failing a deployment we simply cannot classify.
+ * The test looks FORWARD, deliberately. It used to look backward — "does an
+ * earlier success exist on this branch" — which was the right question while
+ * `ignoreCommand` ran `turbo-ignore`, because an earlier success was the
+ * baseline a skip diffed against. It is the wrong question for supersession:
+ * on `main` an earlier success always exists, so every cancel would read as
+ * benign no matter what caused it. A manual stop or a Hobby-plan build
+ * concurrency limit would have gone green with the commit never deployed.
+ *
+ * No state filter on the later deployment: it may still be BUILDING, and
+ * requiring it to be READY would fail the superseded one for losing a race it
+ * is supposed to lose.
+ *
+ * Scoped to the candidate's branch because supersession is per-branch. When the
+ * branch is unknown, fall back to any later deployment rather than failing one
+ * we simply cannot classify.
  */
-export function hasPriorSuccessfulDeployment(deployments, candidate) {
+export function wasSupersededByLaterDeployment(deployments, candidate) {
   const branch = candidate?.meta?.githubCommitRef;
   const candidateAt = deploymentCreatedAt(candidate);
+  const candidateSha = candidate?.meta?.githubCommitSha;
+  const candidateTarget = candidate?.target ?? null;
 
   return deployments.some((deployment) => {
     if (deployment === candidate) return false;
-    if (!VERCEL_TERMINAL_SUCCESS_STATES.has(deploymentState(deployment))) return false;
     if (branch && deployment?.meta?.githubCommitRef !== branch) return false;
-    return deploymentCreatedAt(deployment) < candidateAt;
+    // Same channel only. `deploy-vercel-production.mjs` creates production
+    // deployments with `gitSource.ref = "main"`, so a release of some OTHER
+    // commit lands on this project with `githubCommitRef: "main"` and a later
+    // timestamp. It verifies nothing about the preview that was cancelled, and
+    // without this filter a dispatched production deploy would silently excuse
+    // an unrelated cancelled staging build.
+    if ((deployment?.target ?? null) !== candidateTarget) return false;
+    // A retry of the SAME commit is not a superseding push.
+    if (candidateSha && deployment?.meta?.githubCommitSha === candidateSha) return false;
+    return deploymentCreatedAt(deployment) > candidateAt;
   });
 }
 
@@ -112,11 +147,14 @@ export async function verifyVercelDeploy({
       const elapsed = clock.now() - startedAt;
       if (elapsed >= noDeployGraceMs) {
         return {
-          status: "neutral",
+          status: "failure",
           message:
             `No Vercel deployment found for ${sha} on ${label} within ` +
-            `${Math.round(noDeployGraceMs / 1000)}s. ` +
-            `Likely a turbo-ignore skip (no project changes). Treating as neutral.`,
+            `${Math.round(noDeployGraceMs / 1000)}s. No build should be skippable — ` +
+            `each app's vercel.json is expected to pin \`ignoreCommand: "exit 1"\` and ` +
+            `\`git.deploymentEnabled.main\` is true — so a missing deployment row means ` +
+            `either that Ignored Build Step was changed or the Git integration did not ` +
+            `fire. Check the vercel.json first; it is the cheaper of the two.`,
         };
       }
       logger.log?.(`[${label}] Waiting for Vercel to create a deployment for ${sha}...`);
@@ -151,23 +189,42 @@ export async function verifyVercelDeploy({
       const branch = latest?.meta?.githubCommitRef;
       const branchLabel = branch ? `branch ${branch}` : "this branch";
 
-      if (!hasPriorSuccessfulDeployment(deployments, latest)) {
+      if (wasSupersededByLaterDeployment(deployments, latest)) {
         return {
-          status: "failure",
+          status: "neutral",
           message:
             `Vercel deployment ${latest.uid ?? latest.url} for ${label} was ${state}, ` +
-            `but ${branchLabel} has no earlier successful deployment for turbo-ignore ` +
-            `to have skipped against. Nothing was built for ${sha}, so this is an ` +
-            `unverified project, not a no-op.`,
+            `superseded by a later deployment on ${branchLabel} which carries the ` +
+            `verification. Treating as neutral.`,
         };
       }
 
+      // Not superseded *yet*. Keep polling rather than failing on first sight:
+      // the cancel and the superseding deployment are two separate writes and
+      // they are not ordered. Two merges seconds apart cancel the first build
+      // the moment the second push arrives, and that cancel can appear in the
+      // list before the newer deployment's row does — so failing here on the
+      // first observation would red a push that was superseded normally.
+      const elapsed = clock.now() - startedAt;
+      if (elapsed < noDeployGraceMs) {
+        logger.log?.(
+          `[${label}] ${latest.uid ?? latest.url} is ${state}; waiting to see whether a ` +
+            `later deployment overtook it...`,
+        );
+        await clock.sleep(pollIntervalMs);
+        continue;
+      }
+
       return {
-        status: "neutral",
+        status: "failure",
         message:
-          `Vercel deployment ${latest.uid ?? latest.url} for ${label} was ${state} ` +
-          `(turbo-ignore skip against an earlier successful deployment on ` +
-          `${branchLabel}). Treating as neutral.`,
+          `Vercel deployment ${latest.uid ?? latest.url} for ${label} was ${state}, ` +
+          `and after ${Math.round(noDeployGraceMs / 1000)}s no later deployment on ` +
+          `${branchLabel} had overtaken it, so this was not a superseded push. ` +
+          `Nothing was built for ${sha} — an unverified project, not a no-op. ` +
+          `Likely a manual stop, a build concurrency limit, or an Ignored Build Step ` +
+          `that skipped it (each app's vercel.json is expected to pin ` +
+          `\`ignoreCommand: "exit 1"\` — check it before debugging further).`,
       };
     }
 

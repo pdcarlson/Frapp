@@ -180,6 +180,7 @@ CI runs as domain-specific parallel jobs on every PR to `main`. Each job is an i
 | `changes`            | Path filter deciding whether `web-tests` and `web-responsive-floor` run; asserts nothing itself      | Yes |
 | `web-responsive-floor` | Every dashboard route holds the 375px floor — no horizontal scroll (`apps/web/tests/visual/responsive-floor.spec.ts`, #1152) | Yes |
 | `dependency-cruiser` | Architectural boundaries — API layer direction, package/app separation, cycles — against a committed baseline | Yes |
+| `web-production-build` | Vercel parity — builds web and landing with devDependencies pruned, the shape a production deploy uses | Yes |
 | `duplicate-detection` | jscpd against a repo-wide duplication threshold                                                     | **No — advisory** |
 
 `web-tests` and `web-responsive-floor` are **path-gated and still required**, which is only a contradiction if you assume a skip blocks. It does not: GitHub reports a job skipped by a *job-level* conditional as *Success*, and `success` / `skipped` / `neutral` all satisfy a required check. `changes` is required for a different and less obvious reason — a required check whose `needs:` parent fails is skipped and *may not block merging*, so a non-required parent would leave both satisfiable without ever running. See the ADR-15 amendment in [`../architecture/README.md`](../architecture/README.md) and the comments in [`scripts/configure-branch-protection.mjs`](../../scripts/configure-branch-protection.mjs).
@@ -264,7 +265,12 @@ secrets.
   environment variables. Promoting a `main` preview instead would ship a bundle with the
   staging API URL and staging Supabase keys inlined at build time.
 - Feature/PR branches do not auto-deploy on Vercel.
-- Each app uses `turbo-ignore` to skip rebuilds when its files haven't changed.
+- Neither app skips builds. Both pin `ignoreCommand: "exit 1"` in `vercel.json` — an
+  explicit *always build*, since Vercel reads exit 0 as "ignore this build" and exit 1 as
+  "continue". This replaced `npx turbo-ignore <app>`, which skipped a production release
+  by diffing it against the `main` preview of the same commit (run 33275321347). The key is
+  set rather than removed: `ignoreCommand` overrides the project's dashboard Ignored Build
+  Step, so deleting it would hand the decision back to unversioned dashboard state.
 - Branch filtering is controlled with `git.deploymentEnabled` in each app's `vercel.json` (`main` enabled, all others disabled). Production deployments bypass branch triggers entirely: `deploy-production.yml` creates them through the Vercel API with `target: production`.
 - Vercel detects the monorepo structure and builds the appropriate app via `vercel.json` build commands.
 

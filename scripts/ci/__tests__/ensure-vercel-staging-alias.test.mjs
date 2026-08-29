@@ -144,7 +144,7 @@ describe("ensureVercelStagingAlias", () => {
     assert.match(result.message, /BUILDING/);
   });
 
-  it("skips when latest deployment for SHA is CANCELED (turbo-ignore)", async () => {
+  it("skips when latest deployment for SHA is CANCELED", async () => {
     const fetchImpl = async (url) => {
       if (url.includes("/v6/deployments")) {
         return okJson({

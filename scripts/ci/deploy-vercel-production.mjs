@@ -24,22 +24,26 @@
 // second call to `verify-vercel-deploy.mjs`.
 //
 // That verifier calls `CANCELED` neutral when the deployment's branch already
-// has an earlier successful deployment — the signature of a turbo-ignore skip.
-// It was safe only because production deployments lived on the `production`
-// branch, which had no earlier successes: Vercel's own build log for the last
-// promotion reads `No previous deployments found for "web" on branch
-// "production" -> Proceeding with deployment`.
+// has an earlier successful deployment. It was safe only because production
+// deployments lived on the `production` branch, which had no earlier successes:
+// Vercel's own build log for the last promotion reads `No previous deployments
+// found for "web" on branch "production" -> Proceeding with deployment`.
 //
 // Deploying from `main` inverts that. `main` has many READY deployments, so the
 // "prior success" test is ALWAYS true, and every cancelled production build
-// would read as a neutral no-op — green, forever, having shipped nothing. Worse,
-// turbo-ignore's baseline becomes the main PREVIEW of the same commit, so it can
-// conclude "unaffected" about a build that differs from the last PRODUCTION
-// deploy in every way that matters.
+// would read as a neutral no-op — green, forever, having shipped nothing.
 //
-// So on this path a cancel is a failure. If turbo-ignore skipped a genuinely
-// unchanged app, the fix is to say so out loud and let a human decide, not to
-// infer it from a heuristic that no longer holds.
+// This is not hypothetical. It is exactly what run 33275321347 did: each app's
+// `vercel.json` carried `ignoreCommand: "npx turbo-ignore <app>"`, and because
+// `gitSource.ref` is `main` (see the header on the create call below),
+// turbo-ignore diffed the release against the main PREVIEW of the *same commit*,
+// concluded "unaffected", and skipped both builds. Migrations and the API had
+// already shipped. Both apps now pin `ignoreCommand: "exit 1"`, so a build can
+// no longer be skipped — but the rule below is what makes that failure loud
+// instead of green, and it stays whatever the ignore step is set to.
+//
+// So on this path a cancel is a failure, always. A skipped release is a fact to
+// report, not a state to infer a no-op from.
 //
 // Semantics: the pure functions below. Unit tests:
 // `scripts/ci/__tests__/deploy-vercel-production.test.mjs`.
@@ -185,9 +189,10 @@ export async function pollVercelDeployment({
         status: "failure",
         message: cancelled
           ? `Vercel deployment ${deploymentId} for ${label} was ${state}. On the production ` +
-            `path a cancel is never a no-op: most likely turbo-ignore compared this commit ` +
-            `against the main PREVIEW of the same commit and skipped the build, so nothing ` +
-            `was shipped to production.`
+            `path a cancel is never a no-op — nothing was shipped to production. Check the ` +
+            `project's Ignored Build Step: \`${label}\`'s vercel.json pins ` +
+            `\`ignoreCommand: "exit 1"\` so a build cannot be skipped, and a cancel here ` +
+            `means either that was overridden or the build was stopped externally.`
           : `Vercel deployment ${deploymentId} for ${label} ended in ${state}.`,
       };
     }
