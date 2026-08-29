@@ -22,9 +22,6 @@ import { KeyboardProviderGuarded } from "@/lib/keyboard";
 import { FrappThemeProvider, useFrappTheme } from "@/lib/theme";
 import { buildMobileSentryOptions, mobileSentryDsn } from "@/lib/sentry/options";
 
-// Hold the splash until Figtree is registered, so no screen ever paints in the
-// system font and then re-renders. hideAsync runs on error too — a failed font
-// load falls back to the system face rather than stranding the splash.
 /**
  * Error reporting for the mobile app (issue #1299), reporting to the
  * `frapp-mobile` Sentry project.
@@ -47,6 +44,9 @@ if (sentryDsn) {
   Sentry.init(buildMobileSentryOptions(sentryDsn));
 }
 
+// Hold the splash until Figtree is registered, so no screen ever paints in the
+// system font and then re-renders. hideAsync runs on error too — a failed font
+// load falls back to the system face rather than stranding the splash.
 void SplashScreen.preventAutoHideAsync();
 
 function RootLayoutContent() {
