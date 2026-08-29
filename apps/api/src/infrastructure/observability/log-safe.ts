@@ -14,13 +14,17 @@ const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/g;
 /**
  * A caller-supplied string made safe to interpolate into a log message.
  *
- * The application log stream is one record per line, so a value carrying a
- * newline lets whoever supplied it forge a whole record — a fabricated
- * `security_event` in the same stream the auth-failure spike detector and any
- * incident investigation read. Query-string values on public callback routes
+ * A log record is one line, so a value carrying a newline lets whoever supplied
+ * it write an additional line of their own choosing into the stream an
+ * incident investigation reads. Query-string values on public callback routes
  * are the realistic source: `GET /v1/discord/connect/callback` is
  * unauthenticated by necessity, so `error` and `error_description` are chosen
  * by whoever follows the link, not by Discord.
+ *
+ * A forged line is not perfectly disguised — Nest's default logger prefixes
+ * genuine records with `[Nest] <pid> - <ts> <LEVEL>`, and `security_event` is
+ * emitted at `warn` while the injectable sites log at `log`. That bounds the
+ * damage; it does not make an arbitrarily-writable log stream acceptable.
  *
  * Strips control characters rather than escaping them: these fields are
  * human-readable diagnostics, so a lost control character costs nothing, while

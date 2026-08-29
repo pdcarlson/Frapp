@@ -49,21 +49,28 @@ export function pathOnly(url: string | undefined): string | undefined {
  * when someone is probing.
  */
 function stripAuthority(path: string): string {
-  // Origin-form, the overwhelmingly common case: already just a path.
-  if (path.startsWith('/') && !path.startsWith('//')) return path;
+  // Origin-form, the overwhelmingly common case: already just a path. This
+  // includes a `//`-leading target, which is a legal origin-form path — RFC
+  // 9112's `absolute-path` is `1*( "/" segment )` and a segment may be empty.
+  //
+  // A protocol-relative target (`//host/path`) is deliberately NOT handled.
+  // It is not one of the four request-target forms, so it cannot legitimately
+  // arrive; treating it as one meant discarding the first segment of any legal
+  // `//`-leading path, which is strictly worse than the leak this function
+  // fixes. `GET //x/v1/chapters/join` 404s but would have been logged as
+  // `/v1/chapters/join` — a real route, indistinguishable in the path field
+  // from a genuine request, which is log forgery in the function whose whole
+  // subject is log integrity.
+  if (path.startsWith('/')) return path;
 
   const afterScheme = path.match(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/(.*)$/);
-  const authorityAndPath = afterScheme
-    ? afterScheme[1]
-    : path.startsWith('//')
-      ? path.slice(2)
-      : undefined;
 
-  // Neither absolute nor protocol-relative — asterisk-form (`OPTIONS *`) or
-  // authority-form (`CONNECT host:port`). Neither carries a path to recover,
-  // and neither should be rewritten into something that looks like one.
-  if (authorityAndPath === undefined) return path;
+  // Not absolute-form — asterisk-form (`OPTIONS *`) or authority-form
+  // (`CONNECT host:port`). Neither carries a path to recover, and neither
+  // should be rewritten into something that looks like one.
+  if (!afterScheme) return path;
 
+  const authorityAndPath = afterScheme[1];
   const slash = authorityAndPath.indexOf('/');
   return slash === -1 ? '/' : authorityAndPath.slice(slash);
 }

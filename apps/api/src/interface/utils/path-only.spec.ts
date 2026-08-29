@@ -45,8 +45,15 @@ describe('pathOnly', () => {
     );
   });
 
-  it('handles a protocol-relative target', () => {
-    expect(pathOnly('//api.frapp.live/v1/tasks?q=1')).toBe('/v1/tasks');
+  it('leaves a //-leading origin-form path intact, first segment and all', () => {
+    // `absolute-path = 1*( "/" segment )` and a segment may be empty, so this is
+    // a legal request target. Treating it as protocol-relative and discarding
+    // `x` as an authority would log `GET //x/v1/chapters/join` — which 404s — as
+    // `/v1/chapters/join`, a real route, indistinguishable in the path field
+    // from a genuine request. That is log forgery in the helper whose subject
+    // is log integrity.
+    expect(pathOnly('//x/v1/chapters/join')).toBe('//x/v1/chapters/join');
+    expect(pathOnly('//v1/tasks?q=1')).toBe('//v1/tasks');
   });
 
   it('yields / for an absolute-form target with no path', () => {
