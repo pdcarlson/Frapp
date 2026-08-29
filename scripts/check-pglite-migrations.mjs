@@ -36,7 +36,8 @@ import { vector } from "@electric-sql/pglite-pgvector";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
+const REPO_ROOT = process.cwd();
+const MIGRATIONS_DIR = join(REPO_ROOT, "supabase", "migrations");
 
 const files = readdirSync(MIGRATIONS_DIR)
   .filter((f) => f.endsWith(".sql"))
@@ -343,6 +344,67 @@ const LANDMARKS = [
       rows[0].ev_gen === 1 &&
       rows[0].us_gen === 1 &&
       rows[0].gin_indexes === 3,
+  },
+  {
+    // Schema-drift guard for the two explicit select lists in
+    // `SearchService`. They enumerate columns rather than `select('*')` so the
+    // generated tsvector is not shipped back per row -- but an explicit list
+    // stops tracking its table the moment a migration adds a column, and the
+    // rows are cast to the entity type, so nothing else would notice: the new
+    // field just silently stops appearing in search results.
+    //
+    // That already happened once while writing #284 -- the first draft dropped
+    // `check_in_zone` / `check_in_zone_name` from event results, which
+    // `apps/web/components/events/event-editor-dialog.tsx` reads to populate the
+    // geofence editor. This landmark is why it cannot happen quietly again.
+    //
+    // Expected set: every column of the table EXCEPT the generated tsvector.
+    name: "SearchService select lists cover every column of events + backwork_resources",
+    sql: `select table_name, string_agg(column_name, ', ' order by ordinal_position) as cols
+            from information_schema.columns
+           where table_schema = 'public'
+             and table_name in ('events', 'backwork_resources')
+             and column_name <> 'search_vector'
+           group by table_name`,
+    ok: (rows) => {
+      const source = readFileSync(
+        join(REPO_ROOT, "apps/api/src/application/services/search.service.ts"),
+        "utf8",
+      );
+      const listFor = (constName) => {
+        const m = source.match(
+          new RegExp(`export const ${constName}\\s*=\\s*\\n?\\s*'([^']*)'`),
+        );
+        return m ? m[1] : null;
+      };
+      const expected = {
+        events: listFor("EVENT_SEARCH_COLUMNS"),
+        backwork_resources: listFor("BACKWORK_SEARCH_COLUMNS"),
+      };
+      const norm = (s) =>
+        (s ?? "")
+          .split(",")
+          .map((c) => c.trim())
+          .filter(Boolean)
+          .sort()
+          .join(",");
+      return rows.every((row) => {
+        const want = norm(row.cols);
+        const got = norm(expected[row.table_name]);
+        if (want !== got) {
+          const missing = want
+            .split(",")
+            .filter((c) => !got.split(",").includes(c));
+          const extra = got.split(",").filter((c) => !want.split(",").includes(c));
+          console.error(
+            `      ${row.table_name}: select list drift` +
+              (missing.length ? ` -- MISSING ${missing.join(", ")}` : "") +
+              (extra.length ? ` -- NOT A COLUMN ${extra.join(", ")}` : ""),
+          );
+        }
+        return want === got;
+      });
+    },
   },
   {
     name: "anonymize_user RPC present, security invoker (FRA-40)",

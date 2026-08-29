@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { SearchService } from './search.service';
+import {
+  SearchService,
+  BACKWORK_SEARCH_COLUMNS,
+  EVENT_SEARCH_COLUMNS,
+} from './search.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { RbacService } from './rbac.service';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
@@ -310,6 +314,25 @@ describe('SearchService', () => {
         expect(chains[table].or).not.toHaveBeenCalled();
         expect(chains[table].ilike).not.toHaveBeenCalled();
       }
+    });
+
+    /**
+     * Regression: the first draft of the `select('*')` → explicit-list change
+     * silently dropped `check_in_zone` / `check_in_zone_name` from event search
+     * results. Rows are cast to `Event`, so the types kept claiming the fields
+     * were there while `event-editor-dialog.tsx` — which reads `check_in_zone`
+     * to populate the geofence editor — would have received `undefined`.
+     *
+     * `check-pglite-migrations.mjs` asserts the full list against the real
+     * schema; this pins the specific columns whose loss is most damaging, so
+     * the failure is legible without a database.
+     */
+    it('selects the geofence columns for event results', async () => {
+      expect(EVENT_SEARCH_COLUMNS).toContain('check_in_zone');
+      expect(EVENT_SEARCH_COLUMNS).toContain('check_in_zone_name');
+      // and the tsvector is still excluded, which is why the list is explicit
+      expect(EVENT_SEARCH_COLUMNS).not.toContain('search_vector');
+      expect(BACKWORK_SEARCH_COLUMNS).not.toContain('search_vector');
     });
 
     it('never raises on punctuation that would break to_tsquery', async () => {

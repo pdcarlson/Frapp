@@ -56,6 +56,34 @@ const TEXT_SEARCH = {
   config: 'english',
 } as const;
 
+/**
+ * Explicit column lists for the two sources that used to `select('*')`.
+ *
+ * They are explicit for one reason: `*` would also ship the generated
+ * `search_vector` back — the whole tsvector payload, per row, on the one read
+ * whose result set these tables grow. Same reason `searchMessages` enumerates
+ * rather than globbing.
+ *
+ * THE TRADE, AND THE GUARD. An explicit list stops tracking the table the
+ * moment someone adds a column: the new field silently vanishes from search
+ * results while every type still says it is there, because the rows are cast to
+ * the entity type rather than inferred. That is not hypothetical — writing this
+ * change dropped `check_in_zone` / `check_in_zone_name` from event results,
+ * which `apps/web/components/events/event-editor-dialog.tsx` reads to populate
+ * the geofence editor.
+ *
+ * So these lists are exported and `scripts/check-pglite-migrations.mjs` asserts
+ * each one equals its table's real columns minus the tsvector. Add a column to
+ * `events` or `backwork_resources` and that gate fails until it is added here
+ * too. Keep them exported, and keep them as plain string literals — the gate
+ * parses this file.
+ */
+export const BACKWORK_SEARCH_COLUMNS =
+  'id, chapter_id, department_id, course_number, professor_id, uploader_id, title, year, semester, assignment_type, assignment_number, document_variant, storage_path, file_hash, is_redacted, tags, created_at';
+
+export const EVENT_SEARCH_COLUMNS =
+  'id, chapter_id, name, description, location, start_time, end_time, point_value, is_mandatory, recurrence_rule, parent_event_id, required_role_ids, notes, created_at, check_in_zone, check_in_zone_name';
+
 function emptyResult(): SearchResult {
   return { backwork: [], events: [], members: [], messages: [] };
 }
@@ -249,11 +277,7 @@ export class SearchService {
   ): Promise<BackworkResource[]> {
     const { data, error } = (await this.supabase
       .from('backwork_resources')
-      // Not `*`: `search_vector` is the STORED tsvector this matches on, and
-      // PostgREST's `*` would ship the whole index payload back per hit.
-      .select(
-        'id, chapter_id, department_id, course_number, professor_id, uploader_id, title, year, semester, assignment_type, assignment_number, document_variant, storage_path, file_hash, is_redacted, tags, created_at',
-      )
+      .select(BACKWORK_SEARCH_COLUMNS)
       .eq('chapter_id', chapterId)
       .textSearch('search_vector', query, TEXT_SEARCH)
       .limit(SEARCH_LIMIT)) as QueryResult<BackworkResource>;
@@ -275,9 +299,7 @@ export class SearchService {
   ): Promise<Event[]> {
     const { data, error } = (await this.supabase
       .from('events')
-      .select(
-        'id, chapter_id, name, description, location, start_time, end_time, point_value, is_mandatory, recurrence_rule, parent_event_id, required_role_ids, notes, created_at',
-      )
+      .select(EVENT_SEARCH_COLUMNS)
       .eq('chapter_id', chapterId)
       .textSearch('search_vector', query, TEXT_SEARCH)
       .limit(SEARCH_LIMIT)) as QueryResult<Event>;
