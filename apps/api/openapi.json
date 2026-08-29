@@ -8179,6 +8179,11 @@
             "type": "string",
             "description": "End date (ISO date)",
             "example": "2025-12-15"
+          },
+          "promote_new_members": {
+            "type": "boolean",
+            "description": "Also bulk-promote every New Member in the chapter to Member, in the same transaction as the archive. Members keep all their other roles. Defaults to false.",
+            "default": false
           }
         },
         "required": [

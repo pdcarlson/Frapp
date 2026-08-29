@@ -254,6 +254,24 @@ export interface Database {
         };
         Returns: Member[];
       };
+      /**
+       * `20260829000000` — `returns semester_archives`. Archives the period and
+       * swaps New Member → Member across the chapter in one transaction. Returns
+       * the single created archive row (a composite, not `setof`), so this is the
+       * row type rather than an array. Only reached when promotion is requested;
+       * a plain rollover still goes through `semester_archives.insert`.
+       */
+      rollover_semester: {
+        Args: {
+          p_chapter_id: string;
+          p_label: string;
+          p_start_date: string;
+          p_end_date: string;
+          p_new_member_role_id: string;
+          p_member_role_id: string;
+        };
+        Returns: SemesterArchive;
+      };
       /** `20260803120000` — `returns setof financial_invoices`. */
       apply_invoice_payment: {
         Args: {
