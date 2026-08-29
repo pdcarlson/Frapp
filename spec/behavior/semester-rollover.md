@@ -15,6 +15,7 @@ Admins with `semester:rollover` permission can trigger a "New Semester" action f
    - Members who never held New Member are untouched, as are members of every other chapter.
    - The archive and the role changes happen in **one transaction** (the `rollover_semester` function). A rollover either archives *and* promotes, or does neither — it can never archive without promoting and then be blocked from retrying by the once-per-month rule.
    - Both roles are resolved by `roles.system_key`, not by name, so a chapter that renamed either role still promotes correctly. If either system role cannot be resolved the rollover is **refused with `409 Conflict`** rather than archiving with a silent no-op promotion; rolling over without promotion still works.
+   - Promotion additionally requires **`roles:manage`**, on top of the `semester:rollover` the route already demands. Rewriting `members.role_ids` is what `PATCH /v1/members/:id/roles` gates, and the two permissions are separable — a chapter may grant a custom role `semester:rollover` alone — so requesting promotion without `roles:manage` returns `403 Forbidden`. A rollover *without* promotion needs only `semester:rollover`, and the web toggle is hidden (not merely disabled) for callers who lack `roles:manage`.
 4. Study session configurations (geofences, reward rates, minimum session lengths) carry forward unless manually changed.
 
 ## Historical Data

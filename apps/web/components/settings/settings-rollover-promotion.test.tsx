@@ -3,17 +3,27 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
-const { mockCurrentChapter, mockRollover } = vi.hoisted(() => ({
-  mockCurrentChapter: vi.fn(),
-  mockRollover: vi.fn(),
-}));
+const { mockCurrentChapter, mockRollover, mockPermissions } = vi.hoisted(
+  () => ({
+    mockCurrentChapter: vi.fn(),
+    mockRollover: vi.fn(),
+    mockPermissions: vi.fn<() => string[]>(),
+  }),
+);
 
-const PERMISSIONS = ["chapter-config:manage", "semester:rollover"];
+// Mutable so a test can take `roles:manage` away and assert the toggle goes
+// with it — the API refuses promotion without it, so a live toggle would be a
+// control that always 403s.
+let permissions: string[] = [
+  "chapter-config:manage",
+  "semester:rollover",
+  "roles:manage",
+];
 
 vi.mock("@repo/hooks", () => ({
   useCurrentChapter: () => mockCurrentChapter(),
   useMyPermissions: () => ({
-    data: { permissions: PERMISSIONS },
+    data: { permissions: mockPermissions() },
     isPending: false,
     isError: false,
   }),
@@ -42,7 +52,16 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/components/shared/can", () => ({
-  Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  Can: ({
+    children,
+    permission,
+  }: {
+    children: React.ReactNode;
+    permission?: string;
+  }) =>
+    !permission || mockPermissions().includes(permission) ? (
+      <>{children}</>
+    ) : null,
 }));
 
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
@@ -69,6 +88,12 @@ describe("semester rollover — New Member promotion (#285)", () => {
     vi.clearAllMocks();
     chapter.active();
     mockRollover.mockResolvedValue({});
+    permissions = [
+      "chapter-config:manage",
+      "semester:rollover",
+      "roles:manage",
+    ];
+    mockPermissions.mockImplementation(() => permissions);
   });
 
   it("offers the promotion, off by default", () => {
@@ -84,7 +109,9 @@ describe("semester rollover — New Member promotion (#285)", () => {
     render(<SettingsPage />);
 
     await submitRollover(user);
-    await user.click(screen.getByRole("button", { name: /start new semester/i }));
+    await user.click(
+      screen.getByRole("button", { name: /start new semester/i }),
+    );
 
     expect(mockRollover).toHaveBeenCalledWith(
       expect.objectContaining({ promote_new_members: false }),
@@ -97,7 +124,9 @@ describe("semester rollover — New Member promotion (#285)", () => {
 
     await user.click(promoteSwitch());
     await submitRollover(user);
-    await user.click(screen.getByRole("button", { name: /start new semester/i }));
+    await user.click(
+      screen.getByRole("button", { name: /start new semester/i }),
+    );
 
     expect(mockRollover).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -143,6 +172,22 @@ describe("semester rollover — New Member promotion (#285)", () => {
     await user.click(screen.getByRole("button", { name: /cancel/i }));
 
     expect(mockRollover).not.toHaveBeenCalled();
+  });
+
+  it("hides the toggle from a caller without roles:manage", () => {
+    // The API refuses promotion without roles:manage, because rewriting
+    // members.role_ids chapter-wide is what that permission governs. Offering
+    // the toggle anyway would hand the officer a guaranteed 403 at submit.
+    permissions = ["chapter-config:manage", "semester:rollover"];
+    render(<SettingsPage />);
+
+    expect(
+      screen.queryByRole("switch", { name: /promote new members/i }),
+    ).not.toBeInTheDocument();
+    // The rollover itself is still available — only the extra option is gated.
+    expect(
+      screen.getByRole("button", { name: /archive current semester/i }),
+    ).toBeInTheDocument();
   });
 
   it("gates the promotion toggle with the same subscription gate as the submit", async () => {

@@ -5,8 +5,13 @@ import { SupabaseSemesterArchiveRepository } from '../../infrastructure/supabase
 import { SEMESTER_ARCHIVE_REPOSITORY } from '../../domain/repositories/semester-archive.repository.interface';
 import { SupabaseRoleRepository } from '../../infrastructure/supabase/repositories/supabase-role.repository';
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
+import { RbacModule } from '../rbac/rbac.module';
 
 @Module({
+  // RbacModule so the promotion path can check the caller's *own* effective
+  // permissions for `roles:manage` — Nest guards never fire on an in-process
+  // service call, and the route guard only covers `semester:rollover`.
+  imports: [RbacModule],
   controllers: [SemesterRolloverController],
   providers: [
     SemesterRolloverService,

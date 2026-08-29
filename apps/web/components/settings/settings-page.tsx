@@ -169,10 +169,7 @@ function SettingsPageContent() {
   // entitled to change — over-gating is the worse defect here.
   const rolloverGate = useSubscriptionGate();
 
-  const canManage = can(
-    "chapter-config:manage",
-    permissionsPayload?.permissions,
-  );
+  const canManage = can("chapter-config:manage", permissionsPayload?.permissions);
 
   // Deep-link the active tab via `?tab=` so links (e.g. the redirect from the
   // former standalone `/roles` page) can land directly on a tab.
@@ -267,9 +264,7 @@ function SettingsPageContent() {
     );
   }
 
-  const parsedChapter = CurrentChapterPayloadSchema.safeParse(
-    chapterQuery.data,
-  );
+  const parsedChapter = CurrentChapterPayloadSchema.safeParse(chapterQuery.data);
   const chapterPayload = parsedChapter.success
     ? (parsedChapter.data as CurrentChapterPayload & {
         donation_url?: string | null;
@@ -627,9 +622,7 @@ function SettingsPageContent() {
                       <Input
                         id="semester-label"
                         value={semesterLabel}
-                        onChange={(event) =>
-                          setSemesterLabel(event.target.value)
-                        }
+                        onChange={(event) => setSemesterLabel(event.target.value)}
                         placeholder="Fall 2026"
                         required
                       />
@@ -640,9 +633,7 @@ function SettingsPageContent() {
                         id="semester-start"
                         type="date"
                         value={semesterStart}
-                        onChange={(event) =>
-                          setSemesterStart(event.target.value)
-                        }
+                        onChange={(event) => setSemesterStart(event.target.value)}
                         required
                       />
                     </div>
@@ -663,22 +654,38 @@ function SettingsPageContent() {
                       confirmation dialog restates the consequence before it
                       runs. Same `gate.controlProps` as the submit button so an
                       ungated chapter cannot toggle a control it cannot use.
+
+                      Wrapped in `<Can permission="roles:manage">` because the
+                      API enforces exactly that on the promotion path: rewriting
+                      `members.role_ids` is what `PATCH /members/:id/roles`
+                      gates, and `semester:rollover` alone does not carry it.
+                      Offering the toggle without it would produce a 403 at
+                      submit. A rollover *without* promotion stays available —
+                      this hides the toggle, never the card.
+
+                      `aria-label` is explicit rather than inherited from the
+                      wrapping `<label>`: a `<label>` does not name a `button`,
+                      which is what Radix renders for `role="switch"`. Same
+                      reason `settings-fields-tab.tsx` names its switches.
                     */}
-                    <label className="flex items-start gap-2 text-sm md:col-span-3">
-                      <Switch
-                        id="semester-promote"
-                        checked={promoteNewMembers}
-                        onCheckedChange={setPromoteNewMembers}
-                        {...rolloverGate.controlProps(rollover.isPending)}
-                      />
-                      <span>
-                        Also promote New Members to Member
-                        <span className="block text-xs text-muted-foreground">
-                          Everyone currently holding the New Member role becomes
-                          a Member. Other roles they hold are kept.
+                    <Can permission="roles:manage">
+                      <label className="flex items-start gap-2 text-sm md:col-span-3">
+                        <Switch
+                          id="semester-promote"
+                          aria-label="Also promote New Members to Member"
+                          checked={promoteNewMembers}
+                          onCheckedChange={setPromoteNewMembers}
+                          {...rolloverGate.controlProps(rollover.isPending)}
+                        />
+                        <span>
+                          Also promote New Members to Member
+                          <span className="block text-xs text-muted-foreground">
+                            Everyone currently holding the New Member role
+                            becomes a Member. Other roles they hold are kept.
+                          </span>
                         </span>
-                      </span>
-                    </label>
+                      </label>
+                    </Can>
                   </CardContent>
                   <CardFooter className="flex justify-end">
                     {/*
@@ -922,16 +929,13 @@ function SettingsPageContent() {
                     <p className="text-xs text-warning">
                       Label text on this color reads at{" "}
                       {previewInkRatio.toFixed(1)}:1, under the 4.5:1 minimum.
-                      Buttons and name tags using it will be hard to read — pick
-                      a lighter or darker shade.
+                      Buttons and name tags using it will be hard to read —
+                      pick a lighter or darker shade.
                     </p>
                   ) : null}
                 </CardContent>
                 <CardFooter className="flex justify-end">
-                  <Button
-                    type="submit"
-                    disabled={!canManage || updateChapter.isPending}
-                  >
+                  <Button type="submit" disabled={!canManage || updateChapter.isPending}>
                     {updateChapter.isPending ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : null}

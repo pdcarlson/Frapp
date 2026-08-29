@@ -1,11 +1,15 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { SemesterRolloverService } from './semester-rollover.service';
 import { SEMESTER_ARCHIVE_REPOSITORY } from '../../domain/repositories/semester-archive.repository.interface';
 import type { ISemesterArchiveRepository } from '../../domain/repositories/semester-archive.repository.interface';
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
 import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
-import { SystemRoleKeys } from '../../domain/constants/permissions';
+import {
+  SystemPermissions,
+  SystemRoleKeys,
+} from '../../domain/constants/permissions';
+import { RbacService } from './rbac.service';
 import type { Role } from '../../domain/entities/role.entity';
 import type { SemesterArchive } from '../../domain/entities/semester-archive.entity';
 
@@ -13,6 +17,7 @@ describe('SemesterRolloverService', () => {
   let service: SemesterRolloverService;
   let mockArchiveRepo: jest.Mocked<ISemesterArchiveRepository>;
   let mockRoleRepo: jest.Mocked<IRoleRepository>;
+  let mockRbacService: { getEffectivePermissions: jest.Mock };
 
   const baseArchive: SemesterArchive = {
     id: 'arch-1',
@@ -54,6 +59,14 @@ describe('SemesterRolloverService', () => {
       createWithPromotion: jest.fn(),
     };
 
+    // Default: the caller can manage roles. Tests that care about the
+    // authority check override this explicitly.
+    mockRbacService = {
+      getEffectivePermissions: jest
+        .fn()
+        .mockResolvedValue([SystemPermissions.ROLES_MANAGE]),
+    };
+
     mockRoleRepo = {
       findById: jest.fn(),
       findByChapter: jest.fn(),
@@ -77,6 +90,10 @@ describe('SemesterRolloverService', () => {
           provide: ROLE_REPOSITORY,
           useValue: mockRoleRepo,
         },
+        {
+          provide: RbacService,
+          useValue: mockRbacService,
+        },
       ],
     }).compile();
 
@@ -90,6 +107,7 @@ describe('SemesterRolloverService', () => {
 
       const result = await service.rollover({
         chapterId: 'ch-1',
+        userId: 'user-1',
         label: 'Fall 2025',
         startDate: '2025-08-01',
         endDate: '2025-12-15',
@@ -126,6 +144,7 @@ describe('SemesterRolloverService', () => {
 
       const result = await service.rollover({
         chapterId: 'ch-1',
+        userId: 'user-1',
         label: 'Spring 2026',
         startDate: '2026-01-10',
         endDate: '2026-05-15',
@@ -145,6 +164,8 @@ describe('SemesterRolloverService', () => {
       await expect(
         service.rollover({
           chapterId: 'ch-1',
+          userId: 'user-1',
+          userId: 'user-1',
           label: 'Spring 2026',
           startDate: '2026-01-10',
           endDate: '2026-05-15',
@@ -168,6 +189,8 @@ describe('SemesterRolloverService', () => {
       await expect(
         service.rollover({
           chapterId: 'ch-1',
+          userId: 'user-1',
+          userId: 'user-1',
           label: 'Duplicate',
           startDate: '2026-01-01',
           endDate: '2026-01-31',
@@ -229,6 +252,7 @@ describe('SemesterRolloverService', () => {
 
       const result = await service.rollover({
         chapterId: 'ch-1',
+        userId: 'user-1',
         label: 'Spring 2026',
         startDate: '2026-01-10',
         endDate: '2026-05-15',
@@ -293,6 +317,48 @@ describe('SemesterRolloverService', () => {
         newMemberRoleId: 'role-new',
         memberRoleId: 'role-member',
       });
+    });
+
+    it('refuses promotion when the caller lacks roles:manage', async () => {
+      // Rewriting members.role_ids chapter-wide is what
+      // `PATCH /v1/members/:id/roles` gates behind roles:manage. semester:rollover
+      // and roles:manage are separable — a chapter can mint a custom role holding
+      // only the former — so the promotion door must not be a way around it.
+      mockRbacService.getEffectivePermissions.mockResolvedValue([
+        SystemPermissions.SEMESTER_ROLLOVER,
+      ]);
+      withBothSystemRoles();
+
+      await expect(
+        service.rollover({ ...input, promoteNewMembers: true }),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(mockArchiveRepo.create).not.toHaveBeenCalled();
+      expect(mockArchiveRepo.createWithPromotion).not.toHaveBeenCalled();
+    });
+
+    it('lets the wildcard (President) through', async () => {
+      // getEffectivePermissions preserves `*` from live roles (it is only
+      // stripped from custom-role capabilities), and `can()` honors it — so the
+      // check must not lock out the one role that holds every permission.
+      mockRbacService.getEffectivePermissions.mockResolvedValue([
+        SystemPermissions.WILDCARD,
+      ]);
+      withBothSystemRoles();
+      mockArchiveRepo.createWithPromotion.mockResolvedValue(baseArchive);
+
+      await expect(
+        service.rollover({ ...input, promoteNewMembers: true }),
+      ).resolves.toEqual(baseArchive);
+    });
+
+    it("never asks for the caller's permissions on an unpromoted rollover", async () => {
+      mockArchiveRepo.create.mockResolvedValue(baseArchive);
+
+      await service.rollover(input);
+
+      // A plain rollover must not start requiring roles:manage.
+      expect(mockRbacService.getEffectivePermissions).not.toHaveBeenCalled();
     });
 
     it('resolves both roles by system_key, never by name', async () => {

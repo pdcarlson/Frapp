@@ -5,7 +5,10 @@ import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
-import { CurrentChapterId } from '../decorators/current-user.decorator';
+import {
+  CurrentChapterId,
+  CurrentUser,
+} from '../decorators/current-user.decorator';
 import { SystemPermissions } from '../../domain/constants/permissions';
 import { RolloverDto } from '../dtos/semester-rollover.dto';
 
@@ -24,10 +27,12 @@ export class SemesterRolloverController {
   @ApiOperation({ summary: 'Trigger semester rollover' })
   async rollover(
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
     @Body() dto: RolloverDto,
   ) {
     return this.semesterRolloverService.rollover({
       chapterId,
+      userId,
       label: dto.label,
       startDate: dto.start_date,
       endDate: dto.end_date,

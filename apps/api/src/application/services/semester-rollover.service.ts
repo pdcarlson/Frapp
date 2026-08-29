@@ -1,9 +1,19 @@
-import { Inject, Injectable, ConflictException } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common';
+import { can } from '@repo/validation';
 import { SEMESTER_ARCHIVE_REPOSITORY } from '../../domain/repositories/semester-archive.repository.interface';
 import type { ISemesterArchiveRepository } from '../../domain/repositories/semester-archive.repository.interface';
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
 import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
-import { SystemRoleKeys } from '../../domain/constants/permissions';
+import {
+  SystemPermissions,
+  SystemRoleKeys,
+} from '../../domain/constants/permissions';
+import { RbacService } from './rbac.service';
 import type { SemesterArchive } from '../../domain/entities/semester-archive.entity';
 
 export interface RolloverInput {
@@ -11,6 +21,11 @@ export interface RolloverInput {
   label: string;
   startDate: string;
   endDate: string;
+  /**
+   * The caller, so promotion can be checked against *their* authority rather
+   * than the service's ambient service-role connection.
+   */
+  userId: string;
   /**
    * Bulk-promote the chapter's New Members to Member as part of this rollover
    * (spec/behavior/semester-rollover.md step 3). Optional and off by default —
@@ -26,6 +41,7 @@ export class SemesterRolloverService {
     private readonly archiveRepo: ISemesterArchiveRepository,
     @Inject(ROLE_REPOSITORY)
     private readonly roleRepo: IRoleRepository,
+    private readonly rbacService: RbacService,
   ) {}
 
   async rollover(input: RolloverInput): Promise<SemesterArchive> {
@@ -53,6 +69,25 @@ export class SemesterRolloverService {
         start_date: input.startDate,
         end_date: input.endDate,
       });
+    }
+
+    // Promotion rewrites `members.role_ids` across the whole chapter, which is
+    // exactly what `PATCH /v1/members/:id/roles` gates behind `roles:manage`
+    // (member.controller.ts). The route guard here is `semester:rollover`, and
+    // the two are separable: a chapter can grant a custom role `semester:rollover`
+    // without `roles:manage`, and that holder must not reach a chapter-wide role
+    // rewrite through this door. Checked against the caller's own effective
+    // permissions -- Nest guards do not fire on this in-process path, and the
+    // service's service-role connection has no authority of its own.
+    const permissions = await this.rbacService.getEffectivePermissions(
+      input.chapterId,
+      input.userId,
+    );
+    if (!can(SystemPermissions.ROLES_MANAGE, permissions)) {
+      throw new ForbiddenException(
+        'Promoting New Members requires the roles:manage permission. ' +
+          'Roll over without promotion, or ask an admin to run it.',
+      );
     }
 
     // Resolve both roles by `system_key`, never by `name`. A chapter is free to
