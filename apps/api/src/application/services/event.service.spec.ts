@@ -678,6 +678,65 @@ describe('EventService', () => {
         expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
       });
 
+      // Found in review: `update()` validates the interval against the row the
+      // caller named, but a series edit is written to the *parent*. An
+      // individually-moved child can hold times that make the patch valid
+      // against itself yet inverted against the parent.
+      it('rejects a patch that would invert the parent interval', async () => {
+        // Child was moved to the afternoon of 03-22; the parent still runs
+        // 18:00-19:00 on 03-01.
+        const movedChild: Event = {
+          ...futureChild1,
+          start_time: '2026-03-22T14:00:00.000Z',
+          end_time: '2026-03-22T18:00:00.000Z',
+        };
+        mockEventRepo.findById.mockImplementation(async (id: string) =>
+          id === 'parent-1' ? parent : movedChild,
+        );
+
+        // 17:00 on 03-22 is before the child's own 18:00 end, so the caller-facing
+        // check passes — but it is three weeks after the parent's end_time.
+        await expect(
+          service.update(
+            'child-future-1',
+            'ch-1',
+            { start_time: '2026-03-22T17:00:00.000Z' },
+            'series',
+          ),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockEventRepo.update).not.toHaveBeenCalled();
+      });
+
+      // Found in review: regenerating from a parent that already started would
+      // create occurrences in the past — rows for meetings that never happened.
+      it('does not create past occurrences when regenerating', async () => {
+        const monthlyParent: Event = { ...parent, recurrence_rule: 'MONTHLY' };
+        mockEventRepo.findById.mockResolvedValue(monthlyParent);
+        mockEventRepo.findChildren.mockResolvedValue(wholeSeries);
+        mockEventRepo.update.mockResolvedValue({
+          ...monthlyParent,
+          recurrence_rule: 'WEEKLY',
+        });
+        mockEventRepo.create.mockResolvedValue(baseEvent);
+
+        // Parent started 03-01 and "now" is 03-15, so a WEEKLY rebuild would
+        // otherwise emit an occurrence on 03-08, a week in the past.
+        await service.update(
+          'parent-1',
+          'ch-1',
+          { recurrence_rule: 'WEEKLY' },
+          'series',
+        );
+
+        const createdStarts = mockEventRepo.create.mock.calls.map(([payload]) =>
+          new Date(payload.start_time as string).getTime(),
+        );
+        expect(createdStarts.length).toBeGreaterThan(0);
+        for (const started of createdStarts) {
+          expect(started).toBeGreaterThan(NOW);
+        }
+      });
+
       it('resolves a series edit issued against a child to its parent', async () => {
         mockEventRepo.findById.mockImplementation(async (id: string) =>
           id === 'parent-1'

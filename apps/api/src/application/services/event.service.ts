@@ -60,8 +60,8 @@ export interface UpdateEventInput {
  * `spec/behavior/events.md` § Recurring events fixes this at two values, not
  * the usual calendar-app three: *"Each instance can be individually edited or
  * canceled. Recurrence rules can be modified (changes apply to future instances
- * only)."* There is deliberately no "this and past" — see
- * `assertNoPastMutation` for why that is enforced rather than merely documented.
+ * only)."* There is deliberately no "this and past" — see `partitionByTime` for
+ * why the past boundary is enforced rather than merely documented.
  *
  * `'instance'` is the default on every route so existing callers, which send no
  * scope at all, keep their exact current single-row behavior.
@@ -224,7 +224,19 @@ export class EventService {
     return parent;
   }
 
-  private async generateRecurringInstances(parent: Event): Promise<void> {
+  /**
+   * Materialize the generated occurrences of a recurring parent.
+   *
+   * `skipBefore`, when supplied, drops any occurrence falling at or before that
+   * instant. Regeneration passes `Date.now()`: rebuilding a series whose parent
+   * already started would otherwise *create* occurrences in the past — rows for
+   * meetings that never happened — which is the opposite of "changes apply to
+   * future instances only". Creation passes nothing, preserving its behavior.
+   */
+  private async generateRecurringInstances(
+    parent: Event,
+    skipBefore?: number,
+  ): Promise<void> {
     const rule = parent.recurrence_rule;
     if (!rule) return;
 
@@ -248,7 +260,7 @@ export class EventService {
 
     // ⚡ Bolt: Optimize recurring instance creation using Promise.all
     // Eliminates N+1 sequential database queries by executing them concurrently.
-    const promises = Array.from({ length: count }, (_, idx) => {
+    const payloads = Array.from({ length: count }, (_, idx) => {
       const i = idx + 1;
       const instanceStart = new Date(start);
       const instanceEnd = new Date(end);
@@ -281,7 +293,7 @@ export class EventService {
         instanceEnd.setDate(Math.min(end.getDate(), maxEndDay));
       }
 
-      return this.eventRepo.create({
+      return {
         chapter_id: parent.chapter_id,
         name: parent.name,
         description: parent.description,
@@ -300,10 +312,17 @@ export class EventService {
         // set a zone that a later regenerate silently dropped again.
         check_in_zone: parent.check_in_zone,
         check_in_zone_name: parent.check_in_zone_name,
-      });
+      };
     });
 
-    await Promise.all(promises);
+    const due =
+      skipBefore === undefined
+        ? payloads
+        : payloads.filter(
+            (payload) => new Date(payload.start_time).getTime() > skipBefore,
+          );
+
+    await Promise.all(due.map((payload) => this.eventRepo.create(payload)));
   }
 
   /**
@@ -484,6 +503,20 @@ export class EventService {
     const target = await this.findById(id, chapterId);
     const parent = await this.resolveSeriesParent(target, chapterId);
 
+    // Re-validate against the row actually being written. `update()` checked the
+    // interval against `target`, but a series edit lands on the *parent*, and an
+    // individually-moved child can have entirely different times — so a patch
+    // that is valid against the child can still invert the parent's interval.
+    if (input.start_time || input.end_time) {
+      const start = new Date(input.start_time ?? parent.start_time);
+      const end = new Date(input.end_time ?? parent.end_time);
+      if (end <= start) {
+        throw new BadRequestException(
+          'end_time must be after start_time for the series',
+        );
+      }
+    }
+
     const normalized: UpdateEventInput = {
       ...input,
       ...(input.check_in_zone !== undefined
@@ -524,7 +557,7 @@ export class EventService {
         chapterId,
       );
       if (updatedParent.recurrence_rule) {
-        await this.generateRecurringInstances(updatedParent);
+        await this.generateRecurringInstances(updatedParent, Date.now());
       }
     } else {
       const propagate = propagatableFields(normalized);
