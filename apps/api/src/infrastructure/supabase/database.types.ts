@@ -255,7 +255,7 @@ export interface Database {
         Returns: Member[];
       };
       /**
-       * `20260829000000` — `returns semester_archives`. Archives the period and
+       * `20260829010000` — `returns semester_archives`. Archives the period and
        * swaps New Member → Member across the chapter in one transaction. Returns
        * the single created archive row (a composite, not `setof`), so this is the
        * row type rather than an array. Only reached when promotion is requested;
