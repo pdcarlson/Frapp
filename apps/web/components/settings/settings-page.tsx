@@ -34,6 +34,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -188,6 +189,9 @@ function SettingsPageContent() {
   const [semesterLabel, setSemesterLabel] = useState("");
   const [semesterStart, setSemesterStart] = useState("");
   const [semesterEnd, setSemesterEnd] = useState("");
+  // Defaults to off: promotion rewrites roles across the whole chapter and is
+  // not one-click undoable, so it is opted into per rollover, never inherited.
+  const [promoteNewMembers, setPromoteNewMembers] = useState(false);
 
   useEffect(() => {
     const parsed = CurrentChapterPayloadSchema.safeParse(chapterQuery.data);
@@ -419,12 +423,15 @@ function SettingsPageContent() {
     if (!semesterLabel || !semesterStart || !semesterEnd) return;
     const confirmed = await confirm({
       title: `Start a new semester labelled "${semesterLabel}"?`,
-      description:
-        "The current leaderboard period is archived and a new one begins. Points already awarded are kept — only the leaderboard's default window moves.",
+      description: promoteNewMembers
+        ? "The current leaderboard period is archived and a new one begins. Points already awarded are kept — only the leaderboard's default window moves. Every New Member is also promoted to Member; they keep any other roles they hold, and this cannot be undone in one step."
+        : "The current leaderboard period is archived and a new one begins. Points already awarded are kept — only the leaderboard's default window moves.",
       confirmLabel: "Start new semester",
       // Not destructive: a rollover archives rather than deletes, and
       // `writing.md` §7's own copy for this flow says the history stays. A red
-      // button would state a loss the API does not perform.
+      // button would state a loss the API does not perform. Promotion is a role
+      // change rather than a deletion, so it does not change that reading — the
+      // description above states its scope instead.
       tone: "default",
     });
     if (!confirmed) return;
@@ -433,14 +440,18 @@ function SettingsPageContent() {
         label: semesterLabel,
         start_date: semesterStart,
         end_date: semesterEnd,
+        promote_new_members: promoteNewMembers,
       });
       toast({
         title: "Semester archived",
-        description: `${semesterLabel} is now the active period.`,
+        description: promoteNewMembers
+          ? `${semesterLabel} is now the active period, and New Members were promoted to Member.`
+          : `${semesterLabel} is now the active period.`,
       });
       setSemesterLabel("");
       setSemesterStart("");
       setSemesterEnd("");
+      setPromoteNewMembers(false);
     } catch (error) {
       toast({
         title: "Couldn't archive semester",
@@ -636,6 +647,45 @@ function SettingsPageContent() {
                         required
                       />
                     </div>
+                    {/*
+                      Pledge promotion (spec/behavior/semester-rollover.md step
+                      3). Optional and off by default — it rewrites roles across
+                      the chapter, so it is opted into per rollover. The
+                      confirmation dialog restates the consequence before it
+                      runs. Same `gate.controlProps` as the submit button so an
+                      ungated chapter cannot toggle a control it cannot use.
+
+                      Wrapped in `<Can permission="roles:manage">` because the
+                      API enforces exactly that on the promotion path: rewriting
+                      `members.role_ids` is what `PATCH /members/:id/roles`
+                      gates, and `semester:rollover` alone does not carry it.
+                      Offering the toggle without it would produce a 403 at
+                      submit. A rollover *without* promotion stays available —
+                      this hides the toggle, never the card.
+
+                      `aria-label` is explicit rather than inherited from the
+                      wrapping `<label>`: a `<label>` does not name a `button`,
+                      which is what Radix renders for `role="switch"`. Same
+                      reason `settings-fields-tab.tsx` names its switches.
+                    */}
+                    <Can permission="roles:manage">
+                      <label className="flex items-start gap-2 text-sm md:col-span-3">
+                        <Switch
+                          id="semester-promote"
+                          aria-label="Also promote New Members to Member"
+                          checked={promoteNewMembers}
+                          onCheckedChange={setPromoteNewMembers}
+                          {...rolloverGate.controlProps(rollover.isPending)}
+                        />
+                        <span>
+                          Also promote New Members to Member
+                          <span className="block text-xs text-muted-foreground">
+                            Everyone currently holding the New Member role
+                            becomes a Member. Other roles they hold are kept.
+                          </span>
+                        </span>
+                      </label>
+                    </Can>
                   </CardContent>
                   <CardFooter className="flex justify-end">
                     {/*
