@@ -399,6 +399,24 @@ Next.js 16 defaults `experimental.useTypeScriptCli` to `true`, then looks for
 `next build` use the TypeScript 6 compiler API instead. Do not flip it back while `typescript`
 is the 6.x alias — Next will try to `npm install typescript` (which resolves to 7) and fail.
 
+Both apps also set `typescript.tsconfigPath` to their own `tsconfig.build.json`, which extends
+the app's `tsconfig.json` and excludes test directories, the four test suffixes, and the
+`vitest` / `playwright` configs. Same reason as `@repo/hooks` above, one layer up: the app
+`tsconfig.json` includes every `.ts` / `.tsx` file under the app, so those files land in the
+program `next build` type-checks and import packages Vercel's production install omits. Next's
+checker already drops diagnostics from files *named* `*.test.*`, `*.spec.*`, `__tests__/` or
+`__mocks__/`, so the only ones that ever reached an error report were the non-suffixed ones —
+`apps/web/tests/chapter-subscription.ts` and each app's `vitest.config.ts` — which is why
+#1331's suffix-only exclude did not transfer. Previews stayed green throughout because a preview
+does not run the same install: the failing production builds installed 1126 packages cold, while
+the `main` preview of the same tree restored a build cache and audited 1958. Reproduce with
+`npm install --omit=dev` at the root; a green preview or a green dev-tree build is not evidence.
+Two constraints when editing: Next reads `tsconfigPath` for path-alias resolution as well as the
+type check, so the build config must *extend* the app config rather than replace it; and
+`exclude` overrides rather than merges, so an exclusion added to `tsconfig.json` never reaches
+the build. `tsconfig.json` still includes the excluded files, so `check-types` and the editor
+keep covering them — and `check-types` is now the only thing that does.
+
 Every ts-jest project overlays `"rootDir": "."` and `"ignoreDeprecations": "6.0"`: the unit
 suite in `apps/api/package.json`, plus `apps/api/test/jest-e2e.json`,
 `apps/api/test/integration/jest-integration.json`, and
