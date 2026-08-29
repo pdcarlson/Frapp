@@ -3178,6 +3178,11 @@ export interface components {
              * @example 2025-12-15
              */
             end_date: string;
+            /**
+             * @description Also bulk-promote every New Member in the chapter to Member, in the same transaction as the archive. Members keep all their other roles. Defaults to false.
+             * @default false
+             */
+            promote_new_members: boolean;
         };
         ReportExportResponseDto: {
             /** @description Signed download URL, valid for one hour */
