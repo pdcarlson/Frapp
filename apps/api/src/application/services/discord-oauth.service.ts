@@ -8,6 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import * as Sentry from '@sentry/nestjs';
 import { randomUUID } from 'node:crypto';
+import { logSafe } from '../../infrastructure/observability/log-safe';
 import {
   DISCORD_BOT_GATEWAY,
   DISCORD_OAUTH_CLIENT,
@@ -371,8 +372,20 @@ export class DiscordOAuthService {
         // fabricated. The collapse that does matter (nonexistent vs. spent vs.
         // expired, all answering `expired`) lives inside `consumeState` and is
         // untouched.
+        // The state id is deliberately NOT in this message (#1260). It is the
+        // CSRF token itself, and on this branch it is *live*: the conditional
+        // UPDATE never committed, so the row stays `consumed_at IS NULL` for
+        // the balance of its TTL. Logging it here would put an unspent
+        // handshake id into the application log stream — the same stream, at
+        // the same `error` level, that this issue's request-path fix drains.
+        //
+        // It costs nothing diagnostically. As the comment above says, this
+        // branch is a function of store health alone and fires identically for
+        // every state id; `describeError` plus the request id already identify
+        // the event, and the id would only distinguish handshakes in an
+        // outage that by construction affects all of them.
         this.logger.error(
-          `Could not consume Discord OAuth state ${stateId}`,
+          'Could not consume Discord OAuth state',
           describeError(error),
         );
         captureSwallowed(error, 'failed');
@@ -405,8 +418,15 @@ export class DiscordOAuthService {
     if (query.error) {
       // `error_description` is logged and goes no further — see
       // `DiscordConnectCode`.
+      //
+      // Both values come off the callback's query string, which is public and
+      // unauthenticated, so they are attacker-chosen. Every other record in
+      // this stream is one JSON object per line, so an unescaped newline here
+      // would let a caller forge a whole log line — a fabricated
+      // `security_event` in the stream the auth-failure spike investigation
+      // reads (#1260). `logSafe` strips control characters and caps length.
       this.logger.log(
-        `Discord connect declined for chapter ${consumed.chapter_id}: ${query.error} ${query.error_description ?? ''}`.trim(),
+        `Discord connect declined for chapter ${consumed.chapter_id}: ${logSafe(query.error)} ${logSafe(query.error_description)}`.trim(),
       );
       return finish(
         query.error === 'access_denied' ? 'declined' : 'failed',

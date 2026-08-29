@@ -319,7 +319,19 @@ describe('DiscordOAuthService — the callback’s trust boundary', () => {
 
     expect(logged).toHaveBeenCalledTimes(1);
     const [message, cause] = logged.mock.calls[0] as [string, string];
-    expect(message).toContain(STATE);
+
+    // This assertion was inverted by #1260, deliberately. It previously read
+    // `expect(message).toContain(STATE)`. The state id is the CSRF token, and
+    // on this branch it is *live* — `consumeState` rejected, so the conditional
+    // UPDATE never committed and the row stays unspent for the rest of its TTL.
+    // Logging it put an unspent handshake id into the application log stream.
+    //
+    // Nothing this test is actually about is lost: its subject is that the
+    // *cause* survives where a plain PostgREST object would hide it, and both
+    // cause assertions below are untouched. The id was never diagnostic here —
+    // the service's own comment notes this branch is a function of store health
+    // alone and fires identically for every state id.
+    expect(message).not.toContain(STATE);
     expect(cause).toContain('PGRST205');
     expect(cause).toContain('public.discord_oauth_states');
     logged.mockRestore();

@@ -27,6 +27,38 @@ describe('pathOnly', () => {
     expect(pathOnly('/v1/tasks?b=c#a')).toBe('/v1/tasks');
   });
 
+  it('drops scheme, host and userinfo from an absolute-form target (#1260)', () => {
+    // Node hands `req.url` the request line verbatim, so this is a real shape a
+    // caller can send. The userinfo is the reason this matters: keeping it
+    // would log a credential in the stream this helper exists to keep clean.
+    const stripped = pathOnly(
+      'http://user:hunter2@api.frapp.live/v1/health?x=1',
+    );
+    expect(stripped).toBe('/v1/health');
+    expect(stripped).not.toContain('hunter2');
+    expect(stripped).not.toContain('api.frapp.live');
+  });
+
+  it('groups an absolute-form target with its origin-form equivalent', () => {
+    expect(pathOnly('https://api.frapp.live/v1/tasks')).toBe(
+      pathOnly('/v1/tasks'),
+    );
+  });
+
+  it('handles a protocol-relative target', () => {
+    expect(pathOnly('//api.frapp.live/v1/tasks?q=1')).toBe('/v1/tasks');
+  });
+
+  it('yields / for an absolute-form target with no path', () => {
+    expect(pathOnly('http://api.frapp.live')).toBe('/');
+    expect(pathOnly('http://api.frapp.live?q=1')).toBe('/');
+  });
+
+  it('leaves asterisk-form and authority-form alone rather than inventing a path', () => {
+    expect(pathOnly('*')).toBe('*');
+    expect(pathOnly('api.frapp.live:443')).toBe('api.frapp.live:443');
+  });
+
   it('leaves a path with neither untouched', () => {
     expect(pathOnly('/v1/tasks')).toBe('/v1/tasks');
   });

@@ -343,15 +343,21 @@ describe('AllExceptionsFilter', () => {
     // `error` level, which ships in every environment.
     new AllExceptionsFilter().catch(new Error('boom'), host());
 
+    // The secret must be absent from the whole record — a leak anywhere in the
+    // line is still a leak.
     expect(captured.error[0]).not.toContain('secret-code');
-    expect(captured.error[0]).not.toContain('?');
 
-    // ...and the path itself survives, so the record still identifies the route.
+    // The `?` check is scoped to the `path` field rather than the whole record:
+    // this record also carries `error: <stack>`, which is free text and may
+    // legitimately contain a `?`. Asserting on the record would fail on an
+    // unrelated future exception and read as a query-string leak that had not
+    // happened.
     const logged = JSON.parse(captured.error[0] ?? '{}') as Record<
       string,
       unknown
     >;
     expect(logged).toMatchObject({ path: '/v1/chapters/join' });
+    expect(String(logged.path)).not.toContain('?');
   });
 
   it('strips the OAuth state and code from the 5xx error log (#1260)', () => {
