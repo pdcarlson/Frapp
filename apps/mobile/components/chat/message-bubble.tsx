@@ -9,6 +9,7 @@ import {
   resolveAuthorName,
 } from "@repo/hooks";
 import { initialsFor } from "@/lib/chat/display-name";
+import { MessageAttachments } from "./message-attachments";
 
 /**
  * One message row in the s05 thread.
@@ -119,24 +120,22 @@ export function MessageBubble({
   const reactions = groupReactions(message, viewerId);
   const time = formatMessageTime(message.created_at);
 
-  // Mobile has no attachment picker and no attachment renderer yet, but it must
-  // still say that a message HAS files. Two things made this urgent rather than
-  // cosmetic: web can now send a message that is nothing but a file, and the
-  // backfill strips the `📎 <name> (<path>)` text out of every historical
-  // attachment message — so without this line, messages that read fine on mobile
-  // yesterday become empty bubbles indistinguishable from a rendering bug.
+  // Mount the renderer only when the message actually has files. The query hook
+  // inside reaches for `FrappClientProvider`, so mounting unconditionally would
+  // make every plain-text row — the overwhelming majority — require a client
+  // context it has never needed. The count comes off the message row, so this
+  // costs no request to decide.
   //
-  // A count, not a filename: the names live in `chat_message_attachments` and
-  // need a signed-URL round trip per message, which is the renderer's job when
-  // it lands. Saying "1 attachment" with no way to open it is honest; saying
-  // nothing is not.
-  const attachmentNote =
+  // A deleted message shows none: the API 404s the attachment list anyway, but
+  // the client must not offer the affordance in the first place.
+  const attachments =
     !message.is_deleted && message.attachment_count > 0 ? (
-      <Text style={isMine ? styles.attachmentMine : styles.attachmentTheirs}>
-        {message.attachment_count === 1
-          ? "1 attachment · open on web"
-          : `${message.attachment_count} attachments · open on web`}
-      </Text>
+      <MessageAttachments
+        channelId={message.channel_id}
+        messageId={message.id}
+        count={message.attachment_count}
+        isMine={isMine}
+      />
     ) : null;
 
   const body = message.is_deleted ? (
@@ -148,7 +147,7 @@ export function MessageBubble({
           {message.content}
         </Text>
       ) : null}
-      {attachmentNote}
+      {attachments}
     </>
   );
 
@@ -214,9 +213,7 @@ export function MessageBubble({
       </View>
 
       <View style={styles.theirsColumn}>
-        <Text style={styles.metaText}>
-          {`${authorLabel} · ${time}`}
-        </Text>
+        <Text style={styles.metaText}>{`${authorLabel} · ${time}`}</Text>
         <View style={styles.bubbleTheirs}>{body}</View>
 
         <ReactionRow
@@ -364,16 +361,6 @@ function createStyles(tokens: SignetTokens) {
     },
     bodyMine: {
       ...typeRole(tokens.typography.role.body),
-      color: tokens.color.gold.onHouse,
-    },
-    // Same token pair as the body, one step quieter — the note is metadata about
-    // the message, not the message.
-    attachmentTheirs: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-    },
-    attachmentMine: {
-      ...typeRole(tokens.typography.role.caption),
       color: tokens.color.gold.onHouse,
     },
     deleted: {

@@ -1,8 +1,37 @@
 /** @vitest-environment jsdom */
-import { describe, expect, it } from "vitest";
+import React from "react";
+import { create, type ReactTestRenderer } from "react-test-renderer";
+import { act } from "react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { reactionActionType } from "@repo/chat-core/types";
-import { formatMessageTime, groupReactions } from "./message-bubble";
+import { FrappThemeProvider } from "@/lib/theme";
+
+const attachmentHook = vi.hoisted(() => ({
+  calls: [] as Array<{ enabled: boolean }>,
+}));
+
+vi.mock("@repo/hooks", async () => {
+  const actual =
+    await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
+  return {
+    ...actual,
+    useMessageAttachments: (
+      _channelId: string,
+      _messageId: string,
+      enabled: boolean,
+    ) => {
+      attachmentHook.calls.push({ enabled });
+      return { isPending: false, isError: false, data: [] };
+    },
+  };
+});
+
+import {
+  formatMessageTime,
+  groupReactions,
+  MessageBubble,
+} from "./message-bubble";
 
 const VIEWER = "11111111-1111-4111-8111-111111111111";
 const OTHER = "22222222-2222-4222-8222-222222222222";
@@ -110,5 +139,65 @@ describe("groupReactions", () => {
 
   it("survives a message with no reactions at all", () => {
     expect(groupReactions(message(), VIEWER)).toEqual([]);
+  });
+});
+
+/**
+ * Where the attachment renderer is allowed to mount.
+ *
+ * The gate lives here rather than in `MessageAttachments` because the query hook
+ * inside it reaches for `FrappClientProvider` on render — so "don't fetch" is not
+ * enough, the component must not mount at all for the overwhelming majority of
+ * rows. #1229.
+ */
+function renderBubble(message: ChatMessage): ReactTestRenderer {
+  let tree!: ReactTestRenderer;
+  act(() => {
+    tree = create(
+      <FrappThemeProvider>
+        <MessageBubble
+          message={message}
+          viewerId={VIEWER}
+          nameFor={() => "Casey"}
+          onRetry={vi.fn()}
+          onDiscard={vi.fn()}
+          onReact={vi.fn()}
+          onUnreact={vi.fn()}
+        />
+      </FrappThemeProvider>,
+    );
+  });
+  return tree;
+}
+
+describe("attachment rendering is gated on the message", () => {
+  beforeEach(() => {
+    attachmentHook.calls = [];
+  });
+
+  it("mounts the renderer for a message that has attachments", () => {
+    renderBubble(message({ attachment_count: 2 }));
+    expect(attachmentHook.calls).toEqual([{ enabled: true }]);
+  });
+
+  it("does not mount it for a plain text message", () => {
+    renderBubble(message({ attachment_count: 0 }));
+    expect(attachmentHook.calls).toEqual([]);
+  });
+
+  it("does not mount it for a deleted message that had attachments", () => {
+    // The API 404s the attachment list for a deleted message, but the client
+    // must not offer the affordance in the first place.
+    renderBubble(message({ attachment_count: 3, is_deleted: true }));
+    expect(attachmentHook.calls).toEqual([]);
+  });
+
+  it("no longer renders the open-on-web placeholder", () => {
+    // #1228's stopgap. It was honest but it was a dead end, and the acceptance
+    // criteria require it deleted rather than left alongside the real renderer.
+    const rendered = JSON.stringify(
+      renderBubble(message({ attachment_count: 1 })).toJSON(),
+    );
+    expect(rendered).not.toContain("open on web");
   });
 });

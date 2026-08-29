@@ -53,6 +53,9 @@ vi.mock("react-native", () => ({
   View: "View",
   Text: "Text",
   Pressable: "Pressable",
+  // Added with the chat attachment renderer (#1229), which previews image
+  // attachments inline.
+  Image: "Image",
   ScrollView: "ScrollView",
   TextInput: "TextInput",
   // The chat thread windows its messages with a FlatList. As a string stand-in
