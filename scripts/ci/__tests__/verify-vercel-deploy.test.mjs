@@ -73,13 +73,33 @@ function vercelDeployment({
   };
 }
 
-// A successful earlier deployment on `branch` — what makes a later CANCELED
-// readable as a superseded push rather than an unverified project.
+// An EARLIER successful deployment on `branch`. Deliberately not evidence of
+// anything any more: it was the baseline a turbo-ignore skip diffed against,
+// and on `main` one always exists, so treating it as exculpatory is what let a
+// manual stop or a concurrency-limit cancel report green.
 function priorSuccess({ branch = "main", createdAt = "2026-04-15T00:00:00Z" } = {}) {
   return vercelDeployment({
     sha: "0ldc0mm1t",
     state: "READY",
     uid: `dpl_prior_${branch}`,
+    createdAt,
+    branch,
+  });
+}
+
+// A LATER deployment on `branch` — the push that overtook the candidate, and
+// the only thing that makes a cancel benign. Left in whatever state the caller
+// wants: a superseding build may still be running, and requiring it to be READY
+// would fail the superseded one for losing a race it is meant to lose.
+function laterDeployment({
+  branch = "main",
+  state = "READY",
+  createdAt = "2026-04-17T00:00:00Z",
+} = {}) {
+  return vercelDeployment({
+    sha: "newc0mm1t",
+    state,
+    uid: `dpl_later_${branch}`,
     createdAt,
     branch,
   });
@@ -139,10 +159,10 @@ describe("verifyVercelDeploy", () => {
     assert.match(result.message, /ERROR/);
   });
 
-  it("returns neutral on CANCELED superseded by a later push on the same branch", async () => {
+  it("returns neutral on CANCELED overtaken by a later deployment on the same branch", async () => {
     const { fetchImpl } = makeFetchStub([
       okJson({
-        deployments: [vercelDeployment({ state: "CANCELED" }), priorSuccess()],
+        deployments: [vercelDeployment({ state: "CANCELED" }), laterDeployment()],
       }),
     ]);
     const { clock } = makeFakeClock();
@@ -153,14 +173,31 @@ describe("verifyVercelDeploy", () => {
     assert.match(result.message, /superseded/);
   });
 
-  // ── CANCELED without a baseline ───────────────────────────────────────────
-  // The gap this closes: a CANCELED deployment was an automatic pass, so a
-  // project that never built could report green. Vercel only auto-cancels
-  // against a newer push on the same branch; with no earlier successful
-  // deployment the cancel came from something else (manual
-  // stop, concurrency limit) and nothing was verified.
+  it("stays neutral when the superseding deployment is still building", async () => {
+    const { fetchImpl } = makeFetchStub([
+      okJson({
+        deployments: [
+          vercelDeployment({ state: "CANCELED" }),
+          laterDeployment({ state: "BUILDING" }),
+        ],
+      }),
+    ]);
+    const { clock } = makeFakeClock();
 
-  it("fails on CANCELED when no prior deployment exists at all", async () => {
+    const result = await verifyVercelDeploy({ ...defaults, clock, fetchImpl });
+
+    assert.equal(result.status, "neutral");
+  });
+
+  // ── CANCELED that nothing overtook ────────────────────────────────────────
+  // The gap this closes: a CANCELED deployment was an automatic pass, so a
+  // project that never built could report green. Vercel auto-cancels a build
+  // only when a NEWER push lands on the same branch, so supersession implies a
+  // later deployment. Without one the cancel came from something else — a
+  // manual stop, a build concurrency limit, or an Ignored Build Step that
+  // skipped it — and nothing was verified.
+
+  it("fails on CANCELED when no other deployment exists at all", async () => {
     const { fetchImpl } = makeFetchStub([
       okJson({ deployments: [vercelDeployment({ state: "CANCELED" })] }),
     ]);
@@ -169,16 +206,34 @@ describe("verifyVercelDeploy", () => {
     const result = await verifyVercelDeploy({ ...defaults, clock, fetchImpl });
 
     assert.equal(result.status, "failure");
-    assert.match(result.message, /no earlier successful deployment/);
+    assert.match(result.message, /no later deployment/);
     assert.match(result.message, /CANCELED/);
   });
 
-  it("fails on CANCELED when the only earlier success is on another branch", async () => {
+  // The regression guard for the cutover. Under the previous backward-looking
+  // rule ("does an earlier success exist on this branch") this exact page
+  // returned NEUTRAL — and on `main` an earlier success always exists, so every
+  // cancel did. That is the false green the forward-looking rule removes.
+  it("fails on CANCELED when every other deployment on the branch is older", async () => {
+    const { fetchImpl } = makeFetchStub([
+      okJson({
+        deployments: [vercelDeployment({ state: "CANCELED" }), priorSuccess()],
+      }),
+    ]);
+    const { clock } = makeFakeClock();
+
+    const result = await verifyVercelDeploy({ ...defaults, clock, fetchImpl });
+
+    assert.equal(result.status, "failure");
+    assert.match(result.message, /no later deployment/);
+  });
+
+  it("fails on CANCELED when the only later deployment is on another branch", async () => {
     const { fetchImpl } = makeFetchStub([
       okJson({
         deployments: [
           vercelDeployment({ state: "CANCELED", branch: "production" }),
-          priorSuccess({ branch: "main" }),
+          laterDeployment({ branch: "main" }),
         ],
       }),
     ]);
@@ -190,50 +245,12 @@ describe("verifyVercelDeploy", () => {
     assert.match(result.message, /branch production/);
   });
 
-  it("fails on CANCELED when earlier deployments on the branch were themselves CANCELED", async () => {
-    const { fetchImpl } = makeFetchStub([
-      okJson({
-        deployments: [
-          vercelDeployment({ state: "CANCELED" }),
-          vercelDeployment({
-            sha: "0ldc0mm1t",
-            state: "CANCELED",
-            uid: "dpl_older_cancel",
-            createdAt: "2026-04-15T00:00:00Z",
-          }),
-        ],
-      }),
-    ]);
-    const { clock } = makeFakeClock();
-
-    const result = await verifyVercelDeploy({ ...defaults, clock, fetchImpl });
-
-    assert.equal(result.status, "failure");
-    assert.match(result.message, /no earlier successful deployment/);
-  });
-
-  it("fails on CANCELED when the only success on the branch is newer than the cancel", async () => {
-    const { fetchImpl } = makeFetchStub([
-      okJson({
-        deployments: [
-          vercelDeployment({ state: "CANCELED", createdAt: "2026-04-16T00:00:00Z" }),
-          priorSuccess({ createdAt: "2026-04-17T00:00:00Z" }),
-        ],
-      }),
-    ]);
-    const { clock } = makeFakeClock();
-
-    const result = await verifyVercelDeploy({ ...defaults, clock, fetchImpl });
-
-    assert.equal(result.status, "failure");
-  });
-
-  it("falls back to any earlier success when Vercel reports no branch", async () => {
+  it("falls back to any later deployment when Vercel reports no branch", async () => {
     const { fetchImpl } = makeFetchStub([
       okJson({
         deployments: [
           vercelDeployment({ state: "CANCELED", branch: null }),
-          priorSuccess({ branch: "some-other-branch" }),
+          laterDeployment({ branch: "some-other-branch" }),
         ],
       }),
     ]);
@@ -274,14 +291,20 @@ describe("verifyVercelDeploy", () => {
     assert.equal(result.status, "success");
   });
 
-  // Replay of the real frapp-web page around PR #1330's preview, in the shape
+  // Replay of the real frapp-web deployment page around PR #1330, in the shape
   // the v6 endpoint actually returns (`created` as epoch ms, not `createdAt`).
-  // Kept as real captured data: the fixture predates the removal of
-  // `turbo-ignore`, so that cancel was a skip rather than a supersession, but
-  // the rule under test does not depend on which — a CANCELED deployment with
-  // an earlier success behind it on the same branch stays neutral either way.
-  // The stricter CANCELED rule must not turn a whole page of real history red.
-  it("stays neutral for a CANCELED deployment on a branch with real history", async () => {
+  // Every uid, sha and timestamp here was read from the live API.
+  //
+  // What this guards is epoch-ms parsing in the supersession comparison — the
+  // ordering test is the whole rule, so a field-shape miss would silently make
+  // every real cancel compare as unordered. Asserted in both directions on the
+  // same page.
+  //
+  // Note the cutover this encodes: as captured, that cancel was a turbo-ignore
+  // skip and the old rule called it neutral because earlier successes sat
+  // behind it. Nothing skips builds now, so the same page is a failure until a
+  // later deployment overtakes it.
+  it("reads epoch-ms `created` when deciding supersession on real data", async () => {
     const canceledPreview = {
       uid: "dpl_DMZsRAr8kvDuzAtfsAgFzJ3xa2Wg",
       url: "frapp-5odpw2a0f.vercel.app",
@@ -301,15 +324,36 @@ describe("verifyVercelDeploy", () => {
       created: 1787867621695,
       meta: { githubCommitSha: "1f4263fb", githubCommitRef: "main" },
     };
-    const { fetchImpl } = makeFetchStub([
+    // The real next push on main, ~84 minutes later (PR #1331's merge).
+    const laterReady = {
+      uid: "dpl_9xzrDJ7fCzXxGknqQaRxujNjxFEy",
+      state: "READY",
+      created: 1787933183873,
+      meta: { githubCommitSha: "d6912052", githubCommitRef: "main" },
+    };
+
+    const olderOnly = makeFetchStub([
       okJson({ deployments: [canceledPreview, olderCancel, olderReady] }),
     ]);
-    const { clock } = makeFakeClock();
+    const withLater = makeFetchStub([
+      okJson({ deployments: [canceledPreview, olderCancel, olderReady, laterReady] }),
+    ]);
 
-    const result = await verifyVercelDeploy({ ...defaults, clock, fetchImpl });
+    const failed = await verifyVercelDeploy({
+      ...defaults,
+      clock: makeFakeClock().clock,
+      fetchImpl: olderOnly.fetchImpl,
+    });
+    assert.equal(failed.status, "failure");
+    assert.match(failed.message, /no later deployment/);
 
-    assert.equal(result.status, "neutral");
-    assert.match(result.message, /branch main/);
+    const superseded = await verifyVercelDeploy({
+      ...defaults,
+      clock: makeFakeClock().clock,
+      fetchImpl: withLater.fetchImpl,
+    });
+    assert.equal(superseded.status, "neutral");
+    assert.match(superseded.message, /branch main/);
   });
 
   it("returns failure when Vercel API responds with HTTP 500", async () => {

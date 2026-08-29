@@ -279,32 +279,67 @@ jobs:
       - name: Install production dependencies only
         run: npm ci --omit=dev
 
-      # The prune is this job's entire premise, so assert it rather than
-      # assume it. If a devDependency is ever promoted to `dependencies`,
-      # this job would quietly become another dev-tree build and keep
-      # reporting green while covering nothing.
+      # The prune is this job's entire premise, so assert it rather than assume
+      # it. Two probes, one per direction: something dev-only must be gone, and
+      # the type-checker must survive.
+      #
+      # Note that neither is decided by the dependencies/devDependencies split
+      # alone -- npm keeps a package the prune would otherwise drop when it is
+      # reachable as an optional peer, which the lockfile marks `devOptional`.
+      # `typescript` is in that position today (it satisfies Next's optional
+      # peer), which is exactly why Vercel's production install still has a
+      # type-checker. So treat a failure here as "the tree changed shape",
+      # investigate which mechanism moved, and fix that -- do not delete the
+      # check to get green, and do not assume the answer is a misfiled
+      # dependency.
       - name: Assert the tree is actually pruned
         run: |
           set -euo pipefail
           if [ -d node_modules/vitest ]; then
-            echo "::error::node_modules/vitest exists after --omit=dev, so this is not a production-shaped tree. This job's premise is broken -- fix the dependency classification rather than deleting this check."
+            echo "::error::node_modules/vitest survived --omit=dev, so this is not a production-shaped tree and this job is silently covering nothing. Check whether vitest became a production dependency or gained an optional-peer path (lockfile 'devOptional')."
             exit 1
           fi
           if [ ! -d node_modules/typescript ]; then
-            echo "::error::typescript is missing, so 'next build' could not type-check at all and a pass here would mean nothing."
+            echo "::error::typescript did not survive --omit=dev. Vercel's production build would lose its type-checker too, so this is a real parity finding, not a CI-only problem: check what stopped keeping it reachable (it survives today as an optional peer of next)."
             exit 1
           fi
           echo "::notice::Production-shaped tree confirmed (vitest pruned, typescript present)"
 
       # turbo is a root devDependency and is therefore pruned too, so it is
-      # fetched the way Vercel's build step gets it. The version is read from
-      # package.json rather than pinned here a second time -- one source of
-      # truth, so a Renovate bump cannot leave this workflow building with a
-      # different turbo than the repo uses.
+      # fetched the way Vercel's build step gets it. The version is read rather
+      # than pinned here a second time -- one source of truth, so a bump cannot
+      # leave this workflow building with a different turbo than the repo uses.
+      #
+      # Read from package-lock.json, not package.json: the lock records what
+      # `npm ci` actually installs everywhere else, while the manifest records a
+      # RANGE. A lockfile-maintenance bump inside `^2.10.11` would otherwise
+      # leave every other job on the new turbo and this one on 2.10.11 -- the
+      # exact drift this is meant to prevent. It also does not care whether
+      # turbo sits in `dependencies` or `devDependencies`, so moving it (a
+      # plausible edit, since this job prunes devDependencies) cannot break the
+      # required check for every open PR.
       - name: Build web and landing as production
+        # `next build` prerenders, and `/chat` constructs a Supabase browser
+        # client while doing so, so the build needs NEXT_PUBLIC_* present or it
+        # dies with "@supabase/ssr: Your project's URL and API key are required".
+        # These are the stand-ins from `apps/web/playwright.config.ts` — a valid
+        # HTTP URL and a well-formed JWT-ish string, enough for the client to be
+        # constructible — kept identical so the repo has one placeholder shape.
+        #
+        # Deliberately NOT the real values, even though Vercel's production
+        # build has them via the Infisical sync: `NEXT_PUBLIC_*` is inlined at
+        # build time, so real values would bake a live URL and key into a CI
+        # artifact that is then thrown away. This job exists to check the
+        # dependency shape of the build, not its env — the env only has to be
+        # present enough to let the program run. Do not "fix" this by wiring in
+        # secrets.
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321"
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiJ9.playwright-stand-in.signature"
+          NEXT_PUBLIC_API_URL: "http://127.0.0.1:3001"
         run: |
           set -euo pipefail
-          TURBO_VERSION="$(node -p "require('./package.json').devDependencies.turbo.replace(/^[^0-9]*/, '')")"
+          TURBO_VERSION="$(node -p "require('./package-lock.json').packages['node_modules/turbo'].version")"
           echo "Using turbo@${TURBO_VERSION}"
           npx --yes "turbo@${TURBO_VERSION}" run build --filter=web --filter=landing
 

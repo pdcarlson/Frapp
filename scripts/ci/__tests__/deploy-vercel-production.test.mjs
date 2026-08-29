@@ -62,7 +62,11 @@ function makeFetchStub(responses) {
 // The first test pins TODAY's behaviour so the hole is documented rather than
 // asserted about in a comment; the second pins the strict behaviour that
 // replaces it.
-describe("CANCELED on main: the observer's neutral verdict does not survive the cutover", () => {
+// Why deploy-vercel-production.mjs polls its own deployment instead of reusing
+// the observer. The two rules agree on an unexplained cancel and diverge on a
+// superseded one — and on the production path even a superseded cancel means
+// nothing shipped, so it can never be neutral.
+describe("CANCELED on main: the production path is stricter than the observer", () => {
   const cancelledOnMain = {
     uid: "dpl_cancelled",
     state: "CANCELED",
@@ -77,10 +81,43 @@ describe("CANCELED on main: the observer's neutral verdict does not survive the 
     createdAt: "2026-08-28T20:00:00Z",
     meta: { githubCommitSha: "deadbeef", githubCommitRef: "main" },
   };
+  const laterDeploymentOnMain = {
+    uid: "dpl_later",
+    state: "READY",
+    target: null,
+    createdAt: "2026-08-28T22:00:00Z",
+    meta: { githubCommitSha: "feedbeef", githubCommitRef: "main" },
+  };
 
-  it("verify-vercel-deploy reports NEUTRAL — the hole, reproduced", async () => {
+  // The original hole: an earlier success on the branch made the observer call
+  // this neutral, and on `main` an earlier success always exists. Both paths
+  // now fail it — the observer asks whether a LATER deployment overtook it.
+  it("the observer now also reports FAILURE when nothing overtook the cancel", async () => {
     const { fetchImpl } = makeFetchStub([
       okJson({ deployments: [cancelledOnMain, earlierSuccessOnMain] }),
+    ]);
+
+    const result = await verifyVercelDeploy({
+      apiKey: API_KEY,
+      projectId: "prj_test",
+      sha: SHA,
+      clock: makeFakeClock(),
+      fetchImpl,
+      logger: quiet,
+    });
+
+    assert.equal(result.status, "failure");
+    assert.match(result.message, /no later deployment/);
+  });
+
+  // Where they still diverge, and the reason this module exists: a superseded
+  // cancel is benign for a staging push (the newer build verifies the branch)
+  // and fatal for a release (the named commit was never built).
+  it("the observer reports NEUTRAL for a superseded cancel", async () => {
+    const { fetchImpl } = makeFetchStub([
+      okJson({
+        deployments: [cancelledOnMain, earlierSuccessOnMain, laterDeploymentOnMain],
+      }),
     ]);
 
     const result = await verifyVercelDeploy({

@@ -15,9 +15,11 @@
 // verifier-neutral terminal states). Exits 1 on failure.
 //
 // Skipping stays non-fatal here because this script only points a hostname at a
-// build; it is not the gate. `verify-vercel-deploy.mjs` runs first in the same
-// workflow and FAILS when no deployment exists for the SHA, which is the check
-// that a missing build has to trip.
+// build; it is not the gate. `verify-vercel-deploy.mjs` runs as the preceding
+// step in `verify-deployments.yml` and FAILS when no deployment exists for the
+// SHA, so that job ends there and this script is never reached in that case —
+// its no-deployment branch survives for direct runs and for any future caller
+// that does not gate on the verifier.
 
 import { fetchVercelDeployments } from "./lib/providers.mjs";
 import { VERCEL_NEUTRAL_TERMINAL_STATES } from "./verify-vercel-deploy.mjs";

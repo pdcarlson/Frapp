@@ -71,7 +71,11 @@ jobs:
           GITHUB_SHA: ${{ github.sha }}
         run: node scripts/ci/verify-vercel-deploy.mjs
 
-      # Skips gracefully when verify step was neutral (CANCELED / no deploy for SHA); see ensure-vercel-staging-alias.mjs.
+      # Only reached when the verify step above passed or was neutral — a plain
+      # sequential step, so a failed verify ends the job here. Neutral now means a
+      # CANCELED deployment superseded by a later push; "no deployment for the SHA"
+      # is a FAILURE since nothing skips builds any more. See
+      # ensure-vercel-staging-alias.mjs.
       - name: Point staging domain at latest main deployment (web)
         env:
           VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
@@ -100,7 +104,11 @@ jobs:
           GITHUB_SHA: ${{ github.sha }}
         run: node scripts/ci/verify-vercel-deploy.mjs
 
-      # Skips gracefully when verify step was neutral (CANCELED / no deploy for SHA); see ensure-vercel-staging-alias.mjs.
+      # Only reached when the verify step above passed or was neutral — a plain
+      # sequential step, so a failed verify ends the job here. Neutral now means a
+      # CANCELED deployment superseded by a later push; "no deployment for the SHA"
+      # is a FAILURE since nothing skips builds any more. See
+      # ensure-vercel-staging-alias.mjs.
       - name: Point staging domain at latest main deployment (landing)
         env:
           VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
