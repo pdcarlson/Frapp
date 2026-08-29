@@ -31,6 +31,7 @@ export class SemesterRolloverController {
       label: dto.label,
       startDate: dto.start_date,
       endDate: dto.end_date,
+      promoteNewMembers: dto.promote_new_members,
     });
   }
 

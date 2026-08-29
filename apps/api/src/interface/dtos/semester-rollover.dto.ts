@@ -1,5 +1,5 @@
-import { IsDateString, IsString, MaxLength } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsBoolean, IsDateString, IsOptional, IsString, MaxLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class RolloverDto {
   @ApiProperty({ description: 'Semester label (e.g. "Fall 2025")' })
@@ -14,4 +14,13 @@ export class RolloverDto {
   @ApiProperty({ description: 'End date (ISO date)', example: '2025-12-15' })
   @IsDateString()
   end_date: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Also bulk-promote every New Member in the chapter to Member, in the same transaction as the archive. Members keep all their other roles. Defaults to false.',
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  promote_new_members?: boolean;
 }
