@@ -3,11 +3,16 @@ import { ConflictException } from '@nestjs/common';
 import { SemesterRolloverService } from './semester-rollover.service';
 import { SEMESTER_ARCHIVE_REPOSITORY } from '../../domain/repositories/semester-archive.repository.interface';
 import type { ISemesterArchiveRepository } from '../../domain/repositories/semester-archive.repository.interface';
+import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
+import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
+import { SystemRoleKeys } from '../../domain/constants/permissions';
+import type { Role } from '../../domain/entities/role.entity';
 import type { SemesterArchive } from '../../domain/entities/semester-archive.entity';
 
 describe('SemesterRolloverService', () => {
   let service: SemesterRolloverService;
   let mockArchiveRepo: jest.Mocked<ISemesterArchiveRepository>;
+  let mockRoleRepo: jest.Mocked<IRoleRepository>;
 
   const baseArchive: SemesterArchive = {
     id: 'arch-1',
@@ -18,11 +23,47 @@ describe('SemesterRolloverService', () => {
     created_at: '2025-12-16T00:00:00.000Z',
   };
 
+  const newMemberRole = {
+    id: 'role-new',
+    system_key: SystemRoleKeys.NEW_MEMBER,
+  } as Role;
+  const memberRole = {
+    id: 'role-member',
+    system_key: SystemRoleKeys.MEMBER,
+  } as Role;
+
+  /** Resolve both system roles, as a healthy seeded chapter would. */
+  function withBothSystemRoles() {
+    mockRoleRepo.findByChapterAndSystemKey.mockImplementation(
+      (_chapterId: string, systemKey: string) =>
+        Promise.resolve(
+          systemKey === SystemRoleKeys.NEW_MEMBER
+            ? newMemberRole
+            : systemKey === SystemRoleKeys.MEMBER
+              ? memberRole
+              : null,
+        ),
+    );
+  }
+
   beforeEach(async () => {
     mockArchiveRepo = {
       findByChapter: jest.fn(),
       findLatestByChapter: jest.fn(),
       create: jest.fn(),
+      createWithPromotion: jest.fn(),
+    };
+
+    mockRoleRepo = {
+      findById: jest.fn(),
+      findByChapter: jest.fn(),
+      findByIds: jest.fn(),
+      findByChapterAndName: jest.fn(),
+      findByChapterAndSystemKey: jest.fn(),
+      create: jest.fn(),
+      createMany: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -31,6 +72,10 @@ describe('SemesterRolloverService', () => {
         {
           provide: SEMESTER_ARCHIVE_REPOSITORY,
           useValue: mockArchiveRepo,
+        },
+        {
+          provide: ROLE_REPOSITORY,
+          useValue: mockRoleRepo,
         },
       ],
     }).compile();
@@ -191,6 +236,137 @@ describe('SemesterRolloverService', () => {
 
       expect(result.label).toBe('Spring 2026');
       expect(mockArchiveRepo.create).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('New Member promotion (#285)', () => {
+    beforeEach(() => {
+      mockArchiveRepo.findLatestByChapter.mockResolvedValue(null);
+    });
+
+    const input = {
+      chapterId: 'ch-1',
+      label: 'Fall 2026',
+      startDate: '2026-08-01',
+      endDate: '2026-12-15',
+    };
+
+    it('does not touch roles when the flag is absent', async () => {
+      mockArchiveRepo.create.mockResolvedValue(baseArchive);
+
+      await service.rollover(input);
+
+      // The unpromoted path must stay a single write on the original code path.
+      expect(mockArchiveRepo.create).toHaveBeenCalledTimes(1);
+      expect(mockArchiveRepo.createWithPromotion).not.toHaveBeenCalled();
+      expect(mockRoleRepo.findByChapterAndSystemKey).not.toHaveBeenCalled();
+    });
+
+    it('does not touch roles when the flag is explicitly false', async () => {
+      mockArchiveRepo.create.mockResolvedValue(baseArchive);
+
+      await service.rollover({ ...input, promoteNewMembers: false });
+
+      expect(mockArchiveRepo.create).toHaveBeenCalledTimes(1);
+      expect(mockArchiveRepo.createWithPromotion).not.toHaveBeenCalled();
+      expect(mockRoleRepo.findByChapterAndSystemKey).not.toHaveBeenCalled();
+    });
+
+    it('promotes through the atomic path when the flag is set', async () => {
+      withBothSystemRoles();
+      mockArchiveRepo.createWithPromotion.mockResolvedValue(baseArchive);
+
+      const result = await service.rollover({
+        ...input,
+        promoteNewMembers: true,
+      });
+
+      expect(result).toEqual(baseArchive);
+      // The archive insert and the role swap must go through the single
+      // transactional RPC, never the plain insert plus a second write.
+      expect(mockArchiveRepo.create).not.toHaveBeenCalled();
+      expect(mockArchiveRepo.createWithPromotion).toHaveBeenCalledWith({
+        chapterId: 'ch-1',
+        label: 'Fall 2026',
+        startDate: '2026-08-01',
+        endDate: '2026-12-15',
+        newMemberRoleId: 'role-new',
+        memberRoleId: 'role-member',
+      });
+    });
+
+    it('resolves both roles by system_key, never by name', async () => {
+      withBothSystemRoles();
+      mockArchiveRepo.createWithPromotion.mockResolvedValue(baseArchive);
+
+      await service.rollover({ ...input, promoteNewMembers: true });
+
+      // A chapter may rename its system roles freely, which is why
+      // 20260806220000_role_system_key.sql exists. Keying on `name` here would
+      // silently promote nobody for any chapter that relabelled either role.
+      expect(mockRoleRepo.findByChapterAndName).not.toHaveBeenCalled();
+      expect(mockRoleRepo.findByChapterAndSystemKey).toHaveBeenCalledWith(
+        'ch-1',
+        SystemRoleKeys.NEW_MEMBER,
+      );
+      expect(mockRoleRepo.findByChapterAndSystemKey).toHaveBeenCalledWith(
+        'ch-1',
+        SystemRoleKeys.MEMBER,
+      );
+    });
+
+    it('refuses, and writes nothing, when the New Member role is missing', async () => {
+      mockRoleRepo.findByChapterAndSystemKey.mockImplementation(
+        (_chapterId: string, systemKey: string) =>
+          Promise.resolve(
+            systemKey === SystemRoleKeys.MEMBER ? memberRole : null,
+          ),
+      );
+
+      await expect(
+        service.rollover({ ...input, promoteNewMembers: true }),
+      ).rejects.toThrow(ConflictException);
+
+      // Refusing beats archiving with a silent no-op promotion: an officer who
+      // ticked the box must not be told the semester rolled over while nobody
+      // was promoted. Nothing is written, so the retry is still available.
+      expect(mockArchiveRepo.create).not.toHaveBeenCalled();
+      expect(mockArchiveRepo.createWithPromotion).not.toHaveBeenCalled();
+    });
+
+    it('refuses, and writes nothing, when the Member role is missing', async () => {
+      mockRoleRepo.findByChapterAndSystemKey.mockImplementation(
+        (_chapterId: string, systemKey: string) =>
+          Promise.resolve(
+            systemKey === SystemRoleKeys.NEW_MEMBER ? newMemberRole : null,
+          ),
+      );
+
+      await expect(
+        service.rollover({ ...input, promoteNewMembers: true }),
+      ).rejects.toThrow(ConflictException);
+
+      expect(mockArchiveRepo.create).not.toHaveBeenCalled();
+      expect(mockArchiveRepo.createWithPromotion).not.toHaveBeenCalled();
+    });
+
+    it('enforces the monthly limit before resolving roles or promoting', async () => {
+      const now = new Date();
+      mockArchiveRepo.findLatestByChapter.mockResolvedValue({
+        ...baseArchive,
+        created_at: new Date(
+          Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+        ).toISOString(),
+      });
+      withBothSystemRoles();
+
+      await expect(
+        service.rollover({ ...input, promoteNewMembers: true }),
+      ).rejects.toThrow(ConflictException);
+
+      // A blocked rollover must not promote anyone as a side effect.
+      expect(mockArchiveRepo.createWithPromotion).not.toHaveBeenCalled();
+      expect(mockRoleRepo.findByChapterAndSystemKey).not.toHaveBeenCalled();
     });
   });
 });

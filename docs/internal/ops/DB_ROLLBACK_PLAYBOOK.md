@@ -745,6 +745,11 @@ After any rollback event:
 * **Action**: Run `DROP FUNCTION IF EXISTS transfer_presidency(uuid, uuid, uuid, text);`
 * **Note**: Additive function only — dropping it removes the atomic presidency-transfer path but loses no data. The API calls it from `SupabaseMemberRepository.transferPresidencyAtomic`, so a forward-fix (rather than a bare drop) is required to keep presidency transfer working: deploy an API revision that reverts to the prior two-write path (remove the wildcard role from the current President, add it to the target) before dropping the function.
 
+## Rollback `rollover_semester` RPC
+* **Migration**: `20260829000000_rollover_promote_new_members.sql`
+* **Action**: Run `DROP FUNCTION IF EXISTS rollover_semester(uuid, text, date, date, text, text);`
+* **Note**: Additive function only — dropping it loses no data. Unlike the other RPCs here, a bare drop does **not** break the ordinary path: a rollover without pledge promotion never calls this function and still goes through `semester_archives.insert`. Only the optional New Member → Member promotion is lost. The API calls it from `SupabaseSemesterArchiveRepository.createWithPromotion`, so deploy an API revision that stops offering the promotion toggle before dropping the function, or a rollover requesting promotion will fail. **Already-applied promotions are not reverted by dropping the function** — the role changes are ordinary `members.role_ids` writes; reversing one means putting the New Member role back on the affected members, and there is no record of who was promoted, so capture that before rolling forward if it matters.
+
 ## Rollback `get_points_report` RPC
 * **Migration**: `20260604140000_get_points_report_window_filter.sql` (supersedes `20250226120000_add_get_points_report_rpc.sql`)
 * **Action**: Run `DROP FUNCTION IF EXISTS get_points_report(uuid, uuid, timestamptz);`

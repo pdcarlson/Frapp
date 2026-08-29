@@ -34,6 +34,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -168,7 +169,10 @@ function SettingsPageContent() {
   // entitled to change — over-gating is the worse defect here.
   const rolloverGate = useSubscriptionGate();
 
-  const canManage = can("chapter-config:manage", permissionsPayload?.permissions);
+  const canManage = can(
+    "chapter-config:manage",
+    permissionsPayload?.permissions,
+  );
 
   // Deep-link the active tab via `?tab=` so links (e.g. the redirect from the
   // former standalone `/roles` page) can land directly on a tab.
@@ -188,6 +192,9 @@ function SettingsPageContent() {
   const [semesterLabel, setSemesterLabel] = useState("");
   const [semesterStart, setSemesterStart] = useState("");
   const [semesterEnd, setSemesterEnd] = useState("");
+  // Defaults to off: promotion rewrites roles across the whole chapter and is
+  // not one-click undoable, so it is opted into per rollover, never inherited.
+  const [promoteNewMembers, setPromoteNewMembers] = useState(false);
 
   useEffect(() => {
     const parsed = CurrentChapterPayloadSchema.safeParse(chapterQuery.data);
@@ -260,7 +267,9 @@ function SettingsPageContent() {
     );
   }
 
-  const parsedChapter = CurrentChapterPayloadSchema.safeParse(chapterQuery.data);
+  const parsedChapter = CurrentChapterPayloadSchema.safeParse(
+    chapterQuery.data,
+  );
   const chapterPayload = parsedChapter.success
     ? (parsedChapter.data as CurrentChapterPayload & {
         donation_url?: string | null;
@@ -419,12 +428,15 @@ function SettingsPageContent() {
     if (!semesterLabel || !semesterStart || !semesterEnd) return;
     const confirmed = await confirm({
       title: `Start a new semester labelled "${semesterLabel}"?`,
-      description:
-        "The current leaderboard period is archived and a new one begins. Points already awarded are kept — only the leaderboard's default window moves.",
+      description: promoteNewMembers
+        ? "The current leaderboard period is archived and a new one begins. Points already awarded are kept — only the leaderboard's default window moves. Every New Member is also promoted to Member; they keep any other roles they hold, and this cannot be undone in one step."
+        : "The current leaderboard period is archived and a new one begins. Points already awarded are kept — only the leaderboard's default window moves.",
       confirmLabel: "Start new semester",
       // Not destructive: a rollover archives rather than deletes, and
       // `writing.md` §7's own copy for this flow says the history stays. A red
-      // button would state a loss the API does not perform.
+      // button would state a loss the API does not perform. Promotion is a role
+      // change rather than a deletion, so it does not change that reading — the
+      // description above states its scope instead.
       tone: "default",
     });
     if (!confirmed) return;
@@ -433,14 +445,18 @@ function SettingsPageContent() {
         label: semesterLabel,
         start_date: semesterStart,
         end_date: semesterEnd,
+        promote_new_members: promoteNewMembers,
       });
       toast({
         title: "Semester archived",
-        description: `${semesterLabel} is now the active period.`,
+        description: promoteNewMembers
+          ? `${semesterLabel} is now the active period, and New Members were promoted to Member.`
+          : `${semesterLabel} is now the active period.`,
       });
       setSemesterLabel("");
       setSemesterStart("");
       setSemesterEnd("");
+      setPromoteNewMembers(false);
     } catch (error) {
       toast({
         title: "Couldn't archive semester",
@@ -611,7 +627,9 @@ function SettingsPageContent() {
                       <Input
                         id="semester-label"
                         value={semesterLabel}
-                        onChange={(event) => setSemesterLabel(event.target.value)}
+                        onChange={(event) =>
+                          setSemesterLabel(event.target.value)
+                        }
                         placeholder="Fall 2026"
                         required
                       />
@@ -622,7 +640,9 @@ function SettingsPageContent() {
                         id="semester-start"
                         type="date"
                         value={semesterStart}
-                        onChange={(event) => setSemesterStart(event.target.value)}
+                        onChange={(event) =>
+                          setSemesterStart(event.target.value)
+                        }
                         required
                       />
                     </div>
@@ -636,6 +656,29 @@ function SettingsPageContent() {
                         required
                       />
                     </div>
+                    {/*
+                      Pledge promotion (spec/behavior/semester-rollover.md step
+                      3). Optional and off by default — it rewrites roles across
+                      the chapter, so it is opted into per rollover. The
+                      confirmation dialog restates the consequence before it
+                      runs. Same `gate.controlProps` as the submit button so an
+                      ungated chapter cannot toggle a control it cannot use.
+                    */}
+                    <label className="flex items-start gap-2 text-sm md:col-span-3">
+                      <Switch
+                        id="semester-promote"
+                        checked={promoteNewMembers}
+                        onCheckedChange={setPromoteNewMembers}
+                        {...rolloverGate.controlProps(rollover.isPending)}
+                      />
+                      <span>
+                        Also promote New Members to Member
+                        <span className="block text-xs text-muted-foreground">
+                          Everyone currently holding the New Member role becomes
+                          a Member. Other roles they hold are kept.
+                        </span>
+                      </span>
+                    </label>
                   </CardContent>
                   <CardFooter className="flex justify-end">
                     {/*
@@ -879,13 +922,16 @@ function SettingsPageContent() {
                     <p className="text-xs text-warning">
                       Label text on this color reads at{" "}
                       {previewInkRatio.toFixed(1)}:1, under the 4.5:1 minimum.
-                      Buttons and name tags using it will be hard to read —
-                      pick a lighter or darker shade.
+                      Buttons and name tags using it will be hard to read — pick
+                      a lighter or darker shade.
                     </p>
                   ) : null}
                 </CardContent>
                 <CardFooter className="flex justify-end">
-                  <Button type="submit" disabled={!canManage || updateChapter.isPending}>
+                  <Button
+                    type="submit"
+                    disabled={!canManage || updateChapter.isPending}
+                  >
                     {updateChapter.isPending ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : null}
