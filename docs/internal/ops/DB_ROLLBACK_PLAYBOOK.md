@@ -458,6 +458,51 @@ After any rollback event:
   leave the column and index in place. They cost writes on insert and nothing on
   read, and they will be needed again.
 
+## Rollback backwork/events/members search vectors
+
+* **Migration**: `20260829002000_search_vectors_backwork_events_members.sql`
+* **Action**:
+  ```sql
+  DROP INDEX IF EXISTS public.idx_backwork_resources_search;
+  DROP INDEX IF EXISTS public.idx_events_search;
+  DROP INDEX IF EXISTS public.idx_users_display_name_search;
+  ALTER TABLE public.backwork_resources DROP COLUMN IF EXISTS search_vector;
+  ALTER TABLE public.events             DROP COLUMN IF EXISTS search_vector;
+  ALTER TABLE public.users              DROP COLUMN IF EXISTS display_name_search;
+  ```
+  Dropping a column drops its index too; the explicit `DROP INDEX` lines are for
+  a partial apply where the column never landed.
+* **Order**: **redeploy the API first, then the database** — same rule and same
+  reason as the chat entry above. `SearchService` names all three columns
+  (`.textSearch('search_vector', …)` for backwork and events,
+  `.textSearch('users.display_name_search', …)` for members), so dropping them
+  under a running post-change API turns `GET /v1/search` into a 500 on every
+  request: PostgREST `42703 column "…" does not exist`. The pre-change revision
+  uses `ILIKE` and references none of them.
+* **Note**: **nothing is lost.** All three are `GENERATED ALWAYS ... STORED` and
+  derived entirely from columns that remain (`title`/`course_number`,
+  `name`/`description`, `display_name`), so re-applying reconstructs them
+  exactly.
+* **Member search is the one behavioural difference to expect on rollback.** The
+  pre-change revision fetches the whole chapter roster and filters it in memory
+  (#1085). Rolling back restores that cost, so a rollback on a large chapter
+  makes member search slow rather than broken — do not read the latency as a
+  failed rollback.
+* **Locks**: dropping is a catalog operation and does not rewrite the heap.
+  **Re-applying is the expensive direction** — each generated column materialises
+  per row under ACCESS EXCLUSIVE, and the GIN build that follows holds SHARE.
+  `users` is the one to schedule around: it is **global**, so its rewrite blocks
+  writes for every chapter at once, not just the one that prompted the rollback.
+* **Lighter option**: if the problem is search *results* rather than the schema
+  (stemming surprises — `Budget` matches `Budgetson` but `udgets` no longer
+  does), revert only the service change and leave the columns and indexes in
+  place. They cost writes on insert and nothing on read, and they will be needed
+  again.
+* **If you roll back the service but keep the schema**, also revert
+  `EVENT_SEARCH_COLUMNS` / `BACKWORK_SEARCH_COLUMNS` together with it: the
+  `check-pglite-migrations.mjs` landmark asserts those lists match their table's
+  columns minus the tsvector, so a half-revert fails that gate.
+
 ## Rollback the imported-kind semantics
 
 * **Migration**: `20260823123000_chat_imported_kind_semantics.sql`
