@@ -12,6 +12,32 @@ const MAX_LOG_VALUE_LENGTH = 200;
 const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/g;
 
 /**
+ * A value of unknown runtime shape, rendered for a log message.
+ *
+ * Call sites are typed `string`, but Express's query parser yields an **array**
+ * for a repeated key, so `?error=a&error=b` arrives as `['a', 'b']`. Returning
+ * `''` for that would erase the very diagnostic the line exists for — an
+ * operator investigating a spike of failed connects would read a message with
+ * nothing after the colon — so arrays are joined, matching what bare
+ * interpolation produced before `logSafe` existed. Stripping and the length cap
+ * still apply on the way out, so nothing here is trusted.
+ *
+ * Objects are deliberately not expanded. `qs` can produce one too
+ * (`?error[x]=1`), and a placeholder loses a diagnostic that was never
+ * meaningful, where a JSON dump would carry nested caller-controlled text into
+ * the record.
+ */
+function render(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value === null || value === undefined) return '';
+  if (Array.isArray(value)) return value.map(render).join(',');
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return '[object]';
+}
+
+/**
  * A caller-supplied string made safe to interpolate into a log message.
  *
  * A log record is one line, so a value carrying a newline lets whoever supplied
@@ -21,10 +47,14 @@ const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/g;
  * unauthenticated by necessity, so `error` and `error_description` are chosen
  * by whoever follows the link, not by Discord.
  *
- * A forged line is not perfectly disguised — Nest's default logger prefixes
- * genuine records with `[Nest] <pid> - <ts> <LEVEL>`, and `security_event` is
- * emitted at `warn` while the injectable sites log at `log`. That bounds the
- * damage; it does not make an arbitrarily-writable log stream acceptable.
+ * A forged line is not perfectly disguised: Nest's default logger prefixes
+ * genuine records with `[Nest] <pid> - <ts> <LEVEL>`, which a caller cannot
+ * supply. Do not lean on anything past that. A record is **not** one line in
+ * general — `logger.error(message, stack)` prints the message and then the
+ * stack across further lines — and this subsystem logs at `log`, `warn` and
+ * `error`, so neither line count nor level separates forged from genuine.
+ * That bounds the damage; it does not make an arbitrarily-writable log stream
+ * acceptable.
  *
  * Strips control characters rather than escaping them: these fields are
  * human-readable diagnostics, so a lost control character costs nothing, while
@@ -36,8 +66,9 @@ const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/g;
  * records either side of it.
  */
 export function logSafe(value: unknown): string {
-  if (typeof value !== 'string' || value.length === 0) return '';
-  const stripped = value.replace(CONTROL_CHARS, '');
+  const text = render(value);
+  if (text.length === 0) return '';
+  const stripped = text.replace(CONTROL_CHARS, '');
   return stripped.length > MAX_LOG_VALUE_LENGTH
     ? `${stripped.slice(0, MAX_LOG_VALUE_LENGTH)}\u2026`
     : stripped;

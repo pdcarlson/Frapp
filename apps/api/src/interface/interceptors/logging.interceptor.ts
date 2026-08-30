@@ -108,8 +108,9 @@ export class LoggingInterceptor implements NestInterceptor {
         method: request.method,
         // `request.url` carries the query string, which routinely carries
         // credentials — the Discord connect callback's `state` IS the CSRF
-        // token (#1260). `observability.md` specifies this field as the path
-        // without the query; `pathOnly` is what makes that true.
+        // token (#1260). This field was never specified — § Structured
+        // Logging said "endpoint" — so rule 1 there, added with this fix,
+        // is what requires it to route through `pathOnly`.
         path: pathOnly(request.url),
         statusCode: statusCode ?? 500,
         latencyMs,

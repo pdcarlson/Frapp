@@ -28,10 +28,34 @@ describe('logSafe', () => {
     expect(capped.endsWith('\u2026')).toBe(true);
   });
 
-  it('returns an empty string for absent or non-string input', () => {
+  it('returns an empty string only for genuinely absent input', () => {
     expect(logSafe(undefined)).toBe('');
     expect(logSafe(null)).toBe('');
     expect(logSafe('')).toBe('');
-    expect(logSafe(42)).toBe('');
+  });
+
+  it('renders a repeated query parameter instead of erasing it', () => {
+    // Call sites are typed `string`, but Express's query parser hands back an
+    // array for a repeated key, so `?error=a&error=b` arrives as `['a','b']`.
+    // Returning '' there blanked the whole diagnostic — the log line read
+    // `Discord connect declined for chapter <uuid>:` with nothing after the
+    // colon, which is precisely the case an operator needs it for.
+    expect(logSafe(['access_denied', 'x'])).toBe('access_denied,x');
+    expect(logSafe(42)).toBe('42');
+    expect(logSafe(false)).toBe('false');
+  });
+
+  it('still strips and caps what it renders from a non-string', () => {
+    // Rendering must not become a bypass: the array path is caller-controlled
+    // too, so a newline inside one element would forge a line just as well.
+    expect(logSafe(['a\nB', 'c'])).toBe('aB,c');
+    expect(logSafe(['x'.repeat(500)])).toHaveLength(201);
+  });
+
+  it('does not expand an object into the record', () => {
+    // `qs` can produce one from `?error[x]=1`. A placeholder loses nothing
+    // that was ever diagnostic; a JSON dump would carry nested
+    // caller-controlled text into the log.
+    expect(logSafe({ x: 'nested\ntext' })).toBe('[object]');
   });
 });

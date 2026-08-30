@@ -342,12 +342,14 @@ describe('DiscordOAuthService — the callback’s trust boundary', () => {
     // of the three that no test pinned: reinstating the id in
     // `parkConnection`'s throw message leaves the rest of this suite green.
     //
-    // The catch interpolates `error.message` into a `logger.log` line *and*
-    // returns it as the user-facing `reason`, so an id there reaches the
-    // application log and the browser. Unlike the `consumeState` branch the
-    // state here IS spent, which lowers the severity but not the rule: the
-    // handshake id is a credential and the chapter id is what identifies the
-    // event.
+    // The catch interpolates `error.message` into a `logger.log` line. That
+    // is the whole of the exposure: `reason` is operator-facing, documented
+    // "never placed on the redirect URL", and the controller returns
+    // `outcome.returnUrl` alone — so this does NOT reach the browser. The
+    // `reason`/`returnUrl` assertions below are defence in depth against that
+    // changing, not a live sink. Unlike the `consumeState` branch the state
+    // here IS spent, which lowers the severity but not the rule: the handshake
+    // id is a credential and the chapter id is what identifies the event.
     const service = await build();
     repo.attachPendingConnection.mockResolvedValue(null);
     const logged = jest
@@ -490,6 +492,33 @@ describe('DiscordOAuthService — the callback’s trust boundary', () => {
     expect(repo.consumeState).toHaveBeenCalledWith(STATE, expect.any(Date));
     expect(outcome.code).toBe('declined');
     expect(repo.attachPendingConnection).not.toHaveBeenCalled();
+  });
+
+  it('still logs a reason when Discord repeats the error parameter', async () => {
+    // Express's query parser yields an ARRAY for a repeated key, so
+    // `?error=a&error=b` reaches this call site as `['a','b']` despite the
+    // `string` annotation. `logSafe` returned '' for any non-string, which
+    // blanked the line to `Discord connect declined for chapter <uuid>:` —
+    // dropping the cause on exactly the branch whose only job is to record it.
+    // Sanitizing must not become erasing.
+    const service = await build();
+    const logged = jest
+      .spyOn(Logger.prototype, 'log')
+      .mockImplementation(() => undefined);
+
+    await service.handleCallback({
+      state: STATE,
+      error: ['access_denied', 'x'] as unknown as string,
+      error_description: 'User cancelled',
+    });
+
+    const declined = logged.mock.calls
+      .map((call) => String(call[0]))
+      .filter((message) => message.includes('declined'));
+    expect(declined).toHaveLength(1);
+    expect(declined[0]).toContain('access_denied,x');
+    expect(declined[0]).toContain('User cancelled');
+    logged.mockRestore();
   });
 
   it('rejects an authorization that installed the bot nowhere', async () => {

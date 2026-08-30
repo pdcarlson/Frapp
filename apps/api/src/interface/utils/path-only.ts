@@ -9,9 +9,13 @@
  * state row's primary key IS the CSRF token, so the whole attack is a SELECT on
  * a value the log already contains.
  *
- * `spec/behavior/observability.md` § Structured Logging specifies the `path`
- * field as "Request path without the query string" — this is the function that
- * makes that true, and every log site writing a path must route through it.
+ * `spec/behavior/observability.md` § Metrics → Security events specifies the
+ * `security_event` `path` field as "Request path without the query string".
+ * Only that row: § Structured Logging listed the request-log fields as
+ * "endpoint", never a `path`, so the request log and the internal-error record
+ * were covered by nothing. Rule 1 of § Structured Logging, added alongside this
+ * helper, is what generalizes the requirement — every log site writing a
+ * request path routes it through this function.
  *
  * No allowlist. Keeping selected parameters would mean each new query parameter
  * is logged by default until someone notices it should not be, which is the
@@ -19,10 +23,16 @@
  * filtered. Route grouping and debugging read the path, which is preserved
  * exactly.
  *
- * Deliberately *not* shared with `pathOnly` in `packages/validation`'s Sentry
- * scrubber: that one additionally runs `redactFreeText` and guards the
- * external-reporting boundary, where the threat model and the retention policy
- * both differ from the internal log stream.
+ * `packages/validation`'s Sentry scrubber has a `pathOnly` of its own that does
+ * NOT strip the authority. Treat that as a known gap, not a design — the
+ * justification once offered for it, that its `redactFreeText` covers userinfo,
+ * is false. `EMAIL_RE` swallows a password only when the password is word
+ * characters and it can greedily read `svc:s3cr3t@api.frapp.live` as an email;
+ * one `!`, `%` or `:` and the credential ships to Sentry byte-for-byte, and the
+ * username and host ship either way. Tracked in #1388, whose fix is to hoist
+ * `stripAuthority` below into that package so both sinks share one
+ * implementation. Until then the internal log stream is the hardened one and
+ * the external boundary is not, which is backwards.
  */
 export function pathOnly(url: string | undefined): string | undefined {
   if (!url) return undefined;
