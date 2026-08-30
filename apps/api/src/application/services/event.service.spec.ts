@@ -356,6 +356,44 @@ describe('EventService', () => {
       }
     });
 
+    it('generated occurrences inherit the parent check-in zone', async () => {
+      // Without this the geofence applied only to the series' first date, so a
+      // member could check in at the opening meeting and nowhere else. It is
+      // also what stops a later regenerate from silently dropping a zone that a
+      // series patch had set.
+      const zone = [
+        { lat: 0, lng: 0 },
+        { lat: 1, lng: 0 },
+        { lat: 0, lng: 1 },
+      ];
+      const zonedWeekly: Event = {
+        ...baseEvent,
+        recurrence_rule: 'WEEKLY',
+        check_in_zone: zone,
+        check_in_zone_name: 'Great Hall',
+      };
+      mockEventRepo.create.mockResolvedValue(zonedWeekly);
+
+      await service.create({
+        chapter_id: 'ch-1',
+        name: 'Chapter Meeting',
+        start_time: baseEvent.start_time,
+        end_time: baseEvent.end_time,
+        recurrence_rule: 'WEEKLY',
+        check_in_zone: zone,
+        check_in_zone_name: 'Great Hall',
+      });
+
+      // Assert the generation actually ran before asserting anything about its
+      // payloads, so this cannot pass vacuously on zero generated occurrences.
+      expect(mockEventRepo.create).toHaveBeenCalledTimes(13);
+      for (let i = 1; i <= 12; i++) {
+        const call = mockEventRepo.create.mock.calls[i][0];
+        expect(call.check_in_zone).toEqual(zone);
+        expect(call.check_in_zone_name).toBe('Great Hall');
+      }
+    });
+
     it('should not generate instances when no recurrence_rule is set', async () => {
       mockEventRepo.create.mockResolvedValue(baseEvent);
 
