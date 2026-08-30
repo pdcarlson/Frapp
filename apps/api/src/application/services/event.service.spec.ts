@@ -873,8 +873,12 @@ describe('EventService', () => {
 
         await service.delete('parent-1', 'ch-1');
 
+        // The successor is the earliest *upcoming* occurrence. Promoting
+        // `child-past` instead rewrote a meeting that had already happened to
+        // carry a recurrence rule, and left the series anchored in the past so
+        // every later regenerating edit built from a stale anchor.
         expect(mockEventRepo.update).toHaveBeenCalledWith(
-          'child-past',
+          'child-future-1',
           'ch-1',
           {
             recurrence_rule: 'WEEKLY',
@@ -882,9 +886,15 @@ describe('EventService', () => {
           },
         );
         expect(mockEventRepo.updateMany).toHaveBeenCalledWith(
-          ['child-future-1', 'child-future-2'],
+          ['child-future-2'],
           'ch-1',
-          { parent_event_id: 'child-past' },
+          { parent_event_id: 'child-future-1' },
+        );
+        // Occurrences that already happened become standalone history.
+        expect(mockEventRepo.updateMany).toHaveBeenCalledWith(
+          ['child-past'],
+          'ch-1',
+          { parent_event_id: null },
         );
         expect(mockEventRepo.delete).toHaveBeenCalledWith('parent-1', 'ch-1');
       });
@@ -896,6 +906,153 @@ describe('EventService', () => {
 
         expect(mockEventRepo.findChildren).not.toHaveBeenCalled();
         expect(mockEventRepo.delete).toHaveBeenCalledWith('evt-1', 'ch-1');
+      });
+    });
+
+    // Each case below is a defect this branch's review found in #1358 and
+    // fixes. Every one was reproduced against the unfixed code first.
+    describe('review fixes', () => {
+      it('regenerates a full series forward when the head is long past', async () => {
+        // The old code emitted a fixed window anchored on the parent's original
+        // start_time and filtered out whatever had elapsed. Once a series
+        // outlived that window every candidate was in the past, so a rule change
+        // deleted the future occurrences and created nothing.
+        const ancient: Event = {
+          ...parent,
+          start_time: '2025-01-06T18:00:00.000Z',
+          end_time: '2025-01-06T19:00:00.000Z',
+        };
+        mockEventRepo.findById.mockResolvedValue(ancient);
+        mockEventRepo.findChildren.mockResolvedValue([futureChild1]);
+        mockEventRepo.update.mockResolvedValue({
+          ...ancient,
+          recurrence_rule: 'BIWEEKLY',
+        });
+        mockEventRepo.create.mockResolvedValue(baseEvent);
+
+        await service.update(
+          'parent-1',
+          'ch-1',
+          { recurrence_rule: 'BIWEEKLY' },
+          'series',
+        );
+
+        // A BIWEEKLY series is six occurrences, and every one must be upcoming.
+        expect(mockEventRepo.create).toHaveBeenCalledTimes(6);
+        for (const [payload] of mockEventRepo.create.mock.calls) {
+          expect(
+            new Date(payload.start_time as string).getTime(),
+          ).toBeGreaterThan(NOW);
+        }
+      });
+
+      it('refuses an ungeneratable rule before deleting anything', async () => {
+        mockEventRepo.findById.mockResolvedValue(parent);
+        mockEventRepo.findChildren.mockResolvedValue(wholeSeries);
+
+        await expect(
+          service.update(
+            'parent-1',
+            'ch-1',
+            { recurrence_rule: 'DAILY' },
+            'series',
+          ),
+        ).rejects.toThrow(BadRequestException);
+
+        expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
+        expect(mockEventRepo.update).not.toHaveBeenCalled();
+      });
+
+      it('ignores the times on a series edit issued from a child', async () => {
+        // Clients round-trip the whole event object, so a rename saved from a
+        // later occurrence arrived carrying that occurrence's start_time. That
+        // is not a request to move the series.
+        mockEventRepo.findById.mockImplementation(async (id: string) =>
+          id === 'parent-1' ? parent : futureChild1,
+        );
+        mockEventRepo.findChildren.mockResolvedValue([futureChild2]);
+        mockEventRepo.update.mockResolvedValue(parent);
+
+        await service.update(
+          'child-future-1',
+          'ch-1',
+          {
+            name: 'Renamed',
+            start_time: futureChild1.start_time,
+            end_time: futureChild1.end_time,
+            recurrence_rule: 'WEEKLY',
+          },
+          'series',
+        );
+
+        // A rename must not destroy and rebuild the series...
+        expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
+        expect(mockEventRepo.create).not.toHaveBeenCalled();
+        // ...and must not drag the anchor onto the child's date. Assert the
+        // parent write happened before inspecting it, so this cannot pass by
+        // the call list simply being empty.
+        expect(mockEventRepo.update).toHaveBeenCalledWith(
+          'parent-1',
+          'ch-1',
+          expect.objectContaining({ name: 'Renamed' }),
+        );
+        for (const call of mockEventRepo.update.mock.calls) {
+          expect(call[2]).not.toHaveProperty('start_time');
+          expect(call[2]).not.toHaveProperty('end_time');
+        }
+      });
+
+      it('rejects a child-issued series edit that carries only times', async () => {
+        // Dropping the times can empty the patch. Reporting 200 for a request
+        // that wrote nothing anywhere is worse than refusing it.
+        mockEventRepo.findById.mockImplementation(async (id: string) =>
+          id === 'parent-1' ? parent : futureChild1,
+        );
+
+        await expect(
+          service.update(
+            'child-future-1',
+            'ch-1',
+            {
+              start_time: '2026-03-22T20:00:00.000Z',
+              end_time: '2026-03-22T21:00:00.000Z',
+            },
+            'series',
+          ),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockEventRepo.update).not.toHaveBeenCalled();
+        expect(mockEventRepo.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('does not invert an overnight occurrence at a month boundary', async () => {
+        // start and end were clamped against their own months independently, so
+        // a MONTHLY event spanning midnight could generate an occurrence ending
+        // before it began — slipping past the end<=start guard that create and
+        // update both enforce, and emitting DTEND before DTSTART in its .ics.
+        const overnight: Event = {
+          ...baseEvent,
+          recurrence_rule: 'MONTHLY',
+          start_time: '2027-01-29T20:00:00.000Z',
+          end_time: '2027-01-30T08:00:00.000Z',
+        };
+        mockEventRepo.create.mockResolvedValue(overnight);
+
+        await service.create({
+          chapter_id: 'ch-1',
+          name: 'Overnight',
+          start_time: overnight.start_time,
+          end_time: overnight.end_time,
+          recurrence_rule: 'MONTHLY',
+        });
+
+        // 1 parent + 6 occurrences; assert generation ran before inspecting it.
+        expect(mockEventRepo.create).toHaveBeenCalledTimes(7);
+        for (let i = 1; i <= 6; i++) {
+          const payload = mockEventRepo.create.mock.calls[i][0];
+          expect(
+            new Date(payload.end_time as string).getTime(),
+          ).toBeGreaterThan(new Date(payload.start_time as string).getTime());
+        }
       });
     });
 

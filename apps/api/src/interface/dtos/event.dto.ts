@@ -69,6 +69,11 @@ export class CreateEventDto {
   })
   @IsOptional()
   @IsString()
+  // Only the three rules the generator understands. Anything else was accepted
+  // and then silently generated nothing; on a series edit that meant deleting
+  // the future occurrences and rebuilding none of them. `null` still clears a
+  // series (@IsOptional short-circuits this).
+  @IsIn(['WEEKLY', 'BIWEEKLY', 'MONTHLY'])
   recurrence_rule?: string;
 
   @ApiPropertyOptional({ type: [String] })
@@ -176,6 +181,11 @@ export class UpdateEventDto {
   })
   @IsOptional()
   @IsString()
+  // Only the three rules the generator understands. Anything else was accepted
+  // and then silently generated nothing; on a series edit that meant deleting
+  // the future occurrences and rebuilding none of them. `null` still clears a
+  // series (@IsOptional short-circuits this).
+  @IsIn(['WEEKLY', 'BIWEEKLY', 'MONTHLY'])
   recurrence_rule?: string;
 
   @ApiPropertyOptional({ type: [String] })

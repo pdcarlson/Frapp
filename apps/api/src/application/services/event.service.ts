@@ -227,79 +227,106 @@ export class EventService {
   /**
    * Materialize the generated occurrences of a recurring parent.
    *
-   * `skipBefore`, when supplied, drops any occurrence falling at or before that
-   * instant. Regeneration passes `Date.now()`: rebuilding a series whose parent
-   * already started would otherwise *create* occurrences in the past — rows for
-   * meetings that never happened — which is the opposite of "changes apply to
-   * future instances only". Creation passes nothing, preserving its behavior.
+   * `skipBefore`, when supplied, skips occurrences at or before that instant
+   * **without consuming the count**, so a regenerate always yields a full
+   * series' worth of *upcoming* dates. Creation passes nothing and is
+   * unchanged.
    */
   private async generateRecurringInstances(
     parent: Event,
     skipBefore?: number,
   ): Promise<void> {
+    const payloads = this.buildOccurrencePayloads(parent, skipBefore);
+    // ⚡ Bolt: Optimize recurring instance creation using Promise.all
+    // Eliminates N+1 sequential database queries by executing them concurrently.
+    await Promise.all(
+      payloads.map((payload) => this.eventRepo.create(payload)),
+    );
+  }
+
+  /**
+   * How many occurrences a rule generates, or `null` when it is not a rule this
+   * service can generate from.
+   *
+   * Separated out so a caller can discover that a rule is ungeneratable
+   * *before* deleting anything.
+   */
+  private occurrenceCountFor(rule: string): number | null {
+    switch (rule) {
+      case 'WEEKLY':
+        return 12;
+      case 'BIWEEKLY':
+        return 6;
+      case 'MONTHLY':
+        return 6;
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * Build the rows for a recurring parent's generated occurrences. Pure — no
+   * writes — so a regenerate can be judged before anything is destroyed.
+   *
+   * Skipping rather than filtering is load-bearing. Filtering a fixed window
+   * anchored on the parent's original `start_time` meant that once a series
+   * grew older than that window — 12 weeks, or 6 months — every candidate fell
+   * in the past and a rule change regenerated **nothing**, leaving a parent
+   * advertising a rule with no occurrences behind it.
+   */
+  private buildOccurrencePayloads(
+    parent: Event,
+    skipBefore?: number,
+  ): Partial<Event>[] {
     const rule = parent.recurrence_rule;
-    if (!rule) return;
+    if (!rule) return [];
+    const count = this.occurrenceCountFor(rule);
+    if (count === null) return [];
 
     const start = new Date(parent.start_time);
     const end = new Date(parent.end_time);
+    // Derive each occurrence's end from its own start plus the parent's
+    // duration. Clamping start and end independently against their own months
+    // could invert the interval: a MONTHLY event running 2027-01-29T20:00Z to
+    // 2027-01-30T08:00Z generated a February occurrence ending twelve hours
+    // before it began, slipping past the `end <= start` guard that `create` and
+    // `update` both enforce and emitting DTEND before DTSTART in its .ics.
+    const durationMs = end.getTime() - start.getTime();
 
-    let count: number;
-    switch (rule) {
-      case 'WEEKLY':
-        count = 12;
-        break;
-      case 'BIWEEKLY':
-        count = 6;
-        break;
-      case 'MONTHLY':
-        count = 6;
-        break;
-      default:
-        return;
-    }
+    // Bounds the catch-up scan for a long-dormant series: ~11 years of weeks or
+    // 50 years of months, while still guaranteeing termination.
+    const MAX_OCCURRENCE_SCAN = 600;
 
-    // ⚡ Bolt: Optimize recurring instance creation using Promise.all
-    // Eliminates N+1 sequential database queries by executing them concurrently.
-    const payloads = Array.from({ length: count }, (_, idx) => {
-      const i = idx + 1;
+    const payloads: Partial<Event>[] = [];
+    for (let i = 1; i <= MAX_OCCURRENCE_SCAN && payloads.length < count; i++) {
       const instanceStart = new Date(start);
-      const instanceEnd = new Date(end);
 
       if (rule === 'WEEKLY') {
         instanceStart.setDate(instanceStart.getDate() + i * 7);
-        instanceEnd.setDate(instanceEnd.getDate() + i * 7);
       } else if (rule === 'BIWEEKLY') {
         instanceStart.setDate(instanceStart.getDate() + i * 14);
-        instanceEnd.setDate(instanceEnd.getDate() + i * 14);
       } else if (rule === 'MONTHLY') {
-        const targetStartMonth = start.getMonth() + i;
         instanceStart.setDate(1);
-        instanceStart.setMonth(targetStartMonth);
+        instanceStart.setMonth(start.getMonth() + i);
         const maxStartDay = new Date(
           instanceStart.getFullYear(),
           instanceStart.getMonth() + 1,
           0,
         ).getDate();
         instanceStart.setDate(Math.min(start.getDate(), maxStartDay));
-
-        const targetEndMonth = end.getMonth() + i;
-        instanceEnd.setDate(1);
-        instanceEnd.setMonth(targetEndMonth);
-        const maxEndDay = new Date(
-          instanceEnd.getFullYear(),
-          instanceEnd.getMonth() + 1,
-          0,
-        ).getDate();
-        instanceEnd.setDate(Math.min(end.getDate(), maxEndDay));
       }
 
-      return {
+      if (skipBefore !== undefined && instanceStart.getTime() <= skipBefore) {
+        continue;
+      }
+
+      payloads.push({
         chapter_id: parent.chapter_id,
         name: parent.name,
         description: parent.description,
         location: parent.location,
         start_time: instanceStart.toISOString(),
-        end_time: instanceEnd.toISOString(),
+        end_time: new Date(instanceStart.getTime() + durationMs).toISOString(),
         point_value: parent.point_value,
         is_mandatory: parent.is_mandatory,
         recurrence_rule: null,
@@ -312,17 +339,10 @@ export class EventService {
         // set a zone that a later regenerate silently dropped again.
         check_in_zone: parent.check_in_zone,
         check_in_zone_name: parent.check_in_zone_name,
-      };
-    });
+      });
+    }
 
-    const due =
-      skipBefore === undefined
-        ? payloads
-        : payloads.filter(
-            (payload) => new Date(payload.start_time).getTime() > skipBefore,
-          );
-
-    await Promise.all(due.map((payload) => this.eventRepo.create(payload)));
+    return payloads;
   }
 
   /**
@@ -503,13 +523,33 @@ export class EventService {
     const target = await this.findById(id, chapterId);
     const parent = await this.resolveSeriesParent(target, chapterId);
 
-    // Re-validate against the row actually being written. `update()` checked the
-    // interval against `target`, but a series edit lands on the *parent*, and an
-    // individually-moved child can have entirely different times — so a patch
-    // that is valid against the child can still invert the parent's interval.
-    if (input.start_time || input.end_time) {
-      const start = new Date(input.start_time ?? parent.start_time);
-      const end = new Date(input.end_time ?? parent.end_time);
+    // A series edit issued against a *child* carries that child's times, not the
+    // series anchor's. Clients round-trip the whole event object, so a rename
+    // saved from a later occurrence arrived carrying that occurrence's
+    // `start_time` — which is not a request to move the series, it is whichever
+    // row the client happened to have open. Honouring it dragged the anchor onto
+    // the child's date and rebuilt every future occurrence with fresh ids.
+    const issuedFromChild = target.id !== parent.id;
+    const effective: UpdateEventInput = { ...input };
+    if (issuedFromChild) {
+      delete effective.start_time;
+      delete effective.end_time;
+      // Dropping the times can empty the patch. Say so rather than reporting a
+      // 200 for a request that wrote nothing anywhere.
+      if (Object.keys(effective).length === 0) {
+        throw new BadRequestException(
+          'A series edit issued from a generated occurrence cannot move the series. Address the series head to change its times.',
+        );
+      }
+    }
+
+    // Re-validate against the row actually being written — a series edit lands
+    // on the parent, and an individually-moved child can have entirely
+    // different times, so a patch valid against the child can still invert the
+    // parent's interval.
+    if (effective.start_time || effective.end_time) {
+      const start = new Date(effective.start_time ?? parent.start_time);
+      const end = new Date(effective.end_time ?? parent.end_time);
       if (end <= start) {
         throw new BadRequestException(
           'end_time must be after start_time for the series',
@@ -518,9 +558,9 @@ export class EventService {
     }
 
     const normalized: UpdateEventInput = {
-      ...input,
-      ...(input.check_in_zone !== undefined
-        ? { check_in_zone: normalizeCheckInZone(input.check_in_zone) }
+      ...effective,
+      ...(effective.check_in_zone !== undefined
+        ? { check_in_zone: normalizeCheckInZone(effective.check_in_zone) }
         : {}),
     };
 
@@ -529,7 +569,7 @@ export class EventService {
     // change. Treating it as one would delete and rebuild the future half of the
     // series on a no-op save, cascading away any attendance those rows carry.
     const hasChanged = (field: (typeof RECURRENCE_DEFINING_FIELDS)[number]) => {
-      const next = input[field];
+      const next = effective[field];
       if (next === undefined) return false;
       const current = parent[field];
       if (field === 'recurrence_rule') return next !== current;
@@ -540,6 +580,18 @@ export class EventService {
     };
     const regenerates = RECURRENCE_DEFINING_FIELDS.some(hasChanged);
 
+    // Refuse a rule this service cannot generate from *before* touching
+    // anything. `recurrence_rule` arrives as a free string, and the old order
+    // deleted the whole future half of the series and only then discovered it
+    // had nothing to rebuild with.
+    const nextRule = normalized.recurrence_rule ?? parent.recurrence_rule;
+    if (regenerates && nextRule && this.occurrenceCountFor(nextRule) === null) {
+      throw new BadRequestException(
+        'recurrence_rule must be one of WEEKLY, BIWEEKLY, MONTHLY',
+      );
+    }
+
+    const now = Date.now();
     const updatedParent = await this.eventRepo.update(
       parent.id,
       chapterId,
@@ -549,16 +601,19 @@ export class EventService {
     // Resolve children before any delete: `parent_event_id` is
     // `on delete set null`, so a parent removed first takes the pointers with it.
     const children = await this.eventRepo.findChildren(parent.id, chapterId);
-    const { future } = this.partitionByTime(children, Date.now());
+    const { future } = this.partitionByTime(children, now);
 
     if (regenerates) {
+      // Build the replacements before destroying anything, so a regenerate that
+      // would produce none cannot leave the series empty.
+      const replacements = this.buildOccurrencePayloads(updatedParent, now);
       await this.eventRepo.deleteMany(
         future.map((child) => child.id),
         chapterId,
       );
-      if (updatedParent.recurrence_rule) {
-        await this.generateRecurringInstances(updatedParent, Date.now());
-      }
+      await Promise.all(
+        replacements.map((payload) => this.eventRepo.create(payload)),
+      );
     } else {
       const propagate = propagatableFields(normalized);
       if (Object.keys(propagate).length > 0) {
@@ -612,14 +667,30 @@ export class EventService {
    * Hand a series to its earliest surviving occurrence, so deleting the head
    * cancels one occurrence rather than decapitating the series.
    *
-   * `findChildren` returns oldest-first, so `children[0]` is the successor.
+   * The successor must be a *future* occurrence. `findChildren` returns
+   * oldest-first across the whole series, so taking `children[0]` outright
+   * promoted an occurrence that had already happened: it rewrote a completed
+   * meeting to carry `recurrence_rule` and left the series anchored permanently
+   * in the past, so every later regenerating edit built from a stale anchor.
+   * Past occurrences are detached instead, exactly as `deleteSeries` treats
+   * them. With no future occurrence there is no series left to hand on.
    */
   private async promoteSuccessor(
     parent: Event,
     children: Event[],
     chapterId: string,
   ): Promise<void> {
-    const [successor, ...rest] = children;
+    const { future, past } = this.partitionByTime(children, Date.now());
+
+    await this.eventRepo.updateMany(
+      past.map((child) => child.id),
+      chapterId,
+      { parent_event_id: null },
+    );
+
+    if (future.length === 0) return;
+
+    const [successor, ...rest] = future;
 
     await this.eventRepo.update(successor.id, chapterId, {
       recurrence_rule: parent.recurrence_rule,
