@@ -248,7 +248,7 @@ session model (Opus). There is no `claude-review-gate` required check, no `claud
 
 ### Key Design Decisions
 
-- **No CI frontend build gate.** CI focuses on lint/type/tests/docs gates; Vercel handles staging frontend deployments off `main`, and production deployments are created by `deploy-production.yml`.
+- **The frontend build gate is production-shaped, not preview-shaped.** `web-production-build` builds `apps/web` and `apps/landing` under `npm ci --omit=dev`, matching Vercel's production install, because nothing in CI ran `next build` before #1374 and that gap took production down twice (#1331, #1372). Staging frontends are still verified through Vercel preview deployments off `main`; production deployments are created by `deploy-production.yml`. The build-shape difference between the two is a recorded trade-off — ADR-20 decision 3.
 - **No placeholder secrets.** CI never sets `NEXT_PUBLIC_SUPABASE_URL` or similar to dummy values. All env-dependent builds happen in the provider (Vercel/Render).
 - **API contract check uses git-diff.** The `openapi.json` is committed as a source-of-truth artifact. CI checks freshness via `git diff` — it does not bootstrap the NestJS application, avoiding the need for Supabase/Stripe credentials in CI.
 - **Mobile CI is lint + typecheck only.** EAS builds are expensive and slow; they run on-demand, not per-PR.

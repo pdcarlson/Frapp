@@ -57,6 +57,27 @@ session?"* Then run this skill if they say yes. Don't nag, and don't stop workin
 
 Default to `next` if the user didn't say and the current task looks complete; `continue` otherwise.
 
+## Multi-stage programs
+
+Some work is one stage of a longer program — a sequenced refactor, a migration, a rebuild — and the
+program has a tracker (a GitHub `[Epic]` with sub-issues; see
+[`GITHUB_PM.md`](../../../docs/internal/ci-cd/GITHUB_PM.md)). When it does, **link the tracker and
+hand over the current stage only.**
+
+Do not restate the plan in the handoff. A restated plan is a second copy that starts drifting from
+the issue the moment either changes, and the fresh session cannot tell which one is current — which
+is the same failure as summarising a canonical file instead of pointing at it, one level up. It is
+also how a program ends up existing only as one agent's summary of another agent's summary.
+
+So: name the tracker issue, name the stage being handed over, and give live state and traps for
+*that stage*. Everything the next session needs about the other stages is in the tracker.
+
+If you learned something the tracker does not know, update the tracker rather than the handoff — but
+this skill requests no GitHub tools, so you may not be able to. When you cannot, say so in the
+handoff in one line ("the tracker is stale on X; update it before relying on that section") and let
+the fresh session, which will have the tools, correct it. Never route around it with `gh` or raw
+REST: the GitHub MCP is the only sanctioned tracker path (`AGENTS.md` § Work tracking).
+
 ## Gather live state (don't recall it — check)
 
 Run these and use the real output. Recalled state is exactly what's unreliable by this point.
@@ -91,7 +112,7 @@ Structure:
 3. **Live state** — branch, HEAD SHA, PR + CI, tracker issue, tree clean or not. Facts only, as just
    verified.
 4. **Where to look** — canonical files and issue IDs. Pointers, not précis. Include `AGENTS.md` and
-   the specific spec/doc the work touches.
+   the specific spec/doc the work touches, and the program tracker if there is one.
 5. **Traps and known-open items** — things that cost this session time, each with the evidence that
    makes it checkable. Include anything filed to Triage that's relevant.
 6. **Already verified, and how** — not "don't redo this". State the claim and the evidence
