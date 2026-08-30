@@ -3,6 +3,7 @@ import {
   IsArray,
   IsBoolean,
   IsISO8601,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -68,6 +69,11 @@ export class CreateEventDto {
   })
   @IsOptional()
   @IsString()
+  // Only the three rules the generator understands. Anything else was accepted
+  // and then silently generated nothing; on a series edit that meant deleting
+  // the future occurrences and rebuilding none of them. `null` still clears a
+  // series (@IsOptional short-circuits this).
+  @IsIn(['WEEKLY', 'BIWEEKLY', 'MONTHLY'])
   recurrence_rule?: string;
 
   @ApiPropertyOptional({ type: [String] })
@@ -118,6 +124,17 @@ export class CreateEventDto {
   client_message_id?: string;
 }
 
+/**
+ * Which occurrences of a recurring event a write applies to.
+ *
+ * Two values, not the calendar-app three: `spec/behavior/events.md` § Recurring
+ * events allows individual edits and future-only series changes, and nothing
+ * else. Omitting it means `instance`, so every pre-existing caller keeps its
+ * current single-row behavior.
+ */
+const EVENT_SCOPE_DESCRIPTION =
+  'Which occurrences this applies to. `instance` (default) affects only this event. `series` affects the whole recurring series from now forward — occurrences that have already started are never modified or deleted, so attendance history is preserved.';
+
 export class UpdateEventDto {
   @ApiPropertyOptional()
   @IsOptional()
@@ -164,6 +181,11 @@ export class UpdateEventDto {
   })
   @IsOptional()
   @IsString()
+  // Only the three rules the generator understands. Anything else was accepted
+  // and then silently generated nothing; on a series edit that meant deleting
+  // the future occurrences and rebuilding none of them. `null` still clears a
+  // series (@IsOptional short-circuits this).
+  @IsIn(['WEEKLY', 'BIWEEKLY', 'MONTHLY'])
   recurrence_rule?: string;
 
   @ApiPropertyOptional({ type: [String] })
@@ -195,4 +217,34 @@ export class UpdateEventDto {
   @IsString()
   @MaxLength(120)
   check_in_zone_name?: string;
+
+  // No `default:` here on purpose. `openapi-typescript` promotes any property
+  // carrying a schema default to *required* in the generated SDK type (the same
+  // reason `CreateEventDto.point_value` generates non-optional), which would
+  // force every existing caller of the update hook to pass a scope. The default
+  // is stated in the description and applied in the service signature instead.
+  @ApiPropertyOptional({
+    enum: ['instance', 'series'],
+    description: EVENT_SCOPE_DESCRIPTION,
+  })
+  @IsOptional()
+  @IsIn(['instance', 'series'])
+  scope?: 'instance' | 'series';
+}
+
+/**
+ * Query string for `DELETE /v1/events/:id`.
+ *
+ * A dedicated class rather than a bare `@Query('scope')` because the global
+ * pipe runs `forbidNonWhitelisted`, so an undeclared query property is a 400 —
+ * and because it is what puts the enum into the OpenAPI contract.
+ */
+export class DeleteEventQueryDto {
+  @ApiPropertyOptional({
+    enum: ['instance', 'series'],
+    description: EVENT_SCOPE_DESCRIPTION,
+  })
+  @IsOptional()
+  @IsIn(['instance', 'series'])
+  scope?: 'instance' | 'series';
 }

@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Res,
   UseGuards,
 } from '@nestjs/common';
@@ -27,7 +28,11 @@ import {
   CurrentChapterId,
   CurrentUser,
 } from '../decorators/current-user.decorator';
-import { CreateEventDto, UpdateEventDto } from '../dtos/event.dto';
+import {
+  CreateEventDto,
+  DeleteEventQueryDto,
+  UpdateEventDto,
+} from '../dtos/event.dto';
 import { SystemPermissions } from '../../domain/constants/permissions';
 
 @ApiTags('Events')
@@ -81,7 +86,10 @@ export class EventController {
     @Param('id') id: string,
     @Body() dto: UpdateEventDto,
   ) {
-    return this.eventService.update(id, chapterId, dto);
+    // `scope` is a control flag, not a column. Split it off here so it can never
+    // reach the repository's update payload as a stray field.
+    const { scope, ...patch } = dto;
+    return this.eventService.update(id, chapterId, patch, scope);
   }
 
   @Get(':id/ics')
@@ -102,9 +110,15 @@ export class EventController {
 
   @Delete(':id')
   @RequirePermissions(SystemPermissions.EVENTS_DELETE)
-  @ApiOperation({ summary: 'Delete an event' })
-  async delete(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
-    await this.eventService.delete(id, chapterId);
+  @ApiOperation({
+    summary: 'Delete an event, or cancel a recurring series from now forward',
+  })
+  async delete(
+    @CurrentChapterId() chapterId: string,
+    @Param('id') id: string,
+    @Query() query: DeleteEventQueryDto,
+  ) {
+    await this.eventService.delete(id, chapterId, query.scope);
     return { success: true };
   }
 }

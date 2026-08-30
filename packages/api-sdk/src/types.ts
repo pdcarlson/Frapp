@@ -718,7 +718,7 @@ export interface paths {
         get: operations["EventController_getOne_v1"];
         put?: never;
         post?: never;
-        /** Delete an event */
+        /** Delete an event, or cancel a recurring series from now forward */
         delete: operations["EventController_delete_v1"];
         options?: never;
         head?: never;
@@ -2837,6 +2837,11 @@ export interface components {
             check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
             /** @description Human-readable name for `check_in_zone`, shown on the mobile scanner ("Inside the Great Hall zone"). */
             check_in_zone_name?: string;
+            /**
+             * @description Which occurrences this applies to. `instance` (default) affects only this event. `series` affects the whole recurring series from now forward — occurrences that have already started are never modified or deleted, so attendance history is preserved.
+             * @enum {string}
+             */
+            scope?: "instance" | "series";
         };
         ChannelUnreadCountDto: {
             /** Format: uuid */
@@ -4551,7 +4556,10 @@ export interface operations {
     };
     EventController_delete_v1: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which occurrences this applies to. `instance` (default) affects only this event. `series` affects the whole recurring series from now forward — occurrences that have already started are never modified or deleted, so attendance history is preserved. */
+                scope?: "instance" | "series";
+            };
             header?: never;
             path: {
                 id: string;
