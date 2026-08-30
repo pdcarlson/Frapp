@@ -104,9 +104,13 @@ explicit prioritization" rule. Remove `triage` and add exactly one `P1`–`P4` i
   exists. Added 2026-08-10 on the owner's decision to defer production and make staging the
   near-term goal. These issues are **parked by choice, not blocked and not stale**: routines must
   not mark them `stale`, must not raise their priority for age, and must not re-file duplicates of
-  them. `frapp-prod` being paused, the production Render service being suspended, and `frapp-web`
-  having no production deployment are all intentional states, not findings. Revisit when
-  production becomes a goal; see #814 for the decision record.
+  them. The production Render service being suspended and `frapp-web` having no production
+  deployment are intentional states, not findings. Revisit when production becomes a goal; see #814
+  for the decision record. **Caveat (2026-08-30):** this bullet's premise — that production does not
+  yet exist — no longer holds. `frapp-prod` is live and `deploy-production.yml` deploys to it
+  (`spec/architecture/README.md` ADR-20). The label's scope is the owner's to redefine, so nothing
+  here changes on an agent's initiative; but do not read this bullet as evidence that a
+  production-shaped risk is theoretical. Tracked in #1381.
 - Legacy labels from the pre-Linear era (`bug`, `Improvement`, `release:*`) persist on old issues;
   `release:*` still drives version bumps ([`AGENT_INFRA.md`](AGENT_INFRA.md)). Don't extend the
   legacy set to new issues.
