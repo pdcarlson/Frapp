@@ -44,7 +44,10 @@
 //   * A change touching no migrations introduces nothing, so the gate returns
 //     in milliseconds having made ZERO network calls. It cannot block a PR over
 //     unrelated state, and it cannot make repo-wide merge availability depend
-//     on the Supabase API.
+//     on the Supabase API — nor on Infisical, which is why the missing-token
+//     check lives below the fast path rather than in the workflow. A shell
+//     guard in the job would run before `node` does and would fail on changes
+//     that were never going to read anything.
 //   * A PR that FIXES an ordering problem turns its own check green, because
 //     the renamed file is the introduced one. `migration-drift` could never do
 //     that — it compared `origin/main` against staging on every run, so the PR
@@ -596,6 +599,20 @@ export async function runOrderGate({
   if (localOnly) {
     log("  ORDER_GATE_LOCAL_ONLY is set — the deployed databases are not being read.");
     return finish([]);
+  }
+
+  // Asserted HERE, past the fast path, and deliberately not in the workflow.
+  // A shell guard in the job runs before `node` does, so it fires on changes
+  // that were never going to read a database — which is how a required check
+  // ends up failing every PR in the repository because a credential expired.
+  // The script is the only place that knows whether the read is needed.
+  if (!accessToken) {
+    error(
+      "::error::SUPABASE_ACCESS_TOKEN is required to read the deployed databases, and this " +
+        "change adds or removes migrations so they must be read. It is injected from the " +
+        "Infisical 'prod' environment. See docs/internal/environment/SECRETS_MANAGEMENT.md.",
+    );
+    return 2;
   }
 
   let resolved;

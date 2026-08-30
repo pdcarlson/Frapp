@@ -5,6 +5,7 @@ import {
   checkAncestry,
   classifyRequiredChecks,
   describeCheckFailure,
+  CANCELLED_CONCLUSIONS,
   isFullSha,
   jobIdsAtRef,
   validateDeploySha,
@@ -395,5 +396,54 @@ describe("classifyRequiredChecks — the narrowing must not excuse everything", 
     });
     assert.equal(result.ok, false);
     assert.match(result.reason, /no CI evidence at all/);
+  });
+});
+
+
+describe("classifyRequiredChecks — a cancelled check is not a failed one", () => {
+  it("refuses a cancelled check, but reports it apart from a failure", () => {
+    // How this happens: ci.yml, docs.yml and migration-drift-gate.yml all key
+    // concurrency on `github.ref`, which is `refs/heads/main` for EVERY push to
+    // main. Two merges minutes apart put both push runs in one group, so the
+    // first commit's run is cancelled by the second's. Nothing re-runs it, and
+    // the commit becomes permanently undeployable — the same class as the
+    // deployable-window bug above, through a different door, landing on the
+    // same operation (rollback = redeploy an older commit).
+    const verdict = classifyRequiredChecks({
+      checkRuns: [
+        { name: "api-tests", status: "completed", conclusion: "success" },
+        { name: "migration-order", status: "completed", conclusion: "cancelled" },
+      ],
+      required: ["api-tests", "migration-order"],
+    });
+    assert.equal(verdict.ok, false, "a cancelled check asserted nothing and must not pass");
+    assert.deepEqual(verdict.failing, [], "must not be reported as a test failure");
+    assert.deepEqual(verdict.cancelled, ["migration-order (cancelled)"]);
+  });
+
+  it("names the remedy, which is a re-run and not a code change", () => {
+    const text = describeCheckFailure({
+      missing: [],
+      pending: [],
+      failing: [],
+      cancelled: ["migration-order (cancelled)"],
+    });
+    assert.match(text, /cancelled/);
+    assert.match(text, /re-run the workflow run for this commit/);
+    assert.doesNotMatch(text, /failed:/);
+  });
+
+  it("timed_out and stale are the same shape as cancelled", () => {
+    assert.ok(CANCELLED_CONCLUSIONS.has("cancelled"));
+    assert.ok(CANCELLED_CONCLUSIONS.has("timed_out"));
+    assert.ok(CANCELLED_CONCLUSIONS.has("stale"));
+    // And a real failure is still a real failure.
+    assert.ok(!CANCELLED_CONCLUSIONS.has("failure"));
+    const verdict = classifyRequiredChecks({
+      checkRuns: [{ name: "api-tests", status: "completed", conclusion: "failure" }],
+      required: ["api-tests"],
+    });
+    assert.deepEqual(verdict.failing, ["api-tests (failure)"]);
+    assert.deepEqual(verdict.cancelled, []);
   });
 });

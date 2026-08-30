@@ -59,6 +59,31 @@ export const SHA_PATTERN = /^[0-9a-f]{40}$/;
 // Success. See the long note in `configure-branch-protection.mjs`.
 export const ACCEPTED_CONCLUSIONS = new Set(["success", "skipped", "neutral"]);
 
+/**
+ * `cancelled` is NOT accepted — a cancelled check asserted nothing — but it is
+ * reported apart from a genuine failure, because the remedy is different and an
+ * operator mid-rollback should not have to guess it.
+ *
+ * How a merge commit on `main` ends up with cancelled required checks: `ci.yml`,
+ * `docs.yml` and `migration-drift-gate.yml` all carry
+ * `group: <name>-${{ github.ref }}` with `cancel-in-progress: true`, and
+ * `github.ref` is `refs/heads/main` for EVERY push to main. Two merges a few
+ * minutes apart — routine here — put both push runs in one group, so the first
+ * commit's run is cancelled by the second's. Its checks conclude `cancelled`,
+ * and nothing re-runs them.
+ *
+ * That commit is then permanently undeployable: `jobIdsAtRef` cannot excuse it
+ * (the run EXISTS, it is just cancelled), so it lands in `failing` and reads as
+ * "CI is not green" — a red-tests message for a commit whose tests never ran.
+ * It is the same "an older commit became undeployable" class the narrowing
+ * above fixes, arriving through a different door, and it lands on the same
+ * operation: DB_ROLLBACK_PLAYBOOK recovery is redeploying an older commit.
+ *
+ * Naming it is the fix that generalises. A cancelled run can be re-run from the
+ * Actions UI for 30 days, which turns a dead end into one click.
+ */
+export const CANCELLED_CONCLUSIONS = new Set(["cancelled", "timed_out", "stale"]);
+
 const CHECK_RUNS_URL = (repo, sha, page) =>
   `https://api.github.com/repos/${repo}/commits/${sha}/check-runs?per_page=100&page=${page}`;
 
@@ -117,6 +142,7 @@ export function classifyRequiredChecks({ checkRuns, required, defined = null, cu
   const missing = [];
   const pending = [];
   const failing = [];
+  const cancelled = [];
   const notApplicable = [];
 
   for (const name of required) {
@@ -143,6 +169,10 @@ export function classifyRequiredChecks({ checkRuns, required, defined = null, cu
       pending.push(`${name} (${run.status})`);
       continue;
     }
+    if (CANCELLED_CONCLUSIONS.has(run.conclusion)) {
+      cancelled.push(`${name} (${run.conclusion})`);
+      continue;
+    }
     if (!ACCEPTED_CONCLUSIONS.has(run.conclusion)) {
       failing.push(`${name} (${run.conclusion ?? "no conclusion"})`);
     }
@@ -158,6 +188,7 @@ export function classifyRequiredChecks({ checkRuns, required, defined = null, cu
       missing: [...notApplicable],
       pending,
       failing,
+      cancelled,
       notApplicable: [],
       ok: false,
       exhausted: true,
@@ -168,18 +199,27 @@ export function classifyRequiredChecks({ checkRuns, required, defined = null, cu
     missing,
     pending,
     failing,
+    cancelled,
     notApplicable,
     exhausted: false,
-    ok: !missing.length && !pending.length && !failing.length,
+    ok: !missing.length && !pending.length && !failing.length && !cancelled.length,
   };
 }
 
 /** Human-readable reason a commit is not deployable, or null when it is. */
-export function describeCheckFailure({ missing, pending, failing }) {
+export function describeCheckFailure({ missing, pending, failing, cancelled = [] }) {
   const parts = [];
   if (failing.length) parts.push(`failed: ${failing.join(", ")}`);
   if (pending.length) parts.push(`still running: ${pending.join(", ")}`);
   if (missing.length) parts.push(`never reported: ${missing.join(", ")}`);
+  // Carries its own remedy: these did not fail, they were superseded, and a
+  // re-run of that workflow run makes the commit deployable again.
+  if (cancelled.length) {
+    parts.push(
+      `cancelled — re-run the workflow run for this commit from the Actions UI, ` +
+        `then retry: ${cancelled.join(", ")}`,
+    );
+  }
   return parts.length ? parts.join("; ") : null;
 }
 

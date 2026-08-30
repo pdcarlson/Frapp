@@ -186,15 +186,17 @@ jobs:
       # project's Production Branch has become `main`, ordinary merges are
       # already shipping to production and this workflow is not the only path.
       #
-      # Under `migrations-only` the Vercel half is dropped. Both settings still
-      # matter for a code deploy, but only ONE of them bears on applying a
-      # migration: if Render's auto-deploy is back on, an ordinary merge could
-      # ship code against the schema this run is about to change. A Vercel
-      # Production Branch has no such relationship to a database, so leaving it
-      # in would let a Vercel API outage block a database recovery — on the path
-      # you reach for when something has already gone wrong. That is the wrong
-      # trade, and it is a dependency the deleted `migrate-production.yml` did
-      # not have.
+      # Under `migrations-only` exactly ONE assertion is dropped:
+      # frapp-LANDING's Vercel Production Branch. Render's stays, because
+      # auto-deploy being back on means an ordinary merge could ship code
+      # against the schema this run is about to change. frapp-WEB's stays too:
+      # `apps/web` is a direct Supabase client — PostgREST reads and
+      # `postgres_changes` bindings on `public.chat_messages` and
+      # `public.chat_message_actions` — so a dashboard promoted from `main` is
+      # wired straight to the schema being changed, which makes the drift more
+      # worth catching before a migrations-only apply, not less. frapp-landing
+      # has no Supabase client at all, so it is the one thing a database-only
+      # run can honestly skip.
       - name: Provider guardrail preflight
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
@@ -212,7 +214,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${SCOPE:-}" = "migrations-only" ]; then
-            node scripts/ci/production-guardrails.mjs --preflight --render-only
+            node scripts/ci/production-guardrails.mjs --preflight --migrations-only
           else
             node scripts/ci/production-guardrails.mjs --preflight
           fi

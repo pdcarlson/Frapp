@@ -69,7 +69,21 @@ concurrency:
   # sends SQL to a deployed database, so a superseded run has no cleanup to do
   # and no reason to finish.
   group: migration-drift-gate-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancellable on a PR ref, NEVER on main.
+  #
+  # `github.ref` is `refs/heads/main` for every push to main, so an unguarded
+  # `cancel-in-progress: true` puts every merge's push run in one group — and
+  # two merges a few minutes apart (routine here) means the first commit's run
+  # is cancelled by the second's. Its required checks conclude `cancelled`,
+  # nothing re-runs them, and `validate-deploy-sha.mjs` then refuses to deploy
+  # that commit: a cancelled check asserted nothing, and `jobIdsAtRef` cannot
+  # excuse it because the run exists. The commit is undeployable, which lands on
+  # exactly the operation that needs it — DB_ROLLBACK_PLAYBOOK recovery is
+  # redeploying an older commit.
+  #
+  # Cancelling a PR run costs a re-push. Cancelling a main push run costs a
+  # commit's deployability. Only the first is worth the minutes.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   migration-drift:
@@ -453,8 +467,71 @@ jobs:
             echo "::notice::Fork PR — no secrets. The base-branch ordering rule still runs; the deployed databases are not read."
           fi
 
+      # Does this change touch migrations at all?
+      #
+      # Without this, the credential steps below run on EVERY same-repo PR,
+      # because `steps.creds` answers "can this context reach secrets", not
+      # "does this change need them". A rotated or expired Infisical identity
+      # (#696, which this repo has already hit) would then redden a required
+      # check on every open PR — a docs-only one included — which is precisely
+      # the repo-wide freeze `migration-drift`'s demotion was meant to end,
+      # rebuilt in the check that replaced it. The script's zero-network fast
+      # path is real; only this wrapper could defeat it.
+      #
+      # Safe by construction: if nothing under `supabase/migrations/` changed,
+      # `introduced` and `removed` are both empty and the script returns green
+      # through that fast path regardless, so gating here can never suppress a
+      # finding. A rename or a delete still touches the path, so the `removed`
+      # clause is preserved. The same step and the same reasoning as
+      # `migration-replay` above.
+      - name: Does this change touch migrations?
+        id: touched
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # The changed-file list goes to a FILE and grep reads the file. Never
+          # `echo "$LIST" | grep -q`: `grep -q` exits at its first match, killing
+          # `echo` with EPIPE, and `pipefail` turns that successful match into a
+          # failed pipeline — the false-green that hid a skipped production
+          # deploy in #1330.
+          CHANGED="${RUNNER_TEMP:-/tmp}/order-changed-paths.txt"
+
+          # A dispatch exists to exercise the credential path (the probe), so it
+          # always takes it.
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Manual dispatch — taking the credential path regardless of the diff."
+            exit 0
+          fi
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            RANGE="$BASE_SHA...$HEAD_SHA"
+          else
+            RANGE="$BEFORE_SHA..$HEAD_SHA"
+          fi
+
+          if git diff --name-only "$RANGE" > "$CHANGED" 2>/dev/null; then
+            DIFF_OK=1
+          else
+            DIFF_OK=0
+            : > "$CHANGED"
+            echo "::warning::Could not diff $RANGE. Taking the credential path rather than skipping the database read."
+          fi
+
+          if [ "$DIFF_OK" -eq 0 ] || grep -qE '^supabase/migrations/' "$CHANGED"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Migrations touched (or the diff was unreadable) — the deployed databases will be read."
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "No files under supabase/migrations/ changed — the base-branch rule still runs, no database is read."
+          fi
+
       - name: Verify Infisical credentials are configured
-        if: steps.creds.outputs.remote == 'true'
+        if: steps.creds.outputs.remote == 'true' && steps.touched.outputs.run == 'true'
         env:
           CLIENT_ID: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
           CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
@@ -483,7 +560,7 @@ jobs:
       # account-level, so this is belt and braces rather than a fix; taking the
       # copy with the widest proven reach costs nothing.
       - name: Inject production secrets from Infisical
-        if: steps.creds.outputs.remote == 'true'
+        if: steps.creds.outputs.remote == 'true' && steps.touched.outputs.run == 'true'
         uses: Infisical/secrets-action@v1.0.12
         with:
           method: "universal"
@@ -511,10 +588,11 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          if [ "$ORDER_GATE_LOCAL_ONLY" != "true" ] && [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
-            echo "::error::SUPABASE_ACCESS_TOKEN is not set in the Infisical 'prod' environment. See docs/internal/environment/SECRETS_MANAGEMENT.md."
-            exit 1
-          fi
+          # No token assertion here on purpose. A shell guard runs before `node`
+          # does, so it would fire on changes that were never going to read a
+          # database — the freeze this job is built to avoid. The script asserts
+          # the token past its own fast path, where it knows whether the read is
+          # actually needed.
           if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$ORDER_GATE_LOCAL_ONLY" != "true" ]; then
             node scripts/ci/check-migration-order.mjs --probe
           fi
