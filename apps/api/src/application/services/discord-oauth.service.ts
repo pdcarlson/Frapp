@@ -8,6 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import * as Sentry from '@sentry/nestjs';
 import { randomUUID } from 'node:crypto';
+import { logSafe } from '../../infrastructure/observability/log-safe';
 import {
   DISCORD_BOT_GATEWAY,
   DISCORD_OAUTH_CLIENT,
@@ -371,8 +372,20 @@ export class DiscordOAuthService {
         // fabricated. The collapse that does matter (nonexistent vs. spent vs.
         // expired, all answering `expired`) lives inside `consumeState` and is
         // untouched.
+        // The state id is deliberately NOT in this message (#1260). It is the
+        // CSRF token itself, and on this branch it is *live*: the conditional
+        // UPDATE never committed, so the row stays `consumed_at IS NULL` for
+        // the balance of its TTL. Logging it here would put an unspent
+        // handshake id into the application log stream — the same stream, at
+        // the same `error` level, that this issue's request-path fix drains.
+        //
+        // It costs nothing diagnostically. As the comment above says, this
+        // branch is a function of store health alone and fires identically for
+        // every state id; `describeError` plus the request id already identify
+        // the event, and the id would only distinguish handshakes in an
+        // outage that by construction affects all of them.
         this.logger.error(
-          `Could not consume Discord OAuth state ${stateId}`,
+          'Could not consume Discord OAuth state',
           describeError(error),
         );
         captureSwallowed(error, 'failed');
@@ -405,11 +418,26 @@ export class DiscordOAuthService {
     if (query.error) {
       // `error_description` is logged and goes no further — see
       // `DiscordConnectCode`.
+      //
+      // Both values come off the callback's query string, which is public and
+      // unauthenticated, so they are attacker-chosen. A record is one line, so
+      // an unescaped newline here would let a caller write an extra line of
+      // their choosing into the stream an incident investigation reads
+      // (#1260). `logSafe` strips control characters and caps length.
       this.logger.log(
-        `Discord connect declined for chapter ${consumed.chapter_id}: ${query.error} ${query.error_description ?? ''}`.trim(),
+        `Discord connect declined for chapter ${consumed.chapter_id}: ${logSafe(query.error)} ${logSafe(query.error_description)}`.trim(),
       );
+      // Express's query parser yields an ARRAY for a repeated key, so
+      // `?error=a&error=b` arrives as `['a','b']` despite the `string`
+      // annotation, and comparing that to a string is silently `false`. A
+      // cancelled connect then reported `failed`, and the wizard showed "could
+      // not complete the Discord connection" instead of the cancel sentence.
+      // First value wins, which is what a single-valued parameter means.
+      const errorCode: string = Array.isArray(query.error)
+        ? String(query.error[0])
+        : query.error;
       return finish(
-        query.error === 'access_denied' ? 'declined' : 'failed',
+        errorCode === 'access_denied' ? 'declined' : 'failed',
         `Discord returned error=${query.error}`,
       );
     }
@@ -536,9 +564,13 @@ export class DiscordOAuthService {
         },
       );
       if (!parked) {
+        // No state id in this message: it is caught below and interpolated
+        // into a `logger.log` line, so an id here reaches the application log
+        // stream by a second route (#1260). The chapter id in that line is
+        // what identifies the event; the handshake id is the credential.
         throw new DiscordConnectFailure(
           'expired',
-          `Handshake ${stateId} could not be parked; it already carries a pending connection.`,
+          'Handshake could not be parked; it already carries a pending connection.',
         );
       }
       return confirmToken;
