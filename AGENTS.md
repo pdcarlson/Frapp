@@ -65,7 +65,7 @@ This repo is **mid-rebuild (Frapp → Signet)**. Treat existing code as *possibl
 
 **The tracker is the only debt list.** Do not start a running debt file (`TECH-DEBT.md` or similar). GitHub Issues already have status, ownership, priority, and close-on-merge.
 
-**When the existing shape is wrong, rebuild it rather than patch around it.** A much larger diff is an acceptable price for a system that is more correct and more consistent — and the typecheck, test, CI and review gates exist precisely so that a change of that size can be trusted. Age is not evidence of correctness. Standard: [`spec/engineering.md`](spec/engineering.md#changing-existing-code) § Changing existing code.
+**When the existing shape is wrong, rebuild it rather than patch around it.** A much larger diff is an acceptable price for a system that is more correct and more consistent — and the typecheck, test, CI and review gates exist precisely so that a change of that size can be trusted. Age is not evidence of correctness. A rebuild too large for one reviewable change becomes an ordered series of them, each independently valuable and revertable, scoped before you start — never one unreviewable PR. Standard: [`spec/engineering.md`](spec/engineering.md#changing-existing-code) § Changing existing code.
 
 **A cutover deletes what it replaces** in the same change, unless there is an explicit reason to keep both live (a flag, a documented migration window). "We might need it later" is not a reason. Checklist: [`.claude/skills/signet-cutover/SKILL.md`](.claude/skills/signet-cutover/SKILL.md).
 

@@ -1009,8 +1009,9 @@ assert.
 ### ADR-20: CI/CD pipeline redesign — production-shaped CI, one path to production, a six-stage program (2026-08-30)
 
 **Decision:** Rebuild the deployment pipeline rather than patch it, in six sequenced stages, each
-independently valuable and revertable. Stages 1–2 are merged (#1374, #1378); the program is tracked
-in a GitHub `[Epic]`, not a document.
+independently valuable and revertable. Stages 1–2 are merged (#1374, #1378); stage 3 is this ADR and
+the standard it points to. The program is tracked in **#1381**, a GitHub `[Epic]` with one sub-issue
+per remaining stage (#1382, #1383, #1384), not a document.
 
 **Context.** Production deploy run
 [33275321347](https://github.com/pdcarlson/Frapp/actions/runs/33275321347) applied migrations and
@@ -1029,9 +1030,9 @@ the ones a later reader would otherwise re-litigate.
 | 3 | Make CI production-shaped; leave staging preview-based | 2026-08-29 | `web-production-build` builds `apps/web` and `apps/landing` under `npm ci --omit=dev`, matching Vercel's production install. Staging keeps preview builds, so a build-shape difference between the two environments persists — a recorded trade-off, not a bug to rediscover |
 | 4 | Six stages, sequenced, each independently valuable and revertable | 2026-08-29 | A single change large enough to carry all of it could not be reviewed or reverted; the sequence is what makes the scale safe (`spec/engineering.md` § Changing existing code) |
 | 5 | Demote `migration-drift` from required to reporting-only | 2026-08-30 | It measures whether staging is behind `main` — a question no PR contains or can change. As a required check it was a merge-freeze switch, not a gate: on 2026-08-29 it turned every open PR unmergeable over state none of them touched. Detection is not lost; `check-migration-drift.yml` covers both environments daily |
-| 6 | Delete `migrate-production.yml`; give `deploy-production.yml` a `scope: full \| migrations-only` input | 2026-08-30 | The deleted workflow took an arbitrary `ref` and skipped SHA validation, the guardrail preflight, the replay and the working-tree fence — the most dangerous path in the repository, kept as a backup for the safest one |
+| 6 | Delete `migrate-production.yml`; give `deploy-production.yml` a `scope: full \| migrations-only` input | 2026-08-30 | The deleted workflow took an arbitrary `ref` and skipped SHA validation, the guardrail preflight, the replay and the working-tree fence — the most dangerous path in the repository, kept as a backup for the safest one. ADR-19's 2026-08-29 correction records the same reversal from the other side; this row is the decision as taken, that correction is its effect on ADR-19 |
 | 7 | `--include-all` exists as a human-only recovery flag no workflow sets | 2026-08-30 | It discards the ordering guarantee `migration-order` exists to enforce. `run-migration.mjs` refuses it under `CI=true` unless `MIGRATION_ALLOW_INCLUDE_ALL` is set; recovery is deliberately human |
-| 8 | The master plan lives in a GitHub tracking issue; the durable standard is written before any further CI refactoring | 2026-08-30 | `docs/internal/DOCUMENTATION_CONVENTIONS.md` hard rule 3 bans narrative plan documents and names migration plans as the example; hard rule 4 sends a new initiative to an `[Epic]` parent with sub-issues |
+| 8 | The master plan lives in GitHub tracking issue **#1381**; the durable standard is written before any further CI refactoring | 2026-08-30 | `docs/internal/DOCUMENTATION_CONVENTIONS.md` hard rule 3 bans narrative plan documents and names migration plans as the example; hard rule 4 sends a new initiative to an `[Epic]` parent with sub-issues |
 
 **What replaced each piece.**
 

@@ -106,10 +106,11 @@ explicit prioritization" rule. Remove `triage` and add exactly one `P1`–`P4` i
   not mark them `stale`, must not raise their priority for age, and must not re-file duplicates of
   them. The production Render service being suspended and `frapp-web` having no production
   deployment are intentional states, not findings. Revisit when production becomes a goal; see #814
-  for the decision record. **Correction (2026-08-30):** this bullet also listed `frapp-prod` as
-  paused. It is `ACTIVE_HEALTHY` and holds the same 54 applied migrations as staging, and
-  `deploy-production.yml` is the live path to it (ADR-20). A `scope:production` issue is still
-  parked by choice; the paused-project premise is simply no longer true.
+  for the decision record. **Caveat (2026-08-30):** this bullet's premise — that production does not
+  yet exist — no longer holds. `frapp-prod` is live and `deploy-production.yml` deploys to it
+  (`spec/architecture/README.md` ADR-20). The label's scope is the owner's to redefine, so nothing
+  here changes on an agent's initiative; but do not read this bullet as evidence that a
+  production-shaped risk is theoretical. Tracked in #1381.
 - Legacy labels from the pre-Linear era (`bug`, `Improvement`, `release:*`) persist on old issues;
   `release:*` still drives version bumps ([`AGENT_INFRA.md`](AGENT_INFRA.md)). Don't extend the
   legacy set to new issues.

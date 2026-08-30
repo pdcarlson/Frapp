@@ -70,9 +70,13 @@ is the same failure as summarising a canonical file instead of pointing at it, o
 also how a program ends up existing only as one agent's summary of another agent's summary.
 
 So: name the tracker issue, name the stage being handed over, and give live state and traps for
-*that stage*. Everything the next session needs about the other stages is in the tracker, and it is
-current there. If the tracker is wrong or missing something you learned, fix the tracker before you
-write the handoff — not in the handoff.
+*that stage*. Everything the next session needs about the other stages is in the tracker.
+
+If you learned something the tracker does not know, update the tracker rather than the handoff — but
+this skill requests no GitHub tools, so you may not be able to. When you cannot, say so in the
+handoff in one line ("the tracker is stale on X; update it before relying on that section") and let
+the fresh session, which will have the tools, correct it. Never route around it with `gh` or raw
+REST: the GitHub MCP is the only sanctioned tracker path (`AGENTS.md` § Work tracking).
 
 ## Gather live state (don't recall it — check)
 
