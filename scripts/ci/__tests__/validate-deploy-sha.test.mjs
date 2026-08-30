@@ -5,7 +5,9 @@ import {
   checkAncestry,
   classifyRequiredChecks,
   describeCheckFailure,
+  CANCELLED_CONCLUSIONS,
   isFullSha,
+  jobIdsAtRef,
   validateDeploySha,
 } from "../validate-deploy-sha.mjs";
 
@@ -224,5 +226,224 @@ describe("validateDeploySha", () => {
     });
     assert.equal(result.ok, false);
     assert.equal(fetched, false);
+  });
+});
+
+// ── The deployable window ───────────────────────────────────────────────────
+// `ALL_REQUIRED_CHECKS` is today's list, asked of a commit from any point in
+// the past. A check run cannot exist on a commit whose tree never defined the
+// job that emits it, so every check ADDED to that array used to make every
+// older commit undeployable with "never reported: <new-check>".
+//
+// Measured, not hypothesised: at `971d7d5` — the commit production's API was
+// running when this was written — `.github/workflows/` defines 50 job ids and
+// `web-production-build` is not among them. #1374 added that check, so rolling
+// production back to the commit it was already running had become impossible.
+// The recovery `DB_ROLLBACK_PLAYBOOK.md` prescribes is "redeploy the API at the
+// pre-<X> revision", which is exactly this operation.
+
+describe("classifyRequiredChecks — checks the commit could not have produced", () => {
+  const runs = [{ name: "api-tests", status: "completed", conclusion: "success" }];
+
+  it("treats a check the commit's workflows never defined as not applicable", () => {
+    const verdict = classifyRequiredChecks({
+      checkRuns: runs,
+      required: ["api-tests", "web-production-build"],
+      defined: new Set(["api-tests"]),
+    });
+    assert.deepEqual(verdict.missing, []);
+    assert.deepEqual(verdict.notApplicable, ["web-production-build"]);
+    assert.equal(verdict.ok, true);
+  });
+
+  it("still fails a check the commit DID define and never reported", () => {
+    // The half that must not soften. A defined job that produced no run is the
+    // silent-skip hole this gate exists for.
+    const verdict = classifyRequiredChecks({
+      checkRuns: runs,
+      required: ["api-tests", "secret-scan"],
+      defined: new Set(["api-tests", "secret-scan"]),
+    });
+    assert.deepEqual(verdict.missing, ["secret-scan"]);
+    assert.equal(verdict.ok, false);
+  });
+
+  it("still fails a check that ran and failed, defined or not", () => {
+    const verdict = classifyRequiredChecks({
+      checkRuns: [{ name: "api-tests", status: "completed", conclusion: "failure" }],
+      required: ["api-tests"],
+      defined: new Set(),
+    });
+    assert.deepEqual(verdict.failing, ["api-tests (failure)"]);
+    assert.deepEqual(verdict.notApplicable, []);
+    assert.equal(verdict.ok, false);
+  });
+
+  it("narrows nothing when `defined` is null", () => {
+    // Null is the conservative answer — "could not read the tree", not "no jobs
+    // exist". An empty Set would excuse the entire required list.
+    const verdict = classifyRequiredChecks({
+      checkRuns: runs,
+      required: ["api-tests", "secret-scan"],
+      defined: null,
+    });
+    assert.deepEqual(verdict.missing, ["secret-scan"]);
+    assert.equal(verdict.ok, false);
+  });
+});
+
+describe("jobIdsAtRef", () => {
+  it("reads real job ids out of the tree at a ref", () => {
+    const ids = jobIdsAtRef({ ref: "HEAD" });
+    assert.ok(ids instanceof Set);
+    // Present in ci.yml on every commit this repo has had for months.
+    assert.ok(ids.has("api-tests"), "expected api-tests among HEAD's job ids");
+    assert.ok(ids.has("lint-and-typecheck"));
+  });
+
+  it("returns null — never an empty Set — for an unreadable ref", () => {
+    // An empty Set would mark every required check not-applicable and pass a
+    // deploy having asserted nothing.
+    assert.equal(jobIdsAtRef({ ref: "refs/heads/definitely-not-a-branch" }), null);
+    assert.equal(
+      jobIdsAtRef({
+        ref: "HEAD",
+        git: () => {
+          throw new Error("git exploded");
+        },
+      }),
+      null,
+    );
+  });
+
+  it("returns null when the ref has workflow files it cannot read", () => {
+    let call = 0;
+    const git = (args) => {
+      call += 1;
+      if (args[0] === "ls-tree") return ".github/workflows/ci.yml\n";
+      throw new Error("unreadable blob");
+    };
+    assert.equal(jobIdsAtRef({ ref: "HEAD", git }), null);
+    assert.ok(call >= 2);
+  });
+});
+
+describe("classifyRequiredChecks — the narrowing must not excuse everything", () => {
+  it("refuses when NOT ONE required check could be matched", () => {
+    // The narrowing exists so an older commit stays deployable. Taken to its
+    // limit it says "none of these 21 checks applies", which is not an old
+    // commit — it is an unreadable tree or a roster matching nothing. Returning
+    // ok:true there deploys to production with no CI evidence at all, which is
+    // worse than the refusal the narrowing was softening.
+    const verdict = classifyRequiredChecks({
+      checkRuns: [],
+      required: ["api-tests", "secret-scan", "web-tests"],
+      defined: new Set(["some-unrelated-job"]),
+      currentlyDefined: new Set(["api-tests", "secret-scan", "web-tests"]),
+    });
+    assert.equal(verdict.ok, false);
+    assert.equal(verdict.exhausted, true);
+    assert.deepEqual(verdict.notApplicable, []);
+    assert.deepEqual(verdict.missing.sort(), ["api-tests", "secret-scan", "web-tests"]);
+  });
+
+  it("a roster entry no ref defines is missing, not excused", () => {
+    // A job renamed in the workflows without updating ALL_REQUIRED_CHECKS, or a
+    // stale roster entry. Excusing it silently drops a gate and mislabels the
+    // drop as "this commit predates them".
+    const verdict = classifyRequiredChecks({
+      checkRuns: [{ name: "api-tests", status: "completed", conclusion: "success" }],
+      required: ["api-tests", "renamed-away"],
+      defined: new Set(["api-tests"]),
+      currentlyDefined: new Set(["api-tests"]),
+    });
+    assert.deepEqual(verdict.missing, ["renamed-away"]);
+    assert.deepEqual(verdict.notApplicable, []);
+    assert.equal(verdict.ok, false);
+  });
+
+  it("excuses only a check that exists NOW and did not exist THEN", () => {
+    const verdict = classifyRequiredChecks({
+      checkRuns: [{ name: "api-tests", status: "completed", conclusion: "success" }],
+      required: ["api-tests", "web-production-build"],
+      defined: new Set(["api-tests"]),
+      currentlyDefined: new Set(["api-tests", "web-production-build"]),
+    });
+    assert.deepEqual(verdict.notApplicable, ["web-production-build"]);
+    assert.equal(verdict.ok, true);
+  });
+
+  it("end to end: a no-CI-evidence commit is refused, with a reason that says why", async () => {
+    const result = await validateDeploySha({
+      sha: "a".repeat(40),
+      repo: "o/r",
+      token: "t",
+      required: ["api-tests", "secret-scan"],
+      // Ref-aware: the trusted ref defines both checks, the deployed commit
+      // defines neither — a total workflow restructure. That is the shape the
+      // floor exists for; a roster naming jobs NEITHER ref defines is the
+      // separate stale-roster case asserted above.
+      git: (args) => {
+        if (args[0] === "cat-file" || args[0] === "merge-base") return "";
+        if (args[0] === "ls-tree") return ".github/workflows/ci.yml\n";
+        const ref = args[1] ?? "";
+        return ref.startsWith("origin/main")
+          ? "  api-tests:\n  secret-scan:\n"
+          : "  unrelated-job:\n";
+      },
+      fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ check_runs: [] }) }),
+      logger: { log: () => {} },
+    });
+    assert.equal(result.ok, false);
+    assert.match(result.reason, /no CI evidence at all/);
+  });
+});
+
+
+describe("classifyRequiredChecks — a cancelled check is not a failed one", () => {
+  it("refuses a cancelled check, but reports it apart from a failure", () => {
+    // How this happens: ci.yml, docs.yml and migration-drift-gate.yml all key
+    // concurrency on `github.ref`, which is `refs/heads/main` for EVERY push to
+    // main. Two merges minutes apart put both push runs in one group, so the
+    // first commit's run is cancelled by the second's. Nothing re-runs it, and
+    // the commit becomes permanently undeployable — the same class as the
+    // deployable-window bug above, through a different door, landing on the
+    // same operation (rollback = redeploy an older commit).
+    const verdict = classifyRequiredChecks({
+      checkRuns: [
+        { name: "api-tests", status: "completed", conclusion: "success" },
+        { name: "migration-order", status: "completed", conclusion: "cancelled" },
+      ],
+      required: ["api-tests", "migration-order"],
+    });
+    assert.equal(verdict.ok, false, "a cancelled check asserted nothing and must not pass");
+    assert.deepEqual(verdict.failing, [], "must not be reported as a test failure");
+    assert.deepEqual(verdict.cancelled, ["migration-order (cancelled)"]);
+  });
+
+  it("names the remedy, which is a re-run and not a code change", () => {
+    const text = describeCheckFailure({
+      missing: [],
+      pending: [],
+      failing: [],
+      cancelled: ["migration-order (cancelled)"],
+    });
+    assert.match(text, /cancelled/);
+    assert.match(text, /re-run the workflow run for this commit/);
+    assert.doesNotMatch(text, /failed:/);
+  });
+
+  it("timed_out and stale are the same shape as cancelled", () => {
+    assert.ok(CANCELLED_CONCLUSIONS.has("cancelled"));
+    assert.ok(CANCELLED_CONCLUSIONS.has("timed_out"));
+    assert.ok(CANCELLED_CONCLUSIONS.has("stale"));
+    // And a real failure is still a real failure.
+    assert.ok(!CANCELLED_CONCLUSIONS.has("failure"));
+    const verdict = classifyRequiredChecks({
+      checkRuns: [{ name: "api-tests", status: "completed", conclusion: "failure" }],
+      required: ["api-tests"],
+    });
+    assert.deepEqual(verdict.failing, ["api-tests (failure)"]);
+    assert.deepEqual(verdict.cancelled, []);
   });
 });

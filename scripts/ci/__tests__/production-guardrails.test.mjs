@@ -171,3 +171,42 @@ describe("provider identifiers are inputs, never defaults", () => {
     assert.ok(!urls.some((u) => u.includes("prj_xkn32taKrJCgYRZoN6pZRfGfPT9T")));
   });
 });
+
+describe("buildSummary — a pass must not assert what it did not read", () => {
+  it("names both settings when both were checked", () => {
+    const text = buildSummary([]);
+    assert.match(text, /Render auto-deploy is off/);
+    assert.match(text, /neither Vercel project promotes from main/);
+  });
+
+  it("claims only frapp-web, never 'neither project', under --migrations-only", () => {
+    // Two failures guarded at once.
+    //
+    // The first: a success line naming a setting nothing read. `migrations-only`
+    // skips frapp-landing, so claiming "neither Vercel project promotes from
+    // main" would be a written assurance about a project this run never
+    // fetched — on the only path to production, in the step whose entire job is
+    // asserting the settings that fail open.
+    //
+    // The second, and the reason frapp-web is still in the list: `apps/web` is
+    // a direct Supabase client (PostgREST reads plus `postgres_changes` on
+    // `public.chat_messages` and `public.chat_message_actions`), so a dashboard
+    // promoted from `main` is wired straight to the schema a migrations-only
+    // run is changing. An earlier cut of this flag dropped both projects on the
+    // stated grounds that a Production Branch "bears on nothing a migration
+    // does". That was false for frapp-web.
+    const text = buildSummary([], { checked: ["render", "vercel-web"] });
+    assert.match(text, /Render auto-deploy is off/);
+    assert.match(text, /frapp-web does not promote from main/);
+    assert.doesNotMatch(text, /neither Vercel project promotes from main/);
+    assert.match(text, /frapp-landing's Production Branch was NOT read/);
+    // And it must not claim completeness.
+    assert.doesNotMatch(text, /All production deploy guardrails hold/);
+  });
+
+  it("still reports violations verbatim regardless of scope", () => {
+    const text = buildSummary(["Render auto-deploy is ON"], { checked: ["render", "vercel-web"] });
+    assert.match(text, /1 production guardrail violation/);
+    assert.match(text, /Render auto-deploy is ON/);
+  });
+});

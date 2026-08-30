@@ -382,7 +382,7 @@ for how an agent is expected to use it.
 | `staging.frapp.live` | the landing site (apex — see wildcard note) |
 | `*.staging.frapp.live` | `app.staging.frapp.live`, the web dashboard |
 | `api-staging.frapp.live` | the Render-hosted API. A **sibling** of `staging.frapp.live`, not a subdomain of it, so `*.staging.frapp.live` does **not** cover it |
-| `hnoyzpidbmizhbqaiity.supabase.co` | the hosted `frapp-staging` project — Realtime, Presence, GoTrue. The **staging project ref**, not a wildcard; if the project is ever rotated this line must be updated, and the bringup probe below is what will tell you |
+| `hnoyzpidbmizhbqaiity.supabase.co` | the hosted `frapp-staging` project — Realtime, Presence, GoTrue. The **staging project ref**, not a wildcard; if the project is ever rotated this line must be updated — and so must [`ci/environments.json`](../../../ci/environments.json), which `run-migration.mjs` fails closed against and `check-migration-order.mjs` reads, so a rotation that misses it blocks every production migration and every migration-bearing PR. The bringup probe below is what will tell you about this line |
 
 ### Wildcard semantics — weaker than the docs imply
 

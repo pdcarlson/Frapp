@@ -221,6 +221,11 @@
       "file": "docs/internal/environment/ENV_REFERENCE.md",
       "path": "apps/mobile/play-service-account.json",
       "reason": "Play service-account key for `eas submit` — a credential that is deliberately gitignored and must never exist in the repo; the citing passage says exactly that."
+    },
+    {
+      "file": "spec/architecture/README.md",
+      "path": "migrate-production.yml",
+      "reason": "ADR text recording the state at the time it was written, when `migrate-production.yml` still existed. ADRs are immutable (AGENTS.md § ADR discipline), so the deletion is recorded as an appended `Correction (2026-08-29)` sub-bullet under the same consequence rather than by rewriting it — the form the 2026-08-28 correction at ADR-13 already set."
     }
   ]
 }

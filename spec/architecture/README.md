@@ -982,6 +982,20 @@ in the flow ever named a commit. Three consequences, all measured rather than ar
   pointed at the now-deleted `production` branch is the *safe* state.
 - `migrate-production.yml` survives as the code-free escape hatch, and is now explicitly
   the weaker path: it does not rehearse the migration, where the deploy workflow does.
+  - **Correction (2026-08-29), recorded rather than rewritten — this consequence was
+    reversed.** `migrate-production.yml` has been **deleted**. Keeping a code-free path
+    that skipped the rehearsal turned out to mean keeping the most dangerous workflow in
+    the repository as a backup for the safest one: it took an arbitrary `ref` and skipped
+    SHA validation, the provider guardrail preflight, the replay and the working-tree
+    fence. Its stated reason for skipping the rehearsal — that reconstructing production's
+    state is least dependable once something has gone wrong — does not hold: the state
+    that cannot be reconstructed is a *foreign* migration, and a foreign migration blocks
+    `supabase db push` outright anyway, so the rehearsal was not what would have failed,
+    it was what would have said so first. The capability survives as
+    `deploy-production.yml`'s `scope: migrations-only` input, which keeps every gate. What
+    is genuinely given up is applying migrations from a ref that is not an ancestor of
+    `main`, or from a commit whose CI was not green. Both were worth losing. The decision
+    below stands as taken; only this consequence was reversed.
 - ADR-13's consequence bullet ("the `production` environment's manual-approval pause is
   gone") and its 2026-08-28 correction both stand as written. This ADR does not revise
   them; it records that the pause was **kept deliberately** and is now the only human gate.

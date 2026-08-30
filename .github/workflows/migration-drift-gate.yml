@@ -69,7 +69,21 @@ concurrency:
   # sends SQL to a deployed database, so a superseded run has no cleanup to do
   # and no reason to finish.
   group: migration-drift-gate-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancellable on a PR ref, NEVER on main.
+  #
+  # `github.ref` is `refs/heads/main` for every push to main, so an unguarded
+  # `cancel-in-progress: true` puts every merge's push run in one group — and
+  # two merges a few minutes apart (routine here) means the first commit's run
+  # is cancelled by the second's. Its required checks conclude `cancelled`,
+  # nothing re-runs them, and `validate-deploy-sha.mjs` then refuses to deploy
+  # that commit: a cancelled check asserted nothing, and `jobIdsAtRef` cannot
+  # excuse it because the run exists. The commit is undeployable, which lands on
+  # exactly the operation that needs it — DB_ROLLBACK_PLAYBOOK recovery is
+  # redeploying an older commit.
+  #
+  # Cancelling a PR run costs a re-push. Cancelling a main push run costs a
+  # commit's deployability. Only the first is worth the minutes.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   migration-drift:
@@ -315,3 +329,271 @@ jobs:
       - name: No migrations touched
         if: steps.touched.outputs.run != 'true'
         run: echo "No files under supabase/migrations/ changed — replay not needed."
+
+  # ── Migration ordering ──────────────────────────────────────────────────
+  # REQUIRED check: does a migration this change INTRODUCES sort before a
+  # version the target database has already applied?
+  #
+  # #1373: `20260829000000_rollover_promote_new_members` merged after
+  # `20260829002000` was already applied to staging. `supabase db push` refused
+  # — "Found local migration files to be inserted before the last migration on
+  # remote database" — staging's deploy halted, and because `migration-drift`
+  # was a required check at the time, every open PR in the repo became
+  # unmergeable until a human intervened.
+  #
+  # Nothing caught it pre-merge, and the information already existed:
+  # `check-migration-replay.mjs` computed exactly this set, called it
+  # `backDated`, and discarded it. It also could not have caught this one
+  # anyway — the replay rebuilds PRODUCTION's state, and production had not
+  # applied `20260829002000` yet. Staging had. Hence both environments here.
+  #
+  # ── Why this can be required where `migration-drift` could not ─────────
+  # It reads the migrations the CHANGE introduces (head minus base), not the
+  # whole pending set. So a change touching no migrations introduces nothing,
+  # makes ZERO network calls, and returns in about a second — it cannot block a
+  # PR over state that PR did not cause, and it cannot put repo-wide merge
+  # availability behind the Supabase API. A PR that FIXES an ordering problem
+  # also turns its own check green, which `migration-drift` structurally could
+  # not: it compared `origin/main` against staging on every run, so the PR
+  # fixing the drift was blocked by the drift it was fixing.
+  #
+  # No Supabase CLI, no Docker, no disposable stack: one read-only GET per
+  # environment to the Management API's migration-history endpoint.
+  #
+  # Semantics: scripts/ci/check-migration-order.mjs. Unit tests (including the
+  # #1373 replay from a recorded state): scripts/ci/__tests__/.
+  migration-order:
+    runs-on: ubuntu-latest
+    # NO job-level fork guard, unlike the two jobs above, and that is the
+    # difference worth understanding. Those two can do nothing at all without
+    # secrets, so skipping (which reports Success) is the only option a fork
+    # leaves them. This job's FIRST rule — no introduced migration may sort
+    # before one already on the base branch — needs no credentials, no network
+    # and no database. Skipping the whole job on a fork would throw away the
+    # only clause that catches the #1373 race deterministically, in exchange for
+    # nothing. So the job always runs, and only the half that reads a deployed
+    # database is guarded, below.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history: the base ref this change is measured against has to be
+          # readable, and a shallow clone cannot answer for it.
+          fetch-depth: 0
+
+      - name: Fetch main
+        run: git fetch --no-tags origin main:refs/remotes/origin/main
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # What "introduced" is measured against. On a PR it is `main`, so the
+      # introduced set is the PR's own migrations. On a push it is the commit
+      # the branch moved from, so the run reports on exactly what just landed.
+      # What "introduced" is measured against.
+      #
+      # `git merge-base HEAD refs/remotes/origin/main`, NOT the live tip of
+      # main, and that distinction is the whole step.
+      #
+      # `actions/checkout` pins the tree to `github.sha` — for a PR, the merge
+      # commit computed when the event fired. Comparing that fixed tree against
+      # a freshly fetched `origin/main` means any migration merged since (or
+      # merged before a re-run of an older event) is present in the base and
+      # absent from the head, so it reads as REMOVED BY THIS CHANGE. The gate
+      # then leaves its zero-network fast path, calls the Management API, finds
+      # the migration applied on staging, and fails a TypeScript-only PR with
+      # "this change removes a migration a deployed database has already
+      # applied" — a required check going red over someone else's merge, which
+      # is the repo-wide-freeze shape that got `migration-drift` demoted,
+      # walking straight back in.
+      #
+      # A merge base is always an ancestor of HEAD, so `removed` can only ever
+      # contain real deletions. One construct covers all three cases that get
+      # this wrong: a PR whose base has moved, a re-run of a stale event, and a
+      # `workflow_dispatch` from a branch (where there is no PR context at all
+      # and the naive answer is `origin/main`).
+      #
+      # `push` is the exception and keeps `github.event.before`: HEAD is already
+      # on main, so its merge base with main is itself and nothing would ever
+      # read as introduced.
+      - name: Resolve the base ref
+        id: base
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "push" ]; then
+            # All-zeros on a branch creation, and a force-push can leave a SHA
+            # this clone does not have. Either way `HEAD~1` is the honest
+            # fallback; silently comparing against nothing would read every
+            # migration in the repo as newly introduced.
+            if [ -n "${BEFORE_SHA:-}" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ] \
+               && git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+              BASE="$BEFORE_SHA"
+            else
+              echo "::warning::github.event.before is unusable ('${BEFORE_SHA:-unset}'); measuring against HEAD~1 instead."
+              BASE="HEAD~1"
+            fi
+          elif BASE="$(git merge-base HEAD refs/remotes/origin/main 2>/dev/null)" && [ -n "$BASE" ]; then
+            : # merge base found — the common ancestor of this tree and main.
+          else
+            # Nothing sane to compare against. Refusing beats guessing: the two
+            # available guesses are "origin/main", which manufactures phantom
+            # removals, and "nothing", which reads the whole repo as introduced.
+            echo "::error::Could not compute a merge base between HEAD and refs/remotes/origin/main. The checkout is probably shallow — this job needs fetch-depth: 0."
+            exit 1
+          fi
+
+          echo "ref=$BASE" >> "$GITHUB_OUTPUT"
+          echo "Measuring introduced migrations against: $BASE"
+          git --no-pager log -1 --format='  (%h %s)' "$BASE" || true
+
+      - name: Can this context read the deployed databases?
+        id: creds
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          THIS_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "push" ] || [ "$EVENT_NAME" = "workflow_dispatch" ] || [ "$HEAD_REPO" = "$THIS_REPO" ]; then
+            echo "remote=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "remote=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Fork PR — no secrets. The base-branch ordering rule still runs; the deployed databases are not read."
+          fi
+
+      # Does this change touch migrations at all?
+      #
+      # Without this, the credential steps below run on EVERY same-repo PR,
+      # because `steps.creds` answers "can this context reach secrets", not
+      # "does this change need them". A rotated or expired Infisical identity
+      # (#696, which this repo has already hit) would then redden a required
+      # check on every open PR — a docs-only one included — which is precisely
+      # the repo-wide freeze `migration-drift`'s demotion was meant to end,
+      # rebuilt in the check that replaced it. The script's zero-network fast
+      # path is real; only this wrapper could defeat it.
+      #
+      # Safe by construction: if nothing under `supabase/migrations/` changed,
+      # `introduced` and `removed` are both empty and the script returns green
+      # through that fast path regardless, so gating here can never suppress a
+      # finding. A rename or a delete still touches the path, so the `removed`
+      # clause is preserved. The same step and the same reasoning as
+      # `migration-replay` above.
+      - name: Does this change touch migrations?
+        id: touched
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # The changed-file list goes to a FILE and grep reads the file. Never
+          # `echo "$LIST" | grep -q`: `grep -q` exits at its first match, killing
+          # `echo` with EPIPE, and `pipefail` turns that successful match into a
+          # failed pipeline — the false-green that hid a skipped production
+          # deploy in #1330.
+          CHANGED="${RUNNER_TEMP:-/tmp}/order-changed-paths.txt"
+
+          # A dispatch exists to exercise the credential path (the probe), so it
+          # always takes it.
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Manual dispatch — taking the credential path regardless of the diff."
+            exit 0
+          fi
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            RANGE="$BASE_SHA...$HEAD_SHA"
+          else
+            RANGE="$BEFORE_SHA..$HEAD_SHA"
+          fi
+
+          if git diff --name-only "$RANGE" > "$CHANGED" 2>/dev/null; then
+            DIFF_OK=1
+          else
+            DIFF_OK=0
+            : > "$CHANGED"
+            echo "::warning::Could not diff $RANGE. Taking the credential path rather than skipping the database read."
+          fi
+
+          if [ "$DIFF_OK" -eq 0 ] || grep -qE '^supabase/migrations/' "$CHANGED"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Migrations touched (or the diff was unreadable) — the deployed databases will be read."
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "No files under supabase/migrations/ changed — the base-branch rule still runs, no database is read."
+          fi
+
+      - name: Verify Infisical credentials are configured
+        if: steps.creds.outputs.remote == 'true' && steps.touched.outputs.run == 'true'
+        env:
+          CLIENT_ID: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+        run: |
+          MISSING=""
+          [ -n "$CLIENT_ID" ] || MISSING="$MISSING INFISICAL_MACHINE_IDENTITY_ID"
+          [ -n "$CLIENT_SECRET" ] || MISSING="$MISSING INFISICAL_CLIENT_SECRET"
+          if [ -n "$MISSING" ]; then
+            echo "::error::Infisical credentials are not configured. Missing or empty:$MISSING. See docs/internal/environment/SECRETS_MANAGEMENT.md."
+            exit 1
+          fi
+
+      # ONE injection, and the `prod` slug rather than `staging`.
+      #
+      # Only `SUPABASE_ACCESS_TOKEN` is wanted — the project REFS come from
+      # `ci/environments.json`, which is what lets this job skip the
+      # capture-between-injections dance check-migration-drift.yml needs (a
+      # second `secrets-action` step clobbers `SUPABASE_PROJECT_REF` from the
+      # first).
+      #
+      # `prod`, because this job reads BOTH projects and `prod` is the copy
+      # already proven to do that: check-migration-drift.yml injects staging
+      # then prod and reads both refs with whichever survives — the prod one —
+      # and `migration-replay` above already uses this slug on PR triggers, so
+      # the credential path and the fork guard both exist for it. The token is
+      # account-level, so this is belt and braces rather than a fix; taking the
+      # copy with the widest proven reach costs nothing.
+      - name: Inject production secrets from Infisical
+        if: steps.creds.outputs.remote == 'true' && steps.touched.outputs.run == 'true'
+        uses: Infisical/secrets-action@v1.0.12
+        with:
+          method: "universal"
+          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: "frapp-live-ej-ls"
+          env-slug: "prod"
+          secret-path: "/"
+          include-imports: true
+
+      # A manual dispatch runs the PROBE, not the gate.
+      #
+      # On a dispatch, head and base are both `main`, so the gate introduces
+      # nothing and returns green through its zero-network fast path — it proves
+      # the job starts and nothing else. That is the wrong evidence to promote a
+      # required check on, and it is exactly the evidence a naive "just dispatch
+      # it and see it go green" would produce. The probe reads both projects and
+      # prints what they hold, so a project-scoped token or a wrong ref surfaces
+      # here rather than as a hard block on the first migration PR after this
+      # check starts blocking.
+      - name: Check migration ordering
+        env:
+          ORDER_GATE_BASE_REF: ${{ steps.base.outputs.ref }}
+          ORDER_GATE_LOCAL_ONLY: ${{ steps.creds.outputs.remote != 'true' }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          # No token assertion here on purpose. A shell guard runs before `node`
+          # does, so it would fire on changes that were never going to read a
+          # database — the freeze this job is built to avoid. The script asserts
+          # the token past its own fast path, where it knows whether the read is
+          # actually needed.
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$ORDER_GATE_LOCAL_ONLY" != "true" ]; then
+            node scripts/ci/check-migration-order.mjs --probe
+          fi
+          node scripts/ci/check-migration-order.mjs
