@@ -67,9 +67,11 @@ describe('logSafe', () => {
   });
 
   it('does not expand an object into the record', () => {
-    // `qs` can produce one from `?error[x]=1`. A placeholder loses nothing
-    // that was ever diagnostic; a JSON dump would carry nested
-    // caller-controlled text into the log.
+    // Not reachable from a query string: Express 5's default parser is
+    // `simple`, so `?error[x]=1` arrives as the flat key `'error[x]'` and
+    // `query.error` is undefined. This branch is for the `unknown` contract.
+    // A placeholder loses nothing that was ever diagnostic; a JSON dump would
+    // carry nested caller-controlled text into the log.
     expect(logSafe({ x: 'nested\ntext' })).toBe('[object]');
   });
 });

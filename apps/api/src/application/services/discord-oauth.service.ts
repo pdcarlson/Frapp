@@ -433,8 +433,8 @@ export class DiscordOAuthService {
       // cancelled connect then reported `failed`, and the wizard showed "could
       // not complete the Discord connection" instead of the cancel sentence.
       // First value wins, which is what a single-valued parameter means.
-      const errorCode = Array.isArray(query.error)
-        ? query.error[0]
+      const errorCode: string = Array.isArray(query.error)
+        ? String(query.error[0])
         : query.error;
       return finish(
         errorCode === 'access_denied' ? 'declined' : 'failed',

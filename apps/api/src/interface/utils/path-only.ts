@@ -26,16 +26,16 @@
  * `packages/validation`'s Sentry scrubber has a `pathOnly` of its own that does
  * NOT strip the authority. Treat that as a known gap, not a design — the
  * justification once offered for it, that its `redactFreeText` covers userinfo,
- * does not hold. `EMAIL_RE` consumes the run of `[\w.+-]` immediately before
- * the `@`, plus the host, so what it removes is incidental:
+ * does not hold. `redactFreeText` has no rule about URL authority at all; what
+ * it removes is whatever its e-mail pattern happens to overlap, which for some
+ * inputs is the password and host, for others half the password, and for others
+ * nothing whatsoever. #1388 carries the measured cases — deliberately there and
+ * not here, because a regex's incidental behaviour is exactly the kind of
+ * detail a comment states once and then drifts on.
  *
- *   svc:s3cr3t@host/p   ->  svc:[redacted:email]/p      (password gone, host gone)
- *   svc:hun!ter@host/p  ->  svc:hun![redacted:email]/p  (leading half survives)
- *   svc:s3cr3t!@host/p  ->  unchanged, byte-for-byte    (nothing matches)
- *
- * So the scheme and username always ship; the password ships in part, or whole
- * when its last character is outside that class. Tracked in #1388, whose fix is
- * to hoist `stripAuthority` below into that package so both sinks share one
+ * The part that is stable, and the reason this helper does not delegate: that
+ * function is not an authority stripper and does not claim to be. #1388's fix
+ * is to hoist `stripAuthority` below into that package so both sinks share one
  * implementation. Until then the internal log stream is the hardened one and
  * the external boundary is not, which is backwards.
  */
