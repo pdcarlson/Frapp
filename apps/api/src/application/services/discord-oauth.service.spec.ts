@@ -337,6 +337,35 @@ describe('DiscordOAuthService — the callback’s trust boundary', () => {
     logged.mockRestore();
   });
 
+  it('keeps the handshake id out of the log when parking fails', async () => {
+    // The third route into the log stream that #1260 found, and the only one
+    // of the three that no test pinned: reinstating the id in
+    // `parkConnection`'s throw message leaves the rest of this suite green.
+    //
+    // The catch interpolates `error.message` into a `logger.log` line *and*
+    // returns it as the user-facing `reason`, so an id there reaches the
+    // application log and the browser. Unlike the `consumeState` branch the
+    // state here IS spent, which lowers the severity but not the rule: the
+    // handshake id is a credential and the chapter id is what identifies the
+    // event.
+    const service = await build();
+    repo.attachPendingConnection.mockResolvedValue(null);
+    const logged = jest
+      .spyOn(Logger.prototype, 'log')
+      .mockImplementation(() => undefined);
+
+    const outcome = await service.handleCallback({ code: 'c', state: STATE });
+
+    const messages = logged.mock.calls.map((call) => String(call[0]));
+    // Prove the branch was actually taken — otherwise the assertions below
+    // pass vacuously on a path that never ran.
+    expect(messages.some((m) => m.includes('could not be parked'))).toBe(true);
+    for (const message of messages) expect(message).not.toContain(STATE);
+    expect(outcome.reason).not.toContain(STATE);
+    expect(outcome.returnUrl).not.toContain(STATE);
+    logged.mockRestore();
+  });
+
   it('does NOT tell a store failure that its link expired', async () => {
     // These two must not collapse together, which is the opposite of what this
     // test asserted when it was written.
