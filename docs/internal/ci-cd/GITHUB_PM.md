@@ -104,9 +104,12 @@ explicit prioritization" rule. Remove `triage` and add exactly one `P1`–`P4` i
   exists. Added 2026-08-10 on the owner's decision to defer production and make staging the
   near-term goal. These issues are **parked by choice, not blocked and not stale**: routines must
   not mark them `stale`, must not raise their priority for age, and must not re-file duplicates of
-  them. `frapp-prod` being paused, the production Render service being suspended, and `frapp-web`
-  having no production deployment are all intentional states, not findings. Revisit when
-  production becomes a goal; see #814 for the decision record.
+  them. The production Render service being suspended and `frapp-web` having no production
+  deployment are intentional states, not findings. Revisit when production becomes a goal; see #814
+  for the decision record. **Correction (2026-08-30):** this bullet also listed `frapp-prod` as
+  paused. It is `ACTIVE_HEALTHY` and holds the same 54 applied migrations as staging, and
+  `deploy-production.yml` is the live path to it (ADR-20). A `scope:production` issue is still
+  parked by choice; the paused-project premise is simply no longer true.
 - Legacy labels from the pre-Linear era (`bug`, `Improvement`, `release:*`) persist on old issues;
   `release:*` still drives version bumps ([`AGENT_INFRA.md`](AGENT_INFRA.md)). Don't extend the
   legacy set to new issues.

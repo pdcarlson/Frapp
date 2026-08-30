@@ -1006,6 +1006,76 @@ assert.
 
 ---
 
+### ADR-20: CI/CD pipeline redesign — production-shaped CI, one path to production, a six-stage program (2026-08-30)
+
+**Decision:** Rebuild the deployment pipeline rather than patch it, in six sequenced stages, each
+independently valuable and revertable. Stages 1–2 are merged (#1374, #1378); the program is tracked
+in a GitHub `[Epic]`, not a document.
+
+**Context.** Production deploy run
+[33275321347](https://github.com/pdcarlson/Frapp/actions/runs/33275321347) applied migrations and
+shipped the API, then skipped both frontends and skipped the release job — leaving production split
+across two commits with no tag recording what was live. Investigating it surfaced a class of
+defect rather than a bug: CI proved that code compiled and tests passed, and asserted nothing about
+the thing being deployed or the databases receiving it. Patching the immediate failure would have
+left that premise intact, so the pipeline was taken as the unit of change instead. The eight
+decisions below were taken between 2026-08-28 and 2026-08-30 and are recorded here because they are
+the ones a later reader would otherwise re-litigate.
+
+| # | Decision | Date | Why |
+| --- | --- | --- | --- |
+| 1 | Leave production blocked rather than hand-unblock it, until the pipeline fix landed | 2026-08-29 | Hand-unblocking would have spent the one forcing function that made the redesign urgent, and would have deployed through the path under suspicion |
+| 2 | Defer production backups to stage 5, as an accepted risk | 2026-08-29 | `db-backup.yml` covers staging only, and the free tier has neither PITR nor daily backups. Until stage 5, a `frapp-prod` data-loss event is **unrecoverable**. Recorded as a risk taken knowingly, not an oversight |
+| 3 | Make CI production-shaped; leave staging preview-based | 2026-08-29 | `web-production-build` builds `apps/web` and `apps/landing` under `npm ci --omit=dev`, matching Vercel's production install. Staging keeps preview builds, so a build-shape difference between the two environments persists — a recorded trade-off, not a bug to rediscover |
+| 4 | Six stages, sequenced, each independently valuable and revertable | 2026-08-29 | A single change large enough to carry all of it could not be reviewed or reverted; the sequence is what makes the scale safe (`spec/engineering.md` § Changing existing code) |
+| 5 | Demote `migration-drift` from required to reporting-only | 2026-08-30 | It measures whether staging is behind `main` — a question no PR contains or can change. As a required check it was a merge-freeze switch, not a gate: on 2026-08-29 it turned every open PR unmergeable over state none of them touched. Detection is not lost; `check-migration-drift.yml` covers both environments daily |
+| 6 | Delete `migrate-production.yml`; give `deploy-production.yml` a `scope: full \| migrations-only` input | 2026-08-30 | The deleted workflow took an arbitrary `ref` and skipped SHA validation, the guardrail preflight, the replay and the working-tree fence — the most dangerous path in the repository, kept as a backup for the safest one |
+| 7 | `--include-all` exists as a human-only recovery flag no workflow sets | 2026-08-30 | It discards the ordering guarantee `migration-order` exists to enforce. `run-migration.mjs` refuses it under `CI=true` unless `MIGRATION_ALLOW_INCLUDE_ALL` is set; recovery is deliberately human |
+| 8 | The master plan lives in a GitHub tracking issue; the durable standard is written before any further CI refactoring | 2026-08-30 | `docs/internal/DOCUMENTATION_CONVENTIONS.md` hard rule 3 bans narrative plan documents and names migration plans as the example; hard rule 4 sends a new initiative to an `[Epic]` parent with sub-issues |
+
+**What replaced each piece.**
+
+| Was | Is |
+| --- | --- |
+| Nothing ever ran `next build` for either frontend | `web-production-build`, a required check building both apps under the production install |
+| `ignoreCommand: "npx turbo-ignore <app>"`, which skipped production builds by diffing against a baseline identical by construction | `ignoreCommand: "exit 1"` in both `vercel.json` files — an explicit always-build that cannot be overridden from the Vercel dashboard |
+| A missing deployment for a SHA read as neutral | A hard failure, with `CANCELED` neutral only when a *later* deployment overtook it |
+| `--env` validated, printed, then dropped — `staging` and `production` were byte-identical programs | `--env` fails closed on a project-ref mismatch before `link` or `push` |
+| Migration ordering caught only after merge, by a required check that froze every PR | `migration-order`, which reads the migrations a change *introduces* against the merge-base and makes zero network calls when a change touches none |
+| `ALL_REQUIRED_CHECKS` asked of any past commit, silently un-deploying every commit older than the newest check | The expected set intersected with the job ids the deployed commit's own workflows define, with a narrowing floor |
+| Two paths to production, the weaker one skipping every gate | One path, two scopes |
+
+**Consequences.**
+
+- **The rollout is not the merge.** Live branch protection is written by
+  `scripts/configure-branch-protection.mjs` and is not read back by anything, so merging a check
+  into the roster changes intent, not GitHub. Worse, `scripts/ci/validate-deploy-sha.mjs` *imports*
+  that array, so a check gates the **production deploy path** from the moment it merges — before
+  any admin action. The two halves move at different times and always will until stage 5.
+- **Branch protection cannot be verified by an agent.** `api.github.com` returns 403 to
+  authenticated and unauthenticated requests alike from a cloud sandbox, and the GitHub MCP exposes
+  no branch-protection tool. Step 4 of any rollout is evidenced only by a human's own run output.
+  This is why #813, #1166 and #1138 recur.
+- **A `frapp-prod` data-loss event is unrecoverable until stage 5.** `frapp-prod` is
+  `ACTIVE_HEALTHY` and holds all 54 migrations — the same set as staging — so this is a live
+  exposure, not a hypothetical about a paused project.
+- **Staging and production build differently on purpose.** Staging is verified through preview
+  deployments; production is built through the API with `target: production`. `web-production-build`
+  closes the type-check half of that gap in CI, not the deployment half.
+- **`migration-order` is stricter than the databases require.** It also fails a migration that
+  predates one merged while the PR was in review, even where a single `db push` would have swallowed
+  both. The remedy is a free rename of an unapplied file, and the invariant — every new migration
+  sorts after everything on the base branch — is one a person can hold in their head.
+- **A non-transactional partial apply (`CREATE INDEX CONCURRENTLY`) still passes the rehearsal and
+  fails the real apply.** Not a regression — the deleted workflow's dry run was equally blind — but
+  nothing in the redesign catches it either.
+
+**Trigger to revisit:** the six-stage program completes or is abandoned; production backups exist
+(retiring the decision-2 risk); or a provider gains a readable API for branch protection from an
+agent session, which would retire the write-only rollout step.
+
+---
+
 ## 13. AI Corpus Architecture (v1)
 
 ### Sources

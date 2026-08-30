@@ -57,6 +57,23 @@ session?"* Then run this skill if they say yes. Don't nag, and don't stop workin
 
 Default to `next` if the user didn't say and the current task looks complete; `continue` otherwise.
 
+## Multi-stage programs
+
+Some work is one stage of a longer program — a sequenced refactor, a migration, a rebuild — and the
+program has a tracker (a GitHub `[Epic]` with sub-issues; see
+[`GITHUB_PM.md`](../../../docs/internal/ci-cd/GITHUB_PM.md)). When it does, **link the tracker and
+hand over the current stage only.**
+
+Do not restate the plan in the handoff. A restated plan is a second copy that starts drifting from
+the issue the moment either changes, and the fresh session cannot tell which one is current — which
+is the same failure as summarising a canonical file instead of pointing at it, one level up. It is
+also how a program ends up existing only as one agent's summary of another agent's summary.
+
+So: name the tracker issue, name the stage being handed over, and give live state and traps for
+*that stage*. Everything the next session needs about the other stages is in the tracker, and it is
+current there. If the tracker is wrong or missing something you learned, fix the tracker before you
+write the handoff — not in the handoff.
+
 ## Gather live state (don't recall it — check)
 
 Run these and use the real output. Recalled state is exactly what's unreliable by this point.
@@ -91,7 +108,7 @@ Structure:
 3. **Live state** — branch, HEAD SHA, PR + CI, tracker issue, tree clean or not. Facts only, as just
    verified.
 4. **Where to look** — canonical files and issue IDs. Pointers, not précis. Include `AGENTS.md` and
-   the specific spec/doc the work touches.
+   the specific spec/doc the work touches, and the program tracker if there is one.
 5. **Traps and known-open items** — things that cost this session time, each with the evidence that
    makes it checkable. Include anything filed to Triage that's relevant.
 6. **Already verified, and how** — not "don't redo this". State the claim and the evidence
