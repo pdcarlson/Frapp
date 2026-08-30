@@ -8,6 +8,7 @@ import {
   partitionMigrations,
   runReplayGate,
 } from "../check-migration-replay.mjs";
+import { readLocalMigrations } from "../check-migration-drift.mjs";
 import { makeFetchMock } from "./helpers.mjs";
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
@@ -217,4 +218,102 @@ test("decideOutcome codes are the ones deploy-production.yml parses", () => {
   });
   assert.equal(replayed.ok, true);
   assert.notEqual(replayed.code, "nothing-pending");
+});
+
+// ── back-dated is FATAL (#1373) ─────────────────────────────────────────────
+// The class: `20260829000000_rollover_promote_new_members` merged AFTER
+// `20260829002000` had already been applied, and `supabase db push` refused.
+// The gate computed `backDated`, logged it, and passed — its stated reason
+// being that the CLI "applies such a migration at the END regardless of where
+// its version sorts", which is not what the CLI does. Measured on 2026-08-29
+// against the pinned 2.77.0: it exits 1, applies nothing, and prints
+// "Found local migration files to be inserted before the last migration on
+// remote database."
+
+test("a back-dated pending migration fails the gate", () => {
+  const backDated = m("20260101000000", "back_dated_fix");
+  const partition = partitionMigrations({
+    local: [...LOCAL, backDated],
+    applied: APPLIED,
+  });
+  const outcome = decideOutcome({ partition, replay: { ok: true } });
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.code, "back-dated-migrations");
+  assert.match(outcome.message, /20260101000000_back_dated_fix\.sql/);
+  // The newest applied version, which is what the file must be renamed past.
+  assert.match(outcome.message, /20260824150000/);
+  // The message must NOT lead with "rename it". This gate reads one database
+  // and the whole pending set, so it cannot know whether the file is the
+  // author's, nor whether another environment has already applied it — and a
+  // rename in that case strands a foreign row and blocks `db push` there.
+  const remedyAt = outcome.message.search(/rename it to a version after/i);
+  const warningAt = outcome.message.search(/may already be merged and may not be yours/i);
+  const strandAt = outcome.message.search(/strands a `schema_migrations` row/i);
+  assert.ok(warningAt !== -1, "must say the file may not be the author's");
+  assert.ok(strandAt !== -1, "must warn that renaming an applied migration strands it");
+  assert.ok(remedyAt !== -1, "must still give the remedy for the ordinary case");
+  assert.ok(warningAt < remedyAt, "the caveat must come before the remedy");
+  assert.ok(strandAt < remedyAt, "the stranding warning must come before the remedy");
+  // And where to go when renaming is the wrong move.
+  assert.match(outcome.message, /DB_PROMOTION_RUNBOOK\.md/);
+  // The check that has neither scope limit, so the reader knows where to look.
+  assert.match(outcome.message, /migration-order/);
+});
+
+test("back-dated beats a clean replay — a passing rehearsal cannot excuse it", () => {
+  // The regression that would restore the old behaviour: if the replay's
+  // verdict were consulted first, a rehearsal that happened to pass would
+  // report the gate green on a migration the real apply refuses.
+  const partition = partitionMigrations({
+    local: [...LOCAL, m("20260101000000", "back_dated_fix")],
+    applied: APPLIED,
+  });
+  assert.equal(decideOutcome({ partition, replay: { ok: true } }).ok, false);
+  assert.equal(decideOutcome({ partition, replay: null }).code, "back-dated-migrations");
+});
+
+test("foreign still outranks back-dated", () => {
+  // Both are fatal, but a foreign row means production's state cannot be
+  // reconstructed at all, so it is the more fundamental complaint and must be
+  // the one reported.
+  const partition = partitionMigrations({
+    local: [...LOCAL, m("20260101000000", "back_dated_fix")],
+    applied: [...APPLIED, m("20260228000000", "enable_rls_on_remaining_tables")],
+  });
+  assert.equal(decideOutcome({ partition, replay: null }).code, "foreign-migrations");
+});
+
+test("an ordinary forward migration is still not back-dated", () => {
+  // The false-positive guard. Every normal migration PR adds a version newer
+  // than anything applied, and none of them may go red.
+  const partition = partitionMigrations({ local: LOCAL, applied: APPLIED });
+  assert.deepEqual(partition.backDated, []);
+  assert.equal(decideOutcome({ partition, replay: { ok: true } }).code, "replay-clean");
+});
+
+test("the replay is not run at all when a migration is back-dated", async () => {
+  // Reaching a known verdict costs no Docker: the CLI would refuse anyway, so
+  // rebuilding a database to watch it refuse is minutes spent to learn nothing.
+  //
+  // The applied set is derived from REAL repo versions, every one of them minus
+  // the earliest. An invented version like `99999999999999` would be FOREIGN,
+  // and the foreign guard skips the replay first — so the test would pass with
+  // the back-dated guard deleted, which is the one line it exists to protect.
+  const local = "supabase/migrations";
+  const repo = readLocalMigrations(local);
+  const applied = repo.slice(1).map((m) => ({ version: m.version, name: m.name }));
+  const partition = partitionMigrations({ local: repo, applied });
+  assert.deepEqual(partition.foreign, [], "fixture must contain no foreign version");
+  assert.ok(partition.backDated.length > 0, "fixture must be back-dated");
+
+  const code = await runReplayGate({
+    accessToken: "t",
+    projectRef: "ref",
+    migrationsDir: local,
+    fetchImpl: makeFetchMock(appliedRoute(applied)).fetchImpl,
+    replayImpl: () => {
+      throw new Error("the replay must not run for a back-dated partition");
+    },
+  });
+  assert.equal(code, 1);
 });

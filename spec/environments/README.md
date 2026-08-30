@@ -197,6 +197,27 @@ per-check whether a gate is live today; read live state per
 
 There was a third advisory job, `web-visual-regression`, and it has been **deleted**. It compared each dashboard route against a committed PNG; its exemption was specifically about pixels, since baselines pinned to CI's Chromium build drift with it. The 375px floor gate used to live in the same job and inherited that exemption by directory despite storing no baseline and comparing no pixels — #1152 split it into the required `web-responsive-floor` above, and the snapshot job was later removed along with its spec, its baselines and the `test:visual` script.
 
+### Environment identity
+
+Each environment's Supabase project ref is recorded in
+[`ci/environments.json`](../../ci/environments.json), read through
+`scripts/ci/lib/environments.mjs`. Refs are **not secrets** — they are already published in
+[`DB_ROLLBACK_PLAYBOOK.md`](../../docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md) and
+[`CLOUD_SANDBOX.md`](../../docs/internal/environment/CLOUD_SANDBOX.md), and one grants nothing without
+`SUPABASE_ACCESS_TOKEN`. Committing them is what makes an assertion possible: `scripts/run-migration.mjs`
+compares the ref Infisical injected against the one this file records for `--env`, and **fails closed on a
+mismatch before any `link` or `push`**. Before that existed, `--env` was validated, printed, and then
+dropped — `--env staging` and `--env production` were the same program, so a mis-scoped Infisical folder
+would have applied migrations to production while every log line said staging.
+
+Two consequences worth holding together:
+
+- **Rotating a project is a four-place change** — Infisical, `ci/environments.json`, and the two doc tables
+  above. Missing the file blocks every production migration and fails `migration-order` on every
+  migration-bearing PR. The playbook's ref table says so where the tables live.
+- **`check-migration-drift.yml` deliberately still reads its refs from Infisical.** Pointing it at the
+  committed file too would make the pair agree by construction, and the fence would assert nothing.
+
 ### Additional Docs Checks
 
 All three run in `.github/workflows/docs.yml`. **Required?** below is the *intended* set — what
@@ -207,8 +228,9 @@ All three run in `.github/workflows/docs.yml`. **Required?** below is the *inten
 | ---------------- | -------------- | ----------------------------------------------- | ---------- |
 | `docs-spec-sync` | GitHub Actions | Docs/spec sync **and** structure on PRs (`check-docs-impact.mjs` + `check-docs-structure.mjs`) | Yes |
 | `doc-paths`      | GitHub Actions | Backticked repo-path citations in docs resolve (`check-doc-paths.mjs`, whole-tree) | Yes — listed in `DOCS_CHECKS`. Whole-tree, so it can block a PR over a citation in a doc that PR never touched; that trade was taken deliberately ([`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md)) |
-| `migration-drift` | GitHub Actions | Staging holds every migration on `main` (`check-migration-drift-gate.mjs`, read-only against the Supabase Management API) | Yes — listed in `DRIFT_CHECKS`. Compares `origin/main` against staging, so a PR's own unmerged migration cannot fail it; 30-minute grace from merge time covers the `migrate-staging` apply window |
-| `migration-replay` | GitHub Actions | Pending migrations apply cleanly to a disposable Supabase stack rebuilt at production's applied state (`check-migration-replay.mjs`; production access is one read-only Management API call) | Yes — listed in `DRIFT_CHECKS`. Runs the replay only when the PR touches `supabase/migrations/**` and passes in seconds otherwise, so it cannot block a PR over unrelated state. A migration applied on production but missing from the repo is a hard failure: the state cannot be reconstructed, and `db push` would refuse anyway |
+| `migration-order` | GitHub Actions | No migration this change **introduces** sorts before a version staging or production has already applied (`check-migration-order.mjs`, read-only against the Supabase Management API) | Yes — listed in `DRIFT_CHECKS`. Reads head-minus-base, so a change touching no migrations makes zero network calls and cannot block a PR over unrelated state, and a PR that fixes an ordering fault turns its own check green. Checks **both** environments: #1373 was invisible to `migration-replay` because the replay rebuilds *production's* state and production had not applied the newer migration; staging had |
+| `migration-drift` | GitHub Actions | Staging holds every migration on `main` (`check-migration-drift-gate.mjs`, read-only against the Supabase Management API) | **No — demoted from `DRIFT_CHECKS`.** It measures whether *staging* is behind *main*, which no PR can answer, so as a required check it was a repo-wide merge-freeze switch — #1373 used it as one and made every open PR unmergeable. It still runs and reports on every PR, and the scheduled [`check-migration-drift.yml`](../../.github/workflows/check-migration-drift.yml) covers the same ground daily across staging *and* production with a self-closing P1 issue |
+| `migration-replay` | GitHub Actions | Pending migrations apply cleanly to a disposable Supabase stack rebuilt at production's applied state (`check-migration-replay.mjs`; production access is one read-only Management API call) | Yes — listed in `DRIFT_CHECKS`. Runs the replay only when the PR touches `supabase/migrations/**` and passes in seconds otherwise, so it cannot block a PR over unrelated state. A pending migration that sorts before production's newest applied version is a hard failure here too: the CLI refuses rather than reordering. A migration applied on production but missing from the repo is a hard failure: the state cannot be reconstructed, and `db push` would refuse anyway |
 | `doc-tables`     | GitHub Actions | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml` (`check-doc-tables.mjs`, whole-tree) | Not yet — reports only, pending the same promotion step |
 
 **Code review is a local pre-push gate, not a CI check** (ADR-14 2026-06-04 amendment). The

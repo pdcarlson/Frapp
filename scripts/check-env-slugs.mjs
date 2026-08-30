@@ -39,10 +39,19 @@ const UI_NAMES = { dev: "Development", staging: "Staging", prod: "Production" };
 
 const CANONICAL_DOC = "docs/internal/environment/ENV_REFERENCE.md";
 
+/**
+ * Environment identity, which names an Infisical slug per environment. Scanned
+ * for the same reason everything else here is: it is a hand-written copy of a
+ * fact that lives in the Infisical dashboard, and an unscanned copy is how
+ * `local` reached six docs and package.json in the first place.
+ */
+const ENVIRONMENTS_CONFIG = "ci/environments.json";
+
 /** Everything the scan reads. Checked for existence first — see section 0. */
 const SCAN_ROOTS = [
   "package.json",
   ".infisical.json",
+  ENVIRONMENTS_CONFIG,
   ".github/workflows",
   "docs",
   "spec",
@@ -184,6 +193,21 @@ function main() {
   ]) {
     const text = read(doc);
     if (text) scan(doc, text, /--env=([A-Za-z0-9_-]+)/g, "--env= in a doc example");
+  }
+
+  // ── 4b. ci/environments.json — the `infisicalEnvSlug` of each environment ───────
+  // The trap this catches is specifically the name/slug one: the environment is
+  // *named* "production" in this file's own keys, and its Infisical slug is `prod`.
+  // Writing `"infisicalEnvSlug": "production"` next to `"production": {` reads
+  // perfectly and resolves to nothing.
+  const envConfig = read(ENVIRONMENTS_CONFIG);
+  if (envConfig) {
+    scan(
+      ENVIRONMENTS_CONFIG,
+      envConfig,
+      /"infisicalEnvSlug":\s*"([A-Za-z0-9_-]+)"/g,
+      "infisicalEnvSlug",
+    );
   }
 
   // ── 5. The canonical table must list exactly the real slugs ─────────────────────

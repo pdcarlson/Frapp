@@ -55,9 +55,13 @@ jobs:
         with:
           node-version: 20
 
-      # Project refs are not committed to this repo — they live in Infisical
-      # alongside the rest of the deploy config (`run-migration.mjs` reads
-      # SUPABASE_PROJECT_REF the same way). Both environments are needed in one
+      # Refs come from Infisical here, and this workflow keeps reading them that
+      # way ON PURPOSE. `ci/environments.json` now also records the ref each
+      # environment must have, and `run-migration.mjs` fails closed when the two
+      # disagree — so a divergence has to be observable from BOTH sides to be
+      # caught at all. If this workflow switched to the committed file, the pair
+      # would agree by construction and the fence would assert nothing.
+      # Both environments are needed in one
       # job so a single alert issue can speak for the whole fleet, so the
       # injection runs twice and each ref is captured before being overwritten.
       # NOTE: the Infisical slug for production is `prod`, not `production`.

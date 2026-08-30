@@ -171,3 +171,31 @@ describe("provider identifiers are inputs, never defaults", () => {
     assert.ok(!urls.some((u) => u.includes("prj_xkn32taKrJCgYRZoN6pZRfGfPT9T")));
   });
 });
+
+describe("buildSummary — a pass must not assert what it did not read", () => {
+  it("names both settings when both were checked", () => {
+    const text = buildSummary([]);
+    assert.match(text, /Render auto-deploy is off/);
+    assert.match(text, /neither Vercel project promotes from main/);
+  });
+
+  it("does NOT claim the Vercel setting under --render-only", () => {
+    // The failure this guards: `migrations-only` runs the preflight with
+    // --render-only, which never fetches either Vercel project. A success line
+    // still naming the Vercel Production Branch is a written assurance about a
+    // setting nothing looked at — on the only path to production, in the step
+    // whose entire job is asserting the two settings that fail open.
+    const text = buildSummary([], { checked: ["render"] });
+    assert.match(text, /Render auto-deploy is off/);
+    assert.doesNotMatch(text, /neither Vercel project promotes from main/);
+    assert.match(text, /NOT read by this run/);
+    // And it must not claim completeness either.
+    assert.doesNotMatch(text, /All production deploy guardrails hold/);
+  });
+
+  it("still reports violations verbatim regardless of scope", () => {
+    const text = buildSummary(["Render auto-deploy is ON"], { checked: ["render"] });
+    assert.match(text, /1 production guardrail violation/);
+    assert.match(text, /Render auto-deploy is ON/);
+  });
+});

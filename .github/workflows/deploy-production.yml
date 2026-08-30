@@ -36,6 +36,47 @@ name: Deploy production
 # the commit — rather than at a promotion PR opened before anyone knew whether
 # the migration applied.
 #
+# ── `scope`, and the workflow this absorbed ─────────────────────────────────
+# `migrate-production.yml` used to sit beside this file as a code-free escape
+# hatch: apply migrations without shipping code, for a failed apply, a backlog
+# ahead of the code that needs it, or a schedule no deploy matches. It has been
+# deleted, and `scope: migrations-only` does that job here instead.
+#
+# It was deleted because it was strictly more dangerous than the path it backed
+# up. It took an arbitrary `ref`, and it skipped SHA validation, the provider
+# guardrail preflight, the migration replay and the working-tree fence — every
+# safety layer below. Its own header argued the replay was unreliable "when
+# something has already gone wrong", but the state it could not reconstruct is a
+# foreign migration, and a foreign migration blocks `supabase db push` outright
+# anyway. So the rehearsal was not the thing that failed in that scenario; it was
+# the thing that would have said so first.
+#
+# What `scope: migrations-only` gives up against the old workflow, stated in
+# full rather than flatteringly:
+#
+#   * Applying migrations from a ref that is not an ancestor of `main`, or from
+#     a commit whose CI was not green. Both worth losing.
+#   * Applying migrations when the REHEARSAL ITSELF REFUSES. The replay step
+#     below is deliberately NOT scope-gated — a migrations-only run is still a
+#     write to the production database, and the rehearsal is the only thing that
+#     has ever executed that write first — so `foreign-migrations` or
+#     `back-dated-migrations` stops a migrations-only run exactly as it stops a
+#     full one. The old workflow would have proceeded, because it never
+#     rehearsed at all.
+#
+# The second is a real narrowing and it is taken on purpose. In both of those
+# states `supabase db push` refuses anyway, so what the old path bought was
+# reaching the refusal later, mid-run, with less explanation — not reaching a
+# different outcome. Recovery from either is a human act by design (decision 7:
+# `--include-all` is human-run, never set by a workflow) and is documented at
+# `docs/internal/ops/DB_PROMOTION_RUNBOOK.md` § `--include-all`.
+#
+# The case that IS a genuine gap: a non-transactional partial apply — say
+# `CREATE INDEX CONCURRENTLY` leaving objects behind with no history row. The
+# rehearsal rebuilds without them, applies cleanly, and passes; the real apply
+# then hits "already exists". The deleted workflow's dry run was equally blind
+# to it, so this is not a regression, but nothing here catches it either.
+#
 # ── One job, deliberately ───────────────────────────────────────────────────
 # Every environment-scoped job costs its own Approve click. Migrate + deploy +
 # verify live in ONE job so a production release is one approval, not four. The
@@ -57,6 +98,14 @@ on:
         required: false
         default: false
         type: boolean
+      scope:
+        description: >-
+          'full' migrates and deploys the commit. 'migrations-only' applies the
+          migrations and stops — no Render deploy, no Vercel build, no tag.
+        required: false
+        default: full
+        type: choice
+        options: [full, migrations-only]
       bump:
         description: "Version bump. 'auto' reads release:* labels on the PRs merged since the last tag."
         required: false
@@ -79,11 +128,11 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 75
-    # SHARED with migrate-production.yml. Two paths can apply a production
-    # migration, so they must take the same lock or they can interleave two
-    # `db push` runs against one database. The same group name in both files is
-    # what makes that hold — renaming it here without renaming it there
-    # silently removes the lock.
+    # This used to be SHARED with migrate-production.yml, which was the second
+    # path that could apply a production migration. That file is gone and this
+    # is now the only one, so the group serialises this workflow against
+    # ITSELF — two dispatches (a `full` release and a `migrations-only` retry,
+    # say) must not interleave two `db push` runs against one database.
     #
     # `cancel-in-progress: false` is the important half: cancelling a run
     # mid-`db push` is how a database ends up half-migrated.
@@ -136,6 +185,16 @@ jobs:
       # settings fail OPEN: if Render's auto-deploy is back on, or a Vercel
       # project's Production Branch has become `main`, ordinary merges are
       # already shipping to production and this workflow is not the only path.
+      #
+      # Under `migrations-only` the Vercel half is dropped. Both settings still
+      # matter for a code deploy, but only ONE of them bears on applying a
+      # migration: if Render's auto-deploy is back on, an ordinary merge could
+      # ship code against the schema this run is about to change. A Vercel
+      # Production Branch has no such relationship to a database, so leaving it
+      # in would let a Vercel API outage block a database recovery — on the path
+      # you reach for when something has already gone wrong. That is the wrong
+      # trade, and it is a dependency the deleted `migrate-production.yml` did
+      # not have.
       - name: Provider guardrail preflight
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
@@ -147,7 +206,16 @@ jobs:
           VERCEL_WEB_PROJECT_ID: ${{ env.VERCEL_WEB_PROJECT_ID }}
           VERCEL_LANDING_PROJECT_ID: ${{ env.VERCEL_LANDING_PROJECT_ID }}
           VERCEL_TEAM_ID: ${{ env.VERCEL_TEAM_ID }}
-        run: node scripts/ci/production-guardrails.mjs --preflight
+          # Through the environment, not interpolated into the script body —
+          # the habit this file keeps everywhere a value reaches a shell.
+          SCOPE: ${{ inputs.scope }}
+        run: |
+          set -euo pipefail
+          if [ "${SCOPE:-}" = "migrations-only" ]; then
+            node scripts/ci/production-guardrails.mjs --preflight --render-only
+          else
+            node scripts/ci/production-guardrails.mjs --preflight
+          fi
 
       # Proven to be an ancestor of main, so this is already-reviewed code.
       - name: Check out the commit being deployed
@@ -290,7 +358,7 @@ jobs:
           {
             echo "### Dry run only — nothing was applied and nothing was deployed"
             echo ""
-            echo "Commit: \`${{ inputs.sha }}\`"
+            echo "Commit: \`${{ inputs.sha }}\` · scope: \`${{ inputs.scope }}\`"
             echo ""
             echo "The commit passed validation, the migration replay ran against production's"
             echo "applied state, and the pending set is listed in the previous step's log."
@@ -313,7 +381,7 @@ jobs:
       # now `main`, which moves on every merge.
       - name: Deploy the commit to Render
         id: render
-        if: ${{ !inputs.dry_run_only }}
+        if: ${{ !inputs.dry_run_only && inputs.scope != 'migrations-only' }}
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           RENDER_SERVICE_ID: ${{ env.RENDER_PROD_SERVICE_ID }}
@@ -331,6 +399,17 @@ jobs:
       # actually answers. Unlike deploy-api.yml, a missing URL FAILS rather than
       # warning and exiting 0: a health check that silently does not run is
       # indistinguishable from one that passed.
+      # NOT scope-gated, unlike the Render and Vercel steps above and below.
+      #
+      # A migrations-only run changes the schema under an API that is already
+      # running and is not being redeployed — which makes "does production still
+      # answer?" more urgent here, not less. A lock that wedges the pool, an
+      # object the running build reads on boot, an RLS change the service role
+      # now fails: all of them leave the apply reporting success and production
+      # down, and this loop is the only step in the job that would notice.
+      # Skipping it would have this workflow report success having verified
+      # nothing about production, on the path its own header calls the one you
+      # reach for when something has already gone wrong.
       - name: Health smoke check
         if: ${{ !inputs.dry_run_only }}
         run: |
@@ -355,7 +434,7 @@ jobs:
       # would put the production dashboard on the staging API and staging
       # Supabase keys. See the header of deploy-vercel-production.mjs.
       - name: Deploy the commit to Vercel production (web + landing)
-        if: ${{ !inputs.dry_run_only }}
+        if: ${{ !inputs.dry_run_only && inputs.scope != 'migrations-only' }}
         env:
           VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
           VERCEL_WEB_PROJECT_ID: ${{ env.VERCEL_WEB_PROJECT_ID }}
@@ -373,7 +452,19 @@ jobs:
   # mean "this was merged and we hoped it would ship".
   release:
     needs: deploy
-    if: ${{ needs.deploy.result == 'success' && !inputs.dry_run_only }}
+    # The scope clause is not decoration. A tag means "this is what is live",
+    # and a migrations-only run changes the database without changing a single
+    # deployed byte — tagging it would record a release that never shipped,
+    # which is the precise failure `vX.Y.Z` was redefined in #1340 to stop.
+    #
+    # Written `!= 'migrations-only'`, never `== 'full'`. Every scope condition in
+    # this file has that polarity on purpose: an unexpected or empty `scope`
+    # then behaves like a normal release, where `== 'full'` would silently skip
+    # the deploy and the tag and still report success — a production run that
+    # ships nothing and says it worked. That is the exact failure class this
+    # workflow was rebuilt to make impossible, so it must not be reintroduced by
+    # the shape of a conditional.
+    if: ${{ needs.deploy.result == 'success' && !inputs.dry_run_only && inputs.scope != 'migrations-only' }}
     uses: ./.github/workflows/release.yml
     permissions:
       # A called workflow's job permissions are intersected with what the caller
@@ -401,7 +492,9 @@ jobs:
           RELEASE_RESULT: ${{ needs.release.result }}
           RENDER_DEPLOY_ID: ${{ needs.deploy.outputs.render-deploy-id }}
           REPLAY_OUTCOME: ${{ needs.deploy.outputs.replay-outcome }}
+          APPLIED: ${{ needs.deploy.outputs.applied }}
           DRY_RUN: ${{ inputs.dry_run_only }}
+          SCOPE: ${{ inputs.scope }}
           SHA: ${{ inputs.sha }}
         run: |
           {
@@ -409,7 +502,9 @@ jobs:
             echo ""
             echo "| Phase | Result |"
             echo "| --- | --- |"
+            echo "| Scope | \`$SCOPE\` |"
             echo "| Migrate + deploy | \`$DEPLOY_RESULT\` |"
+            echo "| Migrations applied | \`${APPLIED:-not reached}\` |"
             echo "| Migration rehearsal | \`${REPLAY_OUTCOME:-not reached}\` |"
             echo "| Render deploy id | \`${RENDER_DEPLOY_ID:-none}\` |"
             echo "| Release tag | \`${RELEASE_RESULT:-skipped}\` |"
@@ -417,6 +512,13 @@ jobs:
             if [ "$REPLAY_OUTCOME" = "nothing-pending" ]; then
               echo "> The migration rehearsal found nothing pending, so it verified nothing."
               echo "> That is the ordinary case and is not evidence that an apply would work."
+              echo ""
+            fi
+            if [ "$SCOPE" = "migrations-only" ] && [ "$DRY_RUN" != "true" ]; then
+              echo "> **Migrations only.** The database moved; Render, Vercel and the version tag"
+              echo "> did not. Production is now running the PREVIOUS code against the NEW schema,"
+              echo "> so the migrations had better be forward-compatible with it. Finish with a"
+              echo "> \`full\` run against the same SHA when the code is meant to follow."
               echo ""
             fi
           } >> "$GITHUB_STEP_SUMMARY"
@@ -428,7 +530,12 @@ jobs:
 
           # The quiet failure this job exists for: production is updated and no
           # tag exists, so nothing records what is live.
-          if [ "$DRY_RUN" != "true" ] && [ "$RELEASE_RESULT" != "success" ]; then
+          #
+          # Scoped to `full`. A migrations-only run skips `release` on purpose
+          # (see that job's `if:`), and without this clause every such run would
+          # end by erroring that the tag it was never going to create is
+          # missing — a red run for doing exactly what was asked.
+          if [ "$DRY_RUN" != "true" ] && [ "$SCOPE" != "migrations-only" ] && [ "$RELEASE_RESULT" != "success" ]; then
             echo "::error::Deploy succeeded but the release tag did not ($RELEASE_RESULT). Production IS updated. Re-run the 'Release' workflow manually with sha=$SHA to record it."
             exit 1
           fi

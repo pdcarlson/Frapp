@@ -85,11 +85,54 @@ const PARKED_DIR = join(process.cwd(), "supabase", ".migrations-replay-parked");
  *   foreign     — applied remotely, in no repo file. Fatal (see header).
  *   backDated   — pending, but sorting BEFORE the newest applied version.
  *
- * `backDated` is reported, never fatal. It is not an error — `supabase db push`
- * applies such a migration at the END regardless of where its version sorts —
- * but it is the single case where a from-zero run and a real apply put a
- * migration in different company, so it is the case this gate exists for and it
- * is worth naming in the log when it happens.
+ * `backDated` is FATAL, and used to be merely reported. The comment that
+ * justified staying silent said "`supabase db push` applies such a migration at
+ * the END regardless of where its version sorts". That is false, and it is the
+ * reason #1373 shipped. Measured against the pinned CLI 2.77.0 on 2026-08-29,
+ * applying `20260102000000` to a database already holding `20260103000000`:
+ *
+ *   $ supabase migration up --db-url ...
+ *   Connecting to local database...
+ *   Found local migration files to be inserted before the last migration on remote database.
+ *
+ *   Rerun the command with --include-all flag to apply these migrations:
+ *   supabase/migrations/20260102000000_b.sql
+ *   $ echo $?
+ *   1
+ *
+ * Exit 1, nothing applied, ledger unchanged — and `db push` carries the same
+ * `--include-all` flag with the same description, so it refuses identically.
+ * The CLI does not reorder; it stops.
+ *
+ * `db push` and `migration up` are not merely similar here: `internal/db/push`
+ * calls `up.GetPendingMigrations`, the same entry point, and both bind
+ * `--include-all` to the same flag. So the replay's phase 2 DOES reproduce the
+ * refusal — this gate is not covering a hole in the rehearsal.
+ *
+ * It is decided here for three smaller reasons that still add up. The verdict
+ * needs no Docker and no database rebuild. It carries the remedy, where the
+ * replay path surfaces the CLI's own text with no repo-specific advice. And it
+ * names the fault as an ordering fault rather than as a failure "applying" some
+ * file, which is what the replay's file attribution reports.
+ *
+ * Two scope limits worth stating, because both shape what the message can
+ * honestly advise. This gate reads the PENDING set — every local migration the
+ * target has not applied — not the set a change introduces, so a back-dated
+ * migration already merged on `main` fails it for an author who did not cause
+ * it. And it reads ONE database, so it cannot know whether the offending file
+ * has been applied elsewhere, which is exactly what decides between "rename it"
+ * and "renaming it stalls another environment". `check-migration-order.mjs` has
+ * neither limit: it reads head-minus-base against both environments and has a
+ * `stranded` clause for the applied-elsewhere case. That is why this gate's
+ * message leads with "check whether this is yours" rather than with a remedy.
+ *
+ * What it does NOT do is close #1373. That incident was invisible here for a
+ * structural reason: this gate reconstructs PRODUCTION's applied state, and
+ * production had not yet applied the newer migration — staging had, and staging
+ * is where the apply refused. Relative to production, `backDated` was empty and
+ * the gate passed correctly. The check that covers that class is
+ * `scripts/ci/check-migration-order.mjs`, which reads staging and production
+ * both. Keep both; neither subsumes the other.
  */
 export function partitionMigrations({ local, applied }) {
   const appliedVersions = new Set(applied.map((m) => m.version));
@@ -121,8 +164,8 @@ export function describePartition({ baseline, pending, foreign, backDated }, lab
   for (const m of pending) lines.push(`  + ${m.file}`);
   if (backDated.length > 0) {
     lines.push(
-      `Back-dated (version sorts before the newest applied version, so this is` +
-        ` exactly the case a from-zero run cannot see): ${backDated.length}`,
+      `Back-dated — version sorts before the newest applied version, which the CLI refuses` +
+        ` outright and a from-zero run cannot see (FATAL): ${backDated.length}`,
     );
     for (const m of backDated) lines.push(`  ~ ${m.file}`);
   }
@@ -141,7 +184,7 @@ export function describePartition({ baseline, pending, foreign, backDated }, lab
  * having verified nothing, and that is a logic bug, not a SQL bug.
  */
 export function decideOutcome({ partition, replay }) {
-  const { foreign, pending } = partition;
+  const { foreign, pending, backDated = [], newestApplied = null } = partition;
 
   if (foreign.length > 0) {
     return {
@@ -152,6 +195,38 @@ export function decideOutcome({ partition, replay }) {
         `Production's state cannot be faithfully reconstructed, so this gate cannot certify ` +
         `anything — and \`supabase db push\` will refuse to run in this state anyway. ` +
         `Reconcile first: docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md.`,
+    };
+  }
+
+  // Decided BEFORE the replay, on purpose. The replay would fail too — phase 2
+  // runs `migration up`, and `db push` calls that same `GetPendingMigrations`,
+  // so both refuse identically (CLI 2.77.0, pkg/migration/apply.go, whose own
+  // comment reads "Enforce migrations are applied in chronological order by
+  // default"). Deciding here spends no Docker and no database rebuild to reach
+  // a verdict already known, and reports an ordering fault as one — with the
+  // rename remedy attached — rather than as a failure "applying" a file.
+  if (backDated.length > 0) {
+    const files = backDated.map((m) => `  ~ ${m.file}`).join("\n");
+    return {
+      ok: false,
+      code: "back-dated-migrations",
+      message:
+        `${backDated.length} pending migration(s) sort BEFORE \`${newestApplied}\`, the newest ` +
+        `version this database has already applied. The Supabase CLI refuses this outright — ` +
+        `"Found local migration files to be inserted before the last migration on remote ` +
+        `database" — so the apply would halt, not reorder:\n${files}\n\n` +
+        `IMPORTANT — this gate reads the PENDING SET, not what your change introduced, so a file ` +
+        `listed here may already be merged and may not be yours. Check that first: if it is ` +
+        `already on the base branch, the fault is in the deploy path, not in your PR, and the ` +
+        `person to tell is whoever owns the next production release.\n\n` +
+        `Do NOT reach for a rename until you know where the file has been applied. This gate ` +
+        `reads ONE database; another environment may already hold it, and renaming it there ` +
+        `strands a \`schema_migrations\` row no file explains — a foreign row, which blocks ` +
+        `\`db push\` to that environment entirely. \`migration-order\` is the check that reads ` +
+        `both and can tell you.\n\n` +
+        `If it is unapplied everywhere — the ordinary case for a migration still in review — ` +
+        `rename it to a version after \`${newestApplied}\`, keeping its name. Otherwise read ` +
+        `docs/internal/ops/DB_PROMOTION_RUNBOOK.md § \`--include-all\` first.`,
     };
   }
 
@@ -374,8 +449,15 @@ export async function runReplayGate({
   const partition = partitionMigrations({ local, applied: remote.migrations });
   console.log(describePartition(partition, label));
 
+  // Back-dated is decided without a replay for the same reason foreign is: the
+  // apply cannot proceed in that state, so rebuilding a database to prove it
+  // would spend several minutes of Docker to reach a verdict already known.
   let replay = null;
-  if (partition.foreign.length === 0 && partition.pending.length > 0) {
+  if (
+    partition.foreign.length === 0 &&
+    partition.backDated.length === 0 &&
+    partition.pending.length > 0
+  ) {
     replay = replayImpl({ pending: partition.pending });
   }
 

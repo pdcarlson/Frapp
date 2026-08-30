@@ -1,0 +1,15 @@
+{
+  "$comment": "Environment identity — the one place a deployed environment's provider IDs are named. These are NOT secrets: the Supabase project refs already appear in docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md, docs/internal/environment/CLOUD_SANDBOX.md and .claude/skills/live-verification/SKILL.md, and a ref alone grants nothing without SUPABASE_ACCESS_TOKEN. What IS a secret is the token, and that still comes from Infisical. Read this file through scripts/ci/lib/environments.mjs rather than parsing it inline. `infisicalEnvSlug` values are Infisical SLUGS, not display names — production is `prod`, not `production`; scripts/check-env-slugs.mjs scans this file for exactly that trap. Optional per-environment flag: `allowEmptyMigrationHistory` (default false) tells check-migration-order.mjs that an empty applied-migration list is legitimate rather than a wrong ref — set it only for a genuinely new project, since both projects here permanently hold 00000000000000_initial_schema. Stage 3 of the CI/CD redesign folds the Render service id and the two Vercel project ids in here too; they are hardcoded in three workflow files today with a comment asking humans to keep them in step, and this file exists so that does not become a fourth copy.",
+  "environments": {
+    "staging": {
+      "supabaseProjectRef": "hnoyzpidbmizhbqaiity",
+      "supabaseProjectName": "frapp-staging",
+      "infisicalEnvSlug": "staging"
+    },
+    "production": {
+      "supabaseProjectRef": "unttyvyfezddlyafcydh",
+      "supabaseProjectName": "frapp-prod",
+      "infisicalEnvSlug": "prod"
+    }
+  }
+}

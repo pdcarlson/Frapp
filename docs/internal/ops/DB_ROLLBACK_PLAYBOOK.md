@@ -4,7 +4,7 @@
 
 Migrations are now applied automatically in the deploy pipeline (see `.github/workflows/deploy-api.yml`):
 - **Staging:** Runs automatically on merge to `main` (no approval needed)
-- **Production:** Never automatic. `deploy-production.yml` applies migrations for one named commit, and **pauses on the `production` environment's required reviewer** before it applies (`docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets). That approval is the only human gate since #1340 retired the `main` → `production` promotion PR. Before applying, the workflow rehearses the migration against production's live applied state with `check-migration-replay.mjs`; `migrate-production.yml` is the code-free escape hatch and does **not** rehearse. (The old justification for saying the environment did not gate anything — Enterprise-only environment rules *on private repos* — was corrected 2026-08-21: this repo is public. See `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets.)
+- **Production:** Never automatic. `deploy-production.yml` applies migrations for one named commit, and **pauses on the `production` environment's required reviewer** before it applies (`docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets). That approval is the only human gate since #1340 retired the `main` → `production` promotion PR. Before applying, the workflow rehearses the migration against production's live applied state with `check-migration-replay.mjs`. The code-free path — apply migrations without shipping code — is now the same workflow run with `scope: migrations-only`, so it rehearses too; the separate `Migrate production` workflow that skipped the rehearsal (and SHA validation, and the guardrail preflight, and the working-tree fence) has been deleted. (The old justification for saying the environment did not gate anything — Enterprise-only environment rules *on private repos* — was corrected 2026-08-21: this repo is public. See `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets.)
 
 If an automated migration fails, the entire deploy pipeline halts — no API deploy happens. Check the GitHub Actions run for the error output.
 
@@ -31,6 +31,22 @@ Action:
 2. Apply to staging first.
 3. Deploy that commit to production once verified (**Deploy production**, with the SHA).
 
+> **Deploying an OLDER commit — the deployable window.** `Deploy production`
+> refuses a SHA whose required checks are not green, and the required list is
+> today's. A check run cannot exist on a commit whose tree never defined the job
+> that emits it, so every check added to `CI_CHECKS`/`DOCS_CHECKS`/`DRIFT_CHECKS`
+> used to make every older commit undeployable with `never reported: <check>` —
+> which lands on exactly this step, the one you reach for when something is
+> already wrong.
+>
+> It was not hypothetical: `web-production-build` (#1374) made `971d7d5`, the
+> commit production's API was running at the time, un-redeployable.
+> `scripts/ci/validate-deploy-sha.mjs` now intersects the required list with the
+> job ids the deployed commit's own workflows define, and reports the difference
+> as *not applicable* rather than missing. The run log names them — a commit
+> predating a gate was never judged by it, and if that matters for the rollback
+> you are doing, the log is where you find out.
+
 ### 2) Full rollback to backup/snapshot
 
 Use when:
@@ -55,6 +71,14 @@ Established from the Supabase Management API and Supabase's own documentation on
 | **Plan** | **`free`** — holds *both* `frapp-staging` and `frapp-prod` |
 | `frapp-staging` | `hnoyzpidbmizhbqaiity`, `us-east-1`, Postgres 17.6.1.063 |
 | `frapp-prod` | `unttyvyfezddlyafcydh`, `us-east-2`, Postgres 17.6.1.063 |
+
+> **Rotating either project is a four-place change.** The ref is recorded in
+> [`ci/environments.json`](../../../ci/environments.json) as well as in Infisical, in this table, and in
+> [`CLOUD_SANDBOX.md`](../environment/CLOUD_SANDBOX.md)'s egress allowlist. `scripts/run-migration.mjs`
+> compares the injected `SUPABASE_PROJECT_REF` against the committed file and **refuses to run** when they
+> disagree — deliberately, so a staging label can never write to production — so a rotation that updates
+> Infisical and not the file blocks every production migration, and `migration-order` fails every
+> migration-bearing PR against the dead ref. Update the file in the same change.
 | Supabase daily backups | **None available.** [Pro/Team/Enterprise only](https://supabase.com/docs/guides/platform/backups) |
 | Point-in-Time Recovery | **Not available.** Paid add-on, Pro and above |
 

@@ -190,31 +190,70 @@ const DOCS_CHECKS = [
 
 // Checks emitted by .github/workflows/migration-drift-gate.yml.
 const DRIFT_CHECKS = [
-  // Asserts that staging holds every migration on `main`. The one check here
-  // that is about a DEPLOYED DATABASE rather than about the code: everything
-  // above proves the repo is internally consistent, and all of it stays green
-  // while staging sits dozens of migrations behind. Two migrations merged to
-  // main and were never applied to staging; nothing went red.
+  // NOT here on purpose, and it used to be: `migration-drift`. It asserts that
+  // STAGING holds every migration on MAIN — a question about two things the PR
+  // in front of it neither contains nor can change. As a required check it is
+  // therefore not a gate, it is a repo-wide merge-freeze switch, and #1373 used
+  // it as one: a single back-dated filename halted staging's apply, and every
+  // open PR in the repository became unmergeable until a human intervened.
   //
-  // Required rather than advisory because the failure it catches is one nobody
-  // goes looking for. The sibling daily check (check-migration-drift.yml) files
-  // an issue, which is the correct shape for a watchdog and the wrong shape for
-  // a thing that must be impossible to miss.
+  // The trade was taken knowingly when it was promoted — "it can block a PR
+  // over state that PR did not cause; that is the cheaper failure". It was not
+  // the cheaper failure. A check nobody can answer teaches people to route
+  // around it, and its own escape hatch (drop the context by hand for the
+  // duration) is a repo-admin edit to branch protection made under outage
+  // pressure, which is the worst available moment to be making one.
   //
-  // Accepted trade, the same one `doc-paths` took: this can block a PR over
-  // state that PR did not cause. That is the cheaper failure. The alternative
-  // is a schema mismatch nobody sees until something breaks on staging.
+  // Detection is NOT lost, which is what makes the demotion safe rather than a
+  // retreat: `.github/workflows/check-migration-drift.yml` runs the same
+  // comparison daily across staging AND production and files a P1
+  // `routine-state` issue that closes itself on recovery. The job also keeps
+  // running and reporting on every PR — it stays visible, it just stops
+  // blocking. What replaces it as a GATE is `migration-order` below: the same
+  // failure class, scoped so a PR can actually answer it.
+
+  // Does a migration this change INTRODUCES sort before a version the target
+  // database has already applied? If it does, the Supabase CLI refuses rather
+  // than reordering — measured against the pinned 2.77.0: exit 1, nothing
+  // applied, "Found local migration files to be inserted before the last
+  // migration on remote database". That is #1373, which halted staging's
+  // migration deploy and, through `migration-drift`, froze the repo.
   //
-  // It also depends on a third-party API (Supabase Management) being reachable,
-  // so a sustained Supabase outage blocks merges. Transient blips are absorbed
-  // by bounded retries in the script; a real outage is meant to be loud. If a
-  // merge genuinely cannot wait, drop this context deliberately for the
-  // duration rather than teaching the gate to pass unverified.
+  // Required, and safe to require where `migration-drift` was not, because it
+  // reads only the migrations the change introduces (head minus base):
+  //
+  //   * a change touching no migrations introduces nothing, so the job makes
+  //     ZERO network calls and cannot block a PR over unrelated state — nor
+  //     put repo-wide merge availability behind the Supabase Management API;
+  //   * a PR that FIXES an ordering problem turns its own check green, because
+  //     the renamed file is the introduced one. `migration-drift` structurally
+  //     could not do that, and that deadlock is what forced the #1369
+  //     escape-hatch discussion.
+  //
+  // Checks staging AND production. #1373 was invisible to `migration-replay`
+  // for a structural reason rather than a logical one: the replay rebuilds
+  // PRODUCTION's applied state, and production had not yet applied the newer
+  // migration. Staging had, and staging is where the apply refused.
   //
   // ROLLOUT: same caveat as secret-scan — required only once the
-  // migration-drift job exists on the target branch and has run green,
+  // migration-order job exists on the target branch and has run green,
   // otherwise every PR blocks on a missing required check.
-  "migration-drift",
+  //
+  // For THIS check "has run green" is weaker evidence than usual and must not
+  // be taken at face value: a run on a change that introduces no migrations
+  // returns green having made ZERO network calls, so it proves the job starts,
+  // not that either project can be read.
+  //
+  // Nor does dispatching the workflow fix that on its own — a dispatch on
+  // `main` has head == base, which is that same vacuous case. So the job runs
+  // `check-migration-order.mjs --probe` on a dispatch: it reads both projects
+  // and prints what each holds, asserting nothing about any change. Promote
+  // only after a dispatch whose step summary shows a real `newestApplied` for
+  // BOTH staging and production. If the Infisical token turns out to be
+  // project-scoped rather than account-level, that is where it surfaces —
+  // instead of as a hard block on the first migration PR after this starts
+  // blocking.
+  "migration-order",
   // Do the migrations a PR adds actually APPLY to the database they are heading
   // for? Rebuilds production's currently-applied state on a disposable Supabase
   // stack and runs the pending set against it, through the same CLI path

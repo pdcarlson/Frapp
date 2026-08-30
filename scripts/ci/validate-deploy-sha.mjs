@@ -21,6 +21,29 @@
 // checks API fails the deploy, for the same reason `check-migration-drift.mjs`
 // refuses to treat an unreachable database as clean.
 //
+// ── The deployable-window bug this closes ───────────────────────────────────
+// `ALL_REQUIRED_CHECKS` is TODAY's list, and it is asked of a commit from any
+// point in the past. A check run cannot exist on a commit whose tree did not
+// define the job that emits it — so every time a check is ADDED to that array,
+// every commit older than the job's introduction silently becomes undeployable
+// with "never reported: <new-check>".
+//
+// That is not theoretical and it is not new. `web-production-build` (#1374) did
+// it, and adding `migration-order` would have done it again. The failure lands
+// on the one operation that matters most when something is wrong:
+// `DB_ROLLBACK_PLAYBOOK.md` recovery is "redeploy the API at the pre-<X>
+// revision", i.e. deploying an OLDER commit — the exact thing a growing
+// required-check list makes impossible, and it fails at the moment you can
+// least afford to debug a gate.
+//
+// So the expected set is intersected with the jobs the deployed commit's own
+// workflows define (`jobIdsAtRef`). A check the tree never defined is reported
+// as NOT APPLICABLE rather than missing. The extraction is a deliberate
+// SUPERSET of job ids — it matches any two-space-indented YAML key, the same
+// approximation `scripts/check-doc-tables.mjs` makes — because erring toward
+// "defined" keeps a real gate fatal, while erring the other way would excuse
+// one. A check whose job IS in the tree and did not report stays fatal.
+//
 // Semantics are the pure functions below. Unit tests:
 // `scripts/ci/__tests__/validate-deploy-sha.test.mjs`.
 
@@ -65,9 +88,22 @@ function startedAt(run) {
  * the same name), so the most recently started run wins. Taking "any run
  * succeeded" instead would let a green first attempt mask a red re-run.
  *
- * @param {{checkRuns: Array<object>, required: string[]}} input
+ * `defined` is the set of job ids the deployed commit's own workflows declare,
+ * and `currentlyDefined` the set the TRUSTED ref declares. A required check is
+ * excused only when it is absent from `defined` AND present in
+ * `currentlyDefined` — i.e. it demonstrably exists now and demonstrably did not
+ * exist then, which is what "this commit predates the gate" actually means.
+ *
+ * A check in NEITHER set is not an old commit, it is a roster naming a job that
+ * exists nowhere — a stale `ALL_REQUIRED_CHECKS` entry, or a job renamed in the
+ * workflows without updating it. Excusing that would silently drop a gate and
+ * label the drop "this commit predates them", so it stays `missing`.
+ *
+ * Pass null for either to skip the narrowing; null is the conservative default.
+ *
+ * @param {{checkRuns: Array<object>, required: string[], defined?: Set<string>|null}} input
  */
-export function classifyRequiredChecks({ checkRuns, required }) {
+export function classifyRequiredChecks({ checkRuns, required, defined = null, currentlyDefined = null }) {
   const latestByName = new Map();
   for (const run of Array.isArray(checkRuns) ? checkRuns : []) {
     const name = run?.name;
@@ -81,10 +117,20 @@ export function classifyRequiredChecks({ checkRuns, required }) {
   const missing = [];
   const pending = [];
   const failing = [];
+  const notApplicable = [];
 
   for (const name of required) {
     const run = latestByName.get(name);
     if (!run) {
+      // The check could not have run here: this commit's workflows do not
+      // define the job that emits it, and the trusted ref's do. Only ever
+      // reached when the run is also absent, so a job that exists at this
+      // commit and DID report is classified on its conclusion exactly as
+      // before.
+      if (defined && !defined.has(name) && (!currentlyDefined || currentlyDefined.has(name))) {
+        notApplicable.push(name);
+        continue;
+      }
       // Absent is NOT "nothing to worry about". A required check that never
       // reported is exactly the shape of the hole this repo has been closing
       // all year: the workflow was skipped by a branch/path filter, so nothing
@@ -102,7 +148,30 @@ export function classifyRequiredChecks({ checkRuns, required }) {
     }
   }
 
-  return { missing, pending, failing, ok: !missing.length && !pending.length && !failing.length };
+  // The floor. Narrowing that excuses EVERY required check has not found an old
+  // commit — it has found a tree whose workflows this function could not read,
+  // or a roster that matches nothing in them. Returning ok:true there would
+  // deploy to production having verified no CI at all, which is strictly worse
+  // than the "never reported" refusal this narrowing was added to soften.
+  if (required.length > 0 && notApplicable.length === required.length) {
+    return {
+      missing: [...notApplicable],
+      pending,
+      failing,
+      notApplicable: [],
+      ok: false,
+      exhausted: true,
+    };
+  }
+
+  return {
+    missing,
+    pending,
+    failing,
+    notApplicable,
+    exhausted: false,
+    ok: !missing.length && !pending.length && !failing.length,
+  };
 }
 
 /** Human-readable reason a commit is not deployable, or null when it is. */
@@ -149,6 +218,45 @@ export function checkAncestry({ sha, mainRef = "origin/main", git = defaultGit }
   }
 
   return { ok: true, reason: null };
+}
+
+/**
+ * Every job id defined by the workflows in the tree at `ref`.
+ *
+ * A check-run's name is its job id in this repo (the convention
+ * `check-doc-tables.mjs` also relies on), so this answers "could this commit
+ * have produced a check run called X at all?".
+ *
+ * Returns null when the workflow directory cannot be read at that ref. Null
+ * means "do not narrow anything" — every required check stays expected, which
+ * is the conservative answer. A silent empty Set would excuse the entire
+ * required list, which is the one outcome this function must never produce.
+ */
+export function jobIdsAtRef({ ref, git = defaultGit }) {
+  let listing;
+  try {
+    listing = git(["ls-tree", "-r", "--name-only", ref, "--", ".github/workflows"]);
+  } catch {
+    return null;
+  }
+
+  const files = listing
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => /\.ya?ml$/.test(line));
+  if (files.length === 0) return null;
+
+  const ids = new Set();
+  for (const file of files) {
+    let text;
+    try {
+      text = git(["show", `${ref}:${file}`]);
+    } catch {
+      continue;
+    }
+    for (const match of text.matchAll(/^  ([a-zA-Z0-9_-]+):$/gm)) ids.add(match[1]);
+  }
+  return ids.size > 0 ? ids : null;
 }
 
 // ── Checks API ──────────────────────────────────────────────────────────────
@@ -216,13 +324,40 @@ export async function validateDeploySha({
     return { ok: false, reason: `Could not read CI status for ${sha}: ${error.message}` };
   }
 
-  const verdict = classifyRequiredChecks({ checkRuns, required });
+  // Narrowed to the checks this commit's own workflows could have produced —
+  // and only for checks the trusted ref still defines, so a stale roster entry
+  // cannot excuse itself.
+  const defined = jobIdsAtRef({ ref: sha, git });
+  const currentlyDefined = jobIdsAtRef({ ref: mainRef, git });
+  const verdict = classifyRequiredChecks({ checkRuns, required, defined, currentlyDefined });
   const failure = describeCheckFailure(verdict);
   if (failure) {
+    if (verdict.exhausted) {
+      return {
+        ok: false,
+        reason:
+          `Not one of the ${required.length} required checks could be matched against ${sha}. ` +
+          `That is not an old commit — it is a tree whose workflows could not be read, or a ` +
+          `required-check roster that names nothing they define. Refusing to deploy a commit ` +
+          `with no CI evidence at all.`,
+      };
+    }
     return { ok: false, reason: `CI is not green on ${sha} — ${failure}` };
   }
 
-  logger.log?.(`✅ All ${required.length} required checks passed on ${sha}.`);
+  if (verdict.notApplicable.length > 0) {
+    // Said out loud, never silently. Deploying a commit predating a gate means
+    // that gate never judged what is about to ship, and an operator rolling
+    // back deserves to know which ones.
+    logger.log?.(
+      `ℹ️  ${verdict.notApplicable.length} required check(s) did not exist at ${sha} and were ` +
+        `not required of it: ${verdict.notApplicable.join(", ")}. This commit predates them, so ` +
+        `they never judged it.`,
+    );
+  }
+  logger.log?.(
+    `✅ All ${required.length - verdict.notApplicable.length} applicable required checks passed on ${sha}.`,
+  );
   return { ok: true, reason: null };
 }
 

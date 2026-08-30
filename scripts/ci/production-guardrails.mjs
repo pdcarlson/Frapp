@@ -32,6 +32,9 @@
 // A sibling script with its own title is cheaper than either.
 //
 // ── Two modes ───────────────────────────────────────────────────────────────
+//   --render-only  with --preflight: assert Render's auto-deploy only, skipping
+//                  the Vercel Production Branch checks. For a run that changes
+//                  a database and deploys no code — see main().
 //   --preflight  exit non-zero on any violation, file nothing. Used by
 //                deploy-production.yml before it touches anything.
 //   (default)    raise/resolve a tracking issue, for the schedule.
@@ -112,9 +115,30 @@ export function assertVercelProductionBranch(project, label) {
   return [];
 }
 
-export function buildSummary(findings) {
+/**
+ * The pass/fail line.
+ *
+ * `checked` names what this run actually read. It is not decoration: with
+ * `--render-only` the Vercel projects are never fetched, and a success line that
+ * still said "neither Vercel project promotes from main" would be an
+ * affirmative written assurance about a setting nothing looked at — on the only
+ * path to production, in the step whose whole job is asserting the two settings
+ * that fail open. That is the "reports success having verified nothing" failure
+ * this file's own header rejects, and an earlier `ℹ️ --render-only` notice does
+ * not undo a later `✅` that names the unchecked setting.
+ */
+export function buildSummary(findings, { checked = ["render", "vercel"] } = {}) {
   if (findings.length === 0) {
-    return "All production deploy guardrails hold: Render auto-deploy is off and tracking main; neither Vercel project promotes from main.";
+    const parts = [];
+    if (checked.includes("render")) parts.push("Render auto-deploy is off and tracking main");
+    if (checked.includes("vercel")) parts.push("neither Vercel project promotes from main");
+    const scope = checked.includes("vercel")
+      ? "All production deploy guardrails hold"
+      : "The production deploy guardrails THIS RUN CHECKED hold";
+    const caveat = checked.includes("vercel")
+      ? ""
+      : " The Vercel Production Branch settings were NOT read by this run (--render-only).";
+    return `${scope}: ${parts.join("; ")}.${caveat}`;
   }
   return [`${findings.length} production guardrail violation(s):`, ...findings.map((f) => `- ${f}`)].join("\n");
 }
@@ -203,18 +227,48 @@ function buildAlertIssueBody({ findings, runUrl }) {
 async function main() {
   const preflight = process.argv.includes("--preflight");
 
+  // `--render-only` drops the Vercel assertions. It exists for exactly one
+  // caller: `deploy-production.yml` under `scope: migrations-only`, which
+  // changes a database and deploys no code.
+  //
+  // The asymmetry is real, not a convenience. Render's auto-deploy being back
+  // on means an ordinary merge could ship code against the schema that run is
+  // about to change, so it bears on a migration. A Vercel Production Branch
+  // bears on nothing a migration does — so requiring it would put the Vercel
+  // API between an operator and a database recovery, on the path reached for
+  // when something has already gone wrong.
+  //
+  // Deliberately NOT accepted for the scheduled run or for a full deploy: there
+  // the Vercel setting is exactly as load-bearing as Render's, and the whole
+  // point of a fail-open setting is that something asserts it.
+  const renderOnly = process.argv.includes("--render-only");
+  if (renderOnly && !preflight) {
+    console.error("Error: --render-only is only meaningful with --preflight.");
+    process.exit(2);
+  }
+  if (renderOnly) {
+    console.log(
+      "ℹ️  --render-only: asserting Render auto-deploy only. The Vercel Production Branch " +
+        "settings are NOT checked by this run, because it deploys no frontend.",
+    );
+  }
+
   const findings = await collectFindings({
     renderApiKey: requireEnv("RENDER_API_KEY"),
-    vercelApiKey: requireEnv("VERCEL_API_KEY"),
+    vercelApiKey: renderOnly ? undefined : requireEnv("VERCEL_API_KEY"),
     teamId: process.env.VERCEL_TEAM_ID,
     renderServiceId: requireEnv("RENDER_SERVICE_ID"),
-    vercelProjects: [
-      { projectId: requireEnv("VERCEL_WEB_PROJECT_ID"), label: "frapp-web" },
-      { projectId: requireEnv("VERCEL_LANDING_PROJECT_ID"), label: "frapp-landing" },
-    ],
+    vercelProjects: renderOnly
+      ? []
+      : [
+          { projectId: requireEnv("VERCEL_WEB_PROJECT_ID"), label: "frapp-web" },
+          { projectId: requireEnv("VERCEL_LANDING_PROJECT_ID"), label: "frapp-landing" },
+        ],
   });
 
-  const summary = buildSummary(findings);
+  const summary = buildSummary(findings, {
+    checked: renderOnly ? ["render"] : ["render", "vercel"],
+  });
   if (findings.length === 0) console.log(`✅ ${summary}`);
   else console.error(`::error::${summary}`);
 

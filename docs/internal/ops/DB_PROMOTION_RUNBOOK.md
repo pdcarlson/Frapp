@@ -14,7 +14,7 @@ looking for the command to push migrations to staging, there isn't one any more
 | ----------- | -------------------------- | --------------- |
 | **Local** | `npx supabase db push --local` | You, while developing |
 | **Staging** | **Automatic.** The `migrate-staging` job in [`deploy-api.yml`](../../../.github/workflows/deploy-api.yml) runs on every successful CI run on `main` | Nobody — merging to `main` is the trigger |
-| **Production** | **Manual.** Normally the [`Deploy production`](../../../.github/workflows/deploy-production.yml) workflow, which migrates and deploys one named commit together. [`Migrate production`](../../../.github/workflows/migrate-production.yml) applies migrations *without* shipping code, for recovery and backlogs | A human, deliberately |
+| **Production** | **Manual.** The [`Deploy production`](../../../.github/workflows/deploy-production.yml) workflow, which migrates and deploys one named commit together. Its `scope: migrations-only` input applies migrations *without* shipping code, for recovery and backlogs | A human, deliberately |
 
 ### Staging: do not push by hand
 
@@ -38,35 +38,48 @@ renamed before merge, and a foreign row makes `supabase db push` refuse to run
 If staging needs a migration applied out of band, re-run the `Deploy API`
 workflow against the latest commit on `main`.
 
-### Production: two paths, both human
+### Production: one path, two scopes
 
 There is no `production` branch and no promotion PR. Both were retired in #1340 —
 merging into a branch never named a commit, and Render's auto-deploy-on-commit
 meant a push shipped whatever was at the tip without waiting for CI.
 
-1. **`Deploy production` workflow — the ordinary path.** Actions → *Deploy
-   production* → Run workflow. Give it the commit SHA you want live and type
-   `DEPLOY TO PRODUCTION`. It refuses any SHA that is not an ancestor of `main`
-   or whose CI was not green, **rehearses the migration against production's
-   live applied state**, applies it, then deploys that same commit to Render and
-   Vercel and tags it. Migrations and the code that needs them move together,
-   which is what you want almost every time. It also offers a **dry-run-only**
-   mode that validates and rehearses, then stops.
-2. **`Migrate production` workflow — the escape hatch.** Actions → *Migrate
-   production* → Run workflow. Requires typing `APPLY TO PRODUCTION`, and offers
-   its own dry-run-only mode. Use it to re-run an apply that failed partway, to
-   apply a backlog ahead of the code that needs it, or on a schedule no deploy
-   matches.
+**`Deploy production`.** Actions → *Deploy production* → Run workflow. Give it
+the commit SHA you want live and type `DEPLOY TO PRODUCTION`. It refuses any SHA
+that is not an ancestor of `main` or whose CI was not green, **rehearses the
+migration against production's live applied state**, fences the working tree,
+applies it — and then, depending on `scope`:
 
-   **It does not rehearse.** `Deploy production` runs
-   `check-migration-replay.mjs` against production's live state before applying;
-   this one only lists what is pending. That is deliberate — you reach for it
-   when something has already gone wrong, which is exactly when rebuilding
-   production's state on a disposable stack is least dependable — but it means
-   the apply is less proven. Prefer `Deploy production` whenever you can.
+| `scope` | What happens | Use it when |
+| ------- | ------------ | ----------- |
+| `full` (default) | Migrates, deploys the same commit to Render and Vercel, health-checks it, and tags `vX.Y.Z` | Almost always. Migrations and the code that needs them move together |
+| `migrations-only` | Migrates and stops. No Render deploy, no Vercel build, **no tag** | Re-running an apply that failed partway; applying a backlog ahead of the code that needs it; applying on a schedule no deploy matches |
 
-Both share the `db-migrate-production` concurrency group, so they queue behind
-each other instead of interleaving two `db push` runs against one database.
+There is also a **dry-run-only** mode that validates and rehearses, then stops
+without applying anything, under either scope.
+
+> **`migrations-only` leaves production running the previous code against the new
+> schema.** That is the ordering invariant the whole pipeline rests on —
+> migrations land before the API in a `full` run too — but here it persists
+> until someone comes back with a `full` run. The migration must be
+> forward-compatible with the currently-deployed API. It also deliberately
+> creates no tag: a tag means "this is what is live", and a migrations-only run
+> changes no deployed byte.
+
+**There used to be a second workflow, `Migrate production`, and it has been
+deleted.** It did the `migrations-only` job with none of the safety: it took an
+arbitrary `ref`, and it skipped SHA validation, the provider guardrail
+preflight, the migration replay and the working-tree fence. It was the most
+dangerous path in the repository and it existed to back up the safest one. Its
+stated reason for skipping the rehearsal — that rebuilding production's state is
+least dependable once something has gone wrong — does not survive inspection:
+the state that cannot be rebuilt is a foreign migration, and a foreign migration
+blocks `supabase db push` outright anyway, so the rehearsal was not the thing
+that would have failed. It was the thing that would have said so first.
+
+The workflow holds the `db-migrate-production` concurrency group with
+`cancel-in-progress: false`, so two dispatches queue instead of interleaving two
+`db push` runs against one database.
 
 > **The `production` environment's Required reviewers is now the ONLY human
 > gate, and it pauses the run.** Production migrations used to be gated by a
@@ -82,9 +95,11 @@ each other instead of interleaving two `db push` runs against one database.
 > `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap
 > secrets — read that rather than trusting a restatement here.
 
-> **✅ Production is reconciled and current (verified 2026-08-28).** The
-> Management API reports **52** applied migrations, exactly matching
+> **✅ Production is reconciled and current (verified 2026-08-29).** The
+> Management API reports **54** applied migrations on both `frapp-staging` and
+> `frapp-prod`, newest `20260829002000`, exactly matching
 > `supabase/migrations/` on `main`: nothing pending, and no foreign version.
+> (This read **52** when checked on 2026-08-28; two migrations have landed since.)
 > The hand-applied `20260228000000_enable_rls_on_remaining_tables` that used to
 > block `supabase db push` outright is gone from the history (#832).
 >
@@ -101,27 +116,121 @@ each other instead of interleaving two `db push` runs against one database.
 > without first reading what the row did — see
 > [`DB_ROLLBACK_PLAYBOOK.md`](./DB_ROLLBACK_PLAYBOOK.md).
 
-## What catches drift
+## What catches drift, and what catches bad ordering
 
-Two checks, deliberately different shapes:
+Three checks, deliberately different shapes:
 
 | Check | When | Scope | On failure |
 | ----- | ---- | ----- | ---------- |
-| `migration-drift` ([`migration-drift-gate.yml`](../../../.github/workflows/migration-drift-gate.yml)) | Every PR and every push to `main` — **required check** | Staging only | Blocks the merge |
+| `migration-order` ([`migration-drift-gate.yml`](../../../.github/workflows/migration-drift-gate.yml)) | Every PR and every push to `main` — **required check** | Staging **and** production | Blocks the merge |
+| `migration-drift` (same workflow) | Every PR and every push to `main` — **reports only** | Staging only | Reports; does not block |
 | [`check-migration-drift.yml`](../../../.github/workflows/check-migration-drift.yml) | Daily, 07:00 UTC | Staging **and** production | Files/updates a tracking issue |
 
-The required check compares `origin/main` against staging's applied migration
-history — **not** your PR's head, so a migration you are adding cannot fail its
-own check. A migration is tolerated for 30 minutes from the moment it landed on
-`main`, which is the window `migrate-staging` needs to apply it.
+All three are read-only: they call the Supabase Management API's
+migration-history endpoint and send no SQL. None of them ever repairs anything.
 
-Both are read-only: they call the Supabase Management API's migration-history
-endpoint and send no SQL. Neither ever repairs anything.
+### `migration-order` — the required one
 
-If `migration-drift` is red on your PR and you did not cause it, that is the
-gate working as intended — staging is out of sync for everyone, and the schema
-your tests ran against is not the schema on staging. Fix the drift, don't route
-around it.
+It asks whether a migration **this change introduces** sorts before a version
+the target database has already applied. If one does, `supabase db push`
+refuses rather than reordering:
+
+> Found local migration files to be inserted before the last migration on
+> remote database. Rerun the command with `--include-all` flag to apply these
+> migrations.
+
+That is #1373: `20260829000000_rollover_promote_new_members` merged after
+`20260829002000` was already applied to staging, and staging's migration deploy
+halted. Measured against the pinned CLI 2.77.0 — exit 1, nothing applied, ledger
+untouched. The CLI stops; it does not reorder.
+
+The remedy the check prints is the right one in the ordinary case: **rename the
+file to a version after the newest applied one**, keeping its name. That is safe
+while the migration is unapplied everywhere, which is the normal state for one
+still in review. If it has already been applied somewhere, renaming strands that
+state — read [`--include-all`](#--include-all-recovery-only) instead.
+
+It reads only head-minus-base, which is what makes it safe to require: a change
+touching no migrations introduces nothing, so it makes zero network calls, and a
+PR that *fixes* an ordering fault turns its own check green. It checks both
+environments because production is deployed manually and is routinely behind —
+the environment furthest ahead refuses first, and that is usually staging, which
+is exactly why `migration-replay` (which rebuilds *production's* state) was
+structurally blind to #1373.
+
+### `migration-drift` — reports, does not block
+
+It compares `origin/main` against staging's applied history — **not** your PR's
+head — with a 30-minute grace from the moment a migration landed on `main`,
+which is the window `migrate-staging` needs to apply it.
+
+**It is no longer a required check.** It measures whether staging is behind
+main, which is a question no individual PR contains or can change, so as a
+required check it was a repo-wide merge-freeze switch rather than a gate — and
+#1373 used it as one, making every open PR in the repository unmergeable until a
+human intervened. It still runs and reports on every PR, and the daily scheduled
+check above files a self-closing P1 issue for the same condition.
+
+So if `migration-drift` is red on your PR and you did not cause it: staging is
+out of sync for everyone and the schema your tests ran against is not the schema
+on staging. That is worth fixing and worth not ignoring — it is simply no longer
+worth blocking your merge on.
+
+### `--include-all` (recovery only)
+
+`scripts/run-migration.mjs` accepts `--include-all`, which passes the same flag
+to `supabase db push`. **No workflow sets it, and the script refuses it under
+`CI=true` unless `MIGRATION_ALLOW_INCLUDE_ALL=true` is also set** — two
+deliberate acts, because this is the flag that applies exactly what
+`migration-order` exists to keep off `main`.
+
+**What it does.** Without it, the CLI refuses to apply any migration sorting
+before the newest version the remote has already applied, and stops:
+
+> Found local migration files to be inserted before the last migration on remote
+> database. Rerun the command with `--include-all` flag to apply these
+> migrations.
+
+With it, the CLI applies those migrations at the end of the history regardless of
+where their versions sort. The ledger then records them in an order that does not
+match their version order, and every later reconstruction of that database's
+state — `migration-replay`'s baseline rebuild, a `db reset`, a restore
+rehearsal — replays them in *version* order instead. If the migrations are
+order-sensitive, those two are different databases.
+
+**The one case that makes it legitimate.** A migration has already been applied
+somewhere, and it is back-dated relative to another environment. Renaming it —
+the remedy `migration-order` prints, and the right answer while a migration is
+unapplied everywhere — would strand the applied copy as a *foreign* row on the
+environment that has it, which blocks `db push` on that environment outright.
+When renaming would strand state, `--include-all` is the lesser evil.
+
+**It is not the systemic answer.** Reaching for it means an ordering fault
+already merged. Fix the fault; the gate that should have caught it is
+`migration-order`, and if it did not, that is a bug in the gate worth filing.
+
+    # Recovery, run by a human who has read the above. From the REPOSITORY ROOT.
+    SUPABASE_ACCESS_TOKEN=... \
+    SUPABASE_PROJECT_REF=... \
+    SUPABASE_DB_PASSWORD=... \
+      node scripts/run-migration.mjs --env production --include-all
+
+All three variables are mandatory and the script refuses without them.
+`SUPABASE_DB_PASSWORD` is the one that surprises people: without it the pinned
+CLI cannot initialise its `cli_login_postgres` role and dies as
+`42501: permission denied to alter role`, which reads as a privilege problem on
+the production database and is a CLI bug ([supabase/cli#5091](https://github.com/supabase/cli/issues/5091)).
+The script now says so rather than letting you debug it mid-incident.
+
+Two other refusals, both deliberate:
+
+- **Wrong project.** If `SUPABASE_PROJECT_REF` does not match the ref
+  `ci/environments.json` records for `--env`, the script exits before `link` or
+  `push`. A production ref cannot be applied under a staging label, or the
+  reverse.
+- **Wrong directory.** `supabase/migrations/` is resolved from the working
+  directory, so running from anywhere else is an error rather than a cheerful
+  "no migrations to apply" and exit 0.
 
 ## Preflight checklist
 
@@ -178,6 +287,7 @@ Actions → Deploy production → Run workflow
   sha           <full 40-char SHA, already merged to main and CI-green>
   confirm       DEPLOY TO PRODUCTION
   dry_run_only  ✔ first pass, ✗ for the real one
+  scope         full (or migrations-only — see below)
   bump          auto (or patch/minor/major to force it)
 ```
 
@@ -186,8 +296,12 @@ preflight, and the same migration replay as the real deploy, so a red dry run
 tells you what a real one would have done to the database before it did it.
 
 If you need to apply migrations *without* shipping code — recovering a failed
-apply, or clearing a backlog — use `Migrate production` instead, and read the
-caveat above: it does not rehearse.
+apply, or clearing a backlog — run the same workflow with **`scope:
+migrations-only`**. It keeps every gate the full path has (SHA validation, the
+provider preflight, the replay, the working-tree fence) and simply stops after
+the apply: no Render deploy, no Vercel build, no tag. Production is then running
+the previous code against the new schema until you come back with a `full` run,
+so the migration must be forward-compatible with the deployed API.
 
 Before you promote — the API does not boot without these:
 
@@ -719,7 +833,7 @@ On 2026-08-10 the first CI-driven migration since 2026-02-28 ran successfully ag
 
 Fixing the invalid Infisical credential (#696) was necessary but **not sufficient**. Two further blockers only became visible once injection worked, and both will recur on the first **production** migration:
 
-* **`SUPABASE_DB_PASSWORD` is mandatory.** The pinned Supabase CLI cannot initialise its `cli_login_postgres` login role — it sets that role's password with an already-expired `valid until`, failing as `42501: permission denied to alter role`. Reads like a privilege problem; is a CLI bug ([supabase/cli#5091](https://github.com/supabase/cli/issues/5091), pin tracked in #835). Setting `SUPABASE_DB_PASSWORD` in the Infisical environment makes the CLI connect directly and skip the broken path. Present in the Infisical `development`, `staging`, and `production` environments as of 2026-08-10. Only the staging value has been exercised by a real migration run — `frapp-prod` is paused and no `production`-branch deploy has run since, so the production value is provisioned but unverified (#832).
+* **`SUPABASE_DB_PASSWORD` is mandatory.** The pinned Supabase CLI cannot initialise its `cli_login_postgres` login role — it sets that role's password with an already-expired `valid until`, failing as `42501: permission denied to alter role`. Reads like a privilege problem; is a CLI bug ([supabase/cli#5091](https://github.com/supabase/cli/issues/5091), pin tracked in #835). Setting `SUPABASE_DB_PASSWORD` in the Infisical environment makes the CLI connect directly and skip the broken path. Present in the Infisical `development`, `staging`, and `production` environments as of 2026-08-10. Verified on both as of 2026-08-29: `frapp-prod` is `ACTIVE_HEALTHY`, not paused, and run [33275321347](https://github.com/pdcarlson/Frapp/actions/runs/33275321347) applied production migrations successfully — so the production value is exercised, not merely provisioned. (This line previously said the opposite, from a period when `frapp-prod` was paused and no production deploy had run.)
 * **Migration-history reconciliation.** `db push` refused with `Remote migration versions not found in local migrations directory`. Staging's `schema_migrations` carried `20260228000000_enable_rls_on_remaining_tables`, a version that has never existed in this repository on any branch. Its recorded `statements` column showed four `alter table … enable row level security` calls (`users`, `chapters`, `push_tokens`, `user_settings`) — a hand-applied February hotfix. The current `00000000000000_initial_schema.sql` already enables RLS on all four, so the row was redundant and was deleted.
 
 **On-call note — reconciling a foreign migration row.** When `db push` reports a remote version missing locally, the CLI suggests `supabase migration repair --status reverted <version>`. **Do not run it blind.** First read what the row actually did:
