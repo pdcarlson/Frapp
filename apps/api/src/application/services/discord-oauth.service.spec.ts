@@ -521,6 +521,26 @@ describe('DiscordOAuthService — the callback’s trust boundary', () => {
     logged.mockRestore();
   });
 
+  it('still reads a repeated error parameter as a cancellation', async () => {
+    // The word "declined" in the assertion above is hardcoded in the log
+    // template and is emitted for `failed` too, so that test alone proves
+    // nothing about the outcome. The same array also reaches
+    // `query.error === 'access_denied'`, where array-vs-string is silently
+    // false: the admin cancelled, but the wizard showed the `failed` sentence
+    // ("could not complete the Discord connection") rather than the cancel
+    // one. `discord-import-page.tsx` branches on this code, so it is
+    // user-visible, not cosmetic bookkeeping.
+    const service = await build();
+
+    const outcome = await service.handleCallback({
+      state: STATE,
+      error: ['access_denied', 'access_denied'] as unknown as string,
+    });
+
+    expect(outcome.code).toBe('declined');
+    expect(outcome.returnUrl).toContain('discord=declined');
+  });
+
   it('rejects an authorization that installed the bot nowhere', async () => {
     const service = await build();
     oauth.exchangeCode.mockResolvedValue({

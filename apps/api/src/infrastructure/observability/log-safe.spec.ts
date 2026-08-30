@@ -52,6 +52,20 @@ describe('logSafe', () => {
     expect(logSafe(['x'.repeat(500)])).toHaveLength(201);
   });
 
+  it('survives a cyclic or deeply nested value instead of throwing', () => {
+    // `logSafe` takes `unknown` and is called from catch blocks, so it must
+    // never be the thing that fails. Before the depth guard both of these
+    // raised RangeError from inside a log statement.
+    const cyclic: unknown[] = ['x'];
+    cyclic.push(cyclic);
+    expect(() => logSafe(cyclic)).not.toThrow();
+    expect(logSafe(cyclic)).toContain('[nested]');
+
+    let deep: unknown = 'bottom';
+    for (let i = 0; i < 10_000; i += 1) deep = [deep];
+    expect(() => logSafe(deep)).not.toThrow();
+  });
+
   it('does not expand an object into the record', () => {
     // `qs` can produce one from `?error[x]=1`. A placeholder loses nothing
     // that was ever diagnostic; a JSON dump would carry nested

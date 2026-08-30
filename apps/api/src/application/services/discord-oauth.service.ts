@@ -427,8 +427,17 @@ export class DiscordOAuthService {
       this.logger.log(
         `Discord connect declined for chapter ${consumed.chapter_id}: ${logSafe(query.error)} ${logSafe(query.error_description)}`.trim(),
       );
+      // Express's query parser yields an ARRAY for a repeated key, so
+      // `?error=a&error=b` arrives as `['a','b']` despite the `string`
+      // annotation, and comparing that to a string is silently `false`. A
+      // cancelled connect then reported `failed`, and the wizard showed "could
+      // not complete the Discord connection" instead of the cancel sentence.
+      // First value wins, which is what a single-valued parameter means.
+      const errorCode = Array.isArray(query.error)
+        ? query.error[0]
+        : query.error;
       return finish(
-        query.error === 'access_denied' ? 'declined' : 'failed',
+        errorCode === 'access_denied' ? 'declined' : 'failed',
         `Discord returned error=${query.error}`,
       );
     }

@@ -26,11 +26,16 @@
  * `packages/validation`'s Sentry scrubber has a `pathOnly` of its own that does
  * NOT strip the authority. Treat that as a known gap, not a design — the
  * justification once offered for it, that its `redactFreeText` covers userinfo,
- * is false. `EMAIL_RE` swallows a password only when the password is word
- * characters and it can greedily read `svc:s3cr3t@api.frapp.live` as an email;
- * one `!`, `%` or `:` and the credential ships to Sentry byte-for-byte, and the
- * username and host ship either way. Tracked in #1388, whose fix is to hoist
- * `stripAuthority` below into that package so both sinks share one
+ * does not hold. `EMAIL_RE` consumes the run of `[\w.+-]` immediately before
+ * the `@`, plus the host, so what it removes is incidental:
+ *
+ *   svc:s3cr3t@host/p   ->  svc:[redacted:email]/p      (password gone, host gone)
+ *   svc:hun!ter@host/p  ->  svc:hun![redacted:email]/p  (leading half survives)
+ *   svc:s3cr3t!@host/p  ->  unchanged, byte-for-byte    (nothing matches)
+ *
+ * So the scheme and username always ship; the password ships in part, or whole
+ * when its last character is outside that class. Tracked in #1388, whose fix is
+ * to hoist `stripAuthority` below into that package so both sinks share one
  * implementation. Until then the internal log stream is the hardened one and
  * the external boundary is not, which is backwards.
  */
