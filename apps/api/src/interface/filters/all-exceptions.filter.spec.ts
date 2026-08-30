@@ -337,6 +337,39 @@ describe('AllExceptionsFilter', () => {
     expect(reported).toBe(thrown);
   });
 
+  it('strips the query string from the 5xx error log (#1260)', () => {
+    // The shared fixture URL is `/v1/chapters/join?invite=secret-code`, so the
+    // query already carries a credential-shaped value. This log line runs at
+    // `error` level, which ships in every environment.
+    new AllExceptionsFilter().catch(new Error('boom'), host());
+
+    // The secret must be absent from the whole record — a leak anywhere in the
+    // line is still a leak.
+    expect(captured.error[0]).not.toContain('secret-code');
+
+    // The `?` check is scoped to the `path` field rather than the whole record:
+    // this record also carries `error: <stack>`, which is free text and may
+    // legitimately contain a `?`. Asserting on the record would fail on an
+    // unrelated future exception and read as a query-string leak that had not
+    // happened.
+    const logged = JSON.parse(captured.error[0] ?? '{}') as Record<
+      string,
+      unknown
+    >;
+    expect(logged).toMatchObject({ path: '/v1/chapters/join' });
+    expect(String(logged.path)).not.toContain('?');
+  });
+
+  it('strips the OAuth state and code from the 5xx error log (#1260)', () => {
+    new AllExceptionsFilter().catch(
+      new Error('boom'),
+      host({ url: '/v1/discord/connect/callback?code=abc123&state=deadbeef' }),
+    );
+
+    expect(captured.error[0]).not.toContain('deadbeef');
+    expect(captured.error[0]).not.toContain('abc123');
+  });
+
   it('preserves the existing 5xx error log shape', () => {
     new AllExceptionsFilter().catch(new Error('boom'), host());
 

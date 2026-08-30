@@ -8,6 +8,7 @@ import {
 import { Observable, tap } from 'rxjs';
 import type { Request } from 'express';
 import type { RequestContext } from '../types/request-context.types';
+import { pathOnly } from '../utils/path-only';
 
 /**
  * Shape of the `X-Forwarded-For` chain, carrying no address.
@@ -105,7 +106,12 @@ export class LoggingInterceptor implements NestInterceptor {
         userId: request.appUser?.id,
         chapterId: request.chapterId,
         method: request.method,
-        path: request.url,
+        // `request.url` carries the query string, which routinely carries
+        // credentials — the Discord connect callback's `state` IS the CSRF
+        // token (#1260). This field was never specified — § Structured
+        // Logging said "endpoint" — so rule 1 there, added with this fix,
+        // is what requires it to route through `pathOnly`.
+        path: pathOnly(request.url),
         statusCode: statusCode ?? 500,
         latencyMs,
         xffCount,

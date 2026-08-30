@@ -319,9 +319,52 @@ describe('DiscordOAuthService — the callback’s trust boundary', () => {
 
     expect(logged).toHaveBeenCalledTimes(1);
     const [message, cause] = logged.mock.calls[0] as [string, string];
-    expect(message).toContain(STATE);
+
+    // This assertion was inverted by #1260, deliberately. It previously read
+    // `expect(message).toContain(STATE)`. The state id is the CSRF token, and
+    // on this branch it is *live* — `consumeState` rejected, so the conditional
+    // UPDATE never committed and the row stays unspent for the rest of its TTL.
+    // Logging it put an unspent handshake id into the application log stream.
+    //
+    // Nothing this test is actually about is lost: its subject is that the
+    // *cause* survives where a plain PostgREST object would hide it, and both
+    // cause assertions below are untouched. The id was never diagnostic here —
+    // the service's own comment notes this branch is a function of store health
+    // alone and fires identically for every state id.
+    expect(message).not.toContain(STATE);
     expect(cause).toContain('PGRST205');
     expect(cause).toContain('public.discord_oauth_states');
+    logged.mockRestore();
+  });
+
+  it('keeps the handshake id out of the log when parking fails', async () => {
+    // The third route into the log stream that #1260 found, and the only one
+    // of the three that no test pinned: reinstating the id in
+    // `parkConnection`'s throw message leaves the rest of this suite green.
+    //
+    // The catch interpolates `error.message` into a `logger.log` line. That
+    // is the whole of the exposure: `reason` is operator-facing, documented
+    // "never placed on the redirect URL", and the controller returns
+    // `outcome.returnUrl` alone — so this does NOT reach the browser. The
+    // `reason`/`returnUrl` assertions below are defence in depth against that
+    // changing, not a live sink. Unlike the `consumeState` branch the state
+    // here IS spent, which lowers the severity but not the rule: the handshake
+    // id is a credential and the chapter id is what identifies the event.
+    const service = await build();
+    repo.attachPendingConnection.mockResolvedValue(null);
+    const logged = jest
+      .spyOn(Logger.prototype, 'log')
+      .mockImplementation(() => undefined);
+
+    const outcome = await service.handleCallback({ code: 'c', state: STATE });
+
+    const messages = logged.mock.calls.map((call) => String(call[0]));
+    // Prove the branch was actually taken — otherwise the assertions below
+    // pass vacuously on a path that never ran.
+    expect(messages.some((m) => m.includes('could not be parked'))).toBe(true);
+    for (const message of messages) expect(message).not.toContain(STATE);
+    expect(outcome.reason).not.toContain(STATE);
+    expect(outcome.returnUrl).not.toContain(STATE);
     logged.mockRestore();
   });
 
@@ -449,6 +492,53 @@ describe('DiscordOAuthService — the callback’s trust boundary', () => {
     expect(repo.consumeState).toHaveBeenCalledWith(STATE, expect.any(Date));
     expect(outcome.code).toBe('declined');
     expect(repo.attachPendingConnection).not.toHaveBeenCalled();
+  });
+
+  it('still logs a reason when Discord repeats the error parameter', async () => {
+    // Express's query parser yields an ARRAY for a repeated key, so
+    // `?error=a&error=b` reaches this call site as `['a','b']` despite the
+    // `string` annotation. `logSafe` returned '' for any non-string, which
+    // blanked the line to `Discord connect declined for chapter <uuid>:` —
+    // dropping the cause on exactly the branch whose only job is to record it.
+    // Sanitizing must not become erasing.
+    const service = await build();
+    const logged = jest
+      .spyOn(Logger.prototype, 'log')
+      .mockImplementation(() => undefined);
+
+    await service.handleCallback({
+      state: STATE,
+      error: ['access_denied', 'x'] as unknown as string,
+      error_description: 'User cancelled',
+    });
+
+    const declined = logged.mock.calls
+      .map((call) => String(call[0]))
+      .filter((message) => message.includes('declined'));
+    expect(declined).toHaveLength(1);
+    expect(declined[0]).toContain('access_denied,x');
+    expect(declined[0]).toContain('User cancelled');
+    logged.mockRestore();
+  });
+
+  it('still reads a repeated error parameter as a cancellation', async () => {
+    // The word "declined" in the assertion above is hardcoded in the log
+    // template and is emitted for `failed` too, so that test alone proves
+    // nothing about the outcome. The same array also reaches
+    // `query.error === 'access_denied'`, where array-vs-string is silently
+    // false: the admin cancelled, but the wizard showed the `failed` sentence
+    // ("could not complete the Discord connection") rather than the cancel
+    // one. `discord-import-page.tsx` branches on this code, so it is
+    // user-visible, not cosmetic bookkeeping.
+    const service = await build();
+
+    const outcome = await service.handleCallback({
+      state: STATE,
+      error: ['access_denied', 'access_denied'] as unknown as string,
+    });
+
+    expect(outcome.code).toBe('declined');
+    expect(outcome.returnUrl).toContain('discord=declined');
   });
 
   it('rejects an authorization that installed the bot nowhere', async () => {
