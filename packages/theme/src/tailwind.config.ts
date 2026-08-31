@@ -24,69 +24,48 @@ const motionEasing = frappTokens.motion.easing;
  * writes went first, in #1143; the #920 groundwork moved the rest, so there is
  * now exactly one convention and no pairing rule to get wrong.
  *
- * `color-mix` only appears when a class asks for one — `bg-primary/15` — so
- * the common case still compiles to a plain `var()`. Tailwind hands this
- * function `var(--tw-bg-opacity, 1)` for an un-modified utility; that path is
- * deliberately collapsed to the bare variable, which drops support for the
- * legacy `bg-opacity-70` form. Nothing in the repo uses it.
+ * **This used to be a function.** Under Tailwind v3 it was a `({ opacityValue })
+ * => string` callback that hand-rolled the alpha branch, emitting a bare
+ * `var()` for an un-modified utility and a `color-mix(in srgb, …)` for a
+ * modified one — because v3 had no other way to apply alpha to a custom
+ * property whose format it could not know.
  *
- * Three shapes of `opacityValue` arrive, and they are not interchangeable:
- * `undefined` (`toColorValue`), the string `var(--tw-*-opacity, 1)` (an
- * un-modified utility), an explicit `"0.7"` or `"62%"` (a modifier), and the
- * **number** `0` — which `gradientColorStops` passes to synthesise the implicit
- * transparent end-stop of `from-*` / `via-*`. Testing truthiness would send that
- * `0` down the no-modifier branch and emit an opaque stop, turning a fade into a
- * flat block; a percentage needs to be used as-is, because `calc(62% * 100%)`
- * is not a valid product and the browser drops the whole declaration.
+ * v4 dropped function color values entirely; it applies the modifier itself.
+ * A function left here is not an error, it is **dropped**: the key vanishes and
+ * every utility built on it compiles to nothing. That is #1145's silent
+ * no-color failure again, and on the v4 bump it hit every semantic token at
+ * once rather than one family — verified by compiling the sheet and grepping
+ * it for `.bg-primary`, which is the only way this class of defect ever shows
+ * up. So the helper is now what its name always claimed: the token, wrapped in
+ * `var()`, as a plain string.
  *
- * **Browser floor.** `color-mix` needs Chrome 111 / Safari 16.2 / Firefox 113,
- * where `hsl(var(--x) / a)` needed only Safari 12.1. It applies to every
- * utility that carries an **opacity modifier** (`bg-primary/10`,
- * `border-destructive/30`, `ring-primary/70`); an un-modified utility
- * compiles to a plain `var()` and has no floor at all. Those degrade to no
- * fill on an older engine.
+ * What v4 emits in its place is strictly better than what it replaced.
+ * `bg-primary` is still a plain `var(--primary)` with no floor at all;
+ * `bg-primary/15` becomes `color-mix(in oklab, var(--primary) 15%, transparent)`
+ * guarded by `@supports (color: color-mix(in lab, red, red))`, with the opaque
+ * `var()` left as the fallback declaration. The v3 helper had no fallback, so
+ * below the `color-mix` floor (Chrome 111 / Safari 16.2 / Firefox 113) a
+ * modified utility degraded to **no fill**; it now degrades to the un-modified
+ * color. The mixing space moves from sRGB to OKLab, which shifts a translucent
+ * fill imperceptibly and is Tailwind's own default.
  *
- * The floor was scoped to the fourteen `side-*` classes (a family since
- * deleted with the #920 shell cutover) while they were the only keys here.
- * Converting the rest of the preset (#920 groundwork) widened it to every
- * token: measured against the real `apps/web` and `apps/landing` class
- * corpus, compiled `color-mix` declarations went from **7** to **57**.
+ * The three awkward `opacityValue` shapes the old callback had to special-case
+ * are all v4's problem now: the `var(--tw-*-opacity, 1)` sentinel, a `"62%"`
+ * string that must not be multiplied, and the literal `0` that
+ * `gradientColorStops` passes to synthesise a transparent end-stop (testing it
+ * for truthiness turned a fade into a flat block).
  *
- * It is the same trade Tailwind v4 makes for every colour, and it is the price
- * of a token that can hold hex, `hsl()` or `rgba()`; there is no pre-`color-mix`
- * way to apply alpha to a custom property of unknown format. Signet's `rgba()`
- * hairlines make that format-agnostic reader mandatory, so the floor is not
- * separable from the cutover.
- *
- * **Two Signet tokens carry the floor even un-modified.** `--primary-pressed`
- * and `--accent-subtle-hover` are themselves `color-mix()` values (the button
- * states `components.md` §3 names but the accent engine emits no role for), so
- * `bg-primary-pressed` needs `color-mix` support to resolve at all — the "no
- * floor without a modifier" guarantee above is about the utility, not about
- * what the token holds. Below the floor those two degrade to no fill rather
- * than to the un-pressed colour; they are hover/pressed states on controls that
- * are legible without them, which is why they were an acceptable place to
- * spend it. Do not reach for a `color-mix` token for a *rest* state.
+ * **Two Signet tokens still carry the `color-mix` floor un-modified.**
+ * `--primary-pressed` and `--accent-subtle-hover` are themselves `color-mix()`
+ * values (the button states `components.md` §3 names but the accent engine
+ * emits no role for), so `bg-primary-pressed` needs `color-mix` support to
+ * resolve at all — that is about what the token holds, not about the utility.
+ * Below the floor those two degrade to no fill rather than to the un-pressed
+ * colour; they are hover/pressed states on controls that are legible without
+ * them, which is why they were an acceptable place to spend it. Do not reach
+ * for a `color-mix` token for a *rest* state.
  */
-export const colorVar = (token: string): string =>
-  // Tailwind resolves a function color value at runtime and documents the form,
-  // but `Config` types every colour as a plain `string`, so there is no way to
-  // express this without a cast. It is the type stub being narrower than the
-  // library, not an unsound claim: `tailwind.config.spec.ts` calls these back
-  // and asserts what they emit across all four shapes above.
-  ((({ opacityValue }: { opacityValue?: string | number } = {}) => {
-    if (
-      opacityValue === undefined ||
-      (typeof opacityValue === "string" && opacityValue.startsWith("var(--tw-"))
-    ) {
-      return `var(${token})`;
-    }
-    const amount =
-      typeof opacityValue === "string" && opacityValue.endsWith("%")
-        ? opacityValue
-        : `calc(${opacityValue} * 100%)`;
-    return `color-mix(in srgb, var(${token}) ${amount}, transparent)`;
-  }) as unknown as string);
+export const colorVar = (token: string): string => `var(${token})`;
 
 const config: Partial<Config> = {
   theme: {
