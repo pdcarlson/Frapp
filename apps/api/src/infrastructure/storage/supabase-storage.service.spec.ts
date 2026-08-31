@@ -264,53 +264,6 @@ describe('SupabaseStorageService', () => {
    * a crafted `chapters/<mine>/branding/../../../../reports/...` read another
    * chapter's report PDF.
    */
-  describe('getSignedUploadUrl contentType handling', () => {
-    /**
-     * Pins the one behaviour #1230 is about, which had no coverage at all.
-     *
-     * `contentType` stays in the signature as declared intent — it is what
-     * callers validate against the allowlist before asking for a URL — but it
-     * cannot be forwarded to `createSignedUploadUrl`, because a signed upload
-     * URL pins nothing: the client sets its own `Content-Type` on the PUT. A
-     * future change that "helpfully" starts passing it would not enforce
-     * anything, and would restore exactly the false impression of a second
-     * enforcement point that #1230 exists to remove. Without this test that
-     * change is invisible — every other suite mocks `IStorageProvider` and so
-     * never sees what the concrete service does.
-     */
-    it('does not forward contentType to createSignedUploadUrl', async () => {
-      await service.getSignedUploadUrl(
-        'chat',
-        'chapters/a/chat/c/m/note.png',
-        'image/png',
-      );
-
-      expect(createSignedUploadUrl).toHaveBeenCalledTimes(1);
-      const [path, options] = createSignedUploadUrl.mock.calls[0];
-      expect(path).toBe('chapters/a/chat/c/m/note.png');
-      // Negative control: this is the assertion that fails the moment someone
-      // adds `contentType` to the options object. Checking the whole argument
-      // rather than one key means a rename cannot slip past it either.
-      expect(options).toBeUndefined();
-      expect(JSON.stringify(createSignedUploadUrl.mock.calls[0])).not.toContain(
-        'image/png',
-      );
-    });
-
-    it('still passes upsert through, so the assertion above is not vacuous', async () => {
-      await service.getSignedUploadUrl(
-        'chat-archive',
-        'chapters/a/chat-archive/imports/i/media/clip.mp4',
-        'video/mp4',
-        { upsert: true },
-      );
-
-      const [, options] = createSignedUploadUrl.mock.calls[0];
-      expect(options).toEqual({ upsert: true });
-      expect(JSON.stringify(options)).not.toContain('video/mp4');
-    });
-  });
-
   describe('path containment', () => {
     const TRAVERSALS = [
       'chapters/a/branding/../../../reports/chapters/b/secret.pdf',
@@ -475,6 +428,79 @@ describe('SupabaseStorageService', () => {
       await expect(
         service.listFiles('reports', '../other'),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('getSignedUploadUrl contentType handling', () => {
+    /**
+     * Pins the one behaviour #1230 is about, which had no coverage at all.
+     *
+     * `contentType` stays in the signature as declared intent — it is what
+     * callers validate against the allowlist before asking for a URL — but it
+     * cannot be forwarded to `createSignedUploadUrl`, because a signed upload
+     * URL pins nothing: the client sets its own `Content-Type` on the PUT. A
+     * change that "helpfully" starts passing it would enforce nothing and would
+     * restore exactly the false impression of a second enforcement point that
+     * #1230 exists to remove. Every other suite mocks `IStorageProvider`, so
+     * without these tests that change is invisible.
+     *
+     * Each case asserts on a distinctive sentinel type rather than on the shape
+     * of the options argument. Asserting `options` is `undefined` looks like a
+     * guard and is not one: the natural regression
+     * (`options?.upsert ? { upsert: true, contentType } : undefined`) leaves
+     * `options` undefined whenever the caller passed none, so a no-options test
+     * cannot catch it. The sentinel is checked against the whole recorded call,
+     * so positional forwarding, any options key name, and a wholesale spread of
+     * the caller's options all trip it.
+     */
+    const SENTINEL = 'application/x-contenttype-sentinel';
+
+    const forwardedValues = () =>
+      JSON.stringify(createSignedUploadUrl.mock.calls);
+
+    it('does not forward contentType when the caller passes no options', async () => {
+      await service.getSignedUploadUrl(
+        'chat',
+        'chapters/a/chat/c/m/note.png',
+        SENTINEL,
+      );
+
+      expect(createSignedUploadUrl).toHaveBeenCalledTimes(1);
+      expect(createSignedUploadUrl.mock.calls[0][0]).toBe(
+        'chapters/a/chat/c/m/note.png',
+      );
+      expect(forwardedValues()).not.toContain(SENTINEL);
+    });
+
+    it('does not smuggle contentType in alongside upsert', async () => {
+      // The case the no-options test above provably cannot catch.
+      await service.getSignedUploadUrl(
+        'chat-archive',
+        'chapters/a/chat-archive/imports/i/media/clip.mp4',
+        SENTINEL,
+        { upsert: true },
+      );
+
+      // `upsert` must still get through — otherwise this test would pass just
+      // as well against a method that forwards nothing at all.
+      expect(createSignedUploadUrl.mock.calls[0][1]).toMatchObject({
+        upsert: true,
+      });
+      expect(forwardedValues()).not.toContain(SENTINEL);
+    });
+
+    it('does not forward a contentType that arrives inside options', async () => {
+      // Guards the one shape the two cases above miss: spreading the caller's
+      // options wholesale. If `SignedUploadOptions` ever gains a `contentType`
+      // field, a spread would pin a type through a channel nothing else checks.
+      await service.getSignedUploadUrl(
+        'chat',
+        'chapters/a/chat/c/m/note.png',
+        'image/png',
+        { upsert: true, contentType: SENTINEL } as never,
+      );
+
+      expect(forwardedValues()).not.toContain(SENTINEL);
     });
   });
 
