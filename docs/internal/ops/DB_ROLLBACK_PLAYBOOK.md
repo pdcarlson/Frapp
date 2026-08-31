@@ -117,13 +117,14 @@ prevent.
 
 ### What this backup does not cover
 
-- **Storage objects.** Per Supabase, "Database backups do not include objects you
-  store via the Storage API, as the database only includes metadata about these
-  objects." Five buckets hold real content, `chat-archive` in particular. A
-  restore therefore yields rows referencing objects that were never captured.
-  Backing up Storage is separate work, tracked in #1290 (unblocked now that the
-  offsite bucket exists — it is meant to write to the same bucket under a
-  `storage/` prefix).
+- **Storage objects — covered now, but by the *other* job.** Per Supabase,
+  "Database backups do not include objects you store via the Storage API, as the
+  database only includes metadata about these objects", so the dump above still
+  cannot carry them. #1290 closed that gap with a second job in the same
+  workflow, writing to the same R2 bucket under a `storage/` prefix. **A full
+  recovery needs both halves**: restoring the database alone gives you rows
+  referencing files, and restoring Storage alone gives you files nothing points
+  at. See *Restoring Storage objects* below.
 - **The `storage` schema itself**, deliberately: bucket rows are provisioned by
   this repo's own `supabase/migrations/*_bucket.sql`, so they come back when
   migrations run. Including them made the restore abort on `buckets_pkey`.
@@ -153,6 +154,97 @@ rather than letting you discover it mid-replay.
 `--force` is required for any non-local target. That is not ceremony: the script
 replaces the contents of the database it is pointed at, and the difference
 between a rehearsal and an outage is one mistyped host.
+
+## Restoring Storage objects
+
+Storage is backed up by the `backup-staging-storage` job in
+[`db-backup.yml`](../../../.github/workflows/db-backup.yml), which runs
+[`scripts/storage-backup-run.mjs`](../../../scripts/storage-backup-run.mjs).
+Rationale for every design choice is in the header of
+[`scripts/storage-backup.mjs`](../../../scripts/storage-backup.mjs).
+
+### What is offsite, and in what shape
+
+Unlike the database dump, this is a **mirror, not a dated snapshot**. Objects sit
+at a stable key so a restore can address one file without unpacking a nightly
+archive:
+
+```
+s3://<BACKUP_S3_BUCKET>/storage/manifest.json
+s3://<BACKUP_S3_BUCKET>/storage/<bucket>/<object path>
+```
+
+The manifest object at the top of that prefix is the index: one record per
+object with its size, etag, `updated_at`, when it was first backed up, and
+`deleted_at` if it has since been removed from Storage.
+
+### Deleted objects are still restorable — that is the point
+
+A plain mirror would drop the backup copy the moment a file left Storage, which
+would make "someone deleted it, get it back" impossible. Instead a deletion is
+**tombstoned**: the object stays in R2 and the manifest records `deleted_at`. It
+is pruned only once it is older than `BACKUP_RETENTION_DAYS` (default 30).
+
+**So the retention window is the recovery window.** A file deleted 31 days ago is
+gone; one deleted yesterday is one command away.
+
+### If the backup job fails saying it would delete too much
+
+The job refuses to proceed when a run would tombstone more than half of a corpus
+of 20 or more objects. That is not a real mass deletion in almost every case --
+it is a **short listing**: a permissions change, a renamed bucket, or a partial
+API failure that still answered `200`. From inside the job those look identical
+to everyone deleting everything, and the difference would otherwise only surface
+a month later when retention began pruning.
+
+Nothing is written offsite when this fires, so the previous backup is intact.
+Check what Storage actually returns before doing anything else. If the deletion
+is genuine (a chapter offboarded, a bucket deliberately emptied), re-run with
+`STORAGE_BACKUP_ALLOW_MASS_DELETE=true`.
+
+### Restore
+
+Needs `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and the four `BACKUP_S3_*`
+values in the environment (all live in Infisical `staging` at `/`), plus
+`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_DEFAULT_REGION=auto` set
+from the `BACKUP_S3_*` pair, exactly as the workflow does it.
+
+```bash
+# See what would be restored, changing nothing.
+node scripts/storage-backup-run.mjs restore --dry-run
+
+# One file — the usual case.
+node scripts/storage-backup-run.mjs restore \
+  --bucket documents --path "chapter-1/bylaws.pdf"
+
+# A whole bucket.
+node scripts/storage-backup-run.mjs restore --bucket chat-archive
+
+# Everything.
+node scripts/storage-backup-run.mjs restore
+```
+
+Restores are **idempotent** (`x-upsert`), so a run that dies halfway is safe to
+repeat. They write *into* Storage, so run the dry run first.
+
+### Order, when restoring both halves
+
+Restore the **database first, Storage second**. Bucket rows come from this repo's
+own `supabase/migrations/*_bucket.sql`, so the buckets must exist before objects
+can be written into them — a Storage restore against a database that has not been
+migrated fails on the missing bucket.
+
+### Rehearsing it
+
+A copy nobody has restored from is not a backup. The drill is automated: Actions
+→ **Nightly Backup** → *Run workflow* → tick **`storage_rehearsal`**. It writes a
+canary object, backs it up, deletes it from Storage, restores it from R2, and
+asserts the bytes match byte-for-byte, then cleans up after itself. It only ever
+touches its own canary under `documents/_backup-rehearsal/`, and deletes it
+again on the way out. (`documents` rather than `reports` because every bucket
+here pins `allowed_mime_types` and `reports` permits only `application/pdf`.)
+
+Record each run in the rehearsal log below.
 
 ## Rehearsal log
 
