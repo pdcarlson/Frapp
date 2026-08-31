@@ -584,7 +584,15 @@ export class EventService {
     // anything. `recurrence_rule` arrives as a free string, and the old order
     // deleted the whole future half of the series and only then discovered it
     // had nothing to rebuild with.
-    const nextRule = normalized.recurrence_rule ?? parent.recurrence_rule;
+    // `??` would read an explicit `recurrence_rule: null` — the caller ending
+    // the series — as "unchanged" and fall through to the parent's rule. That
+    // was harmless while this value only gated validation, but the split path
+    // below *writes* it to the new head, where it would resurrect a series the
+    // caller just cleared.
+    const nextRule =
+      normalized.recurrence_rule !== undefined
+        ? normalized.recurrence_rule
+        : parent.recurrence_rule;
     if (regenerates && nextRule && this.occurrenceCountFor(nextRule) === null) {
       throw new BadRequestException(
         'recurrence_rule must be one of WEEKLY, BIWEEKLY, MONTHLY',
@@ -592,15 +600,51 @@ export class EventService {
     }
 
     const now = Date.now();
+
+    // Resolve children before any write: `parent_event_id` is
+    // `on delete set null`, so a parent removed first takes the pointers with it.
+    const children = await this.eventRepo.findChildren(parent.id, chapterId);
+
+    // How the caller moved the head, kept as a *shift* rather than as the
+    // literal instants they sent. The split path below re-times a different
+    // occurrence, and `null` duration means "leave each occurrence's own length
+    // alone" — an individually-lengthened child must not silently inherit the
+    // parent's duration from an edit that never mentioned time.
+    const startShiftMs = hasChanged('start_time')
+      ? new Date(normalized.start_time as string).getTime() -
+        new Date(parent.start_time).getTime()
+      : 0;
+    const nextDurationMs =
+      hasChanged('start_time') || hasChanged('end_time')
+        ? new Date(normalized.end_time ?? parent.end_time).getTime() -
+          new Date(normalized.start_time ?? parent.start_time).getTime()
+        : null;
+
+    // The head is both the series template and the series' own first
+    // occurrence. Once it has started, writing the patch to it edits a meeting
+    // that already happened, and its `event_attendance` rows then describe an
+    // event as it never was.
+    if (new Date(parent.start_time).getTime() <= now) {
+      return this.splitStartedHead({
+        parent,
+        children,
+        chapterId,
+        normalized,
+        input,
+        regenerates,
+        nextRule,
+        startShiftMs,
+        nextDurationMs,
+        now,
+      });
+    }
+
     const updatedParent = await this.eventRepo.update(
       parent.id,
       chapterId,
       normalized,
     );
 
-    // Resolve children before any delete: `parent_event_id` is
-    // `on delete set null`, so a parent removed first takes the pointers with it.
-    const children = await this.eventRepo.findChildren(parent.id, chapterId);
     const { future } = this.partitionByTime(children, now);
 
     if (regenerates) {
@@ -628,6 +672,149 @@ export class EventService {
     await this.notifyEventUpdated(chapterId, updatedParent, input);
 
     return updatedParent;
+  }
+
+  /**
+   * Apply a `series` edit whose head has already started, by splitting the
+   * head's two roles apart instead of trying to guard one of them.
+   *
+   * #1391 attempted the guard — restrict a started head's write to
+   * `recurrence_rule` — and it was strictly worse in three measured ways, all
+   * with the same root cause: **regeneration still read the parent as the
+   * template.** A head-addressed reschedule was dropped from the parent write
+   * but still counted as a regenerate, so the series was rebuilt from the
+   * unchanged anchor and the requested move vanished along with every future
+   * occurrence's id; non-time edits propagated to the children but not to the
+   * template, so the next rule change resurrected the old name and dropped the
+   * `check_in_zone`; and a child-issued time-only edit became a silent 200.
+   *
+   * So the template moves. The started head is retired into standalone history
+   * — `recurrence_rule` cleared and **no other field written** — and the
+   * earliest upcoming occurrence becomes the new head carrying the caller's
+   * changes. From here on that row is what `buildOccurrencePayloads` reads, so
+   * a later rule change regenerates from current values rather than stale ones.
+   *
+   * **The series head's id changes.** That is deliberate, and it is not new:
+   * `delete` with `instance` scope on a series head already does it through
+   * `promoteSuccessor`. The old id keeps resolving to the meeting that actually
+   * took place, which is the right target for a chat event card, a notification
+   * deep link (`data.target.eventId`) or an exported `.ics` — each was created
+   * for that occurrence, not for the series.
+   */
+  private async splitStartedHead(args: {
+    parent: Event;
+    children: Event[];
+    chapterId: string;
+    normalized: UpdateEventInput;
+    input: UpdateEventInput;
+    regenerates: boolean;
+    nextRule: string | null;
+    startShiftMs: number;
+    nextDurationMs: number | null;
+    now: number;
+  }): Promise<Event> {
+    const {
+      parent,
+      children,
+      chapterId,
+      normalized,
+      input,
+      regenerates,
+      nextRule,
+      startShiftMs,
+      nextDurationMs,
+      now,
+    } = args;
+
+    const { future, past } = this.partitionByTime(children, now);
+
+    // Nothing upcoming means every row this edit could reach is history, and
+    // the whole point here is not to rewrite that. Refuse out loud: #1391's
+    // third regression was a silent 200 that wrote nothing anywhere.
+    if (future.length === 0) {
+      throw new BadRequestException(
+        'This series has no upcoming occurrences, so a series edit would only rewrite meetings that have already happened. Edit an occurrence directly with instance scope.',
+      );
+    }
+
+    const [successor, ...rest] = future;
+
+    // Re-time by the caller's shift, never by the instants they sent. Their
+    // `start_time` describes the *old* head and is in the past; writing it onto
+    // the successor would anchor the series behind `now` — the exact failure
+    // `promoteSuccessor`'s docblock records. Moving the head 18:00 -> 19:00
+    // moves every upcoming occurrence an hour later, which is what
+    // rescheduling a recurring meeting means.
+    const retimed: Partial<Event> = {};
+    if (startShiftMs !== 0 || nextDurationMs !== null) {
+      const startMs = new Date(successor.start_time).getTime() + startShiftMs;
+      if (startMs <= now) {
+        throw new BadRequestException(
+          'That change would move the next occurrence into the past. Shift the series by less, or edit the remaining occurrences individually.',
+        );
+      }
+      const durationMs =
+        nextDurationMs ??
+        new Date(successor.end_time).getTime() -
+          new Date(successor.start_time).getTime();
+      retimed.start_time = new Date(startMs).toISOString();
+      retimed.end_time = new Date(startMs + durationMs).toISOString();
+    }
+
+    // Retire the head. `recurrence_rule` and nothing else: every one of its own
+    // fields keeps the value it had while the meeting was happening, so the
+    // `event_attendance` rows hanging off it still describe it accurately.
+    await this.eventRepo.update(parent.id, chapterId, {
+      recurrence_rule: null,
+    });
+
+    // Past occurrences belong to the series that just ended. Detached, not
+    // deleted — `event_attendance.event_id` is `on delete cascade`, and this is
+    // exactly how `deleteSeries` and `promoteSuccessor` already treat them.
+    if (past.length > 0) {
+      await this.eventRepo.updateMany(
+        past.map((child) => child.id),
+        chapterId,
+        { parent_event_id: null },
+      );
+    }
+
+    // The successor becomes the series, carrying the caller's changes. A
+    // `nextRule` of null means they cleared the rule: the series ends here and
+    // this row survives as a standalone event with the edit applied, rather
+    // than the edit landing nowhere.
+    const newHead = await this.eventRepo.update(successor.id, chapterId, {
+      ...propagatableFields(normalized),
+      ...retimed,
+      recurrence_rule: nextRule,
+      parent_event_id: null,
+    });
+
+    if (regenerates) {
+      // Build before destroying, so a regenerate that would produce none cannot
+      // leave the series empty.
+      const replacements = this.buildOccurrencePayloads(newHead, now);
+      await this.eventRepo.deleteMany(
+        rest.map((child) => child.id),
+        chapterId,
+      );
+      await Promise.all(
+        replacements.map((payload) => this.eventRepo.create(payload)),
+      );
+    } else if (rest.length > 0) {
+      // No regeneration, so the survivors keep their own dates — but they must
+      // be re-pointed at the new head, or they would still hang off the row
+      // that just left the series and no later series operation would find them.
+      await this.eventRepo.updateMany(
+        rest.map((child) => child.id),
+        chapterId,
+        { ...propagatableFields(normalized), parent_event_id: newHead.id },
+      );
+    }
+
+    await this.notifyEventUpdated(chapterId, newHead, input);
+
+    return newHead;
   }
 
   async delete(
