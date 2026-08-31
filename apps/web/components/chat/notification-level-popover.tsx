@@ -134,6 +134,12 @@ export function NotificationLevelPopover({
                       return;
                     }
                     onChange(option.level);
+                    // A consumer that does not wire `isSaving` has no in-flight
+                    // signal for the effect above to close on, so dismiss
+                    // immediately rather than leaving the menu stuck open
+                    // forever. Controlled consumers stay open until the write
+                    // lands, which is what gives `hasError` somewhere to show.
+                    if (isSaving === undefined) setOpen(false);
                   }}
                   className={cn(
                     "flex w-full flex-col gap-0.5 px-3 py-2.5 text-left transition-colors disabled:opacity-60",

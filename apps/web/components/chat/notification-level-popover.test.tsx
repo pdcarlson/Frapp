@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
 import { NotificationLevelPopover } from "./notification-level-popover";
@@ -136,5 +136,110 @@ describe("NotificationLevelPopover", () => {
     await user.click(screen.getByRole("button", { name: /notifications:/i }));
     const menu = screen.getByRole("button", { name: /every message/i });
     expect(menu).toBeInTheDocument();
+  });
+
+  /**
+   * The commit that introduced close-on-save shipped without pinning it: the
+   * three tests added alongside it all passed with the component reverted to
+   * closing on click. These two are the actual pins.
+   */
+  it("stays open until a controlled save completes, then closes", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <NotificationLevelPopover
+        level="mentions"
+        onChange={onChange}
+        isSaving={false}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /notifications:/i }));
+    await user.click(screen.getByRole("button", { name: /mute/i }));
+    expect(onChange).toHaveBeenCalledWith("off");
+
+    // Still open while the write is in flight — this is what gives a failure
+    // somewhere to render.
+    rerender(
+      <NotificationLevelPopover
+        level="mentions"
+        onChange={onChange}
+        isSaving={true}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: /every message/i }),
+    ).toBeInTheDocument();
+
+    // Save lands with no error -> dismisses.
+    rerender(
+      <NotificationLevelPopover
+        level="off"
+        onChange={onChange}
+        isSaving={false}
+      />,
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: /every message/i }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("keeps the menu open when the completed save failed", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <NotificationLevelPopover
+        level="mentions"
+        onChange={onChange}
+        isSaving={false}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /notifications:/i }));
+    await user.click(screen.getByRole("button", { name: /mute/i }));
+
+    rerender(
+      <NotificationLevelPopover
+        level="mentions"
+        onChange={onChange}
+        isSaving={true}
+      />,
+    );
+    rerender(
+      <NotificationLevelPopover
+        level="mentions"
+        onChange={onChange}
+        isSaving={false}
+        hasError
+      />,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent(/could not save/i);
+    expect(
+      screen.getByRole("button", { name: /every message/i }),
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * `isSaving` is optional. Without it there is no in-flight transition for the
+   * effect to close on, so the click must dismiss directly — otherwise such a
+   * consumer gets a menu that never goes away.
+   */
+  it("dismisses immediately for a consumer that does not wire isSaving", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<NotificationLevelPopover level="mentions" onChange={onChange} />);
+
+    await user.click(screen.getByRole("button", { name: /notifications:/i }));
+    await user.click(screen.getByRole("button", { name: /mute/i }));
+
+    expect(onChange).toHaveBeenCalledWith("off");
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: /every message/i }),
+      ).not.toBeInTheDocument(),
+    );
   });
 });

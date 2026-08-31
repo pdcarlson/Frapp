@@ -221,6 +221,20 @@ export function ChatShell() {
 
   const setNotificationLevel = useSetChannelNotificationLevel();
 
+  // `useSetChannelNotificationLevel` is ONE mutation instance for the whole
+  // shell, and TanStack keeps `isError` set until the next `mutate()`. Passing
+  // it straight through pinned a "could not save" alert onto every channel for
+  // the rest of the session after a single failure — a confident, wrong claim
+  // about channels the member never touched. Scope it to the channel the failed
+  // write was actually for, and clear it when they move away.
+  const failedChannelId = setNotificationLevel.isError
+    ? setNotificationLevel.variables?.channelId
+    : undefined;
+  const resetNotificationLevel = setNotificationLevel.reset;
+  useEffect(() => {
+    resetNotificationLevel();
+  }, [activeChannelId, resetNotificationLevel]);
+
   // Opening a channel stamps the read cursor — the only thing that moves it, and
   // the only thing that clears the badges above. Without it the rail lights up
   // on first load and never goes out, which is worse than the dead badge this
@@ -396,9 +410,19 @@ export function ChatShell() {
                     ? (levelByChannelId.get(activeChannel.id) ?? "mentions")
                     : "mentions"
                 }
-                disabled={!activeChannel}
+                // Disabled until we actually know the level. The server now
+                // sends an entry for every readable channel, so a missing one
+                // means the read has not landed (or failed outright) — and the
+                // `mentions` fallback above would then be a guess of exactly
+                // the kind this whole change exists to remove. Better an
+                // inert control than one that confidently misreports.
+                disabled={
+                  !activeChannel || !levelByChannelId.has(activeChannel.id)
+                }
                 isSaving={setNotificationLevel.isPending}
-                hasError={setNotificationLevel.isError}
+                hasError={
+                  !!activeChannel && failedChannelId === activeChannel.id
+                }
                 onChange={(level) => {
                   if (!activeChannel) return;
                   setNotificationLevel.mutate({

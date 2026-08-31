@@ -1147,6 +1147,19 @@ export class ChatService {
    * delete the mute row — so keying the response off stored rows would let a
    * caller enumerate channel ids they can no longer read. Driving it off the
    * accessible channel list instead makes that impossible by construction.
+   *
+   * **Cost, stated rather than hidden.** This deliberately gives up the old
+   * `if (rows.length === 0) return []` short-circuit, so every call now loads
+   * the chapter's channels and runs the read predicate — the same work
+   * `getUnreadCounts` already does per request — even for the majority of
+   * members who have muted nothing. That is inherent to the contract: you
+   * cannot report a channel's default without knowing the channel. It is
+   * affordable because the web client's query key was simultaneously lifted
+   * out of the `["channels"]` prefix, so this stopped being invalidated twice
+   * on every channel switch; the per-call cost went up and the call count went
+   * down. If it ever does show up, the fix is a projection on `findByChapter`
+   * (only `id` and `name` are used here), not a return to guessing defaults
+   * client-side.
    */
   async getChannelNotificationPreferences(chapterId: string, userId: string) {
     const [rows, channels] = await Promise.all([
