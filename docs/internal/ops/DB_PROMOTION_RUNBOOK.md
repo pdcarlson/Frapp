@@ -164,6 +164,14 @@ It compares `origin/main` against staging's applied history — **not** your PR'
 head — with a 30-minute grace from the moment a migration landed on `main`,
 which is the window `migrate-staging` needs to apply it.
 
+"Landed on `main`" means the commit on `main`'s own first-parent chain — the
+merge commit, or the squash commit where the merge was squashed — not the
+feature-branch commit that authored the file. The distinction is the whole
+grace: a migration authored last week and merged two minutes ago has had two
+minutes, not a week. Until #1363 the gate measured the authoring commit, so any
+PR that sat in review longer than 30 minutes got no grace at all and the gate
+went red across every open PR seconds after any migration merged.
+
 **It is no longer a required check.** It measures whether staging is behind
 main, which is a question no individual PR contains or can change, so as a
 required check it was a repo-wide merge-freeze switch rather than a gate — and
@@ -174,7 +182,9 @@ check above files a self-closing P1 issue for the same condition.
 So if `migration-drift` is red on your PR and you did not cause it: staging is
 out of sync for everyone and the schema your tests ran against is not the schema
 on staging. That is worth fixing and worth not ignoring — it is simply no longer
-worth blocking your merge on.
+worth blocking your merge on. Since #1363 that reading is reliable; before it,
+a red here in the half hour after a merge was as likely to be the gate
+mis-dating its own grace window as a real drift.
 
 ### `--include-all` (recovery only)
 
