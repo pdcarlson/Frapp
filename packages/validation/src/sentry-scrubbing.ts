@@ -229,6 +229,17 @@ const URL_USERINFO_RE = /([a-zA-Z][a-zA-Z0-9+.-]*:\/\/)[^/\s@]+@/g;
  *
  * Stripping the authority structurally makes both cases moot, which is why
  * this is a parser and not another pattern. Measured cases live on #1388.
+ *
+ * Absolute-form is a real inbound shape, not a defensive nicety: RFC 9112
+ * permits `GET http://host/path HTTP/1.1` on any request, not just to a proxy,
+ * and Node hands `req.url` the request line verbatim. Verified against the
+ * Express version in this repo — such a request arrives with `req.url` intact
+ * while `req.path` is already `/v1/health`, so anything reading `req.url`
+ * sees the authority.
+ *
+ * Reducing it also keeps grouping honest on both sinks: absolute-form records
+ * would otherwise never group with the origin-form records for the same route,
+ * which is exactly when someone is probing.
  */
 export function stripAuthority(path: string): string {
   // Origin-form, the overwhelmingly common case: already just a path. This
