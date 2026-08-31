@@ -1,6 +1,13 @@
-name: Nightly DB Backup
+name: Nightly Backup
 
-# Offsite logical backup of the staging database (#852).
+# Offsite backup of staging: the database (#852) and Storage objects (#1290).
+#
+# Two jobs, because they are two genuinely different mechanisms and neither is a
+# flag on the other. `backup-staging` dumps Postgres with the Supabase CLI.
+# `backup-staging-storage` mirrors Storage objects, which a database dump cannot
+# cover -- "Database backups do not include objects you store via the Storage
+# API, as the database only includes metadata about these objects." A restore
+# needs both halves or it produces rows referencing files nobody kept.
 #
 # This is not redundancy on top of a provider snapshot. The `Frapp Live` org is on
 # the Supabase FREE plan, which gets no dashboard-accessible daily backups and no
@@ -20,6 +27,15 @@ on:
     # deploy pipeline so a dump never races a migration apply.
     - cron: "0 7 * * *"
   workflow_dispatch:
+    inputs:
+      storage_rehearsal:
+        description: >-
+          Run the Storage restore rehearsal instead of a plain backup: write a
+          canary object, back it up, delete it from Storage, restore it from the
+          offsite copy, and assert the bytes match. This is the drill that turns
+          a copy into a backup -- it writes and deletes only its own canary.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -181,6 +197,110 @@ jobs:
             echo "- Destination: \`$BACKUP_S3_BUCKET/staging/\`"
             echo "- Read-back verified against the bucket."
             echo
-            echo "Covers application data only. Storage objects are **not** included —"
-            echo "see DB_ROLLBACK_PLAYBOOK.md § What this backup does not cover."
+            echo "Covers application data only. Storage objects are backed up by the"
+            echo "\`backup-staging-storage\` job in this same workflow (#1290); a full"
+            echo "recovery needs both halves. See DB_ROLLBACK_PLAYBOOK.md."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Storage objects. Runs independently of the dump above: a failure to back up
+  # the database must not skip Storage, and vice versa -- two half-backups are
+  # more recoverable than one that never ran. Reads Storage over its REST API
+  # with the service-role key, so unlike the S3-protocol route it needs no
+  # credential that does not already exist. Rationale in scripts/storage-backup.mjs.
+  backup-staging-storage:
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify Infisical credentials are configured
+        env:
+          CLIENT_ID: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+        run: |
+          MISSING=""
+          [ -n "$CLIENT_ID" ] || MISSING="$MISSING INFISICAL_MACHINE_IDENTITY_ID"
+          [ -n "$CLIENT_SECRET" ] || MISSING="$MISSING INFISICAL_CLIENT_SECRET"
+          if [ -n "$MISSING" ]; then
+            echo "::error::Infisical credentials are not configured for the staging environment. Missing or empty:$MISSING. See docs/internal/environment/SECRETS_MANAGEMENT.md."
+            exit 1
+          fi
+
+      - name: Inject staging secrets from Infisical
+        uses: Infisical/secrets-action@v1.0.12
+        with:
+          method: "universal"
+          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: "frapp-live-ej-ls"
+          env-slug: "staging"
+          secret-path: "/"
+          include-imports: true
+
+      # Same fail-fast posture as the dump job, and the same reason: a backup
+      # job that goes green without writing a backup anywhere is the illusion
+      # this work exists to destroy. SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY
+      # are checked alongside the destination because this job needs the source
+      # credentials too -- the dump job gets its source from `supabase link`.
+      - name: Check source and destination are configured
+        run: |
+          MISSING=""
+          [ -n "${SUPABASE_URL:-}" ]                || MISSING="$MISSING SUPABASE_URL"
+          [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ]   || MISSING="$MISSING SUPABASE_SERVICE_ROLE_KEY"
+          [ -n "${BACKUP_S3_ENDPOINT:-}" ]          || MISSING="$MISSING BACKUP_S3_ENDPOINT"
+          [ -n "${BACKUP_S3_BUCKET:-}" ]            || MISSING="$MISSING BACKUP_S3_BUCKET"
+          [ -n "${BACKUP_S3_ACCESS_KEY_ID:-}" ]     || MISSING="$MISSING BACKUP_S3_ACCESS_KEY_ID"
+          [ -n "${BACKUP_S3_SECRET_ACCESS_KEY:-}" ] || MISSING="$MISSING BACKUP_S3_SECRET_ACCESS_KEY"
+          if [ -n "$MISSING" ]; then
+            {
+              echo "## Nightly Storage backup did not run"
+              echo
+              echo "Secrets did not reach this job. Missing:"
+              echo
+              for s in $MISSING; do echo "- \`$s\`"; done
+              echo
+              echo "All of these are provisioned in Infisical \`staging\` at \`/\` -- the"
+              echo "\`BACKUP_S3_*\` four since 2026-08-27 (#1287), and the Supabase pair long"
+              echo "before that. So this is a **regression**, not first-time setup: do not"
+              echo "re-provision anything. See docs/internal/environment/SECRETS_MANAGEMENT.md."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::Storage backup secrets missing from the job env (missing:$MISSING). Already provisioned -- check Infisical staging."
+            exit 1
+          fi
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Back up Storage objects
+        id: storage
+        env:
+          AWS_ACCESS_KEY_ID: ${{ env.BACKUP_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ env.BACKUP_S3_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ env.BACKUP_S3_REGION || 'auto' }}
+        run: |
+          if [ "${{ inputs.storage_rehearsal }}" = "true" ]; then
+            node scripts/storage-backup-run.mjs rehearse --prefix storage
+          else
+            node scripts/storage-backup-run.mjs backup --prefix storage
+          fi
+
+      - name: Summary
+        if: success()
+        run: |
+          {
+            echo "## Nightly Storage backup"
+            echo
+            echo "- Source: \`frapp-staging\` Storage (all buckets)"
+            echo "- Destination: \`$BACKUP_S3_BUCKET/storage/\`"
+            echo "- Manifest read back from the bucket after upload."
+            echo
+            echo "Incremental: unchanged objects are not re-fetched. Deleted objects are"
+            echo "tombstoned and stay restorable for \`BACKUP_RETENTION_DAYS\` (default 30)."
+            echo
+            echo "Restore: DB_ROLLBACK_PLAYBOOK.md section 'Restoring Storage objects'."
           } >> "$GITHUB_STEP_SUMMARY"
