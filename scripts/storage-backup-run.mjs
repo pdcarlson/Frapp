@@ -30,6 +30,10 @@ import { dirname, join } from "node:path";
 
 import {
   DEFAULT_RETENTION_DAYS,
+  REHEARSAL_BUCKET,
+  REHEARSAL_CONTENT_TYPE,
+  REHEARSAL_PREFIX,
+  assertSafeObjectPath,
   backupKey,
   checkDeletionSanity,
   downloadObject,
@@ -39,9 +43,6 @@ import {
   sha256,
   uploadObject,
 } from "./storage-backup.mjs";
-
-const REHEARSAL_BUCKET = "reports";
-const REHEARSAL_PREFIX = "_backup-rehearsal";
 
 function requireEnv(name) {
   const v = process.env[name];
@@ -242,6 +243,7 @@ async function runRestore(opts) {
     }
 
     for (const obj of targets) {
+      assertSafeObjectPath(obj.path);
       const local = join(tmp, "restore", obj.bucket, obj.path);
       mkdirSync(dirname(local), { recursive: true });
       aws(
@@ -285,7 +287,7 @@ async function runRehearsal(opts) {
     bucket: REHEARSAL_BUCKET,
     path,
     body,
-    contentType: "text/plain",
+    contentType: REHEARSAL_CONTENT_TYPE,
   });
 
   console.log("2/5 backing up");

@@ -1,8 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+import { readFileSync, readdirSync } from "node:fs";
+
 import {
   DEFAULT_RETENTION_DAYS,
+  REHEARSAL_BUCKET,
+  REHEARSAL_CONTENT_TYPE,
+  assertSafeObjectPath,
   LIST_PAGE_SIZE,
   backupKey,
   checkDeletionSanity,
@@ -374,4 +379,45 @@ test("tombstones already in the manifest do not count toward the live corpus", (
   });
   assert.equal(verdict.ok, false, "19 of 20 live objects must trip it despite 500 old tombstones");
   assert.equal(verdict.live, 20);
+});
+
+// -- The rehearsal canary must be writable into the bucket it targets ---------
+
+test("the rehearsal bucket actually permits the canary's content type", () => {
+  // This caught a real bug before it shipped. The rehearsal first targeted
+  // `reports`, whose allowed_mime_types is exactly ['application/pdf'] -- so a
+  // text/plain canary was rejected with a 400 and the drill failed every single
+  // time, for a reason with nothing to do with the backup. Every bucket in this
+  // project pins allowed_mime_types, so the pairing has to be checked, not
+  // assumed. Reads the migrations rather than a hand-copied list, because a
+  // hand-copied list is the thing that goes stale.
+  const dir = "supabase/migrations";
+  const declaration = readdirSync(dir)
+    .filter((f) => f.endsWith(".sql"))
+    .map((f) => readFileSync(`${dir}/${f}`, "utf8"))
+    .join("\n")
+    // The bucket's tuple: its quoted id, then everything up to the closing
+    // bracket of its allowed_mime_types array.
+    .match(new RegExp(`'${REHEARSAL_BUCKET}',\\s*'${REHEARSAL_BUCKET}',[^\\]]*\\]`));
+
+  assert.ok(declaration, `no storage.buckets declaration found for '${REHEARSAL_BUCKET}'`);
+  assert.ok(
+    declaration[0].includes(`'${REHEARSAL_CONTENT_TYPE}'`),
+    `bucket '${REHEARSAL_BUCKET}' does not allow '${REHEARSAL_CONTENT_TYPE}', so the rehearsal canary would be rejected`,
+  );
+});
+
+// -- assertSafeObjectPath ----------------------------------------------------
+
+test("a restore refuses an object path that would escape the directory", () => {
+  // Object names are attacker-influenced -- a member picks the filename they
+  // upload -- and a restore turns each one into a local path.
+  assert.throws(() => assertSafeObjectPath("../../etc/passwd"), /unsafe object path/);
+  assert.throws(() => assertSafeObjectPath("chapter-1/../../../x"), /unsafe object path/);
+  assert.throws(() => assertSafeObjectPath("a//b.pdf"), /unsafe object path/);
+});
+
+test("ordinary object paths are accepted unchanged", () => {
+  assert.equal(assertSafeObjectPath("chapter-1/bylaws.pdf"), "chapter-1/bylaws.pdf");
+  assert.equal(assertSafeObjectPath("file with spaces.png"), "file with spaces.png");
 });

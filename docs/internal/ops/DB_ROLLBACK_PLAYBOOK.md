@@ -240,7 +240,9 @@ A copy nobody has restored from is not a backup. The drill is automated: Actions
 → **Nightly Backup** → *Run workflow* → tick **`storage_rehearsal`**. It writes a
 canary object, backs it up, deletes it from Storage, restores it from R2, and
 asserts the bytes match byte-for-byte, then cleans up after itself. It only ever
-touches its own canary under `reports/_backup-rehearsal/`.
+touches its own canary under `documents/_backup-rehearsal/`, and deletes it
+again on the way out. (`documents` rather than `reports` because every bucket
+here pins `allowed_mime_types` and `reports` permits only `application/pdf`.)
 
 Record each run in the rehearsal log below.
 
