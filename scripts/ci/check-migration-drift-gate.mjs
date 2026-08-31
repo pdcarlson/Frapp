@@ -34,9 +34,14 @@
 // minutes ago is instantly "24h overdue" by that measure, so every PR opened in
 // the minutes after a migration merge would go red while the apply is still
 // running. This gate instead asks git when the file actually landed on main
-// (`git log -1 --format=%ct`), which is precisely "how long has staging had to
-// catch up". Default grace is 30 minutes — comfortably longer than a
-// `migrate-staging` run, far shorter than a working day.
+// (`git log -1 --first-parent --format=%ct`), which is precisely "how long has
+// staging had to catch up". Default grace is 30 minutes — comfortably longer
+// than a `migrate-staging` run, far shorter than a working day.
+//
+// `--first-parent` is what makes that true rather than merely intended: see
+// the comment at the call site. Without it the grace was measured from the
+// feature-branch commit, so a PR that sat in review longer than the window got
+// no grace at all — which is every agent-authored migration PR.
 //
 // ── Read-only ───────────────────────────────────────────────────────────────
 // Same data source as the sibling: `GET /v1/projects/{ref}/database/migrations`
@@ -121,9 +126,19 @@ export function readMigrationsAtRef({ ref, runGit = defaultRunGit }) {
 
     let landedMs = null;
     try {
+      // `--first-parent` is load-bearing, not a stylistic flag. Without it
+      // `git log` walks into the merged branch and returns the commit that
+      // AUTHORED the file, which is the moment someone started the PR — not
+      // the moment the migration reached `ref`. The grace window above is
+      // specified as "how long has staging had to catch up", so it has to run
+      // from the landing. Restricted to the first-parent chain, the answer is
+      // the merge commit on `ref`'s own history; under a squash merge the
+      // squash commit is already that same commit, so this is correct for both
+      // merge styles this repo has used.
       const stamp = runGit([
         "log",
         "-1",
+        "--first-parent",
         "--format=%ct",
         ref,
         "--",
