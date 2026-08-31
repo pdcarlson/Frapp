@@ -113,6 +113,10 @@ export function useConfirmDocumentUpload() {
       title: string;
       description?: string;
       folder?: string;
+      content_type?: string;
+      byte_size?: number;
+      document_type?: string;
+      effective_date?: string;
     }) => {
       const { data, error } = await client.POST("/v1/documents", { body });
       if (error) throw error;

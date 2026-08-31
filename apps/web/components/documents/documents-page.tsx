@@ -66,6 +66,10 @@ type ChapterDocument = {
   storage_path: string;
   uploaded_by: string;
   created_at: string;
+  content_type: string | null;
+  byte_size: number | null;
+  document_type: string | null;
+  effective_date: string | null;
 };
 
 // The signed-URL flow blocks SVG + executables. Kind `document` in
@@ -195,8 +199,17 @@ export function DocumentsPage() {
     title: string;
     description: string;
     folder: string;
+    documentType: string;
+    effectiveDate: string;
     file: File | null;
-  }>({ title: "", description: "", folder: "", file: null });
+  }>({
+    title: "",
+    description: "",
+    folder: "",
+    documentType: "",
+    effectiveDate: "",
+    file: null,
+  });
   const [uploading, setUploading] = useState(false);
   /*
     Which rows' deletes are in flight — a set, not a scalar. `useDeleteDocument` is pessimistic —
@@ -276,13 +289,24 @@ export function DocumentsPage() {
         title: uploadDraft.title.trim() || file.name,
         description: uploadDraft.description.trim() || undefined,
         folder: uploadDraft.folder.trim() || undefined,
+        content_type: contentType,
+        byte_size: file.size,
+        document_type: uploadDraft.documentType.trim() || undefined,
+        effective_date: uploadDraft.effectiveDate || undefined,
       });
       toast({
         title: "Document uploaded",
         description: `${file.name} is now in the chapter library.`,
       });
       uploadDialog.setOpen(false);
-      setUploadDraft({ title: "", description: "", folder: "", file: null });
+      setUploadDraft({
+        title: "",
+        description: "",
+        folder: "",
+        documentType: "",
+        effectiveDate: "",
+        file: null,
+      });
     } catch (error) {
       toast({
         title: "Couldn't upload document",
@@ -447,6 +471,36 @@ export function DocumentsPage() {
                       }))
                     }
                     placeholder="Governance"
+                  />
+                </div>
+                <div className="grid gap-1">
+                  <Label htmlFor="doc-type">Document type (optional)</Label>
+                  <Input
+                    id="doc-type"
+                    value={uploadDraft.documentType}
+                    onChange={(event) =>
+                      setUploadDraft((prev) => ({
+                        ...prev,
+                        documentType: event.target.value,
+                      }))
+                    }
+                    placeholder="Bylaws"
+                  />
+                </div>
+                <div className="grid gap-1">
+                  <Label htmlFor="doc-effective-date">
+                    Effective date (optional)
+                  </Label>
+                  <Input
+                    id="doc-effective-date"
+                    type="date"
+                    value={uploadDraft.effectiveDate}
+                    onChange={(event) =>
+                      setUploadDraft((prev) => ({
+                        ...prev,
+                        effectiveDate: event.target.value,
+                      }))
+                    }
                   />
                 </div>
                 <div className="grid gap-1">
@@ -657,6 +711,10 @@ export function DocumentsPage() {
                       <p className="text-[12.5px] text-muted-foreground">
                         Uploaded {new Date(doc.created_at).toLocaleDateString()}
                         {doc.folder ? ` · ${doc.folder}` : ""}
+                        {doc.document_type ? ` · ${doc.document_type}` : ""}
+                        {doc.effective_date
+                          ? ` · Effective ${new Date(doc.effective_date).toLocaleDateString()}`
+                          : ""}
                       </p>
                     </div>
                     <div className="flex items-center gap-2 sm:ml-auto">

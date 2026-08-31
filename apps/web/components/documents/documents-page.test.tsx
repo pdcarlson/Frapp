@@ -1,6 +1,12 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 import { networkMock } from "@/tests/network";
 
@@ -9,6 +15,8 @@ const {
   mockDeleteDoc,
   mockRefetch,
   mockDocumentRefetch,
+  mockRequestUpload,
+  mockConfirmUpload,
   documentsQuery,
   mockOffline,
 } = vi.hoisted(() => ({
@@ -16,6 +24,8 @@ const {
   mockDeleteDoc: vi.fn().mockResolvedValue({}),
   mockRefetch: vi.fn(),
   mockDocumentRefetch: vi.fn(),
+  mockRequestUpload: vi.fn(),
+  mockConfirmUpload: vi.fn(),
   mockOffline: { value: false },
   documentsQuery: {
     data: [] as unknown[],
@@ -44,8 +54,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCurrentChapter: () => mockCurrentChapter(),
   useDocuments: () => documentsQuery,
   useDocument: () => ({ refetch: mockDocumentRefetch }),
-  useRequestDocumentUploadUrl: () => ({ mutateAsync: vi.fn() }),
-  useConfirmDocumentUpload: () => ({ mutateAsync: vi.fn() }),
+  useRequestDocumentUploadUrl: () => ({ mutateAsync: mockRequestUpload }),
+  useConfirmDocumentUpload: () => ({ mutateAsync: mockConfirmUpload }),
   useDeleteDocument: () => ({ mutateAsync: mockDeleteDoc }),
 }));
 
@@ -262,6 +272,86 @@ describe("DocumentsPage upload allowlist", () => {
     expect(accept.split(",")).toContain(".doc");
     expect(accept.split(",")).toContain(".xls");
     expect(accept.split(",")).toContain(".ppt");
+  });
+});
+
+describe("DocumentsPage upload metadata", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chapter.active();
+    mockRequestUpload.mockResolvedValue({
+      upload_url: "https://storage.example/put",
+      storage_path: "chapters/chap-1/documents/doc-1/bylaws.pdf",
+    });
+    mockConfirmUpload.mockResolvedValue({});
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true } as Response));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("sends content type, size, document type and effective date on confirm", async () => {
+    render(<DocumentsPage />);
+    await userEvent.click(uploadTrigger());
+
+    const dialog = screen.getByRole("dialog");
+    await userEvent.type(within(dialog).getByLabelText(/title/i), "Bylaws 2026");
+    await userEvent.type(
+      within(dialog).getByLabelText(/document type/i),
+      "Bylaws",
+    );
+    fireEvent.change(within(dialog).getByLabelText(/effective date/i), {
+      target: { value: "2026-01-01" },
+    });
+
+    const file = new File(["%PDF-1.4"], "bylaws.pdf", {
+      type: "application/pdf",
+    });
+    fireEvent.change(within(dialog).getByLabelText(/^file$/i), {
+      target: { files: [file] },
+    });
+
+    const submit = within(dialog).getByRole("button", { name: /^upload$/i });
+    await waitFor(() => expect(submit).toBeEnabled());
+    await userEvent.click(submit);
+
+    await waitFor(() => expect(mockConfirmUpload).toHaveBeenCalledTimes(1));
+    expect(mockConfirmUpload).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content_type: "application/pdf",
+        byte_size: file.size,
+        document_type: "Bylaws",
+        effective_date: "2026-01-01",
+      }),
+    );
+  });
+
+  it("omits document type and effective date when left blank", async () => {
+    render(<DocumentsPage />);
+    await userEvent.click(uploadTrigger());
+
+    const dialog = screen.getByRole("dialog");
+    await userEvent.type(within(dialog).getByLabelText(/title/i), "Agenda");
+
+    const file = new File(["%PDF-1.4"], "agenda.pdf", {
+      type: "application/pdf",
+    });
+    fireEvent.change(within(dialog).getByLabelText(/^file$/i), {
+      target: { files: [file] },
+    });
+
+    const submit = within(dialog).getByRole("button", { name: /^upload$/i });
+    await waitFor(() => expect(submit).toBeEnabled());
+    await userEvent.click(submit);
+
+    await waitFor(() => expect(mockConfirmUpload).toHaveBeenCalledTimes(1));
+    expect(mockConfirmUpload).toHaveBeenCalledWith(
+      expect.objectContaining({
+        document_type: undefined,
+        effective_date: undefined,
+      }),
+    );
   });
 });
 
