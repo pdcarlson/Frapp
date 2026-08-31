@@ -117,9 +117,13 @@ function isCompleteColor(value: string): boolean {
 function tokensReadBy(colors: unknown): string[] {
   const tokens: string[] = [];
   const visit = (node: unknown): void => {
-    if (typeof node === "function") {
-      const emitted = String((node as (arg?: unknown) => unknown)());
-      const token = emitted.match(/^var\((--[\w-]+)\)$/)?.[1];
+    // A bare `var(--token)` string is the only shape a colour key takes. It was
+    // a `({ opacityValue }) => string` function until the Tailwind v4 bump,
+    // which ignores non-string colour values outright — so a function reaching
+    // here again means those keys are being dropped by the compiler, and this
+    // walker must not quietly resolve one back into a token it no longer emits.
+    if (typeof node === "string") {
+      const token = node.match(/^var\((--[\w-]+)\)$/)?.[1];
       if (token) tokens.push(token);
       return;
     }

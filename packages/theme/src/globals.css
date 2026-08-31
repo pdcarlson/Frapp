@@ -1,6 +1,4 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 /*
  * Frapp design tokens — bone / bronze / ink palette. LEGACY: serves only the
