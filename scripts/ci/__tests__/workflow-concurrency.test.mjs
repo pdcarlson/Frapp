@@ -137,9 +137,13 @@ describe("workflow concurrency — a main push run must never cancel another", (
     const guard = workflows.find((w) => w.name === "pr-base-guard.yml");
     assert.ok(guard, "pr-base-guard.yml must exist");
     assert.equal(pushesToMain(guard.text), false, "pr-base-guard must not run on push");
-    assert.ok(
-      !concurrencyOf(guard.text)?.group.includes("github.ref"),
-      "pr-base-guard's exemption rests on its group NOT being ref-keyed",
+    // Asserted by equality rather than a negated `includes`: with optional
+    // chaining, deleting the concurrency block entirely would make the negated
+    // form pass vacuously, which is the failure this suite exists to avoid.
+    assert.equal(
+      concurrencyOf(guard.text)?.group,
+      "pr-base-guard-${{ github.event.pull_request.number }}",
+      "pr-base-guard's exemption rests on a PR-number-keyed group, not github.ref",
     );
   });
 });
