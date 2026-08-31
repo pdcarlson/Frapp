@@ -83,12 +83,22 @@ export class ChatNotificationPreferenceRepository {
   /**
    * Set the caller's level for one channel.
    *
-   * `onConflict` names the columns of `idx_chat_notif_prefs_unique`
-   * (20260527120000). That index is expression-based —
-   * `coalesce(scope_id::text, scope_kind)` — so it covers both the `channel`
-   * and `kind` arms in one constraint; naming the plain columns here is what
-   * PostgREST needs to target it, and it is why setting a channel level twice
-   * updates rather than accumulating rows.
+   * `onConflict` names the columns of `idx_chat_notif_prefs_channel_unique`
+   * (20260829011200) — the plain `(user_id, chapter_id, scope, scope_id)`
+   * index added for exactly this call, and the reason setting a channel level
+   * twice updates rather than accumulating rows.
+   *
+   * It deliberately does NOT target `idx_chat_notif_prefs_unique`
+   * (20260527120000), and it cannot: that one is expression-based on
+   * `coalesce(scope_id::text, scope_kind)`, `ON CONFLICT` only matches an index
+   * defined on those exact columns or expressions, and PostgREST's
+   * `on_conflict` takes column NAMES and cannot express `coalesce(...)`.
+   * Against the expression index alone Postgres raises `42P10 there is no
+   * unique or exclusion constraint matching the ON CONFLICT specification`, so
+   * this write would 500 on every call. Both indexes are load-bearing: the
+   * expression one still enforces the real invariant across both scope arms,
+   * and dropping the plain one breaks this method — see that migration's
+   * ROLLBACK note.
    *
    * `updated_at` is left to the table's `trg_chat_notification_preferences_updated_at`
    * trigger rather than being set here — one writer for that column, not two.

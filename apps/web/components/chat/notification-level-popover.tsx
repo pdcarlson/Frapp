@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { MuteGlyph } from "./chat-glyphs";
 import {
@@ -24,9 +24,14 @@ import type { ChatNotificationLevel } from "@repo/hooks";
  * populates.
  *
  * The three levels are the schema's, not an invention
- * (`chat_notification_preferences.level`). `mentions` is the default for
- * ordinary channels, so it is labelled as such rather than presented as a third
- * exotic option.
+ * (`chat_notification_preferences.level`).
+ *
+ * **`level` is the EFFECTIVE level, resolved server-side.** It is not "the
+ * stored row, else `mentions`": `defaultLevelFor` sends `#announcements` to
+ * `all` and `#chapter-audit` to `off`, so a client-side `mentions` assumption
+ * misreported exactly the channels members most want to turn down — and the
+ * no-op guard below then swallowed the corrective click. The server resolves
+ * the default so this component never has to know one.
  */
 
 const OPTIONS: {
@@ -42,7 +47,10 @@ const OPTIONS: {
   {
     level: "mentions",
     label: "Only @mentions",
-    description: "The default. Notify me when someone addresses me.",
+    // Not labelled "the default" any more: it is the default for ordinary
+    // channels but not for #announcements (`all`) or #chapter-audit (`off`),
+    // and the popover is shown on those too.
+    description: "Notify me when someone addresses me.",
   },
   {
     level: "off",
@@ -56,15 +64,32 @@ export function NotificationLevelPopover({
   onChange,
   disabled,
   isSaving,
+  hasError,
 }: {
-  /** The channel's current level; `mentions` when the user has set nothing. */
+  /** The channel's server-resolved EFFECTIVE level (stored row, else the channel's default). */
   level: ChatNotificationLevel;
   onChange: (level: ChatNotificationLevel) => void;
   disabled?: boolean;
   isSaving?: boolean;
+  /**
+   * The last write failed. Rendered inside the popover AND kept open on
+   * failure — a mutation with no visible error state let a member close this
+   * believing a setting was saved that was not.
+   */
+  hasError?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const isMuted = level === "off";
+
+  // Close on a SUCCESSFUL save, not on click. Closing on click is what made a
+  // failed write invisible: the popover was already gone before the mutation
+  // rejected, so the member saw a dismissed menu and assumed it had stuck.
+  // Staying open until the write lands means `hasError` has somewhere to show.
+  const wasSaving = useRef(false);
+  useEffect(() => {
+    if (wasSaving.current && !isSaving && !hasError) setOpen(false);
+    wasSaving.current = Boolean(isSaving);
+  }, [isSaving, hasError]);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -100,9 +125,15 @@ export function NotificationLevelPopover({
                   aria-current={selected ? "true" : undefined}
                   onClick={() => {
                     // A no-op write still costs a round trip and would bump
-                    // updated_at for nothing.
-                    if (!selected) onChange(option.level);
-                    setOpen(false);
+                    // updated_at for nothing. This is only safe because `level`
+                    // is the server-resolved EFFECTIVE level — when it was a
+                    // client-side `mentions` guess, this guard silently ate the
+                    // one click that would have fixed a mis-shown channel.
+                    if (selected) {
+                      setOpen(false);
+                      return;
+                    }
+                    onChange(option.level);
                   }}
                   className={cn(
                     "flex w-full flex-col gap-0.5 px-3 py-2.5 text-left transition-colors disabled:opacity-60",
@@ -127,6 +158,15 @@ export function NotificationLevelPopover({
             );
           })}
         </ul>
+        {hasError ? (
+          <p
+            role="alert"
+            className="border-t border-border px-3 py-2.5 text-[12.5px] text-destructive"
+          >
+            Could not save that. Your notification level is unchanged — try
+            again.
+          </p>
+        ) : null}
       </PopoverContent>
     </Popover>
   );

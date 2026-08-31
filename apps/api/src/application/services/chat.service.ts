@@ -58,6 +58,7 @@ import { ChannelAccessService } from './channel-access.service';
 import { ActivationService } from './activation.service';
 import { ChatNotificationPreferenceRepository } from '../../modules/chat-push-worker/chat-notification-preference.repository';
 import type { ChatNotificationLevel } from '../../modules/chat-push-worker/chat-notification-preference.repository';
+import { defaultLevelFor } from '../../modules/chat-push-worker/push-rules';
 
 const MAX_PINNED_MESSAGES = 50;
 const MAX_GROUP_DM_MEMBERS = 10;
@@ -1116,7 +1117,7 @@ export class ChatService {
   // ── Per-channel notification level (mute) ────────────────────────────
 
   /**
-   * The caller's own channel-scoped notification levels (#296).
+   * The caller's EFFECTIVE channel-scoped notification levels (#296).
    *
    * Returned as its own collection rather than folded into the channel payload,
    * matching how unread counts are served. `channel-list.tsx` documents why: an
@@ -1124,32 +1125,58 @@ export class ChatService {
    * unread tracking", nothing ever populated it, and the badge reading it could
    * never render. `muted` was the second field in that state until this slice.
    *
-   * Only rows the caller can still see are returned. A preference row survives
-   * losing access to its channel — leaving a private channel does not delete the
-   * mute row — so returning them unfiltered would let a caller enumerate channel
-   * ids they can no longer read. `filterAccessibleChannelIds` is the same batch
-   * predicate `getUnreadCounts` uses for exactly this reason.
+   * **Effective, not stored — and that distinction is the whole point.** An
+   * earlier cut of this returned only rows that exist in
+   * `chat_notification_preferences`, leaving the client to assume `mentions`
+   * for everything else. That is wrong for exactly the channels members most
+   * want to turn down: `defaultLevelFor` sends `#announcements` to `all` and
+   * `#chapter-audit` to `off`, and both are seeded into every chapter by
+   * `DEFAULT_CHANNELS`. The control would then have shown "Only @mentions" on a
+   * channel actually pushing every message at URGENT, and — because the popover
+   * suppresses a write for the option already displayed as current — the single
+   * most natural corrective click did nothing at all.
+   *
+   * Resolving the default here rather than in the client keeps ONE
+   * implementation of it, the one `push-rules.ts` already uses to decide real
+   * pushes and that `push-rules.spec.ts` already pins. A second copy in web
+   * could drift from the worker, and a UI that disagrees with the worker about
+   * whether you are muted is worse than no UI.
+   *
+   * Only channels the caller can still read are returned. A preference row
+   * survives losing access to its channel — leaving a private channel does not
+   * delete the mute row — so keying the response off stored rows would let a
+   * caller enumerate channel ids they can no longer read. Driving it off the
+   * accessible channel list instead makes that impossible by construction.
    */
   async getChannelNotificationPreferences(chapterId: string, userId: string) {
-    const rows = await this.chatNotificationPrefs.findChannelPreferencesForUser(
-      userId,
-      chapterId,
-    );
-    if (rows.length === 0) return [];
+    const [rows, channels] = await Promise.all([
+      this.chatNotificationPrefs.findChannelPreferencesForUser(
+        userId,
+        chapterId,
+      ),
+      this.channelRepo.findByChapter(chapterId),
+    ]);
 
-    const channelIds = rows
-      .map((row) => row.scope_id)
-      .filter((id): id is string => id !== null);
-    const accessible = await this.channelAccess.filterAccessibleChannelIds(
+    const accessible = await this.channelAccess.filterAccessibleChannels(
       chapterId,
       userId,
-      channelIds,
+      channels,
     );
-    const allowed = new Set(accessible);
+    if (accessible.length === 0) return [];
 
-    return rows
-      .filter((row) => row.scope_id !== null && allowed.has(row.scope_id))
-      .map((row) => ({ channel_id: row.scope_id as string, level: row.level }));
+    const stored = new Map<string, ChatNotificationLevel>();
+    for (const row of rows) {
+      if (row.scope_id !== null) stored.set(row.scope_id, row.level);
+    }
+
+    // `'text'` is the ordinary-message kind: this endpoint answers "what does
+    // this channel do by default", not "what would this one message do". The
+    // kind-scoped arms (`system_audit`, `imported`) are decided per message in
+    // `decidePush` and are deliberately not user-settable here.
+    return accessible.map((channel) => ({
+      channel_id: channel.id,
+      level: stored.get(channel.id) ?? defaultLevelFor(channel.name, 'text'),
+    }));
   }
 
   /**

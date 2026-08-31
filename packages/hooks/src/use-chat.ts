@@ -154,7 +154,13 @@ export interface ChannelNotificationPreference {
 export function useChannelNotificationPreferences() {
   const client = useFrappClient();
   return useQuery({
-    queryKey: ["channels", "notification-preferences"],
+    // Deliberately NOT nested under ["channels"]. `useMarkChannelRead`
+    // invalidates that whole prefix, and TanStack Query matches prefixes
+    // non-exactly, so nesting made this endpoint refetch on every channel open
+    // AND close — two extra round trips per channel switch, each one re-running
+    // the accessible-channel predicate server-side. Mute state does not change
+    // when a read receipt is written, so it should not be invalidated by one.
+    queryKey: ["channel-notification-preferences"],
     queryFn: async () => {
       const { data, error } = await client.GET(
         "/v1/channels/notification-preferences",
@@ -189,7 +195,17 @@ export function useSetChannelNotificationLevel() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["channels", "notification-preferences"],
+        queryKey: ["channel-notification-preferences"],
+      });
+    },
+    // A failed write must not leave the control asserting a level the server
+    // never stored. Re-reading is the honest recovery: the popover snaps back
+    // to the real level instead of silently displaying the one that failed.
+    // The caller still surfaces `isError` — this only repairs the displayed
+    // state, it does not tell the member anything on its own.
+    onError: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["channel-notification-preferences"],
       });
     },
   });

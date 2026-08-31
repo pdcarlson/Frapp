@@ -91,4 +91,50 @@ describe("NotificationLevelPopover", () => {
     // is nothing to mute, so the control says so rather than silently no-oping.
     expect(screen.getByRole("button")).toBeDisabled();
   });
+
+  /**
+   * A write that fails must say so. Before this the popover closed on click,
+   * so a rejected PUT dismissed the menu exactly as a successful one did and
+   * the member walked away believing a setting had been saved that had not.
+   */
+  it("surfaces a failed save instead of closing silently", async () => {
+    const user = userEvent.setup();
+    render(
+      <NotificationLevelPopover level="mentions" onChange={vi.fn()} hasError />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /notifications:/i }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(/could not save/i);
+  });
+
+  it("says nothing about errors when the save succeeded", async () => {
+    const user = userEvent.setup();
+    render(<NotificationLevelPopover level="mentions" onChange={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: /notifications:/i }));
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  /**
+   * The popover stays open while the write is in flight, so the error has
+   * somewhere to land. Closing is driven by the save completing, not by the
+   * click — see the effect in the component.
+   */
+  it("keeps the menu open while a write is in flight", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <NotificationLevelPopover
+        level="mentions"
+        onChange={onChange}
+        isSaving
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /notifications:/i }));
+    const menu = screen.getByRole("button", { name: /every message/i });
+    expect(menu).toBeInTheDocument();
+  });
 });

@@ -140,10 +140,19 @@ with no policies and the API holds the `service_role` key, so that application-l
 the only thing stopping a member from writing a preference row about a private channel or a DM
 they are not part of, which would confirm that channel exists.
 
-`GET /v1/channels/notification-preferences` returns the caller's channel-scoped rows, filtered
-to channels they can still read — a preference row outlives access to its channel, so an
-unfiltered response would let a caller enumerate channel ids they have lost access to. It is a
-separate endpoint rather than a `muted` field on the channel payload, matching how unread
+`GET /v1/channels/notification-preferences` returns the caller's **effective** level for every
+channel they can read — the stored row where one exists, otherwise that channel's default from
+`defaultLevelFor`. It deliberately does not return "stored rows only": the defaults are not
+uniform (`#announcements` is `all`, `#chapter-audit` is `off`, and both are seeded into every
+chapter), so a client assuming `mentions` for an absent row would misreport exactly the
+channels members most want to turn down, and the popover — which suppresses a write for the
+level it already shows as current — would then swallow the corrective click. Resolving the
+default server-side keeps one implementation of it, the one the push worker already uses.
+
+The response is driven by the accessible-channel list rather than by the stored rows, which is
+also what makes enumeration impossible: a preference row outlives access to its channel, so
+keying the response off rows would let a caller learn channel ids they have lost access to. It
+is a separate endpoint rather than a `muted` field on the channel payload, matching how unread
 counts are served; `channel-list.tsx` records why a per-user field on the shared channel type
 is the wrong shape.
 

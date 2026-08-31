@@ -1,11 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  AuditGlyph,
-  DirectMessageGlyph,
-  LockGlyph,
-} from "./chat-glyphs";
+import { AuditGlyph, DirectMessageGlyph, LockGlyph } from "./chat-glyphs";
 import {
   EmptyState,
   ErrorState,
@@ -33,7 +29,10 @@ import {
   type ChannelUnread,
   type ChatChannel,
 } from "./channel-list";
-import { MessageTimeline, type MessageTimelineHandle } from "./message-timeline";
+import {
+  MessageTimeline,
+  type MessageTimelineHandle,
+} from "./message-timeline";
 import { Composer } from "./composer";
 import { ThreadPanel } from "./thread-panel";
 import { PinsPopover } from "./pins-popover";
@@ -141,18 +140,21 @@ export function ChatShell() {
   const notificationPrefsQuery = useChannelNotificationPreferences();
   const levelByChannelId = useMemo(() => {
     const map = new Map<string, ChatNotificationLevel>();
-    // On error, leave the map empty rather than guessing. Every channel then
-    // reads at its default (`mentions`), which is what an un-configured account
-    // genuinely looks like — the failure mode is a control that shows the
-    // default, not one that claims a channel is muted when it is not.
-    if (notificationPrefsQuery.isError || !notificationPrefsQuery.data) {
+    // Keyed off `data`, NOT `isError`. TanStack Query keeps the last good
+    // `data` when a *background refetch* fails, so bailing on `isError` threw
+    // away still-valid levels the user had already seen: one 502 during an API
+    // restart and every muted channel silently rendered as unmuted, which is
+    // precisely the "claims a channel is not muted when it is" failure this
+    // guard was meant to avoid. With no data at all the map stays empty and
+    // callers fall back, which is the honest un-configured state.
+    if (!notificationPrefsQuery.data) {
       return map;
     }
     for (const row of notificationPrefsQuery.data) {
       map.set(row.channel_id, row.level);
     }
     return map;
-  }, [notificationPrefsQuery.data, notificationPrefsQuery.isError]);
+  }, [notificationPrefsQuery.data]);
 
   const channels = useMemo(
     () =>
@@ -267,8 +269,7 @@ export function ChatShell() {
   const isModuleEnabled = useMemo(() => {
     return (key: string) => {
       const data = orgConfig.data as
-        | { isModuleEnabled?: (k: string) => boolean }
-        | undefined;
+        { isModuleEnabled?: (k: string) => boolean } | undefined;
       if (!data?.isModuleEnabled) return false;
       return data.isModuleEnabled(key);
     };
@@ -397,6 +398,7 @@ export function ChatShell() {
                 }
                 disabled={!activeChannel}
                 isSaving={setNotificationLevel.isPending}
+                hasError={setNotificationLevel.isError}
                 onChange={(level) => {
                   if (!activeChannel) return;
                   setNotificationLevel.mutate({
@@ -420,7 +422,10 @@ export function ChatShell() {
             </p>
           ) : null}
         </header>
-        <div className="min-h-0 flex-1 overflow-hidden" aria-label="Chat timeline">
+        <div
+          className="min-h-0 flex-1 overflow-hidden"
+          aria-label="Chat timeline"
+        >
           <MessageTimeline
             ref={timeline}
             nameFor={nameFor}
@@ -448,9 +453,7 @@ export function ChatShell() {
             isReadOnly={!!activeChannel.is_read_only}
             draft={channel.draft}
             onChangeDraft={channel.setDraft}
-            onSend={(body, attachments) =>
-              channel.send(body, { attachments })
-            }
+            onSend={(body, attachments) => channel.send(body, { attachments })}
             onSlashDispatch={(command: SlashCommand, args: string) =>
               channel.dispatchSlash(
                 command,
