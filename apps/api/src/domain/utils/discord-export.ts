@@ -14,6 +14,11 @@
  * missing key is a data problem to report, never a crash.
  */
 
+import type { DiscordExportPreamble } from '@repo/validation';
+
+export type { DiscordExportPreamble } from '@repo/validation';
+export { parseExportPreamble } from '@repo/validation';
+
 /** A Discord user as DCE writes it. */
 export interface DiscordExportUser {
   id?: string | null;
@@ -66,15 +71,6 @@ export interface DiscordExportMessage {
   } | null;
 }
 
-export interface DiscordExportPreamble {
-  guild: { id: string | null; name: string | null };
-  channel: {
-    id: string | null;
-    name: string | null;
-    category: string | null;
-  };
-}
-
 export interface DiscordExportPart extends DiscordExportPreamble {
   messages: DiscordExportMessage[];
 }
@@ -104,102 +100,6 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
-}
-
-/**
- * Read the `{guild, channel}` header off a part.
- *
- * Used both by the browser (against the first 64 KB of a file, to build the
- * mapping step without uploading anything) and by the worker (against the real
- * part it is about to import).
- *
- * **The worker's copy is the authoritative one.** The wizard sends the channel
- * ids it read client-side, but the import keys every message on the id read
- * here, from the bytes actually being parsed — so a client that lied about
- * which channel a part belongs to cannot redirect a Discord channel's history
- * into a Signet channel the admin did not choose.
- */
-/**
- * Find the structural `"messages"` KEY, not the first occurrence of the text.
- *
- * `indexOf('"messages"')` is wrong in a way that only shows up on real data: a
- * guild with a channel or category literally named `messages` puts
- * `"name":"messages"` in the preamble, the cut lands mid-object, and the parse
- * fails — so that channel silently disappears from the mapping step and its
- * whole history is skipped with a warning. (The case the original comment
- * defended against — a topic reading "read the pinned messages" — was never a
- * problem: unquoted prose does not match `"messages"` at all.)
- *
- * A key is a quoted string followed by optional whitespace and a colon, at
- * nesting depth 1, outside any string. Tracking depth and string state is
- * enough here; the preamble has no escapes worth a full parser.
- */
-function findMessagesKey(input: string): number {
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-
-  for (let i = 0; i < input.length; i += 1) {
-    const ch = input[i];
-
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (ch === '\\') escaped = true;
-      else if (ch === '"') inString = false;
-      continue;
-    }
-
-    if (ch === '"') {
-      // A key only counts at the top level of the root object, and only when a
-      // colon follows the closing quote.
-      if (depth === 1 && input.startsWith('"messages"', i)) {
-        const after = input.slice(i + '"messages"'.length).match(/^\s*:/);
-        if (after) return i;
-      }
-      inString = true;
-      continue;
-    }
-
-    if (ch === '{' || ch === '[') depth += 1;
-    else if (ch === '}' || ch === ']') depth -= 1;
-  }
-  return -1;
-}
-
-export function parseExportPreamble(
-  input: string,
-): DiscordExportPreamble | null {
-  const guildStart = input.indexOf('"guild"');
-  if (guildStart === -1) return null;
-
-  // Truncate at the messages array and close the object, so a 400 MB file can
-  // be described from its first few KB.
-  const messagesKey = findMessagesKey(input);
-  const head =
-    messagesKey === -1
-      ? input
-      : `${input.slice(0, messagesKey).replace(/,\s*$/, '')}}`;
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(head);
-  } catch {
-    return null;
-  }
-
-  const root = asRecord(parsed);
-  const guild = asRecord(root?.guild);
-  const channel = asRecord(root?.channel);
-  if (!channel) return null;
-
-  return {
-    guild: { id: asString(guild?.id), name: asString(guild?.name) },
-    channel: {
-      id: asString(channel.id),
-      name: asString(channel.name),
-      category: asString(channel.category),
-    },
-  };
 }
 
 /** Parse a whole export part. Throws `DiscordExportFormatError` on junk. */
