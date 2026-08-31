@@ -50,6 +50,9 @@
 import { execFileSync } from "node:child_process";
 
 import { ALL_REQUIRED_CHECKS } from "../configure-branch-protection.mjs";
+import { requireEnv } from "./lib/env.mjs";
+import { resilientFetch } from "./lib/http.mjs";
+import { githubHeaders } from "./lib/github.mjs";
 
 export const SHA_PATTERN = /^[0-9a-f]{40}$/;
 
@@ -317,15 +320,11 @@ export function jobIdsAtRef({ ref, git = defaultGit }) {
  * green commit into a refused deploy (and, if the defaults were ever inverted,
  * the reverse).
  */
-export async function fetchCheckRuns({ repo, sha, token, fetchImpl = fetch, maxPages = 10 }) {
+export async function fetchCheckRuns({ repo, sha, token, fetchImpl = resilientFetch, maxPages = 10 }) {
   const runs = [];
   for (let page = 1; page <= maxPages; page += 1) {
     const response = await fetchImpl(CHECK_RUNS_URL(repo, sha, page), {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
+      headers: githubHeaders({ token }),
     });
     if (!response.ok) {
       throw new Error(`GitHub checks API returned HTTP ${response.status} for ${sha}`);
@@ -348,7 +347,7 @@ export async function validateDeploySha({
   mainRef = "origin/main",
   required = ALL_REQUIRED_CHECKS,
   git = defaultGit,
-  fetchImpl = fetch,
+  fetchImpl = resilientFetch,
   logger = console,
 }) {
   if (!isFullSha(sha)) {
@@ -409,15 +408,6 @@ export async function validateDeploySha({
 }
 
 // ── CLI entry ───────────────────────────────────────────────────────────────
-
-function requireEnv(name) {
-  const value = process.env[name];
-  if (!value) {
-    console.error(`Error: ${name} environment variable is required.`);
-    process.exit(1);
-  }
-  return value;
-}
 
 async function main() {
   const result = await validateDeploySha({

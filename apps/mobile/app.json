@@ -56,6 +56,13 @@
           "isIosBackgroundLocationEnabled": false,
           "isAndroidBackgroundLocationEnabled": false
         }
+      ],
+      [
+        "@sentry/react-native/expo",
+        {
+          "organization": "frapp-live",
+          "project": "frapp-mobile"
+        }
       ]
     ],
     "experiments": {

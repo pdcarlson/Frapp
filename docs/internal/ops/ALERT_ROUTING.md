@@ -4,7 +4,7 @@
 
 - **Critical production alerts:** on-call paging channel
 - **Non-critical staging alerts:** engineering notifications channel
-- **Error tracking:** Sentry project alerts — org `frapp-live`, projects `frapp-api` (NestJS API) and `frapp-web` (Next dashboard)
+- **Error tracking:** Sentry project alerts — org `frapp-live`, projects `frapp-api` (NestJS API), `frapp-web` (Next dashboard) and `frapp-mobile` (Expo app)
 
 > **`frapp-web` exists but is not receiving events yet.** The project was created during #865
 > (`javascript-nextjs`, team `frapp-live`). What remains is adding `NEXT_PUBLIC_SENTRY_DSN` to
@@ -14,12 +14,31 @@
 > Sentry not at all, so a silent `frapp-web` means "not configured", not "no errors".
 >
 > Two projects rather than one is deliberate: a browser error and a server error have different
-> owners, different noise profiles, and different alert thresholds.
+> owners, different noise profiles, and different alert thresholds. `frapp-mobile` extends the same
+> reasoning to the third runtime.
 >
-> Creating a project needs org-owner rights. `frapp-live` had *"Let members create projects"* off,
-> which made the Sentry MCP's `create_project` fail with
+> Creating a project needs org-owner rights. During #865/#970 `frapp-live` had
+> *"Let members create projects"* off, which made the Sentry MCP's `create_project` fail with
 > `HTTP 403 "Your organization has disabled this feature for members."` — worth knowing, because that
 > error names *members* and reads like a token-scope problem when it is an org toggle.
+>
+> **That no longer reproduces.** On 2026-08-29 the same MCP call created `frapp-mobile` (#1299)
+> without a prompt or an error. An org toggle is not agent-observable, so what changed is not
+> recorded here — only that the call now succeeds. Try it before routing a human to the dashboard.
+
+> **`frapp-mobile` exists and the app is wired, but no event has been proven yet.** The project was
+> created 2026-08-29 (`react-native`, team `frapp-live`) and `apps/mobile` initializes
+> `@sentry/react-native` through `lib/sentry/options.ts` (#1299). Two things remain, and neither is
+> something a PR can contain: `EXPO_PUBLIC_SENTRY_DSN` must be entered per profile in the **EAS
+> dashboard** — there is no Infisical→EAS sync, so it does not arrive on its own — and a real error
+> has to be captured from a **dev build on a physical device**, which needs the EAS project tracked
+> in [#938](https://github.com/pdcarlson/Frapp/issues/938). Expo Go cannot exercise a native SDK's
+> crash handling, so "it works in Go" is not evidence. Until both land, a silent `frapp-mobile`
+> means "not configured", not "no errors".
+>
+> Environment tagging is per build profile in the committed `eas.json`
+> (`development` / `staging` / `production`), not a dashboard value — an EAS profile exposes no
+> `VERCEL_ENV` equivalent to the bundle.
 
 > **Sentry alert rules are dashboard-only.** Sentry's issue-alert-rule API answers `HTTP 410 {"message":"This API no longer exists."}`, so no agent or script can create, read, or verify a rule. Every rule below has to be created by a human in the Sentry UI, and its existence cannot be asserted in CI — treat the dashboard as the source of truth and re-check it by hand when routing changes.
 

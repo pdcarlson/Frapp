@@ -47,6 +47,7 @@ import {
   raiseAlert as raiseAlertIssue,
   resolveAlert as resolveAlertIssue,
 } from "./lib/alert-issue.mjs";
+import { requireEnv } from "./lib/env.mjs";
 
 // ── Alert issue identity ────────────────────────────────────────────────────
 // Title is the primary key: it is looked up by exact match, so it must stay
@@ -78,7 +79,6 @@ export const DEPLOY_JOB_NAMES = ["migrate-staging", "deploy-staging"];
 // are included deliberately: a cancelled deploy is not a deploy, and treating it
 // as benign is precisely the "green history" failure this script exists to end.
 export const FAILED_RESULTS = new Set(["failure", "cancelled", "timed_out"]);
-
 
 /**
  * Pure classifier over the `needs` context's job results.
@@ -440,15 +440,6 @@ export async function runDeployAlert({
 }
 
 // ── CLI entry ───────────────────────────────────────────────────────────────
-
-function requireEnv(name) {
-  const value = process.env[name];
-  if (!value) {
-    console.error(`Error: ${name} environment variable is required.`);
-    process.exit(1);
-  }
-  return value;
-}
 
 async function main() {
   const token = requireEnv("GITHUB_TOKEN");

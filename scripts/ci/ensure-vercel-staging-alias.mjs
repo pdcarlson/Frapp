@@ -23,6 +23,7 @@
 
 import { fetchVercelDeployments } from "./lib/providers.mjs";
 import { VERCEL_NEUTRAL_TERMINAL_STATES } from "./verify-vercel-deploy.mjs";
+import { requireEnv } from "./lib/env.mjs";
 
 const LIST_ALIASES_URL = (deploymentId) =>
   `https://api.vercel.com/v2/deployments/${deploymentId}/aliases`;
@@ -168,15 +169,6 @@ export async function ensureVercelStagingAlias({
     status: "failure",
     message: `Assign alias failed: HTTP ${assignResponse.status}${detail}`,
   };
-}
-
-function requireEnv(name) {
-  const value = process.env[name];
-  if (!value) {
-    console.error(`Error: ${name} environment variable is required.`);
-    process.exit(1);
-  }
-  return value;
 }
 
 async function main() {

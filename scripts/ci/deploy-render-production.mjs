@@ -39,6 +39,8 @@ import {
   RENDER_TERMINAL_FAILURE_STATES,
   RENDER_TERMINAL_SUCCESS_STATES,
 } from "./verify-render-deploy.mjs";
+import { requireEnv } from "./lib/env.mjs";
+import { resilientFetch } from "./lib/http.mjs";
 
 export const RENDER_POLL_INTERVAL_MS = 20 * 1000;
 export const RENDER_OVERALL_TIMEOUT_MS = 20 * 60 * 1000;
@@ -73,7 +75,7 @@ export async function createRenderDeploy({
   serviceId,
   sha,
   clearCache = "do_not_clear",
-  fetchImpl = fetch,
+  fetchImpl = resilientFetch,
 }) {
   const response = await fetchImpl(CREATE_DEPLOY_URL(serviceId), {
     method: "POST",
@@ -114,7 +116,7 @@ export async function pollRenderDeploy({
   deployId,
   label = serviceId,
   clock = createClock(),
-  fetchImpl = fetch,
+  fetchImpl = resilientFetch,
   pollIntervalMs = RENDER_POLL_INTERVAL_MS,
   overallTimeoutMs = RENDER_OVERALL_TIMEOUT_MS,
   logger = console,
@@ -170,7 +172,7 @@ export async function deployRenderProduction({
   sha,
   label = serviceId,
   clock = createClock(),
-  fetchImpl = fetch,
+  fetchImpl = resilientFetch,
   pollIntervalMs = RENDER_POLL_INTERVAL_MS,
   overallTimeoutMs = RENDER_OVERALL_TIMEOUT_MS,
   logger = console,
@@ -198,15 +200,6 @@ export async function deployRenderProduction({
 }
 
 // ── CLI entry ───────────────────────────────────────────────────────────────
-
-function requireEnv(name) {
-  const value = process.env[name];
-  if (!value) {
-    console.error(`Error: ${name} environment variable is required.`);
-    process.exit(1);
-  }
-  return value;
-}
 
 async function main() {
   const serviceId = requireEnv("RENDER_SERVICE_ID");
