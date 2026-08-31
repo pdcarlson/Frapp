@@ -186,6 +186,89 @@ const CONTEXT_ALLOWLIST = new Set([
  */
 const URL_QUERY_RE = /((?:https?:\/\/[^\s?#]*|\/[^\s?#]*)\?)\S*/g;
 const EMAIL_RE = /[\w.+-]+@[\w-]+\.[\w.-]+/g;
+/**
+ * `userinfo` in a URL that appears inside free text (#1388).
+ *
+ * {@link stripAuthority} covers the two *structural* URL fields — `request.url`
+ * and the transaction name — but an exception message or a breadcrumb is prose,
+ * and a connection string lands there routinely: a driver that cannot reach its
+ * database puts the whole DSN in the error it throws. Nothing else in this
+ * chain catches it. {@link EMAIL_RE} is the near-miss that makes it look
+ * covered — it consumes the run of `[\w.+-]` before the `@`, so it takes part
+ * of some passwords, none of others, and never the ones on a dotless host.
+ *
+ * Matching stops at `/`, whitespace and a second `@`, so it cannot reach past
+ * the authority into a path or query — `…/v1/users?email=a@b.com` has its `@`
+ * after a `/` and is left to `EMAIL_RE`. Requiring `://` keeps `mailto:` and
+ * bare prose out. Runs before `EMAIL_RE` so the e-mail pattern cannot consume
+ * half the credential first and leave the rest unmatchable.
+ */
+const URL_USERINFO_RE = /([a-zA-Z][a-zA-Z0-9+.-]*:\/\/)[^/\s@]+@/g;
+
+/**
+ * An absolute-form or otherwise authority-bearing target, reduced to its path.
+ *
+ * Hoisted here from `apps/api/src/interface/utils/path-only.ts` (#1388) so the
+ * internal log stream and this external boundary share one implementation.
+ * They had diverged, and the divergence ran the wrong way: the API-side helper
+ * stripped the authority and this one did not, leaving the *third-party* sink
+ * — the one with the stricter threat model — as the leaky half.
+ *
+ * The justification once offered for the divergence was that this file's
+ * `redactFreeText` covers userinfo. It does not. `redactFreeText` has no rule
+ * about URL authority at all; {@link EMAIL_RE} sometimes *overlaps* one, which
+ * is a different thing and fails in two directions:
+ *
+ *   - it consumes the run of `[\w.+-]` immediately before the `@`, so a
+ *     password ending in any other character (`hunter2!`) is left intact along
+ *     with the host, and
+ *   - its host half requires a literal `.`, so a dotless internal host matches
+ *     nothing whatsoever — `postgresql://postgres:s3cr3t@localhost:5432/db`
+ *     passed through byte-for-byte, and an internal service URL is exactly the
+ *     shape that carries a real credential in userinfo.
+ *
+ * Stripping the authority structurally makes both cases moot, which is why
+ * this is a parser and not another pattern. Measured cases live on #1388.
+ *
+ * Absolute-form is a real inbound shape, not a defensive nicety: RFC 9112
+ * permits `GET http://host/path HTTP/1.1` on any request, not just to a proxy,
+ * and Node hands `req.url` the request line verbatim. Verified against the
+ * Express version in this repo — such a request arrives with `req.url` intact
+ * while `req.path` is already `/v1/health`, so anything reading `req.url`
+ * sees the authority.
+ *
+ * Reducing it also keeps grouping honest on both sinks: absolute-form records
+ * would otherwise never group with the origin-form records for the same route,
+ * which is exactly when someone is probing.
+ */
+export function stripAuthority(path: string): string {
+  // Origin-form, the overwhelmingly common case: already just a path. This
+  // includes a `//`-leading target, which is a legal origin-form path — RFC
+  // 9112's `absolute-path` is `1*( "/" segment )` and a segment may be empty.
+  //
+  // A protocol-relative target (`//host/path`) is deliberately NOT handled.
+  // It is not one of the four request-target forms, so it cannot legitimately
+  // arrive; treating it as one meant discarding the first segment of any legal
+  // `//`-leading path, which is strictly worse than the leak this fixes.
+  // `GET //x/v1/chapters/join` 404s but would have been reported as
+  // `/v1/chapters/join` — a real route, indistinguishable from a genuine
+  // request, which is forgery in the function whose subject is integrity.
+  if (path.startsWith('/')) return path;
+
+  const afterScheme = path.match(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/(.*)$/);
+
+  // Not absolute-form — asterisk-form (`OPTIONS *`) or authority-form
+  // (`CONNECT host:port`). Neither carries a path to recover, and neither
+  // should be rewritten into something that looks like one.
+  if (!afterScheme) return path;
+
+  // `(.*)` always participates when the match succeeds, so the fallback is
+  // unreachable — it is here because this package compiles under
+  // `noUncheckedIndexedAccess`, unlike `apps/api` where this parser was born.
+  const authorityAndPath = afterScheme[1] ?? '';
+  const slash = authorityAndPath.indexOf('/');
+  return slash === -1 ? '/' : authorityAndPath.slice(slash);
+}
 /** `Bearer <jwt|opaque>`, and bare three-segment JWTs wherever they appear. */
 const BEARER_RE = /\bBearer\s+[\w\-._~+/]+=*/gi;
 const JWT_RE = /\beyJ[\w-]*\.[\w-]+\.[\w-]+/g;
@@ -247,6 +330,7 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
       .replace(URL_QUERY_RE, (_match, uptoQuestionMark: string) =>
         uptoQuestionMark.slice(0, -1),
       )
+      .replace(URL_USERINFO_RE, '$1[redacted:userinfo]@')
       .replace(BEARER_RE, '[redacted:token]')
       .replace(JWT_RE, '[redacted:token]')
       .replace(KEYLIKE_RE, '[redacted:key]')
@@ -312,12 +396,19 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
     }
   }
 
-  /** Path without query or fragment — query strings routinely carry tokens. */
+  /**
+   * Path without query, fragment, or authority.
+   *
+   * Both halves are load-bearing and neither substitutes for the other.
+   * Dropping the query removes the tokens that routinely ride in it; dropping
+   * the authority via {@link stripAuthority} removes `userinfo`, which
+   * `redactFreeText` never had a rule for (#1388).
+   */
   function pathOnly(url: unknown): string | undefined {
     if (typeof url !== 'string' || !url) return undefined;
     const cut = url.search(/[?#]/);
     const trimmed = cut === -1 ? url : url.slice(0, cut);
-    return redactFreeText(trimmed);
+    return redactFreeText(stripAuthority(trimmed));
   }
 
   // ── Structural scrubbing ───────────────────────────────────────────────────
