@@ -82,13 +82,28 @@ export class SupabaseStorageService implements IStorageProvider {
     contentType: string,
     options?: SignedUploadOptions,
   ): Promise<string> {
-    // `contentType` is deliberately unused: `createSignedUploadUrl` cannot pin
-    // a type, because the uploader sets its own on the PUT. It stays in the
-    // signature so callers keep declaring what they expect, and so the bucket's
-    // `allowed_mime_types` remains the enforcement point — which it genuinely
-    // is: a PUT of a disallowed type answers 415 `invalid_mime_type` from
-    // storage-api, verified against the local stack. See #1230.
-    void contentType;
+    // `contentType` is deliberately unused here: `createSignedUploadUrl` cannot
+    // pin a type, because the uploader sets its own header on the PUT. It stays
+    // in the signature so callers keep declaring what they expect — the value
+    // each service validates against the allowlist *before* asking for a URL —
+    // and so the bucket's `allowed_mime_types` remains the enforcement point.
+    // That column enforces only over the declared header, never the bytes; see
+    // `@repo/validation`'s `upload-allowlists.ts` for the measurement.
+    //
+    // Do NOT "fix" this by forwarding `contentType` into the call below. It
+    // would pin nothing and would restore exactly the false impression of a
+    // second enforcement point that #1230 exists to remove;
+    // `supabase-storage.service.spec.ts` fails if you try.
+    //
+    // Why no `void contentType;` and no lint error: for `src/**`,
+    // `@typescript-eslint/no-unused-vars` is an *error* (the `off` in
+    // `eslint.config.mjs` is scoped to `**/*.spec.ts` and `test/**`). It stays
+    // quiet only because its default `args: 'after-used'` reports a parameter
+    // solely when nothing after it is used, and `options` below is read. That
+    // exemption is positional: if `options` ever stops being read, lint will
+    // flag `contentType`. The fix then is a rename or an inline disable —
+    // never deleting the parameter (it is `IStorageProvider`'s contract, with
+    // seven call sites) and never forwarding it.
     assertSafeObjectPath(path);
     const { data, error } = await this.supabase.storage
       .from(bucket)

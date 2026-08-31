@@ -232,8 +232,8 @@ export function UploadStep({
                       // `entry.file.type`. The browser reports an empty type for
                       // several formats a Discord archive is full of (.heic,
                       // .mkv, .avif); that becomes application/octet-stream,
-                      // which the bucket allowlist rejects with a 415, and the
-                      // file can then never be marked uploaded.
+                      // which the bucket allowlist rejects, and the file can
+                      // then never be marked uploaded.
                       "content-type": ticket.content_type,
                       "x-upsert": "true",
                     },
