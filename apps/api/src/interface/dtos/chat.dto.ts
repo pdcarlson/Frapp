@@ -308,3 +308,33 @@ export class ChannelUnreadCountDto {
   })
   mention_count: number;
 }
+
+/**
+ * The three per-channel notification levels (ADR-06), mirroring the
+ * `chat_notification_preferences.level` CHECK constraint.
+ *
+ * `off` is what the UI calls "muted". It is not absolute: `decidePush` lifts it
+ * when the message mentions the recipient, which is the spec'd mention override
+ * (`spec/behavior/notifications.md` § Per-Channel Mute). `mentions` is the
+ * default for ordinary channels, so setting a channel to `mentions` is a reset
+ * to default rather than a distinct third state the user has to reason about.
+ */
+export const CHAT_NOTIFICATION_LEVELS = ['all', 'mentions', 'off'] as const;
+
+export class SetChannelNotificationLevelDto {
+  @ApiProperty({
+    enum: CHAT_NOTIFICATION_LEVELS,
+    description:
+      'all = every message; mentions = only when you are mentioned (default); off = muted, though @mentions still notify.',
+  })
+  @IsIn(CHAT_NOTIFICATION_LEVELS)
+  level: (typeof CHAT_NOTIFICATION_LEVELS)[number];
+}
+
+export class ChannelNotificationPreferenceDto {
+  @ApiProperty({ format: 'uuid' })
+  channel_id: string;
+
+  @ApiProperty({ enum: CHAT_NOTIFICATION_LEVELS })
+  level: (typeof CHAT_NOTIFICATION_LEVELS)[number];
+}

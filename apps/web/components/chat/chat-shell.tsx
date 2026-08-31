@@ -1,11 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  AuditGlyph,
-  DirectMessageGlyph,
-  LockGlyph,
-} from "./chat-glyphs";
+import { AuditGlyph, DirectMessageGlyph, LockGlyph } from "./chat-glyphs";
 import {
   EmptyState,
   ErrorState,
@@ -13,8 +9,10 @@ import {
 } from "@/components/shared/async-states";
 import {
   directChannelDisplayName,
+  useChannelNotificationPreferences,
   useChannelUnreadCounts,
   useChannels,
+  useSetChannelNotificationLevel,
   useMarkChannelRead,
   useCategories,
   useChapterRoster,
@@ -31,12 +29,17 @@ import {
   type ChannelUnread,
   type ChatChannel,
 } from "./channel-list";
-import { MessageTimeline, type MessageTimelineHandle } from "./message-timeline";
+import {
+  MessageTimeline,
+  type MessageTimelineHandle,
+} from "./message-timeline";
 import { Composer } from "./composer";
 import { ThreadPanel } from "./thread-panel";
 import { PinsPopover } from "./pins-popover";
+import { NotificationLevelPopover } from "./notification-level-popover";
 import { ReconnectPill } from "./reconnect-pill";
 import type { SlashCommand } from "@repo/chat-integrations";
+import type { ChatNotificationLevel } from "@repo/hooks";
 
 interface DirectoryMember {
   user_id: string;
@@ -130,9 +133,39 @@ export function ChatShell() {
   // Names for message authors and DM titles. Shares its query key with the
   // roster read below, so react-query serves both from one fetch.
   const { byId: memberNames, nameFor } = useMemberDisplayNames();
+  // Per-channel notification levels, from their own endpoint rather than the
+  // channel payload — the same split unread counts use, and for the same
+  // recorded reason (see `channel-list.tsx`, which explains how a `muted` field
+  // nothing populated stayed permanently falsy).
+  const notificationPrefsQuery = useChannelNotificationPreferences();
+  const levelByChannelId = useMemo(() => {
+    const map = new Map<string, ChatNotificationLevel>();
+    // Keyed off `data`, NOT `isError`. TanStack Query keeps the last good
+    // `data` when a *background refetch* fails, so bailing on `isError` threw
+    // away still-valid levels the user had already seen: one 502 during an API
+    // restart and every muted channel silently rendered as unmuted, which is
+    // precisely the "claims a channel is not muted when it is" failure this
+    // guard was meant to avoid. With no data at all the map stays empty and
+    // callers fall back, which is the honest un-configured state.
+    if (!notificationPrefsQuery.data) {
+      return map;
+    }
+    for (const row of notificationPrefsQuery.data) {
+      map.set(row.channel_id, row.level);
+    }
+    return map;
+  }, [notificationPrefsQuery.data]);
+
   const channels = useMemo(
-    () => asArray<ChatChannel>(channelsQuery.data),
-    [channelsQuery.data],
+    () =>
+      asArray<ChatChannel>(channelsQuery.data).map((ch) => ({
+        ...ch,
+        // `muted` finally has a writer. It has been on this type since the
+        // channel list was built and was populated nowhere until now, so the
+        // "muted" indicator it gates could never render.
+        muted: levelByChannelId.get(ch.id) === "off",
+      })),
+    [channelsQuery.data, levelByChannelId],
   );
 
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(
@@ -186,6 +219,28 @@ export function ChatShell() {
 
   const channel = useChatChannel(activeChannelId);
 
+  const setNotificationLevel = useSetChannelNotificationLevel();
+
+  // `useSetChannelNotificationLevel` is ONE mutation instance for the whole
+  // shell, and TanStack keeps `isError` set until the next `mutate()`. Passing
+  // it straight through pinned a "could not save" alert onto every channel for
+  // the rest of the session after a single failure — a confident, wrong claim
+  // about channels the member never touched. Scope it to the channel the failed
+  // write was actually for, and clear it when they move away.
+  const failedChannelId = setNotificationLevel.isError
+    ? setNotificationLevel.variables?.channelId
+    : undefined;
+  const resetNotificationLevel = setNotificationLevel.reset;
+  const notificationLevelErrored = setNotificationLevel.isError;
+  useEffect(() => {
+    // Only when there is actually an error to clear. An unconditional reset
+    // detached the observer from an IN-FLIGHT write, so a mute that failed
+    // after the member changed channel was reported on no channel at all —
+    // and it forced a second full render of the shell on every switch to
+    // clear state that is almost never set.
+    if (notificationLevelErrored) resetNotificationLevel();
+  }, [activeChannelId, notificationLevelErrored, resetNotificationLevel]);
+
   // Opening a channel stamps the read cursor — the only thing that moves it, and
   // the only thing that clears the badges above. Without it the rail lights up
   // on first load and never goes out, which is worse than the dead badge this
@@ -234,8 +289,7 @@ export function ChatShell() {
   const isModuleEnabled = useMemo(() => {
     return (key: string) => {
       const data = orgConfig.data as
-        | { isModuleEnabled?: (k: string) => boolean }
-        | undefined;
+        { isModuleEnabled?: (k: string) => boolean } | undefined;
       if (!data?.isModuleEnabled) return false;
       return data.isModuleEnabled(key);
     };
@@ -356,6 +410,35 @@ export function ChatShell() {
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <ReconnectPill status={channel.connection} />
+              {activeChannel && failedChannelId === activeChannel.id ? (
+                // Lives in the header, not inside the popover. The popover
+                // unmounts its content when dismissed, so an alert in there is
+                // only seen by a member who happens to reopen it — and keeping
+                // it open until the write landed is what froze the menu when
+                // TanStack paused the mutation offline. Scoped to the channel
+                // the failed write was actually for: the mutation is shared by
+                // the whole shell, so its bare `isError` would assert a
+                // failure on channels nobody touched.
+                <p role="alert" className="text-[12.5px] text-destructive">
+                  Notification level not saved
+                </p>
+              ) : null}
+              <NotificationLevelPopover
+                level={
+                  activeChannel
+                    ? (levelByChannelId.get(activeChannel.id) ?? null)
+                    : null
+                }
+                disabled={!activeChannel}
+                isSaving={setNotificationLevel.isPending}
+                onChange={(level) => {
+                  if (!activeChannel) return;
+                  setNotificationLevel.mutate({
+                    channelId: activeChannel.id,
+                    level,
+                  });
+                }}
+              />
               <PinsPopover
                 messages={channel.messages}
                 nameFor={nameFor}
@@ -371,7 +454,10 @@ export function ChatShell() {
             </p>
           ) : null}
         </header>
-        <div className="min-h-0 flex-1 overflow-hidden" aria-label="Chat timeline">
+        <div
+          className="min-h-0 flex-1 overflow-hidden"
+          aria-label="Chat timeline"
+        >
           <MessageTimeline
             ref={timeline}
             nameFor={nameFor}
@@ -399,9 +485,7 @@ export function ChatShell() {
             isReadOnly={!!activeChannel.is_read_only}
             draft={channel.draft}
             onChangeDraft={channel.setDraft}
-            onSend={(body, attachments) =>
-              channel.send(body, { attachments })
-            }
+            onSend={(body, attachments) => channel.send(body, { attachments })}
             onSlashDispatch={(command: SlashCommand, args: string) =>
               channel.dispatchSlash(
                 command,
