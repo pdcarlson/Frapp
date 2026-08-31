@@ -297,8 +297,8 @@ v8 is also what `@vitest/coverage-v8` uses, so both runners now report through o
 ### The missing Vitest provider
 
 No workspace declared `@vitest/coverage-v8`, so `vitest run --coverage` failed with
-`MISSING DEPENDENCY`. It is now a root devDependency, pinned **exact** at `4.1.10` because Vitest
-declares it as an exact peer.
+`MISSING DEPENDENCY`. It is now a root devDependency, pinned **exact** at `4.1.11` because Vitest
+declares it as an exact peer — the pin moves with every `vitest` bump.
 
 ### Running it
 

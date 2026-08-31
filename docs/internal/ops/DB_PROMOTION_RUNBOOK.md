@@ -164,6 +164,14 @@ It compares `origin/main` against staging's applied history — **not** your PR'
 head — with a 30-minute grace from the moment a migration landed on `main`,
 which is the window `migrate-staging` needs to apply it.
 
+"Landed on `main`" means the commit on `main`'s own first-parent chain — the
+merge commit, or the squash commit where the merge was squashed — not the
+feature-branch commit that authored the file. The distinction is the whole
+grace: a migration authored last week and merged two minutes ago has had two
+minutes, not a week. Until #1363 the gate measured the authoring commit, so any
+PR that sat in review longer than 30 minutes got no grace at all and the gate
+went red across every open PR seconds after any migration merged.
+
 **It is no longer a required check.** It measures whether staging is behind
 main, which is a question no individual PR contains or can change, so as a
 required check it was a repo-wide merge-freeze switch rather than a gate — and
@@ -174,7 +182,9 @@ check above files a self-closing P1 issue for the same condition.
 So if `migration-drift` is red on your PR and you did not cause it: staging is
 out of sync for everyone and the schema your tests ran against is not the schema
 on staging. That is worth fixing and worth not ignoring — it is simply no longer
-worth blocking your merge on.
+worth blocking your merge on. Since #1363 that reading is reliable; before it,
+a red here in the half hour after a merge was as likely to be the gate
+mis-dating its own grace window as a real drift.
 
 ### `--include-all` (recovery only)
 
@@ -490,6 +500,14 @@ it depends on (`chat_messages.author_name`, `chat_message_attachments`, and the
 
 ### 20260824120000_discord_import.sql
 
+> **Comment correction (not yet applied to the file).** This migration's header
+> says a signed-URL PUT of a disallowed type "answers 415 `invalid_mime_type`".
+> The status is **400**; the `415` is a field inside the response body. The
+> header is left as shipped because migration files are treated as immutable —
+> tracked in #1409. Canonical statement:
+> `packages/validation/src/upload-allowlists.ts` § What the bucket allowlist
+> actually enforces.
+
 * **Purpose**: give the importer its own identity column and the three tables an
   import needs while it runs. `chat_messages.external_message_id` holds the
   Discord message snowflake and is the re-run dedupe key; `discord_imports`,
@@ -712,8 +730,10 @@ kind-semantics migration replaces a policy the authors migration leaves alone).
   MIME check performed in the worker before the transfer rather than by the
   bucket alone. Do not scope an incident on this bucket to signed-URL uploads.
   So `allowed_mime_types` is now the enforcement point rather than a second belt
-  — and it does enforce: a signed-URL PUT of a type outside the list answers
-  **415 `invalid_mime_type`** from storage-api, verified against the local stack.
+  — and it does enforce, though only over the **declared** header, never the
+  bytes. The rejection is **HTTP 400**, not the `415` several comments in this
+  repo claimed; see `packages/validation/src/upload-allowlists.ts` § What the
+  bucket allowlist actually enforces for the captured response and its caveats.
   The API additionally re-derives the expected type from the file extension
   before minting a URL, so a rejection is a readable error rather than a failed
   PUT. Content type still cannot be pinned at sign time (#1230).

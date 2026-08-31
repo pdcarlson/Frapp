@@ -1,6 +1,14 @@
 name: Migration drift gate
 
-# REQUIRED check: does staging actually hold every migration on `main`?
+# Does staging actually hold every migration on `main`, and is anything this
+# change introduces out of order?
+#
+# Two jobs, two postures, and the difference matters: `migration-order` is the
+# REQUIRED check, and `migration-drift` REPORTS ONLY. Drift was required once
+# and was demoted for the reason `configure-branch-protection.mjs` records --
+# it asserts something about main and staging that the PR in front of it
+# neither contains nor can change, which makes it a merge-freeze switch rather
+# than a gate.
 #
 # The incident: two migrations merged to main and were never applied to
 # staging. Every workflow stayed green, because nothing in CI has ever asserted
@@ -10,8 +18,9 @@ name: Migration drift gate
 # `check-migration-drift.yml` already detects this, but on a daily schedule and
 # by filing an issue. That is the right shape for a slow watchdog and the wrong
 # shape for a thing that must be impossible to miss: an issue has to be opened
-# to be read. This gate turns the same fact into a red X on every open PR, which
-# is the one signal a team cannot route around.
+# to be read. This gate turns the same fact into a red X on every open PR --
+# visible without anyone opening anything, though since the demotion above it
+# no longer blocks the merge.
 #
 # ── Why this is not a job in ci.yml ─────────────────────────────────────────
 # ci.yml consumes NO secrets — not one job in it touches `secrets.*`. That is a

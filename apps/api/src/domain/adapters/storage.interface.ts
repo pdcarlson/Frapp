@@ -44,6 +44,21 @@ export interface IStorageProvider {
   getSignedUploadUrl(
     bucket: string,
     path: string,
+    /**
+     * The type the caller expects to be uploaded — **declared intent, not an
+     * enforced constraint.**
+     *
+     * A signed upload URL cannot pin a content type: the client sets its own
+     * `Content-Type` on the PUT and the API never sees the bytes. So passing a
+     * value here does not make the upload that type, and an implementation
+     * cannot forward it to the storage backend to make it one.
+     *
+     * A caller must therefore still validate it itself — `isAllowedUploadMime`
+     * from `@repo/validation` — before asking for a URL, and must not treat
+     * this parameter as a server-side gate. The gate is the bucket's
+     * `allowed_mime_types`, and it constrains only the declared header. See
+     * that package's `upload-allowlists.ts` and #1230.
+     */
     contentType: string,
     options?: SignedUploadOptions,
   ): Promise<string>;

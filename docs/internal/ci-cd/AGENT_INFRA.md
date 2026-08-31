@@ -50,7 +50,7 @@ it. Design + policy: [`GITHUB_PM.md`](GITHUB_PM.md).
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | CI                  | `.github/workflows/ci.yml` — parallel jobs (`lint-and-typecheck` includes `nest build` for `apps/api` + landing, `@repo/validation`, `@repo/color`, `@repo/formatting`, `@repo/chapter-theme`, and `@repo/api-sdk` unit tests; `api-tests` runs `apps/api` Jest unit + E2E suites (`test` then `test:e2e`); `web-tests` runs `apps/web` Vitest plus the `packages/hooks`, `packages/chat-core`, and `packages/chat-integrations` suites; `api-docker-build` runs `apps/api/Dockerfile`; `web-production-build` builds `apps/web` and `apps/landing` on a `npm ci --omit=dev` tree, the Vercel production install shape) |
 | API deploy (staging) | `.github/workflows/deploy-api.yml` — after CI (`workflow_run`) on `main`. Staging only since #1340. |
-| Production deploy   | `.github/workflows/deploy-production.yml` — `workflow_dispatch` ONLY, takes a `sha`. Validates the commit is an ancestor of `main` with green CI (`scripts/ci/validate-deploy-sha.mjs`), preflights the provider guardrails, replays the migration against production's live applied state, applies, deploys that commit to Render by `commitId` and to Vercel with `target: production`, then calls `release.yml`. One job under `environment: production`, so one approval click. A `scope: migrations-only` input applies the migrations and stops — no Render deploy, no Vercel build, no tag — which is what the deleted `Migrate production` workflow used to do, minus that workflow's habit of skipping every gate in this sentence. |
+| Production deploy   | `.github/workflows/deploy-production.yml` — `workflow_dispatch` ONLY, takes a `sha`. Validates the commit is an ancestor of `main` with green CI (`scripts/ci/validate-deploy-sha.mjs`) — the required-check roster intersected with the jobs that commit's own workflows define, so a check it predates reads *not applicable* instead of making an older commit undeployable (see the **Deploying an OLDER commit** callout in `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`) — preflights the provider guardrails, replays the migration against production's live applied state, applies, deploys that commit to Render by `commitId` and to Vercel with `target: production`, then calls `release.yml`. One job under `environment: production`, so one approval click. A `scope: migrations-only` input applies the migrations and stops — no Render deploy, no Vercel build, no tag — which is what the deleted `Migrate production` workflow used to do, minus that workflow's habit of skipping every gate in this sentence. |
 | Production guardrails | `.github/workflows/production-guardrails.yml` — **scheduled** (daily 07:15 UTC) + `workflow_dispatch`, and re-run as a preflight inside the production deploy. Asserts Render `frapp-api-prod` has auto-deploy **off** and tracks `main`, and that neither Vercel project's Production Branch is `main`. Both settings are dashboard-only and fail OPEN, so they can only be asserted, never enforced. Logic in `scripts/ci/production-guardrails.mjs`. **Not** a required check. |
 | Deploy outcome      | `.github/workflows/deploy-api.yml` → terminal `deploy-outcome` job — the only job in that workflow with a write scope (job-scoped `issues: write`; the workflow-level grant stays `contents: read`). Writes a step summary + annotation saying whether the run **deployed** or **declined to deploy**, and upserts one `routine-state` alert issue on failure, closing it on the next successful deploy. Logic in `scripts/ci/deploy-alert.mjs` (tests: `scripts/ci/__tests__/deploy-alert.test.mjs`). **Not** a required check. See "Deploy visibility" below. |
 | Deploy verification | `.github/workflows/verify-deployments.yml` — post-push Render + Vercel state polling, **staging only**. Production verifies itself inline inside `deploy-production.yml`, polling the deploy/deployment IDs it created, with stricter semantics: a `CANCELED` Vercel deployment is a failure there, never neutral. |
@@ -439,6 +439,32 @@ on `packages/validation` (`TS5011` missing `rootDir`) before Nest, ESLint, and J
 run. Re-evaluate when TypeScript 7.1 ships a stable programmatic API *and* those three peers
 widen; until then the aliases move independently — native 7.x patches on `@typescript/native`,
 6.0.x patches on the `typescript` alias (stay below 6.1 for `typescript-eslint`).
+
+### A group regeneration can drop `jsdom`, and vitest resolves it from the root
+
+`vitest` declares `jsdom` as an **optional** peer (`peerDependenciesMeta.jsdom.optional`), and npm
+never auto-installs optional peers. It also loads the environment from *its own* install location —
+the hoisted root `node_modules/vitest` — so the workspace-level `jsdom` devDependencies in
+`apps/web`, `packages/hooks` and `packages/chat-core` are invisible to it. The jsdom suites passed
+only because a stale root `jsdom@29.1.1` node lingered in the lockfile as an auto-installed peer of
+an older vitest, which nothing declared and nothing guaranteed.
+
+#1395 — the weekly `npm-minor-and-patch` group — regenerated the lockfile, that root node went away,
+and every `environment: "jsdom"` config plus every `/** @vitest-environment jsdom */` spec failed
+with `Cannot find package 'jsdom' imported from …/node_modules/vitest/dist/chunks/…`. `web-tests`
+and `mobile-validate` went red with nothing in the diff that looked like a cause: the group touched
+no test file, and the jsdom line in each workspace manifest was unchanged.
+
+`jsdom` is now an explicit **root** devDependency, so the hoisted copy is intentional and `npm ci`
+reproduces it. Two neighbouring declarations were missing for the same reason — hoisting luck rather
+than intent — and are now explicit: `@testing-library/react` in `apps/mobile` (eight specs import
+it), and the `react-dom` peer that `@testing-library/react` needs in `packages/hooks`. Without that
+second one npm re-resolves the peer to the newest `^19` on any bump of the testing-library edge,
+which collides with the exact `react@19.2.3` pin and fails the install outright with `ERESOLVE`.
+
+The general rule: **declare what a workspace imports.** A package that resolves only because npm
+happened to hoist it is a red suite waiting for the next regeneration — and the failure surfaces in
+a PR that never touched it.
 
 ### Alerts and security updates are a repo Settings toggle
 
