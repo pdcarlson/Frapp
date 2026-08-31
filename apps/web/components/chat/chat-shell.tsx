@@ -231,9 +231,15 @@ export function ChatShell() {
     ? setNotificationLevel.variables?.channelId
     : undefined;
   const resetNotificationLevel = setNotificationLevel.reset;
+  const notificationLevelErrored = setNotificationLevel.isError;
   useEffect(() => {
-    resetNotificationLevel();
-  }, [activeChannelId, resetNotificationLevel]);
+    // Only when there is actually an error to clear. An unconditional reset
+    // detached the observer from an IN-FLIGHT write, so a mute that failed
+    // after the member changed channel was reported on no channel at all —
+    // and it forced a second full render of the shell on every switch to
+    // clear state that is almost never set.
+    if (notificationLevelErrored) resetNotificationLevel();
+  }, [activeChannelId, notificationLevelErrored, resetNotificationLevel]);
 
   // Opening a channel stamps the read cursor — the only thing that moves it, and
   // the only thing that clears the badges above. Without it the rail lights up
@@ -404,25 +410,27 @@ export function ChatShell() {
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <ReconnectPill status={channel.connection} />
+              {activeChannel && failedChannelId === activeChannel.id ? (
+                // Lives in the header, not inside the popover. The popover
+                // unmounts its content when dismissed, so an alert in there is
+                // only seen by a member who happens to reopen it — and keeping
+                // it open until the write landed is what froze the menu when
+                // TanStack paused the mutation offline. Scoped to the channel
+                // the failed write was actually for: the mutation is shared by
+                // the whole shell, so its bare `isError` would assert a
+                // failure on channels nobody touched.
+                <p role="alert" className="text-[12.5px] text-destructive">
+                  Notification level not saved
+                </p>
+              ) : null}
               <NotificationLevelPopover
                 level={
                   activeChannel
-                    ? (levelByChannelId.get(activeChannel.id) ?? "mentions")
-                    : "mentions"
+                    ? (levelByChannelId.get(activeChannel.id) ?? null)
+                    : null
                 }
-                // Disabled until we actually know the level. The server now
-                // sends an entry for every readable channel, so a missing one
-                // means the read has not landed (or failed outright) — and the
-                // `mentions` fallback above would then be a guess of exactly
-                // the kind this whole change exists to remove. Better an
-                // inert control than one that confidently misreports.
-                disabled={
-                  !activeChannel || !levelByChannelId.has(activeChannel.id)
-                }
+                disabled={!activeChannel}
                 isSaving={setNotificationLevel.isPending}
-                hasError={
-                  !!activeChannel && failedChannelId === activeChannel.id
-                }
                 onChange={(level) => {
                   if (!activeChannel) return;
                   setNotificationLevel.mutate({

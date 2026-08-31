@@ -93,144 +93,22 @@ describe("NotificationLevelPopover", () => {
   });
 
   /**
-   * A write that fails must say so. Before this the popover closed on click,
-   * so a rejected PUT dismissed the menu exactly as a successful one did and
-   * the member walked away believing a setting had been saved that had not.
+   * Dismissal is unconditional. An earlier revision kept the menu open until
+   * the write landed so a failure could render inside it; that made closing
+   * depend on an `isPending` transition, which never arrives when TanStack
+   * pauses the mutation offline — the menu froze with every option disabled.
+   * The failure is reported in the channel header instead.
    */
-  it("surfaces a failed save instead of closing silently", async () => {
-    const user = userEvent.setup();
-    render(
-      <NotificationLevelPopover level="mentions" onChange={vi.fn()} hasError />,
-    );
-
-    await user.click(screen.getByRole("button", { name: /notifications:/i }));
-
-    expect(screen.getByRole("alert")).toHaveTextContent(/could not save/i);
-  });
-
-  it("says nothing about errors when the save succeeded", async () => {
-    const user = userEvent.setup();
-    render(<NotificationLevelPopover level="mentions" onChange={vi.fn()} />);
-
-    await user.click(screen.getByRole("button", { name: /notifications:/i }));
-
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
-
-  /**
-   * The popover stays open while the write is in flight, so the error has
-   * somewhere to land. Closing is driven by the save completing, not by the
-   * click — see the effect in the component.
-   */
-  it("keeps the menu open while a write is in flight", async () => {
+  it("closes as soon as a level is picked", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     render(
       <NotificationLevelPopover
         level="mentions"
         onChange={onChange}
-        isSaving
-      />,
-    );
-
-    await user.click(screen.getByRole("button", { name: /notifications:/i }));
-    const menu = screen.getByRole("button", { name: /every message/i });
-    expect(menu).toBeInTheDocument();
-  });
-
-  /**
-   * The commit that introduced close-on-save shipped without pinning it: the
-   * three tests added alongside it all passed with the component reverted to
-   * closing on click. These two are the actual pins.
-   */
-  it("stays open until a controlled save completes, then closes", async () => {
-    const user = userEvent.setup();
-    const onChange = vi.fn();
-    const { rerender } = render(
-      <NotificationLevelPopover
-        level="mentions"
-        onChange={onChange}
         isSaving={false}
       />,
     );
-
-    await user.click(screen.getByRole("button", { name: /notifications:/i }));
-    await user.click(screen.getByRole("button", { name: /mute/i }));
-    expect(onChange).toHaveBeenCalledWith("off");
-
-    // Still open while the write is in flight — this is what gives a failure
-    // somewhere to render.
-    rerender(
-      <NotificationLevelPopover
-        level="mentions"
-        onChange={onChange}
-        isSaving={true}
-      />,
-    );
-    expect(
-      screen.getByRole("button", { name: /every message/i }),
-    ).toBeInTheDocument();
-
-    // Save lands with no error -> dismisses.
-    rerender(
-      <NotificationLevelPopover
-        level="off"
-        onChange={onChange}
-        isSaving={false}
-      />,
-    );
-    await waitFor(() =>
-      expect(
-        screen.queryByRole("button", { name: /every message/i }),
-      ).not.toBeInTheDocument(),
-    );
-  });
-
-  it("keeps the menu open when the completed save failed", async () => {
-    const user = userEvent.setup();
-    const onChange = vi.fn();
-    const { rerender } = render(
-      <NotificationLevelPopover
-        level="mentions"
-        onChange={onChange}
-        isSaving={false}
-      />,
-    );
-
-    await user.click(screen.getByRole("button", { name: /notifications:/i }));
-    await user.click(screen.getByRole("button", { name: /mute/i }));
-
-    rerender(
-      <NotificationLevelPopover
-        level="mentions"
-        onChange={onChange}
-        isSaving={true}
-      />,
-    );
-    rerender(
-      <NotificationLevelPopover
-        level="mentions"
-        onChange={onChange}
-        isSaving={false}
-        hasError
-      />,
-    );
-
-    expect(screen.getByRole("alert")).toHaveTextContent(/could not save/i);
-    expect(
-      screen.getByRole("button", { name: /every message/i }),
-    ).toBeInTheDocument();
-  });
-
-  /**
-   * `isSaving` is optional. Without it there is no in-flight transition for the
-   * effect to close on, so the click must dismiss directly — otherwise such a
-   * consumer gets a menu that never goes away.
-   */
-  it("dismisses immediately for a consumer that does not wire isSaving", async () => {
-    const user = userEvent.setup();
-    const onChange = vi.fn();
-    render(<NotificationLevelPopover level="mentions" onChange={onChange} />);
 
     await user.click(screen.getByRole("button", { name: /notifications:/i }));
     await user.click(screen.getByRole("button", { name: /mute/i }));
@@ -241,5 +119,34 @@ describe("NotificationLevelPopover", () => {
         screen.queryByRole("button", { name: /every message/i }),
       ).not.toBeInTheDocument(),
     );
+  });
+
+  /**
+   * An unknown level must not be reported as a real one. The server sends an
+   * entry for every readable channel, so a missing entry means the read has
+   * not landed — and a `mentions` stand-in would state a level, which on
+   * `#announcements` (`all`) or `#chapter-audit` (`off`) is exactly the wrong
+   * one. This is the defect the whole change exists to remove, so it must not
+   * come back through the loading path.
+   */
+  it("reports no level, and refuses interaction, when the level is unknown", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<NotificationLevelPopover level={null} onChange={onChange} />);
+
+    const trigger = screen.getByRole("button", {
+      name: /notification level unavailable/i,
+    });
+    expect(trigger).toBeDisabled();
+    // Critically: it does NOT claim "only @mentions".
+    expect(
+      screen.queryByRole("button", { name: /only @mentions/i }),
+    ).not.toBeInTheDocument();
+
+    await user.click(trigger);
+    expect(
+      screen.queryByRole("button", { name: /every message/i }),
+    ).not.toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
   });
 });

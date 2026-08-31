@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { MuteGlyph } from "./chat-glyphs";
 import {
@@ -64,32 +64,21 @@ export function NotificationLevelPopover({
   onChange,
   disabled,
   isSaving,
-  hasError,
 }: {
-  /** The channel's server-resolved EFFECTIVE level (stored row, else the channel's default). */
-  level: ChatNotificationLevel;
+  /**
+   * The channel's server-resolved EFFECTIVE level (stored row, else the
+   * channel's default), or `null` when it is not known yet. `null` renders a
+   * neutral, disabled trigger: a `mentions` stand-in would state a level, and
+   * stating the wrong one is the defect this whole change exists to remove.
+   */
+  level: ChatNotificationLevel | null;
   onChange: (level: ChatNotificationLevel) => void;
   disabled?: boolean;
   isSaving?: boolean;
-  /**
-   * The last write failed. Rendered inside the popover AND kept open on
-   * failure — a mutation with no visible error state let a member close this
-   * believing a setting was saved that was not.
-   */
-  hasError?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const isMuted = level === "off";
-
-  // Close on a SUCCESSFUL save, not on click. Closing on click is what made a
-  // failed write invisible: the popover was already gone before the mutation
-  // rejected, so the member saw a dismissed menu and assumed it had stuck.
-  // Staying open until the write lands means `hasError` has somewhere to show.
-  const wasSaving = useRef(false);
-  useEffect(() => {
-    if (wasSaving.current && !isSaving && !hasError) setOpen(false);
-    wasSaving.current = Boolean(isSaving);
-  }, [isSaving, hasError]);
+  const unknown = level === null;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -97,13 +86,15 @@ export function NotificationLevelPopover({
         <Button
           variant="secondary"
           size="sm"
-          disabled={disabled}
+          disabled={disabled || unknown}
           // Names the state, not just the control: a screen reader user needs
           // to know the channel is muted without opening the popover.
           aria-label={
-            isMuted
-              ? "Notifications: muted. Change notification level"
-              : `Notifications: ${level === "all" ? "every message" : "only @mentions"}. Change notification level`
+            unknown
+              ? "Notification level unavailable"
+              : isMuted
+                ? "Notifications: muted. Change notification level"
+                : `Notifications: ${level === "all" ? "every message" : "only @mentions"}. Change notification level`
           }
         >
           <MuteGlyph className="h-5 w-5" active={isMuted} />
@@ -124,22 +115,17 @@ export function NotificationLevelPopover({
                   disabled={isSaving}
                   aria-current={selected ? "true" : undefined}
                   onClick={() => {
-                    // A no-op write still costs a round trip and would bump
-                    // updated_at for nothing. This is only safe because `level`
-                    // is the server-resolved EFFECTIVE level — when it was a
-                    // client-side `mentions` guess, this guard silently ate the
-                    // one click that would have fixed a mis-shown channel.
-                    if (selected) {
-                      setOpen(false);
-                      return;
-                    }
-                    onChange(option.level);
-                    // A consumer that does not wire `isSaving` has no in-flight
-                    // signal for the effect above to close on, so dismiss
-                    // immediately rather than leaving the menu stuck open
-                    // forever. Controlled consumers stay open until the write
-                    // lands, which is what gives `hasError` somewhere to show.
-                    if (isSaving === undefined) setOpen(false);
+                    // Closes on click, unconditionally. An earlier revision
+                    // kept it open until the write landed so a failure had
+                    // somewhere to render; that made dismissal depend on an
+                    // `isPending` transition, which never arrives when
+                    // TanStack PAUSES the mutation offline (`networkMode:
+                    // "online"`) — the menu froze with every option disabled
+                    // and no explanation, on a surface that is explicitly
+                    // offline-capable. The failure is reported in the channel
+                    // header instead, which does not unmount.
+                    if (!selected) onChange(option.level);
+                    setOpen(false);
                   }}
                   className={cn(
                     "flex w-full flex-col gap-0.5 px-3 py-2.5 text-left transition-colors disabled:opacity-60",
@@ -164,15 +150,6 @@ export function NotificationLevelPopover({
             );
           })}
         </ul>
-        {hasError ? (
-          <p
-            role="alert"
-            className="border-t border-border px-3 py-2.5 text-[12.5px] text-destructive"
-          >
-            Could not save that. Your notification level is unchanged — try
-            again.
-          </p>
-        ) : null}
       </PopoverContent>
     </Popover>
   );

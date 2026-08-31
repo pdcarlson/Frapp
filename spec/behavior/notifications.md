@@ -161,6 +161,15 @@ single `<button>` (a nested button is invalid HTML) and a hover-revealed action 
 unreachable on touch. Mobile does not yet expose the control; the levels it writes are already
 honoured by the worker for every client.
 
+Two states the control must not fake. When the effective level is **not yet known** — the read
+has not landed, or failed — the trigger is disabled and announces "Notification level
+unavailable" rather than standing in `mentions`, because on `#announcements` or `#chapter-audit`
+that stand-in states the wrong level. When a write **fails**, the failure is reported in the
+channel header, not inside the popover: the popover unmounts its content when dismissed, and
+holding it open until the write lands freezes it whenever the mutation is paused offline. The
+report is scoped to the channel the failed write was for — the mutation is shared by the whole
+shell, so an unscoped error asserts a failure on channels the member never touched.
+
 ## Chat notification preferences
 
 Chat-specific levels live in the `chat_notification_preferences` table (ADR-06), separately from the broader `notification_preferences` table because chat needs a tri-state (`all` / `mentions` / `off`) and two scope arms — per-channel and per-kind. Both arms are keyed by `(user_id, chapter_id, scope, coalesce(scope_id::text, scope_kind))` with a unique constraint that allows exactly one row per (scope, key).
