@@ -580,19 +580,20 @@ export class EventService {
     };
     const regenerates = RECURRENCE_DEFINING_FIELDS.some(hasChanged);
 
-    // Refuse a rule this service cannot generate from *before* touching
-    // anything. `recurrence_rule` arrives as a free string, and the old order
-    // deleted the whole future half of the series and only then discovered it
-    // had nothing to rebuild with.
-    // `??` would read an explicit `recurrence_rule: null` — the caller ending
-    // the series — as "unchanged" and fall through to the parent's rule. That
-    // was harmless while this value only gated validation, but the split path
-    // below *writes* it to the new head, where it would resurrect a series the
-    // caller just cleared.
+    // `??` here would read an explicit `recurrence_rule: null` — the caller
+    // ending the series — as "unchanged" and fall through to the parent's rule.
+    // That was harmless while this value only gated the check below, but the
+    // split path also *writes* it to the new head, where it would resurrect a
+    // series the caller just cleared.
     const nextRule =
       normalized.recurrence_rule !== undefined
         ? normalized.recurrence_rule
         : parent.recurrence_rule;
+
+    // Refuse a rule this service cannot generate from *before* touching
+    // anything. `recurrence_rule` arrives as a free string, and the old order
+    // deleted the whole future half of the series and only then discovered it
+    // had nothing to rebuild with.
     if (regenerates && nextRule && this.occurrenceCountFor(nextRule) === null) {
       throw new BadRequestException(
         'recurrence_rule must be one of WEEKLY, BIWEEKLY, MONTHLY',
@@ -761,9 +762,18 @@ export class EventService {
       retimed.end_time = new Date(startMs + durationMs).toISOString();
     }
 
+    const carried = propagatableFields(normalized);
+
     // Retire the head. `recurrence_rule` and nothing else: every one of its own
     // fields keeps the value it had while the meeting was happening, so the
     // `event_attendance` rows hanging off it still describe it accurately.
+    //
+    // Retired *before* the successor is promoted, not after. These writes are
+    // not in one transaction, and the two orders fail differently: retiring
+    // first and then failing leaves a series with no head, which reads as "the
+    // series ended" and is recoverable; promoting first and then failing leaves
+    // the old head and the successor both carrying the rule — two live series
+    // over the same occurrences.
     await this.eventRepo.update(parent.id, chapterId, {
       recurrence_rule: null,
     });
@@ -784,7 +794,7 @@ export class EventService {
     // this row survives as a standalone event with the edit applied, rather
     // than the edit landing nowhere.
     const newHead = await this.eventRepo.update(successor.id, chapterId, {
-      ...propagatableFields(normalized),
+      ...carried,
       ...retimed,
       recurrence_rule: nextRule,
       parent_event_id: null,
@@ -808,7 +818,7 @@ export class EventService {
       await this.eventRepo.updateMany(
         rest.map((child) => child.id),
         chapterId,
-        { ...propagatableFields(normalized), parent_event_id: newHead.id },
+        { ...carried, parent_event_id: newHead.id },
       );
     }
 
