@@ -5,6 +5,7 @@ import {
   DEFAULT_RETENTION_DAYS,
   LIST_PAGE_SIZE,
   backupKey,
+  checkDeletionSanity,
   isUnchanged,
   listBucketObjects,
   parseObjectPage,
@@ -318,4 +319,59 @@ test("the service key never appears in a listing error message", async () => {
     listBucketObjects({ supabaseUrl: "https://x.supabase.co", serviceKey: secret, bucket: "documents", fetchImpl }),
     (err) => !err.message.includes(secret),
   );
+});
+
+// -- checkDeletionSanity -----------------------------------------------------
+
+const liveManifest = (n) =>
+  manifestOf(Array.from({ length: n }, (_, i) => recorded("documents", `f${i}.pdf`)));
+
+test("a short listing that would wipe the corpus is refused before any write", () => {
+  // The scenario: a permissions change or partial API failure returns 200 with
+  // far fewer objects than exist. From inside planSync that is indistinguishable
+  // from a real mass deletion, and it only becomes visible when retention starts
+  // pruning a month later -- after 30 green runs.
+  const manifest = liveManifest(100);
+  const verdict = checkDeletionSanity({ manifest, tombstone: manifest.objects.slice(0, 90) });
+
+  assert.equal(verdict.ok, false);
+  assert.match(verdict.reason, /90 of 100/);
+  assert.match(verdict.reason, /Nothing has been changed offsite/);
+});
+
+test("an ordinary run well under the threshold passes", () => {
+  const manifest = liveManifest(100);
+  assert.equal(checkDeletionSanity({ manifest, tombstone: manifest.objects.slice(0, 10) }).ok, true);
+});
+
+test("exactly at the threshold is allowed, not refused", () => {
+  const manifest = liveManifest(100);
+  assert.equal(checkDeletionSanity({ manifest, tombstone: manifest.objects.slice(0, 50) }).ok, true);
+});
+
+test("a small corpus is exempt -- deleting 2 of 3 files is ordinary, not suspicious", () => {
+  const manifest = liveManifest(3);
+  assert.equal(checkDeletionSanity({ manifest, tombstone: manifest.objects.slice(0, 2) }).ok, true);
+});
+
+test("a first run has no manifest and cannot trip the guard", () => {
+  assert.equal(checkDeletionSanity({ manifest: null, tombstone: [] }).ok, true);
+});
+
+test("tombstones already in the manifest do not count toward the live corpus", () => {
+  // Otherwise a backup carrying a long tail of old tombstones would raise the
+  // denominator and quietly weaken the guard over time.
+  const manifest = manifestOf([
+    ...Array.from({ length: 20 }, (_, i) => recorded("documents", `live${i}.pdf`)),
+    ...Array.from({ length: 500 }, (_, i) =>
+      recorded("documents", `dead${i}.pdf`, { deleted_at: "2026-08-30T00:00:00Z" }),
+    ),
+  ]);
+
+  const verdict = checkDeletionSanity({
+    manifest,
+    tombstone: manifest.objects.filter((o) => !o.deleted_at).slice(0, 19),
+  });
+  assert.equal(verdict.ok, false, "19 of 20 live objects must trip it despite 500 old tombstones");
+  assert.equal(verdict.live, 20);
 });

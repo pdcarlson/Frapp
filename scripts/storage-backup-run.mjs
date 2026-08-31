@@ -31,6 +31,7 @@ import { dirname, join } from "node:path";
 import {
   DEFAULT_RETENTION_DAYS,
   backupKey,
+  checkDeletionSanity,
   downloadObject,
   listBucketObjects,
   listBuckets,
@@ -149,6 +150,18 @@ async function runBackup(opts) {
       `Plan: ${plan.upload.length} to upload, ${plan.keep.length} unchanged, ` +
         `${plan.tombstone.length} newly deleted, ${plan.prune.length} past retention.`,
     );
+
+    // Before any write. A short listing looks exactly like a mass deletion from
+    // in here, and the difference only becomes visible once retention starts
+    // pruning -- by which point the run has looked green for a month.
+    const sanity = checkDeletionSanity({ manifest, tombstone: plan.tombstone });
+    if (!sanity.ok && process.env.STORAGE_BACKUP_ALLOW_MASS_DELETE !== "true") {
+      console.error(`::error::${sanity.reason}`);
+      process.exit(1);
+    }
+    if (!sanity.ok) {
+      console.log(`STORAGE_BACKUP_ALLOW_MASS_DELETE=true -- proceeding with ${sanity.deleting} deletions.`);
+    }
 
     if (opts.dryRun) {
       console.log("--dry-run: stopping before any write.");

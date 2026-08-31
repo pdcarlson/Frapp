@@ -188,6 +188,20 @@ is pruned only once it is older than `BACKUP_RETENTION_DAYS` (default 30).
 **So the retention window is the recovery window.** A file deleted 31 days ago is
 gone; one deleted yesterday is one command away.
 
+### If the backup job fails saying it would delete too much
+
+The job refuses to proceed when a run would tombstone more than half of a corpus
+of 20 or more objects. That is not a real mass deletion in almost every case --
+it is a **short listing**: a permissions change, a renamed bucket, or a partial
+API failure that still answered `200`. From inside the job those look identical
+to everyone deleting everything, and the difference would otherwise only surface
+a month later when retention began pruning.
+
+Nothing is written offsite when this fires, so the previous backup is intact.
+Check what Storage actually returns before doing anything else. If the deletion
+is genuine (a chapter offboarded, a bucket deliberately emptied), re-run with
+`STORAGE_BACKUP_ALLOW_MASS_DELETE=true`.
+
 ### Restore
 
 Needs `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and the four `BACKUP_S3_*`
