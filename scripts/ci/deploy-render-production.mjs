@@ -33,7 +33,7 @@
 // Semantics: the pure functions below. Unit tests:
 // `scripts/ci/__tests__/deploy-render-production.test.mjs`.
 
-import { createClock } from "./lib/polling.mjs";
+import { createClock, pollUntilTerminal } from "./lib/polling.mjs";
 import {
   RENDER_NEUTRAL_TERMINAL_STATES,
   RENDER_TERMINAL_FAILURE_STATES,
@@ -121,48 +121,58 @@ export async function pollRenderDeploy({
   overallTimeoutMs = RENDER_OVERALL_TIMEOUT_MS,
   logger = console,
 }) {
-  const startedAt = clock.now();
   let lastObservedStatus = null;
 
-  while (clock.now() - startedAt < overallTimeoutMs) {
-    const response = await fetchImpl(GET_DEPLOY_URL(serviceId, deployId), {
-      headers: { Authorization: `Bearer ${apiKey}` },
-    });
-    if (!response.ok) {
-      return {
-        status: "failure",
-        message: `Render API returned HTTP ${response.status} for deploy ${deployId} on ${label}.`,
-      };
-    }
+  return pollUntilTerminal({
+    clock,
+    pollIntervalMs,
+    overallTimeoutMs,
+    logger,
+    fetchOne: async () => {
+      const response = await fetchImpl(GET_DEPLOY_URL(serviceId, deployId), {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      if (!response.ok) {
+        return { httpStatus: response.status };
+      }
+      const deploy = await response.json();
+      return { deployStatus: deploy?.status ?? null };
+    },
+    classify: (state) => {
+      if (state.httpStatus) {
+        return {
+          status: "failure",
+          message: `Render API returned HTTP ${state.httpStatus} for deploy ${deployId} on ${label}.`,
+        };
+      }
 
-    const deploy = await response.json();
-    const deployStatus = deploy?.status ?? null;
-    lastObservedStatus = deployStatus;
+      const deployStatus = state.deployStatus;
+      lastObservedStatus = deployStatus;
 
-    const verdict = classifyRenderStatus(deployStatus);
-    if (verdict === "success") {
-      return { status: "success", message: `Render deploy ${deployId} for ${label} is ${deployStatus}.` };
-    }
-    if (verdict === "failure") {
-      return {
-        status: "failure",
-        message:
-          `Render deploy ${deployId} for ${label} ended in ${deployStatus}. ` +
-          `On a deliberate single-commit deploy this means the commit did not ship.`,
-      };
-    }
+      const verdict = classifyRenderStatus(deployStatus);
+      if (verdict === "success") {
+        return { status: "success", message: `Render deploy ${deployId} for ${label} is ${deployStatus}.` };
+      }
+      if (verdict === "failure") {
+        return {
+          status: "failure",
+          message:
+            `Render deploy ${deployId} for ${label} ended in ${deployStatus}. ` +
+            `On a deliberate single-commit deploy this means the commit did not ship.`,
+        };
+      }
 
-    logger.log?.(`[${label}] Render deploy ${deployId} is ${deployStatus}...`);
-    await clock.sleep(pollIntervalMs);
-  }
-
-  return {
-    status: "failure",
-    message:
-      `Timed out after ${Math.round(overallTimeoutMs / 1000)}s waiting for Render deploy ` +
-      `${deployId} on ${label}. Last observed status: ${lastObservedStatus ?? "none"}. ` +
-      `Timing out is a failure, not an assumption that it went live.`,
-  };
+      logger.log?.(`[${label}] Render deploy ${deployId} is ${deployStatus}...`);
+      return null;
+    },
+    onTimeout: () => ({
+      status: "failure",
+      message:
+        `Timed out after ${Math.round(overallTimeoutMs / 1000)}s waiting for Render deploy ` +
+        `${deployId} on ${label}. Last observed status: ${lastObservedStatus ?? "none"}. ` +
+        `Timing out is a failure, not an assumption that it went live.`,
+    }),
+  });
 }
 
 /** create + poll, the whole job. */

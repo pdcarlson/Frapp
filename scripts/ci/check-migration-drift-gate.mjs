@@ -87,6 +87,7 @@ import {
   parseMigrationFilename,
 } from "./check-migration-drift.mjs";
 import { requireEnv, SECRETS_RUNBOOK } from "./lib/env.mjs";
+import { DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_MS } from "./lib/http.mjs";
 
 export const DEFAULT_MAIN_REF = "origin/main";
 export const DEFAULT_GRACE_MINUTES = 30;
@@ -95,8 +96,12 @@ export const MIGRATIONS_PREFIX = "supabase/migrations";
 // Bounded retry for the one network call. Three attempts over ~6s absorbs the
 // blips that would otherwise redden every open PR; anything longer-lived is a
 // real outage and should surface as one rather than be waited out in CI.
-export const FETCH_ATTEMPTS = 3;
-export const FETCH_BACKOFF_MS = [1000, 5000];
+// Re-exported from `lib/http.mjs` rather than redeclared: the numbers had
+// already drifted into agreement with `resilientFetch`'s defaults, which is
+// exactly the silent-duplication risk this module's own header warns about
+// for the rest of the CI script layer.
+export const FETCH_ATTEMPTS = DEFAULT_ATTEMPTS;
+export const FETCH_BACKOFF_MS = DEFAULT_BACKOFF_MS;
 
 // ── git ─────────────────────────────────────────────────────────────────────
 
