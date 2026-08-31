@@ -25,15 +25,15 @@ export async function fetchJson({ url, headers, what, fetchImpl = fetch }) {
 }
 
 export async function fetchRenderDeploys({ apiKey, serviceId, fetchImpl = fetch }) {
+  // `what` names the service up front rather than rewrapping the result in a
+  // `.catch`: a rewrap would swallow the original stack trace (and the
+  // original error's identity — a network throw, a malformed-JSON
+  // SyntaxError) for every failure, not just the intended non-2xx case.
   return fetchJson({
     url: RENDER_DEPLOYS_URL(serviceId),
     headers: { Authorization: `Bearer ${apiKey}` },
-    what: `Render API`,
+    what: `Render API for service ${serviceId}`,
     fetchImpl,
-  }).catch((error) => {
-    // Preserve the original message shape: "Render API returned HTTP 500 for
-    // service srv-123", naming the service rather than just "Render API".
-    throw new Error(`${error.message} for service ${serviceId}`);
   });
 }
 
@@ -41,9 +41,7 @@ export async function fetchVercelDeployments({ apiKey, projectId, fetchImpl = fe
   return fetchJson({
     url: VERCEL_DEPLOYMENTS_URL(projectId),
     headers: { Authorization: `Bearer ${apiKey}` },
-    what: `Vercel API`,
+    what: `Vercel API for project ${projectId}`,
     fetchImpl,
-  }).catch((error) => {
-    throw new Error(`${error.message} for project ${projectId}`);
   });
 }

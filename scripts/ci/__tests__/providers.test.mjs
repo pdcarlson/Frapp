@@ -57,11 +57,11 @@ describe("fetchRenderDeploys", () => {
 
   // Naming the service in the error is what makes a red deploy log actionable
   // rather than a bare status code.
-  it("throws naming the status and the service on a non-ok response", async () => {
+  it("throws naming the service and the status on a non-ok response", async () => {
     const { fetchImpl } = recorder({ ok: false, status: 503, json: async () => ({}) });
     await assert.rejects(
       () => fetchRenderDeploys({ apiKey: "k", serviceId: "srv-1", fetchImpl }),
-      /Render API returned HTTP 503 for service srv-1/,
+      /Render API for service srv-1 returned HTTP 503/,
     );
   });
 });
@@ -80,11 +80,11 @@ describe("fetchVercelDeployments", () => {
     assert.equal(calls[0].init.headers.Authorization, "Bearer k");
   });
 
-  it("throws naming the status and the project on a non-ok response", async () => {
+  it("throws naming the project and the status on a non-ok response", async () => {
     const { fetchImpl } = recorder({ ok: false, status: 401, json: async () => ({}) });
     await assert.rejects(
       () => fetchVercelDeployments({ apiKey: "k", projectId: "prj_1", fetchImpl }),
-      /Vercel API returned HTTP 401 for project prj_1/,
+      /Vercel API for project prj_1 returned HTTP 401/,
     );
   });
 });
