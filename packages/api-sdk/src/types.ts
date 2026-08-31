@@ -3171,6 +3171,14 @@ export interface components {
             description?: string;
             /** @description Folder name (one level, flat structure) */
             folder?: string;
+            /** @description MIME content type, as declared for the upload */
+            content_type?: string;
+            /** @description File size in bytes */
+            byte_size?: number;
+            /** @description Free-text document category (bylaws, budget, minutes, ...) */
+            document_type?: string;
+            /** @description Date this document took effect (ISO date), distinct from the upload timestamp */
+            effective_date?: string;
         };
         CreateDocumentFolderDto: {
             /** @description Folder name (unique within the chapter) */

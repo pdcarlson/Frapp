@@ -337,6 +337,30 @@ After any rollback event:
   public` is not a partial fix, it is the original bug spelled explicitly — the guard
   rejects it for that reason.
 
+## Rollback the `chapter_documents` metadata columns
+
+* **Migration**: `20260831220000_chapter_documents_metadata.sql`
+* **Action**:
+  ```sql
+  ALTER TABLE chapter_documents
+    DROP COLUMN content_type,
+    DROP COLUMN byte_size,
+    DROP COLUMN document_type,
+    DROP COLUMN effective_date;
+  ```
+  Dropping the columns also drops `chapter_documents_byte_size_nonneg`, which is
+  defined on `byte_size` — no separate `DROP CONSTRAINT` needed.
+* **Order**: no coordination required — the four columns are purely additive and
+  nullable. A running API build from before this migration selects `*` and simply
+  never reads the new keys; a build from after this migration reverted still reads
+  `null` for them (the service already treats every one of the four as optional).
+* **Data caveat**: the four columns are populated only for documents uploaded
+  after this migration landed. Rolling back loses that metadata for any document
+  uploaded in between — there is no source to re-derive it from (the client
+  supplied `content_type`/`byte_size` at upload time; `document_type`/
+  `effective_date` were free-text form input). Confirm nothing downstream (a
+  retrieval index, a report) depends on that window's values before dropping.
+
 ## Rollback the chat author fields
 
 * **Migration**: `20260823120000_chat_message_authors.sql`

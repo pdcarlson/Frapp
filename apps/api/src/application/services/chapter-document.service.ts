@@ -42,6 +42,10 @@ export interface ConfirmUploadInput {
   folder?: string | null;
   storage_path: string;
   uploaded_by: string;
+  content_type?: string | null;
+  byte_size?: number | null;
+  document_type?: string | null;
+  effective_date?: string | null;
 }
 
 @Injectable()
@@ -98,6 +102,21 @@ export class ChapterDocumentService {
       'storage_path must not contain relative path segments',
     );
 
+    // `requestUploadUrl` validates the declared content type before minting a
+    // signed URL, but that validation is not carried into this call — the two
+    // are separate requests with no shared state. Without re-checking here, a
+    // caller could confirm a real, already-validated upload under an arbitrary
+    // `content_type`, corrupting the provenance metadata this column exists to
+    // feed (the AI corpus retrieval design).
+    if (
+      input.content_type != null &&
+      !isAllowedUploadMime('document', input.content_type)
+    ) {
+      throw new BadRequestException(
+        `Content type "${input.content_type}" is not allowed`,
+      );
+    }
+
     const folder = normalizeFolderName(input.folder);
 
     // Uploading into a folder that was never explicitly created is still
@@ -115,6 +134,10 @@ export class ChapterDocumentService {
       folder,
       storage_path: input.storage_path,
       uploaded_by: input.uploaded_by,
+      content_type: input.content_type ?? null,
+      byte_size: input.byte_size ?? null,
+      document_type: input.document_type ?? null,
+      effective_date: input.effective_date ?? null,
     });
   }
 

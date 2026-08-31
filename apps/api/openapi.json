@@ -8094,6 +8094,22 @@
           "folder": {
             "type": "string",
             "description": "Folder name (one level, flat structure)"
+          },
+          "content_type": {
+            "type": "string",
+            "description": "MIME content type, as declared for the upload"
+          },
+          "byte_size": {
+            "type": "number",
+            "description": "File size in bytes"
+          },
+          "document_type": {
+            "type": "string",
+            "description": "Free-text document category (bylaws, budget, minutes, ...)"
+          },
+          "effective_date": {
+            "type": "string",
+            "description": "Date this document took effect (ISO date), distinct from the upload timestamp"
           }
         },
         "required": [

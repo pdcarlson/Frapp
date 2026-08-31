@@ -371,6 +371,24 @@ Every migration below records what it does, how it was promoted, and anything a
 promoter must do by hand. `check:migration-safety` requires migration PRs to
 touch this file, which is what keeps the log complete.
 
+## 2026-08-31: `chapter_documents` metadata — mime type, size, document type, effective date (#716)
+
+One additive migration. Adds four nullable columns to an existing table; no
+backfill, no lock-heavy operation, no RLS change (the table already has RLS
+enabled with no client policies).
+
+### 20260831220000_chapter_documents_metadata.sql
+* **Purpose**: Adds `content_type`, `byte_size`, `document_type`, `effective_date`
+  to `chapter_documents`, prerequisite work for the AI corpus retrieval design
+  (ADR-13 §13, #720) which needs a currency signal distinct from upload time and
+  provenance metadata beyond a title. `content_type`/`byte_size` are populated
+  from what the client already knows about the file (`file.type` / `file.size`);
+  `document_type`/`effective_date` are optional form fields, user-supplied and
+  never inferred. A check constraint keeps `byte_size` non-negative when set.
+* **Checks**: After `db push`, `select column_name from information_schema.columns where table_name = 'chapter_documents' and column_name in ('content_type','byte_size','document_type','effective_date');` — should return 4 rows. `select conname from pg_constraint where conname = 'chapter_documents_byte_size_nonneg';` — should return 1 row.
+
+**Rollback**: See `DB_ROLLBACK_PLAYBOOK.md` § Rollback the `chapter_documents` metadata columns.
+
 ## 2026-08-24: Discord bot connection — two migrations
 
 The second way in: a single Signet-owned bot a chapter installs through
