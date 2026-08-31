@@ -38,13 +38,25 @@ const applied = (list) => list.map((m) => ({ version: m.version, name: m.name })
 const graceMs = DEFAULT_GRACE_MINUTES * 60 * 1000;
 
 // A git double: `ls-tree` lists paths, `log` dates them.
-function makeGit({ paths, times = {} }) {
+//
+// `log` models the one behaviour this gate depends on. Real `git log -1 -- path`
+// walks into merged branches and reports the commit that AUTHORED the file;
+// adding `--first-parent` restricts the walk to `ref`'s own history and reports
+// the commit that LANDED it. So the double keeps two clocks and serves whichever
+// the caller's flags ask for. `authored` alone means the two agree, which is
+// what a squash merge actually looks like.
+function makeGit({ paths, times = {}, landedTimes = {} }) {
   return (args) => {
     if (args[0] === "ls-tree") return `${paths.join("\n")}\n`;
     if (args[0] === "log") {
       const path = args[args.length - 1];
-      if (times[path] === undefined) throw new Error("no commit found");
-      return `${times[path]}\n`;
+      const firstParent = args.includes("--first-parent");
+      const stamp =
+        firstParent && landedTimes[path] !== undefined
+          ? landedTimes[path]
+          : times[path];
+      if (stamp === undefined) throw new Error("no commit found");
+      return `${stamp}\n`;
     }
     throw new Error(`unexpected git ${args[0]}`);
   };
@@ -96,6 +108,92 @@ test("readMigrationsAtRef leaves landedMs null when git cannot date the file", (
 
   const [only] = readMigrationsAtRef({ ref: "origin/main", runGit });
   assert.equal(only.landedMs, null);
+});
+
+// ── The grace window runs from the merge, not from the authoring ────────────
+// Regression cover for the gate turning every open PR red seconds after a
+// migration merged. The grace was computed from the feature-branch commit, so
+// a PR that sat in review longer than the window got no grace at all — and a
+// PR open longer than 30 minutes is the normal case here, which made the
+// intended grace unreachable in practice.
+
+const SECOND = 1000;
+const MERGE_CASE = "supabase/migrations/20260824115900_late_merge.sql";
+
+test("readMigrationsAtRef dates a migration from its merge, not from the branch commit", () => {
+  const runGit = makeGit({
+    paths: [MERGE_CASE],
+    times: { [MERGE_CASE]: (NOW - 90 * 60 * SECOND) / SECOND },
+    landedTimes: { [MERGE_CASE]: (NOW - 60 * SECOND) / SECOND },
+  });
+
+  const [only] = readMigrationsAtRef({ ref: "origin/main", runGit });
+
+  assert.equal(
+    only.landedMs,
+    NOW - 60 * SECOND,
+    "landedMs must be the merge commit's time, not the authoring commit's",
+  );
+});
+
+test("a migration authored outside the grace but merged inside it is graced", () => {
+  // The measured shape of the real misfire: authored on a branch 90 minutes
+  // ago, merged to main 60 seconds ago, gate runs now. Staging has had one
+  // minute to catch up, so this is not drift yet.
+  const runGit = makeGit({
+    paths: [MERGE_CASE],
+    times: { [MERGE_CASE]: (NOW - 90 * 60 * SECOND) / SECOND },
+    landedTimes: { [MERGE_CASE]: (NOW - 60 * SECOND) / SECOND },
+  });
+
+  const result = classifyGateDrift({
+    main: readMigrationsAtRef({ ref: "origin/main", runGit }),
+    applied: [],
+    nowMs: NOW,
+    graceMs,
+  });
+
+  assert.equal(result.status, "clean", "an unrelated PR must not go red for this");
+  assert.deepEqual(result.overdue, []);
+  assert.deepEqual(
+    result.withinGrace.map((m) => m.version),
+    ["20260824115900"],
+  );
+});
+
+test("the fix does not blunt the gate: merged long ago is still overdue", () => {
+  // The other half of the trade. A migration that genuinely has not reached
+  // staging must still fail, and dating it from the merge must not rescue it.
+  const runGit = makeGit({
+    paths: [MERGE_CASE],
+    times: { [MERGE_CASE]: (NOW - 72 * HOUR) / SECOND },
+    landedTimes: { [MERGE_CASE]: (NOW - 48 * HOUR) / SECOND },
+  });
+
+  const result = classifyGateDrift({
+    main: readMigrationsAtRef({ ref: "origin/main", runGit }),
+    applied: [],
+    nowMs: NOW,
+    graceMs,
+  });
+
+  assert.equal(result.status, "drift");
+  assert.deepEqual(
+    result.overdue.map((m) => m.version),
+    ["20260824115900"],
+  );
+});
+
+test("a squash merge dates identically — plain and --first-parent agree", () => {
+  // main's current merge style: one linear commit, no side branch to walk
+  // into. The double models that as landedTimes being absent.
+  const runGit = makeGit({
+    paths: [MERGE_CASE],
+    times: { [MERGE_CASE]: (NOW - 60 * SECOND) / SECOND },
+  });
+
+  const [only] = readMigrationsAtRef({ ref: "origin/main", runGit });
+  assert.equal(only.landedMs, NOW - 60 * SECOND);
 });
 
 // ── classifyGateDrift ───────────────────────────────────────────────────────
