@@ -70,7 +70,7 @@ describe('scrubSentryEvent', () => {
     expect(scrubbed?.request).not.toHaveProperty('cookies');
   });
 
-  it('strips the query string from request urls and transactions', () => {
+  it('strips the query string and the authority from request urls and transactions', () => {
     const scrubbed = scrubSentryEvent({
       transaction: 'GET /v1/reports?token=eyJhbGciOiJIUzI1NiJ9.abc.def', // gitleaks:allow
       request: {
@@ -78,9 +78,17 @@ describe('scrubSentryEvent', () => {
       },
     } as unknown as ErrorEvent);
 
-    expect(scrubbed?.request?.url).toBe('https://api.frapp.live/v1/reports');
+    // Was `https://api.frapp.live/v1/reports` until #1388 hoisted
+    // `stripAuthority` into the shared scrubber. Tightened, not relaxed: the
+    // scheme and host go too, because the same parse is what removes
+    // `userinfo` — which `redactFreeText` never had a rule for, and which this
+    // boundary was shipping to a third party.
+    expect(scrubbed?.request?.url).toBe('/v1/reports');
+    // A transaction name is `<METHOD> <path>`, not a target, so it has no
+    // authority to strip and is unchanged by the same call.
     expect(scrubbed?.transaction).toBe('GET /v1/reports');
     expect(serialize(scrubbed)).not.toContain('super-secret');
+    expect(serialize(scrubbed)).not.toContain('api.frapp.live');
   });
 
   it('pseudonymizes uuids inside exception messages with the analytics salt', () => {

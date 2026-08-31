@@ -186,6 +186,60 @@ const CONTEXT_ALLOWLIST = new Set([
  */
 const URL_QUERY_RE = /((?:https?:\/\/[^\s?#]*|\/[^\s?#]*)\?)\S*/g;
 const EMAIL_RE = /[\w.+-]+@[\w-]+\.[\w.-]+/g;
+
+/**
+ * An absolute-form or otherwise authority-bearing target, reduced to its path.
+ *
+ * Hoisted here from `apps/api/src/interface/utils/path-only.ts` (#1388) so the
+ * internal log stream and this external boundary share one implementation.
+ * They had diverged, and the divergence ran the wrong way: the API-side helper
+ * stripped the authority and this one did not, leaving the *third-party* sink
+ * — the one with the stricter threat model — as the leaky half.
+ *
+ * The justification once offered for the divergence was that this file's
+ * `redactFreeText` covers userinfo. It does not. `redactFreeText` has no rule
+ * about URL authority at all; {@link EMAIL_RE} sometimes *overlaps* one, which
+ * is a different thing and fails in two directions:
+ *
+ *   - it consumes the run of `[\w.+-]` immediately before the `@`, so a
+ *     password ending in any other character (`hunter2!`) is left intact along
+ *     with the host, and
+ *   - its host half requires a literal `.`, so a dotless internal host matches
+ *     nothing whatsoever — `postgresql://postgres:s3cr3t@localhost:5432/db`
+ *     passed through byte-for-byte, and an internal service URL is exactly the
+ *     shape that carries a real credential in userinfo.
+ *
+ * Stripping the authority structurally makes both cases moot, which is why
+ * this is a parser and not another pattern. Measured cases live on #1388.
+ */
+export function stripAuthority(path: string): string {
+  // Origin-form, the overwhelmingly common case: already just a path. This
+  // includes a `//`-leading target, which is a legal origin-form path — RFC
+  // 9112's `absolute-path` is `1*( "/" segment )` and a segment may be empty.
+  //
+  // A protocol-relative target (`//host/path`) is deliberately NOT handled.
+  // It is not one of the four request-target forms, so it cannot legitimately
+  // arrive; treating it as one meant discarding the first segment of any legal
+  // `//`-leading path, which is strictly worse than the leak this fixes.
+  // `GET //x/v1/chapters/join` 404s but would have been reported as
+  // `/v1/chapters/join` — a real route, indistinguishable from a genuine
+  // request, which is forgery in the function whose subject is integrity.
+  if (path.startsWith('/')) return path;
+
+  const afterScheme = path.match(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/(.*)$/);
+
+  // Not absolute-form — asterisk-form (`OPTIONS *`) or authority-form
+  // (`CONNECT host:port`). Neither carries a path to recover, and neither
+  // should be rewritten into something that looks like one.
+  if (!afterScheme) return path;
+
+  // `(.*)` always participates when the match succeeds, so the fallback is
+  // unreachable — it is here because this package compiles under
+  // `noUncheckedIndexedAccess`, unlike `apps/api` where this parser was born.
+  const authorityAndPath = afterScheme[1] ?? '';
+  const slash = authorityAndPath.indexOf('/');
+  return slash === -1 ? '/' : authorityAndPath.slice(slash);
+}
 /** `Bearer <jwt|opaque>`, and bare three-segment JWTs wherever they appear. */
 const BEARER_RE = /\bBearer\s+[\w\-._~+/]+=*/gi;
 const JWT_RE = /\beyJ[\w-]*\.[\w-]+\.[\w-]+/g;
@@ -312,12 +366,19 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
     }
   }
 
-  /** Path without query or fragment — query strings routinely carry tokens. */
+  /**
+   * Path without query, fragment, or authority.
+   *
+   * Both halves are load-bearing and neither substitutes for the other.
+   * Dropping the query removes the tokens that routinely ride in it; dropping
+   * the authority via {@link stripAuthority} removes `userinfo`, which
+   * `redactFreeText` never had a rule for (#1388).
+   */
   function pathOnly(url: unknown): string | undefined {
     if (typeof url !== 'string' || !url) return undefined;
     const cut = url.search(/[?#]/);
     const trimmed = cut === -1 ? url : url.slice(0, cut);
-    return redactFreeText(trimmed);
+    return redactFreeText(stripAuthority(trimmed));
   }
 
   // ── Structural scrubbing ───────────────────────────────────────────────────

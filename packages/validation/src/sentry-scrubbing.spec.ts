@@ -289,3 +289,87 @@ describe("shared rules hold regardless of which app binds them", () => {
     expect(browser.scrubSentryTransaction(exploding)).toBeNull();
   });
 });
+
+/**
+ * URL authority on the external boundary (#1388).
+ *
+ * `pathOnly` used to cut only at `?`/`#` and hand the rest to `redactFreeText`,
+ * which has no rule about URL authority — its e-mail pattern merely *overlaps*
+ * one for some inputs. The two whole-credential leaks that produced are pinned
+ * here by shape rather than by regex behaviour, because the point of the fix is
+ * that the regex's behaviour stopped mattering: the authority is now removed
+ * structurally, before the sweep ever runs.
+ *
+ * Node hands `req.url` the request line verbatim and RFC 9112 permits
+ * absolute-form on any request, so these targets reach the boundary in practice
+ * — they are not synthetic.
+ */
+describe("sentry scrubbing — URL authority", () => {
+  const CREDENTIALLED = "http://svc:s3cr3t@api.frapp.live/v1/health";
+  /** Password ends outside `[\w.+-]`, so EMAIL_RE matched nothing at all. */
+  const TRAILING_SPECIAL = "http://svc:hunter2!@api.frapp.live/v1/health";
+  /** EMAIL_RE's host half requires a dot, so a dotless host matched nothing. */
+  const DOTLESS_HOST = "postgresql://postgres:s3cr3t@localhost:5432/postgres";
+
+  it("reduces an absolute-form request url to its path", () => {
+    const scrubbed = browser.scrubSentryEvent({
+      request: { url: CREDENTIALLED },
+    });
+
+    expect(
+      (scrubbed as { request?: { url?: string } } | null)?.request?.url,
+    ).toBe("/v1/health");
+    const json = serialize(scrubbed);
+    expect(json).not.toContain("s3cr3t");
+    expect(json).not.toContain("svc");
+    expect(json).not.toContain("api.frapp.live");
+  });
+
+  it("strips userinfo the free-text sweep never matched", () => {
+    for (const url of [TRAILING_SPECIAL, DOTLESS_HOST]) {
+      const json = serialize(browser.scrubSentryEvent({ request: { url } }));
+      expect(json).not.toContain("hunter2");
+      expect(json).not.toContain("s3cr3t");
+      expect(json).not.toContain("localhost");
+    }
+  });
+
+  it("covers beforeSendTransaction, not just beforeSend", () => {
+    const scrubbed = browser.scrubSentryTransaction({
+      transaction: CREDENTIALLED,
+      request: { url: DOTLESS_HOST },
+    });
+
+    expect(
+      (scrubbed as { transaction?: string } | null)?.transaction,
+    ).toBe("/v1/health");
+    const json = serialize(scrubbed);
+    expect(json).not.toContain("s3cr3t");
+    expect(json).not.toContain("localhost");
+  });
+
+  it("leaves an origin-form path exactly as it is", () => {
+    const scrubbed = browser.scrubSentryEvent({
+      request: { url: "/v1/health" },
+    });
+
+    expect(
+      (scrubbed as { request?: { url?: string } } | null)?.request?.url,
+    ).toBe("/v1/health");
+  });
+
+  it("does not rewrite a `//`-leading path into a different real route", () => {
+    // A protocol-relative target is not one of the four request-target forms,
+    // so treating it as one would discard the first segment of a legal
+    // `//`-leading path — turning `//x/v1/chapters/join` into the real route
+    // `/v1/chapters/join`. That is log forgery in the function whose whole
+    // subject is integrity, so the target is preserved verbatim instead.
+    const scrubbed = browser.scrubSentryEvent({
+      request: { url: "//x/v1/chapters/join" },
+    });
+
+    expect(
+      (scrubbed as { request?: { url?: string } } | null)?.request?.url,
+    ).toBe("//x/v1/chapters/join");
+  });
+});
