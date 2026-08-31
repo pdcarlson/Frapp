@@ -186,6 +186,24 @@ const CONTEXT_ALLOWLIST = new Set([
  */
 const URL_QUERY_RE = /((?:https?:\/\/[^\s?#]*|\/[^\s?#]*)\?)\S*/g;
 const EMAIL_RE = /[\w.+-]+@[\w-]+\.[\w.-]+/g;
+/**
+ * `userinfo` in a URL that appears inside free text (#1388).
+ *
+ * {@link stripAuthority} covers the two *structural* URL fields — `request.url`
+ * and the transaction name — but an exception message or a breadcrumb is prose,
+ * and a connection string lands there routinely: a driver that cannot reach its
+ * database puts the whole DSN in the error it throws. Nothing else in this
+ * chain catches it. {@link EMAIL_RE} is the near-miss that makes it look
+ * covered — it consumes the run of `[\w.+-]` before the `@`, so it takes part
+ * of some passwords, none of others, and never the ones on a dotless host.
+ *
+ * Matching stops at `/`, whitespace and a second `@`, so it cannot reach past
+ * the authority into a path or query — `…/v1/users?email=a@b.com` has its `@`
+ * after a `/` and is left to `EMAIL_RE`. Requiring `://` keeps `mailto:` and
+ * bare prose out. Runs before `EMAIL_RE` so the e-mail pattern cannot consume
+ * half the credential first and leave the rest unmatchable.
+ */
+const URL_USERINFO_RE = /([a-zA-Z][a-zA-Z0-9+.-]*:\/\/)[^/\s@]+@/g;
 
 /**
  * An absolute-form or otherwise authority-bearing target, reduced to its path.
@@ -301,6 +319,7 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
       .replace(URL_QUERY_RE, (_match, uptoQuestionMark: string) =>
         uptoQuestionMark.slice(0, -1),
       )
+      .replace(URL_USERINFO_RE, '$1[redacted:userinfo]@')
       .replace(BEARER_RE, '[redacted:token]')
       .replace(JWT_RE, '[redacted:token]')
       .replace(KEYLIKE_RE, '[redacted:key]')

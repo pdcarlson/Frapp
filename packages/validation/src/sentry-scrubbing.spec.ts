@@ -373,3 +373,45 @@ describe("sentry scrubbing — URL authority", () => {
     ).toBe("//x/v1/chapters/join");
   });
 });
+
+/**
+ * `userinfo` in a URL that reaches Sentry as *prose* rather than as a URL field
+ * (#1388). `stripAuthority` covers `request.url` and the transaction name; a
+ * driver that cannot reach its database puts the whole DSN into the message it
+ * throws, and that path is free text.
+ */
+describe("sentry scrubbing — userinfo in free text", () => {
+  it("redacts a connection string carried in an exception message", () => {
+    const scrubbed = browser.scrubSentryEvent({
+      exception: {
+        values: [
+          {
+            type: "Error",
+            value:
+              "connect ECONNREFUSED postgresql://postgres:s3cr3t@localhost:5432/postgres",
+          },
+        ],
+      },
+    });
+
+    const json = serialize(scrubbed);
+    expect(json).not.toContain("s3cr3t");
+    expect(json).toContain("[redacted:userinfo]");
+    // The host and path are diagnostic and are not credentials, so they stay —
+    // this is a userinfo rule, not another authority stripper.
+    expect(json).toContain("localhost");
+  });
+
+  it("does not reach past the authority into a query string", () => {
+    // The `@` here follows a `/`, so it belongs to EMAIL_RE, not this rule.
+    const json = serialize(
+      browser.scrubSentryEvent({
+        message: `GET https://api.frapp.live/v1/users?email=${MEMBER_EMAIL}`,
+      }),
+    );
+
+    expect(json).not.toContain(MEMBER_EMAIL);
+    expect(json).not.toContain("[redacted:userinfo]");
+    expect(json).toContain("api.frapp.live");
+  });
+});
