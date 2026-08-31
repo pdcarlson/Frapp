@@ -130,6 +130,87 @@ export function useCategories() {
   });
 }
 
+/** Per-channel notification level. `off` is what the UI calls "muted". */
+export type ChatNotificationLevel = "all" | "mentions" | "off";
+
+export interface ChannelNotificationPreference {
+  channel_id: string;
+  level: ChatNotificationLevel;
+}
+
+/**
+ * The caller's own per-channel notification levels.
+ *
+ * Served as its own collection rather than a field on the channel payload, for
+ * the same reason unread counts are: `channel-list.tsx` documents that an
+ * `unread_count?` field once sat on the channel type "populated by future
+ * unread tracking", nothing ever populated it, and the badge reading it could
+ * never render. `muted` was the second field in exactly that state until this
+ * hook existed.
+ *
+ * Only channels the caller can still read come back — a preference row outlives
+ * access to its channel, so the server filters before returning.
+ */
+export function useChannelNotificationPreferences() {
+  const client = useFrappClient();
+  return useQuery({
+    // Deliberately NOT nested under ["channels"]. `useMarkChannelRead`
+    // invalidates that whole prefix, and TanStack Query matches prefixes
+    // non-exactly, so nesting made this endpoint refetch on every channel open
+    // AND close — two extra round trips per channel switch, each one re-running
+    // the accessible-channel predicate server-side. Mute state does not change
+    // when a read receipt is written, so it should not be invalidated by one.
+    queryKey: ["channel-notification-preferences"],
+    queryFn: async () => {
+      const { data, error } = await client.GET(
+        "/v1/channels/notification-preferences",
+      );
+      if (error) throw error;
+      return (data ?? []) as ChannelNotificationPreference[];
+    },
+    // Matches `useChannels`: mute state changes far less often than unread
+    // counts, and a stale mute badge is not the visible defect a stale unread
+    // badge is.
+    staleTime: 60_000,
+  });
+}
+
+export function useSetChannelNotificationLevel() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      channelId,
+      level,
+    }: {
+      channelId: string;
+      level: ChatNotificationLevel;
+    }) => {
+      const { data, error } = await client.PUT(
+        "/v1/channels/{id}/notification-preference",
+        { params: { path: { id: channelId } }, body: { level } },
+      );
+      if (error) throw error;
+      return data as ChannelNotificationPreference;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["channel-notification-preferences"],
+      });
+    },
+    // A failed write must not leave the control asserting a level the server
+    // never stored. Re-reading is the honest recovery: the popover snaps back
+    // to the real level instead of silently displaying the one that failed.
+    // The caller still surfaces `isError` — this only repairs the displayed
+    // state, it does not tell the member anything on its own.
+    onError: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["channel-notification-preferences"],
+      });
+    },
+  });
+}
+
 export function useCreateChannel() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
@@ -148,6 +229,15 @@ export function useCreateChannel() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["channels"] });
+      // The effective-level response is a function of the channel SET and each
+      // channel NAME (`defaultLevelFor` is name-keyed), so a create, rename or
+      // delete can change it. Lifting the prefs key out of the ["channels"]
+      // prefix removed the incidental coupling that used to cover this, so the
+      // channel-set mutations name it explicitly. Message-level and
+      // read-receipt mutations deliberately do NOT.
+      queryClient.invalidateQueries({
+        queryKey: ["channel-notification-preferences"],
+      });
     },
   });
 }
@@ -178,6 +268,15 @@ export function useUpdateChannel() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["channels"] });
+      // The effective-level response is a function of the channel SET and each
+      // channel NAME (`defaultLevelFor` is name-keyed), so a create, rename or
+      // delete can change it. Lifting the prefs key out of the ["channels"]
+      // prefix removed the incidental coupling that used to cover this, so the
+      // channel-set mutations name it explicitly. Message-level and
+      // read-receipt mutations deliberately do NOT.
+      queryClient.invalidateQueries({
+        queryKey: ["channel-notification-preferences"],
+      });
     },
   });
 }
@@ -195,6 +294,15 @@ export function useDeleteChannel() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["channels"] });
+      // The effective-level response is a function of the channel SET and each
+      // channel NAME (`defaultLevelFor` is name-keyed), so a create, rename or
+      // delete can change it. Lifting the prefs key out of the ["channels"]
+      // prefix removed the incidental coupling that used to cover this, so the
+      // channel-set mutations name it explicitly. Message-level and
+      // read-receipt mutations deliberately do NOT.
+      queryClient.invalidateQueries({
+        queryKey: ["channel-notification-preferences"],
+      });
     },
   });
 }
@@ -210,6 +318,15 @@ export function useGetOrCreateDm() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["channels"] });
+      // The effective-level response is a function of the channel SET and each
+      // channel NAME (`defaultLevelFor` is name-keyed), so a create, rename or
+      // delete can change it. Lifting the prefs key out of the ["channels"]
+      // prefix removed the incidental coupling that used to cover this, so the
+      // channel-set mutations name it explicitly. Message-level and
+      // read-receipt mutations deliberately do NOT.
+      queryClient.invalidateQueries({
+        queryKey: ["channel-notification-preferences"],
+      });
     },
   });
 }
@@ -227,6 +344,15 @@ export function useCreateGroupDm() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["channels"] });
+      // The effective-level response is a function of the channel SET and each
+      // channel NAME (`defaultLevelFor` is name-keyed), so a create, rename or
+      // delete can change it. Lifting the prefs key out of the ["channels"]
+      // prefix removed the incidental coupling that used to cover this, so the
+      // channel-set mutations name it explicitly. Message-level and
+      // read-receipt mutations deliberately do NOT.
+      queryClient.invalidateQueries({
+        queryKey: ["channel-notification-preferences"],
+      });
     },
   });
 }
