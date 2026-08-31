@@ -24,6 +24,21 @@
 /** Long enough for a slow provider API, short enough to fail inside a job. */
 export const DEFAULT_TIMEOUT_MS = 15_000;
 
+/**
+ * The timeout for a request that cannot be retried.
+ *
+ * Aborting a create is not free: `deploy-render-production.mjs` POSTs to start a
+ * deploy, and if we abort at 15s a slow-but-successful create still ran — the
+ * deploy proceeds on the provider while the script throws, so CI reports a
+ * failure for a deploy that is actually happening. And because the call is not
+ * idempotent we cannot re-send it to find out.
+ *
+ * So the short timeout is exactly wrong here. A non-idempotent call gets a
+ * generous ceiling instead: still bounded, so a genuinely hung socket cannot
+ * hold the job until the runner kills it, but far past any honest create.
+ */
+export const NON_IDEMPOTENT_TIMEOUT_MS = 120_000;
+
 /** Three attempts over ~6s: absorbs blips, surfaces outages as outages. */
 export const DEFAULT_ATTEMPTS = 3;
 export const DEFAULT_BACKOFF_MS = [1000, 5000];
@@ -69,7 +84,8 @@ export async function fetchWithRetry(
   {
     attempts = DEFAULT_ATTEMPTS,
     backoffMs = DEFAULT_BACKOFF_MS,
-    timeoutMs = DEFAULT_TIMEOUT_MS,
+    // `null` means "pick by method" below; an explicit number always wins.
+    timeoutMs = null,
     fetchImpl = fetch,
     sleep = defaultSleep,
     onRetry,
@@ -78,9 +94,13 @@ export async function fetchWithRetry(
 ) {
   let lastError = null;
 
-  // A non-idempotent request gets the timeout but exactly one attempt.
+  // A non-idempotent request gets exactly one attempt, and a longer ceiling to
+  // go with it — see NON_IDEMPOTENT_TIMEOUT_MS.
   const method = (init.method ?? "GET").toUpperCase();
-  const effectiveAttempts = retryMethods.has(method) ? attempts : 1;
+  const retriable = retryMethods.has(method);
+  const effectiveAttempts = retriable ? attempts : 1;
+  const effectiveTimeoutMs =
+    timeoutMs ?? (retriable ? DEFAULT_TIMEOUT_MS : NON_IDEMPOTENT_TIMEOUT_MS);
 
   for (let attempt = 1; attempt <= effectiveAttempts; attempt += 1) {
     // Only install our timeout when the caller has not brought a signal of
@@ -88,8 +108,8 @@ export async function fetchWithRetry(
     // intent should win over a default anyway.
     const signal =
       init.signal ??
-      (timeoutMs > 0 && typeof AbortSignal?.timeout === "function"
-        ? AbortSignal.timeout(timeoutMs)
+      (effectiveTimeoutMs > 0 && typeof AbortSignal?.timeout === "function"
+        ? AbortSignal.timeout(effectiveTimeoutMs)
         : undefined);
 
     let response = null;

@@ -7,6 +7,8 @@ import {
   resilientFetch,
   IDEMPOTENT_METHODS,
   DEFAULT_ATTEMPTS,
+  DEFAULT_TIMEOUT_MS,
+  NON_IDEMPOTENT_TIMEOUT_MS,
 } from "../lib/http.mjs";
 
 /** Replays a scripted sequence of statuses; "throw" rejects like undici does. */
@@ -120,6 +122,49 @@ describe("fetchWithRetry", () => {
     const { fetchImpl } = scripted([500, 200]);
     await fetchWithRetry("u", {}, { fetchImpl, sleep: noSleep, onRetry: (i) => seen.push(i.status) });
     assert.deepEqual(seen, [500]);
+  });
+});
+
+describe("timeout selection", () => {
+  /** Captures the deadline the helper installed, via the signal it passed. */
+  async function timeoutFor(init, opts = {}) {
+    let captured;
+    const fetchImpl = async (_url, i) => {
+      captured = i.signal;
+      return { ok: true, status: 200 };
+    };
+    await fetchWithRetry("u", init, { fetchImpl, sleep: async () => {}, ...opts });
+    return captured;
+  }
+
+  it("installs a timeout signal for a retriable request", async () => {
+    assert.ok(await timeoutFor({ method: "GET" }));
+  });
+
+  // The regression this pins: a create that cannot be retried must not be
+  // aborted at the short deadline. If we abort a slow-but-successful POST the
+  // deploy still runs on the provider while the script throws, and we cannot
+  // re-send it to find out what happened.
+  it("gives a non-idempotent request a longer ceiling than a retriable one", () => {
+    assert.ok(
+      NON_IDEMPOTENT_TIMEOUT_MS > DEFAULT_TIMEOUT_MS,
+      "aborting an unretryable create is worse than waiting for it",
+    );
+  });
+
+  it("still bounds a non-idempotent request rather than waiting forever", async () => {
+    assert.ok(await timeoutFor({ method: "POST" }));
+    assert.ok(Number.isFinite(NON_IDEMPOTENT_TIMEOUT_MS));
+  });
+
+  it("lets an explicit timeoutMs win over the method default", async () => {
+    assert.ok(await timeoutFor({ method: "POST" }, { timeoutMs: 1000 }));
+  });
+
+  it("leaves a caller-supplied signal alone", async () => {
+    const controller = new AbortController();
+    const signal = await timeoutFor({ method: "GET", signal: controller.signal });
+    assert.equal(signal, controller.signal);
   });
 });
 

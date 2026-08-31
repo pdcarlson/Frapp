@@ -511,9 +511,13 @@ and `deploy-vercel-production.mjs` both **POST to create a deployment**. If the 
 provider and only its response is lost — a gateway 502, or the timeout firing on a slow but successful
 call — then re-sending it starts a **second production deploy**.
 
-Non-idempotent calls still get the timeout, which is pure benefit: it turns a hung socket into a
-prompt failure instead of a job that sits until the runner kills it. A caller that knows its POST is
-idempotent (a search, a dry-run) opts in explicitly with `retryMethods`.
+Non-idempotent calls are still bounded, but on a **much longer** deadline (`NON_IDEMPOTENT_TIMEOUT_MS`,
+120s, against 15s for a retriable call). Aborting a create is not free: if the short deadline fired on
+a slow-but-successful deploy POST, the deploy would still run on the provider while the script threw —
+CI reporting failure for a deploy that is actually happening — and because the call is not idempotent
+we could not re-send it to find out. A caller that knows its POST is idempotent (a search, a dry-run)
+opts in to retry explicitly with `retryMethods`, and an explicit `timeoutMs` always wins over both
+defaults.
 
 **What is retried:** `429`, any `5xx`, and a network-level rejection (undici throws on DNS failure and
 `ECONNRESET` rather than returning a response). **What is not:** every other `4xx`. A `401`, `403` or
