@@ -75,6 +75,10 @@ export class ChapterDocumentController {
       folder: dto.folder,
       storage_path: dto.storage_path,
       uploaded_by: userId,
+      content_type: dto.content_type,
+      byte_size: dto.byte_size,
+      document_type: dto.document_type,
+      effective_date: dto.effective_date,
     });
   }
 

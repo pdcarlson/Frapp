@@ -33,6 +33,8 @@ Document listing accepts an optional case-insensitive substring match on the tit
 
 Each document has: a system-generated `id` (UUID, primary key — this is the `{document_id}` referenced in the storage path below), title, description (optional), folder (optional), storage path, uploaded_by (FK users), and created_at. No academic metadata (no department, professor, assignment type, etc.).
 
+Four additional fields, all optional and populated at confirm-upload time: `content_type` (MIME type, client-declared), `byte_size`, `document_type` (free text — no fixed taxonomy, unlike Backwork's checked `assignment_type`), and `effective_date` (the date the document took effect, distinct from `created_at` which is upload time — never inferred, only user-supplied). These exist for the AI corpus retrieval design (ADR-13 §13), which needs a currency signal distinct from upload time and provenance metadata beyond a title.
+
 ## Storage
 
 Files are stored in Supabase Storage under `chapters/{chapter_id}/documents/{document_id}/{filename}`. The upload-URL step generates this chapter-scoped path server-side. On confirm, the API rejects any `storage_path` that does not start with `chapters/{chapter_id}/documents/` (the caller's active chapter) so a client cannot register metadata that points outside its own chapter folder. Signed download URLs are only issued for documents already scoped to the active chapter.

@@ -1,4 +1,5 @@
 import {
+  IsDateString,
   IsInt,
   IsOptional,
   IsString,
@@ -42,6 +43,36 @@ export class ConfirmDocumentUploadDto {
   @IsString()
   @MaxLength(100)
   folder?: string;
+
+  @ApiPropertyOptional({
+    description: 'MIME content type, as declared for the upload',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  content_type?: string;
+
+  @ApiPropertyOptional({ description: 'File size in bytes' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  byte_size?: number;
+
+  @ApiPropertyOptional({
+    description: 'Free-text document category (bylaws, budget, minutes, ...)',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  document_type?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Date this document took effect (ISO date), distinct from the upload timestamp',
+  })
+  @IsOptional()
+  @IsDateString()
+  effective_date?: string;
 }
 
 export class CreateDocumentFolderDto {

@@ -42,6 +42,10 @@ export interface ConfirmUploadInput {
   folder?: string | null;
   storage_path: string;
   uploaded_by: string;
+  content_type?: string | null;
+  byte_size?: number | null;
+  document_type?: string | null;
+  effective_date?: string | null;
 }
 
 @Injectable()
@@ -115,6 +119,10 @@ export class ChapterDocumentService {
       folder,
       storage_path: input.storage_path,
       uploaded_by: input.uploaded_by,
+      content_type: input.content_type ?? null,
+      byte_size: input.byte_size ?? null,
+      document_type: input.document_type ?? null,
+      effective_date: input.effective_date ?? null,
     });
   }
 

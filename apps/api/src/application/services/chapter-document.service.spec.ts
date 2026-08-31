@@ -31,6 +31,10 @@ describe('ChapterDocumentService', () => {
     storage_path: 'chapters/ch-1/documents/doc-1/bylaws.pdf',
     uploaded_by: 'user-1',
     created_at: '2026-01-01T00:00:00.000Z',
+    content_type: 'application/pdf',
+    byte_size: 1024,
+    document_type: 'Bylaws',
+    effective_date: '2026-01-01',
   };
 
   const baseFolder: ChapterDocumentFolder = {
@@ -175,6 +179,50 @@ describe('ChapterDocumentService', () => {
         }),
       );
       expect(mockFolderRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('should persist content type, size, document type and effective date when provided', async () => {
+      mockDocumentRepo.create.mockResolvedValue(baseDocument);
+
+      await service.confirmUpload({
+        chapter_id: 'ch-1',
+        title: 'Bylaws 2025',
+        storage_path: 'chapters/ch-1/documents/doc-1/bylaws.pdf',
+        uploaded_by: 'user-1',
+        content_type: 'application/pdf',
+        byte_size: 1024,
+        document_type: 'Bylaws',
+        effective_date: '2026-01-01',
+      });
+
+      expect(mockDocumentRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content_type: 'application/pdf',
+          byte_size: 1024,
+          document_type: 'Bylaws',
+          effective_date: '2026-01-01',
+        }),
+      );
+    });
+
+    it('should default content type, size, document type and effective date to null when omitted', async () => {
+      mockDocumentRepo.create.mockResolvedValue(baseDocument);
+
+      await service.confirmUpload({
+        chapter_id: 'ch-1',
+        title: 'Agenda',
+        storage_path: 'chapters/ch-1/documents/doc-2/agenda.pdf',
+        uploaded_by: 'user-1',
+      });
+
+      expect(mockDocumentRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content_type: null,
+          byte_size: null,
+          document_type: null,
+          effective_date: null,
+        }),
+      );
     });
 
     it('should register a folder that does not exist yet', async () => {
