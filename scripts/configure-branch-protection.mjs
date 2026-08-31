@@ -37,6 +37,7 @@ import { execSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { loadEnvFiles } from "./lib/env-file.mjs";
+import { githubHeaders } from "./ci/lib/github.mjs";
 
 // ── Required status checks ──────────────────────────────────────────────────
 // These must match check-run names exactly as reported on PRs.
@@ -339,12 +340,7 @@ function resolveToken() {
 async function callGitHubApi({ token, method, path, body }) {
   const response = await fetch(`https://api.github.com${path}`, {
     method,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-      "Content-Type": "application/json",
-    },
+    headers: githubHeaders({ token, hasBody: true }),
     body: body ? JSON.stringify(body) : undefined,
   });
 

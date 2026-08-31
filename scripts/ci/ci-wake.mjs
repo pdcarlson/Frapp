@@ -43,6 +43,8 @@
 // it exists to remove); 1 only on unexpected errors.
 
 import { readFileSync } from "node:fs";
+import { ghRequest } from "./lib/github.mjs";
+import { requireEnv } from "./lib/env.mjs";
 
 // ── Classification semantics ────────────────────────────────────────────────
 // Steps the Actions runner itself owns. A job whose only failed step is one of
@@ -268,48 +270,6 @@ export function buildWakeComment({ run, verdict, reason, rerunResult }) {
     "_Automated wake signal for watching agent sessions (`docs/internal/ci-cd/AGENT_INFRA.md` § PR babysitting): the PR-activity webhook carries CI failures and successes, but nothing for a cancelled or timed-out run — so this comment is the wake for those. One live comment per watched workflow, removed the next time that workflow reports a real verdict (a `skipped`/`neutral` report or a superseded run leaves it in place); success and real failures stay silent._",
   );
   return lines.join("\n");
-}
-
-// ── GitHub REST helpers (injectable fetch, same headers as configure-branch-protection.mjs)
-// Exported for reuse by sibling watchdog scripts (pr-base-sync.mjs) — one request/upsert
-// implementation, so the delete-then-create webhook semantics can't drift between them.
-
-export async function ghRequest({
-  token,
-  fetchImpl = fetch,
-  method = "GET",
-  path,
-  body,
-}) {
-  // Network-level rejections (DNS, ECONNRESET — undici throws, it doesn't return a
-  // response) surface as an ordinary failed request. Both watchdogs treat `ok: false`
-  // as a fail-safe skip; an uncaught throw instead aborted the WHOLE run — for
-  // pr-base-sync that dropped every PR after the failing one and turned a transient
-  // socket blip into a red run on main.
-  try {
-    const response = await fetchImpl(`https://api.github.com${path}`, {
-      method,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        ...(body ? { "Content-Type": "application/json" } : {}),
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    let data = null;
-    const text = await response.text();
-    if (text) {
-      try {
-        data = JSON.parse(text);
-      } catch {
-        data = text;
-      }
-    }
-    return { ok: response.ok, status: response.status, data };
-  } catch {
-    return { ok: false, status: 0, data: null };
-  }
 }
 
 /**
@@ -609,15 +569,6 @@ export async function processCompletedRun({
 }
 
 // ── CLI entry ───────────────────────────────────────────────────────────────
-
-function requireEnv(name) {
-  const value = process.env[name];
-  if (!value) {
-    console.error(`Error: ${name} environment variable is required.`);
-    process.exit(1);
-  }
-  return value;
-}
 
 async function main() {
   const token = requireEnv("GITHUB_TOKEN");

@@ -47,16 +47,14 @@
 // Exits 0 on every handled outcome (a watchdog that reds CI creates the noise
 // it exists to remove); 1 only on unexpected errors.
 
-import {
-  ghRequest,
-  clearMarkedComments,
-  upsertWakeComment,
-} from "./ci-wake.mjs";
+import { ghRequest } from "./lib/github.mjs";
+import { clearMarkedComments, upsertWakeComment } from "./ci-wake.mjs";
 import {
   findAlertIssuesDetailed,
   raiseAlert as raiseAlertIssue,
   resolveAlert as resolveAlertIssue,
 } from "./lib/alert-issue.mjs";
+import { requireEnv } from "./lib/env.mjs";
 
 // One live comment per PR. No workflow-name suffix (unlike ci-wake's per-workflow
 // markers): this sweep owns exactly one verdict per PR and each new base move
@@ -670,15 +668,6 @@ async function processOnePr({
 }
 
 // ── CLI entry ───────────────────────────────────────────────────────────────
-
-function requireEnv(name) {
-  const value = process.env[name];
-  if (!value) {
-    console.error(`Error: ${name} environment variable is required.`);
-    process.exit(1);
-  }
-  return value;
-}
 
 async function main() {
   const token = requireEnv("GITHUB_TOKEN");

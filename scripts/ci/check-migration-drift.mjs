@@ -58,7 +58,8 @@ import { readdirSync } from "node:fs";
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { ghRequest } from "./ci-wake.mjs";
+import { ghRequest } from "./lib/github.mjs";
+import { requireEnv } from "./lib/env.mjs";
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
@@ -648,15 +649,6 @@ export async function runMigrationDriftCheck({
 }
 
 // ── CLI entry ───────────────────────────────────────────────────────────────
-
-function requireEnv(name) {
-  const value = process.env[name];
-  if (!value) {
-    console.error(`Error: ${name} environment variable is required.`);
-    process.exit(1);
-  }
-  return value;
-}
 
 async function main() {
   const token = requireEnv("GITHUB_TOKEN");

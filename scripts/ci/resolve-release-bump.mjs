@@ -30,6 +30,8 @@
 // `scripts/ci/__tests__/resolve-release-bump.test.mjs`.
 
 import { appendFileSync } from "node:fs";
+import { requireEnv } from "./lib/env.mjs";
+import { githubHeaders } from "./lib/github.mjs";
 
 const MERGE_SUBJECT = /^Merge pull request #(\d+)\b/;
 const SQUASH_SUBJECT = /\(#(\d+)\)\s*$/;
@@ -104,11 +106,7 @@ export function applyBump(currentVersion, bump) {
  */
 export async function fetchPrLabels({ repo, prNumber, token, fetchImpl = fetch }) {
   const response = await fetchImpl(`https://api.github.com/repos/${repo}/pulls/${prNumber}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-    },
+    headers: githubHeaders({ token }),
   });
   if (!response.ok) {
     throw new Error(`GitHub API returned HTTP ${response.status} for PR #${prNumber}`);
@@ -158,15 +156,6 @@ export async function resolveReleaseBump({
 }
 
 // ── CLI entry ───────────────────────────────────────────────────────────────
-
-function requireEnv(name) {
-  const value = process.env[name];
-  if (!value) {
-    console.error(`Error: ${name} environment variable is required.`);
-    process.exit(1);
-  }
-  return value;
-}
 
 function appendOutput(lines) {
   const file = process.env.GITHUB_OUTPUT;

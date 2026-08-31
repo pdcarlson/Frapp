@@ -86,6 +86,7 @@ import {
   fetchAppliedMigrations,
   parseMigrationFilename,
 } from "./check-migration-drift.mjs";
+import { requireEnv, SECRETS_RUNBOOK } from "./lib/env.mjs";
 
 export const DEFAULT_MAIN_REF = "origin/main";
 export const DEFAULT_GRACE_MINUTES = 30;
@@ -405,20 +406,9 @@ export async function runDriftGate({
   return 0;
 }
 
-function requireEnv(name) {
-  const value = process.env[name];
-  if (!value) {
-    console.error(
-      `::error::${name} is required. See docs/internal/environment/SECRETS_MANAGEMENT.md.`,
-    );
-    process.exit(1);
-  }
-  return value;
-}
-
 async function main() {
-  const accessToken = requireEnv("SUPABASE_ACCESS_TOKEN");
-  const projectRef = requireEnv("SUPABASE_PROJECT_REF");
+  const accessToken = requireEnv("SUPABASE_ACCESS_TOKEN", { hint: SECRETS_RUNBOOK });
+  const projectRef = requireEnv("SUPABASE_PROJECT_REF", { hint: SECRETS_RUNBOOK });
   const mainRef = process.env.DRIFT_GATE_MAIN_REF || DEFAULT_MAIN_REF;
   const graceMinutes = Number(
     process.env.DRIFT_GATE_GRACE_MINUTES || DEFAULT_GRACE_MINUTES,

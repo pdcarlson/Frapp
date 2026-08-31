@@ -47,6 +47,8 @@
 // `scripts/ci/__tests__/production-guardrails.test.mjs`.
 
 import { findAlertIssuesDetailed, raiseAlert, resolveAlert } from "./lib/alert-issue.mjs";
+import { requireEnv } from "./lib/env.mjs";
+import { resilientFetch } from "./lib/http.mjs";
 
 export const ALERT_ISSUE_TITLE =
   "Production deploy guardrails have drifted — auto-deploy or production branch is wrong";
@@ -162,7 +164,7 @@ export async function collectFindings({
   teamId,
   renderServiceId,
   vercelProjects,
-  fetchImpl = fetch,
+  fetchImpl = resilientFetch,
 }) {
   const findings = [];
 
@@ -196,15 +198,6 @@ export async function collectFindings({
 }
 
 // ── CLI entry ───────────────────────────────────────────────────────────────
-
-function requireEnv(name) {
-  const value = process.env[name];
-  if (!value) {
-    console.error(`Error: ${name} environment variable is required.`);
-    process.exit(1);
-  }
-  return value;
-}
 
 function buildAlertIssueBody({ findings, runUrl }) {
   return [

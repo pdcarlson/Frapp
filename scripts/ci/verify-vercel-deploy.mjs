@@ -25,6 +25,7 @@
 
 import { createClock } from "./lib/polling.mjs";
 import { fetchVercelDeployments } from "./lib/providers.mjs";
+import { requireEnv } from "./lib/env.mjs";
 
 // ── State semantics ─────────────────────────────────────────────────────────
 export const VERCEL_TERMINAL_SUCCESS_STATES = new Set(["READY"]);
@@ -241,15 +242,6 @@ export async function verifyVercelDeploy({
 }
 
 // ── CLI entry ───────────────────────────────────────────────────────────────
-
-function requireEnv(name) {
-  const value = process.env[name];
-  if (!value) {
-    console.error(`Error: ${name} environment variable is required.`);
-    process.exit(1);
-  }
-  return value;
-}
 
 async function main() {
   const apiKey = requireEnv("VERCEL_API_KEY");

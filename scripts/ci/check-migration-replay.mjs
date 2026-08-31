@@ -68,6 +68,7 @@ import {
 import { join } from "node:path";
 
 import { fetchAppliedMigrations, readLocalMigrations } from "./check-migration-drift.mjs";
+import { resilientFetch } from "./lib/http.mjs";
 
 const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
 // Files are moved here, not copied and deleted: a rename inside one filesystem
@@ -427,7 +428,7 @@ export async function runReplayGate({
   accessToken = process.env.SUPABASE_ACCESS_TOKEN,
   projectRef = process.env.SUPABASE_PROJECT_REF,
   migrationsDir = MIGRATIONS_DIR,
-  fetchImpl = fetch,
+  fetchImpl = resilientFetch,
   replayImpl = replayAgainstDisposable,
   label = "production",
 } = {}) {

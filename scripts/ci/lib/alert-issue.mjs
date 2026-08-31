@@ -16,7 +16,7 @@
 // never-claimable, which is what stops agent sessions picking an alert up as if
 // it were backlog work.
 
-import { ghRequest } from "../ci-wake.mjs";
+import { ghRequest } from "./github.mjs";
 
 export const DEFAULT_LOOKUP_LABEL = "routine-state";
 
