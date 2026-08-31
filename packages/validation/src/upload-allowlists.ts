@@ -31,6 +31,46 @@
  * Bucket policies in `supabase/migrations/*.sql` must keep mirroring these
  * MIME lists (comment cross-references only on shipped migrations). Size is
  * `MAX_UPLOAD_BYTES` (26214400), matching `supabase/config.toml`.
+ *
+ * ## What the bucket allowlist actually enforces
+ *
+ * Canonical statement. Other sites summarise in a sentence and link here
+ * rather than repeating the detail, per
+ * `docs/internal/DOCUMENTATION_CONVENTIONS.md` rule 5 — restating it is how a
+ * wrong status code reached nine sites in the first place.
+ *
+ * Measured against the **local** stack (storage-api 1.66.4) on a throwaway
+ * bucket with `allowed_mime_types: ["image/png"]`:
+ *
+ * - A signed-URL PUT declaring a type outside the list is rejected with
+ *   **HTTP 400**, carrying the body
+ *   `{"statusCode":"415","error":"invalid_mime_type","message":"mime type
+ *   text/html is not supported"}`. The `415` is a field *inside that body*,
+ *   not the response status — reading it as the status is what put
+ *   "answers 415" in nine comments across this repo. Eight are corrected; the
+ *   ninth is a shipped migration comment, tracked in #1409.
+ * - The list gates the **client-declared `Content-Type` header, never the
+ *   bytes**. HTML uploaded while declaring `image/png` is accepted (200) and
+ *   stored, and a signed download returns it as `image/png` with the markup
+ *   intact.
+ *
+ * So the allowlist does not keep hostile bytes out of a bucket — it constrains
+ * the type they are served as. What stops a browser rendering them is decided
+ * per call on the *download* side: `getSignedDownloadUrl`'s `downloadAs` sets
+ * `Content-Disposition: attachment`, and the chat attachment path does pass it
+ * (`ChatService.getMessageAttachments`). A URL minted **without** `downloadAs`
+ * carried neither that header nor `X-Content-Type-Options: nosniff` in the
+ * capture above, so for those the served type is all that is left.
+ *
+ * Deliberately **not** measured, and so not claimed anywhere: any hosted
+ * Supabase environment (this capture is local only, and an edge layer is
+ * exactly the sort of thing that adds response headers), and how any given
+ * browser actually treats such a response.
+ *
+ * The application-layer check in each service therefore gates URL *issuance*
+ * only. It is a real half of the pair — it turns a rejection into a readable
+ * error rather than a failed PUT — but it is not a second enforcement point.
+ * See `docs/internal/security/content-validation.md` and #1230.
  */
 
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
@@ -101,8 +141,9 @@ const PDF_BINDING: MimeBinding = {
 /**
  * Media Discord carries that live chat does not accept. Mirrors the
  * `chat-archive` bucket's `allowed_mime_types`, which is the enforcement point
- * — verified against the local stack: a signed-URL PUT of a type outside that
- * list answers 415 `invalid_mime_type` from storage-api.
+ * on that bucket — a signed-URL PUT of a type outside the list is rejected by
+ * storage-api. See the module header for exactly what that rejection looks
+ * like and what the list does and does not gate.
  */
 const ARCHIVE_MEDIA_BINDINGS: readonly MimeBinding[] = [
   { mime: "image/bmp", extensions: ["bmp"] },

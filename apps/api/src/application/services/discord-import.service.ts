@@ -75,7 +75,7 @@ export interface UploadTicket {
    * derived from the file extension, while the browser sends `file.type`, which
    * is empty for exactly the formats a Discord archive is full of (`.heic`,
    * `.mkv`, `.avif`). An empty type becomes `application/octet-stream`, the
-   * bucket's allowlist rejects it with a 415, and the file's manifest row keeps
+   * bucket's allowlist rejects it, and the file's manifest row keeps
    * `uploaded_at = null` forever — which `start()` refuses to import past, with
    * no way to drop the row. The import becomes permanently unstartable.
    */
@@ -732,8 +732,10 @@ export class DiscordImportService {
     // The declared type is re-derived from the extension rather than trusted:
     // a signed upload URL cannot pin a content type (the uploader sets its own
     // on the PUT), so this is a pre-check that produces a readable error, and
-    // the bucket's `allowed_mime_types` remains the enforcement point — it
-    // answers 415 for a disallowed type, verified against the local stack.
+    // the bucket's `allowed_mime_types` remains the enforcement point — it does
+    // reject a disallowed declared type. See the header of
+    // `@repo/validation`'s `upload-allowlists.ts` for the measured response and
+    // for what that column does not gate.
     const contentType =
       contentTypeByExtension('archive')[fileExtension(relativePath)] ??
       file.content_type;
