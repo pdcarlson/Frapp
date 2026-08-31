@@ -482,6 +482,35 @@ After any rollback event:
   leave the column and index in place. They cost writes on insert and nothing on
   read, and they will be needed again.
 
+## Rollback the chat-mute upsert target
+
+* **Migration**: `20260829011200_chat_notif_prefs_channel_upsert_target.sql`
+* **Action**:
+  ```sql
+  DROP INDEX IF EXISTS public.idx_chat_notif_prefs_channel_unique;
+  ```
+* **Order**: **redeploy the API first, then the database.** The index exists so
+  `PUT /v1/channels/:id/notification-preference` can name it as an `ON CONFLICT`
+  target; dropping it under a running post-change API makes every mute write
+  fail with `42P10 there is no unique or exclusion constraint matching the ON
+  CONFLICT specification`. The pre-change revision has no write path at all and
+  does not reference it.
+* **Note**: **nothing is lost, and no constraint is loosened.** This index is
+  additive and duplicates, for the `channel` arm only, an invariant that
+  `idx_chat_notif_prefs_unique` (20260527120000) already enforces on both arms.
+  Dropping it leaves the original expression index in place, so a duplicate
+  (user, chapter, channel) preference row still cannot be created.
+* **Locks**: `create index` holds SHARE on `chat_notification_preferences` for
+  its duration; the table holds at most one row per user per channel they have
+  deliberately configured, so it is small everywhere. Dropping is a catalog
+  operation.
+* **Why it exists at all**, since a second unique index on nearly the same
+  columns looks redundant: the original is an *expression* index
+  (`coalesce(scope_id::text, scope_kind)`), and PostgREST's `on_conflict` takes
+  column names only. There is no way to target the original from the API. The
+  alternatives were a read-then-write in the service, which races two concurrent
+  mutes into a duplicate-key error, or an RPC wrapping the expression form.
+
 ## Rollback backwork/events/members search vectors
 
 * **Migration**: `20260829002000_search_vectors_backwork_events_members.sql`

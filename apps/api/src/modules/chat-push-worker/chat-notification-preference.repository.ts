@@ -1,6 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+} from '../../infrastructure/supabase/database.types';
 
 /** Per-channel-or-kind notification level (ADR-06). */
 export type ChatNotificationLevel = 'all' | 'mentions' | 'off';
@@ -49,5 +52,89 @@ export class ChatNotificationPreferenceRepository {
       return [];
     }
     return data ?? [];
+  }
+
+  /**
+   * Channel-scoped rows only, for the caller's own mute UI.
+   *
+   * Unlike {@link findForUser}, this one **throws** rather than degrading to an
+   * empty array. The worker swallows because a failed preference lookup there
+   * should not stop a push from being decided at all — a missed mute is better
+   * than a dropped notification. Here the array *is* the answer: returning `[]`
+   * on a database error would render every channel as unmuted, which is
+   * indistinguishable from the user having muted nothing, and the UI would
+   * silently lie about their settings.
+   */
+  async findChannelPreferencesForUser(
+    userId: string,
+    chapterId: string,
+  ): Promise<ChatNotificationPreferenceRow[]> {
+    const { data, error } = await this.supabase
+      .from('chat_notification_preferences')
+      .select('user_id, chapter_id, scope, scope_id, scope_kind, level')
+      .eq('user_id', userId)
+      .eq('chapter_id', chapterId)
+      .eq('scope', 'channel');
+
+    if (error) throw error;
+    return data ?? [];
+  }
+
+  /**
+   * Set the caller's level for one channel.
+   *
+   * `onConflict` names the columns of `idx_chat_notif_prefs_channel_unique`
+   * (20260829011200) — the plain `(user_id, chapter_id, scope, scope_id)`
+   * index added for exactly this call, and the reason setting a channel level
+   * twice updates rather than accumulating rows.
+   *
+   * It deliberately does NOT target `idx_chat_notif_prefs_unique`
+   * (20260527120000), and it cannot: that one is expression-based on
+   * `coalesce(scope_id::text, scope_kind)`, `ON CONFLICT` only matches an index
+   * defined on those exact columns or expressions, and PostgREST's
+   * `on_conflict` takes column NAMES and cannot express `coalesce(...)`.
+   * Against the expression index alone Postgres raises `42P10 there is no
+   * unique or exclusion constraint matching the ON CONFLICT specification`, so
+   * this write would 500 on every call. Both indexes are load-bearing: the
+   * expression one still enforces the real invariant across both scope arms,
+   * and dropping the plain one breaks this method — see that migration's
+   * ROLLBACK note.
+   *
+   * `updated_at` is left to the table's `trg_chat_notification_preferences_updated_at`
+   * trigger rather than being set here — one writer for that column, not two.
+   */
+  async upsertChannelLevel(
+    userId: string,
+    chapterId: string,
+    channelId: string,
+    level: ChatNotificationLevel,
+  ): Promise<ChatNotificationPreferenceRow> {
+    const row: TablesInsert<'chat_notification_preferences'> = {
+      user_id: userId,
+      chapter_id: chapterId,
+      scope: 'channel',
+      scope_id: channelId,
+      // Explicitly null, not omitted: the table's
+      // `chat_notif_prefs_scope_id_when_channel` CHECK requires scope_kind to
+      // be null on a channel row, and an upsert that updates an existing row
+      // must clear it rather than leave whatever was there.
+      scope_kind: null,
+      level,
+    };
+
+    const { data, error } = await this.supabase
+      .from('chat_notification_preferences')
+      .upsert(row, { onConflict: 'user_id,chapter_id,scope,scope_id' })
+      .select('user_id, chapter_id, scope, scope_id, scope_kind, level')
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) {
+      throw new Error(
+        'chat-prefs: upsert returned no row for ' +
+          `user ${userId}, channel ${channelId}`,
+      );
+    }
+    return data;
   }
 }

@@ -130,9 +130,51 @@ push regardless of the resolved `off` level. The one exception is the `system_au
 those system messages never page anyone unless explicitly opted in (see below), so a mention
 does not lift their `off` default.
 
+**Setting the level.** Members change their own level from the channel header on web
+(`apps/web/components/chat/notification-level-popover.tsx`), which writes through
+`PUT /v1/channels/:id/notification-preference`. The route resolves the row from the
+authenticated caller and the channel in the path — it does **not** accept a `user_id`, because
+a preference is per-user and a caller-supplied id would let any member silence another's
+notifications. It calls `assertChannelAccess` before writing: `chat_channels` has RLS enabled
+with no policies and the API holds the `service_role` key, so that application-layer check is
+the only thing stopping a member from writing a preference row about a private channel or a DM
+they are not part of, which would confirm that channel exists.
+
+`GET /v1/channels/notification-preferences` returns the caller's **effective** level for every
+channel they can read — the stored row where one exists, otherwise that channel's default from
+`defaultLevelFor`. It deliberately does not return "stored rows only": the defaults are not
+uniform (`#announcements` is `all`, `#chapter-audit` is `off`, and both are seeded into every
+chapter), so a client assuming `mentions` for an absent row would misreport exactly the
+channels members most want to turn down, and the popover — which suppresses a write for the
+level it already shows as current — would then swallow the corrective click. Resolving the
+default server-side keeps one implementation of it, the one the push worker already uses.
+
+The response is driven by the accessible-channel list rather than by the stored rows, which is
+also what makes enumeration impossible: a preference row outlives access to its channel, so
+keying the response off rows would let a caller learn channel ids they have lost access to. It
+is a separate endpoint rather than a `muted` field on the channel payload, matching how unread
+counts are served; `channel-list.tsx` records why a per-user field on the shared channel type
+is the wrong shape.
+
+The control lives in the channel header rather than on the channel row because the row is a
+single `<button>` (a nested button is invalid HTML) and a hover-revealed action would be
+unreachable on touch. Mobile does not yet expose the control; the levels it writes are already
+honoured by the worker for every client.
+
+Two states the control must not fake. When the effective level is **not yet known** — the read
+has not landed, or failed — the trigger is disabled and announces "Notification level
+unavailable" rather than standing in `mentions`, because on `#announcements` or `#chapter-audit`
+that stand-in states the wrong level. When a write **fails**, the failure is reported in the
+channel header, not inside the popover: the popover unmounts its content when dismissed, and
+holding it open until the write lands freezes it whenever the mutation is paused offline. The
+report is scoped to the channel the failed write was for — the mutation is shared by the whole
+shell, so an unscoped error asserts a failure on channels the member never touched.
+
 ## Chat notification preferences
 
 Chat-specific levels live in the `chat_notification_preferences` table (ADR-06), separately from the broader `notification_preferences` table because chat needs a tri-state (`all` / `mentions` / `off`) and two scope arms — per-channel and per-kind. Both arms are keyed by `(user_id, chapter_id, scope, coalesce(scope_id::text, scope_kind))` with a unique constraint that allows exactly one row per (scope, key).
+
+That key is an **expression** index, which matters to anyone adding a write path: `ON CONFLICT (a, b, c)` only matches an index defined on those exact columns or expressions, and PostgREST's `on_conflict` parameter takes column names and cannot express `coalesce(...)`. So the channel-scoped upsert targets a second, plain unique index on `(user_id, chapter_id, scope, scope_id)` added by `20260829011200_chat_notif_prefs_channel_upsert_target.sql`. The two do not disagree: for `scope='channel'` rows the expression reduces to `scope_id::text`, which the table's CHECK already guarantees is non-null on that arm; for `scope='kind'` rows `scope_id` is NULL and unique indexes treat NULLs as distinct, so the second index constrains that arm not at all and the original still governs it.
 
 Defaults when no row is set (see ADR-06; the `defaultLevelFor` helper encodes the precedence rules):
 
