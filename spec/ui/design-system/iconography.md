@@ -229,6 +229,7 @@ composer controls, 16px in card eyebrows and inline metadata (§2).
 | Direct or group message | `DirectMessageGlyph` |
 | Connection lost | `OfflineGlyph` |
 | Reply in thread | `ThreadGlyph` |
+| Per-channel notification level / mute | `MuteGlyph` |
 | Event location | `LocationGlyph` |
 | Event card | `EventsGlyph` (shared with the nav intent) |
 | Task card | `TasksGlyph` (shared) |

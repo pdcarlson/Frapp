@@ -1906,6 +1906,36 @@
         ]
       }
     },
+    "/v1/channels/notification-preferences": {
+      "get": {
+        "operationId": "ChatController_getChannelNotificationPreferences_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChannelNotificationPreferenceDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's own per-channel notification levels",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/channels/{id}": {
       "get": {
         "operationId": "ChatController_getChannel_v1",
@@ -2623,6 +2653,52 @@
           }
         ],
         "summary": "Mark channel as read",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/{id}/notification-preference": {
+      "put": {
+        "operationId": "ChatController_setChannelNotificationLevel_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetChannelNotificationLevelDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelNotificationPreferenceDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set the caller's notification level for a channel",
         "tags": [
           "Chat"
         ]
@@ -7160,6 +7236,27 @@
           "mention_count"
         ]
       },
+      "ChannelNotificationPreferenceDto": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "all",
+              "mentions",
+              "off"
+            ]
+          }
+        },
+        "required": [
+          "channel_id",
+          "level"
+        ]
+      },
       "CreateChannelDto": {
         "type": "object",
         "properties": {
@@ -7404,6 +7501,23 @@
         "required": [
           "filename",
           "content_type"
+        ]
+      },
+      "SetChannelNotificationLevelDto": {
+        "type": "object",
+        "properties": {
+          "level": {
+            "type": "string",
+            "enum": [
+              "all",
+              "mentions",
+              "off"
+            ],
+            "description": "all = every message; mentions = only when you are mentioned (default); off = muted, though @mentions still notify."
+          }
+        },
+        "required": [
+          "level"
         ]
       },
       "CheckInDto": {
