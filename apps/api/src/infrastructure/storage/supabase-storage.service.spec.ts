@@ -264,6 +264,53 @@ describe('SupabaseStorageService', () => {
    * a crafted `chapters/<mine>/branding/../../../../reports/...` read another
    * chapter's report PDF.
    */
+  describe('getSignedUploadUrl contentType handling', () => {
+    /**
+     * Pins the one behaviour #1230 is about, which had no coverage at all.
+     *
+     * `contentType` stays in the signature as declared intent — it is what
+     * callers validate against the allowlist before asking for a URL — but it
+     * cannot be forwarded to `createSignedUploadUrl`, because a signed upload
+     * URL pins nothing: the client sets its own `Content-Type` on the PUT. A
+     * future change that "helpfully" starts passing it would not enforce
+     * anything, and would restore exactly the false impression of a second
+     * enforcement point that #1230 exists to remove. Without this test that
+     * change is invisible — every other suite mocks `IStorageProvider` and so
+     * never sees what the concrete service does.
+     */
+    it('does not forward contentType to createSignedUploadUrl', async () => {
+      await service.getSignedUploadUrl(
+        'chat',
+        'chapters/a/chat/c/m/note.png',
+        'image/png',
+      );
+
+      expect(createSignedUploadUrl).toHaveBeenCalledTimes(1);
+      const [path, options] = createSignedUploadUrl.mock.calls[0];
+      expect(path).toBe('chapters/a/chat/c/m/note.png');
+      // Negative control: this is the assertion that fails the moment someone
+      // adds `contentType` to the options object. Checking the whole argument
+      // rather than one key means a rename cannot slip past it either.
+      expect(options).toBeUndefined();
+      expect(JSON.stringify(createSignedUploadUrl.mock.calls[0])).not.toContain(
+        'image/png',
+      );
+    });
+
+    it('still passes upsert through, so the assertion above is not vacuous', async () => {
+      await service.getSignedUploadUrl(
+        'chat-archive',
+        'chapters/a/chat-archive/imports/i/media/clip.mp4',
+        'video/mp4',
+        { upsert: true },
+      );
+
+      const [, options] = createSignedUploadUrl.mock.calls[0];
+      expect(options).toEqual({ upsert: true });
+      expect(JSON.stringify(options)).not.toContain('video/mp4');
+    });
+  });
+
   describe('path containment', () => {
     const TRAVERSALS = [
       'chapters/a/branding/../../../reports/chapters/b/secret.pdf',

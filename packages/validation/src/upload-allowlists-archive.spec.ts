@@ -22,9 +22,9 @@ const MIGRATION = join(
  * This file's own header says bucket policies "must keep mirroring these MIME
  * lists", which until now was a promise with nothing behind it. Drift here is
  * not cosmetic in either direction: a type in the TypeScript list but not the
- * bucket lets the API mint a signed URL for an upload storage then rejects with
- * a 415 the admin cannot act on, and a type in the bucket but not here is an
- * archive file the wizard refuses for no reason the admin can see.
+ * bucket lets the API mint a signed URL for an upload storage then rejects,
+ * with an error the admin cannot act on, and a type in the bucket but not here
+ * is an archive file the wizard refuses for no reason the admin can see.
  */
 function bucketMimeTypes(): string[] {
   const sql = readFileSync(MIGRATION, "utf8");

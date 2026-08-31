@@ -31,6 +31,34 @@
  * Bucket policies in `supabase/migrations/*.sql` must keep mirroring these
  * MIME lists (comment cross-references only on shipped migrations). Size is
  * `MAX_UPLOAD_BYTES` (26214400), matching `supabase/config.toml`.
+ *
+ * ## What the bucket allowlist actually enforces
+ *
+ * This is the canonical statement of it; other sites reference this block
+ * rather than restating a status code, because restating it is how the wrong
+ * one spread to nine places. Measured against the local stack (storage-api
+ * 1.66.4) on a throwaway bucket with `allowed_mime_types: ["image/png"]`:
+ *
+ * - A signed-URL PUT declaring a type outside the list is rejected with
+ *   **HTTP 400**, carrying the body
+ *   `{"statusCode":"415","error":"invalid_mime_type","message":"mime type
+ *   text/html is not supported"}`. The `415` is a field *inside that body*,
+ *   not the response status — reading it as the status is the mistake that
+ *   put "answers 415" in comments across this repo.
+ * - The list gates the **client-declared `Content-Type` header, never the
+ *   bytes**. HTML uploaded while declaring `image/png` is accepted (200) and
+ *   stored, and comes back on a signed download as `image/png` with the
+ *   markup intact. So the allowlist does not prevent hostile bytes from being
+ *   stored; it constrains the type they are *served as*, and that served type
+ *   is what keeps a browser from executing them. No `X-Content-Type-Options:
+ *   nosniff` is set on the download, so that served type is the whole of the
+ *   mitigation — a consumer that sniffs content instead of trusting the header
+ *   is still exposed.
+ *
+ * The application-layer check in each service therefore gates URL *issuance*
+ * only. It is a real half of the pair (it is what makes a rejection a readable
+ * error rather than a failed PUT), but it is not a second enforcement point.
+ * See `docs/internal/security/content-validation.md` and #1230.
  */
 
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
@@ -101,8 +129,9 @@ const PDF_BINDING: MimeBinding = {
 /**
  * Media Discord carries that live chat does not accept. Mirrors the
  * `chat-archive` bucket's `allowed_mime_types`, which is the enforcement point
- * — verified against the local stack: a signed-URL PUT of a type outside that
- * list answers 415 `invalid_mime_type` from storage-api.
+ * on that bucket — a signed-URL PUT of a type outside the list is rejected by
+ * storage-api. See the module header for exactly what that rejection looks
+ * like and what the list does and does not gate.
  */
 const ARCHIVE_MEDIA_BINDINGS: readonly MimeBinding[] = [
   { mime: "image/bmp", extensions: ["bmp"] },

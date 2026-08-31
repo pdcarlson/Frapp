@@ -712,11 +712,14 @@ kind-semantics migration replaces a policy the authors migration leaves alone).
   MIME check performed in the worker before the transfer rather than by the
   bucket alone. Do not scope an incident on this bucket to signed-URL uploads.
   So `allowed_mime_types` is now the enforcement point rather than a second belt
-  — and it does enforce: a signed-URL PUT of a type outside the list answers
-  **415 `invalid_mime_type`** from storage-api, verified against the local stack.
-  The API additionally re-derives the expected type from the file extension
-  before minting a URL, so a rejection is a readable error rather than a failed
-  PUT. Content type still cannot be pinned at sign time (#1230).
+  — and it does enforce: a signed-URL PUT of a type outside the list is rejected
+  with **HTTP 400**, carrying an `invalid_mime_type` body whose `statusCode`
+  field reads `415`. That field is not the response status; reading it as one is
+  why several comments in this repo said "415". The API additionally re-derives
+  the expected type from the file extension before minting a URL, so a rejection
+  is a readable error rather than a failed PUT. Content type still cannot be
+  pinned at sign time, and the column gates only the **declared** header, never
+  the bytes (#1230; measurement in `packages/validation/src/upload-allowlists.ts`).
 * **Object layout — also superseded.** The migration header declares
   `chapters/{chapter_id}/chat-archive/{channel_id}/{message_id}/{basename}`,
   which assumes Signet ids exist when the object is written. They do not: the

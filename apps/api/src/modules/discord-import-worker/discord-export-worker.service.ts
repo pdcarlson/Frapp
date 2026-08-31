@@ -601,8 +601,8 @@ export class DiscordExportWorkerService {
         }
 
         // The bucket's `allowed_mime_types` is the enforcement point and would
-        // answer 415; checking here turns that into a readable warning and
-        // saves the transfer. Discord serves plenty a chapter's archive
+        // reject the upload; checking here turns that into a readable warning
+        // and saves the transfer. Discord serves plenty a chapter's archive
         // contains and this bucket does not accept (`.exe`, `.zip`).
         // Parameters stripped and lower-cased before the allowlist check.
         // `isAllowedUploadMime` is an exact `Set.has`, and Discord reports a
