@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { serviceStatusKind } from "@/components/service/service-status";
 import type { ServiceStatus } from "@/components/service/service-status";
 import { Label } from "@/components/ui/label";
@@ -96,6 +97,11 @@ export function ServiceHoursPage() {
   const reviewEntry = useReviewServiceEntry();
   const deleteEntry = useDeleteServiceEntry();
   const orgConfig = useOrgConfig();
+  // The viewer's `users.id` — the id space `service_entries.user_id` references
+  // (`users(id)`, not the Supabase auth uid). `null` until it resolves, which
+  // the approval gate below treats as "might be me".
+  const { userId: viewerUserId, isLoading: viewerLoading } = useFrappUser();
+  const viewerUnknown = viewerUserId === null;
 
   // Chapter policy (Settings → Workflows): when wf_hours_receipt is enabled
   // the API rejects proof-less submissions. GET /chapters/:id/config needs
@@ -287,7 +293,7 @@ export function ServiceHoursPage() {
         title: "Couldn't approve entry",
         description: getErrorMessage(
           error,
-          "Requires service:approve and an active PENDING status.",
+          "Requires service:approve, an active PENDING status, and an entry you did not submit yourself.",
         ),
         variant: "destructive",
       });
@@ -581,6 +587,20 @@ export function ServiceHoursPage() {
                 {pending.map((entry) => {
                   const name =
                     memberNameById.get(entry.user_id) ?? entry.user_id;
+                  const isOwnEntry =
+                    !viewerUnknown && entry.user_id === viewerUserId;
+                  const cannotApprove = isOwnEntry || viewerUnknown;
+                  // Only describe the button when the subscription gate is not
+                  // already doing it — `controlProps` points `aria-describedby`
+                  // at its own notice, and overriding that would trade one
+                  // reason for another rather than adding this one.
+                  const showApproveReason = cannotApprove && gate.allowed;
+                  const approveReasonId = `svc-approve-reason-${entry.id}`;
+                  const approveBlockedReason = isOwnEntry
+                    ? "You can't approve your own hours \u2014 another admin has to review them."
+                    : viewerLoading
+                      ? "Checking who you are\u2026"
+                      : "Couldn't confirm who you are, so approving is unavailable. Reload to try again.";
                   return (
                     <li
                       key={entry.id}
@@ -609,7 +629,7 @@ export function ServiceHoursPage() {
                           </Button>
                         ) : null}
                       </div>
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         {/*
                           `PATCH /v1/service-entries/:id/review` is paid-ops
                           too, so review mirrors the same gate as the log
@@ -617,14 +637,38 @@ export function ServiceHoursPage() {
                           the page claiming writes are blocked while still
                           offering two per row.
                         */}
+                        {/*
+                          Approving awards SERVICE points to the submitter, and
+                          the API refuses a self-approval (#1338). Mirror that
+                          at the control rather than letting the click 403 —
+                          the fail-fast entitlement rule.
+
+                          Fails **closed** on an unresolved viewer, matching
+                          `tasks-board.tsx:594-610` on the sibling task path:
+                          `viewerUserId` is null while `/v1/users/me` is in
+                          flight or errored, so keying on `isOwnEntry` alone
+                          would put Approve back on your own entry during that
+                          window. Unlike the task board it says why in both
+                          cases — a silently withheld control is #1346.
+                        */}
                         <Button
                           size="sm"
                           onClick={() => void approve(entry)}
-                          {...gate.controlProps(reviewEntry.isPending)}
+                          {...gate.controlProps(
+                            reviewEntry.isPending || cannotApprove,
+                          )}
+                          {...(showApproveReason
+                            ? { "aria-describedby": approveReasonId }
+                            : {})}
                         >
                           <CheckCircle2 className="h-4 w-4" />
                           Approve
                         </Button>
+                        {/*
+                          Reject stays available on your own entry: it awards
+                          no points, so the self-award rule does not reach it
+                          (`spec/behavior/service-hours.md` § Approval Workflow).
+                        */}
                         <Button
                           size="sm"
                           variant="secondary"
@@ -634,6 +678,14 @@ export function ServiceHoursPage() {
                           <XCircle className="h-4 w-4" />
                           Reject
                         </Button>
+                        {showApproveReason ? (
+                          <p
+                            id={approveReasonId}
+                            className="basis-full text-[12.5px] text-muted-foreground"
+                          >
+                            {approveBlockedReason}
+                          </p>
+                        ) : null}
                       </div>
                     </li>
                   );
