@@ -61,10 +61,20 @@ type Reference = { key: string; token: string; style: "triple" | "complete" };
 /**
  * Every custom property the preset's color keys read, and how.
  *
- * A string value wrapping the property in `hsl(...)` needs a bare HSL triple on
- * the other side; a function value (`colorVar`) emits the property directly and
- * so needs a complete color. Literal colors — the `navy` and `emerald` legacy
+ * A bare `var(--token)` string — what `colorVar` emits — needs a complete color
+ * on the other side, because Tailwind hands the property straight to the browser
+ * and applies any opacity modifier itself. A string wrapping the property in
+ * `hsl(...)` needs a bare HSL triple instead; no key is written that way any
+ * more, but the shape is still classified so that reintroducing one is checked
+ * rather than waved through. Literal colors — the `navy` and `emerald` legacy
  * brand scales — reference no property and are skipped.
+ *
+ * A **function** value is now a defect rather than a third shape. v3 called it
+ * with `{ opacityValue }` and `colorVar` used to be one; v4 dropped that
+ * mechanism and silently drops any colour value that is not a string, so a
+ * function here means every utility built on that key compiles to nothing —
+ * #1145 once more, and invisible short of compiling the sheet and grepping it.
+ * It is collected as unrecognised so this suite fails instead of the UI.
  */
 function scanColors(): { references: Reference[]; unrecognised: string[] } {
   const references: Reference[] = [];
@@ -72,14 +82,18 @@ function scanColors(): { references: Reference[]; unrecognised: string[] } {
 
   const visit = (node: unknown, key: string): void => {
     if (typeof node === "function") {
-      // Called the way Tailwind calls it for an un-modified utility.
-      const emitted = String((node as (arg?: unknown) => unknown)());
-      const token = emitted.match(/^var\((--[\w-]+)\)$/)?.[1];
-      if (token) references.push({ key, token, style: "complete" });
-      else unrecognised.push(`${key} is a function but emitted "${emitted}", not a bare var()`);
+      unrecognised.push(
+        `${key} is a function; Tailwind v4 drops non-string colour values, so ` +
+          "every utility built on it would compile to nothing",
+      );
       return;
     }
     if (typeof node === "string") {
+      const bare = node.match(/^var\((--[\w-]+)\)$/);
+      if (bare) {
+        references.push({ key, token: bare[1]!, style: "complete" });
+        return;
+      }
       const wrapped = node.match(/^hsl\(var\((--[\w-]+)\)\)$/);
       if (wrapped) references.push({ key, token: wrapped[1]!, style: "triple" });
       else if (node.includes("var(")) {
@@ -237,9 +251,11 @@ describe("the tokens chapter branding rewrites accept the accent engine's hex", 
   });
 
   it("still renders a chapter's hex through the preset", () => {
+    // The value has to be the property itself and nothing else: the engine
+    // writes hex onto `--ring` at runtime, so anything wrapping or reformatting
+    // it here is #1143 again.
     const colors = config.theme!.extend!.colors as Record<string, unknown>;
-    const ring = colors["ring"] as (arg?: unknown) => string;
-    expect(ring()).toBe("var(--ring)");
+    expect(colors["ring"]).toBe("var(--ring)");
   });
 });
 
@@ -367,46 +383,90 @@ describe("nothing hand-writes hsl(var(--x)) around a complete-colour token", () 
 });
 
 describe("opacity modifiers survive the format-agnostic reader", () => {
-  // Dozens of live classes depend on this — `bg-primary/15`,
-  // `border-destructive/45`, `bg-success/15` and friends. A bare `var()`
-  // cannot take a Tailwind opacity modifier, so dropping `color-mix` here
-  // would silently uncolor them. (The probes read `primary`; every colorVar
-  // key shares the one implementation.)
-  const colors = config.theme!.extend!.colors as Record<string, unknown>;
-  const primary = colors["primary"] as Record<
-    string,
-    (arg?: unknown) => string
-  >;
+  /**
+   * Compiled, not asserted about.
+   *
+   * Dozens of live classes depend on this — `bg-primary/15`,
+   * `border-destructive/45`, `bg-success/15` and friends. Under v3 the preset
+   * hand-rolled the alpha branch inside `colorVar`, and this block probed that
+   * function directly. That was only ever a proxy for the real question, and on
+   * the v4 bump the proxy went green while every one of those classes compiled
+   * to **nothing**: v4 ignores non-string colour values, so the function the
+   * unit test was happily calling had already been dropped by the compiler.
+   *
+   * So this asks Tailwind instead. `source(none)` plus `@source inline(...)`
+   * makes the run hermetic — no filesystem scan, no app fixture, no dependency
+   * on what happens to be in `apps/` — while still driving the same code path
+   * a real build does, which is the only path where this defect is visible.
+   */
+  const compile = async (candidates: string): Promise<string> => {
+    const { default: postcss } = await import("postcss");
+    const { default: tailwind } = await import("@tailwindcss/postcss");
+    const result = await postcss([tailwind()]).process(
+      `@import "tailwindcss" source(none);\n` +
+        `@config "./tailwind.config.ts";\n` +
+        `@source inline("${candidates}");\n`,
+      { from: fileURLToPath(new URL("./probe.css", import.meta.url)) },
+    );
+    return result.css;
+  };
 
-  it("emits a plain var() when no modifier is used", () => {
-    expect(primary["DEFAULT"]!({ opacityValue: "var(--tw-bg-opacity, 1)" })).toBe(
-      "var(--primary)",
+  it("emits a plain var() when no modifier is used", async () => {
+    const css = await compile("bg-primary");
+    expect(css).toMatch(
+      /\.bg-primary\s*\{\s*background-color:\s*var\(--primary\);\s*\}/,
     );
   });
 
-  it("emits a color-mix when a modifier is used", () => {
-    expect(primary["DEFAULT"]!({ opacityValue: "0.7" })).toBe(
-      "color-mix(in srgb, var(--primary) calc(0.7 * 100%), transparent)",
+  it("emits a color-mix when a modifier is used", async () => {
+    const css = await compile("bg-primary/15");
+    // The opaque `var()` stays as the fallback declaration, so below the
+    // `color-mix` floor the fill degrades to the un-modified colour rather than
+    // to nothing — which is what the v3 helper did.
+    expect(css).toMatch(/\.bg-primary\\\/15\s*\{\s*background-color:\s*var\(--primary\)/);
+    expect(css).toContain(
+      "color-mix(in oklab, var(--primary) 15%, transparent)",
     );
   });
 
-  it("uses a percentage modifier as-is", () => {
+  it("uses a percentage modifier as-is", async () => {
     // `bg-primary/[62%]`. Multiplying would give `calc(62% * 100%)`, which is
     // not a valid product, so the browser drops the declaration entirely — the
     // silent no-colour failure this whole file exists to prevent.
-    expect(primary["DEFAULT"]!({ opacityValue: "62%" })).toBe(
-      "color-mix(in srgb, var(--primary) 62%, transparent)",
+    const css = await compile("bg-primary/[62%]");
+    expect(css).toContain(
+      "color-mix(in oklab, var(--primary) 62%, transparent)",
     );
   });
 
-  it("honours the numeric 0 that gradient stops pass", () => {
-    // `gradientColorStops` synthesises the implicit transparent end-stop of
-    // `from-*` / `via-*` by calling with the NUMBER 0. A truthiness check would
-    // treat that as "no modifier" and emit an opaque stop, so
-    // `bg-gradient-to-t from-primary` would render a flat block instead of a
-    // fade.
-    expect(primary["DEFAULT"]!({ opacityValue: 0 })).toBe(
-      "color-mix(in srgb, var(--primary) calc(0 * 100%), transparent)",
+  it("still fades a gradient stop rather than painting a flat block", async () => {
+    // v3 synthesised the implicit transparent end-stop of `from-*` by calling
+    // the colour function with the NUMBER 0, and a truthiness check there
+    // turned the fade into a flat block. v4 owns that end-stop, so the guard is
+    // now that the stop reads the token at all.
+    const css = await compile("from-primary");
+    expect(css).toMatch(/\.from-primary\s*\{[^}]*--tw-gradient-from:\s*var\(--primary\)/);
+  });
+
+  it("colours every key the preset owns, not just the one probed", async () => {
+    // The failure mode is per-key, so probing `primary` alone would not have
+    // caught a single mis-typed value. These are the semantic families the
+    // shared preset is responsible for on both surfaces.
+    const css = await compile(
+      "bg-card text-foreground border-border bg-secondary text-muted-foreground bg-destructive bg-success bg-accent bg-popover ring-ring",
     );
+    for (const [cls, token] of [
+      ["bg-card", "--card"],
+      ["text-foreground", "--foreground"],
+      ["border-border", "--border"],
+      ["bg-secondary", "--secondary"],
+      ["text-muted-foreground", "--muted-foreground"],
+      ["bg-destructive", "--destructive"],
+      ["bg-success", "--success"],
+      ["bg-accent", "--accent"],
+      ["bg-popover", "--popover"],
+    ] as const) {
+      expect(css, `${cls} compiled to nothing`).toContain(`var(${token})`);
+    }
   });
 });

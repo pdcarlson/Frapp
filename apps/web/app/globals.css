@@ -1,1 +1,16 @@
 @import "../../../packages/theme/src/signet.css";
+
+/*
+ * v4 has no `presets` key and no automatic `tailwind.config.ts` pickup: a
+ * config file is opt-in, named from the CSS. `@config` is the documented
+ * compatibility path for a v3-shaped JS config, and it keeps this app's
+ * `presets: [sharedConfig]`, its `darkMode: "class"`, its `content` globs and
+ * the `pointer-coarse` variant plugin all working unchanged.
+ *
+ * It stays a JS config rather than moving to CSS-first `@theme` because the
+ * shared preset is consumed by two surfaces on two different token sets, and
+ * `tailwind.config.spec.ts` asserts the preset/stylesheet contract by importing
+ * the config as a module. Porting that to `@theme` is a reskin-sized change,
+ * not a dependency bump.
+ */
+@config "../tailwind.config.ts";

@@ -208,11 +208,18 @@ const config: Config = {
 };
 ```
 
-`apps/web` additionally layers the Signet-only color tokens, the `2xl` border radius, the Figtree
-`fontFamily.sans` override and a custom `pointer-coarse` variant on top, and keeps
-`darkMode: "class"` with nothing setting the class — read the real `apps/web/tailwind.config.ts`.
-`pointer-coarse` is worth knowing about: Tailwind 3.4 ships no such variant, so before it was
-registered every `pointer-coarse:` class in the tree compiled to nothing at all.
+`apps/web` additionally layers the Signet-only color tokens, the `2xl` border radius and the
+Figtree `fontFamily.sans` override on top, and keeps `darkMode: "class"` with nothing setting the
+class — read the real `apps/web/tailwind.config.ts`. Both apps name their config from CSS with
+`@config`, which is how a v3-shaped JS config (`presets`, `content`, `darkMode`) still applies
+under v4.
+
+`pointer-coarse` is worth knowing about as history: v3.4 shipped no such variant, so every
+`pointer-coarse:` class in the tree compiled to nothing at all, silently, until the config
+registered one by hand. v4 ships it stock — along with `pointer-fine` and the `any-pointer-*`
+family — so the hand-registered plugin is gone. The lesson outlives it: an unknown variant, like an
+unknown colour value, is dropped without a warning, so a class family that has never been seen in a
+compiled stylesheet has not been verified.
 
 Each surface's global CSS imports exactly one of the two theme stylesheets — never both:
 ```css

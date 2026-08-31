@@ -630,40 +630,85 @@ describe('EventService', () => {
     };
     const wholeSeries = [pastChild, futureChild1, futureChild2];
 
+    // `parent` starts 03-01 and the stubbed clock is 03-15, so the head has
+    // ALREADY STARTED in every fixture below. That is deliberate — it is the
+    // #1392 case — and it means a `series` update takes the split path.
+    //
+    // `update` has to return the merged row rather than a canned one: the
+    // service promotes the successor and then re-points the survivors at
+    // `newHead.id`, so a mock that always answers with the parent would let a
+    // wrong-id re-point pass.
+    const mergeUpdate = (rows: Event[]) =>
+      mockEventRepo.update.mockImplementation(
+        async (id: string, _chapterId: string, data: Partial<Event>) => ({
+          ...(rows.find((row) => row.id === id) ?? baseEvent),
+          ...data,
+        }),
+      );
+
     describe('series update', () => {
+      // Before #1392 this asserted `updateMany(['child-future-1',
+      // 'child-future-2'], { name: 'Renamed' })` while the head was renamed in
+      // place. The head has started, so it is now retired instead and the
+      // earliest upcoming occurrence carries the rename as the new series head.
       it('applies the edit to future instances only', async () => {
         mockEventRepo.findById.mockResolvedValue(parent);
         mockEventRepo.findChildren.mockResolvedValue(wholeSeries);
-        mockEventRepo.update.mockResolvedValue({ ...parent, name: 'Renamed' });
+        mergeUpdate([parent, ...wholeSeries]);
 
         await service.update('parent-1', 'ch-1', { name: 'Renamed' }, 'series');
 
-        expect(mockEventRepo.updateMany).toHaveBeenCalledWith(
-          ['child-future-1', 'child-future-2'],
+        // The started head is retired, not renamed.
+        expect(mockEventRepo.update).toHaveBeenCalledWith('parent-1', 'ch-1', {
+          recurrence_rule: null,
+        });
+        // The earliest upcoming occurrence becomes the series and carries it.
+        expect(mockEventRepo.update).toHaveBeenCalledWith(
+          'child-future-1',
           'ch-1',
-          { name: 'Renamed' },
+          expect.objectContaining({
+            name: 'Renamed',
+            recurrence_rule: 'WEEKLY',
+            parent_event_id: null,
+          }),
+        );
+        // The remaining future occurrence is renamed and re-pointed at it.
+        expect(mockEventRepo.updateMany).toHaveBeenCalledWith(
+          ['child-future-2'],
+          'ch-1',
+          { name: 'Renamed', parent_event_id: 'child-future-1' },
         );
         expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
       });
 
+      // Before #1392 this read `updateMany.mock.calls[0]` and asserted the ids
+      // excluded `child-past`. A past occurrence is now written once — to
+      // detach it from the series that just ended — so the assertion is on the
+      // payload instead: no past row may receive any of the caller's fields.
       it('never includes a past instance in the write set', async () => {
         mockEventRepo.findById.mockResolvedValue(parent);
         mockEventRepo.findChildren.mockResolvedValue(wholeSeries);
-        mockEventRepo.update.mockResolvedValue(parent);
+        mergeUpdate([parent, ...wholeSeries]);
 
         await service.update('parent-1', 'ch-1', { name: 'Renamed' }, 'series');
 
-        const [ids] = mockEventRepo.updateMany.mock.calls[0];
-        expect(ids).not.toContain('child-past');
+        for (const [ids, , data] of mockEventRepo.updateMany.mock.calls) {
+          if (ids.includes('child-past')) {
+            expect(data).toEqual({ parent_event_id: null });
+          }
+        }
+        expect(mockEventRepo.update).not.toHaveBeenCalledWith(
+          'child-past',
+          expect.anything(),
+          expect.anything(),
+        );
+        expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
       });
 
       it('regenerates future instances when the recurrence rule changes', async () => {
         mockEventRepo.findById.mockResolvedValue(parent);
         mockEventRepo.findChildren.mockResolvedValue(wholeSeries);
-        mockEventRepo.update.mockResolvedValue({
-          ...parent,
-          recurrence_rule: 'MONTHLY',
-        });
+        mergeUpdate([parent, ...wholeSeries]);
         mockEventRepo.create.mockResolvedValue(baseEvent);
 
         await service.update(
@@ -673,8 +718,10 @@ describe('EventService', () => {
           'series',
         );
 
+        // Before #1392 both future occurrences were deleted and rebuilt from
+        // the head. `child-future-1` is now the new head, so only the rest is.
         expect(mockEventRepo.deleteMany).toHaveBeenCalledWith(
-          ['child-future-1', 'child-future-2'],
+          ['child-future-2'],
           'ch-1',
         );
         expect(mockEventRepo.create).toHaveBeenCalledTimes(6);
@@ -784,18 +831,247 @@ describe('EventService', () => {
               : null,
         );
         mockEventRepo.findChildren.mockResolvedValue([futureChild2]);
-        mockEventRepo.update.mockResolvedValue(parent);
+        mergeUpdate([parent, futureChild1, futureChild2]);
 
         await service.update('child-future-1', 'ch-1', { name: 'X' }, 'series');
 
-        expect(mockEventRepo.update).toHaveBeenCalledWith(
-          'parent-1',
-          'ch-1',
-          expect.objectContaining({ name: 'X' }),
-        );
+        // Resolution to the parent is what this test is about, and it still
+        // happens — `findChildren` is called for the parent's id. Before #1392
+        // the rename then landed on the parent; the parent has started, so it
+        // now lands on the promoted successor instead.
         expect(mockEventRepo.findChildren).toHaveBeenCalledWith(
           'parent-1',
           'ch-1',
+        );
+        expect(mockEventRepo.update).toHaveBeenCalledWith('parent-1', 'ch-1', {
+          recurrence_rule: null,
+        });
+        expect(mockEventRepo.update).toHaveBeenCalledWith(
+          'child-future-2',
+          'ch-1',
+          expect.objectContaining({ name: 'X' }),
+        );
+      });
+    });
+
+    // #1392. The head is both the series template and the series' own first
+    // occurrence. Once it has started, a `series` edit that writes it rewrites a
+    // meeting that already happened, and the `event_attendance` rows hanging off
+    // it then describe an event as it never was.
+    //
+    // Every test here fails against the pre-#1392 service: it wrote the patch to
+    // the head unconditionally.
+    describe('series update on a started head', () => {
+      const ZONE = [
+        { lat: 1, lng: 2 },
+        { lat: 3, lng: 4 },
+        { lat: 5, lng: 6 },
+      ];
+
+      // AC 1 and AC 4.
+      it("never writes the started head's own occurrence fields", async () => {
+        mockEventRepo.findById.mockResolvedValue(parent);
+        mockEventRepo.findChildren.mockResolvedValue(wholeSeries);
+        mergeUpdate([parent, ...wholeSeries]);
+        mockEventRepo.create.mockResolvedValue(baseEvent);
+
+        await service.update(
+          'parent-1',
+          'ch-1',
+          {
+            name: 'Renamed',
+            location: 'Elsewhere',
+            point_value: 25,
+            notes: 'new minutes',
+            check_in_zone: ZONE,
+          },
+          'series',
+        );
+
+        // Exactly one write to the head, carrying exactly one field. Anything
+        // else would edit the meeting its attendance rows describe.
+        const headWrites = mockEventRepo.update.mock.calls.filter(
+          ([id]) => id === 'parent-1',
+        );
+        expect(headWrites).toHaveLength(1);
+        expect(headWrites[0][2]).toEqual({ recurrence_rule: null });
+      });
+
+      // AC 2 — the edit must not be silently dropped, which is how #1391 failed.
+      it('applies the edit to the series going forward', async () => {
+        mockEventRepo.findById.mockResolvedValue(parent);
+        mockEventRepo.findChildren.mockResolvedValue(wholeSeries);
+        mergeUpdate([parent, ...wholeSeries]);
+
+        await service.update(
+          'parent-1',
+          'ch-1',
+          { name: 'Renamed', check_in_zone: ZONE },
+          'series',
+        );
+
+        expect(mockEventRepo.update).toHaveBeenCalledWith(
+          'child-future-1',
+          'ch-1',
+          expect.objectContaining({
+            name: 'Renamed',
+            check_in_zone: ZONE,
+            recurrence_rule: 'WEEKLY',
+            parent_event_id: null,
+          }),
+        );
+      });
+
+      it('detaches past occurrences from the series that just ended', async () => {
+        mockEventRepo.findById.mockResolvedValue(parent);
+        mockEventRepo.findChildren.mockResolvedValue(wholeSeries);
+        mergeUpdate([parent, ...wholeSeries]);
+
+        await service.update('parent-1', 'ch-1', { name: 'Renamed' }, 'series');
+
+        expect(mockEventRepo.updateMany).toHaveBeenCalledWith(
+          ['child-past'],
+          'ch-1',
+          { parent_event_id: null },
+        );
+        // Detached, never deleted: `event_attendance.event_id` cascades.
+        expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
+      });
+
+      // AC 3. This is the regression #1391 hit: fields reached the children but
+      // not the template, so the next rule change rebuilt from stale values and
+      // silently reverted a rename and dropped the geofence.
+      it('regenerates from current values after a later rule change', async () => {
+        mockEventRepo.findById.mockResolvedValue(parent);
+        mockEventRepo.findChildren.mockResolvedValue(wholeSeries);
+        mergeUpdate([parent, ...wholeSeries]);
+
+        const newHead = await service.update(
+          'parent-1',
+          'ch-1',
+          { name: 'Renamed', check_in_zone: ZONE },
+          'series',
+        );
+        expect(newHead.id).toBe('child-future-1');
+
+        // Second edit, addressed to the new head. It is upcoming, so this takes
+        // the ordinary path — and the template it reads is the row above.
+        jest.clearAllMocks();
+        mockEventRepo.findById.mockResolvedValue(newHead);
+        mockEventRepo.findChildren.mockResolvedValue([]);
+        mergeUpdate([newHead]);
+        mockEventRepo.create.mockResolvedValue(baseEvent);
+
+        await service.update(
+          newHead.id,
+          'ch-1',
+          { recurrence_rule: 'BIWEEKLY' },
+          'series',
+        );
+
+        expect(mockEventRepo.create).toHaveBeenCalledTimes(6);
+        for (const [payload] of mockEventRepo.create.mock.calls) {
+          expect(payload.name).toBe('Renamed');
+          expect(payload.check_in_zone).toEqual(ZONE);
+        }
+      });
+
+      it('shifts upcoming occurrences by the amount the head moved', async () => {
+        mockEventRepo.findById.mockResolvedValue(parent);
+        mockEventRepo.findChildren.mockResolvedValue(wholeSeries);
+        mergeUpdate([parent, ...wholeSeries]);
+        mockEventRepo.create.mockResolvedValue(baseEvent);
+
+        // The head ran 18:00-19:00 on 03-01; move it an hour later.
+        await service.update(
+          'parent-1',
+          'ch-1',
+          {
+            start_time: '2026-03-01T19:00:00.000Z',
+            end_time: '2026-03-01T20:00:00.000Z',
+          },
+          'series',
+        );
+
+        // The successor keeps its own date and moves by the same hour. Writing
+        // the caller's instants literally would have anchored the series on
+        // 03-01, two weeks in the past.
+        expect(mockEventRepo.update).toHaveBeenCalledWith(
+          'child-future-1',
+          'ch-1',
+          expect.objectContaining({
+            start_time: '2026-03-22T19:00:00.000Z',
+            end_time: '2026-03-22T20:00:00.000Z',
+          }),
+        );
+      });
+
+      it('refuses a shift that would move the next occurrence into the past', async () => {
+        mockEventRepo.findById.mockResolvedValue(parent);
+        mockEventRepo.findChildren.mockResolvedValue(wholeSeries);
+        mergeUpdate([parent, ...wholeSeries]);
+
+        // Four weeks earlier would land the 03-22 successor on 02-22.
+        await expect(
+          service.update(
+            'parent-1',
+            'ch-1',
+            {
+              start_time: '2026-02-01T18:00:00.000Z',
+              end_time: '2026-02-01T19:00:00.000Z',
+            },
+            'series',
+          ),
+        ).rejects.toThrow(BadRequestException);
+
+        expect(mockEventRepo.update).not.toHaveBeenCalled();
+        expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
+      });
+
+      it('refuses a series edit when no occurrence is still upcoming', async () => {
+        mockEventRepo.findById.mockResolvedValue(parent);
+        mockEventRepo.findChildren.mockResolvedValue([pastChild]);
+
+        // Every row this could reach is history, and rewriting history is the
+        // whole defect. Refuse rather than report a 200 that wrote nothing.
+        await expect(
+          service.update('parent-1', 'ch-1', { name: 'Renamed' }, 'series'),
+        ).rejects.toThrow(BadRequestException);
+
+        expect(mockEventRepo.update).not.toHaveBeenCalled();
+        expect(mockEventRepo.updateMany).not.toHaveBeenCalled();
+        expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
+      });
+
+      // The split is scoped to a head that has started. A series still in the
+      // future keeps the original behavior, head write included.
+      it('still writes the head directly when it has not started', async () => {
+        const upcomingHead: Event = {
+          ...parent,
+          id: 'up-1',
+          start_time: '2026-03-18T18:00:00.000Z',
+          end_time: '2026-03-18T19:00:00.000Z',
+        };
+        const upcomingChild: Event = {
+          ...baseEvent,
+          id: 'up-c1',
+          parent_event_id: 'up-1',
+          start_time: '2026-03-25T18:00:00.000Z',
+          end_time: '2026-03-25T19:00:00.000Z',
+        };
+        mockEventRepo.findById.mockResolvedValue(upcomingHead);
+        mockEventRepo.findChildren.mockResolvedValue([upcomingChild]);
+        mergeUpdate([upcomingHead, upcomingChild]);
+
+        await service.update('up-1', 'ch-1', { name: 'Renamed' }, 'series');
+
+        expect(mockEventRepo.update).toHaveBeenCalledWith('up-1', 'ch-1', {
+          name: 'Renamed',
+        });
+        expect(mockEventRepo.updateMany).toHaveBeenCalledWith(
+          ['up-c1'],
+          'ch-1',
+          { name: 'Renamed' },
         );
       });
     });
@@ -971,7 +1247,7 @@ describe('EventService', () => {
           id === 'parent-1' ? parent : futureChild1,
         );
         mockEventRepo.findChildren.mockResolvedValue([futureChild2]);
-        mockEventRepo.update.mockResolvedValue(parent);
+        mergeUpdate([parent, futureChild1, futureChild2]);
 
         await service.update(
           'child-future-1',
@@ -988,11 +1264,12 @@ describe('EventService', () => {
         // A rename must not destroy and rebuild the series...
         expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
         expect(mockEventRepo.create).not.toHaveBeenCalled();
-        // ...and must not drag the anchor onto the child's date. Assert the
-        // parent write happened before inspecting it, so this cannot pass by
-        // the call list simply being empty.
+        // ...and must not drag the anchor onto the child's date. Before #1392
+        // the rename landed on `parent-1`; it now lands on the promoted
+        // successor. Assert that write happened before inspecting the call
+        // list, so this cannot pass by the list simply being empty.
         expect(mockEventRepo.update).toHaveBeenCalledWith(
-          'parent-1',
+          'child-future-2',
           'ch-1',
           expect.objectContaining({ name: 'Renamed' }),
         );
