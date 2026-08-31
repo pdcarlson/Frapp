@@ -46,6 +46,22 @@ Action:
 > as *not applicable* rather than missing. The run log names them — a commit
 > predating a gate was never judged by it, and if that matters for the rollback
 > you are doing, the log is where you find out.
+>
+> **The other door: a cancelled check.** A commit can also be refused with its
+> required checks *present* but concluded `cancelled` — correctly, because a
+> cancelled check asserted nothing. The cause was concurrency: a workflow keying
+> `group` on `github.ref` with an unguarded `cancel-in-progress: true` puts every
+> push to `main` in one group, since `github.ref` is `refs/heads/main` for all of
+> them, so two merges minutes apart meant the earlier commit's run was cancelled
+> by the later one's and nothing re-ran it. `.github/workflows/ci.yml`,
+> `.github/workflows/docs.yml`, `.github/workflows/links.yml` and
+> `.github/workflows/migration-drift-gate.yml` now carry
+> `cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}`, so main push runs
+> no longer cancel each other. **On a commit that predates that fix, the remedy
+> is a re-run, not a code change:** re-run that commit's workflow run from the
+> Actions UI (GitHub keeps them 30 days), then retry the deploy. The failure
+> message reports cancelled checks apart from genuine failures and names this
+> remedy, so you should not have to reach this page to find it.
 
 ### 2) Full rollback to backup/snapshot
 

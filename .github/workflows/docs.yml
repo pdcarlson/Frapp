@@ -20,7 +20,14 @@ on:
 
 concurrency:
   group: docs-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancellable on a PR ref, NEVER on main. `github.ref` is `refs/heads/main`
+  # for every push to main, so an unguarded `cancel-in-progress: true` puts
+  # every merge's push run in one group and the first commit's run is cancelled
+  # by the second's — leaving required checks concluded `cancelled`, which
+  # `validate-deploy-sha.mjs` refuses to deploy. Cancelling a PR run costs a
+  # re-push; cancelling a main push run costs a commit's deployability.
+  # Full account: scripts/ci/validate-deploy-sha.mjs § CANCELLED_CONCLUSIONS.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   docs-spec-sync:

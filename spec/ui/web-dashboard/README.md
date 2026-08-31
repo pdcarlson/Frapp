@@ -58,7 +58,7 @@ Left: breadcrumb and page title. Right: the mobile nav trigger (`lg:hidden`), gl
 
 ## Responsive contract
 
-Shell geometry as built. Source of truth: [`apps/web/components/layout/dashboard-shell.tsx`](../../../apps/web/components/layout/dashboard-shell.tsx) against stock Tailwind v3 breakpoints (`sm` 640px, `md` 768px, `lg` 1024px) — the shared preset ([`packages/theme/src/tailwind.config.ts`](../../../packages/theme/src/tailwind.config.ts)) extends colors, radii, and motion but never overrides `screens`.
+Shell geometry as built. Source of truth: [`apps/web/components/layout/dashboard-shell.tsx`](../../../apps/web/components/layout/dashboard-shell.tsx) against stock Tailwind v4 breakpoints (`sm` 640px, `md` 768px, `lg` 1024px — v4 states them in `rem`, at the same pixel values) — the shared preset ([`packages/theme/src/tailwind.config.ts`](../../../packages/theme/src/tailwind.config.ts)) extends colors, radii, and motion but never overrides `screens`.
 
 | Viewport | Primary navigation | Content column |
 | --- | --- | --- |
