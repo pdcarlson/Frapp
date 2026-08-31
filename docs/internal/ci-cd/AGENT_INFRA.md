@@ -440,6 +440,32 @@ run. Re-evaluate when TypeScript 7.1 ships a stable programmatic API *and* those
 widen; until then the aliases move independently — native 7.x patches on `@typescript/native`,
 6.0.x patches on the `typescript` alias (stay below 6.1 for `typescript-eslint`).
 
+### A group regeneration can drop `jsdom`, and vitest resolves it from the root
+
+`vitest` declares `jsdom` as an **optional** peer (`peerDependenciesMeta.jsdom.optional`), and npm
+never auto-installs optional peers. It also loads the environment from *its own* install location —
+the hoisted root `node_modules/vitest` — so the workspace-level `jsdom` devDependencies in
+`apps/web`, `packages/hooks` and `packages/chat-core` are invisible to it. The jsdom suites passed
+only because a stale root `jsdom@29.1.1` node lingered in the lockfile as an auto-installed peer of
+an older vitest, which nothing declared and nothing guaranteed.
+
+#1395 — the weekly `npm-minor-and-patch` group — regenerated the lockfile, that root node went away,
+and every `environment: "jsdom"` config plus every `/** @vitest-environment jsdom */` spec failed
+with `Cannot find package 'jsdom' imported from …/node_modules/vitest/dist/chunks/…`. `web-tests`
+and `mobile-validate` went red with nothing in the diff that looked like a cause: the group touched
+no test file, and the jsdom line in each workspace manifest was unchanged.
+
+`jsdom` is now an explicit **root** devDependency, so the hoisted copy is intentional and `npm ci`
+reproduces it. Two neighbouring declarations were missing for the same reason — hoisting luck rather
+than intent — and are now explicit: `@testing-library/react` in `apps/mobile` (eight specs import
+it), and the `react-dom` peer that `@testing-library/react` needs in `packages/hooks`. Without that
+second one npm re-resolves the peer to the newest `^19` on any bump of the testing-library edge,
+which collides with the exact `react@19.2.3` pin and fails the install outright with `ERESOLVE`.
+
+The general rule: **declare what a workspace imports.** A package that resolves only because npm
+happened to hoist it is a red suite waiting for the next regeneration — and the failure surfaces in
+a PR that never touched it.
+
 ### Alerts and security updates are a repo Settings toggle
 
 Dependabot **alerts** and **security updates** live in repo Settings → Advanced Security, not in this
