@@ -225,6 +225,20 @@ describe('ChapterDocumentService', () => {
       );
     });
 
+    it('should reject a content type not on the document upload allowlist', async () => {
+      await expect(
+        service.confirmUpload({
+          chapter_id: 'ch-1',
+          title: 'Bylaws 2025',
+          storage_path: 'chapters/ch-1/documents/doc-1/bylaws.pdf',
+          uploaded_by: 'user-1',
+          content_type: 'application/x-msdownload',
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(mockDocumentRepo.create).not.toHaveBeenCalled();
+    });
+
     it('should register a folder that does not exist yet', async () => {
       mockFolderRepo.findByName.mockResolvedValue(null);
       mockDocumentRepo.create.mockResolvedValue(baseDocument);

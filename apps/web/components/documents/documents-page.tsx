@@ -711,6 +711,10 @@ export function DocumentsPage() {
                       <p className="text-[12.5px] text-muted-foreground">
                         Uploaded {new Date(doc.created_at).toLocaleDateString()}
                         {doc.folder ? ` · ${doc.folder}` : ""}
+                        {doc.document_type ? ` · ${doc.document_type}` : ""}
+                        {doc.effective_date
+                          ? ` · Effective ${new Date(doc.effective_date).toLocaleDateString()}`
+                          : ""}
                       </p>
                     </div>
                     <div className="flex items-center gap-2 sm:ml-auto">
