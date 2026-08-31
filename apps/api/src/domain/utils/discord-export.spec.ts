@@ -36,6 +36,11 @@ function mapMessage(
   });
 }
 
+// The parser itself (findMessagesKey's depth-tracking scanner, including the
+// "messages"-named-channel/category regression) now lives in
+// packages/validation/src/discord-export.ts and is pinned there once — see
+// its spec. This describe block only covers this workspace's re-export
+// against the real fixture, so a wiring regression here still fails loudly.
 describe('parseExportPreamble', () => {
   it('reads guild and channel out of a truncated head', () => {
     const head = readFixture('part-000.json').toString('utf8').slice(0, 700);
@@ -49,43 +54,12 @@ describe('parseExportPreamble', () => {
 
   it('is not fooled by the word "messages" inside channel.topic', () => {
     // The fixture's topic contains the literal `"messages"`, so a naive cut on
-    // the first occurrence truncates mid-object and yields nothing. This is the
-    // whole reason the head parser exists as a tested function.
+    // the first occurrence truncates mid-object and yields nothing.
     const head = readFixture('part-000.json').toString('utf8').slice(0, 700);
     // Escaped in the raw JSON, which is exactly the form a naive
     // `indexOf('"messages"')` would still trip over after unescaping.
     expect(head).toContain('\\"messages\\" pinned above');
     expect(parseExportPreamble(head)?.channel.name).toBe('general');
-  });
-
-  it('survives a channel literally named "messages"', () => {
-    // The failure the naive `indexOf('"messages"')` produces on real data: the
-    // cut lands inside `"name":"messages"`, the parse fails, and that channel
-    // silently vanishes from the mapping step — its entire history then skipped
-    // with a warning buried in a list.
-    const head = JSON.stringify({
-      guild: { id: '1', name: 'G' },
-      channel: { id: '800', name: 'messages', category: 'General' },
-      messages: [],
-    });
-
-    expect(parseExportPreamble(head)?.channel.name).toBe('messages');
-    expect(parseExportPreamble(head)?.channel.id).toBe('800');
-  });
-
-  it('survives a category named "messages" too', () => {
-    const head = JSON.stringify({
-      guild: { id: '1', name: 'G' },
-      channel: { id: '800', name: 'general', category: 'messages' },
-      messages: [],
-    });
-
-    expect(parseExportPreamble(head)?.channel.id).toBe('800');
-  });
-
-  it('returns null for something that is not an export', () => {
-    expect(parseExportPreamble('{"hello":"world"}')).toBeNull();
-    expect(parseExportPreamble('not json at all')).toBeNull();
   });
 });
 

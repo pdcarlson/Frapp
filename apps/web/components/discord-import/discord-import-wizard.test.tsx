@@ -488,18 +488,9 @@ describe("export preamble reader", () => {
     expect(parseExportPreamble(head)?.channelName).toBe("general");
   });
 
-  it("survives a channel literally named messages", () => {
-    // The naive `indexOf('\"messages\"')` cut lands inside `\"name\":\"messages\"`,
-    // the parse fails, and the channel silently vanishes from the mapping grid.
-    const named = JSON.stringify({
-      guild: { id: "1", name: "Tau Nu" },
-      channel: { id: "801", name: "messages", category: "General" },
-      messages: [],
-    });
-
-    expect(parseExportPreamble(named)?.channelId).toBe("801");
-    expect(parseExportPreamble(named)?.channelName).toBe("messages");
-  });
+  // The scanner's "messages"-named-channel/category regression is pinned
+  // once in packages/validation/src/discord-export.spec.ts, which this
+  // wrapper delegates to — no need to duplicate it here.
 
   it("returns null for a file that is not an export", () => {
     expect(parseExportPreamble('{"hello":1}')).toBeNull();

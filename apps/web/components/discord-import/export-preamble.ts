@@ -11,6 +11,8 @@
  * history into a Signet channel the admin did not choose.
  */
 
+import { parseExportPreamble as parseDiscordExportPreamble } from "@repo/validation";
+
 export const PREAMBLE_READ_BYTES = 64 * 1024;
 
 export interface ExportPreamble {
@@ -21,75 +23,24 @@ export interface ExportPreamble {
 }
 
 /**
- * Find the structural `"messages"` KEY, not the first occurrence of the text.
+ * Parse the header out of a truncated export.
  *
- * `indexOf('"messages"')` is wrong in a way that only shows up on real data: a
- * guild with a channel or category literally named `messages` puts
- * `"name":"messages"` in the preamble, the cut lands mid-object, and the parse
- * fails — so that channel silently disappears from the mapping grid and the
- * worker later skips its entire history with a warning nobody reads.
- *
- * A key is a quoted string followed by a colon, at nesting depth 1, outside any
- * string. Kept in step with `findMessagesKey` in
- * `apps/api/src/domain/utils/discord-export.ts`, which is the authority — this
- * copy only decides what the mapping grid shows.
+ * The actual scanner (finding the structural `"messages"` key rather than the
+ * first occurrence of the text, which breaks on a channel or category
+ * literally named `messages`) lives in `@repo/validation`, shared with the
+ * API worker's copy — this is just the wizard's flattened view of the same
+ * `{guild, channel}` header.
  */
-function findMessagesKey(input: string): number {
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-
-  for (let i = 0; i < input.length; i += 1) {
-    const ch = input[i];
-
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (ch === "\\") escaped = true;
-      else if (ch === '"') inString = false;
-      continue;
-    }
-
-    if (ch === '"') {
-      if (depth === 1 && input.startsWith('"messages"', i)) {
-        if (/^\s*:/.test(input.slice(i + '"messages"'.length))) return i;
-      }
-      inString = true;
-      continue;
-    }
-
-    if (ch === "{" || ch === "[") depth += 1;
-    else if (ch === "}" || ch === "]") depth -= 1;
-  }
-  return -1;
-}
-
-/** Parse the header out of a truncated export. */
 export function parseExportPreamble(head: string): ExportPreamble | null {
-  const guildStart = head.indexOf('"guild"');
-  if (guildStart === -1) return null;
-
-  const messagesKey = findMessagesKey(head);
-  const truncated =
-    messagesKey === -1
-      ? head
-      : `${head.slice(0, messagesKey).replace(/,\s*$/, "")}}`;
-
-  try {
-    const parsed = JSON.parse(truncated) as {
-      guild?: { name?: string | null };
-      channel?: { id?: string; name?: string; category?: string | null };
-    };
-    const channelId = parsed.channel?.id;
-    if (!channelId) return null;
-    return {
-      guildName: parsed.guild?.name ?? null,
-      channelId,
-      channelName: parsed.channel?.name ?? channelId,
-      category: parsed.channel?.category ?? null,
-    };
-  } catch {
-    return null;
-  }
+  const parsed = parseDiscordExportPreamble(head);
+  const channelId = parsed?.channel.id;
+  if (!channelId) return null;
+  return {
+    guildName: parsed.guild.name,
+    channelId,
+    channelName: parsed.channel.name ?? channelId,
+    category: parsed.channel.category,
+  };
 }
 
 /** True when a file sits in a DCE `_Files` media folder. */
