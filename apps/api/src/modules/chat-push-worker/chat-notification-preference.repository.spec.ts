@@ -62,4 +62,50 @@ describe('ChatNotificationPreferenceRepository — tenant scope', () => {
 
     expect(rows.map((r) => r.id)).toEqual([PREF_B]);
   });
+
+  /**
+   * Same binding, on the read that backs the mute UI (#296). The worker's
+   * lookup and the UI's lookup are separate methods, so tenant scope has to be
+   * pinned on both — a `chapter_id` filter dropped from one would not be caught
+   * by the other's test.
+   */
+  it('findChannelPreferencesForUser binds chapter_id too', async () => {
+    const rows = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findChannelPreferencesForUser(USER_SHARED, CHAPTER_B),
+    );
+
+    expect(rows.map((r) => r.id)).toEqual([PREF_B]);
+  });
+
+  /**
+   * The two reads differ deliberately on error handling, and it is worth
+   * pinning because it looks like an inconsistency.
+   *
+   * `findForUser` swallows: a failed preference lookup must not stop the worker
+   * deciding a push at all, and a missed mute beats a dropped notification.
+   * `findChannelPreferencesForUser` throws: there the array IS the answer, so
+   * an empty list on a database error would render every channel as unmuted —
+   * indistinguishable from the user having muted nothing, and the UI would
+   * silently misreport their own settings back to them.
+   */
+  it('the UI read throws on error where the worker read degrades', async () => {
+    const failing = createTenantHarness({ tables: seed() });
+    jest.spyOn(failing.client, 'from').mockReturnValue({
+      select: () => ({
+        eq: () => ({
+          eq: () => ({
+            eq: () =>
+              Promise.resolve({ data: null, error: { message: 'boom' } }),
+          }),
+        }),
+      }),
+    });
+    const failingRepo = new ChatNotificationPreferenceRepository(
+      failing.client,
+    );
+
+    await expect(
+      failingRepo.findChannelPreferencesForUser(USER_SHARED, CHAPTER_B),
+    ).rejects.toBeDefined();
+  });
 });

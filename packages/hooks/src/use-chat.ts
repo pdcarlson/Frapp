@@ -130,6 +130,71 @@ export function useCategories() {
   });
 }
 
+/** Per-channel notification level. `off` is what the UI calls "muted". */
+export type ChatNotificationLevel = "all" | "mentions" | "off";
+
+export interface ChannelNotificationPreference {
+  channel_id: string;
+  level: ChatNotificationLevel;
+}
+
+/**
+ * The caller's own per-channel notification levels.
+ *
+ * Served as its own collection rather than a field on the channel payload, for
+ * the same reason unread counts are: `channel-list.tsx` documents that an
+ * `unread_count?` field once sat on the channel type "populated by future
+ * unread tracking", nothing ever populated it, and the badge reading it could
+ * never render. `muted` was the second field in exactly that state until this
+ * hook existed.
+ *
+ * Only channels the caller can still read come back — a preference row outlives
+ * access to its channel, so the server filters before returning.
+ */
+export function useChannelNotificationPreferences() {
+  const client = useFrappClient();
+  return useQuery({
+    queryKey: ["channels", "notification-preferences"],
+    queryFn: async () => {
+      const { data, error } = await client.GET(
+        "/v1/channels/notification-preferences",
+      );
+      if (error) throw error;
+      return (data ?? []) as ChannelNotificationPreference[];
+    },
+    // Matches `useChannels`: mute state changes far less often than unread
+    // counts, and a stale mute badge is not the visible defect a stale unread
+    // badge is.
+    staleTime: 60_000,
+  });
+}
+
+export function useSetChannelNotificationLevel() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      channelId,
+      level,
+    }: {
+      channelId: string;
+      level: ChatNotificationLevel;
+    }) => {
+      const { data, error } = await client.PUT(
+        "/v1/channels/{id}/notification-preference",
+        { params: { path: { id: channelId } }, body: { level } },
+      );
+      if (error) throw error;
+      return data as ChannelNotificationPreference;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["channels", "notification-preferences"],
+      });
+    },
+  });
+}
+
 export function useCreateChannel() {
   const client = useFrappClient();
   const queryClient = useQueryClient();

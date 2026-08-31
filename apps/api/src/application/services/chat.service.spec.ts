@@ -41,6 +41,7 @@ import { NotificationService } from './notification.service';
 import { ActivationService } from './activation.service';
 import { RbacService } from './rbac.service';
 import { ChannelAccessService } from './channel-access.service';
+import { ChatNotificationPreferenceRepository } from '../../modules/chat-push-worker/chat-notification-preference.repository';
 
 describe('ChatService', () => {
   let service: ChatService;
@@ -61,6 +62,10 @@ describe('ChatService', () => {
     findChapterMemberIdentities: jest.Mock;
   };
   let mockActivation: jest.Mocked<Pick<ActivationService, 'record'>>;
+  let mockChatNotificationPrefs: {
+    findChannelPreferencesForUser: jest.Mock;
+    upsertChannelLevel: jest.Mock;
+  };
   let mockRbac: {
     getEffectivePermissions: jest.Mock;
     hasAlumniRole: jest.Mock;
@@ -198,6 +203,11 @@ describe('ChatService', () => {
 
     mockActivation = { record: jest.fn().mockResolvedValue(true) };
 
+    mockChatNotificationPrefs = {
+      findChannelPreferencesForUser: jest.fn().mockResolvedValue([]),
+      upsertChannelLevel: jest.fn(),
+    };
+
     mockRbac = {
       getEffectivePermissions: jest.fn(),
       // Active (non-alumni) member by default; alumni posting is covered in
@@ -253,6 +263,10 @@ describe('ChatService', () => {
         // existing PRIVATE / ROLE_GATED rejection tests still exercise the
         // predicate end-to-end.
         ChannelAccessService,
+        {
+          provide: ChatNotificationPreferenceRepository,
+          useValue: mockChatNotificationPrefs,
+        },
       ],
     }).compile();
 
@@ -1828,6 +1842,131 @@ describe('ChatService', () => {
         'user-1',
       );
       expect(result.channel_id).toBe('ch-chan-1');
+    });
+  });
+
+  // ── Per-channel notification level (mute) ────────────────────────────
+
+  describe('setChannelNotificationLevel', () => {
+    it('upserts the level for the caller and the given channel', async () => {
+      mockChatNotificationPrefs.upsertChannelLevel.mockResolvedValue({
+        user_id: 'user-1',
+        chapter_id: 'ch-1',
+        scope: 'channel',
+        scope_id: 'ch-chan-1',
+        scope_kind: null,
+        level: 'off',
+      });
+
+      const result = await service.setChannelNotificationLevel(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+        'off',
+      );
+
+      expect(mockChatNotificationPrefs.upsertChannelLevel).toHaveBeenCalledWith(
+        'user-1',
+        'ch-1',
+        'ch-chan-1',
+        'off',
+      );
+      expect(result).toEqual({ channel_id: 'ch-chan-1', level: 'off' });
+    });
+
+    /**
+     * The security property of this endpoint. `chat_channels` has RLS enabled
+     * with no policies (#1009) and the API holds the `service_role` key, so
+     * this application-layer check is the only thing preventing a caller from
+     * writing a preference row about a channel they cannot read — which would
+     * confirm that channel id exists.
+     */
+    it('refuses to write a preference for a channel the caller cannot access', async () => {
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        id: 'ch-private',
+        type: 'PRIVATE',
+        member_ids: ['someone-else'],
+      });
+
+      await expect(
+        service.setChannelNotificationLevel(
+          'ch-private',
+          'ch-1',
+          'user-1',
+          'off',
+        ),
+      ).rejects.toThrow();
+
+      expect(
+        mockChatNotificationPrefs.upsertChannelLevel,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('refuses for a channel that does not exist in the chapter', async () => {
+      mockChannelRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.setChannelNotificationLevel(
+          'ch-missing',
+          'ch-1',
+          'user-1',
+          'all',
+        ),
+      ).rejects.toThrow();
+
+      expect(
+        mockChatNotificationPrefs.upsertChannelLevel,
+      ).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getChannelNotificationPreferences', () => {
+    it('returns an empty list when the caller has set no preferences', async () => {
+      mockChatNotificationPrefs.findChannelPreferencesForUser.mockResolvedValue(
+        [],
+      );
+
+      await expect(
+        service.getChannelNotificationPreferences('ch-1', 'user-1'),
+      ).resolves.toEqual([]);
+    });
+
+    /**
+     * A preference row outlives access to its channel — leaving a private
+     * channel does not delete the mute row. Returning rows unfiltered would let
+     * a caller enumerate channel ids they can no longer read.
+     */
+    it('drops rows for channels the caller can no longer access', async () => {
+      mockChatNotificationPrefs.findChannelPreferencesForUser.mockResolvedValue(
+        [
+          {
+            user_id: 'user-1',
+            chapter_id: 'ch-1',
+            scope: 'channel',
+            scope_id: 'ch-chan-1',
+            scope_kind: null,
+            level: 'off',
+          },
+          {
+            user_id: 'user-1',
+            chapter_id: 'ch-1',
+            scope: 'channel',
+            scope_id: 'ch-gone',
+            scope_kind: null,
+            level: 'all',
+          },
+        ],
+      );
+      // `ch-gone` is absent from the accessible set.
+      mockChannelRepo.findByChapter.mockResolvedValue([baseChannel]);
+
+      const result = await service.getChannelNotificationPreferences(
+        'ch-1',
+        'user-1',
+      );
+
+      expect(result).toEqual([{ channel_id: 'ch-chan-1', level: 'off' }]);
     });
   });
 

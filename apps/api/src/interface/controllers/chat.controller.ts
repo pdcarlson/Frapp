@@ -8,6 +8,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -44,6 +45,8 @@ import {
   ChatMessageActionDto,
   RequestChatUploadUrlDto,
   ChannelUnreadCountDto,
+  SetChannelNotificationLevelDto,
+  ChannelNotificationPreferenceDto,
 } from '../dtos/chat.dto';
 import type { ChannelType } from '../../domain/entities/chat.entity';
 
@@ -83,6 +86,24 @@ export class ChatController {
     @CurrentUser('id') userId: string,
   ): Promise<ChannelUnreadCountDto[]> {
     return this.chatService.getUnreadCounts(chapterId, userId);
+  }
+
+  // MUST stay above `@Get(':id')`, for the same reason as `unread` directly
+  // above — `:id` is a single segment and would resolve this as
+  // `getChannel('notification-preferences')`.
+  @Get('notification-preferences')
+  @ApiOperation({
+    summary: "The caller's own per-channel notification levels",
+  })
+  @ApiOkResponse({ type: ChannelNotificationPreferenceDto, isArray: true })
+  async getChannelNotificationPreferences(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<ChannelNotificationPreferenceDto[]> {
+    return this.chatService.getChannelNotificationPreferences(
+      chapterId,
+      userId,
+    );
   }
 
   @Get(':id')
@@ -460,5 +481,36 @@ export class ChatController {
     @CurrentUser('id') userId: string,
   ) {
     return this.chatService.markChannelRead(channelId, chapterId, userId);
+  }
+
+  // ── Per-channel notification level (mute) ────────────────────────────
+
+  /**
+   * Two segments, so unlike the GET above this one cannot be swallowed by
+   * `@Patch(':id')` — but it is kept beside the read-receipt route, which is
+   * its closest sibling: both are per-user writes scoped to one channel.
+   *
+   * No extra `@RequirePermissions`: the class-level `MEMBERS_VIEW` is the right
+   * gate, because a member is changing *their own* notification settings for a
+   * channel they can already read. The authorization that matters is
+   * `assertChannelAccess` in the service, not a chapter-wide permission.
+   */
+  @Put(':id/notification-preference')
+  @ApiOperation({
+    summary: "Set the caller's notification level for a channel",
+  })
+  @ApiOkResponse({ type: ChannelNotificationPreferenceDto })
+  async setChannelNotificationLevel(
+    @Param('id', ParseUUIDPipe) channelId: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: SetChannelNotificationLevelDto,
+  ): Promise<ChannelNotificationPreferenceDto> {
+    return this.chatService.setChannelNotificationLevel(
+      channelId,
+      chapterId,
+      userId,
+      dto.level,
+    );
   }
 }
