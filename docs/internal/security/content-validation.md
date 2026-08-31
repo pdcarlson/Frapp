@@ -18,6 +18,8 @@ Kinds:
 
 Legacy Office stays on `document` because the API and every matching storage bucket already accept those types. The web clients had omitted them from `accept`/maps; completing the client is the decision. Dropping them server-side would reject files the buckets still store.
 
+**This check gates URL *issuance*, not the upload.** A signed upload URL cannot pin a content type — the client sets its own `Content-Type` on the PUT and the API never sees the bytes — so the bucket's `allowed_mime_types` column is the server-side type gate, exactly as the bucket's size column is the server-side size gate (§3). It gates the **declared header, never the bytes**, so it does not stop hostile bytes being stored; it constrains the type they are served as. Validating here is still worth doing — it makes a rejection a readable error instead of a failed PUT — but it is not a second enforcement point. For the measured request/response, what stops a browser rendering a stored object, and what was deliberately not measured, see `packages/validation/src/upload-allowlists.ts` § What the bucket allowlist actually enforces (#1230).
+
 ### 2. Allowed File Extensions
 Validate the filename with `isAllowedUploadExtension(kind, filename)`. If the extension is not in the kind, reject. Blocklists must not be used.
 

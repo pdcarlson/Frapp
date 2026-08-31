@@ -233,7 +233,7 @@ describe('DiscordImportService — upload URLs', () => {
     ).rejects.toThrow(/--partition/);
   });
 
-  it('rejects a media type the archive bucket would 415 anyway', async () => {
+  it('rejects a media type the archive bucket would reject anyway', async () => {
     await build();
     await expect(
       service.requestUploadUrls(IMPORT_ID, CHAPTER, [
