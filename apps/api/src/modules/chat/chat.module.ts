@@ -25,6 +25,7 @@ import { RbacModule } from '../rbac/rbac.module';
 import { ActivationModule } from '../activation/activation.module';
 import { ChapterModule } from '../chapter/chapter.module';
 import { AuthModule } from '../auth/auth.module';
+import { ChatNotificationPreferenceRepository } from '../chat-push-worker/chat-notification-preference.repository';
 
 @Module({
   // RbacModule → RbacService, which the delete-message route uses to resolve
@@ -43,6 +44,12 @@ import { AuthModule } from '../auth/auth.module';
   ],
   controllers: [ChatController],
   providers: [
+    // Provided directly rather than by importing `ChatPushWorkerModule`, which
+    // would pull the worker's Realtime subscription lifecycle into the request
+    // path for a stateless query helper. The class is the single home for
+    // `chat_notification_preferences` reads and writes; a second repository for
+    // the same table would be two places for one table's queries to drift.
+    ChatNotificationPreferenceRepository,
     ChatService,
     {
       provide: CHAT_CHANNEL_REPOSITORY,

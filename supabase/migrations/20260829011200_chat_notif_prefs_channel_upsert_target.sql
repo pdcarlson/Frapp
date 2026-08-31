@@ -1,0 +1,63 @@
+-- A unique index PostgREST can name as an ON CONFLICT target, so the
+-- per-channel mute write (#296) can upsert.
+--
+-- WHY THIS IS NEEDED AT ALL
+--
+-- `20260527120000_chat_notification_preferences.sql` already enforces one
+-- preference per (user, chapter, scope, key) with:
+--
+--   create unique index idx_chat_notif_prefs_unique
+--     on chat_notification_preferences (
+--       user_id, chapter_id, scope, coalesce(scope_id::text, scope_kind)
+--     );
+--
+-- That is the correct constraint and this migration does NOT replace it. The
+-- problem is narrower: it is an EXPRESSION index, and `ON CONFLICT (a, b, c)`
+-- only matches an index whose definition is those exact columns/expressions.
+-- Postgres rejects a plain-column specification against it outright:
+--
+--   ERROR: there is no unique or exclusion constraint matching the
+--          ON CONFLICT specification
+--
+-- (Verified against the local stack before writing this file, not inferred —
+-- the mute endpoint would have 500'd on every call.) PostgREST's `on_conflict`
+-- parameter takes column NAMES only and cannot express `coalesce(...)`, so the
+-- API has no way to target the existing index. The alternatives were a
+-- read-then-write in the service, which races two concurrent mutes into a
+-- duplicate-key error, or an RPC wrapping the expression form. A second index
+-- is cheaper than either and keeps the write a plain upsert.
+--
+-- WHY IT IS SAFE ALONGSIDE THE EXISTING INDEX
+--
+-- Both constrain the same table and they do not disagree. For `scope='channel'`
+-- rows the two are equivalent: `coalesce(scope_id::text, scope_kind)` reduces to
+-- `scope_id::text` exactly when `scope_id` is not null, which the table's
+-- `chat_notif_prefs_scope_id_when_channel` CHECK already guarantees for that arm.
+--
+-- For `scope='kind'` rows `scope_id` IS NULL, and a unique index treats NULLs as
+-- distinct by default (no `NULLS NOT DISTINCT` here, deliberately), so this index
+-- imposes no constraint on that arm at all -- kind rows stay governed solely by
+-- the expression index, exactly as before. Confirmed on the local stack: with
+-- both indexes present, a kind-scoped insert still succeeds and a repeated
+-- channel-scoped upsert updates in place rather than duplicating.
+--
+-- LOCKS
+--
+-- `create index` (not CONCURRENTLY -- Supabase migrations run inside a
+-- transaction and CONCURRENTLY cannot) holds SHARE and blocks writes to
+-- `chat_notification_preferences` for its duration. The table holds at most one
+-- row per user per channel they have deliberately configured, so it is small in
+-- every environment and stays small; this is not the heap-rewrite cost the
+-- search-vector migrations carry.
+--
+-- ROLLBACK
+--
+--   drop index if exists public.idx_chat_notif_prefs_channel_unique;
+--
+-- Purely additive and independently droppable. Dropping it loses no data and
+-- re-tightens nothing: the original expression index still enforces the real
+-- invariant. The only consequence is that the mute upsert stops working, so
+-- revert the API alongside it.
+
+create unique index if not exists idx_chat_notif_prefs_channel_unique
+  on public.chat_notification_preferences (user_id, chapter_id, scope, scope_id);
