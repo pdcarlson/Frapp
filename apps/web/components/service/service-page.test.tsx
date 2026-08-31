@@ -3,8 +3,9 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
-const { mockCurrentChapter } = vi.hoisted(() => ({
+const { mockCurrentChapter, mockFrappUser } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
+  mockFrappUser: vi.fn(),
 }));
 
 // Only the chapter payload is stubbed — `useSubscriptionWriteState` and
@@ -63,6 +64,12 @@ vi.mock("@/components/shared/can", () => ({
 
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 
+// `useFrappUser` reads `useCurrentUser`/`useViewerUserId` out of `@repo/hooks`,
+// which is stubbed wholesale above, so it is stubbed at its own module instead.
+vi.mock("@/lib/auth/use-frapp-user", () => ({
+  useFrappUser: () => mockFrappUser(),
+}));
+
 const { ServiceHoursPage } = await import("./service-page");
 
 const chapter = chapterSubscription(mockCurrentChapter);
@@ -75,7 +82,12 @@ const viewProofButton = () =>
   screen.getByRole("button", { name: /view proof/i });
 
 describe("ServiceHoursPage subscription gating", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // A reviewer who is not the submitter of PENDING_ENTRY ("u-1"), so the
+    // self-approval gate stays out of the way of the subscription cases.
+    mockFrappUser.mockReturnValue({ userId: "admin-9", isLoading: false });
+  });
 
   it("leaves every service write alone on an active chapter", () => {
     chapter.active();
@@ -102,7 +114,9 @@ describe("ServiceHoursPage subscription gating", () => {
 
     // §5 rule 4: disabled, not hidden — the queue and history are still there.
     // The pending entry renders twice (review queue + your-pending card).
-    expect(screen.getAllByText(/soup kitchen shift/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/soup kitchen shift/i).length).toBeGreaterThan(
+      0,
+    );
     expect(screen.getByText(/highway cleanup/i)).toBeInTheDocument();
 
     // And the dialog must not open onto a submission the API will reject.
@@ -218,5 +232,92 @@ describe("ServiceHoursPage subscription gating", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
     expect(logTrigger()).toBeDisabled();
+  });
+});
+
+describe("ServiceHoursPage self-approval affordance", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chapter.active();
+    mockFrappUser.mockReturnValue({ userId: "admin-9", isLoading: false });
+  });
+
+  it("disables Approve on the reviewer's own entry and says why", () => {
+    // `PENDING_ENTRY.user_id` is "u-1". The API refuses this approval (#1338),
+    // so the control must mirror the refusal rather than 403 on click.
+    mockFrappUser.mockReturnValue({ userId: "u-1", isLoading: false });
+    render(<ServiceHoursPage />);
+
+    expect(approveButton()).toBeDisabled();
+    expect(
+      screen.getByText(/can't approve your own hours/i),
+    ).toBeInTheDocument();
+  });
+
+  it("ties the disabled Approve to its reason for assistive tech", () => {
+    // The subscription gate pairs every control it disables with the sentence
+    // explaining it (`noticeId`); this case is outside that gate, so it has to
+    // make the same association itself or the button announces as dimmed with
+    // no reason.
+    mockFrappUser.mockReturnValue({ userId: "u-1", isLoading: false });
+    render(<ServiceHoursPage />);
+
+    const describedBy = approveButton().getAttribute("aria-describedby");
+    expect(describedBy).toBeTruthy();
+    expect(document.getElementById(describedBy!)).toHaveTextContent(
+      /can't approve your own hours/i,
+    );
+  });
+
+  it("keeps Reject available on the reviewer's own entry", () => {
+    // Rejecting awards no points, so the self-award rule does not reach it.
+    mockFrappUser.mockReturnValue({ userId: "u-1", isLoading: false });
+    render(<ServiceHoursPage />);
+
+    expect(rejectButton()).toBeEnabled();
+  });
+
+  it("leaves Approve enabled on another member's entry", () => {
+    render(<ServiceHoursPage />);
+
+    expect(approveButton()).toBeEnabled();
+    expect(
+      screen.queryByText(/can't approve your own hours/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("fails closed while the viewer is still resolving, and says so", () => {
+    // Matches `tasks-board.tsx:594-610`: an unresolved viewer is treated as
+    // "might be me", because offering a control the server will refuse is the
+    // worse failure. Unlike that board it explains itself rather than going
+    // silent, which is the gap #1346 records.
+    mockFrappUser.mockReturnValue({ userId: null, isLoading: true });
+    render(<ServiceHoursPage />);
+
+    expect(approveButton()).toBeDisabled();
+    expect(screen.getByText(/checking who you are/i)).toBeInTheDocument();
+  });
+
+  it("fails closed with a recovery hint when the viewer lookup errored", () => {
+    mockFrappUser.mockReturnValue({ userId: null, isLoading: false });
+    render(<ServiceHoursPage />);
+
+    expect(approveButton()).toBeDisabled();
+    expect(
+      screen.getByText(/couldn't confirm who you are/i),
+    ).toBeInTheDocument();
+  });
+
+  it("does not add a second explanation when the subscription gate already blocks", () => {
+    // The subscription notice owns the message in that case; stacking a
+    // self-approval line under it would give one disabled button two reasons.
+    chapter.incomplete();
+    mockFrappUser.mockReturnValue({ userId: "u-1", isLoading: false });
+    render(<ServiceHoursPage />);
+
+    expect(approveButton()).toBeDisabled();
+    expect(
+      screen.queryByText(/can't approve your own hours/i),
+    ).not.toBeInTheDocument();
   });
 });

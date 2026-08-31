@@ -739,6 +739,84 @@ describe('ServiceEntryService', () => {
       );
     });
 
+    it('should refuse a self-approval and never reach the atomic RPC', async () => {
+      // The submitter and the reviewer are the same member, so approving would
+      // move their own SERVICE balance with no second party — `points.md`'s
+      // "No self-award" rule (#1338). The refusal must happen before
+      // `approveAtomic`, so no ledger row can exist even transiently.
+      mockServiceEntryRepo.findById.mockResolvedValue(baseEntry);
+
+      await expect(
+        service.approve('se-1', 'ch-1', 'user-1', null),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        service.approve('se-1', 'ch-1', 'user-1', null),
+      ).rejects.toThrow('Admins cannot approve their own service entries');
+      expect(mockServiceEntryRepo.approveAtomic).not.toHaveBeenCalled();
+      expect(mockServiceEntryRepo.update).not.toHaveBeenCalled();
+      expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('should refuse a self-approval before the status guard, not after', async () => {
+      // Ordering proof, matching `TaskService.confirmCompletion` (#1056): which
+      // refusal a caller sees must not depend on what state their own entry
+      // happens to be in. An already-APPROVED self-owned entry still reports the
+      // authorization failure, not 'Only PENDING entries can be approved'.
+      const approvedEntry = { ...baseEntry, status: 'APPROVED' as const };
+      mockServiceEntryRepo.findById.mockResolvedValue(approvedEntry);
+
+      await expect(
+        service.approve('se-1', 'ch-1', 'user-1', null),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        service.approve('se-1', 'ch-1', 'user-1', null),
+      ).rejects.toThrow('Admins cannot approve their own service entries');
+      expect(mockServiceEntryRepo.approveAtomic).not.toHaveBeenCalled();
+    });
+
+    it('should refuse a self-approval even when the entry would award zero points', async () => {
+      // The control is authorization, not accounting, so it must not depend on
+      // the chapter-configurable rate: a sub-rate entry (30 min at 60 min/point
+      // floors to 0 points, approving with no ledger row) is refused just the
+      // same. Asserting the rate is never read pins the guard above the lookup,
+      // so lowering `minutes_per_point` in Settings can never change who may
+      // authorise an award.
+      const shortEntry = { ...baseEntry, duration_minutes: 30 };
+      mockServiceEntryRepo.findById.mockResolvedValue(shortEntry);
+
+      await expect(
+        service.approve('se-1', 'ch-1', 'user-1', null),
+      ).rejects.toThrow('Admins cannot approve their own service entries');
+      expect(
+        mockChapterServiceConfig.getMinutesPerPoint,
+      ).not.toHaveBeenCalled();
+      expect(mockServiceEntryRepo.approveAtomic).not.toHaveBeenCalled();
+    });
+
+    it('should still allow a different admin to approve the entry', async () => {
+      // The guard keys on the submitter, not on holding the permission: an
+      // approver who is not the earner is unaffected.
+      const approved = {
+        ...baseEntry,
+        status: 'APPROVED' as const,
+        reviewed_by: 'admin-2',
+        points_awarded: true,
+      };
+      mockServiceEntryRepo.findById.mockResolvedValue(baseEntry);
+      mockServiceEntryRepo.approveAtomic.mockResolvedValue(approved);
+
+      const result = await service.approve('se-1', 'ch-1', 'admin-2', null);
+
+      expect(mockServiceEntryRepo.approveAtomic).toHaveBeenCalledWith(
+        'se-1',
+        'ch-1',
+        'admin-2',
+        null,
+        1,
+      );
+      expect(result).toEqual(approved);
+    });
+
     it('should throw BadRequestException when entry is not PENDING', async () => {
       const approvedEntry = { ...baseEntry, status: 'APPROVED' as const };
       mockServiceEntryRepo.findById.mockResolvedValue(approvedEntry);
