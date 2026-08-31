@@ -24,6 +24,14 @@ expo-env.d.ts
 # would need packaged, i.e. tracked.)
 play-service-account.json
 
+# Written at prebuild by the @sentry/react-native/expo config plugin, at the
+# project root rather than inside the ignored /ios and /android output. Both are
+# generated, so tracking them would be noise — and sentry.properties is the file
+# an `auth.token=` line lands in if anyone ever sets `authToken` in the plugin
+# config instead of the SENTRY_AUTH_TOKEN environment variable.
+sentry.properties
+sentry.options.json
+
 # Metro
 .metro-health-check*
 
