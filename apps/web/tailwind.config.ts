@@ -1,5 +1,4 @@
 import type { Config } from "tailwindcss";
-import plugin from "tailwindcss/plugin";
 import sharedConfig, { colorVar } from "@repo/theme/tailwind";
 
 /*
@@ -18,21 +17,24 @@ import sharedConfig, { colorVar } from "@repo/theme/tailwind";
  * would re-activate them for dark-scheme users. Each screen-family slice of
  * #920 deletes its `dark:` variants as it lands.
  *
- * `pointer-coarse` is a **custom variant**, registered below. Tailwind did not
- * ship one until v4 and this workspace is on v3.4, so before the Directory &
- * Finance slice of #920 every `pointer-coarse:` class in the tree compiled to
- * nothing at all: the chat slice's `CHIP_HIT_AREA`
- * (`components/chat/chip.ts`) had been growing reaction chips to the §2 44px
- * floor on touch only in the source. The shipped stylesheet contained zero
- * occurrences of `pointer: coarse`. Unknown variants are dropped silently
- * rather than erroring, which is why it read as working for two slices; it was
- * caught by compiling the sheet and grepping it, not by inspection.
+ * `pointer-coarse` used to be registered here as a **custom variant**, because
+ * v3.4 shipped none and every `pointer-coarse:` class in the tree therefore
+ * compiled to nothing at all — the chat slice's `CHIP_HIT_AREA`
+ * (`components/chat/chip.ts`) grew reaction chips to the §2 44px touch floor
+ * only in the source, and the shipped stylesheet contained zero occurrences of
+ * `pointer: coarse`. Unknown variants are dropped silently rather than
+ * erroring, which is why it read as working for two slices; it was caught by
+ * compiling the sheet and grepping it, not by inspection.
  *
- * Registering it therefore *activates* chat's chips for the first time, which
- * is a cross-surface change riding on a config edit. Measured in Chromium at
- * 375px before shipping it: the reaction chips go from 26px to 44px tall on a
- * coarse pointer, keep their widths, stay on one row and do not overlap — which
- * is exactly what `CHIP_HIT_AREA` was written to do.
+ * v4 ships `pointer-coarse` (and `pointer-fine`, and the `any-pointer-*`
+ * family) as stock variants emitting the same `@media (pointer: coarse)`, so
+ * the plugin is gone rather than kept as a shadow of a built-in. Checked the
+ * way the original defect had to be: the compiled `apps/web` stylesheet is
+ * byte-identical either side of the removal.
+ *
+ * That silent-drop failure mode is the reason this file is worth compiling
+ * against rather than reading. It is also what the v4 bump hit next, one layer
+ * down — see `colorVar` in the shared preset.
  */
 const config: Config = {
   content: [
@@ -41,17 +43,6 @@ const config: Config = {
   ],
   presets: [sharedConfig],
   darkMode: "class",
-  plugins: [
-    plugin(({ addVariant }) => {
-      /*
-       * §2's touch floor applies where the pointer is coarse. This is the other
-       * half of the same media feature Tailwind's own `hover:` already consults
-       * (`(hover: hover) and (pointer: fine)`), so a control can grow for a
-       * finger without growing for a mouse.
-       */
-      addVariant("pointer-coarse", "@media (pointer: coarse)");
-    }),
-  ],
   theme: {
     extend: {
       colors: {
