@@ -796,7 +796,13 @@ export type { MentionCandidate } from "./mentions";
 // than the server does, so `apps/web` must scrub to the *same* rules rather than
 // a second, looser copy of them. Parameterized by a pseudonymizer because the
 // HMAC salt is API-only on purpose and must never reach a client bundle.
-export { createSentryScrubber, NO_PSEUDONYMS } from "./sentry-scrubbing";
+export {
+  createSentryScrubber,
+  NO_PSEUDONYMS,
+  // Exported so the API's request-log helper consumes this exact parser
+  // rather than keeping a second copy (#1388).
+  stripAuthority,
+} from "./sentry-scrubbing";
 export type {
   ScrubbableEvent,
   SentryPseudonymizer,
