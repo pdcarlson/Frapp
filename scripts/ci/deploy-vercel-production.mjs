@@ -54,6 +54,8 @@ import {
   VERCEL_TERMINAL_FAILURE_STATES,
   VERCEL_TERMINAL_SUCCESS_STATES,
 } from "./verify-vercel-deploy.mjs";
+import { requireEnv } from "./lib/env.mjs";
+import { resilientFetch } from "./lib/http.mjs";
 
 export const VERCEL_POLL_INTERVAL_MS = 20 * 1000;
 // Longer than the observer's 15 minutes on purpose. This account is on a Hobby
@@ -101,7 +103,7 @@ export async function createVercelProductionDeployment({
   repoId,
   teamId,
   ref = "main",
-  fetchImpl = fetch,
+  fetchImpl = resilientFetch,
 }) {
   const response = await fetchImpl(CREATE_DEPLOYMENT_URL(teamId), {
     method: "POST",
@@ -153,7 +155,7 @@ export async function pollVercelDeployment({
   teamId,
   label = deploymentId,
   clock = createClock(),
-  fetchImpl = fetch,
+  fetchImpl = resilientFetch,
   pollIntervalMs = VERCEL_POLL_INTERVAL_MS,
   overallTimeoutMs = VERCEL_OVERALL_TIMEOUT_MS,
   logger = console,
@@ -226,7 +228,7 @@ export async function deployVercelProduction({
   repoId,
   teamId,
   clock = createClock(),
-  fetchImpl = fetch,
+  fetchImpl = resilientFetch,
   pollIntervalMs = VERCEL_POLL_INTERVAL_MS,
   overallTimeoutMs = VERCEL_OVERALL_TIMEOUT_MS,
   logger = console,
@@ -277,15 +279,6 @@ export async function deployVercelProduction({
 }
 
 // ── CLI entry ───────────────────────────────────────────────────────────────
-
-function requireEnv(name) {
-  const value = process.env[name];
-  if (!value) {
-    console.error(`Error: ${name} environment variable is required.`);
-    process.exit(1);
-  }
-  return value;
-}
 
 async function main() {
   const projects = [

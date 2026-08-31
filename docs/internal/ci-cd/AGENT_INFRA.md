@@ -486,6 +486,47 @@ Confirming those toggles is tracked as a `[human]` issue (#921).
 
 Authoring contract for the loop (what an agent must do) lives in [`AGENTS.md`](../../../AGENTS.md) under "Autonomous PR lifecycle". Keep the two in sync when changing either.
 
+## Shared CI script library (`scripts/ci/lib/`)
+
+The scripts below are written against a small shared layer rather than each carrying its own copy.
+Reach for these before writing a new helper; adding a fifteenth private `requireEnv` is the shape of
+drift this layer exists to stop (stage 4 of the CI/CD redesign, [#1382](https://github.com/pdcarlson/Frapp/issues/1382)).
+
+| Module | Exports | Use it for |
+| --- | --- | --- |
+| `scripts/ci/lib/env.mjs` | `requireEnv`, `SECRETS_RUNBOOK` | Reading a required environment variable. Exits 1 naming the variable; emits a GitHub Actions `::error::` annotation under Actions and a plain `Error:` line locally. `hint` appends a pointer — pass `SECRETS_RUNBOOK` where the fix is provisioning a secret. |
+| `scripts/ci/lib/http.mjs` | `fetchWithRetry`, `resilientFetch`, `isRetriableStatus`, `IDEMPOTENT_METHODS` | Any outbound call. `resilientFetch` is a drop-in `fetch` carrying a 15s timeout and a bounded 3-attempt retry. |
+| `scripts/ci/lib/github.mjs` | `ghRequest`, `githubHeaders`, `GITHUB_API` | Every GitHub REST call. Never throws — a network rejection returns `{ ok: false, status: 0, data: null }`. |
+| `scripts/ci/lib/providers.mjs` | `fetchRenderDeploys`, `fetchVercelDeployments` | Listing Render deploys / Vercel deployments. |
+| `scripts/ci/lib/polling.mjs` | `createClock` | An injectable clock, so a poll loop's tests run without sleeping. |
+| `scripts/ci/lib/alert-issue.mjs` | `findAlertIssuesDetailed`, `raiseAlert`, `resolveAlert` | The create/reopen/comment/close upsert contract for `routine-state` alert issues. |
+
+Every one of these takes an injectable `fetchImpl` (or clock), which is what keeps the suites offline.
+
+### Retry is scoped to idempotent methods, deliberately
+
+`fetchWithRetry` retries `GET`, `HEAD` and `OPTIONS`. It does **not** retry `POST`, `PATCH`, `PUT` or
+`DELETE`, and that restriction is load-bearing rather than conservative habit: `deploy-render-production.mjs`
+and `deploy-vercel-production.mjs` both **POST to create a deployment**. If the first POST reaches the
+provider and only its response is lost — a gateway 502, or the timeout firing on a slow but successful
+call — then re-sending it starts a **second production deploy**.
+
+Non-idempotent calls still get the timeout, which is pure benefit: it turns a hung socket into a
+prompt failure instead of a job that sits until the runner kills it. A caller that knows its POST is
+idempotent (a search, a dry-run) opts in explicitly with `retryMethods`.
+
+**What is retried:** `429`, any `5xx`, and a network-level rejection (undici throws on DNS failure and
+`ECONNRESET` rather than returning a response). **What is not:** every other `4xx`. A `401`, `403` or
+`404` on a deploy path is a dead token or a wrong id, and re-sending it three times converts a clear
+failure into a slow one.
+
+### `ghRequest` does not retry by default
+
+The watchdogs (`ci-wake`, `pr-base-sync`) treat `ok: false` as a fail-safe skip, and their suites
+assert exact call counts against `5xx` fixtures — *"exactly one API call: the freshness check"*.
+A default retry would silently change those counts, so callers opt in with `retry: true`. The
+production deploy path uses `resilientFetch` directly instead.
+
 ## PR babysitting: wake signals and CI-failure triage
 
 Why the babysit loop needs more than `subscribe_pr_activity`, and what each layer covers. Root
