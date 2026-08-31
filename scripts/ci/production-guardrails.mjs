@@ -49,6 +49,7 @@
 import { findAlertIssuesDetailed, raiseAlert, resolveAlert } from "./lib/alert-issue.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { resilientFetch } from "./lib/http.mjs";
+import { fetchJson } from "./lib/providers.mjs";
 
 export const ALERT_ISSUE_TITLE =
   "Production deploy guardrails have drifted — auto-deploy or production branch is wrong";
@@ -146,14 +147,6 @@ export function buildSummary(findings, { checked = ["render", "vercel"] } = {}) 
 
 // ── Provider reads ──────────────────────────────────────────────────────────
 
-async function readJson({ url, headers, what, fetchImpl }) {
-  const response = await fetchImpl(url, { headers });
-  if (!response.ok) {
-    throw new Error(`${what} returned HTTP ${response.status}`);
-  }
-  return response.json();
-}
-
 /**
  * Every violation across both providers. A provider that cannot be READ yields
  * a violation of its own rather than being skipped.
@@ -169,7 +162,7 @@ export async function collectFindings({
   const findings = [];
 
   try {
-    const service = await readJson({
+    const service = await fetchJson({
       url: RENDER_SERVICE_URL(renderServiceId),
       headers: { Authorization: `Bearer ${renderApiKey}` },
       what: `Render service ${renderServiceId}`,
@@ -182,7 +175,7 @@ export async function collectFindings({
 
   for (const project of vercelProjects) {
     try {
-      const body = await readJson({
+      const body = await fetchJson({
         url: VERCEL_PROJECT_URL(project.projectId, teamId),
         headers: { Authorization: `Bearer ${vercelApiKey}` },
         what: `Vercel project ${project.label}`,

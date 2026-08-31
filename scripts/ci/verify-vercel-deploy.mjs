@@ -23,7 +23,7 @@
 //
 // Exits 0 on success/neutral, 1 on terminal failure or overall timeout.
 
-import { createClock } from "./lib/polling.mjs";
+import { createClock, pollUntilTerminal } from "./lib/polling.mjs";
 import { fetchVercelDeployments } from "./lib/providers.mjs";
 import { requireEnv } from "./lib/env.mjs";
 
@@ -125,120 +125,126 @@ export async function verifyVercelDeploy({
   overallTimeoutMs = VERCEL_OVERALL_TIMEOUT_MS,
   logger = console,
 }) {
-  const startedAt = clock.now();
   let lastObservedState = null;
 
-  while (clock.now() - startedAt < overallTimeoutMs) {
-    let page;
-    try {
-      page = await fetchVercelDeployments({ apiKey, projectId, fetchImpl });
-    } catch (error) {
-      return {
-        status: "failure",
-        message: `Vercel API error for ${label}: ${error.message}`,
-      };
-    }
+  return pollUntilTerminal({
+    clock,
+    pollIntervalMs,
+    overallTimeoutMs,
+    logger,
+    fetchOne: async () => {
+      try {
+        const page = await fetchVercelDeployments({ apiKey, projectId, fetchImpl });
+        const deployments = Array.isArray(page?.deployments) ? page.deployments : [];
+        const matches = deployments.filter(
+          (deployment) => deployment?.meta?.githubCommitSha === sha,
+        );
+        return { deployments, matches };
+      } catch (error) {
+        return { error };
+      }
+    },
+    classify: (state, { elapsedMs }) => {
+      if (state.error) {
+        return {
+          status: "failure",
+          message: `Vercel API error for ${label}: ${state.error.message}`,
+        };
+      }
 
-    const deployments = Array.isArray(page?.deployments) ? page.deployments : [];
-    const matches = deployments.filter(
-      (deployment) => deployment?.meta?.githubCommitSha === sha,
-    );
+      const { deployments, matches } = state;
 
-    if (matches.length === 0) {
-      const elapsed = clock.now() - startedAt;
-      if (elapsed >= noDeployGraceMs) {
+      if (matches.length === 0) {
+        if (elapsedMs >= noDeployGraceMs) {
+          return {
+            status: "failure",
+            message:
+              `No Vercel deployment found for ${sha} on ${label} within ` +
+              `${Math.round(noDeployGraceMs / 1000)}s. No build should be skippable — ` +
+              `each app's vercel.json is expected to pin \`ignoreCommand: "exit 1"\` and ` +
+              `\`git.deploymentEnabled.main\` is true — so a missing deployment row means ` +
+              `either that Ignored Build Step was changed or the Git integration did not ` +
+              `fire. Check the vercel.json first; it is the cheaper of the two.`,
+          };
+        }
+        logger.log?.(`[${label}] Waiting for Vercel to create a deployment for ${sha}...`);
+        return null;
+      }
+
+      // Pick the most recently created match (Vercel can record multiple
+      // attempts per SHA if a deploy is retried).
+      const latest = [...matches].sort(
+        (a, b) => deploymentCreatedAt(b) - deploymentCreatedAt(a),
+      )[0];
+
+      const deployState = deploymentState(latest);
+      lastObservedState = deployState;
+
+      if (VERCEL_TERMINAL_SUCCESS_STATES.has(deployState)) {
+        return {
+          status: "success",
+          message: `Vercel deployment ${latest.uid ?? latest.url} for ${label} is ${deployState}.`,
+        };
+      }
+
+      if (VERCEL_TERMINAL_FAILURE_STATES.has(deployState)) {
+        return {
+          status: "failure",
+          message: `Vercel deployment ${latest.uid ?? latest.url} for ${label} ended in ${deployState}.`,
+        };
+      }
+
+      if (VERCEL_NEUTRAL_TERMINAL_STATES.has(deployState)) {
+        const branch = latest?.meta?.githubCommitRef;
+        const branchLabel = branch ? `branch ${branch}` : "this branch";
+
+        if (wasSupersededByLaterDeployment(deployments, latest)) {
+          return {
+            status: "neutral",
+            message:
+              `Vercel deployment ${latest.uid ?? latest.url} for ${label} was ${deployState}, ` +
+              `superseded by a later deployment on ${branchLabel} which carries the ` +
+              `verification. Treating as neutral.`,
+          };
+        }
+
+        // Not superseded *yet*. Keep polling rather than failing on first sight:
+        // the cancel and the superseding deployment are two separate writes and
+        // they are not ordered. Two merges seconds apart cancel the first build
+        // the moment the second push arrives, and that cancel can appear in the
+        // list before the newer deployment's row does — so failing here on the
+        // first observation would red a push that was superseded normally.
+        if (elapsedMs < noDeployGraceMs) {
+          logger.log?.(
+            `[${label}] ${latest.uid ?? latest.url} is ${deployState}; waiting to see whether a ` +
+              `later deployment overtook it...`,
+          );
+          return null;
+        }
+
         return {
           status: "failure",
           message:
-            `No Vercel deployment found for ${sha} on ${label} within ` +
-            `${Math.round(noDeployGraceMs / 1000)}s. No build should be skippable — ` +
-            `each app's vercel.json is expected to pin \`ignoreCommand: "exit 1"\` and ` +
-            `\`git.deploymentEnabled.main\` is true — so a missing deployment row means ` +
-            `either that Ignored Build Step was changed or the Git integration did not ` +
-            `fire. Check the vercel.json first; it is the cheaper of the two.`,
-        };
-      }
-      logger.log?.(`[${label}] Waiting for Vercel to create a deployment for ${sha}...`);
-      await clock.sleep(pollIntervalMs);
-      continue;
-    }
-
-    // Pick the most recently created match (Vercel can record multiple
-    // attempts per SHA if a deploy is retried).
-    const latest = [...matches].sort(
-      (a, b) => deploymentCreatedAt(b) - deploymentCreatedAt(a),
-    )[0];
-
-    const state = deploymentState(latest);
-    lastObservedState = state;
-
-    if (VERCEL_TERMINAL_SUCCESS_STATES.has(state)) {
-      return {
-        status: "success",
-        message: `Vercel deployment ${latest.uid ?? latest.url} for ${label} is ${state}.`,
-      };
-    }
-
-    if (VERCEL_TERMINAL_FAILURE_STATES.has(state)) {
-      return {
-        status: "failure",
-        message: `Vercel deployment ${latest.uid ?? latest.url} for ${label} ended in ${state}.`,
-      };
-    }
-
-    if (VERCEL_NEUTRAL_TERMINAL_STATES.has(state)) {
-      const branch = latest?.meta?.githubCommitRef;
-      const branchLabel = branch ? `branch ${branch}` : "this branch";
-
-      if (wasSupersededByLaterDeployment(deployments, latest)) {
-        return {
-          status: "neutral",
-          message:
-            `Vercel deployment ${latest.uid ?? latest.url} for ${label} was ${state}, ` +
-            `superseded by a later deployment on ${branchLabel} which carries the ` +
-            `verification. Treating as neutral.`,
+            `Vercel deployment ${latest.uid ?? latest.url} for ${label} was ${deployState}, ` +
+            `and after ${Math.round(noDeployGraceMs / 1000)}s no later deployment on ` +
+            `${branchLabel} had overtaken it, so this was not a superseded push. ` +
+            `Nothing was built for ${sha} — an unverified project, not a no-op. ` +
+            `Likely a manual stop, a build concurrency limit, or an Ignored Build Step ` +
+            `that skipped it (each app's vercel.json is expected to pin ` +
+            `\`ignoreCommand: "exit 1"\` — check it before debugging further).`,
         };
       }
 
-      // Not superseded *yet*. Keep polling rather than failing on first sight:
-      // the cancel and the superseding deployment are two separate writes and
-      // they are not ordered. Two merges seconds apart cancel the first build
-      // the moment the second push arrives, and that cancel can appear in the
-      // list before the newer deployment's row does — so failing here on the
-      // first observation would red a push that was superseded normally.
-      const elapsed = clock.now() - startedAt;
-      if (elapsed < noDeployGraceMs) {
-        logger.log?.(
-          `[${label}] ${latest.uid ?? latest.url} is ${state}; waiting to see whether a ` +
-            `later deployment overtook it...`,
-        );
-        await clock.sleep(pollIntervalMs);
-        continue;
-      }
-
-      return {
-        status: "failure",
-        message:
-          `Vercel deployment ${latest.uid ?? latest.url} for ${label} was ${state}, ` +
-          `and after ${Math.round(noDeployGraceMs / 1000)}s no later deployment on ` +
-          `${branchLabel} had overtaken it, so this was not a superseded push. ` +
-          `Nothing was built for ${sha} — an unverified project, not a no-op. ` +
-          `Likely a manual stop, a build concurrency limit, or an Ignored Build Step ` +
-          `that skipped it (each app's vercel.json is expected to pin ` +
-          `\`ignoreCommand: "exit 1"\` — check it before debugging further).`,
-      };
-    }
-
-    logger.log?.(`[${label}] Vercel deployment ${latest.uid ?? latest.url} is ${state}...`);
-    await clock.sleep(pollIntervalMs);
-  }
-
-  return {
-    status: "failure",
-    message:
-      `Timed out after ${Math.round(overallTimeoutMs / 1000)}s waiting for ` +
-      `Vercel deployment on ${label}. Last observed state: ${lastObservedState ?? "none"}.`,
-  };
+      logger.log?.(`[${label}] Vercel deployment ${latest.uid ?? latest.url} is ${deployState}...`);
+      return null;
+    },
+    onTimeout: () => ({
+      status: "failure",
+      message:
+        `Timed out after ${Math.round(overallTimeoutMs / 1000)}s waiting for ` +
+        `Vercel deployment on ${label}. Last observed state: ${lastObservedState ?? "none"}.`,
+    }),
+  });
 }
 
 // ── CLI entry ───────────────────────────────────────────────────────────────

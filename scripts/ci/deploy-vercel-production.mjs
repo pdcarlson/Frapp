@@ -48,7 +48,7 @@
 // Semantics: the pure functions below. Unit tests:
 // `scripts/ci/__tests__/deploy-vercel-production.test.mjs`.
 
-import { createClock } from "./lib/polling.mjs";
+import { createClock, pollUntilTerminal } from "./lib/polling.mjs";
 import {
   VERCEL_NEUTRAL_TERMINAL_STATES,
   VERCEL_TERMINAL_FAILURE_STATES,
@@ -160,55 +160,65 @@ export async function pollVercelDeployment({
   overallTimeoutMs = VERCEL_OVERALL_TIMEOUT_MS,
   logger = console,
 }) {
-  const startedAt = clock.now();
   let lastObservedState = null;
 
-  while (clock.now() - startedAt < overallTimeoutMs) {
-    const response = await fetchImpl(GET_DEPLOYMENT_URL(deploymentId, teamId), {
-      headers: { Authorization: `Bearer ${apiKey}` },
-    });
-    if (!response.ok) {
-      return {
-        status: "failure",
-        message: `Vercel API returned HTTP ${response.status} for deployment ${deploymentId} (${label}).`,
-      };
-    }
+  return pollUntilTerminal({
+    clock,
+    pollIntervalMs,
+    overallTimeoutMs,
+    logger,
+    fetchOne: async () => {
+      const response = await fetchImpl(GET_DEPLOYMENT_URL(deploymentId, teamId), {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      if (!response.ok) {
+        return { httpStatus: response.status };
+      }
+      const deployment = await response.json();
+      return { state: deploymentState(deployment) };
+    },
+    classify: (fetched) => {
+      if (fetched.httpStatus) {
+        return {
+          status: "failure",
+          message: `Vercel API returned HTTP ${fetched.httpStatus} for deployment ${deploymentId} (${label}).`,
+        };
+      }
 
-    const deployment = await response.json();
-    const state = deploymentState(deployment);
-    lastObservedState = state;
+      const state = fetched.state;
+      lastObservedState = state;
 
-    const verdict = classifyVercelState(state);
-    if (verdict === "success") {
-      return {
-        status: "success",
-        message: `Vercel deployment ${deploymentId} for ${label} is ${state}.`,
-      };
-    }
-    if (verdict === "failure") {
-      const cancelled = VERCEL_NEUTRAL_TERMINAL_STATES.has(state);
-      return {
-        status: "failure",
-        message: cancelled
-          ? `Vercel deployment ${deploymentId} for ${label} was ${state}. On the production ` +
-            `path a cancel is never a no-op — nothing was shipped to production. Check the ` +
-            `project's Ignored Build Step: \`${label}\`'s vercel.json pins ` +
-            `\`ignoreCommand: "exit 1"\` so a build cannot be skipped, and a cancel here ` +
-            `means either that was overridden or the build was stopped externally.`
-          : `Vercel deployment ${deploymentId} for ${label} ended in ${state}.`,
-      };
-    }
+      const verdict = classifyVercelState(state);
+      if (verdict === "success") {
+        return {
+          status: "success",
+          message: `Vercel deployment ${deploymentId} for ${label} is ${state}.`,
+        };
+      }
+      if (verdict === "failure") {
+        const cancelled = VERCEL_NEUTRAL_TERMINAL_STATES.has(state);
+        return {
+          status: "failure",
+          message: cancelled
+            ? `Vercel deployment ${deploymentId} for ${label} was ${state}. On the production ` +
+              `path a cancel is never a no-op — nothing was shipped to production. Check the ` +
+              `project's Ignored Build Step: \`${label}\`'s vercel.json pins ` +
+              `\`ignoreCommand: "exit 1"\` so a build cannot be skipped, and a cancel here ` +
+              `means either that was overridden or the build was stopped externally.`
+            : `Vercel deployment ${deploymentId} for ${label} ended in ${state}.`,
+        };
+      }
 
-    logger.log?.(`[${label}] Vercel deployment ${deploymentId} is ${state}...`);
-    await clock.sleep(pollIntervalMs);
-  }
-
-  return {
-    status: "failure",
-    message:
-      `Timed out after ${Math.round(overallTimeoutMs / 1000)}s waiting for Vercel deployment ` +
-      `${deploymentId} (${label}). Last observed state: ${lastObservedState ?? "none"}.`,
-  };
+      logger.log?.(`[${label}] Vercel deployment ${deploymentId} is ${state}...`);
+      return null;
+    },
+    onTimeout: () => ({
+      status: "failure",
+      message:
+        `Timed out after ${Math.round(overallTimeoutMs / 1000)}s waiting for Vercel deployment ` +
+        `${deploymentId} (${label}). Last observed state: ${lastObservedState ?? "none"}.`,
+    }),
+  });
 }
 
 /**
