@@ -8,16 +8,25 @@
 //                                 24h grace. Answers "is a deployed database
 //                                 drifting right now?" on a timer.
 //   check-migration-drift-gate  — this file. Runs on every PR and every push to
-//                                 main as a REQUIRED check, staging only, no
-//                                 issue, short grace. Answers "has main's
-//                                 schema actually reached staging?" at the one
-//                                 moment a human is looking at a red X.
+//                                 main, staging only, no issue, short grace.
+//                                 Answers "has main's schema actually reached
+//                                 staging?" at the one moment a human is
+//                                 looking at a red X.
 //
-// The daily one is a smoke alarm; this one is a locked door. The incident that
-// motivated it — two migrations merged to main and never applied to staging —
-// was invisible for as long as it was because the only signal was an issue
-// nobody had reason to open. A required check cannot be not-noticed: it turns
-// every subsequent PR in the repo red until staging catches up.
+// The daily one is a smoke alarm; this one is the same alarm wired to the panel
+// people already watch. The incident that motivated it — two migrations merged
+// to main and never applied to staging — was invisible for as long as it was
+// because the only signal was an issue nobody had reason to open. A check on
+// every PR cannot be not-noticed.
+//
+// ── NOT a required check, deliberately ──────────────────────────────────────
+// This was required once and was demoted (see `configure-branch-protection.mjs`,
+// which names it as excluded on purpose). It compares main against staging, so
+// it asserts something the PR in front of it neither contains nor can change:
+// as a required check that is a repo-wide merge-freeze switch rather than a
+// gate, and #1373 used it as one. `migration-order` is the required gate now,
+// asking the same failure class scoped to what a change introduces. This file
+// reports; it does not block.
 //
 // ── Why it compares MAIN and not the PR head ────────────────────────────────
 // A PR that ADDS a migration has, by definition, a migration that staging has
@@ -52,12 +61,12 @@
 // A required check that calls a third-party API makes repo-wide merge
 // availability depend on that API. That is a real cost and it was taken
 // knowingly: a transient blip is absorbed by bounded retries below, and a
-// sustained Supabase outage blocks merges LOUDLY (with an error naming the
-// cause) rather than passing a check that proved nothing. "Could not verify" is
-// the exact failure mode that let the original incident run; it must never be
-// spelled green. If Supabase is genuinely down and a merge cannot wait, a human
-// removes `migration-drift` from the required list for the duration — a
-// deliberate, logged act, which is the point.
+// sustained Supabase outage fails LOUDLY (with an error naming the cause)
+// rather than passing a check that proved nothing. "Could not verify" is the
+// exact failure mode that let the original incident run; it must never be
+// spelled green. Since the demotion above this costs a red report rather than a
+// merge freeze, so no escape hatch is needed: the outage is visible and merges
+// keep moving.
 //
 // Env inputs:
 //   SUPABASE_ACCESS_TOKEN      — required, Supabase Management API token
@@ -354,8 +363,8 @@ export async function runDriftGate({
         `**Could not read staging migration history.** ${applied.error}`,
         "",
         "This is a failure, not a pass: an unverifiable database is the exact",
-        "state the gate exists to catch. If Supabase is down and a merge cannot",
-        "wait, drop `migration-drift` from the required checks deliberately.",
+        "state the gate exists to catch. `migration-drift` reports and does not",
+        "block, so a Supabase outage leaves this red without holding up merges.",
       ].join("\n"),
     );
     return 1;
