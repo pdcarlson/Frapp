@@ -638,11 +638,20 @@ of the three secrets or `API_URL` / `APP_URL` is unset in that environment — s
 production** with a commit SHA:
 
 1. **Typed confirmation** (`DEPLOY TO PRODUCTION`) — checked before any secret is read.
-2. **Commit validation** — the SHA must be an ancestor of `main` *and* have green CI, asserted against the same required-check list branch protection uses (`scripts/ci/validate-deploy-sha.mjs`).
+2. **Commit validation** — the SHA must be an ancestor of `main` *and* have green CI, asserted against the required-check list branch protection uses, intersected with the jobs that commit's own workflows define (`scripts/ci/validate-deploy-sha.mjs`).
 3. **Provider preflight** — Render auto-deploy is off; neither Vercel project promotes from `main` (`scripts/ci/production-guardrails.mjs`).
 4. **Environment approval** — the job pauses on the `production` environment's Required reviewers. This is the only human gate, and it fires here, on a run that names the commit.
 5. **Migration rehearsal** → fence → dry-run → apply.
 6. **Render deploy by `commitId`** → health smoke check → **Vercel production builds** → **tag**.
+
+> **Deploying an OLDER commit.** That intersection in step 2 is deliberate, and it is what
+> keeps an incident rollback possible. A required check added *after* a commit was made
+> could never have run on it, so it is reported *not applicable* and named in the run log
+> rather than refusing the deploy. What stays fatal: a check whose job that commit **does**
+> define and which never reported, and a `cancelled` / `timed_out` / `stale` run — the last
+> reported apart from a failure, carrying its re-run remedy in the message. Full account,
+> including the incident that prompted it: `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`
+> § Deploying an OLDER commit — the deployable window.
 
 There used to be two human gates: the `main` → `production` promotion PR's required
 review, and then this environment approval after merge, on a click nobody was paged for.
