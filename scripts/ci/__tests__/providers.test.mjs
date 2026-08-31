@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { fetchRenderDeploys, fetchVercelDeployments } from "../lib/providers.mjs";
+import { fetchJson, fetchRenderDeploys, fetchVercelDeployments } from "../lib/providers.mjs";
 
 function recorder(response) {
   const calls = [];
@@ -13,6 +13,33 @@ function recorder(response) {
 }
 
 const jsonOk = (body) => ({ ok: true, status: 200, json: async () => body });
+
+// The shared ok-check-throw-json wrapper `fetchRenderDeploys`,
+// `fetchVercelDeployments`, and `production-guardrails.mjs` all built
+// independently before this (#1351). This suite covers the wrapper itself;
+// the two below cover only their URL-building and error-message wrapping.
+describe("fetchJson", () => {
+  it("returns the parsed JSON body on a 2xx response", async () => {
+    const { calls, fetchImpl } = recorder(jsonOk({ hello: "world" }));
+    const body = await fetchJson({
+      url: "https://example.com/x",
+      headers: { Authorization: "Bearer k" },
+      what: "Example API",
+      fetchImpl,
+    });
+    assert.deepEqual(body, { hello: "world" });
+    assert.equal(calls[0].url, "https://example.com/x");
+    assert.equal(calls[0].init.headers.Authorization, "Bearer k");
+  });
+
+  it("throws naming `what` and the status on a non-ok response", async () => {
+    const { fetchImpl } = recorder({ ok: false, status: 404, json: async () => ({}) });
+    await assert.rejects(
+      () => fetchJson({ url: "https://example.com/x", headers: {}, what: "Example API", fetchImpl }),
+      /Example API returned HTTP 404/,
+    );
+  });
+});
 
 describe("fetchRenderDeploys", () => {
   it("asks for the service's deploys and returns the parsed body", async () => {

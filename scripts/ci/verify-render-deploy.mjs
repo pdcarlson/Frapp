@@ -13,7 +13,7 @@
 //
 // Exits 0 on success/neutral, 1 on terminal failure or overall timeout.
 
-import { createClock } from "./lib/polling.mjs";
+import { createClock, pollUntilTerminal } from "./lib/polling.mjs";
 import { fetchRenderDeploys } from "./lib/providers.mjs";
 import { requireEnv } from "./lib/env.mjs";
 
@@ -57,75 +57,80 @@ export async function verifyRenderDeploy({
   overallTimeoutMs = RENDER_OVERALL_TIMEOUT_MS,
   logger = console,
 }) {
-  const startedAt = clock.now();
   let lastObservedStatus = null;
 
-  while (clock.now() - startedAt < overallTimeoutMs) {
-    let page;
-    try {
-      page = await fetchRenderDeploys({ apiKey, serviceId, fetchImpl });
-    } catch (error) {
-      return {
-        status: "failure",
-        message: `Render API error for ${label}: ${error.message}`,
-      };
-    }
-
-    const entries = Array.isArray(page) ? page : [];
-    const match = entries.find((entry) => entry?.deploy?.commit?.id === sha);
-
-    if (!match) {
-      const elapsed = clock.now() - startedAt;
-      if (elapsed >= noDeployGraceMs) {
+  return pollUntilTerminal({
+    clock,
+    pollIntervalMs,
+    overallTimeoutMs,
+    logger,
+    fetchOne: async () => {
+      try {
+        const page = await fetchRenderDeploys({ apiKey, serviceId, fetchImpl });
+        const entries = Array.isArray(page) ? page : [];
+        return { match: entries.find((entry) => entry?.deploy?.commit?.id === sha) };
+      } catch (error) {
+        return { error };
+      }
+    },
+    classify: (state, { elapsedMs }) => {
+      if (state.error) {
         return {
           status: "failure",
-          message:
-            `No Render deploy created for ${sha} on ${label} within ` +
-            `${Math.round(noDeployGraceMs / 1000)}s. ` +
-            `Check that Render autoDeploy is enabled and pointed at the correct branch.`,
+          message: `Render API error for ${label}: ${state.error.message}`,
         };
       }
-      logger.log?.(`[${label}] Waiting for Render to create a deploy for ${sha}...`);
-      await clock.sleep(pollIntervalMs);
-      continue;
-    }
 
-    const status = match.deploy.status;
-    lastObservedStatus = status;
+      if (!state.match) {
+        if (elapsedMs >= noDeployGraceMs) {
+          return {
+            status: "failure",
+            message:
+              `No Render deploy created for ${sha} on ${label} within ` +
+              `${Math.round(noDeployGraceMs / 1000)}s. ` +
+              `Check that Render autoDeploy is enabled and pointed at the correct branch.`,
+          };
+        }
+        logger.log?.(`[${label}] Waiting for Render to create a deploy for ${sha}...`);
+        return null;
+      }
 
-    if (RENDER_TERMINAL_SUCCESS_STATES.has(status)) {
-      return {
-        status: "success",
-        message: `Render deploy ${match.deploy.id} for ${label} is ${status}.`,
-      };
-    }
+      const status = state.match.deploy.status;
+      lastObservedStatus = status;
 
-    if (RENDER_TERMINAL_FAILURE_STATES.has(status)) {
-      return {
-        status: "failure",
-        message: `Render deploy ${match.deploy.id} for ${label} ended in ${status}.`,
-      };
-    }
+      if (RENDER_TERMINAL_SUCCESS_STATES.has(status)) {
+        return {
+          status: "success",
+          message: `Render deploy ${state.match.deploy.id} for ${label} is ${status}.`,
+        };
+      }
 
-    if (RENDER_NEUTRAL_TERMINAL_STATES.has(status)) {
-      return {
-        status: "neutral",
-        message:
-          `Render deploy ${match.deploy.id} for ${label} was superseded (${status}); ` +
-          `treating as neutral.`,
-      };
-    }
+      if (RENDER_TERMINAL_FAILURE_STATES.has(status)) {
+        return {
+          status: "failure",
+          message: `Render deploy ${state.match.deploy.id} for ${label} ended in ${status}.`,
+        };
+      }
 
-    logger.log?.(`[${label}] Render deploy ${match.deploy.id} is ${status}...`);
-    await clock.sleep(pollIntervalMs);
-  }
+      if (RENDER_NEUTRAL_TERMINAL_STATES.has(status)) {
+        return {
+          status: "neutral",
+          message:
+            `Render deploy ${state.match.deploy.id} for ${label} was superseded (${status}); ` +
+            `treating as neutral.`,
+        };
+      }
 
-  return {
-    status: "failure",
-    message:
-      `Timed out after ${Math.round(overallTimeoutMs / 1000)}s waiting for ` +
-      `Render deploy on ${label}. Last observed status: ${lastObservedStatus ?? "none"}.`,
-  };
+      logger.log?.(`[${label}] Render deploy ${state.match.deploy.id} is ${status}...`);
+      return null;
+    },
+    onTimeout: () => ({
+      status: "failure",
+      message:
+        `Timed out after ${Math.round(overallTimeoutMs / 1000)}s waiting for ` +
+        `Render deploy on ${label}. Last observed status: ${lastObservedStatus ?? "none"}.`,
+    }),
+  });
 }
 
 // ── CLI entry ───────────────────────────────────────────────────────────────
