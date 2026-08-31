@@ -402,13 +402,16 @@ describe("classifyRequiredChecks — the narrowing must not excuse everything", 
 
 describe("classifyRequiredChecks — a cancelled check is not a failed one", () => {
   it("refuses a cancelled check, but reports it apart from a failure", () => {
-    // How this happens: ci.yml, docs.yml and migration-drift-gate.yml all key
-    // concurrency on `github.ref`, which is `refs/heads/main` for EVERY push to
-    // main. Two merges minutes apart put both push runs in one group, so the
-    // first commit's run is cancelled by the second's. Nothing re-runs it, and
-    // the commit becomes permanently undeployable — the same class as the
-    // deployable-window bug above, through a different door, landing on the
-    // same operation (rollback = redeploy an older commit).
+    // How this used to happen: ci.yml, docs.yml, links.yml and
+    // migration-drift-gate.yml each keyed concurrency on `github.ref`, which is
+    // `refs/heads/main` for EVERY push to main. Two merges minutes apart put both
+    // push runs in one group, so the first commit's run is cancelled by the
+    // second's. Nothing re-runs it, and the commit becomes permanently
+    // undeployable — the same class as the deployable-window bug above, through a
+    // different door, landing on the same operation (rollback = redeploy an older
+    // commit). All four now guard `cancel-in-progress` on the ref (#1378, #1379);
+    // this classification still covers commits merged before that, plus manual
+    // stops and timeouts, which no guard prevents.
     const verdict = classifyRequiredChecks({
       checkRuns: [
         { name: "api-tests", status: "completed", conclusion: "success" },

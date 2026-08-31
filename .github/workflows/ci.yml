@@ -8,7 +8,14 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancellable on a PR ref, NEVER on main. `github.ref` is `refs/heads/main`
+  # for every push to main, so an unguarded `cancel-in-progress: true` puts
+  # every merge's push run in one group and the first commit's run is cancelled
+  # by the second's — leaving required checks concluded `cancelled`, which
+  # `validate-deploy-sha.mjs` refuses to deploy. Cancelling a PR run costs a
+  # re-push; cancelling a main push run costs a commit's deployability.
+  # Full account: scripts/ci/validate-deploy-sha.mjs § CANCELLED_CONCLUSIONS.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 # ---------------------------------------------------------------------------
 # Domain-specific parallel jobs. `packages-build` runs first (shared
@@ -1033,9 +1040,13 @@ jobs:
       # Keyed on the resolved Playwright version, so a version bump is a cold
       # key and this job downloads Chromium once before repopulating the cache.
       # This used to share the entry with `web-visual-regression`, which ran
-      # concurrently; with that job deleted there is no second writer, so the
-      # harmless "Unable to reserve cache" annotation that race produced should
-      # no longer appear here.
+      # concurrently; with that job deleted there is no second writer WITHIN a
+      # run. There can still be one ACROSS runs: the concurrency guard above
+      # stops main push runs cancelling each other, so two merges close together
+      # can reach this step at once on the same version-keyed entry.
+      # `actions/cache` settles that by letting the first reservation win and
+      # warning on the second, so the "Unable to reserve cache" annotation is
+      # harmless where it appears and the restore path is unaffected.
       - name: Cache Playwright browsers
         id: pw-cache
         uses: actions/cache@v4
