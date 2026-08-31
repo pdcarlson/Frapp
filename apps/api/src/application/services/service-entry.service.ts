@@ -363,6 +363,26 @@ export class ServiceEntryService {
   ): Promise<ServiceEntry> {
     const entry = await this.findById(id, chapterId);
 
+    // Approving awards SERVICE points to the entry's submitter, so a holder of
+    // `service:approve` approving their own entry moves their own balance with
+    // no second party. `PointsService.adjustPoints:215` already refuses the
+    // equivalent, and `TaskService.confirmCompletion:294` closed the same gap on
+    // the task path (#1056). The rule this implements is `points.md`'s "No
+    // self-award" bullet, which binds the **ledger** rather than one endpoint;
+    // service-hour approval was the last award path on which the member who
+    // earns can also authorise.
+    //
+    // Ordered before the status guard deliberately, matching #1056: which
+    // refusal a caller sees must not depend on what state their own entry
+    // happens to be in, and an authorization failure is the more fundamental of
+    // the two. It stays above `approveAtomic`, so the RPC's compare-and-set
+    // concurrency guarantee is untouched.
+    if (entry.user_id === reviewerId) {
+      throw new ForbiddenException(
+        'Admins cannot approve their own service entries',
+      );
+    }
+
     if (entry.status !== 'PENDING') {
       throw new BadRequestException('Only PENDING entries can be approved');
     }
