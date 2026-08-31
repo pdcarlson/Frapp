@@ -64,13 +64,20 @@ export const ACCEPTED_CONCLUSIONS = new Set(["success", "skipped", "neutral"]);
  * reported apart from a genuine failure, because the remedy is different and an
  * operator mid-rollback should not have to guess it.
  *
- * How a merge commit on `main` ends up with cancelled required checks: `ci.yml`,
- * `docs.yml` and `migration-drift-gate.yml` all carry
+ * How a merge commit on `main` used to end up with cancelled required checks:
+ * `ci.yml`, `docs.yml`, `links.yml` and `migration-drift-gate.yml` each carried
  * `group: <name>-${{ github.ref }}` with `cancel-in-progress: true`, and
  * `github.ref` is `refs/heads/main` for EVERY push to main. Two merges a few
  * minutes apart — routine here — put both push runs in one group, so the first
  * commit's run is cancelled by the second's. Its checks conclude `cancelled`,
  * and nothing re-runs them.
+ *
+ * All four now guard it with `cancel-in-progress: ${{ github.ref !=
+ * 'refs/heads/main' }}` (#1378 for migration-drift-gate, #1379 for the rest), so
+ * main push runs no longer cancel each other. This classification still earns
+ * its place: commits merged BEFORE that fix keep their cancelled runs, and a run
+ * can still be cancelled by a manual stop, a timeout, or a `stale` conclusion —
+ * none of which the guard touches.
  *
  * That commit is then permanently undeployable: `jobIdsAtRef` cannot excuse it
  * (the run EXISTS, it is just cancelled), so it lands in `failing` and reads as
