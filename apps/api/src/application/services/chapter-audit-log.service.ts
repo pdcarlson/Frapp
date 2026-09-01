@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   CHAPTER_AUDIT_LOG_REPOSITORY,
   type IChapterAuditLogRepository,
@@ -36,6 +36,8 @@ export interface RecordAuditEntryInput {
  */
 @Injectable()
 export class ChapterAuditLogService {
+  private readonly logger = new Logger(ChapterAuditLogService.name);
+
   constructor(
     @Inject(CHAPTER_AUDIT_LOG_REPOSITORY)
     private readonly auditLogRepo: IChapterAuditLogRepository,
@@ -43,18 +45,29 @@ export class ChapterAuditLogService {
 
   // Append-only audit trail. A failed write must fail the request — settings
   // and roster changes are never silently unaudited (matches the existing
-  // writers' convention).
+  // writers' convention). Logged before rethrowing so "the mutation
+  // succeeded but its audit entry didn't land" has a specific signal to
+  // triage on, rather than reading as a bare 500 (matches
+  // chapter-config.service.ts's writeAudit).
   async record(entry: RecordAuditEntryInput): Promise<void> {
-    await this.auditLogRepo.create({
-      chapter_id: entry.chapterId,
-      actor_user_id: entry.actorUserId,
-      action: entry.action,
-      target_type: entry.targetType,
-      target_id: entry.targetId ?? null,
-      scope: 'chapter',
-      diff: entry.diff ?? {},
-      member_visible: entry.memberVisible ?? true,
-    });
+    try {
+      await this.auditLogRepo.create({
+        chapter_id: entry.chapterId,
+        actor_user_id: entry.actorUserId,
+        action: entry.action,
+        target_type: entry.targetType,
+        target_id: entry.targetId ?? null,
+        scope: 'chapter',
+        diff: entry.diff ?? {},
+        member_visible: entry.memberVisible ?? true,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to write chapter_audit_log entry (action=${entry.action}, chapter=${entry.chapterId})`,
+        error as Error,
+      );
+      throw error;
+    }
   }
 
   async list(
@@ -66,17 +79,16 @@ export class ChapterAuditLogService {
       Math.min(options.limit ?? LIST_QUERY_LIMIT_DEFAULT, LIST_QUERY_LIMIT_MAX),
     );
 
-    let beforeIso: string | undefined;
-    if (options.before) {
-      const parsed = new Date(options.before);
-      if (!Number.isNaN(parsed.getTime())) {
-        beforeIso = parsed.toISOString();
-      }
-    }
+    // Validated, not reformatted: `new Date(x).toISOString()` truncates a
+    // `timestamptz`'s microsecond precision to milliseconds, which can drop
+    // a same-millisecond row off this created_at-only cursor. The DTO already
+    // rejects non-ISO8601 input; this only guards a directly-called `before`
+    // (e.g. from a test) against reaching Postgres as a malformed literal.
+    const before =
+      options.before && !Number.isNaN(new Date(options.before).getTime())
+        ? options.before
+        : undefined;
 
-    return this.auditLogRepo.findByChapter(chapterId, {
-      before: beforeIso,
-      limit,
-    });
+    return this.auditLogRepo.findByChapter(chapterId, { before, limit });
   }
 }

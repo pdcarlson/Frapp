@@ -135,14 +135,20 @@ describe('ChapterAuditLogService', () => {
       );
     });
 
-    it('normalizes a valid before cursor to an ISO string', async () => {
+    it('passes a valid before cursor through unchanged', async () => {
       mockRepo.findByChapter.mockResolvedValue([]);
 
-      await service.list('chapter-1', { before: '2026-01-01T00:00:00Z' });
+      // Deliberately microsecond-precision and not a round, millisecond-only
+      // instant: reformatting this through `new Date(x).toISOString()` would
+      // truncate it to '...123Z' and could drop a same-millisecond row off
+      // the cursor — the exact regression this test pins against.
+      await service.list('chapter-1', {
+        before: '2026-01-01T00:00:00.123456+00:00',
+      });
 
       expect(mockRepo.findByChapter).toHaveBeenCalledWith(
         'chapter-1',
-        expect.objectContaining({ before: '2026-01-01T00:00:00.000Z' }),
+        expect.objectContaining({ before: '2026-01-01T00:00:00.123456+00:00' }),
       );
     });
 

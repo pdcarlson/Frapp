@@ -1058,7 +1058,17 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChapterAuditLogEntryDto"
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -6992,6 +7002,58 @@
         },
         "required": [
           "success"
+        ]
+      },
+      "ChapterAuditLogEntryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "chapter_id": {
+            "type": "string"
+          },
+          "actor_user_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "action": {
+            "type": "string",
+            "description": "Verb, e.g. `member_removed`"
+          },
+          "target_type": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "scope": {
+            "type": "string"
+          },
+          "diff": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Before/after payload for the change"
+          },
+          "member_visible": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "actor_user_id",
+          "action",
+          "target_type",
+          "target_id",
+          "scope",
+          "diff",
+          "member_visible",
+          "created_at"
         ]
       },
       "MemberCustomFieldValueDto": {

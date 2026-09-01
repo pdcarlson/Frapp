@@ -2840,6 +2840,22 @@ export interface components {
             /** @example true */
             success: boolean;
         };
+        ChapterAuditLogEntryDto: {
+            id: string;
+            chapter_id: string;
+            actor_user_id: string | null;
+            /** @description Verb, e.g. `member_removed` */
+            action: string;
+            target_type: string;
+            target_id: string | null;
+            scope: string;
+            /** @description Before/after payload for the change */
+            diff: {
+                [key: string]: unknown;
+            };
+            member_visible: boolean;
+            created_at: string;
+        };
         MemberCustomFieldValueDto: {
             field_id: string;
             key: string;
@@ -4271,7 +4287,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ChapterAuditLogEntryDto"][];
+                };
             };
         };
     };
