@@ -49,6 +49,10 @@ export class MemberController {
     return this.memberService.findProfilesByChapter(chapterId);
   }
 
+  // MUST stay above `@Get(':id')`. Nest matches routes in declaration order and
+  // a single-segment `:id` would otherwise swallow this path, resolving it as
+  // `getOne('search')` and answering 404 for a route that exists.
+  // Enforced by `test/route-declaration-order.e2e-spec.ts` (#990).
   @Get('search')
   @ApiOperation({ summary: 'Search members by name' })
   @ApiQuery({ name: 'q', required: true, description: 'Search query (name)' })
@@ -63,6 +67,7 @@ export class MemberController {
   // MUST stay above `@Get(':id')`. Nest matches routes in declaration order and
   // a single-segment `:id` would otherwise swallow this path, resolving it as
   // `getOne('roster')` and answering 404 for a route that exists.
+  // Enforced by `test/route-declaration-order.e2e-spec.ts` (#990).
   @Get('roster')
   @ApiOperation({
     summary: 'Display roster for the chapter — id, name and avatar only',
