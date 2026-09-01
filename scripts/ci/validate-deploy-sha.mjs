@@ -49,7 +49,7 @@
 
 import { execFileSync } from "node:child_process";
 
-import { ALL_REQUIRED_CHECKS } from "../configure-branch-protection.mjs";
+import { ALL_REQUIRED_CHECKS } from "./lib/required-checks.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { resilientFetch } from "./lib/http.mjs";
 import { githubHeaders } from "./lib/github.mjs";

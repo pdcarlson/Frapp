@@ -10,14 +10,14 @@
 // manual procedure ("if CI job names change, update these files").
 //
 // Sources of truth:
-//   - CI_CHECKS / DOCS_CHECKS / DRIFT_CHECKS in scripts/configure-branch-protection.mjs
+//   - CI_CHECKS / DOCS_CHECKS / DRIFT_CHECKS in scripts/ci/lib/required-checks.mjs
 //   - job ids and `npm run test -w <workspace>` steps in .github/workflows/ci.yml
 //
 // See docs/internal/ci-cd/DOCS_CI.md for the contract.
 
 import { readFileSync } from "node:fs";
 
-const SCRIPT_SRC = "scripts/configure-branch-protection.mjs";
+const SCRIPT_SRC = "scripts/ci/lib/required-checks.mjs";
 const CI_YML = ".github/workflows/ci.yml";
 
 // The docs that restate the roster. Each is checked against the same source.

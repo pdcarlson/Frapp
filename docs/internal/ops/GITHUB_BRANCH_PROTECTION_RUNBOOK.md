@@ -85,6 +85,29 @@ npm run configure:branch-protection -- --dry-run
 
 This prints the exact configuration that will be applied without making any changes. Review the output carefully.
 
+Since #1383 a dry run also **reads live protection back and prints the difference**, so the output
+answers "what would this actually change?" rather than only "what would this write?". A run that
+changes nothing says so explicitly:
+
+```
+  No changes -- live protection already matches this roster.
+```
+
+### Checking without applying (`--verify`)
+
+```bash
+npm run configure:branch-protection:verify
+```
+
+Reads and diffs but never writes, and **exits non-zero** when live protection differs from the
+roster. This is the mode that turns "the rollout step was run" into evidence: it produces an exit
+code and a printed delta rather than a checkmark.
+
+> **From an agent session this may or may not work, and that is expected.** Reaching
+> `api.github.com` from a cloud sandbox is session-dependent — see the ADR-20 amendment of
+> 2026-09-01 and the evidence table in #680. `--verify` **fails** rather than passes when the read
+> is refused, so an unreadable answer is never mistaken for a matching one.
+
 ## Step 2: Apply
 
 ```bash
@@ -235,13 +258,18 @@ Common causes and fixes:
 - **Workflow path filters + required checks:** if a required workflow is skipped by `paths`, GitHub waits forever for a check that never runs.  
   **Fix:** required workflows must run on every PR to protected branches.
 - **Job/workflow renames:** required check name no longer matches emitted name.  
-  **Fix:** update `scripts/configure-branch-protection.mjs` and re-run `npm run configure:branch-protection`.
+  **Fix:** update `scripts/ci/lib/required-checks.mjs` and re-run `npm run configure:branch-protection`.
 - **Stale required check reference:** a required context name no longer exists because the underlying workflow was removed.  
-  **Fix:** remove the orphan context from `ALL_REQUIRED_CHECKS` in `scripts/configure-branch-protection.mjs`, then `gh api -X DELETE repos/<owner>/<repo>/branches/main/protection/required_status_checks/contexts -f 'contexts[]=<orphan>'`, and re-run the branch-protection script.
+  **Fix:** remove the orphan context from the arrays in `scripts/ci/lib/required-checks.mjs`, then `gh api -X DELETE repos/<owner>/<repo>/branches/main/protection/required_status_checks/contexts -f 'contexts[]=<orphan>'`, and re-run the branch-protection script.
 
 ## Verification Checklist
 
-After running the script, verify in the GitHub UI (Settings → Branches):
+The script now re-reads protection after the PUT and reports whether the result actually matches
+what it wrote, so a 2xx that silently dropped a context no longer reads as success. Run
+`npm run configure:branch-protection:verify` for the same check at any time.
+
+The manual pass below is still worth doing for the things the API does not answer — but it is no
+longer the only way to know. In the GitHub UI (Settings → Branches):
 
 - [ ] A branch protection rule exists for `main`
 - [ ] All required status checks are listed
@@ -271,12 +299,14 @@ If you need to merge urgently and a check is broken:
 
 If CI job names change (e.g., renaming a workflow job), update:
 
-1. `scripts/configure-branch-protection.mjs` — `CI_CHECKS`, `DOCS_CHECKS` arrays
+1. `scripts/ci/lib/required-checks.mjs` — `CI_CHECKS`, `DOCS_CHECKS` arrays (moved out of
+   `configure-branch-protection.mjs` in #1383)
 2. This runbook — required checks tables
 3. `CONTRIBUTING.md` — required checks section
 4. `spec/environments/README.md` — CI job matrix
 5. `docs/internal/ci-cd/DOCS_CI.md` — the docs-gate table and its **Required?** column
 6. Re-run `npm run configure:branch-protection` to apply the new names
+7. Confirm with `npm run configure:branch-protection:verify` — it exits non-zero if anything was missed
 
 This list is the drift engine, not a safety net — one source and four hand-kept copies is why
 `@repo/theme` and `packages/chat-integrations` went missing from every table at once. Steps 2–4 are

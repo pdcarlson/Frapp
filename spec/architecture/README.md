@@ -1071,6 +1071,45 @@ the ones a later reader would otherwise re-litigate.
   fails the real apply.** Not a regression — the deleted workflow's dry run was equally blind — but
   nothing in the redesign catches it either.
 
+- **Amendment (2026-09-01, #1383) — the rosters left `configure-branch-protection.mjs`, and the
+  "cannot be verified by an agent" consequence is narrower than stated.** Two corrections to the
+  consequences above, in the order they matter.
+
+  **(a) The deploy path no longer imports a governance writer.** The consequence above notes that
+  `scripts/ci/validate-deploy-sha.mjs` *imports* `ALL_REQUIRED_CHECKS` from
+  `configure-branch-protection.mjs`, putting a module that PUTs live branch protection on every
+  production deploy's import graph — the entry guard added in #903 being the only thing between a
+  deploy and a governance write. The three arrays moved to `scripts/ci/lib/required-checks.mjs`,
+  a pure data module with no entry point, no network calls and nothing to guard; both consumers
+  import from there and `configure-branch-protection.mjs` no longer re-exports them, so no second
+  import path can reappear. This is deliberately **not** the "split the lists" option #1375
+  considered and rejected — there is still exactly one roster, because #1378 already fixed the
+  backward-looking problem structurally (`jobIdsAtRef` narrowing with a floor), and a second
+  hand-synced array would have re-introduced the drift class that fix removed. What was split is
+  the data from the actor, not the list from itself. `scripts/check-doc-tables.mjs` parses those
+  arrays as source text and its pointer moved with them.
+
+  **(b) Branch protection was read successfully from an agent session.** The consequence above
+  states that `api.github.com` "returns 403 to authenticated and unauthenticated requests alike"
+  from a cloud sandbox. On 2026-09-01, `GET /repos/pdcarlson/Frapp/branches/main/protection`
+  returned **HTTP 200** with the full protection object from a cloud sandbox session, using
+  `GITHUB_PAT` loaded from `.env.local` through `node`'s `fetch`. The recorded 403s were `curl`
+  probes through the agent proxy. **This does not retire the trigger below.** #680's evidence table
+  already records this endpoint class as *session-dependent* — 403 and 200 observed on the same day
+  in different sessions — so the honest statement is that the read **sometimes** works, not that it
+  can be relied on. `configure-branch-protection.mjs` now reads live protection back in every mode
+  and prints a before/after diff, and a `--verify` mode diffs without writing and exits non-zero on
+  any difference; it **fails** rather than passes when the read is refused, so an unreadable answer
+  is never mistaken for a matching one. A rollout step is now evidenceable wherever the read
+  happens to work, and no less safe where it does not.
+
+  **What that read found, on its first run:** live protection on `main` already carried all 21
+  contexts in the roster — `migration-order` and `web-production-build` **required**, and the
+  demoted `migration-drift` **absent** — meaning step 4 of #1378's rollout had already been
+  performed. It also surfaced one genuine divergence, `allow_fork_syncing` live `false` against the
+  roster's `true`, which no one could previously have seen. Both are exactly the class of fact a
+  write-only script structurally cannot report.
+
 **Trigger to revisit:** the six-stage program completes or is abandoned; production backups exist
 (retiring the decision-2 risk); or a provider gains a readable API for branch protection from an
 agent session, which would retire the write-only rollout step.
