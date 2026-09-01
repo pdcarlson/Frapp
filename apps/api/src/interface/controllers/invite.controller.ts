@@ -27,6 +27,7 @@ import {
 import {
   CreateInviteDto,
   BatchCreateInvitesDto,
+  BulkEmailInviteDto,
   RedeemInviteDto,
 } from '../dtos/invite.dto';
 import { SystemPermissions } from '../../domain/constants/permissions';
@@ -69,6 +70,27 @@ export class InviteController {
       userId,
       dto.role,
       dto.count,
+    );
+  }
+
+  @Post('email')
+  @ThrottleExpensiveWrite()
+  @UseGuards(ChapterGuard, PermissionsGuard)
+  @RequirePermissions(SystemPermissions.MEMBERS_INVITE)
+  @GraceBlocked()
+  @ApiOperation({
+    summary: 'Generate invite tokens and email each address a join link',
+  })
+  async createWithEmails(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: BulkEmailInviteDto,
+  ) {
+    return this.inviteService.createWithEmails(
+      chapterId,
+      userId,
+      dto.role,
+      dto.emails,
     );
   }
 

@@ -20,8 +20,9 @@ This file covers the in-app onboarding behavior: the first-officer wizard, invit
 - A token can be used **only once** (`used_at` is set on redemption).
 - An expired or already-used token returns **410 Gone**.
 - Each token carries a `role` that determines the joining member's initial role. If that role was deleted between creation and redemption, the user is assigned the default "Member" role instead.
-- Only users with the `members:invite` permission can generate tokens. Multiple tokens can be generated at once (batch invite).
-- **Inviting is free-tier and not billing-gated.** `InviteService.create` / `createBatch` do not check `subscription_status`; any chapter — including a brand-new `incomplete` one from the onboarding wizard — can generate invite tokens. Billing gates the paid ops modules, not chat/members/invites.
+- Only users with the `members:invite` permission can generate tokens. Multiple tokens can be generated at once (batch invite), or one per address via a bulk email send (`POST /v1/invites/email`) that mints a token per address and emails each a join link. Email delivery is best-effort per address — a send failure never invalidates the token, it is only reported back so the caller can retry or share the link manually.
+- **Inviting is free-tier and not billing-gated.** `InviteService.create` / `createBatch` / `createWithEmails` do not check `subscription_status`; any chapter — including a brand-new `incomplete` one from the onboarding wizard — can generate invite tokens. Billing gates the paid ops modules, not chat/members/invites.
+- Email delivery itself is optional infrastructure: with no `RESEND_API_KEY` configured, the API logs invite emails instead of sending them rather than failing the request — tokens are still created and can be shared as links. See `docs/internal/environment/ENV_REFERENCE.md` § Invite Email.
 - If a user is already a member of the chapter and attempts to use an invite token for it, the API returns **409 Conflict**.
 
 ## Chapter Directory Search
