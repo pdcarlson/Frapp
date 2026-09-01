@@ -71,7 +71,7 @@ const { SettingsPage } = await import("./settings-page");
 const chapter = chapterSubscription(mockCurrentChapter);
 
 const promoteSwitch = () =>
-  screen.getByRole("switch", { name: /promote new members to member/i });
+  screen.getByRole("switch", { name: /promote every new member to member/i });
 
 /** Fill the three required fields and submit, leaving the confirm dialog open. */
 async function submitRollover(user: ReturnType<typeof userEvent.setup>) {
@@ -152,6 +152,9 @@ describe("semester rollover — New Member promotion (#285)", () => {
     expect(dialog).toHaveTextContent(/promoted to Member/i);
     expect(dialog).toHaveTextContent(/keep any other roles they hold/i);
     expect(dialog).toHaveTextContent(/cannot be undone/i);
+    // Case-sensitive: "New Member" title-cased to match how the role is
+    // displayed everywhere else, not vocab()'s sentence-case "New member".
+    expect(dialog).toHaveTextContent("Every New Member is also promoted");
   });
 
   it("stays silent about promotion when it was not requested", async () => {
@@ -183,7 +186,7 @@ describe("semester rollover — New Member promotion (#285)", () => {
     render(<SettingsPage />);
 
     expect(
-      screen.queryByRole("switch", { name: /promote new members/i }),
+      screen.queryByRole("switch", { name: /promote every new member/i }),
     ).not.toBeInTheDocument();
     // The rollover itself is still available — only the extra option is gated.
     expect(
@@ -211,16 +214,34 @@ describe("semester rollover — New Member promotion (#285)", () => {
     render(<SettingsPage />);
 
     expect(
-      screen.getByRole("switch", { name: /promote aspirants to member/i }),
+      screen.getByRole("switch", { name: /promote every aspirant to member/i }),
     ).toBeInTheDocument();
 
     await user.click(
-      screen.getByRole("switch", { name: /promote aspirants to member/i }),
+      screen.getByRole("switch", { name: /promote every aspirant to member/i }),
     );
     await submitRollover(user);
 
     const dialog = await screen.findByRole("dialog");
     expect(dialog).toHaveTextContent(/every aspirant is also promoted/i);
     expect(dialog).not.toHaveTextContent(/new member/i);
+  });
+
+  // #351 diff-review finding: naive `${pledgeTerm}s` concatenation broke for
+  // an officer-typed override that is already plural or ends in "s" — the
+  // vocab field is free text (settings-org-tab.tsx), not an enum.
+  it("does not double an s when the chapter's own vocabulary term already ends in one", () => {
+    mockOrgConfig.mockReturnValue({
+      org_archetype: "ifc",
+      vocabulary: { pledge: "Recruits" },
+    });
+    render(<SettingsPage />);
+
+    expect(
+      screen.getByRole("switch", { name: /promote every recruits to member/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("switch", { name: /recruitss/i }),
+    ).not.toBeInTheDocument();
   });
 });
