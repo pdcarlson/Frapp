@@ -12,9 +12,12 @@
  *    (`spec/ui/mobile/patterns.md` § Chat). That also means `ctx` is `null` until
  *    the viewer's `users.id` resolves, so every callback here guards on it.
  * 2. **No `toast`.** `ChatActionContext.toast` is optional and mobile supplies
- *    none, so chat-core's failure toasts are silent no-ops. A terminal 4xx
- *    surfaces only as `_status: "failed"` + `_error` in the cache, which the
- *    thread renders inline — that is the whole failure UI on this platform.
+ *    none, so chat-core's failure toasts are silent no-ops. A terminal 4xx on
+ *    `send` surfaces as `_status: "failed"` + `_error` in the cache, which the
+ *    thread renders inline; `react`/`unreact` have no such cache row (the
+ *    rollback is silent), so this hook wires `ChatActionContext.onError` per
+ *    call into `reactionError` instead (#999) — the platform-neutral sink
+ *    `chat-core` fires alongside (never instead of) `toast`.
  * 3. **No `getOutboxRow`.** That is a web-only extra on the Dexie store; the
  *    port itself only offers `listForChannel`, so retry/discard look the row up
  *    through it.
@@ -81,6 +84,15 @@ export interface UseChatChannelResult {
   setDraft: (body: string) => void;
   /** Last send failure. `null` once the member edits the draft or retries. */
   sendError: string | null;
+  /**
+   * Last `react`/`unreact` rejection. `chat-core` already rolls the
+   * optimistic toggle back on failure; this is only the explanation, since
+   * mobile has no toast (#999). `null` once cleared by `clearReactionError`,
+   * the next reaction attempt, or a channel change.
+   */
+  reactionError: string | null;
+  /** Dismisses `reactionError` — call on the next successful action or navigation away. */
+  clearReactionError: () => void;
   typingUsers: string[];
   emitTyping: () => void;
   connection: ConnectionStatus;
@@ -234,6 +246,66 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   const sendingRef = useRef(false);
   /** Last send failure, surfaced by the composer since mobile has no toast. */
   const [sendError, setSendError] = useState<string | null>(null);
+  /** Last react/unreact failure, surfaced the same way (#999). */
+  const [reactionError, setReactionError] = useState<string | null>(null);
+  const clearReactionError = useCallback(() => setReactionError(null), []);
+  // A channel switch must not carry the previous channel's reaction failure
+  // onto this one — nothing here retries or discards it the way `sendError`
+  // can, so it would otherwise sit until the member happened to trigger
+  // another reaction. Reset inline during render (React's "adjusting state
+  // when a prop changes" pattern, https://react.dev/reference/react/useState#storing-information-from-previous-renders)
+  // rather than in an effect, which would fire an extra render after the
+  // channel-switch render already committed.
+  const [reactionErrorChannelId, setReactionErrorChannelId] = useState(channelId);
+  if (reactionErrorChannelId !== channelId) {
+    setReactionErrorChannelId(channelId);
+    if (reactionError !== null) setReactionError(null);
+  }
+  /**
+   * Always the current `channelId`, for the generation check below. Refs
+   * cannot be read or written during render (`react-hooks/refs`), so this
+   * mirrors `channelId` via an effect rather than joining the render-time
+   * reset above.
+   */
+  const currentChannelIdRef = useRef(channelId);
+  useEffect(() => {
+    currentChannelIdRef.current = channelId;
+  }, [channelId]);
+  /**
+   * Bumped once per `react`/`unreact` dispatch. `reactAction`/`unreactAction`
+   * resolve asynchronously, so without a generation check a request that is
+   * still in flight when the member switches channels — or fires a second
+   * reaction before the first settles — reports its failure through a stale
+   * closure: `setReactionError` would run against whatever channel or action
+   * is on screen *by then*, not the one the request was actually for.
+   */
+  const reactionGenerationRef = useRef(0);
+  const reactWithErrorSink = useCallback(
+    (fn: typeof reactAction, args: Parameters<typeof reactAction>[1]) => {
+      if (!ctx) return Promise.resolve();
+      const forChannelId = channelId;
+      const generation = ++reactionGenerationRef.current;
+      setReactionError(null);
+      return fn(
+        {
+          ...ctx,
+          onError: (input) => {
+            // Stale if the channel has moved on, or a later react/unreact on
+            // this same channel has already superseded this one.
+            if (
+              currentChannelIdRef.current !== forChannelId ||
+              reactionGenerationRef.current !== generation
+            ) {
+              return;
+            }
+            setReactionError(input.description ?? input.title);
+          },
+        },
+        args,
+      );
+    },
+    [ctx, channelId],
+  );
 
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelDraftTimer = useCallback(() => {
@@ -299,18 +371,18 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
 
   const react = useCallback(
     async (messageId: string, emoji: string) => {
-      if (!channelId || !ctx) return;
-      await reactAction(ctx, { channelId, messageId, emoji });
+      if (!channelId) return;
+      await reactWithErrorSink(reactAction, { channelId, messageId, emoji });
     },
-    [channelId, ctx],
+    [channelId, reactWithErrorSink],
   );
 
   const unreact = useCallback(
     async (messageId: string, emoji: string) => {
-      if (!channelId || !ctx) return;
-      await unreactAction(ctx, { channelId, messageId, emoji });
+      if (!channelId) return;
+      await reactWithErrorSink(unreactAction, { channelId, messageId, emoji });
     },
-    [channelId, ctx],
+    [channelId, reactWithErrorSink],
   );
 
   const emitTyping = useCallback(() => {
@@ -368,6 +440,8 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     draft,
     setDraft,
     sendError,
+    reactionError,
+    clearReactionError,
     typingUsers,
     emitTyping,
     connection,
