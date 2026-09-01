@@ -14,6 +14,19 @@ export interface PushPayload {
   category?: string;
 }
 
+export interface SendToUserResult {
+  /**
+   * Tokens Expo reported as permanently undeliverable (`DeviceNotRegistered`)
+   * — safe to prune from `push_tokens`. Never populated for a transient or
+   * app-level failure (rate limits, oversized payload, bad credentials): those
+   * say nothing about whether the specific token is still valid.
+   */
+  invalidTokens: string[];
+}
+
 export interface INotificationProvider {
-  sendToUser(pushTokens: string[], payload: PushPayload): Promise<void>;
+  sendToUser(
+    pushTokens: string[],
+    payload: PushPayload,
+  ): Promise<SendToUserResult>;
 }

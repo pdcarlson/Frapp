@@ -57,6 +57,7 @@ export class ChapterDocumentController {
       chapterId,
       filename: dto.filename,
       contentType: dto.content_type,
+      sizeBytes: dto.size_bytes,
     });
   }
 

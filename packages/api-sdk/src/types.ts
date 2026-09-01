@@ -3150,6 +3150,8 @@ export interface components {
             filename: string;
             /** @description MIME content type (e.g. image/png) */
             content_type: string;
+            /** @description File size in bytes, if known. Rejected server-side against the upload size ceiling when present. */
+            size_bytes?: number;
         };
         SetChannelNotificationLevelDto: {
             /**
@@ -3283,6 +3285,8 @@ export interface components {
             filename: string;
             /** @description MIME content type (e.g. application/pdf) */
             content_type: string;
+            /** @description File size in bytes, if known. Rejected server-side against the upload size ceiling when present. */
+            size_bytes?: number;
         };
         ConfirmBackworkUploadDto: {
             /** @description Storage path returned from upload-url */
@@ -3317,6 +3321,8 @@ export interface components {
             filename: string;
             /** @description MIME content type (e.g. application/pdf) */
             content_type: string;
+            /** @description File size in bytes, if known. Rejected server-side against the upload size ceiling when present. */
+            size_bytes?: number;
         };
         CreateServiceEntryDto: {
             /** @description Date of service (YYYY-MM-DD) */
@@ -3407,6 +3413,8 @@ export interface components {
             filename: string;
             /** @description MIME content type (e.g. application/pdf) */
             content_type: string;
+            /** @description File size in bytes, if known. Rejected server-side against the upload size ceiling when present. */
+            size_bytes?: number;
         };
         ConfirmDocumentUploadDto: {
             /** @description Storage path returned from upload-url */
