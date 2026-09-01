@@ -80,7 +80,7 @@ Three things about it are load-bearing:
   staging nor the production deploy path does. That is all fine — nothing reads the key. Treat it as inert data,
   not as something a deploy will tidy up.
 
-  > The job is listed in `scripts/configure-branch-protection.mjs`, but listing it is
+  > The job is listed in `scripts/ci/lib/required-checks.mjs`, but listing it is
   > not the same as enforcing it: required checks only change when someone runs
   > `npm run configure:branch-protection`. Until that happens this job runs and reports
   > on every PR without blocking a merge — the same rollout state as `secret-scan`,

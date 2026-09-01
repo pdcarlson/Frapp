@@ -15,8 +15,10 @@ asserts one thing, and each fails with a different fix.
 | Env slugs | [`check-env-slugs.mjs`](../../../scripts/check-env-slugs.mjs) | Every Infisical environment named anywhere is one that exists | Whole tree | `doc-tables` (same job) | Not yet — inherits `doc-tables` |
 
 `docs-spec-sync` is a required check under `enforce_admins: true`, registered via the `DOCS_CHECKS`
-array in [`scripts/configure-branch-protection.mjs`](../../../scripts/configure-branch-protection.mjs)
+array in [`scripts/ci/lib/required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs)
 — a **separate array** from `CI_CHECKS` in the same file, which is easy to miss when grepping.
+The arrays moved out of `configure-branch-protection.mjs` in #1383 so the production deploy path
+could read them without importing a module that writes live branch protection.
 
 **Sync** is intentionally simple: if the PR modifies **any** path **not** under `docs/` or `spec/`,
 it must **also** modify **at least one** path under **either** prefix. So a single edit under
@@ -171,7 +173,7 @@ drifted at once: `@repo/theme` (#1153) and `@repo/formatting` were missing from 
 lists. This check asserts those copies against their source.
 
 - **Sources:** the `CI_CHECKS` / `DOCS_CHECKS` arrays in
-  [`configure-branch-protection.mjs`](../../../scripts/configure-branch-protection.mjs), and the
+  [`required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs), and the
   job ids and `npm run test -w <workspace>` steps in `.github/workflows/ci.yml`.
 - **Asserts** that every required check appears in each doc's roster, and that the workspaces a
   doc names for `lint-and-typecheck` and `web-tests` are the ones those jobs actually run.
