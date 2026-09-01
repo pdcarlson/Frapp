@@ -1035,7 +1035,7 @@ After any rollback event:
 * **Action**: Run `DROP FUNCTION IF EXISTS get_poll_vote_option_totals(uuid[]);` and `DROP FUNCTION IF EXISTS get_poll_user_votes_for_messages(uuid[], uuid);`
 
 ## Rollback locking EXECUTE on `get_points_report`/poll-vote-aggregate RPCs to `service_role`
-* **Migration**: `20260901170000_lock_down_public_rpc_execute.sql`
+* **Migration**: `20260901173000_lock_down_public_rpc_execute.sql`
 * **Action**: Run:
   ```sql
   DO $$
