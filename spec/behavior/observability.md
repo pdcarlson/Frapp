@@ -42,6 +42,8 @@ Integrate with Sentry (or equivalent). All unhandled exceptions and 5xx response
 
 Enforced in one place — `packages/validation/src/sentry-scrubbing.ts` — on these rules, and the rules cover **both classes of event Sentry emits** for **every app that reports**. The SDK routes the two classes to two different hooks, so `createSentryScrubber` returns two entry points and each app's options module wires both: `scrubSentryEvent` as `beforeSend` for error events, and `scrubSentryTransaction` as `beforeSendTransaction` for transaction (tracing) events. Setting only one leaves the other class shipping unscrubbed, which is the gap [#896](https://github.com/pdcarlson/Frapp/issues/896) closed.
 
+Both hooks also carry `sdkProcessingMetadata` field-by-field through `scrubSdkProcessingMetadata`, keeping only `dynamicSamplingContext` (swept) and `spanCountBeforeProcessing` — the two fields the SDK reads back *after* the hook returns, to build the envelope's `trace` header and to compute how many spans were dropped. The rest of that bag (`normalizedRequest`, a full request object) is dropped. This was symmetric only on the transaction path until [#966](https://github.com/pdcarlson/Frapp/issues/966); every error event shipped with no `trace` envelope header until then.
+
 The scrubber is shared rather than per-app because a browser bundle holds strictly *more* PII than the server process does — member emails, chapter names, chat message bodies, document titles — so a second copy of these rules for the client would be a second copy to keep correct, and the failure mode is silent ([#865](https://github.com/pdcarlson/Frapp/issues/865)). Three bindings consume it:
 
 | App | Options module | Pseudonyms | Runtimes initialized |
@@ -220,6 +222,34 @@ Because these events have no dedicated table, the query lives in the provider (P
 - **Failure/discard rate after reconnect**: a ratio of `count(outbox-failed-4xx) + count(outbox-failed-network)` to `count(outbox-queued)` over the same window, or a Funnel insight from `outbox-queued` → `outbox-confirmed` to read conversion directly.
 
 If either report needs to stay queryable without a PostHog provider configured — as the activation funnel deliberately is — that is a bigger change (a dedicated outbox-metrics table, mirroring `chapter_activation_milestones`), not an extension of this instrumentation.
+
+## Search Telemetry
+
+The web command palette (`apps/web/components/layout/dashboard-command-menu.tsx`) fires one client event, `search-completed` (defined in `packages/hooks/src/search-analytics.ts`), once per settled search — a query that clears the 3-character minimum ([`search.md`](search.md)) and finishes fetching, deduped on the query's `dataUpdatedAt` so a re-render never double-counts and a repeat search of the same text (`useSearch`'s `staleTime: 0` refetches it) still counts once per real fetch.
+
+| Property | Meaning |
+| --- | --- |
+| `surface` | Where the search ran — `"command-menu"` today; a future mobile entry point would use its own value |
+| `query_length` | Character count of the trimmed query |
+| `query_word_count` | Word count of the trimmed query |
+| `backwork_count`, `events_count`, `members_count`, `messages_count` | True per-domain result counts — not the palette's own 5-per-domain display cap |
+| `total_count` | Sum of the four counts above |
+| `zero_result` | `total_count === 0` |
+| `timed_out` | The server's per-source 500ms budget (the "Server-side timeout" bullet under [`search.md`](search.md)'s MVP defaults) was hit for at least one domain |
+| `latency_ms` | Time from the debounce settling (200ms after the last keystroke) to the search resolving — the member-perceived wait, not raw fetch time |
+
+### PII exclusion
+
+**The raw query string is never sent, by construction — not merely because `assertContentFreeProperties` (`packages/validation/src/analytics.ts`) would catch it.** It would not: `"query"` is not in `FORBIDDEN_ANALYTICS_PROPERTY_KEYS`, and a query string is itself a scalar, so a property literally named `query` holding the raw text would pass the shared gate untouched. The design instead sends only `query_length`/`query_word_count` — shape, not content — and `dashboard-command-menu.test.tsx`'s search-telemetry suite asserts both that every emitted event still passes `assertContentFreeProperties` (the generic backstop) and that no emitted property value ever equals the typed query text (the specific guarantee the generic gate cannot provide).
+
+### Building a zero-result taxonomy report
+
+Like Outbox Telemetry above, `search-completed` carries no dedicated Frapp-owned table — the report is a PostHog query, not SQL:
+
+- **Zero-result rate**: a Trends insight, ratio of events where `zero_result = true` to all `search-completed` events, broken down by `query_length` bucket (e.g. 3–5, 6–10, 11+) to separate "too-short/typo-shaped" queries from longer ones that plausibly named something the chapter simply doesn't have.
+- **Actionable buckets for product/design review**: group zero-result events by `query_word_count` (single-word vs. multi-word misses read differently) and cross-reference against `timed_out = true` (a timeout-caused miss is an infrastructure problem, not a content or vocabulary gap, and must not be counted as the same kind of failure).
+
+**This instrumentation enables but does not itself complete the acceptance criterion that findings inform the mobile search UI's scope** — no chapter has used this yet, so there is no data to analyze. That is a downstream product decision for whoever reviews the report once real usage accumulates, the same posture the Outbox Telemetry section takes toward its own p50/failure-rate report.
 
 ## Alerting
 

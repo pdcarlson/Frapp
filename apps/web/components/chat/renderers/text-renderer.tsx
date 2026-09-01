@@ -2,6 +2,7 @@
 
 import type { ChatMessage } from "@repo/chat-core/types";
 import { cn } from "@/lib/utils";
+import { MessageMarkdown } from "./message-markdown";
 
 interface TextRendererProps {
   message: ChatMessage;
@@ -57,7 +58,7 @@ export function TextRenderer({ message, isSelf }: TextRendererProps) {
           : "rounded-[18px] rounded-bl-[6px] border border-border bg-card text-foreground",
       )}
     >
-      {message.content}
+      <MessageMarkdown content={message.content} />
     </div>
   );
 }
