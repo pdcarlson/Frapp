@@ -161,6 +161,14 @@ Both are computed server-side by `get_channel_unread_counts` and served from `GE
 
 Resolution is tiered and fails closed — exact user id, exact display name, name without spaces, first word, unique prefix — and **ambiguity at any tier resolves to nobody**. If two members share a first name, `@jane` mentions neither, because silently picking one notifies the wrong person while looking correct to the sender. Unresolvable tokens are dropped silently; an `@` in prose is not an error.
 
+**Three deliberate limits, invisible to anyone building a mention affordance without reading this:**
+
+- **Surname-only does not resolve.** No tier matches on the last word of a display name, so `@Carlson` does not reach "Paul Carlson". This is a product decision, not an oversight — surname matching would make `@smith` ambiguous across most chapters — and it is pinned by `mentions.spec.ts`. A client SHOULD NOT offer a surname as a working mention suggestion.
+- **A display name starting with a digit is unreachable by typing.** Every mention token must open on a Unicode letter (the extraction pattern requires it, the same rule that keeps `email@example.com` from tokenizing), so no `@`-prefixed text a person can type will ever begin with a digit — a member named e.g. "123 Squad" cannot be `@`-mentioned by any prefix of that name. The exact-user-id tier still resolves such a member when something already knows their id; only handle-style typing is blocked. Autocomplete SHOULD NOT present a digit-led display name as reachable by typing.
+- **Two mentions glued together collapse to the first.** `@jane@bob` extracts only the token `jane` — the second `@` is immediately preceded by a letter, which the same lookbehind that excludes email addresses also disqualifies, so `bob` is never tokenized at all rather than tokenized-and-unresolved. Anything that inserts mentions programmatically MUST separate them with whitespace or punctuation (`@jane, @bob`), or the second one vanishes silently.
+
+None of these are bugs to fix; they fall out of the tiering and the tokenizer rules above, and a client's job is to design around them rather than assume every display name is reachable by every input.
+
 Two properties of *how* the roster is read are load-bearing, because both are easy to undo without any test noticing:
 
 - **The body is parsed before the roster is fetched.** A message containing an `@` that yields no mention token — an email address, a bare `@` in prose, `@here` — issues **no roster query at all**. The gate is the same parser that resolves the tokens a moment later, so "has a mention" and "resolves a mention" cannot disagree.
