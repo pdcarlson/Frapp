@@ -328,4 +328,28 @@ describe("useChapterBranding solid-fill pair (accentPrimary/accentOnPrimary)", (
     await waitFor(() => expect(result.current.accentPrimary).toBe(BRAND));
     expect(result.current.accentOnPrimary).toBe(BRAND_ON);
   });
+
+  it("falls back to house gold for both when only one of the pair is present", async () => {
+    // A palette with `accentPrimary` but no `accentOnPrimary` (or vice versa)
+    // is exactly the half-resolved case the both-or-neither gate exists to
+    // catch — pairing a chapter's real fill with the house foreground (or
+    // vice versa) would be the uncontrasted combination this hook prevents.
+    const { result } = renderBranding(
+      {
+        "chapter-1": {
+          id: "chapter-1",
+          accent_color: DARK_LEGIBLE_ACCENT,
+          theme_palette: {
+            "--signet-accent-text": GENERATED_ACCENT_TEXT,
+            "--signet-accent-primary": GENERATED_ACCENT_PRIMARY,
+            // "--signet-accent-on-primary" deliberately absent.
+          },
+        },
+      },
+      "chapter-1",
+    );
+
+    await waitFor(() => expect(result.current.accentPrimary).toBe(BRAND));
+    expect(result.current.accentOnPrimary).toBe(BRAND_ON);
+  });
 });
