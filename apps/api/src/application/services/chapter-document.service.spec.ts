@@ -4,6 +4,7 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
+import { MAX_UPLOAD_BYTES } from '@repo/validation';
 import { ChapterDocumentService } from './chapter-document.service';
 import { CHAPTER_DOCUMENT_REPOSITORY } from '../../domain/repositories/chapter-document.repository.interface';
 import type { IChapterDocumentRepository } from '../../domain/repositories/chapter-document.repository.interface';
@@ -130,6 +131,32 @@ describe('ChapterDocumentService', () => {
           chapterId: 'ch-1',
           filename: 'video.mp4',
           contentType: 'video/mp4',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('accepts a declared size at exactly the upload ceiling', async () => {
+      mockStorageProvider.getSignedUploadUrl.mockResolvedValue(
+        'https://storage.supabase.co/upload/signed',
+      );
+
+      const result = await service.requestUploadUrl({
+        chapterId: 'ch-1',
+        filename: 'bylaws.pdf',
+        contentType: 'application/pdf',
+        sizeBytes: MAX_UPLOAD_BYTES,
+      });
+
+      expect(result.signedUrl).toBeDefined();
+    });
+
+    it('throws BadRequestException for a declared size one byte over the upload ceiling', async () => {
+      await expect(
+        service.requestUploadUrl({
+          chapterId: 'ch-1',
+          filename: 'bylaws.pdf',
+          contentType: 'application/pdf',
+          sizeBytes: MAX_UPLOAD_BYTES + 1,
         }),
       ).rejects.toThrow(BadRequestException);
     });

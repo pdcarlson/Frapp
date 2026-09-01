@@ -34,6 +34,15 @@ export class RequestBackworkUploadUrlDto {
   @ApiProperty({ description: 'MIME content type (e.g. application/pdf)' })
   @IsString()
   content_type: string;
+
+  @ApiPropertyOptional({
+    description:
+      'File size in bytes, if known. Rejected server-side against the upload size ceiling when present.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  size_bytes?: number;
 }
 
 export class ConfirmBackworkUploadDto {

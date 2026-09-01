@@ -7811,6 +7811,10 @@
           "content_type": {
             "type": "string",
             "description": "MIME content type (e.g. image/png)"
+          },
+          "size_bytes": {
+            "type": "number",
+            "description": "File size in bytes, if known. Rejected server-side against the upload size ceiling when present."
           }
         },
         "required": [
@@ -8183,6 +8187,10 @@
           "content_type": {
             "type": "string",
             "description": "MIME content type (e.g. application/pdf)"
+          },
+          "size_bytes": {
+            "type": "number",
+            "description": "File size in bytes, if known. Rejected server-side against the upload size ceiling when present."
           }
         },
         "required": [
@@ -8289,6 +8297,10 @@
           "content_type": {
             "type": "string",
             "description": "MIME content type (e.g. application/pdf)"
+          },
+          "size_bytes": {
+            "type": "number",
+            "description": "File size in bytes, if known. Rejected server-side against the upload size ceiling when present."
           }
         },
         "required": [
@@ -8538,6 +8550,10 @@
           "content_type": {
             "type": "string",
             "description": "MIME content type (e.g. application/pdf)"
+          },
+          "size_bytes": {
+            "type": "number",
+            "description": "File size in bytes, if known. Rejected server-side against the upload size ceiling when present."
           }
         },
         "required": [

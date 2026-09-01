@@ -487,6 +487,7 @@ export class ChatController {
       userId,
       dto.filename,
       dto.content_type,
+      dto.size_bytes,
     );
   }
 
