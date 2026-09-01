@@ -116,6 +116,8 @@ above is aspirational: only chat is bundled today.
 
 The app icon badge shows the total unread count: unread in-app notifications + unread chat messages across all channels. Badge count is updated on every notification delivery and when the user reads content.
 
+**Mobile syncs the OS badge from the same queries the app already fetches, not from a dedicated count endpoint.** `apps/mobile/lib/notifications/use-badge-sync.ts`'s `useBadgeSyncRuntime` (mounted app-wide from `components/app-runtime.tsx`) sums `GET /v1/notifications`' unread rows (`read_at === null`, the same definition the in-app history and its "Mark all read" use) with `GET /v1/channels/unread`'s per-channel `unread_count`, and calls `Notifications.setBadgeCountAsync`. It resyncs whenever either query's data changes — including on app foreground, since `refetchOnWindowFocus` is already wired to `AppState` (`lib/connection/query-connectivity.ts`) — so no separate resume listener is needed. Badge setting needs no EAS `projectId`; it is a local OS call, not a remote push.
+
 ## Per-Channel Mute
 
 Users can mute specific chat channels. Muted channels:
