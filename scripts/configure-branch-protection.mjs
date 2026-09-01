@@ -59,6 +59,41 @@ function hasFlag(name) {
   return process.argv.includes(name);
 }
 
+// Every flag this script understands. `hasFlag` is exact-match, so any spelling
+// it does not recognise simply reads as absent — and "absent" for `--verify` and
+// `--dry-run` means LIVE, i.e. a governance PUT. `--verify=true` (the natural
+// `=`-form of a documented flag), `--verfiy`, `--dryrun` and `--check` all
+// silently applied branch protection before this guard existed.
+//
+// That is not a cosmetic slip: `required-checks.mjs` deliberately carries
+// entries with ROLLOUT caveats saying to run this only AFTER the PR adding the
+// job merges, so an accidental apply can promote a context whose job does not
+// exist yet and make every open PR unmergeable until an admin undoes it by hand.
+// A read-only flag that fails open to a write is the wrong direction to fail.
+const KNOWN_FLAGS = new Set(["--dry-run", "--verify"]);
+const KNOWN_OPTIONS = new Set(["--repo", "--token-env"]);
+
+function assertKnownArgs(argv = process.argv.slice(2)) {
+  const unknown = [];
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (KNOWN_FLAGS.has(arg)) continue;
+    if (KNOWN_OPTIONS.has(arg)) {
+      i += 1; // its value is not itself an argument
+      continue;
+    }
+    unknown.push(arg);
+  }
+  if (unknown.length > 0) {
+    throw new Error(
+      `Unrecognised argument(s): ${unknown.join(", ")}. This script WRITES branch protection ` +
+        "unless --dry-run or --verify is given, and an unrecognised flag reads as neither — so " +
+        "it refuses rather than applying. Valid: --dry-run, --verify, --repo <owner/repo>, " +
+        "--token-env <VAR>. Note flags take no `=` (use `--repo x/y`, not `--repo=x/y`).",
+    );
+  }
+}
+
 function resolveRepoSlug() {
   const explicit = getArg("--repo");
   if (explicit) return explicit;
@@ -219,8 +254,9 @@ const PROTECTION_FLAGS = [
 // BRANCH IS LOCKED. With `lock_branch: false` it describes a situation that
 // cannot arise, and GitHub accepts the written value without persisting it —
 // this payload has sent `true` since 2026-08-27 (f7d03b1) and a read of `main`
-// on 2026-09-01 still returned `false`, after an apply that demonstrably
-// happened in between (it carried `migration-order`, added 2026-08-30).
+// on 2026-09-01 still returned `false`, with `migration-order` (added to the
+// roster 2026-08-30) present live in between — which points to an apply having
+// run, though an admin UI edit would look the same from here.
 //
 // Comparing it on an unlocked branch therefore reports drift that no run can
 // ever resolve, which would make `--verify` exit non-zero forever and turn an
@@ -388,6 +424,10 @@ async function main() {
   // Anything already in the environment still wins over the files, so exporting
   // continues to override a checked-out `.env`.
   loadEnvFiles({ dir: REPO_ROOT });
+
+  // Before anything reads a mode: an unrecognised flag must not silently mean
+  // "apply". See KNOWN_FLAGS.
+  assertKnownArgs();
 
   const repoSlug = resolveRepoSlug();
   const dryRun = hasFlag("--dry-run");
@@ -592,4 +632,4 @@ if (isDirectRun) {
 // `scripts/ci/lib/required-checks.mjs` and consumers import them from there
 // directly — a pass-through would leave exactly the coupling #1383 removed,
 // with this module still on the deploy path's import graph.
-export { buildProtectionPayload };
+export { assertKnownArgs, buildProtectionPayload };

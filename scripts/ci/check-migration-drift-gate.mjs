@@ -20,7 +20,7 @@
 // every PR cannot be not-noticed.
 //
 // ── NOT a required check, deliberately ──────────────────────────────────────
-// This was required once and was demoted (see `configure-branch-protection.mjs`,
+// This was required once and was demoted (see `lib/required-checks.mjs`,
 // which names it as excluded on purpose). It compares main against staging, so
 // it asserts something the PR in front of it neither contains nor can change:
 // as a required check that is a repo-wide merge-freeze switch rather than a

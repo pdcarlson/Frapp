@@ -13,7 +13,8 @@ Large infrastructure PRs are hard to review, hard to debug, and can leave checks
    - If a PR exceeds this, split it unless there is a strong reason not to.
 3. **Stable check names**
    - If workflow/job names change, update:
-     - `scripts/configure-branch-protection.mjs`
+     - `scripts/ci/lib/required-checks.mjs` (the rosters; the applying script is
+       `scripts/configure-branch-protection.mjs`)
      - `docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`
      - `CONTRIBUTING.md`
 4. **No required workflow-level `paths` filters**

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  assertKnownArgs,
   assertRosterFloor,
   buildProtectionPayload,
   diffProtection,
@@ -350,6 +351,36 @@ describe("normalizeProtection edge cases", () => {
     assert.equal(
       normalizeProtection({ ...liveResponse(), restrictions: { users: [] } }).restrictions,
       true,
+    );
+  });
+});
+
+describe("assertKnownArgs", () => {
+  // A read-only flag that fails open to a write is the wrong direction to fail.
+  // hasFlag is exact-match, so any spelling it does not recognise reads as
+  // absent - and absent for --verify/--dry-run means LIVE, i.e. a governance PUT.
+  it("refuses the `=` form of a documented flag rather than applying", () => {
+    assert.throws(() => assertKnownArgs(["--verify=true"]), /Unrecognised argument/);
+    assert.throws(() => assertKnownArgs(["--repo=o/r"]), /Unrecognised argument/);
+  });
+
+  it("refuses misspellings rather than applying", () => {
+    for (const arg of ["--verfiy", "--dryrun", "--check", "--dry_run"]) {
+      assert.throws(() => assertKnownArgs([arg]), /Unrecognised argument/, `missed ${arg}`);
+    }
+  });
+
+  it("accepts the real flag set, and does not mistake an option value for a flag", () => {
+    assert.doesNotThrow(() => assertKnownArgs([]));
+    assert.doesNotThrow(() => assertKnownArgs(["--verify"]));
+    assert.doesNotThrow(() => assertKnownArgs(["--dry-run", "--repo", "owner/repo"]));
+    assert.doesNotThrow(() => assertKnownArgs(["--token-env", "GH_PAT", "--verify"]));
+  });
+
+  it("names every offending argument, so one typo does not hide another", () => {
+    assert.throws(
+      () => assertKnownArgs(["--verfiy", "--nope"]),
+      /--verfiy, --nope/,
     );
   });
 });
