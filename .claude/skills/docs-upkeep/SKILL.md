@@ -128,7 +128,7 @@ reimplementing it.
 | Claim in a doc | Settled by |
 | --- | --- |
 | A command (`npm run …`) | the `scripts` blocks in `package.json` / the workspace manifests |
-| A CI job or required check | `.github/workflows/*.yml`, and `CI_CHECKS` / `DOCS_CHECKS` in `scripts/configure-branch-protection.mjs` |
+| A CI job or required check | `.github/workflows/*.yml`, and `CI_CHECKS` / `DOCS_CHECKS` in `scripts/ci/lib/required-checks.mjs` |
 | An env var name | the codebase, and `docs/internal/environment/ENV_REFERENCE.md` |
 | A file path | `npm run check:doc-paths` — run it, don't eyeball it |
 | Provider state (deploys, secrets, migrations) | the provider API, per `infrastructure-research` |

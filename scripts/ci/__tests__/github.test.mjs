@@ -101,6 +101,32 @@ describe("ghRequest", () => {
     assert.equal(status, 503);
   });
 
+  // undici leaves `message` as the bare "fetch failed" and hangs the actual
+  // diagnosis on `.cause`. Dropping it made a DNS outage, a TLS/CA-bundle
+  // rejection, a proxy reset and a refused connection all reach the operator as
+  // the same four words - and `configure-branch-protection.mjs --verify` asks
+  // them to tell exactly those apart (#1383).
+  it("folds a transport error's cause into `data`", async () => {
+    const fetchImpl = async () => {
+      const error = new TypeError("fetch failed");
+      error.cause = Object.assign(new Error("getaddrinfo ENOTFOUND api.github.com"), {
+        code: "ENOTFOUND",
+      });
+      throw error;
+    };
+    const { data, status } = await ghRequest({ token: "t", path: "/x", fetchImpl });
+    assert.equal(status, 0);
+    assert.equal(data, "fetch failed: getaddrinfo ENOTFOUND api.github.com (ENOTFOUND)");
+  });
+
+  it("leaves a causeless error's message untouched", async () => {
+    const fetchImpl = async () => {
+      throw new Error("ECONNRESET");
+    };
+    const { data } = await ghRequest({ token: "t", path: "/x", fetchImpl });
+    assert.equal(data, "ECONNRESET");
+  });
+
   it("retries when the caller opts in", async () => {
     const { calls, fetchImpl } = recorder((n) =>
       n < 3 ? { ok: false, status: 503, text: async () => "" } : ok({ done: true }),

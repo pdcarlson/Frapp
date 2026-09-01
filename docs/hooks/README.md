@@ -148,7 +148,7 @@ reached via that job's `packages/**` path filter.
 `web-tests` **is a required status check** (ADR-15 2026-08-19 amendment — see
 [`spec/architecture/README.md`](../../spec/architecture/README.md)). The
 required-check list lives in
-[`scripts/configure-branch-protection.mjs`](../../scripts/configure-branch-protection.mjs).
+[`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs).
 
 Collection is pinned to `src` by `packages/hooks/vitest.config.ts`. That is
 load-bearing: `npm run build` compiles the specs to `dist/` as CommonJS, and
