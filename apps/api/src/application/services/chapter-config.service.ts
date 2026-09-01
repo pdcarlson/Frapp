@@ -12,7 +12,10 @@ import {
   MODULE_CATALOG,
 } from '@repo/org-archetypes';
 import { isModuleEnabled } from '@repo/validation';
-import { buildChapterPalette } from './chapter-palette';
+import {
+  buildChapterPalette,
+  logChapterPaletteWarnings,
+} from './chapter-palette';
 import type { PatchChapterConfigDto } from '../../interface/dtos/chapter-config.dto';
 import {
   SERVICE_CONFIG_DEFAULTS,
@@ -534,21 +537,7 @@ export class ChapterConfigService {
     // Colour problems are logged, never thrown: the palette written is still
     // valid, and failing a config save the officer asked for because one hex
     // was malformed is a worse outcome than a slightly wrong accent (#840).
-    // Chapter id is included because these are per-tenant data problems.
-    if (build.invalidSeed) {
-      this.logger.warn(
-        `Invalid accent seed for chapter ${chapterId}: accent="${colors.accent}" — substituted house gold. Expected #RRGGBB.`,
-      );
-    }
-    // The engine guarantees these by construction (accent-engine.md §8), so a
-    // failure means the vendored generator changed behaviour under us.
-    if (build.failedContrastChecks.length > 0) {
-      this.logger.warn(
-        `Signet accent contrast below AA for chapter ${chapterId}: ${build.failedContrastChecks
-          .map((c) => `${c.role} on ${c.against} = ${c.ratio.toFixed(2)}:1`)
-          .join(', ')}`,
-      );
-    }
+    logChapterPaletteWarnings(this.logger, chapterId, colors.accent, build);
     const patch: TablesUpdate<'chapters'> = { theme_palette: build.palette };
     const { error } = await this.supabase
       .from('chapters')

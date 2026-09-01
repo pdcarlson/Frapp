@@ -191,11 +191,14 @@ The confirmation rows below and under Roles & Permissions are the five `window.c
 | Semester empty | `No archived semesters yet` | `After you run your first rollover, the history appears here.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can start a new semester.` |
 | Accent label illegible | — | `Label text on this color reads at <n>:1, under the 4.5:1 minimum. Buttons and name tags using it will be hard to read — pick a lighter or darker shade.` |
+| Accent server contrast disclosure | — | `<Accent text on the app background\|Accent text on its own tinted background\|Text on the accent's solid fill> reads at <n>:1, under the 4.5:1 minimum. Try a lighter or darker shade of this hue and save again.` |
 | Rollover confirmation | `Start a new semester labelled "<label>"?` | `The current leaderboard period is archived and a new one begins. Points already awarded are kept — only the leaderboard's default window moves.` · confirm `Start new semester` |
 | Delete field confirmation | `Delete the field "<label>"?` | `Members lose the values they have entered for it, and the column disappears from the directory. This cannot be undone.` · confirm `Delete field` |
 | Delete custom role confirmation | `Delete the custom role "<label>"?` | `Members holding it lose its capabilities on their next request. This cannot be undone.` · confirm `Delete custom role` |
 
 The **Accent label illegible** row answers a different question from the existing fallback warning beside it, and the pair is easy to collapse by mistake. The fallback fires when the accent is unreadable *as text on the card*, which is what `resolveChapterAccentColor` checks. This one fires when text is unreadable *on the accent* — which is what a primary button is, and what that card's own description promises the colour will be used for. They diverge: `#0080FD` passes the first and fails the second at 4.191:1, so without this row an admin ships unreadable button labels having just been told the colour was fine.
+
+The **Accent server contrast disclosure** row is a third, independent question from both of the above. Those two are client-side checks of the *unsaved draft* against one fixed backdrop each. This one is the server's own §8 verdict on the colour actually saved, generated through the real Signet pipeline (`accent-engine.md` §8), and it is disclosure rather than correction — a failing save still succeeds, since §8 forbids a runtime substitution on engine output. It clears on the officer's next edit, since a stale verdict describing a colour they have already changed away from would be actively misleading (#1183).
 
 ### Tasks (dashboard)
 

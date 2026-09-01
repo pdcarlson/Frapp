@@ -38,7 +38,10 @@ import {
   ConfirmLogoDto,
 } from '../dtos/chapter.dto';
 import { ChapterOnboardingDto } from '../dtos/chapter-onboarding.dto';
-import { CurrentChapterResponseDto } from '../dtos/chapter-response.dto';
+import {
+  CurrentChapterResponseDto,
+  UpdateChapterResponseDto,
+} from '../dtos/chapter-response.dto';
 import { toChapterMemberView } from '../../application/services/chapter-member-view';
 import { SystemPermissions } from '../../domain/constants/permissions';
 
@@ -123,6 +126,7 @@ export class ChapterController {
     SystemPermissions.BILLING_MANAGE,
   )
   @ApiOperation({ summary: 'Update current chapter settings' })
+  @ApiOkResponse({ type: UpdateChapterResponseDto })
   async update(
     @CurrentChapterId() chapterId: string,
     @Body() dto: UpdateChapterDto,
@@ -131,11 +135,15 @@ export class ChapterController {
     // symmetry: this route admits `roles:manage` **or** `billing:manage`, so a
     // custom role carrying `roles:manage` without `billing:view` would
     // otherwise read the billing identifiers straight out of the write
-    // response. The client discards this body and refetches, so narrowing it
-    // costs nothing.
-    return toChapterMemberView(
-      await this.chapterService.update(chapterId, dto),
+    // response.
+    const { chapter, failedContrastChecks } = await this.chapterService.update(
+      chapterId,
+      dto,
     );
+    // `failedContrastChecks` is disclosure of the just-computed palette, not a
+    // chapter column — it does not belong in `toChapterMemberView`'s allowlist,
+    // which projects persisted `chapters` fields only (#1183).
+    return { ...toChapterMemberView(chapter), failedContrastChecks };
   }
 
   @Post('current/logo-url')

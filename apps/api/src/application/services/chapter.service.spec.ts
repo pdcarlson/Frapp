@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { deriveSignetPalette } from '@repo/chapter-theme';
+import * as chapterTheme from '@repo/chapter-theme';
 import { ChapterService } from './chapter.service';
 import { toChapterMemberView } from './chapter-member-view';
 import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
@@ -699,7 +700,57 @@ describe('ChapterService', () => {
         branding: { colors: { accent: '#1E293B' } },
       }),
     );
-    expect(result).toEqual(updatedChapter);
+    expect(result.chapter).toEqual(updatedChapter);
+    // The real seed clears AA, so nothing to disclose (#1183).
+    expect(result.failedContrastChecks).toEqual([]);
+  });
+
+  it('surfaces failedContrastChecks and logs a warning when the generated accent fails AA (#1183)', async () => {
+    // §8 is by construction, not by proof — no real hex in the directory seed
+    // or a systematic sweep of the hue/saturation/lightness space fails it, so
+    // this exercises the disclosure plumbing via a stubbed generator result
+    // rather than hunting for a real seed that may not exist.
+    mockChapterRepo.findById.mockResolvedValue({ id: 'ch-1' });
+    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+    const loggerWarnSpy = jest
+      .spyOn((service as any).logger, 'warn')
+      .mockImplementation(() => undefined);
+    // A plain try/finally, not a trailing `mockRestore()` call: an assertion
+    // failure below would otherwise skip the restore and leak the queued
+    // stub into whichever test runs next in file order.
+    const deriveSpy = jest.spyOn(chapterTheme, 'deriveSignetPalette');
+    try {
+      deriveSpy.mockReturnValueOnce({
+        palette: { '--signet-accent-text': '#222222' } as any,
+        resolvedSeed: '#222222',
+        invalidSeed: false,
+        contrastChecks: [
+          {
+            role: '--signet-accent-text',
+            against: '#0E0D0B',
+            ratio: 2.1,
+            passes: false,
+          },
+        ],
+      });
+
+      const result = await service.update('ch-1', {
+        accent_color: '#222222',
+      });
+
+      expect(result.failedContrastChecks).toEqual([
+        { role: '--signet-accent-text', against: '#0E0D0B', ratio: 2.1 },
+      ]);
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'Signet accent contrast below AA for chapter ch-1: --signet-accent-text on #0E0D0B = 2.10:1',
+        ),
+      );
+      // The save still succeeds — §8 forbids a runtime substitution here.
+      expect(mockChapterRepo.update).toHaveBeenCalled();
+    } finally {
+      deriveSpy.mockRestore();
+    }
   });
 
   it('preserves other branding keys when mirroring the accent', async () => {

@@ -246,7 +246,7 @@ override is no longer doing its work.
 Without that exemption Dependabot would be unusable here, not merely noisy: its PRs change
 `package.json` / `package-lock.json` and nothing else, `check-docs-impact.mjs` fails any PR that
 touches non-`docs/` files without touching `docs/`, and **`docs-spec-sync` is a required status check**
-(`scripts/configure-branch-protection.mjs`) under `enforce_admins: true`. Every Dependabot PR would
+(`scripts/ci/lib/required-checks.mjs`) under `enforce_admins: true`. Every Dependabot PR would
 therefore have been permanently unmergeable — blocked, with no admin override.
 
 Two things to preserve if you ever edit that condition:
@@ -496,7 +496,7 @@ drift this layer exists to stop (stage 4 of the CI/CD redesign, [#1382](https://
 | --- | --- | --- |
 | `scripts/ci/lib/env.mjs` | `requireEnv`, `SECRETS_RUNBOOK` | Reading a required environment variable. Exits 1 naming the variable; emits a GitHub Actions `::error::` annotation under Actions and a plain `Error:` line locally. `hint` appends a pointer — pass `SECRETS_RUNBOOK` where the fix is provisioning a secret. |
 | `scripts/ci/lib/http.mjs` | `fetchWithRetry`, `resilientFetch`, `isRetriableStatus`, `IDEMPOTENT_METHODS` | Any outbound call. `resilientFetch` is a drop-in `fetch` carrying a 15s timeout and a bounded 3-attempt retry. |
-| `scripts/ci/lib/github.mjs` | `ghRequest`, `githubHeaders`, `GITHUB_API` | Every GitHub REST call. Never throws — a network rejection returns `{ ok: false, status: 0, data: null }`. |
+| `scripts/ci/lib/github.mjs` | `ghRequest`, `githubHeaders`, `GITHUB_API` | Every GitHub REST call. Never throws — a network rejection returns `{ ok: false, status: 0, data: <message> }`, where the message folds in the error's `cause` (undici leaves `message` as the bare "fetch failed" and hangs the real diagnosis there). `data` is `null` only when a real HTTP response carried an empty body, so a truthy `data` is **not** evidence a response was received — check `status !== 0` for that. |
 | `scripts/ci/lib/providers.mjs` | `fetchJson`, `fetchRenderDeploys`, `fetchVercelDeployments`, `findRenderDeployBySha`, `findVercelDeploymentBySha`, `vercelDeploymentCreatedAt` | `fetchJson` is the shared ok-check-throw-json wrapper (was three near-identical copies, #1351); `fetchRenderDeploys` / `fetchVercelDeployments` list one page through it. `findRenderDeployBySha` / `findVercelDeploymentBySha` page back through that listing, bounded, looking for a SHA — use these rather than the single-page fetchers when matching against a specific commit, since a page holds only the newest slice and an older SHA can fall off it (#1377). |
 | `scripts/ci/lib/polling.mjs` | `createClock`, `pollUntilTerminal` | `createClock` is an injectable clock, so a poll loop's tests run without sleeping. `pollUntilTerminal` is the shared "fetch, classify, sleep, repeat until terminal or timeout" loop behind all four provider pollers (`verify-render-deploy.mjs`, `verify-vercel-deploy.mjs`, `deploy-render-production.mjs`, `deploy-vercel-production.mjs`, #1351) — it owns only the loop mechanics; each caller's `classify` closure keeps its own terminal-state judgment (the production-path pollers treat a cancel as failure where the observers treat it as neutral, deliberately not unified). |
 | `scripts/ci/lib/alert-issue.mjs` | `findAlertIssuesDetailed`, `raiseAlert`, `resolveAlert` | The create/reopen/comment/close upsert contract for `routine-state` alert issues. |
@@ -878,8 +878,10 @@ this compares against a design, not against something that ran.) What makes it s
   scoped to this repository, so it could not push to a fork either way.
 - Branch protection is a second layer, deliberately **not** the argument, because none of it is
   verifiable from a session. `scripts/configure-branch-protection.mjs` declares `enforce_admins:
-  true` and `restrictions: null`, but: (a) that script only ever `PUT`s, never reads, so it is
-  *intent*, and `docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md` records live `main` having
+  true` and `restrictions: null`, but: (a) as of #1383 that script reads live protection back and diffs it (`npm run
+  configure:branch-protection:verify` exits non-zero on any difference), but the arrays are still
+  only *intent* until someone runs it, and whether an agent session can perform that read is
+  session-dependent — so this stays not-verifiable-from-a-session as an argument, and `docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md` records live `main` having
   drifted from it as recently as 2026-08-19; (b) `restrictions: null` means the push-restriction
   allowlist is **disabled**, which is not the same as "nothing can bypass"; and (c) `bypass_actors`
   live in repository **rulesets**, a layer nothing in this repo configures or inspects — a ruleset
