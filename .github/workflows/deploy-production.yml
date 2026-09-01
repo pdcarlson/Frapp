@@ -419,9 +419,16 @@ jobs:
             echo "::error::API_HEALTHCHECK_URL is not set in the Infisical 'prod' environment. Refusing to call a deploy healthy without checking it."
             exit 1
           fi
+          # API_HEALTHCHECK_URL points at /health, which is Render's own
+          # healthCheckPath (render.yaml) and must stay a plain liveness probe
+          # that always 2xxs. /health/ready is the strict readiness sibling
+          # that 503s on a degraded dependency (see #302) — hit that here so
+          # this gate actually fails on a DB/Storage outage instead of reading
+          # a 200 with a discarded "degraded" body.
+          READY_URL="${API_HEALTHCHECK_URL}/ready"
           echo "Waiting for the production API to become healthy..."
           for i in 1 2 3 4 5 6; do
-            if curl --fail --silent --show-error --location --connect-timeout 2 --max-time 5 "$API_HEALTHCHECK_URL" >/dev/null 2>&1; then
+            if curl --fail --silent --show-error --location --connect-timeout 2 --max-time 5 "$READY_URL" >/dev/null 2>&1; then
               echo "✅ Production API is healthy."
               exit 0
             fi
