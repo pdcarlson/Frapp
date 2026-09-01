@@ -76,8 +76,12 @@ export function resolveWindowSince(
  * `since`/`until` pair composes with the leaderboard's and the report RPC's
  * existing `created_at > since` / `created_at <= until` comparisons.
  *
- * Returns `null` for an archive with unparseable dates, so the caller can
- * fall back the same way `resolveWindowSince` does for a missing archive.
+ * Returns `null` for an archive with unparseable dates, or with `end_date`
+ * before `start_date` — nothing in the schema stops a corrupted or
+ * hand-inserted row from having a reversed range, and an inverted `[since,
+ * until]` would make both bounds unsatisfiable, silently reporting "no
+ * activity" instead of surfacing the real problem. The caller falls back the
+ * same way `resolveWindowSince` does for a missing archive.
  */
 export function resolveArchiveRange(archive: {
   start_date: string;
@@ -87,7 +91,11 @@ export function resolveArchiveRange(archive: {
     `${archive.start_date.slice(0, 10)}T00:00:00.000Z`,
   );
   const until = new Date(`${archive.end_date.slice(0, 10)}T23:59:59.999Z`);
-  if (Number.isNaN(startOfDay.getTime()) || Number.isNaN(until.getTime())) {
+  if (
+    Number.isNaN(startOfDay.getTime()) ||
+    Number.isNaN(until.getTime()) ||
+    startOfDay.getTime() > until.getTime()
+  ) {
     return null;
   }
   const since = new Date(startOfDay.getTime() - 1);

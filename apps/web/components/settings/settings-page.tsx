@@ -15,6 +15,7 @@ import {
   useSemesterRollover,
   useSemesters,
   useUpdateChapter,
+  type SemesterArchive,
 } from "@repo/hooks";
 import {
   CurrentChapterPayloadSchema,
@@ -65,14 +66,6 @@ import { SettingsRolesTab } from "@/components/settings/settings-roles-tab";
 import { SettingsPrivacyTab } from "@/components/settings/settings-privacy-tab";
 import { SettingsFieldsTab } from "@/components/settings/settings-fields-tab";
 import { SettingsComingSoon } from "@/components/settings/settings-coming-soon";
-
-type SemesterArchive = {
-  id: string;
-  label: string;
-  start_date: string;
-  end_date: string;
-  created_at: string;
-};
 
 type Branding = {
   greek_letters?: string;

@@ -6,7 +6,6 @@ import {
   ForbiddenException,
   HttpException,
   HttpStatus,
-  NotFoundException,
 } from '@nestjs/common';
 import { POINT_TRANSACTION_REPOSITORY } from '../../domain/repositories/point-transaction.repository.interface';
 import type { IPointTransactionRepository } from '../../domain/repositories/point-transaction.repository.interface';
@@ -27,9 +26,9 @@ import {
 } from '../../domain/constants/list-query-limits';
 import {
   resolveWindowSince,
-  resolveArchiveRange,
   type PointsWindow,
 } from '../../domain/utils/points-window';
+import { resolveSemesterArchiveRangeOrThrow } from './resolve-semester-archive-range';
 
 // Re-exported so existing importers (points.controller, etc.) keep their path;
 // the canonical definition now lives in domain/utils/points-window.
@@ -125,29 +124,6 @@ export class PointsService {
   }
 
   /**
-   * Resolve a specific archived period by id, chapter-scoped so an id from
-   * another chapter 404s exactly like an unknown one — never distinguishing
-   * "wrong chapter" from "doesn't exist" for a caller probing ids.
-   */
-  private async resolveArchive(
-    chapterId: string,
-    semesterArchiveId: string,
-  ): Promise<{ since: Date; until: Date }> {
-    const archive = await this.semesterArchiveRepo.findById(
-      semesterArchiveId,
-      chapterId,
-    );
-    if (!archive) {
-      throw new NotFoundException('Semester archive not found');
-    }
-    const range = resolveArchiveRange(archive);
-    if (!range) {
-      throw new NotFoundException('Semester archive not found');
-    }
-    return range;
-  }
-
-  /**
    * Filter to one archived period's exact `[since, until]` range — distinct
    * from {@link filterByWindow}'s `all | semester | month` enum, which always
    * measures relative to *now* or the *latest* archive. Selecting an archive
@@ -178,7 +154,11 @@ export class PointsService {
 
     let filtered: PointTransaction[];
     if (semesterArchiveId) {
-      const range = await this.resolveArchive(chapterId, semesterArchiveId);
+      const range = await resolveSemesterArchiveRangeOrThrow(
+        this.semesterArchiveRepo,
+        semesterArchiveId,
+        chapterId,
+      );
       filtered = this.filterByArchiveRange(txns, range);
     } else {
       const semesterRange =
@@ -245,7 +225,11 @@ export class PointsService {
 
     let filtered: PointTransaction[];
     if (semesterArchiveId) {
-      const range = await this.resolveArchive(chapterId, semesterArchiveId);
+      const range = await resolveSemesterArchiveRangeOrThrow(
+        this.semesterArchiveRepo,
+        semesterArchiveId,
+        chapterId,
+      );
       filtered = this.filterByArchiveRange(txns, range);
     } else {
       const semesterRange =

@@ -1,12 +1,12 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { SEMESTER_ARCHIVE_REPOSITORY } from '../../domain/repositories/semester-archive.repository.interface';
 import type { ISemesterArchiveRepository } from '../../domain/repositories/semester-archive.repository.interface';
 import {
   resolveWindowSince,
-  resolveArchiveRange,
   type PointsWindow,
 } from '../../domain/utils/points-window';
+import { resolveSemesterArchiveRangeOrThrow } from './resolve-semester-archive-range';
 import { chunkIds } from '../../domain/utils/chunk-ids';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 
@@ -365,14 +365,11 @@ export class ReportService {
     let since: Date | null;
     let until: Date | null = null;
     if (input.semester_archive_id) {
-      const archive = await this.semesterArchiveRepo.findById(
+      const range = await resolveSemesterArchiveRangeOrThrow(
+        this.semesterArchiveRepo,
         input.semester_archive_id,
         chapterId,
       );
-      const range = archive ? resolveArchiveRange(archive) : null;
-      if (!range) {
-        throw new NotFoundException('Semester archive not found');
-      }
       since = range.since;
       until = range.until;
     } else {

@@ -113,4 +113,23 @@ describe('resolveArchiveRange', () => {
       resolveArchiveRange({ start_date: '2026-01-15', end_date: 'nope' }),
     ).toBeNull();
   });
+
+  it('returns null for a reversed range (end_date before start_date)', () => {
+    // Nothing in the schema stops a corrupted or hand-inserted row from
+    // having end_date < start_date. An inverted range would make both
+    // `created_at > since` and `created_at <= until` unsatisfiable together,
+    // silently reporting "no activity" instead of surfacing the bad data.
+    expect(
+      resolveArchiveRange({ start_date: '2026-05-15', end_date: '2026-01-15' }),
+    ).toBeNull();
+  });
+
+  it('allows a single-day archive (start_date === end_date)', () => {
+    const range = resolveArchiveRange({
+      start_date: '2026-05-15',
+      end_date: '2026-05-15',
+    });
+    expect(range?.since.toISOString()).toBe('2026-05-14T23:59:59.999Z');
+    expect(range?.until.toISOString()).toBe('2026-05-15T23:59:59.999Z');
+  });
 });

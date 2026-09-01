@@ -8,6 +8,7 @@ import {
   useMemberDisplayNames,
   useMyPoints,
   useSemesters,
+  type SemesterArchive,
 } from "@repo/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -60,16 +61,6 @@ type PointTransactionRow = {
   created_at: string;
 };
 
-// GET /v1/semesters declares no response schema (openapi-typescript emits
-// `never` for its body), so `useSemesters`' data is untyped at the wire —
-// same shape and same cast settings-page.tsx already uses for this endpoint.
-type SemesterArchive = {
-  id: string;
-  label: string;
-  start_date: string;
-  end_date: string;
-  created_at: string;
-};
 
 export default function PointsPage() {
   const { isOffline } = useNetwork();
@@ -213,7 +204,7 @@ export default function PointsPage() {
   /* eslint-disable react-hooks/set-state-in-effect -- reset selection when the visible transaction set changes */
   useEffect(() => {
     setSelectedTransactionIds([]);
-  }, [window, transactionSearch, amountFilter, categoryFilter]);
+  }, [window, semesterArchiveId, transactionSearch, amountFilter, categoryFilter]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const transactionIds = filteredTransactions.map((transaction) => transaction.id);
