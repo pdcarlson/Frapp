@@ -400,6 +400,128 @@ describe('PollService', () => {
     });
   });
 
+  describe('vote on a manually closed poll', () => {
+    it('rejects with the same message an expired poll would, even with time left before expires_at', async () => {
+      const closedPoll = {
+        ...basePollMessage,
+        metadata: {
+          ...basePollMessage.metadata,
+          expires_at: '2099-01-01T00:00:00Z',
+          closed_at: '2026-01-02T00:00:00Z',
+          closed_by: 'user-1',
+        },
+      };
+      mockMessageRepo.findById.mockResolvedValue(closedPoll);
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+
+      await expect(
+        service.vote('msg-1', 'user-2', 'ch-1', [0]),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockVoteRepo.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('close', () => {
+    it('lets the creator close an open poll, stamping closed_at and closed_by', async () => {
+      mockMessageRepo.findById.mockResolvedValue(basePollMessage);
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockMessageRepo.update.mockResolvedValue({
+        ...basePollMessage,
+        metadata: {
+          ...basePollMessage.metadata,
+          closed_at: '2026-01-01T00:00:00.000Z',
+          closed_by: 'user-1',
+        },
+      });
+
+      await service.close('msg-1', 'user-1', 'ch-1');
+
+      expect(mockMessageRepo.update).toHaveBeenCalledWith(
+        'msg-1',
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            question: basePollMessage.metadata.question,
+            closed_at: expect.any(String),
+            closed_by: 'user-1',
+          }),
+        }),
+      );
+    });
+
+    it('rejects a non-creator with 403', async () => {
+      mockMessageRepo.findById.mockResolvedValue(basePollMessage);
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+
+      await expect(service.close('msg-1', 'user-2', 'ch-1')).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects closing an already-expired poll', async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...basePollMessage,
+        metadata: {
+          ...basePollMessage.metadata,
+          expires_at: '2020-01-01T00:00:00Z',
+        },
+      });
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+
+      await expect(service.close('msg-1', 'user-1', 'ch-1')).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects closing an already-closed poll', async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...basePollMessage,
+        metadata: {
+          ...basePollMessage.metadata,
+          closed_at: '2026-01-01T00:00:00.000Z',
+          closed_by: 'user-1',
+        },
+      });
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+
+      await expect(service.close('msg-1', 'user-1', 'ch-1')).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects closing a non-poll message', async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...basePollMessage,
+        type: 'TEXT',
+      });
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+
+      await expect(service.close('msg-1', 'user-1', 'ch-1')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('rejects when the poll message does not exist', async () => {
+      mockMessageRepo.findById.mockResolvedValue(null);
+
+      await expect(service.close('msg-1', 'user-1', 'ch-1')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('404 when the channel does not resolve within the chapter', async () => {
+      mockMessageRepo.findById.mockResolvedValue(basePollMessage);
+      mockChannelRepo.findById.mockResolvedValue(null);
+
+      await expect(service.close('msg-1', 'user-1', 'ch-1')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getPoll', () => {
     it('should return poll with results and user votes', async () => {
       mockMessageRepo.findById.mockResolvedValue(basePollMessage);

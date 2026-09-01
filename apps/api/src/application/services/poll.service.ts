@@ -4,6 +4,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { isPollClosed, validateIndexedPollVote } from '@repo/validation';
 import { CHAT_MESSAGE_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
@@ -128,6 +129,13 @@ export class PollService {
 
     const metadata = message.metadata as PollMetadata;
     const options = metadata.options ?? [];
+
+    // `validateIndexedPollVote` below only knows about `expires_at` — a manual
+    // close (`closed_at`) is this service's own concept, checked first so a
+    // creator-closed poll rejects votes the same way an expired one does.
+    if (this.isPollExpired(metadata)) {
+      throw new BadRequestException('Poll has expired');
+    }
 
     // Same rules the chat-card vote path now applies (#871). The messages below
     // are unchanged so this service's existing tests keep passing untouched —
@@ -261,9 +269,59 @@ export class PollService {
     };
   }
 
-  /** Thin wrapper so the read paths share the vote path's notion of "closed". */
+  /**
+   * A poll is closed by its deadline passing OR the creator manually closing it
+   * early (`close`). Thin wrapper so every read/write path shares one notion of
+   * "closed" rather than each re-deriving it from the two metadata fields.
+   */
   private isPollExpired(metadata: PollMetadata): boolean {
-    return isPollClosed(metadata.expires_at);
+    return !!metadata.closed_at || isPollClosed(metadata.expires_at);
+  }
+
+  /**
+   * Manual early close (`spec/behavior/polls.md`: "Once expired (or manually
+   * closed by the creator), the poll is locked"). Creator-only, mirroring
+   * `editMessage`'s ownership check — closing is authorship control over a
+   * poll's own lifecycle, not participation, so it is authorized as a `post`
+   * like creation itself rather than as a `vote`.
+   */
+  async close(
+    messageId: string,
+    userId: string,
+    chapterId: string,
+  ): Promise<ChatMessage> {
+    const message = await this.messageRepo.findById(messageId);
+    if (!message) {
+      throw new NotFoundException('Poll not found');
+    }
+
+    await this.channelAccess.assertChannelAccess(
+      message.channel_id,
+      chapterId,
+      userId,
+      'post',
+    );
+
+    if (message.type !== 'POLL') {
+      throw new BadRequestException('Message is not a poll');
+    }
+
+    if (message.sender_id !== userId) {
+      throw new ForbiddenException('Only the poll creator can close it');
+    }
+
+    const metadata = message.metadata as PollMetadata;
+    if (this.isPollExpired(metadata)) {
+      throw new BadRequestException('Poll has expired');
+    }
+
+    return this.messageRepo.update(messageId, {
+      metadata: {
+        ...metadata,
+        closed_at: new Date().toISOString(),
+        closed_by: userId,
+      } satisfies PollMetadata,
+    });
   }
 
   /**

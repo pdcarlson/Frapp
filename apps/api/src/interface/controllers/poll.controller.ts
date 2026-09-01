@@ -80,6 +80,19 @@ export class PollController {
     return { success: true };
   }
 
+  @Post('polls/:messageId/close')
+  @RequirePermissions(SystemPermissions.POLLS_CREATE)
+  @ApiOperation({
+    summary: 'Manually close a poll early (creator only)',
+  })
+  async close(
+    @Param('messageId') messageId: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.pollService.close(messageId, userId, chapterId);
+  }
+
   @Get('polls')
   @RequirePermissions(SystemPermissions.POLLS_VIEW_ALL)
   @ApiOperation({
