@@ -255,6 +255,22 @@ export interface Database {
         Returns: Member[];
       };
       /**
+       * `20260901180000` (#348). Atomically removes `p_user_id` from a
+       * GROUP_DM's `member_ids` and archives the row once <= 1 member
+       * remains — `array_remove` referencing the table's own column directly
+       * (not an app-computed value) is what makes concurrent leaves
+       * serialize correctly instead of losing an update. Empty result set
+       * means the row didn't match (wrong id/chapter, or not a GROUP_DM).
+       */
+      leave_group_dm: {
+        Args: {
+          p_channel_id: string;
+          p_chapter_id: string;
+          p_user_id: string;
+        };
+        Returns: ChatChannel[];
+      };
+      /**
        * `20260829000000` — `returns semester_archives`. Archives the period and
        * swaps New Member → Member across the chapter in one transaction. Returns
        * the single created archive row (a composite, not `setof`), so this is the

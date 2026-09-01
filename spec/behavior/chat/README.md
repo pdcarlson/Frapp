@@ -44,7 +44,7 @@ Chat is not a module — it is the spine of the app, and every other capability 
 - **Group DM:** User selects multiple members (up to 10). Creates a GROUP_DM-type channel. Chapter-scoped.
 - DMs appear in a separate "Messages" section in the UI, not mixed with chapter channels.
 - DMs are not role-gated; they are scoped by an explicit member list stored on the channel.
-- A user can leave a Group DM. If only one member remains, the Group DM is archived.
+- A user can leave a Group DM (`POST /v1/channels/:id/leave`), which removes them from the channel's member list. Leaving a 1-on-1 DM or any non-DM channel is rejected — there is no equivalent affordance for those. Once membership drops to one remaining member, the Group DM is archived (`chat_channels.archived_at` set) and drops out of the active channel list; it stays directly readable by id, so the last member's history is not deleted.
 - **Privacy invariant:** DMs and group DMs are **never** part of the [AI corpus](../ai.md). They are not indexed for AI Q&A, not used as summarization context, and not surfaced via citations. This is enforced server-side regardless of any chapter-level AI consent settings — opting in to AI does not opt in DMs.
 - **System DM on invite accept.** When a member accepts an invite, the inviter receives a `kind="system_audit"` message in their DM channel with that member — `"Alex Chen accepted your invite."` This is the same server-originated system-message pattern as the audit bridge, but targeted to a DM rather than `#chapter-audit`.
 

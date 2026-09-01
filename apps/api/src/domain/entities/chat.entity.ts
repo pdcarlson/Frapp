@@ -41,6 +41,13 @@ export interface ChatChannel {
   category_id: string | null;
   is_read_only: boolean;
   created_at: string;
+  /**
+   * Set once a GROUP_DM's membership drops to <= 1 via the leave endpoint
+   * (#348); null for every other channel and for a GROUP_DM still active.
+   * `ChannelAccessService.filterAccessibleChannels` excludes an archived
+   * channel from the active list; it stays directly reachable by id.
+   */
+  archived_at: string | null;
 }
 
 export interface ChatMessage {

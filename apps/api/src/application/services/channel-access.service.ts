@@ -25,6 +25,7 @@ function toPredicateChannel(channel: ChatChannel) {
     member_ids: channel.member_ids,
     required_permissions: channel.required_permissions,
     is_read_only: channel.is_read_only ?? null,
+    archived_at: channel.archived_at,
   };
 }
 
@@ -146,7 +147,12 @@ export class ChannelAccessService {
     if (!member) return new Set();
 
     const channels = await this.channelRepo.findByChapter(chapterId);
-    const candidates = channels.filter((channel) => wanted.has(channel.id));
+    // Mirrors `filterAccessibleChannels`' archived exclusion (#348) — this is
+    // the other batch predicate `getUnreadCounts` and the chapter-wide poll
+    // list go through, and the two must not drift on what counts as active.
+    const candidates = channels.filter(
+      (channel) => wanted.has(channel.id) && !channel.archived_at,
+    );
     if (candidates.length === 0) return new Set();
 
     const accessible = await this.applyReadPredicate(
@@ -182,8 +188,15 @@ export class ChannelAccessService {
     userId: string,
     channels: ChatChannel[],
   ): Promise<ChatChannel[]> {
+    // An archived GROUP_DM (#348 — membership dropped to <= 1 via leave)
+    // drops out of the active list here — mirrored in `filterAccessibleChannelIds`
+    // below, this method's sibling — rather than at `findByChapter`: a
+    // direct-by-id fetch (re-leaving, or reading history) still resolves it.
+    // Writing into an archived channel is separately denied for everyone by
+    // `canAccessChannel` itself (the `archived_at` check on a write
+    // operation), so this exclusion is about list membership, not authority.
     const inChapter = channels.filter(
-      (channel) => channel.chapter_id === chapterId,
+      (channel) => channel.chapter_id === chapterId && !channel.archived_at,
     );
     if (inChapter.length === 0) return [];
 

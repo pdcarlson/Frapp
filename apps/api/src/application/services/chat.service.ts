@@ -449,6 +449,52 @@ export class ChatService {
     });
   }
 
+  /**
+   * `spec/behavior/chat/README.md:47` — a member can leave a Group DM; once
+   * one member remains, the channel is archived rather than left to linger.
+   *
+   * `assertChannelAccess` alone would accept leaving a DM, PUBLIC, PRIVATE or
+   * ROLE_GATED channel the caller can read — the explicit type check is what
+   * rejects everything but GROUP_DM, per the issue's own AC.
+   *
+   * The actual removal goes through the `leave_group_dm` RPC
+   * (`channelRepo.leaveGroupDm`), not a read-then-write `update()`: two
+   * members leaving at nearly the same time would otherwise each compute
+   * their target `member_ids` from the same stale snapshot, and whichever
+   * `update()` commits last would silently discard the other's removal
+   * (`/diff-review` caught this in the first pass — see the RPC's migration
+   * comment for why the SQL-side `array_remove` is what makes it safe).
+   */
+  async leaveGroupDm(
+    channelId: string,
+    chapterId: string,
+    userId: string,
+  ): Promise<void> {
+    const channel = await this.assertChannelAccess(
+      channelId,
+      chapterId,
+      userId,
+    );
+    if (channel.type !== 'GROUP_DM') {
+      throw new BadRequestException('Only a Group DM can be left');
+    }
+
+    const updated = await this.channelRepo.leaveGroupDm(
+      channelId,
+      chapterId,
+      userId,
+    );
+    if (!updated) {
+      // Lost a race with a concurrent delete, or the type changed under us
+      // between the check above and the RPC — `assertChannelAccess` already
+      // proved this row existed and was a GROUP_DM a moment ago.
+      throw new NotFoundException('Channel not found');
+    }
+    // A left/archived Group DM must not keep serving the push worker's stale
+    // member list — same reasoning as `updateChannel`'s cache invalidation.
+    this.channelCache.invalidate(channelId);
+  }
+
   // ── Categories ───────────────────────────────────────────────────────
 
   async getCategories(chapterId: string): Promise<ChatChannelCategory[]> {
