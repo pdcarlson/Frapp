@@ -27,8 +27,10 @@ export interface EventDetail extends EventRow {
   description: string | null;
   /**
    * Meeting minutes (`spec/behavior/events.md` § Meeting minutes) — editable
-   * by admins with `events:update` after the event, visible to any member
-   * with access to it. Web's `event-detail-sheet.tsx` labels the section
+   * by admins with `events:update` after the event. Rendered here on the same
+   * terms as `description`: whatever `GET /v1/events/:id` returns, since
+   * neither field is filtered server-side by the event's `required_role_ids`
+   * targeting — see #1463. Web's `event-detail-sheet.tsx` labels the section
    * "Internal notes"; mirrored here rather than inventing a second label.
    */
   notes: string | null;
@@ -49,7 +51,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function str(row: Record<string, unknown>, key: string): string | null {
   const raw = row[key];
-  return typeof raw === "string" && raw.length > 0 ? raw : null;
+  // Trim-checked, not just length-checked — matching `lib/more/narrow.ts`'s
+  // `str()`. A whitespace-only value (e.g. notes edited down to nothing) must
+  // read as absent, or a section renders with a label and an invisible body.
+  return typeof raw === "string" && raw.trim().length > 0 ? raw : null;
 }
 
 function toRow(row: Record<string, unknown>): EventRow | null {

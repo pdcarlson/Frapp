@@ -29,6 +29,12 @@ describe("selectEventDetail — notes", () => {
     expect(selectEventDetail(event({ notes: "" }))?.notes).toBeNull();
   });
 
+  // A whitespace-only value must read as absent, or the section renders with
+  // a label and an invisible body.
+  it("is null for a whitespace-only value", () => {
+    expect(selectEventDetail(event({ notes: "   " }))?.notes).toBeNull();
+  });
+
   it("does not require notes for an otherwise-valid event to resolve", () => {
     const detail = selectEventDetail(event({ notes: undefined }));
     expect(detail).not.toBeNull();
