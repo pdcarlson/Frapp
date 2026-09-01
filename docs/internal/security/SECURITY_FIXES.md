@@ -462,8 +462,8 @@ POST verified against `rawBody: true`, which Helmet does not touch.
   headers on a 200 and a 404 alike (proving the middleware runs ahead of routing, not inside a
   handler), and asserts the CSP string contains exactly the relaxed directives with no wildcard origin.
 - Booted the API against the local sandbox stack: `GET /health` and `GET /docs` both carry the full
-  Helmet header set; `/docs`, `/docs/swagger-ui-bundle.js`, `/docs/swagger-ui.css`,
-  `/docs/swagger-ui-init.js`, and `/docs-json` all still return `200` with their expected content types.
+  Helmet header set; the `/docs` page, its `swagger-ui-dist` bundle/CSS/init-script assets, and
+  `/docs-json` all still return `200` with their expected content types.
 - `POST /v1/webhooks/stripe` with an unsigned body still returns its normal `400` (invalid signature),
   not a crash — the raw-body path is unaffected. The full `billing-webhook.e2e-spec.ts` and
   `apps/api`'s unit suite (2509 tests) pass unchanged.
