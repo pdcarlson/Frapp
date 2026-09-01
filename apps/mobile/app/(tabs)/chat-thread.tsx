@@ -142,6 +142,10 @@ export default function ChatThreadScreen() {
             onVote={(id, actionType, payload) =>
               void act(id, actionType, payload)
             }
+            onRetry={(id) => void retry(id)}
+            onDiscard={(id) => void discard(id)}
+            onReact={(id, emoji) => void react(id, emoji)}
+            onUnreact={(id, emoji) => void unreact(id, emoji)}
           />
         );
       }

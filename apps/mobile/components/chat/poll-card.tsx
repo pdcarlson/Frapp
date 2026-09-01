@@ -1,10 +1,17 @@
 import { useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ChatMessage } from "@repo/chat-core/types";
+import {
+  POLL_VOTE_ACTION_TYPE,
+  readPollPayload,
+  tallyPollVotes,
+  type PollOption,
+} from "@repo/chat-core/polls";
 import { SignetTokens } from "@repo/theme/signet";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useNow } from "@repo/hooks";
+import { groupReactions, ReactionRow } from "./message-bubble";
 
 /**
  * #528 — mobile in-chat poll voting. Mirrors
@@ -14,16 +21,26 @@ import { useNow } from "@repo/hooks";
  * 1. **Not sided.** Web's `MessageRenderer` routes `kind: "poll"` to a card
  *    outside the bubble/avatar layout entirely (`rendersAsBubble` excludes
  *    every card kind); `chat-thread.tsx` does the same — this component is
- *    rendered directly by the list, not wrapped in `MessageBubble`.
- * 2. **`PollPayload`/`PollOption`/`POLL_VOTE_ACTION_TYPE` are redeclared here**
- *    rather than imported from `@repo/chat-integrations` (the canonical home,
- *    `packages/chat-integrations/src/payloads.ts`). `apps/mobile/lib/chat/
- *    use-chat-channel.ts`'s own doc comment names why: that package's
- *    `exports` map points `require` at an unbuilt `dist/` (#989), which is
- *    the condition Metro's resolver uses — so importing it from mobile is a
- *    real runtime risk, not a style preference. The shape is small and
- *    frozen by the wire contract (ADR-07's `action_type: "vote"` /
- *    `payload.option_id`), so duplicating it is safe.
+ *    rendered directly by the list, not wrapped in `MessageBubble`. Web still
+ *    gets retry/discard/reactions on a card row from the shared `MessageItem`
+ *    wrapper every kind renders inside; mobile has no such wrapper, so this
+ *    card renders that chrome itself — status text + Retry/Discard sourced
+ *    from `message._status`/`_error` (mirroring `MineMessageBubble`), and
+ *    `ReactionRow` imported from `message-bubble.tsx` rather than
+ *    reimplemented, so a poll message keeps the same affordances every other
+ *    mobile message kind has.
+ * 2. **`PollOption`/`POLL_VOTE_ACTION_TYPE`/payload-reading/tallying come from
+ *    `@repo/chat-core/polls`**, not `@repo/chat-integrations` (the type
+ *    definitions' canonical home, `packages/chat-integrations/src/
+ *    payloads.ts`). `apps/mobile/lib/chat/use-chat-channel.ts`'s own doc
+ *    comment names why `chat-integrations` itself is off-limits: that
+ *    package's `exports` map points `require` at an unbuilt `dist/` (#989),
+ *    which is the condition Metro's resolver uses. `chat-core/polls` mirrors
+ *    the frozen wire contract (ADR-07's `action_type: "vote"` /
+ *    `payload.option_id`) locally rather than importing it, for the same
+ *    reason — but as the *one* shared copy web's `poll-card.tsx` also reads
+ *    from, not a second mobile-local one, so a future fix to vote-parsing or
+ *    tallying only has one place to land.
  *
  * Voting itself is the generic inline-card-action mechanism (`actOnCard` in
  * `@repo/chat-core/chat-client`, wired through `useChatChannel`'s `act`) —
@@ -38,66 +55,6 @@ import { useNow } from "@repo/hooks";
  * paths before choosing which one to mirror.
  */
 
-interface PollOption {
-  id: string;
-  label: string;
-}
-
-interface PollPayload {
-  question: string;
-  options: PollOption[];
-  closes_at: string;
-}
-
-/** Matches `POLL_VOTE_ACTION_TYPE` in `packages/chat-integrations/src/payloads.ts`. */
-const POLL_VOTE_ACTION_TYPE = "vote";
-
-function readPayload(message: ChatMessage): PollPayload | null {
-  const raw = message.payload;
-  if (!raw || typeof raw !== "object") return null;
-  const question = (raw as { question?: unknown }).question;
-  const options = (raw as { options?: unknown }).options;
-  const closesAt = (raw as { closes_at?: unknown }).closes_at;
-  if (typeof question !== "string" || !Array.isArray(options)) return null;
-  const parsed: PollOption[] = [];
-  for (const o of options) {
-    if (!o || typeof o !== "object") continue;
-    const id = (o as { id?: unknown }).id;
-    const label = (o as { label?: unknown }).label;
-    if (typeof id === "string" && typeof label === "string") {
-      parsed.push({ id, label });
-    }
-  }
-  if (parsed.length < 2) return null;
-  return {
-    question,
-    options: parsed,
-    closes_at: typeof closesAt === "string" ? closesAt : "",
-  };
-}
-
-/** Identical tally logic to web's `tallyByOption`, kept in sync by inspection. */
-function tallyByOption(
-  message: ChatMessage,
-  options: PollOption[],
-  viewerId: string | null,
-): { byOption: Record<string, number>; total: number; myVote: string | null } {
-  const byOption: Record<string, number> = {};
-  for (const o of options) byOption[o.id] = 0;
-  let total = 0;
-  let myVote: string | null = null;
-  for (const action of message.actions) {
-    if (action.action_type !== POLL_VOTE_ACTION_TYPE) continue;
-    const optionId = (action.payload as { option_id?: unknown } | null)
-      ?.option_id;
-    if (typeof optionId !== "string" || !(optionId in byOption)) continue;
-    byOption[optionId] = (byOption[optionId] ?? 0) + 1;
-    total += 1;
-    if (viewerId && action.user_id === viewerId) myVote = optionId;
-  }
-  return { byOption, total, myVote };
-}
-
 export interface PollCardProps {
   message: ChatMessage;
   viewerId: string | null;
@@ -108,6 +65,10 @@ export interface PollCardProps {
     actionType: string,
     payload: Record<string, unknown>,
   ) => void;
+  onRetry: (clientMessageId: string) => void;
+  onDiscard: (clientMessageId: string) => void;
+  onReact: (messageId: string, emoji: string) => void;
+  onUnreact: (messageId: string, emoji: string) => void;
 }
 
 export function PollCard({
@@ -115,6 +76,10 @@ export function PollCard({
   viewerId,
   isConfirmed,
   onVote,
+  onRetry,
+  onDiscard,
+  onReact,
+  onUnreact,
 }: PollCardProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -122,8 +87,9 @@ export function PollCard({
   // same identity signal `MineMessageBubble` gives the self bubble
   // (components.md:210) — a poll's own vote is the viewer's content too.
   const { accentPrimary, accentOnPrimary } = useChapterBranding();
-  const payload = readPayload(message);
+  const payload = readPollPayload(message);
   const now = useNow();
+  const reactions = groupReactions(message, viewerId);
 
   const {
     byOption,
@@ -131,13 +97,57 @@ export function PollCard({
     myVote: viewerVote,
   } = useMemo(() => {
     if (!payload) return { byOption: {}, total: 0, myVote: null };
-    return tallyByOption(message, payload.options, viewerId);
+    return tallyPollVotes(message, payload.options, viewerId);
   }, [message, payload, viewerId]);
+
+  // Sourced straight off `message._status`/`_error`, the same fields
+  // `MineMessageBubble` reads — a poll message is optimistic/failed under
+  // exactly the same `sendMessage` contract any other kind is.
+  const isPending = message._status === "pending";
+  const isFailed = message._status === "failed";
+  const statusAndActions = isPending ? (
+    <Text style={styles.metaText}>Sending…</Text>
+  ) : isFailed ? (
+    <View style={styles.failedRow}>
+      <Text style={styles.metaFailed}>{message._error ?? "Send failed"}</Text>
+      <View style={styles.failedActions}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Retry sending this message"
+          hitSlop={8}
+          onPress={() => onRetry(message.client_message_id)}
+        >
+          <Text style={styles.retryText}>Retry</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Discard this message"
+          hitSlop={8}
+          onPress={() => onDiscard(message.client_message_id)}
+        >
+          <Text style={styles.discardText}>Discard</Text>
+        </Pressable>
+      </View>
+    </View>
+  ) : null;
+  const reactionRow = (
+    <ReactionRow
+      reactions={reactions}
+      messageId={message.id}
+      disabled={!isConfirmed}
+      onReact={onReact}
+      onUnreact={onUnreact}
+      styles={styles}
+      align="flex-start"
+    />
+  );
 
   if (!payload) {
     return (
       <View style={styles.card}>
         <Text style={styles.malformed}>Malformed poll · {message.content}</Text>
+        {statusAndActions}
+        {reactionRow}
       </View>
     );
   }
@@ -212,6 +222,8 @@ export function PollCard({
           ? `No votes yet${canVote ? " · be the first to vote" : ""}.`
           : `${total} vote${total === 1 ? "" : "s"}${viewerVote ? " · your vote is highlighted" : ""}`}
       </Text>
+      {statusAndActions}
+      {reactionRow}
     </View>
   );
 }
@@ -286,6 +298,64 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
       marginTop: tokens.spacing.sm + 1,
+    },
+    // Matches `MineMessageBubble`'s equivalent styles in message-bubble.tsx —
+    // same failed/retry/discard treatment, since a poll message can be
+    // pending or failed under the same `sendMessage` contract any other kind
+    // is.
+    metaText: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+      marginTop: tokens.spacing.sm + 1,
+    },
+    failedRow: {
+      marginTop: tokens.spacing.sm + 1,
+      gap: tokens.spacing.xs,
+    },
+    metaFailed: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.destructive,
+    },
+    failedActions: {
+      flexDirection: "row",
+      gap: tokens.spacing.md,
+    },
+    retryText: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.gold.askText,
+    },
+    discardText: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+    },
+    // Matches `MessageBubble`'s equivalent styles — `ReactionRow` (imported
+    // from message-bubble.tsx) is narrowed to exactly these five keys.
+    reactionRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: tokens.spacing.sm - 2,
+      marginTop: tokens.spacing.sm + 1,
+    },
+    reactionChip: {
+      height: 26,
+      paddingHorizontal: tokens.spacing.sm + 1,
+      borderRadius: tokens.radius.chip + 1,
+      backgroundColor: tokens.color.surface.popover,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    reactionChipMine: {
+      backgroundColor: tokens.color.gold.askFill,
+      borderWidth: 1,
+      borderColor: tokens.color.gold.askBorder,
+    },
+    reactionText: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+    },
+    reactionTextMine: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.gold.askText,
     },
   });
 }

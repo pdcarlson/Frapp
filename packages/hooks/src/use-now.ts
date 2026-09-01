@@ -1,3 +1,5 @@
+"use client";
+
 import { useSyncExternalStore } from "react";
 
 /** 30s matches the previous EventCard check-in window ticker. */
