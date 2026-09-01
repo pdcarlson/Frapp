@@ -8,12 +8,13 @@
  * outbox so components stay dumb (arrays + callbacks).
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFrappClient } from "@repo/hooks";
 import { getRealtimeClient } from "@/lib/realtime/supabase-realtime";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useToast } from "@/hooks/use-toast";
+import { AnalyticsContext } from "@/lib/providers/analytics-provider";
 import {
   chatMessagesKey,
   type ChannelCache,
@@ -86,6 +87,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   const apiClient = useFrappClient();
   const { userId } = useFrappUser();
   const { toast: rawToast } = useToast();
+  const track = useContext(AnalyticsContext);
   const supabase = useMemo(() => getRealtimeClient(), []);
 
   const toast: ToastFn = useCallback(
@@ -106,9 +108,10 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       supabase,
       userId,
       toast,
+      track: track ?? undefined,
       outbox: dexieOutboxStore,
     }),
-    [queryClient, apiClient, supabase, userId, toast],
+    [queryClient, apiClient, supabase, userId, toast, track],
   );
 
   // Initial load: REST backfill of the most recent messages + a single
