@@ -773,6 +773,38 @@ After any rollback event:
 * **Data caveat**: none. This migration stores no data. `realtime.messages` rows are ephemeral broadcast envelopes, partitioned by day and pruned by Realtime itself, and the pings carry only `{table, op}` — no row content — so there is nothing to snapshot before dropping and nothing to reconstruct after re-applying. Re-applying is fully idempotent: every block is guarded (`pg_publication_tables` membership, `pg_policies` existence, `create or replace` on the functions, `drop trigger if exists` before each `create trigger`).
 * **Partial rollback to avoid**: dropping `chat_messages_select` while leaving `chat_messages` in the publication. Realtime enforces RLS per subscriber, so the table stays replicated but every subscriber is denied — the WAL work is done and thrown away. If you want chat off, drop it from the publication too.
 
+## Rollback the ping-swallow warning
+
+* **Migration**: `20260901170000_realtime_ping_swallow_warning.sql`
+* **Read this first**: rolling this back **reintroduces the silent-swallow gap** (#978). The
+  migration changes nothing about the swallow's guarantee (writes still succeed when
+  `realtime.send` fails) or the trigger signatures — it only replaces `null;` with a `raise
+  warning` carrying the table, topic and `SQLERRM` inside each of the three ping triggers'
+  exception handlers. Reverting restores the state where a sustained `realtime.send` failure
+  (partition lag, a Realtime grant change) is invisible until someone reports "the dashboard
+  feels stale". There is almost never a reason to do this; prefer a forward fix.
+* **Action**: `create or replace` back to a bare swallow:
+  ```sql
+  CREATE OR REPLACE FUNCTION public.realtime_notify_notifications() ... AS $$
+  ...
+  exception when others then
+    null;
+  end;
+  ...
+  ```
+  (same shape for `realtime_notify_events` and `realtime_notify_event_attendance`; copy the
+  bodies from `20260827190000_secdef_search_path_pg_temp.sql`, which has the last `null;`-only
+  definitions.)
+* **Order**: no coordination required — deploy in either order. Signature, return type and the
+  swallow's write-survival guarantee are all unchanged, so no running API can observe the
+  difference either way.
+* **Data caveat**: none. Nothing is written, dropped, or backfilled; `raise warning` does not
+  affect the surrounding transaction.
+* **CI will stop you.** `scripts/check-pglite-migrations.mjs`'s "Functional smoke" tier asserts
+  each of the three ping tables raises an observable `WARNING` when `realtime.send` fails (PGlite
+  has no `realtime` schema, so every write there already exercises the swallow) — a rollback
+  committed as a *migration* fails the `pglite-migrations` job by design.
+
 ## Rollback the chat unread/mention slice
 
 * **Migration**: `20260816190000_chat_unread_and_mentions.sql`

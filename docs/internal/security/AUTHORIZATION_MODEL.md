@@ -328,6 +328,18 @@ broadcast and their tables stay API-enforced. The topic strings are a cross-subs
 between that migration and `apps/web/lib/realtime/change-topics.ts`, pinned by
 `change-topics.test.ts` precisely because drift between them is silent.
 
+Each of the three ping triggers wraps its `realtime.send` call in `exception when others then null`
+— deliberate, since an AFTER trigger fires inside the writing transaction and an unguarded send
+would make a best-effort cache-invalidation hint a hard availability dependency of core writes. That
+swallow was itself silent until `20260901170000_realtime_ping_swallow_warning.sql` (#978): each
+handler now `raise warning`s with the table, topic and `SQLERRM` before swallowing, so a sustained
+failure (partition lag, a Realtime grant change) shows up in the Supabase log stream instead of only
+surfacing as "the dashboard feels stale" days later. Recorded call: the log stream is sufficient for
+now — these three tables are a contentless refetch hint, not a lost write, so a missed ping degrades
+to the existing 5s poll fallback rather than losing data. Promoting it to a Sentry breadcrumb or
+alert rule (#863) is a follow-up if the log stream proves insufficient in practice, not a
+prerequisite for closing #978.
+
 ---
 
 ## 6. Regression coverage
