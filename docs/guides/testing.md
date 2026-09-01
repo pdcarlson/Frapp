@@ -237,7 +237,11 @@ The docs/spec sync gate runs **elsewhere** — the `docs-spec-sync` job in `.git
 
 ## 5a. Coverage
 
-Coverage runs on demand, not in CI, and has **no threshold** — it is a measurement, not a gate.
+Coverage runs on demand, not in CI, and has **no threshold** — it is a measurement, not a gate. This
+is a deliberate decision, not an oversight; `spec/architecture/README.md` § 11 states the current
+measured baseline instead of an unenforced minimum — see
+[`QUALITY_GATES.md` § Coverage](../internal/ci-cd/QUALITY_GATES.md#coverage) for why it stays
+ungated.
 
 ```bash
 npm run test:cov                  # every workspace, via turbo
