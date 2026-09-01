@@ -413,6 +413,26 @@ export interface paths {
         patch: operations["CustomFieldController_update_v1"];
         trace?: never;
     };
+    "/v1/audit-log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List chapter audit log entries
+         * @description Officer-action history (config changes, role/field changes, member removal, and similar). Paginate via a cursor (`before` ISO8601). Returns newest-first, capped at `limit` (default 50, max 200).
+         */
+        get: operations["ChapterAuditLogController_list_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/members": {
         parameters: {
             query?: never;
@@ -2840,6 +2860,22 @@ export interface components {
             /** @example true */
             success: boolean;
         };
+        ChapterAuditLogEntryDto: {
+            id: string;
+            chapter_id: string;
+            actor_user_id: string | null;
+            /** @description Verb, e.g. `member_removed` */
+            action: string;
+            target_type: string;
+            target_id: string | null;
+            scope: string;
+            /** @description Before/after payload for the change */
+            diff: {
+                [key: string]: unknown;
+            };
+            member_visible: boolean;
+            created_at: string;
+        };
         MemberCustomFieldValueDto: {
             field_id: string;
             key: string;
@@ -4276,6 +4312,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CustomFieldDto"];
+                };
+            };
+        };
+    };
+    ChapterAuditLogController_list_v1: {
+        parameters: {
+            query?: {
+                /** @description ISO8601 cursor — return audit entries created before this timestamp */
+                before?: string;
+                /** @description Max entries to return. Integers are clamped to 1–200 inclusive; omitted defaults to 50. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterAuditLogEntryDto"][];
                 };
             };
         };
