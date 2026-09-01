@@ -29,6 +29,7 @@ import { ScreenShell } from "@/components/screen-shell";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { useAuthSession } from "@/lib/auth-session";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import { shouldShowDonationCta } from "@/lib/more/donation";
 import { LEGAL_LINKS } from "@/lib/more/legal";
 import {
   getPushPermission,
@@ -350,6 +351,10 @@ export default function PreferencesScreen() {
     chapterQuery.data as
       { enabled_modules?: Record<string, boolean> } | undefined
   )?.enabled_modules;
+  const donationUrl = (
+    chapterQuery.data as { donation_url?: string | null } | undefined
+  )?.donation_url;
+  const showDonationCta = shouldShowDonationCta(permissions, donationUrl);
   const geofencesEnabled =
     canSeeChapterAdmin && isModuleEnabled(enabledModules, "geofences");
   // Gated, not just hidden: the route requires `members:view` **and** the
@@ -521,6 +526,21 @@ export default function PreferencesScreen() {
         {/* Static, not a control: Signet is dark-only by design (lib/theme.tsx),
             and Canvas draws this row as a value too. */}
         <ListRow label="Appearance" value="Dark" />
+        {showDonationCta ? (
+          <ListRow
+            label="Support the Chapter"
+            description="Opens the chapter's donation page in your browser."
+            accessibilityHint="Opens the chapter's donation page in your browser."
+            onPress={() => {
+              // A rejection here is real — iOS rejects a second presentation
+              // while one is already showing — so it is surfaced rather than
+              // left as an unhandled promise.
+              WebBrowser.openBrowserAsync(donationUrl).catch(() =>
+                setLinkFailed("Support the Chapter"),
+              );
+            }}
+          />
+        ) : null}
         {LEGAL_LINKS.map((link) => (
           <ListRow
             key={link.url}
