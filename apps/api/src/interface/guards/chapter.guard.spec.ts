@@ -211,6 +211,77 @@ describe('ChapterGuard', () => {
       ).resolves.toBe(true);
       expect(request.chapterId).toBe('chapter-header');
     });
+
+    // #688: Postgres `uuid` comparison is case-insensitive (an uppercase
+    // header authorizes normally), but storage prefix math is exact-case
+    // string concatenation — so every `@CurrentChapterId()` consumer must
+    // see a canonical (lowercase) value, matching what `chapters.id` already
+    // is in the database.
+    it('lowercases an uppercase x-chapter-id header before setting request.chapterId', async () => {
+      mockSupabaseChain({
+        appUser: { id: 'user-1' },
+        member: { id: 'member-1', role_ids: [] },
+        chapter: { subscription_status: 'active' },
+      });
+      const request = buildRequest({
+        headers: { 'x-chapter-id': 'CHAPTER-HEADER' },
+        jwtClaims: undefined,
+      });
+
+      await expect(
+        guard.canActivate(mockExecutionContext(request)),
+      ).resolves.toBe(true);
+      expect(request.chapterId).toBe('chapter-header');
+    });
+
+    it('lowercases an uppercase JWT active_chapter_id claim before setting request.chapterId', async () => {
+      mockSupabaseChain({
+        appUser: { id: 'user-1' },
+        member: { id: 'member-1', role_ids: [] },
+        chapter: { subscription_status: 'active' },
+      });
+      const request = buildRequest({
+        headers: {},
+        jwtClaims: { active_chapter_id: 'CHAPTER-JWT' },
+      });
+
+      await expect(
+        guard.canActivate(mockExecutionContext(request)),
+      ).resolves.toBe(true);
+      expect(request.chapterId).toBe('chapter-jwt');
+    });
+
+    it('treats a header and JWT claim that agree only up to case as a match, not a mismatch', async () => {
+      mockSupabaseChain({
+        appUser: { id: 'user-1' },
+        member: { id: 'member-1', role_ids: [] },
+        chapter: { subscription_status: 'active' },
+      });
+      const request = buildRequest({
+        headers: { 'x-chapter-id': 'Chapter-Same' },
+        jwtClaims: { active_chapter_id: 'chapter-same' },
+      });
+
+      await expect(
+        guard.canActivate(mockExecutionContext(request)),
+      ).resolves.toBe(true);
+      expect(request.chapterId).toBe('chapter-same');
+    });
+
+    it('still rejects a header and JWT claim that disagree beyond case (chapter.context.mismatch)', async () => {
+      mockSupabaseChain({ appUser: { id: 'user-1' } });
+      const ctx = mockExecutionContext(
+        buildRequest({
+          headers: { 'x-chapter-id': 'CHAPTER-HEADER' },
+          jwtClaims: { active_chapter_id: 'chapter-jwt' },
+        }),
+      );
+
+      await expect(guard.canActivate(ctx)).rejects.toMatchObject({
+        response: { code: 'chapter.context.mismatch' },
+        status: 403,
+      });
+    });
   });
 
   it('should throw ForbiddenException when supabaseUser is not set', async () => {
