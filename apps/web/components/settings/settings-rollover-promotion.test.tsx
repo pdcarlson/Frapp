@@ -3,13 +3,13 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
-const { mockCurrentChapter, mockRollover, mockPermissions } = vi.hoisted(
-  () => ({
+const { mockCurrentChapter, mockRollover, mockPermissions, mockOrgConfig } =
+  vi.hoisted(() => ({
     mockCurrentChapter: vi.fn(),
     mockRollover: vi.fn(),
     mockPermissions: vi.fn<() => string[]>(),
-  }),
-);
+    mockOrgConfig: vi.fn<() => Record<string, unknown>>(),
+  }));
 
 // Mutable so a test can take `roles:manage` away and assert the toggle goes
 // with it — the API refuses promotion without it, so a live toggle would be a
@@ -33,7 +33,7 @@ vi.mock("@repo/hooks", () => ({
   useUpdateChapter: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useCreatePortal: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useOrgConfig: () => ({
-    data: { org_archetype: "ifc" },
+    data: mockOrgConfig(),
     isPending: false,
     isError: false,
     refetch: vi.fn(),
@@ -94,6 +94,7 @@ describe("semester rollover — New Member promotion (#285)", () => {
       "roles:manage",
     ];
     mockPermissions.mockImplementation(() => permissions);
+    mockOrgConfig.mockReturnValue({ org_archetype: "ifc" });
   });
 
   it("offers the promotion, off by default", () => {
@@ -197,5 +198,29 @@ describe("semester rollover — New Member promotion (#285)", () => {
     render(<SettingsPage />);
 
     expect(promoteSwitch()).toBeDisabled();
+  });
+
+  // #351: rollover copy reads in the chapter's own vocabulary rather than a
+  // hardcoded IFC term.
+  it("renders the chapter's own vocabulary term for the promoted role (NPHC)", async () => {
+    mockOrgConfig.mockReturnValue({
+      org_archetype: "nphc",
+      vocabulary: { recruitment: "Intake", pledge: "Aspirant", class: "Line" },
+    });
+    const user = userEvent.setup();
+    render(<SettingsPage />);
+
+    expect(
+      screen.getByRole("switch", { name: /promote aspirants to member/i }),
+    ).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("switch", { name: /promote aspirants to member/i }),
+    );
+    await submitRollover(user);
+
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent(/every aspirant is also promoted/i);
+    expect(dialog).not.toHaveTextContent(/new member/i);
   });
 });
