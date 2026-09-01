@@ -8,6 +8,7 @@ import {
   type ChatNotificationPreferenceRow,
 } from './chat-notification-preference.repository';
 import { RbacService } from '../../application/services/rbac.service';
+import { ChannelCacheService } from './channel-cache.service';
 
 describe('ChatPushWorkerService', () => {
   let service: ChatPushWorkerService;
@@ -42,6 +43,7 @@ describe('ChatPushWorkerService', () => {
     const mod = await Test.createTestingModule({
       providers: [
         ChatPushWorkerService,
+        ChannelCacheService,
         {
           provide: SUPABASE_CLIENT,
           useValue: {},

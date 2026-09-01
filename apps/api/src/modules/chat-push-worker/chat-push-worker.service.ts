@@ -19,9 +19,8 @@ import { decidePush } from './push-rules';
 import { canAccessChannel } from '@repo/validation';
 import { RbacService } from '../../application/services/rbac.service';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
-
-/** How long a cached channel row may inform an authorization decision. */
-const CHANNEL_CACHE_TTL_MS = 30_000;
+import { ChannelCacheService } from './channel-cache.service';
+import type { CachedChannelRow } from './channel-cache.service';
 
 interface ChatMessageRow {
   id: string;
@@ -42,16 +41,8 @@ interface ChatMessageRow {
   created_at: string;
 }
 
-interface ChannelRow {
-  id: string;
-  chapter_id: string;
-  name: string;
-  is_read_only: boolean | null;
-  /** Needed to decide who may read this channel — see `handleMessage`. */
-  type: string;
-  member_ids: string[] | null;
-  required_permissions: string[] | null;
-}
+/** Alias kept local so the rest of this file reads in its own domain terms. */
+type ChannelRow = CachedChannelRow;
 
 /**
  * Push worker (ADR-09).
@@ -78,22 +69,6 @@ export class ChatPushWorkerService
   private messagesChannel: RealtimeChannel | null = null;
   private readonly presenceChannels = new Map<string, RealtimeChannel>();
   private readonly bundler = new BurstBundler();
-  /**
-   * Channel rows, cached to keep a hot channel from re-querying per message.
-   *
-   * Entries expire, and the TTL is load-bearing rather than tidiness: this row
-   * now carries `member_ids` and `required_permissions`, which are the inputs
-   * to the push audience decision. `required_permissions` is mutable at runtime
-   * (`PATCH /v1/channels/:id`), and the read path re-reads the channel on every
-   * request — so an unbounded cache would let an admin tighten a ROLE_GATED
-   * channel, lock people out of reading it, and have the worker keep pushing
-   * them its content until the process restarted. A short TTL bounds that
-   * divergence to the window below instead of "forever".
-   */
-  private readonly channelCache = new Map<
-    string,
-    { row: ChannelRow; expiresAt: number }
-  >();
 
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
@@ -102,6 +77,17 @@ export class ChatPushWorkerService
     private readonly notificationService: NotificationService,
     private readonly prefRepo: ChatNotificationPreferenceRepository,
     private readonly rbac: RbacService,
+    /**
+     * Channel rows, cached to keep a hot channel from re-querying per message.
+     * Shared with `ChatService` (see `ChannelCacheModule`), which evicts an
+     * entry when its `updateChannel` write can change `member_ids` or
+     * `required_permissions` — both are push-audience authorization inputs, not
+     * display data, so a stale entry lets the worker decide from a permission
+     * set or membership list that no longer applies. `ChannelCacheService`'s
+     * TTL is a backstop for entries nothing invalidates, not the primary
+     * correctness mechanism.
+     */
+    private readonly channelCache: ChannelCacheService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -338,7 +324,7 @@ export class ChatPushWorkerService
 
   private async resolveChannel(channelId: string): Promise<ChannelRow | null> {
     const cached = this.channelCache.get(channelId);
-    if (cached && cached.expiresAt > Date.now()) return cached.row;
+    if (cached) return cached;
     const { data, error } = await this.supabase
       .from('chat_channels')
       .select(
@@ -351,10 +337,7 @@ export class ChatPushWorkerService
       return null;
     }
     const row: ChannelRow = data;
-    this.channelCache.set(channelId, {
-      row,
-      expiresAt: Date.now() + CHANNEL_CACHE_TTL_MS,
-    });
+    this.channelCache.set(channelId, row);
     // Open a presence subscription on the same `chat:channel:<id>` topic the
     // web client uses (ADR-10) so we can read who's currently in the channel.
     this.ensurePresenceChannel(row.id);
@@ -466,10 +449,7 @@ export class ChatPushWorkerService
   // ── Internal test helpers ─────────────────────────────────────────────
   /** Cache a channel row in tests so `handleMessage` skips the DB lookup. */
   __setChannelForTest(channel: ChannelRow): void {
-    this.channelCache.set(channel.id, {
-      row: channel,
-      expiresAt: Date.now() + CHANNEL_CACHE_TTL_MS,
-    });
+    this.channelCache.set(channel.id, channel);
   }
   /** Seed a presence map for tests. */
   __setPresenceForTest(channelId: string, userIds: string[]): void {

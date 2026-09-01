@@ -59,6 +59,7 @@ import { ActivationService } from './activation.service';
 import { ChatNotificationPreferenceRepository } from '../../modules/chat-push-worker/chat-notification-preference.repository';
 import type { ChatNotificationLevel } from '../../modules/chat-push-worker/chat-notification-preference.repository';
 import { defaultLevelFor } from '../../modules/chat-push-worker/push-rules';
+import { ChannelCacheService } from '../../modules/chat-push-worker/channel-cache.service';
 
 const MAX_PINNED_MESSAGES = 50;
 const MAX_GROUP_DM_MEMBERS = 10;
@@ -260,6 +261,7 @@ export class ChatService {
     private readonly channelAccess: ChannelAccessService,
     private readonly activation: ActivationService,
     private readonly chatNotificationPrefs: ChatNotificationPreferenceRepository,
+    private readonly channelCache: ChannelCacheService,
   ) {}
 
   // ── Channels ─────────────────────────────────────────────────────────
@@ -390,7 +392,14 @@ export class ChatService {
       throw new BadRequestException(ROLE_GATED_REQUIRES_PERMISSIONS_MESSAGE);
     }
 
-    return this.channelRepo.update(id, chapterId, data);
+    const updated = await this.channelRepo.update(id, chapterId, data);
+    // `required_permissions` is a push-audience authorization input (see
+    // `ChannelCacheService`), not display data — evict unconditionally rather
+    // than only when that field is present in `data`, so a future field this
+    // service starts accepting here can't silently reintroduce the staleness
+    // window by omission (#988).
+    this.channelCache.invalidate(id);
+    return updated;
   }
 
   async deleteChannel(id: string, chapterId: string): Promise<void> {
