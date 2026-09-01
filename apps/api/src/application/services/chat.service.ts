@@ -405,6 +405,9 @@ export class ChatService {
   async deleteChannel(id: string, chapterId: string): Promise<void> {
     await this.requireChannelInChapter(id, chapterId);
     await this.channelRepo.delete(id, chapterId);
+    // A deleted channel's stale row must not outlive it in the push worker's
+    // cache — see `updateChannel`'s note on `ChannelCacheService`.
+    this.channelCache.invalidate(id);
   }
 
   async getOrCreateDm(input: CreateDmInput): Promise<ChatChannel> {

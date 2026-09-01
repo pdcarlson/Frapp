@@ -413,4 +413,89 @@ describe('ChatPushWorkerService', () => {
 
     expect(notifyUser).not.toHaveBeenCalled();
   });
+
+  describe('channel cache eviction race (#988)', () => {
+    it('does not re-cache a channel read that resolves after a concurrent invalidate', async () => {
+      // No `__setChannelForTest` here — the point is to exercise the real,
+      // uncached `resolveChannel` DB-read path with a controllable Supabase
+      // response, so `channelCache.set()` gets called for real rather than
+      // being bypassed by a pre-seeded cache hit.
+      let resolveSelect!: (value: {
+        data: typeof CHANNEL;
+        error: null;
+      }) => void;
+      const selectPromise = new Promise<{
+        data: typeof CHANNEL;
+        error: null;
+      }>((resolve) => {
+        resolveSelect = resolve;
+      });
+      const maybeSingle = jest.fn().mockReturnValue(selectPromise);
+      const eq = jest.fn().mockReturnValue({ maybeSingle });
+      const select = jest.fn().mockReturnValue({ eq });
+      const from = jest.fn().mockReturnValue({ select });
+      const channelStub = {
+        subscribe: jest.fn(),
+        presenceState: () => ({}),
+      };
+
+      const channelCache = new ChannelCacheService();
+      const raceFindByChapter = jest.fn().mockResolvedValue([]); // empty roster: handleMessage returns right after resolveChannel
+
+      const mod = await Test.createTestingModule({
+        providers: [
+          ChatPushWorkerService,
+          { provide: ChannelCacheService, useValue: channelCache },
+          {
+            provide: SUPABASE_CLIENT,
+            useValue: { from, channel: () => channelStub },
+          },
+          {
+            provide: MEMBER_REPOSITORY,
+            useValue: { findByChapter: raceFindByChapter },
+          },
+          {
+            provide: NotificationService,
+            useValue: { notifyUser: jest.fn().mockResolvedValue(undefined) },
+          },
+          {
+            provide: ChatNotificationPreferenceRepository,
+            useValue: { findForUser: jest.fn().mockResolvedValue([]) },
+          },
+          {
+            provide: RbacService,
+            useValue: {
+              getEffectivePermissions: jest.fn().mockResolvedValue([]),
+            },
+          },
+        ],
+      }).compile();
+      const worker = mod.get(ChatPushWorkerService);
+
+      // A message arrives for an uncached channel. `resolveChannel` misses
+      // the cache and starts the SELECT above, which stays pending until
+      // `resolveSelect` is called below.
+      const handlePromise = worker.handleMessage({
+        id: 'm1',
+        channel_id: CHANNEL.id,
+        sender_id: 'sender',
+        content: 'hi',
+        kind: 'text',
+        created_at: '',
+      });
+
+      // While that read is in flight, simulate the concurrent
+      // ChatService.updateChannel this issue is about: nothing is cached yet
+      // (invalidate is a no-op on the map), but it bumps the epoch.
+      channelCache.invalidate(CHANNEL.id);
+
+      // Now the in-flight SELECT resolves with the pre-update row.
+      resolveSelect({ data: CHANNEL, error: null });
+      await handlePromise;
+
+      // Without epoch fencing this would cache CHANNEL for a fresh 30s,
+      // silently undoing the invalidate that raced it.
+      expect(channelCache.get(CHANNEL.id)).toBeNull();
+    });
+  });
 });

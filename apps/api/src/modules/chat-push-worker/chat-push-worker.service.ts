@@ -325,6 +325,11 @@ export class ChatPushWorkerService
   private async resolveChannel(channelId: string): Promise<ChannelRow | null> {
     const cached = this.channelCache.get(channelId);
     if (cached) return cached;
+    // Captured before the read starts, not after it resolves: an `UPDATE`
+    // (and its `invalidate()`) can land on this channel while the `SELECT`
+    // below is in flight. Passing this epoch to `set` below lets it detect
+    // that case and discard the now-stale result instead of re-caching it.
+    const epoch = this.channelCache.getEpoch(channelId);
     const { data, error } = await this.supabase
       .from('chat_channels')
       .select(
@@ -337,7 +342,7 @@ export class ChatPushWorkerService
       return null;
     }
     const row: ChannelRow = data;
-    this.channelCache.set(channelId, row);
+    this.channelCache.set(channelId, row, epoch);
     // Open a presence subscription on the same `chat:channel:<id>` topic the
     // web client uses (ADR-10) so we can read who's currently in the channel.
     this.ensurePresenceChannel(row.id);
@@ -449,7 +454,11 @@ export class ChatPushWorkerService
   // ── Internal test helpers ─────────────────────────────────────────────
   /** Cache a channel row in tests so `handleMessage` skips the DB lookup. */
   __setChannelForTest(channel: ChannelRow): void {
-    this.channelCache.set(channel.id, channel);
+    this.channelCache.set(
+      channel.id,
+      channel,
+      this.channelCache.getEpoch(channel.id),
+    );
   }
   /** Seed a presence map for tests. */
   __setPresenceForTest(channelId: string, userIds: string[]): void {

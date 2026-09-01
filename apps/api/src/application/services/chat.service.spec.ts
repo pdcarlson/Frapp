@@ -846,6 +846,27 @@ describe('ChatService', () => {
         NotFoundException,
       );
     });
+
+    // #988: a deleted channel's row must not outlive it in the push worker's
+    // cache, the same as an updated one.
+    it('evicts the push worker channel cache on delete', async () => {
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockChannelRepo.delete.mockResolvedValue();
+
+      await service.deleteChannel('ch-chan-1', 'ch-1');
+
+      expect(mockChannelCache.invalidate).toHaveBeenCalledWith('ch-chan-1');
+    });
+
+    it('does not evict the cache when the channel is not found', async () => {
+      mockChannelRepo.findById.mockResolvedValue(null);
+
+      await expect(service.deleteChannel('ch-chan-x', 'ch-1')).rejects.toThrow(
+        NotFoundException,
+      );
+
+      expect(mockChannelCache.invalidate).not.toHaveBeenCalled();
+    });
   });
 
   describe('deleteCategory', () => {
