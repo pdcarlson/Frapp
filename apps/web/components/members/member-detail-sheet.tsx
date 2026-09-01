@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, MessageSquare, Trash2 } from "lucide-react";
 import { DirectoryGlyph, RolesGlyph } from "@/components/members/directory-glyphs";
@@ -167,7 +167,7 @@ export function MemberDetailSheet({
   const removeMemberMutation = useRemoveMember();
   const dmMutation = useGetOrCreateDm();
   const router = useRouter();
-  const { userId: currentUserId } = useFrappUser();
+  const { userId: currentUserId, isLoading: isCurrentUserLoading } = useFrappUser();
   const { toast } = useToast();
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
   const [selectedCustomRoleIds, setSelectedCustomRoleIds] = useState<string[]>([]);
@@ -248,6 +248,15 @@ export function MemberDetailSheet({
     typeof resolvedMember?.user_id === "string" && resolvedMember.user_id.length > 0
       ? resolvedMember.user_id
       : null;
+  // members-directory.tsx keeps one MemberDetailSheet instance mounted and
+  // swaps `member` as rows are opened, so a slow DM request started for one
+  // member can still resolve after the sheet has moved to another — this ref
+  // lets that continuation notice it's now stale instead of navigating the
+  // viewer to the wrong conversation.
+  const dmTargetUserIdRef = useRef(dmTargetUserId);
+  useEffect(() => {
+    dmTargetUserIdRef.current = dmTargetUserId;
+  }, [dmTargetUserId]);
   const email = typeof resolvedMember?.email === "string" ? resolvedMember.email : "Unavailable";
   const hasCompletedOnboarding =
     typeof resolvedMember?.has_completed_onboarding === "boolean"
@@ -314,10 +323,19 @@ export function MemberDetailSheet({
   // degenerate channel. Guarding here, not server-side, since this issue is
   // scoped to the web UI; the button is simply absent for the viewer's own row.
   async function handleMessage() {
-    if (!dmTargetUserId || dmTargetUserId === currentUserId) return;
+    // `currentUserId` is null until /v1/users/me resolves; treating that as
+    // "not the viewer" would let a self-DM through during that window, so
+    // require the load to finish before comparing.
+    if (!dmTargetUserId || isCurrentUserLoading || dmTargetUserId === currentUserId) {
+      return;
+    }
+    const requestedUserId = dmTargetUserId;
 
     try {
-      const dm = await dmMutation.mutateAsync({ member_id: dmTargetUserId });
+      const dm = await dmMutation.mutateAsync({ member_id: requestedUserId });
+      // The sheet may have moved on to a different member while this request
+      // was in flight — ignore a result that's no longer for the open member.
+      if (dmTargetUserIdRef.current !== requestedUserId) return;
       const channelId =
         dm && typeof dm === "object" && typeof (dm as { id?: unknown }).id === "string"
           ? (dm as { id: string }).id
@@ -328,6 +346,7 @@ export function MemberDetailSheet({
       onOpenChange(false);
       router.push(`/chat?channel=${channelId}`);
     } catch (error) {
+      if (dmTargetUserIdRef.current !== requestedUserId) return;
       toast({
         title: "Could not start conversation",
         description: getErrorMessage(
@@ -360,7 +379,10 @@ export function MemberDetailSheet({
           </SheetDescription>
         </SheetHeader>
 
-        {!usingPreviewData && dmTargetUserId && dmTargetUserId !== currentUserId ? (
+        {!usingPreviewData &&
+        dmTargetUserId &&
+        !isCurrentUserLoading &&
+        dmTargetUserId !== currentUserId ? (
           <div className="mt-4">
             <Button
               variant="secondary"
