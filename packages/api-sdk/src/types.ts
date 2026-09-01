@@ -2181,6 +2181,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/activity-feed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the chapter activity feed
+         * @description Normalized, newest-first rows aggregated from events, the caller’s own point changes, backwork uploads (only when the caller can view Backwork), new members, and the announcements channel. Read-only aggregation — no separate feed table (`spec/behavior/activity-feed.md`).
+         */
+        get: operations["ActivityFeedController_getFeed_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/chapter-directory/search": {
         parameters: {
             query?: never;
@@ -3380,6 +3400,29 @@ export interface components {
             start_date?: string;
             /** @description End date (YYYY-MM-DD) */
             end_date?: string;
+        };
+        ActivityFeedActorDto: {
+            /** Format: uuid */
+            user_id: string;
+            /** @description Empty when the actor could not be resolved against the current roster (e.g. a member who has since left the chapter) — the server does not invent a placeholder name. */
+            display_name: string;
+            avatar_url: string | null;
+        };
+        ActivityFeedItemDto: {
+            /** @description Stable within one response; not a database primary key. */
+            id: string;
+            /** @enum {string} */
+            type: "event_created" | "event_upcoming" | "points_change" | "backwork_upload" | "member_joined" | "announcement";
+            /**
+             * Format: date-time
+             * @description Feed ordering key — newest first.
+             */
+            timestamp: string;
+            title: string;
+            body: string | null;
+            actor: components["schemas"]["ActivityFeedActorDto"] | null;
+            /** @description The underlying record id (event, point transaction, backwork resource, joining member’s user id, or announcement channel id) for client-side navigation. */
+            target_id: string;
         };
         CreateDiscordImportDto: {
             /** @description The admin confirms they have posted an in-channel notice in their Discord server telling members the history is being archived into Signet. Required — the API refuses without it, and the column is NOT NULL, so no import can exist that was not preceded by this. */
@@ -6921,6 +6964,28 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    ActivityFeedController_getFeed_v1: {
+        parameters: {
+            query?: {
+                /** @description Max feed rows to return across all domains combined. Clamped to 1–50 inclusive; omitted defaults to 20. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityFeedItemDto"][];
+                };
             };
         };
     };

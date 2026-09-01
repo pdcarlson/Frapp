@@ -5336,6 +5336,51 @@
         ]
       }
     },
+    "/v1/activity-feed": {
+      "get": {
+        "description": "Normalized, newest-first rows aggregated from events, the caller’s own point changes, backwork uploads (only when the caller can view Backwork), new members, and the announcements channel. Read-only aggregation — no separate feed table (`spec/behavior/activity-feed.md`).",
+        "operationId": "ActivityFeedController_getFeed_v1",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Max feed rows to return across all domains combined. Clamped to 1–50 inclusive; omitted defaults to 20.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ActivityFeedItemDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get the chapter activity feed",
+        "tags": [
+          "Activity Feed"
+        ]
+      }
+    },
     "/v1/chapter-directory/search": {
       "get": {
         "operationId": "ChapterDirectoryController_search_v1",
@@ -8527,6 +8572,82 @@
             "description": "End date (YYYY-MM-DD)"
           }
         }
+      },
+      "ActivityFeedActorDto": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "display_name": {
+            "type": "string",
+            "description": "Empty when the actor could not be resolved against the current roster (e.g. a member who has since left the chapter) — the server does not invent a placeholder name."
+          },
+          "avatar_url": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "user_id",
+          "display_name",
+          "avatar_url"
+        ]
+      },
+      "ActivityFeedItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable within one response; not a database primary key."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "event_created",
+              "event_upcoming",
+              "points_change",
+              "backwork_upload",
+              "member_joined",
+              "announcement"
+            ]
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Feed ordering key — newest first."
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string",
+            "nullable": true
+          },
+          "actor": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ActivityFeedActorDto"
+              }
+            ]
+          },
+          "target_id": {
+            "type": "string",
+            "description": "The underlying record id (event, point transaction, backwork resource, joining member’s user id, or announcement channel id) for client-side navigation."
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "timestamp",
+          "title",
+          "body",
+          "actor",
+          "target_id"
+        ]
       },
       "CreateDiscordImportDto": {
         "type": "object",

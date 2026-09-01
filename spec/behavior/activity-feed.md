@@ -1,13 +1,16 @@
 # Activity Feed
 
-> **Surface note — this aggregation is specified but built nowhere today.**
+> **Surface note — the API exists; no client renders it.**
 >
-> The *web* home screen it was written for was removed in the chat-first redesign: `/dashboard`
-> redirects to `/chat`, and `/` does too once a Supabase session exists. The **mobile** Home tab
-> (`apps/mobile/app/(tabs)/index.tsx`) is titled "Activity Feed" but is a 48-line static prototype
-> with hardcoded values and no data access at all — part of the preview shell tracked in
-> [#253](https://github.com/pdcarlson/Frapp/issues/253). So the spec below describes intended
-> behavior, not shipped behavior, on either surface.
+> `GET /v1/activity-feed` (`ActivityFeedController`/`ActivityFeedService`) implements the
+> aggregation below, and `@repo/hooks`' `useActivityFeed` wraps it — but neither web nor mobile has
+> a home surface to put it in, by later, more specific product decisions than this spec: the *web*
+> home screen it was written for was removed in the chat-first redesign (`/dashboard` and `/` both
+> redirect to `/chat` once a Supabase session exists), and **mobile**'s `(tabs)/index.tsx` is no
+> longer a Home tab at all — the Signet mobile rebuild ([#937](https://github.com/pdcarlson/Frapp/issues/937))
+> made it `ChatHomeScreen`, chat's own home route. Wiring this feed into an actual screen needs an
+> IA decision (a new mobile tab, undoing the web redirect, or something else) that this issue's own
+> scope didn't license — tracked separately rather than decided silently.
 >
 > It is also *not* the source of the web chat catch-up card. The pulse card
 > ([`chat/catch-up.md`](chat/catch-up.md)) is a **separate** aggregation that reuses the
@@ -24,5 +27,21 @@ The activity aggregation for the user's active chapter covers:
 - Announcements: latest announcement.
 
 Feed items are pulled from existing data (events, point_transactions, backwork_resources, members, chat_messages where channel = announcements). This is a **read-only aggregation view**, not a separate data store.
+
+**Implementation notes** (`ActivityFeedService`):
+
+- "New event created" only surfaces events created within the last 14 days — otherwise a chapter's
+  entire history would read as "new" forever. A recurring event's regenerated future occurrences
+  (`parent_event_id` set) never count as "created," since editing a series' time regenerates them
+  with a fresh `created_at` that has nothing to do with a member's sense of "something new happened."
+- Each domain contributes at most 10 rows before the merged, newest-first list is capped to the
+  caller's requested `limit` (1–50, default 20) — except events, which draws from two separate
+  10-row buckets ("starting soon" and "created," see above), so it alone can contribute up to 20.
+- The five domains are fetched independently: one domain failing (a transient DB error) degrades
+  that domain to an empty contribution rather than failing the whole feed.
+- An `actor` whose `user_id` cannot be resolved against the current chapter roster (a member who has
+  since left) still appears with an empty `display_name` rather than being dropped or given an
+  invented placeholder — the same "empty means unresolved" convention `MemberRosterEntry` uses
+  elsewhere.
 
 **Leaderboard name resolution** (retained rule; no web surface currently renders it — `apps/web/lib/activity-feed-leaderboard.ts` has no importer but its own test since the home screen was removed): leaderboard lines in the activity feed resolve member display names by trying every id shape the API may send (`user_id`, `member_id`, and generic `id`) against the chapter member list, so mismatched field names between points totals and `MemberProfileDto` do not silently fall back to a generic label.
