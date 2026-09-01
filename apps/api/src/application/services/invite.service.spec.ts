@@ -29,15 +29,19 @@ import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.i
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
 import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
+import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
+import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
 import type { Invite } from '../../domain/entities/invite.entity';
 import type { Role } from '../../domain/entities/role.entity';
 import type { Member } from '../../domain/entities/member.entity';
 import { SystemRoleKeys } from '../../domain/constants/permissions';
 import { NotificationService } from './notification.service';
 import { ActivationService } from './activation.service';
+import { ChatService } from './chat.service';
 import { ConfigService } from '@nestjs/config';
 import { EMAIL_PROVIDER } from '../../domain/adapters/email.interface';
 import type { IEmailProvider } from '../../domain/adapters/email.interface';
+import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 
 describe('InviteService', () => {
   let service: InviteService;
@@ -50,6 +54,10 @@ describe('InviteService', () => {
   let mockActivation: jest.Mocked<Pick<ActivationService, 'record'>>;
   let mockEmailProvider: jest.Mocked<IEmailProvider>;
   let mockConfig: jest.Mocked<Pick<ConfigService, 'get'>>;
+  let mockUserRepo: jest.Mocked<IUserRepository>;
+  let mockChatService: jest.Mocked<Pick<ChatService, 'getOrCreateDm'>>;
+  let mockSupabase: { from: jest.Mock };
+  let messageInsert: jest.Mock;
 
   beforeEach(async () => {
     mockInviteRepo = {
@@ -92,16 +100,42 @@ describe('InviteService', () => {
     mockEmailProvider = { sendInviteEmail: jest.fn().mockResolvedValue(true) };
     mockConfig = { get: jest.fn().mockReturnValue(undefined) };
 
+    mockUserRepo = {
+      findById: jest.fn(),
+      findByIds: jest.fn(),
+      findDisplayIdentitiesByIds: jest.fn(),
+      findBySupabaseAuthId: jest.fn(),
+      findByEmail: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      anonymize: jest.fn(),
+    };
+    mockChatService = {
+      getOrCreateDm: jest
+        .fn()
+        .mockResolvedValue({ id: 'dm-1', type: 'DM', member_ids: [] }),
+    };
+    messageInsert = jest.fn().mockResolvedValue({ error: null });
+    mockSupabase = {
+      from: jest.fn((table: string) => {
+        if (table === 'chat_messages') return { insert: messageInsert };
+        return {};
+      }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         InviteService,
         { provide: INVITE_REPOSITORY, useValue: mockInviteRepo },
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
         { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
+        { provide: USER_REPOSITORY, useValue: mockUserRepo },
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: ActivationService, useValue: mockActivation },
+        { provide: ChatService, useValue: mockChatService },
         { provide: EMAIL_PROVIDER, useValue: mockEmailProvider },
         { provide: ConfigService, useValue: mockConfig },
+        { provide: SUPABASE_CLIENT, useValue: mockSupabase },
       ],
     }).compile();
 
@@ -460,6 +494,138 @@ describe('InviteService', () => {
       'ch-1',
       'activation-first-invite-redeemed',
     );
+  });
+
+  describe('notifyInviterOfAcceptance (#596)', () => {
+    const invite: Invite = {
+      id: 'inv-1',
+      token: 'test-uuid',
+      chapter_id: 'ch-1',
+      role: 'Member',
+      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      created_by: 'user-1',
+      used_at: null,
+      created_at: '2024-01-01',
+    };
+    const memberRole: Role = {
+      id: 'role-member',
+      chapter_id: 'ch-1',
+      name: 'Member',
+      system_key: SystemRoleKeys.MEMBER,
+      permissions: [],
+      is_system: true,
+      display_order: 3,
+      color: null,
+      created_at: '2024-01-01',
+    };
+    const member: Member = {
+      id: 'member-1',
+      user_id: 'user-2',
+      chapter_id: 'ch-1',
+      role_ids: [memberRole.id],
+      custom_role_ids: [],
+      has_completed_onboarding: false,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    };
+
+    beforeEach(() => {
+      mockInviteRepo.findByToken.mockResolvedValue(invite);
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+      mockInviteRepo.markUsedAtomically.mockResolvedValue(true);
+      mockRoleRepo.findByChapter.mockResolvedValue([memberRole]);
+      mockMemberRepo.create.mockResolvedValue(member);
+    });
+
+    it('DMs the inviter with a system_audit message naming the accepter', async () => {
+      mockUserRepo.findById.mockResolvedValue({
+        id: 'user-2',
+        supabase_auth_id: 'auth-2',
+        email: 'alex@example.com',
+        display_name: 'Alex Chen',
+        avatar_url: null,
+        bio: null,
+        graduation_year: null,
+        current_city: null,
+        current_company: null,
+        created_at: '2024-01-01',
+        updated_at: '2024-01-01',
+      });
+
+      await service.redeem('test-uuid', 'user-2');
+
+      expect(mockChatService.getOrCreateDm).toHaveBeenCalledWith({
+        chapter_id: 'ch-1',
+        member_ids: ['user-1', 'user-2'],
+      });
+      expect(messageInsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          channel_id: 'dm-1',
+          sender_id: '00000000-0000-0000-0000-000000000000',
+          content: 'Alex Chen accepted your invite.',
+          kind: 'system_audit',
+        }),
+      );
+    });
+
+    it('does not roll back redemption when the accepter profile cannot be found', async () => {
+      mockUserRepo.findById.mockResolvedValue(null);
+
+      const result = await service.redeem('test-uuid', 'user-2');
+
+      expect(result).toEqual({ chapterId: 'ch-1', memberId: 'member-1' });
+      expect(mockChatService.getOrCreateDm).not.toHaveBeenCalled();
+    });
+
+    it('does not roll back redemption when the DM/message write throws', async () => {
+      mockUserRepo.findById.mockResolvedValue({
+        id: 'user-2',
+        supabase_auth_id: 'auth-2',
+        email: 'alex@example.com',
+        display_name: 'Alex Chen',
+        avatar_url: null,
+        bio: null,
+        graduation_year: null,
+        current_city: null,
+        current_company: null,
+        created_at: '2024-01-01',
+        updated_at: '2024-01-01',
+      });
+      // A departed inviter, a chat outage, or any other DM-path failure —
+      // this covers the "missing inviter" edge case the fix must survive.
+      mockChatService.getOrCreateDm.mockRejectedValue(new Error('boom'));
+
+      const result = await service.redeem('test-uuid', 'user-2');
+
+      expect(result).toEqual({ chapterId: 'ch-1', memberId: 'member-1' });
+    });
+
+    it('skips the DM entirely when the accepter is the invite creator (rejoin)', async () => {
+      mockInviteRepo.findByToken.mockResolvedValue({
+        ...invite,
+        created_by: 'user-2',
+      });
+      mockUserRepo.findById.mockResolvedValue({
+        id: 'user-2',
+        supabase_auth_id: 'auth-2',
+        email: 'alex@example.com',
+        display_name: 'Alex Chen',
+        avatar_url: null,
+        bio: null,
+        graduation_year: null,
+        current_city: null,
+        current_company: null,
+        created_at: '2024-01-01',
+        updated_at: '2024-01-01',
+      });
+
+      const result = await service.redeem('test-uuid', 'user-2');
+
+      expect(result).toEqual({ chapterId: 'ch-1', memberId: 'member-1' });
+      // Would otherwise have produced a degenerate self-DM (member_ids [x, x]).
+      expect(mockChatService.getOrCreateDm).not.toHaveBeenCalled();
+      expect(messageInsert).not.toHaveBeenCalled();
+    });
   });
 
   it('does not record a redemption milestone when the invite is expired (#267)', async () => {
