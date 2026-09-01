@@ -2181,6 +2181,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/activity-feed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the chapter activity feed
+         * @description Normalized, newest-first rows aggregated from events, the caller’s own point changes, backwork uploads (only when the caller can view Backwork), new members, and the announcements channel. Read-only aggregation — no separate feed table (`spec/behavior/activity-feed.md`).
+         */
+        get: operations["ActivityFeedController_getFeed_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/chapter-directory/search": {
         parameters: {
             query?: never;
@@ -6908,6 +6928,26 @@ export interface operations {
             query: {
                 /** @description Search query */
                 q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ActivityFeedController_getFeed_v1: {
+        parameters: {
+            query?: {
+                /** @description Max feed rows to return across all domains combined. Clamped to 1–50 inclusive; omitted defaults to 20. */
+                limit?: number;
             };
             header?: never;
             path?: never;

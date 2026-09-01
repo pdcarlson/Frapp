@@ -67,6 +67,11 @@ export interface MemberRosterEntry {
   avatar_url: string | null;
 }
 
+/** A {@link MemberRosterEntry} plus the membership's join timestamp. */
+export interface RecentMemberJoin extends MemberRosterEntry {
+  joined_at: string;
+}
+
 @Injectable()
 export class MemberService {
   constructor(
@@ -140,6 +145,45 @@ export class MemberService {
       });
     }
     return roster;
+  }
+
+  /**
+   * The chapter's most recently joined members, roster-projected (see
+   * {@link findRosterByChapter} for why: no email/bio/etc.), for the Activity
+   * Feed's "new member joined" item (`spec/behavior/activity-feed.md`).
+   *
+   * `Member.created_at` is the membership row's timestamp, i.e. when this
+   * person joined *this chapter* — not `users.created_at`, which is account
+   * creation and could predate the membership by any amount (a re-join, an
+   * alumni account reactivated years later).
+   */
+  async findRecentJoins(
+    chapterId: string,
+    limit: number,
+  ): Promise<RecentMemberJoin[]> {
+    const members = await this.memberRepo.findByChapter(chapterId);
+    if (!members.length) return [];
+
+    const recent = [...members]
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, limit);
+
+    const userIds = [...new Set(recent.map((member) => member.user_id))];
+    const identities = await this.userRepo.findDisplayIdentitiesByIds(userIds);
+    const byId = new Map(identities.map((user) => [user.id, user]));
+
+    const joins: RecentMemberJoin[] = [];
+    for (const member of recent) {
+      const user = byId.get(member.user_id);
+      if (!user) continue;
+      joins.push({
+        user_id: user.id,
+        display_name: user.display_name,
+        avatar_url: user.avatar_url,
+        joined_at: member.created_at,
+      });
+    }
+    return joins;
   }
 
   async findByUserAndChapter(

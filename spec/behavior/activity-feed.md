@@ -1,13 +1,16 @@
 # Activity Feed
 
-> **Surface note — this aggregation is specified but built nowhere today.**
+> **Surface note — the API exists; no client renders it.**
 >
-> The *web* home screen it was written for was removed in the chat-first redesign: `/dashboard`
-> redirects to `/chat`, and `/` does too once a Supabase session exists. The **mobile** Home tab
-> (`apps/mobile/app/(tabs)/index.tsx`) is titled "Activity Feed" but is a 48-line static prototype
-> with hardcoded values and no data access at all — part of the preview shell tracked in
-> [#253](https://github.com/pdcarlson/Frapp/issues/253). So the spec below describes intended
-> behavior, not shipped behavior, on either surface.
+> `GET /v1/activity-feed` (`ActivityFeedController`/`ActivityFeedService`) implements the
+> aggregation below, and `@repo/hooks`' `useActivityFeed` wraps it — but neither web nor mobile has
+> a home surface to put it in, by later, more specific product decisions than this spec: the *web*
+> home screen it was written for was removed in the chat-first redesign (`/dashboard` and `/` both
+> redirect to `/chat` once a Supabase session exists), and **mobile**'s `(tabs)/index.tsx` is no
+> longer a Home tab at all — the Signet mobile rebuild ([#937](https://github.com/pdcarlson/Frapp/issues/937))
+> made it `ChatHomeScreen`, chat's own home route. Wiring this feed into an actual screen needs an
+> IA decision (a new mobile tab, undoing the web redirect, or something else) that this issue's own
+> scope didn't license — tracked separately rather than decided silently.
 >
 > It is also *not* the source of the web chat catch-up card. The pulse card
 > ([`chat/catch-up.md`](chat/catch-up.md)) is a **separate** aggregation that reuses the
