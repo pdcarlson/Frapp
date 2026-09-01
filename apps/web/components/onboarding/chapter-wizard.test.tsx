@@ -3,13 +3,19 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 // Capture the onboard mutation args. `vi.hoisted` runs before the hoisted
 // `vi.mock` factory, so the spies exist when the factory wires them in.
-const { onboardMutate, createInviteMutate, activateMutate, refreshSession } =
-  vi.hoisted(() => ({
-    onboardMutate: vi.fn(),
-    createInviteMutate: vi.fn(),
-    activateMutate: vi.fn(),
-    refreshSession: vi.fn(),
-  }));
+const {
+  onboardMutate,
+  createInviteMutate,
+  emailInvitesMutate,
+  activateMutate,
+  refreshSession,
+} = vi.hoisted(() => ({
+  onboardMutate: vi.fn(),
+  createInviteMutate: vi.fn(),
+  emailInvitesMutate: vi.fn(),
+  activateMutate: vi.fn(),
+  refreshSession: vi.fn(),
+}));
 
 // useSelectChapter refreshes the Supabase session so the new chapter's
 // active_chapter_id claim is issued before the next API call.
@@ -27,6 +33,7 @@ vi.mock("@repo/hooks", () => ({
     refetch: vi.fn(),
   }),
   useCreateInvite: () => ({ mutateAsync: createInviteMutate, isPending: false }),
+  useEmailInvites: () => ({ mutateAsync: emailInvitesMutate, isPending: false }),
   useOnboardChapter: () => ({ mutateAsync: onboardMutate, isPending: false }),
   // Consumed by useSelectChapter, which the wizard calls after creating the
   // chapter so the active_chapter_id claim is issued for the new chapter.
@@ -68,11 +75,22 @@ function gotoIdentityStep() {
   });
 }
 
+/** Drive the wizard all the way to the invite step by completing onboarding. */
+async function gotoInviteStep() {
+  gotoIdentityStep();
+  fireEvent.click(screen.getByRole("checkbox"));
+  fireEvent.click(screen.getByRole("button", { name: "Create chapter" }));
+  await waitFor(() =>
+    expect(screen.getByText("Invite members")).toBeInTheDocument(),
+  );
+}
+
 describe("ChapterWizard legal acceptance gate", () => {
   beforeEach(() => {
     onboardMutate.mockReset();
     onboardMutate.mockResolvedValue({ id: "ch-1" });
     createInviteMutate.mockReset();
+    emailInvitesMutate.mockReset();
   });
 
   it("blocks Create chapter until Terms/Privacy is accepted", () => {
@@ -186,6 +204,90 @@ describe("the archetype card, at the call site", () => {
       expect(cap.className).not.toMatch(/\bfont-mono\b/);
     }
     expect(caps.some((cap) => /text-\[12\.5px\]/.test(cap.className))).toBe(true);
+  });
+});
+
+describe("the invite step's bulk-email path (#238)", () => {
+  beforeEach(() => {
+    onboardMutate.mockReset();
+    onboardMutate.mockResolvedValue({ id: "ch-1" });
+    emailInvitesMutate.mockReset();
+  });
+
+  it("sends one invite per address and reports the sent count", async () => {
+    emailInvitesMutate.mockResolvedValue({
+      invites: [{ token: "t1" }, { token: "t2" }],
+      failed: [],
+    });
+
+    render(<ChapterWizard onComplete={() => {}} />);
+    await gotoInviteStep();
+
+    fireEvent.change(screen.getByLabelText("Or invite by email"), {
+      target: { value: "a@example.com, b@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send invites" }));
+
+    await waitFor(() => expect(emailInvitesMutate).toHaveBeenCalledTimes(1));
+    expect(emailInvitesMutate).toHaveBeenCalledWith({
+      role: "Member",
+      emails: ["a@example.com", "b@example.com"],
+    });
+    await waitFor(() =>
+      expect(screen.getByText("Sent 2 invites.")).toBeInTheDocument(),
+    );
+  });
+
+  it("de-dupes addresses case-insensitively before sending", async () => {
+    emailInvitesMutate.mockResolvedValue({ invites: [{ token: "t1" }], failed: [] });
+
+    render(<ChapterWizard onComplete={() => {}} />);
+    await gotoInviteStep();
+
+    fireEvent.change(screen.getByLabelText("Or invite by email"), {
+      target: { value: "Same@Example.com\nsame@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send invites" }));
+
+    await waitFor(() => expect(emailInvitesMutate).toHaveBeenCalledTimes(1));
+    expect(emailInvitesMutate).toHaveBeenCalledWith({
+      role: "Member",
+      emails: ["Same@Example.com"],
+    });
+  });
+
+  it("reports per-address delivery failures without hiding that the tokens were still created", async () => {
+    emailInvitesMutate.mockResolvedValue({
+      invites: [{ token: "t1" }, { token: "t2" }],
+      failed: ["bad@example.com"],
+    });
+
+    render(<ChapterWizard onComplete={() => {}} />);
+    await gotoInviteStep();
+
+    fireEvent.change(screen.getByLabelText("Or invite by email"), {
+      target: { value: "ok@example.com, bad@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send invites" }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("1 invite could not be emailed"),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.getByText("bad@example.com")).toBeInTheDocument();
+  });
+
+  it("rejects an invalid address client-side without calling the API", async () => {
+    render(<ChapterWizard onComplete={() => {}} />);
+    await gotoInviteStep();
+
+    fireEvent.change(screen.getByLabelText("Or invite by email"), {
+      target: { value: "not-an-email" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send invites" }));
+
+    expect(emailInvitesMutate).not.toHaveBeenCalled();
   });
 });
 

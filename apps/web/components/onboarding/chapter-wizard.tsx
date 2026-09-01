@@ -10,6 +10,7 @@ import {
   Check,
   Copy,
   Loader2,
+  Mail,
   PencilLine,
 } from "lucide-react";
 import {
@@ -22,12 +23,15 @@ import {
   useAccessibleChapters,
   useChapterDirectorySearch,
   useCreateInvite,
+  useEmailInvites,
   useOnboardChapter,
   type ChapterDirectoryResult,
 } from "@repo/hooks";
+import { EmailInviteSchema, dedupeEmails } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Command,
   CommandInput,
@@ -139,6 +143,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
 
   const onboardChapter = useOnboardChapter();
   const createInvite = useCreateInvite();
+  const emailInvites = useEmailInvites();
 
   const [step, setStep] = useState<WizardStep>("find");
   const [rawQuery, setRawQuery] = useState("");
@@ -150,6 +155,12 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [acceptedLegal, setAcceptedLegal] = useState(false);
+  const [emailInput, setEmailInput] = useState("");
+  const [emailStatus, setEmailStatus] = useState<
+    "idle" | "sending" | "sent"
+  >("idle");
+  const [emailFailures, setEmailFailures] = useState<string[]>([]);
+  const [emailSentCount, setEmailSentCount] = useState(0);
 
   const searchQuery = useChapterDirectorySearch(debouncedQuery, {
     enabled: step === "find",
@@ -273,6 +284,63 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
     }
   }
 
+  function parseEmailInput(value: string): string[] {
+    // Comma- or newline-separated, matching the placeholder copy.
+    // `dedupeEmails` is the same de-dup the server runs in
+    // `InviteService.createWithEmails`, shared via @repo/validation so the
+    // two runtimes' notion of "how many unique addresses" can't drift apart.
+    return dedupeEmails(value.split(/[,\n]/));
+  }
+
+  async function sendEmailInvites() {
+    const emails = parseEmailInput(emailInput);
+    if (emails.length === 0) return;
+
+    const parsed = EmailInviteSchema.safeParse({ role: INVITE_ROLE, emails });
+    if (!parsed.success) {
+      toast({
+        title: "Check the email addresses",
+        description:
+          "One or more addresses look invalid, or the list has more than 50.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setEmailStatus("sending");
+    try {
+      const result = await emailInvites.mutateAsync({
+        role: INVITE_ROLE,
+        emails,
+      });
+      const failed =
+        result && typeof result === "object" && "failed" in result
+          ? (result as { failed?: string[] }).failed ?? []
+          : [];
+      const invites =
+        result && typeof result === "object" && "invites" in result
+          ? (result as { invites?: unknown[] }).invites ?? []
+          : [];
+      setEmailFailures(failed);
+      setEmailSentCount(invites.length - failed.length);
+      setEmailStatus("sent");
+      setEmailInput("");
+      if (failed.length === 0 && invites.length > 0) {
+        toast({
+          title: "Invites sent",
+          description: `Emailed ${invites.length} invite${invites.length === 1 ? "" : "s"}.`,
+        });
+      }
+    } catch (error) {
+      setEmailStatus("idle");
+      toast({
+        title: "Unable to send invites",
+        description: getErrorMessage(error, "Please try again in a moment."),
+        variant: "destructive",
+      });
+    }
+  }
+
   function finish() {
     onComplete();
     router.replace(CHAT_LANDING_PATH);
@@ -360,6 +428,12 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
                   isGenerating={createInvite.isPending}
                   onGenerate={generateInviteLink}
                   onCopy={copyInviteLink}
+                  emailInput={emailInput}
+                  onEmailInputChange={setEmailInput}
+                  emailStatus={emailStatus}
+                  emailFailures={emailFailures}
+                  emailSentCount={emailSentCount}
+                  onSendEmails={sendEmailInvites}
                 />
               ) : null}
             </main>
@@ -394,7 +468,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
 
               {step === "invite" ? (
                 <Button onClick={finish}>
-                  {inviteLink ? "Finish" : "Skip for now"}
+                  {inviteLink || emailSentCount > 0 ? "Finish" : "Skip for now"}
                   <ArrowRight className="h-4 w-4" />
                 </Button>
               ) : null}
@@ -799,12 +873,24 @@ function InviteStep({
   isGenerating,
   onGenerate,
   onCopy,
+  emailInput,
+  onEmailInputChange,
+  emailStatus,
+  emailFailures,
+  emailSentCount,
+  onSendEmails,
 }: {
   inviteLink: string | null;
   copied: boolean;
   isGenerating: boolean;
   onGenerate: () => void;
   onCopy: () => void;
+  emailInput: string;
+  onEmailInputChange: (value: string) => void;
+  emailStatus: "idle" | "sending" | "sent";
+  emailFailures: string[];
+  emailSentCount: number;
+  onSendEmails: () => void;
 }) {
   return (
     <div className="space-y-4">
@@ -840,6 +926,59 @@ function InviteStep({
           </p>
         </div>
       ) : null}
+
+      <div className="space-y-2 rounded-lg border border-border p-4">
+        <Label htmlFor="wiz-invite-emails">Or invite by email</Label>
+        <Textarea
+          id="wiz-invite-emails"
+          placeholder="name@example.com, another@example.com"
+          value={emailInput}
+          onChange={(event) => onEmailInputChange(event.target.value)}
+          disabled={emailStatus === "sending"}
+        />
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground">
+            Separate addresses with commas or new lines. Up to 50 at a time.
+          </p>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={onSendEmails}
+            disabled={emailStatus === "sending" || emailInput.trim().length === 0}
+          >
+            {emailStatus === "sending" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Mail className="h-4 w-4" />
+            )}
+            Send invites
+          </Button>
+        </div>
+
+        {emailStatus === "sent" && emailFailures.length === 0 && emailSentCount > 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Sent {emailSentCount} invite{emailSentCount === 1 ? "" : "s"}.
+          </p>
+        ) : null}
+
+        {emailFailures.length > 0 ? (
+          <div className="rounded-md border border-border p-3 text-sm">
+            <p className="font-semibold text-destructive-text">
+              {emailFailures.length} invite{emailFailures.length === 1 ? "" : "s"} could
+              not be emailed
+            </p>
+            <p className="mt-1 text-muted-foreground">
+              Their invite links were still created — share the link above, or
+              retry these addresses.
+            </p>
+            <ul className="mt-2 max-h-32 space-y-0.5 overflow-y-auto text-xs text-muted-foreground">
+              {emailFailures.slice(0, 20).map((email) => (
+                <li key={email}>{email}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
 
       <p className="text-xs text-muted-foreground">
         Frapp collects pseudonymous usage analytics (on by default) to fix bugs
