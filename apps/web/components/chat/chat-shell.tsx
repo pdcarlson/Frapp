@@ -125,8 +125,10 @@ function ChannelHeaderMark({
  */
 export function ChatShell({
   initialChannelId = null,
+  initialMessageId = null,
 }: {
   initialChannelId?: string | null;
+  initialMessageId?: string | null;
 } = {}) {
   const activeChapterId = useChapterStore((state) => state.activeChapterId);
   const { userId } = useFrappUser();
@@ -173,13 +175,27 @@ export function ChatShell({
   );
 
   // Initialized once from the `?channel=` query param a caller (e.g. the
-  // member directory's Message action) may navigate here with — see
-  // `activeChannelId` below for what happens before that channel has loaded
-  // into `channels`.
+  // member directory's Message action, a chat notification, a command-palette
+  // search hit) may navigate here with — see `activeChannelId` below for what
+  // happens before that channel has loaded into `channels`.
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(
     initialChannelId,
   );
+  // A caller-supplied channel id can be stale (deleted channel) or
+  // inaccessible (membership changed since the link was made). Falling back
+  // to #general for either case *silently* would make a broken deep link
+  // indistinguishable from an intentional one — so this is tracked
+  // separately from "no target was requested at all", and surfaces its own
+  // empty state below rather than folding into the general fallback.
+  const [channelTargetDismissed, setChannelTargetDismissed] = useState(false);
+  const requestedChannelMissing =
+    !channelTargetDismissed &&
+    initialChannelId !== null &&
+    selectedChannelId === initialChannelId &&
+    channels.length > 0 &&
+    !channels.some((ch) => ch.id === initialChannelId);
   const activeChannelId = useMemo(() => {
+    if (requestedChannelMissing) return null;
     if (
       selectedChannelId &&
       channels.some((ch) => ch.id === selectedChannelId)
@@ -188,7 +204,7 @@ export function ChatShell({
     }
     if (channels.length === 0) return null;
     return channels.find((ch) => ch.name === "general")?.id ?? channels[0]!.id;
-  }, [selectedChannelId, channels]);
+  }, [selectedChannelId, channels, requestedChannelMissing]);
 
   const activeChannel = useMemo(
     () => channels.find((ch) => ch.id === activeChannelId) ?? null,
@@ -321,6 +337,28 @@ export function ChatShell({
     timeline.current?.scrollToMessage(messageId);
   }, []);
 
+  // A caller-supplied `?message=` jumps to that message once, the first time
+  // its channel's messages finish loading. Tracked in a ref rather than
+  // state so this never re-fires after the member scrolls or picks a
+  // different channel — it is a one-shot arrival behavior, not a pin.
+  const pendingMessageId = useRef(initialMessageId);
+  useEffect(() => {
+    const targetId = pendingMessageId.current;
+    if (!targetId) return;
+    // Only meaningful against the channel the link actually named — a
+    // message id from one channel would be nonsense to look up in another.
+    if (activeChannelId !== initialChannelId) return;
+    if (channel.isLoading || channel.messages.length === 0) return;
+    jumpToMessage(targetId);
+    pendingMessageId.current = null;
+  }, [
+    activeChannelId,
+    initialChannelId,
+    channel.isLoading,
+    channel.messages,
+    jumpToMessage,
+  ]);
+
   const [threadParentId, setThreadParentId] = useState<string | null>(null);
   const threadParent = useMemo(() => {
     if (!threadParentId) return null;
@@ -353,6 +391,16 @@ export function ChatShell({
       <EmptyState
         title="No channels yet"
         description="New chapters seed #general, #announcements, and #chapter-audit during onboarding. Ask an admin if none appear."
+      />
+    );
+  }
+  if (requestedChannelMissing) {
+    return (
+      <EmptyState
+        title="Channel not found"
+        description="This link points to a channel that's been removed, or one you no longer have access to."
+        actionLabel="Browse channels"
+        onAction={() => setChannelTargetDismissed(true)}
       />
     );
   }

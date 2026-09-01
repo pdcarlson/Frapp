@@ -19,6 +19,7 @@ import { formatLocaleDateTime as formatTime } from "@repo/formatting";
 import { asArray } from "@/lib/utils";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
+import { chatDeepLink } from "@/lib/chat/chat-links";
 
 type DashboardNotificationDrawerProps = {
   open: boolean;
@@ -53,13 +54,18 @@ type Notification = {
  * sends users to native screens. The web versions of those screens are
  * only subset; we fall back to `/chat` when a screen isn't yet built so
  * links never dead-end.
+ *
+ * A chat notification's `target` never carries a `messageId` — the chat
+ * push worker has never emitted one (`spec/behavior/notifications.md` §
+ * Deep Linking is explicit that clients must not read one) — so this only
+ * ever forwards `channelId` through `chatDeepLink`.
  */
 function deepLinkFor(notification: Notification): string {
   const target = notification.data?.target;
   if (!target) return "/chat";
   switch (target.screen) {
     case "chat":
-      return "/chat";
+      return chatDeepLink({ channelId: target.channelId });
     case "events":
       return "/events";
     case "points":
