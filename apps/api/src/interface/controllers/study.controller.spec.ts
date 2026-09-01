@@ -184,8 +184,27 @@ describe('StudyController', () => {
           chapterId,
           dto.lat,
           dto.lng,
+          undefined,
         );
         expect(result).toEqual(expectedResult);
+      });
+
+      it('forwards accuracy_meters to studyService.heartbeat when the client sends one', async () => {
+        const userId = 'user-123';
+        const chapterId = 'chapter-123';
+        const dto = { lat: 10, lng: 20, accuracy_meters: 42 };
+        const expectedResult = { status: 'ok' };
+        studyService.heartbeat.mockResolvedValue(expectedResult as any);
+
+        await sessionController.heartbeat(userId, chapterId, dto);
+
+        expect(studyService.heartbeat).toHaveBeenCalledWith(
+          userId,
+          chapterId,
+          dto.lat,
+          dto.lng,
+          42,
+        );
       });
     });
 
