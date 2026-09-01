@@ -43,8 +43,7 @@ import { execSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { loadEnvFiles } from "./lib/env-file.mjs";
-import { githubHeaders } from "./ci/lib/github.mjs";
-import { fetchWithRetry } from "./ci/lib/http.mjs";
+import { ghRequest } from "./ci/lib/github.mjs";
 import { ALL_REQUIRED_CHECKS } from "./ci/lib/required-checks.mjs";
 
 // ── CLI argument parsing ────────────────────────────────────────────────────
@@ -138,18 +137,15 @@ function resolveToken() {
 // ── GitHub API ──────────────────────────────────────────────────────────────
 
 async function callGitHubApi({ token, method, path, body, allowUnprotected = false }) {
-  // `fetchWithRetry` rather than a bare `fetch`: it carries a timeout (Node's
-  // global fetch has none, so a hung socket would stall the run indefinitely)
-  // and it scopes retry to idempotent methods, so the reads below retry a
-  // transient 429/5xx while the PUT still gets exactly one attempt.
-  const response = await fetchWithRetry(`https://api.github.com${path}`, {
-    method,
-    headers: githubHeaders({ token, hasBody: Boolean(body) }),
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  // `retry: true` is safe on every call here, including the PUT: `fetchWithRetry`
+  // underneath scopes retries to idempotent methods, so a PUT still gets exactly
+  // one attempt (and a longer deadline) while the reads retry a transient
+  // 429/5xx. What both gain is a timeout — Node's global `fetch` has none, so a
+  // hung socket would otherwise stall the run indefinitely.
+  const result = await ghRequest({ token, method, path, body, retry: true });
 
-  if (!response.ok) {
-    const text = await response.text();
+  if (!result.ok) {
+    const text = typeof result.data === "string" ? result.data : JSON.stringify(result.data);
 
     // A branch with no protection rule answers 404 with "Branch not protected",
     // which is a legitimate "before" state for the read-back rather than an
@@ -159,24 +155,29 @@ async function callGitHubApi({ token, method, path, body, allowUnprotected = fal
     // two would report a typo'd --repo as "this branch has no protection" and
     // then prescribe a governance PUT to fix it, so only the first is excused
     // and the body is what distinguishes them.
-    if (allowUnprotected && response.status === 404 && /branch not protected/i.test(text)) {
+    if (allowUnprotected && result.status === 404 && /branch not protected/i.test(text)) {
       return null;
     }
 
-    throw new Error(`${method} ${path} failed (${response.status}): ${text}`);
+    throw new Error(`${method} ${path} failed (${result.status}): ${text}`);
   }
-
-  return response.json();
+  return result.data;
 }
 
 /**
- * An error's message plus its `cause`, which is where Node's `fetch` puts the
- * actual diagnosis.
+ * An error's message plus its `cause`, when it has one.
  *
- * Without this every transport failure reads `fetch failed` — DNS, connection
- * refused, a TLS/CA-bundle rejection and a proxy reset are indistinguishable,
- * so an expired token and a broken CA bundle both get blamed on the sandbox
- * proxy. The cause is the only thing that tells them apart.
+ * The failure this guards against is every transport error reading `fetch
+ * failed` — DNS, connection refused, a TLS/CA-bundle rejection and a proxy
+ * reset are indistinguishable on `.message` alone, so an expired token and a
+ * broken CA bundle both end up blamed on the sandbox proxy.
+ *
+ * Note `ghRequest` now catches network-level rejections itself and returns
+ * `{ok: false, status: 0, data: error.message}`, so what reaches here is
+ * usually the Error this file constructed from that — already carrying the
+ * message, and with no `cause` to unwrap. This stays because it is the
+ * difference between a legible failure and a misleading one if any caller in
+ * this file ever throws a raw transport error again.
  */
 function describeError(error) {
   if (!(error instanceof Error)) return String(error);

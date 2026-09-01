@@ -14,8 +14,11 @@
 //     before the merge. A dispatch has no PR and therefore no required checks,
 //     so this asks the checks API directly, against the same
 //     `ALL_REQUIRED_CHECKS` list `configure-branch-protection.mjs` writes to
-//     GitHub. Importing that list rather than restating it is deliberate: two
-//     copies drift, and the copy that drifts is the one nobody reads.
+//     GitHub — imported from `lib/required-checks.mjs`, which is where that
+//     roster lives, rather than from the script that applies it (#1383: the
+//     deploy path must not import a module that writes governance). Importing
+//     the list rather than restating it is deliberate: two copies drift, and
+//     the copy that drifts is the one nobody reads.
 //
 // Both assertions are fatal. "Could not tell" is never a pass — an unreadable
 // checks API fails the deploy, for the same reason `check-migration-drift.mjs`
@@ -52,14 +55,14 @@ import { execFileSync } from "node:child_process";
 import { ALL_REQUIRED_CHECKS } from "./lib/required-checks.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { resilientFetch } from "./lib/http.mjs";
-import { githubHeaders } from "./lib/github.mjs";
+import { ghRequest } from "./lib/github.mjs";
 
 export const SHA_PATTERN = /^[0-9a-f]{40}$/;
 
 // GitHub counts all three as satisfying a required check, and so does branch
 // protection. `skipped` is the load-bearing one: this repo path-gates several
 // required jobs with a job-level `if:`, and a job skipped that way reports
-// Success. See the long note in `configure-branch-protection.mjs`.
+// Success. See the long note in `lib/required-checks.mjs`.
 export const ACCEPTED_CONCLUSIONS = new Set(["success", "skipped", "neutral"]);
 
 /**
@@ -94,8 +97,8 @@ export const ACCEPTED_CONCLUSIONS = new Set(["success", "skipped", "neutral"]);
  */
 export const CANCELLED_CONCLUSIONS = new Set(["cancelled", "timed_out", "stale"]);
 
-const CHECK_RUNS_URL = (repo, sha, page) =>
-  `https://api.github.com/repos/${repo}/commits/${sha}/check-runs?per_page=100&page=${page}`;
+const CHECK_RUNS_PATH = (repo, sha, page) =>
+  `/repos/${repo}/commits/${sha}/check-runs?per_page=100&page=${page}`;
 
 /**
  * A 40-character lowercase hex string and nothing else.
@@ -323,14 +326,21 @@ export function jobIdsAtRef({ ref, git = defaultGit }) {
 export async function fetchCheckRuns({ repo, sha, token, fetchImpl = resilientFetch, maxPages = 10 }) {
   const runs = [];
   for (let page = 1; page <= maxPages; page += 1) {
-    const response = await fetchImpl(CHECK_RUNS_URL(repo, sha, page), {
-      headers: githubHeaders({ token }),
-    });
-    if (!response.ok) {
-      throw new Error(`GitHub checks API returned HTTP ${response.status} for ${sha}`);
+    const result = await ghRequest({ token, fetchImpl, path: CHECK_RUNS_PATH(repo, sha, page) });
+    if (!result.ok) {
+      const detail = result.data ? `: ${result.data}` : "";
+      throw new Error(`GitHub checks API returned HTTP ${result.status} for ${sha}${detail}`);
     }
-    const body = await response.json();
-    const batch = Array.isArray(body?.check_runs) ? body.check_runs : [];
+    // A 2xx with an unparseable body (a proxy/CDN error page, say) leaves
+    // `result.data` as the raw response text rather than an object, so
+    // `.check_runs` reads `undefined`. Falling back to `[]` there would read
+    // as "this commit has zero check runs" — a false, definitive FAILURE
+    // verdict downstream — instead of the honest "could not read CI status"
+    // a malformed response deserves.
+    if (!Array.isArray(result.data?.check_runs)) {
+      throw new Error(`GitHub checks API returned an unexpected payload for ${sha} (page ${page})`);
+    }
+    const batch = result.data.check_runs;
     runs.push(...batch);
     if (batch.length < 100) break;
   }
