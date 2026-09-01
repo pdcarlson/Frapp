@@ -116,6 +116,11 @@ export const CreateInviteSchema = z.object({
   role: z.string().min(1),
 });
 
+export const EmailInviteSchema = z.object({
+  role: z.string().min(1),
+  emails: z.array(z.string().email()).min(1).max(50),
+});
+
 export const RedeemInviteSchema = z.object({
   token: z.string().uuid(),
 });
@@ -728,6 +733,7 @@ export type CreateChapter = z.infer<typeof CreateChapterSchema>;
 export type CreateRole = z.infer<typeof CreateRoleSchema>;
 export type UpdateMemberRoles = z.infer<typeof UpdateMemberRolesSchema>;
 export type CreateInvite = z.infer<typeof CreateInviteSchema>;
+export type EmailInvite = z.infer<typeof EmailInviteSchema>;
 export type RedeemInvite = z.infer<typeof RedeemInviteSchema>;
 export type UpdateUser = z.infer<typeof UpdateUserSchema>;
 export type UpdateAttendance = z.infer<typeof UpdateAttendanceSchema>;

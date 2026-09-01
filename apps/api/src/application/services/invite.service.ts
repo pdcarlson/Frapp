@@ -7,6 +7,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { INVITE_REPOSITORY } from '../../domain/repositories/invite.repository.interface';
 import type { IInviteRepository } from '../../domain/repositories/invite.repository.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
@@ -17,6 +18,18 @@ import { Invite } from '../../domain/entities/invite.entity';
 import { SystemRoleKeys } from '../../domain/constants/permissions';
 import { NotificationService } from './notification.service';
 import { ActivationService } from './activation.service';
+import { EMAIL_PROVIDER } from '../../domain/adapters/email.interface';
+import type { IEmailProvider } from '../../domain/adapters/email.interface';
+import {
+  resolveAppOrigin,
+  buildJoinUrl,
+} from '../../infrastructure/email/invite-link.util';
+
+export interface BulkEmailInviteResult {
+  invites: Invite[];
+  /** Addresses whose invite token was created but the email failed to send. */
+  failed: string[];
+}
 
 @Injectable()
 export class InviteService {
@@ -26,6 +39,8 @@ export class InviteService {
     @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
     private readonly notificationService: NotificationService,
     private readonly activation: ActivationService,
+    @Inject(EMAIL_PROVIDER) private readonly emailProvider: IEmailProvider,
+    private readonly config: ConfigService,
   ) {}
 
   private prepareInviteData(
@@ -77,6 +92,58 @@ export class InviteService {
       batch_size: invites.length,
     });
     return invites;
+  }
+
+  /**
+   * Create one invite token per email address and send each an emailed join
+   * link. Free-tier, same as `create`/`createBatch` — no billing check here;
+   * the not-billing-gated guarantee lives in the controller's decorators.
+   *
+   * Email delivery is best-effort per address: a send failure never rolls
+   * back the invite token (the token is still valid and can be shared
+   * manually), it is only reported back in `failed` so the caller can retry
+   * or fall back to the share link for those addresses.
+   */
+  async createWithEmails(
+    chapterId: string,
+    createdBy: string,
+    role: string,
+    emails: string[],
+  ): Promise<BulkEmailInviteResult> {
+    // Case-insensitive de-dup (the same address typed with different casing
+    // should not mint two tokens), preserving the first-seen casing to send to.
+    const seen = new Set<string>();
+    const uniqueEmails: string[] = [];
+    for (const email of emails) {
+      const trimmed = email.trim();
+      const key = trimmed.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      uniqueEmails.push(trimmed);
+    }
+
+    const inviteData = uniqueEmails.map(() =>
+      this.prepareInviteData(chapterId, createdBy, role),
+    );
+    const invites = await this.inviteRepo.createMany(inviteData);
+
+    const origin = resolveAppOrigin(this.config);
+    const delivered = await Promise.all(
+      invites.map((invite, i) =>
+        this.emailProvider.sendInviteEmail({
+          to: uniqueEmails[i],
+          joinUrl: buildJoinUrl(invite.token, origin),
+          role,
+        }),
+      ),
+    );
+    const failed = uniqueEmails.filter((_, i) => !delivered[i]);
+
+    await this.activation.record(chapterId, 'activation-first-invite-created', {
+      batch_size: invites.length,
+    });
+
+    return { invites, failed };
   }
 
   async redeem(

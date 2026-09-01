@@ -23,6 +23,9 @@ import type { Member } from '../../domain/entities/member.entity';
 import { SystemRoleKeys } from '../../domain/constants/permissions';
 import { NotificationService } from './notification.service';
 import { ActivationService } from './activation.service';
+import { ConfigService } from '@nestjs/config';
+import { EMAIL_PROVIDER } from '../../domain/adapters/email.interface';
+import type { IEmailProvider } from '../../domain/adapters/email.interface';
 
 describe('InviteService', () => {
   let service: InviteService;
@@ -33,6 +36,8 @@ describe('InviteService', () => {
     Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
   >;
   let mockActivation: jest.Mocked<Pick<ActivationService, 'record'>>;
+  let mockEmailProvider: jest.Mocked<IEmailProvider>;
+  let mockConfig: jest.Mocked<Pick<ConfigService, 'get'>>;
 
   beforeEach(async () => {
     mockInviteRepo = {
@@ -72,6 +77,9 @@ describe('InviteService', () => {
 
     mockActivation = { record: jest.fn().mockResolvedValue(true) };
 
+    mockEmailProvider = { sendInviteEmail: jest.fn().mockResolvedValue(true) };
+    mockConfig = { get: jest.fn().mockReturnValue(undefined) };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         InviteService,
@@ -80,6 +88,8 @@ describe('InviteService', () => {
         { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: ActivationService, useValue: mockActivation },
+        { provide: EMAIL_PROVIDER, useValue: mockEmailProvider },
+        { provide: ConfigService, useValue: mockConfig },
       ],
     }).compile();
 
@@ -156,6 +166,106 @@ describe('InviteService', () => {
       'activation-first-invite-created',
       { batch_size: 3 },
     );
+  });
+
+  describe('createWithEmails', () => {
+    beforeEach(() => {
+      mockInviteRepo.createMany.mockImplementation((data) =>
+        Promise.resolve(
+          data.map((d, i) => ({
+            id: `inv-${i + 1}`,
+            token: `token-${i + 1}`,
+            chapter_id: d.chapter_id!,
+            role: d.role!,
+            expires_at: d.expires_at!,
+            created_by: d.created_by!,
+            used_at: null,
+            created_at: '2024-01-01',
+          })),
+        ),
+      );
+    });
+
+    it('creates one invite per unique email and sends each a join link', async () => {
+      const result = await service.createWithEmails(
+        'ch-1',
+        'user-1',
+        'Member',
+        ['a@example.com', 'b@example.com'],
+      );
+
+      expect(mockInviteRepo.createMany).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ chapter_id: 'ch-1', role: 'Member' }),
+        ]),
+      );
+      expect(mockInviteRepo.createMany.mock.calls[0][0]).toHaveLength(2);
+      expect(mockEmailProvider.sendInviteEmail).toHaveBeenCalledTimes(2);
+      expect(mockEmailProvider.sendInviteEmail).toHaveBeenCalledWith({
+        to: 'a@example.com',
+        joinUrl: 'https://app.frapp.live/join?token=token-1',
+        role: 'Member',
+      });
+      expect(result.invites).toHaveLength(2);
+      expect(result.failed).toEqual([]);
+    });
+
+    it('de-dupes case-insensitively, keeping the first-seen casing', async () => {
+      await service.createWithEmails('ch-1', 'user-1', 'Member', [
+        'Same@Example.com',
+        'same@example.com',
+      ]);
+
+      expect(mockInviteRepo.createMany.mock.calls[0][0]).toHaveLength(1);
+      expect(mockEmailProvider.sendInviteEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ to: 'Same@Example.com' }),
+      );
+    });
+
+    it('builds the join link against a configured APP_URL', async () => {
+      mockConfig.get.mockImplementation((key: string) =>
+        key === 'APP_URL' ? 'https://app.staging.frapp.live/' : undefined,
+      );
+
+      await service.createWithEmails('ch-1', 'user-1', 'Member', [
+        'a@example.com',
+      ]);
+
+      expect(mockEmailProvider.sendInviteEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          joinUrl: 'https://app.staging.frapp.live/join?token=token-1',
+        }),
+      );
+    });
+
+    it('reports a per-address failure without failing the whole batch', async () => {
+      mockEmailProvider.sendInviteEmail
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false);
+
+      const result = await service.createWithEmails(
+        'ch-1',
+        'user-1',
+        'Member',
+        ['ok@example.com', 'bad@example.com'],
+      );
+
+      expect(result.invites).toHaveLength(2);
+      expect(result.failed).toEqual(['bad@example.com']);
+    });
+
+    it('records the invite-created activation milestone with the real batch size', async () => {
+      await service.createWithEmails('ch-1', 'user-1', 'Member', [
+        'a@example.com',
+        'b@example.com',
+      ]);
+
+      expect(mockActivation.record).toHaveBeenCalledWith(
+        'ch-1',
+        'activation-first-invite-created',
+        { batch_size: 2 },
+      );
+    });
   });
 
   it('records the invite-created activation milestone on a single invite (#267)', async () => {

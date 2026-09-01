@@ -1371,6 +1371,36 @@
         ]
       }
     },
+    "/v1/invites/email": {
+      "post": {
+        "operationId": "InviteController_createWithEmails_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkEmailInviteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Generate invite tokens and email each address a join link",
+        "tags": [
+          "Invites"
+        ]
+      }
+    },
     "/v1/invites/redeem": {
       "post": {
         "operationId": "InviteController_redeem_v1",
@@ -7117,6 +7147,26 @@
         "required": [
           "role",
           "count"
+        ]
+      },
+      "BulkEmailInviteDto": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "description": "Role name to assign"
+          },
+          "emails": {
+            "description": "Email addresses to invite, one invite token per address",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "role",
+          "emails"
         ]
       },
       "RedeemInviteDto": {

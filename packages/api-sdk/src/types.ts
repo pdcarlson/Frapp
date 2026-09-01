@@ -551,6 +551,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/invites/email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate invite tokens and email each address a join link */
+        post: operations["InviteController_createWithEmails_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/invites/redeem": {
         parameters: {
             query?: never;
@@ -2840,6 +2857,12 @@ export interface components {
             /** @description Number of invites to generate */
             count: number;
         };
+        BulkEmailInviteDto: {
+            /** @description Role name to assign */
+            role: string;
+            /** @description Email addresses to invite, one invite token per address */
+            emails: string[];
+        };
         RedeemInviteDto: {
             token: string;
         };
@@ -4391,6 +4414,27 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["BatchCreateInvitesDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    InviteController_createWithEmails_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkEmailInviteDto"];
             };
         };
         responses: {
