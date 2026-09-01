@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, LayoutGrid, List } from "lucide-react";
 import { InviteGlyph, SearchGlyph } from "@/components/members/directory-glyphs";
 import {
@@ -97,13 +97,17 @@ export function MembersDirectory() {
   const [detailSheetOpen, setDetailSheetOpen] = useState(false);
 
   const trimmedQuery = query.trim();
+  // Keeps typing responsive without a debounce timer of our own: the query only
+  // re-runs once React has caught up with the keystrokes. Matches the mobile
+  // directory screen's guard against firing a request per keystroke.
+  const deferredQuery = useDeferredValue(trimmedQuery);
   const membersQuery = useMembers();
-  const searchQuery = useMemberSearch(trimmedQuery);
+  const searchQuery = useMemberSearch(deferredQuery);
   const rolesQuery = useRoles();
   const leaderboardQuery = useLeaderboard();
   const orgConfig = useOrgConfig();
   const updateRolesMutation = useUpdateMemberRoles();
-  const usingSearch = trimmedQuery.length > 0;
+  const usingSearch = deferredQuery.length > 0;
   const activeQuery = usingSearch ? searchQuery : membersQuery;
 
   const members = useMemo(() => {
@@ -494,7 +498,7 @@ export function MembersDirectory() {
             <CardTitle className="text-lg">Member Records</CardTitle>
             <CardDescription>
               {usingSearch
-                ? `Search results for “${trimmedQuery}”`
+                ? `Search results for “${deferredQuery}”`
                 : `${sortedMembers.length} member${sortedMembers.length === 1 ? "" : "s"}`}
             </CardDescription>
           </CardHeader>

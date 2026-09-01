@@ -95,6 +95,28 @@ describe("SubscriptionCheckoutCard", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it("gives a lapsed chapter's card a different tone than an unstarted one (#1201)", () => {
+    // `incomplete` never started; `past_due`/`canceled` are a working
+    // subscription that regressed — §5's danger. Before this, all three
+    // rendered on the same neutral `border-accent-border`, so a genuinely
+    // lapsed chapter looked identical to one mid-checkout.
+    setChapter("incomplete");
+    const { container: incompleteContainer } = renderCard();
+    const incompleteCard = incompleteContainer.firstElementChild as HTMLElement;
+    expect(incompleteCard.className).toContain("border-warning");
+    expect(incompleteCard.className).not.toContain("border-destructive");
+
+    setChapter("past_due");
+    const { container: pastDueContainer } = renderCard();
+    const pastDueCard = pastDueContainer.firstElementChild as HTMLElement;
+    expect(pastDueCard.className).toContain("border-destructive");
+
+    setChapter("canceled");
+    const { container: canceledContainer } = renderCard();
+    const canceledCard = canceledContainer.firstElementChild as HTMLElement;
+    expect(canceledCard.className).toContain("border-destructive");
+  });
+
   it("never offers checkout to a past_due chapter, which would double-subscribe", async () => {
     // A past_due subscription is live and in dunning. A second checkout would
     // bill the chapter twice indefinitely and orphan the first subscription
