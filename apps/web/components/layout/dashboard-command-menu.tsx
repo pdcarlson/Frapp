@@ -1,9 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import {
+  SEARCH_COMPLETED_EVENT,
   SEARCH_MIN_QUERY_LENGTH,
   useMyPermissions,
   useOrgConfig,
@@ -24,6 +25,7 @@ import { isNavItemVisible } from "@/components/layout/protected-nav-item";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { asArray } from "@/lib/utils";
 import { chatDeepLink } from "@/lib/chat/chat-links";
+import { AnalyticsContext } from "@/lib/providers/analytics-provider";
 
 type DashboardCommandMenuProps = {
   open: boolean;
@@ -148,6 +150,36 @@ function buildSearchGroups(payload: unknown): SearchGroup[] {
   return groups;
 }
 
+/**
+ * Per-domain result counts for search telemetry — the true counts, not the
+ * `buildSearchGroups` display slice (capped to 5 per domain for rendering).
+ * A separate small function rather than folding into `buildSearchGroups`:
+ * that one builds label/href UI structures, this one only needs lengths.
+ */
+function countSearchResults(payload: unknown): {
+  backwork: number;
+  events: number;
+  members: number;
+  messages: number;
+  total: number;
+} {
+  const bag =
+    payload && typeof payload === "object"
+      ? (payload as Record<string, unknown>)
+      : {};
+  const backwork = asArray(bag.backwork).length;
+  const events = asArray(bag.events).length;
+  const members = asArray(bag.members).length;
+  const messages = asArray(bag.messages).length;
+  return {
+    backwork,
+    events,
+    members,
+    messages,
+    total: backwork + events + members + messages,
+  };
+}
+
 function describeTimeoutNotice(sources: SearchSource[]): string {
   const labels = sources.map((source) => SOURCE_LABELS[source]);
   const list =
@@ -178,6 +210,54 @@ export function DashboardCommandMenu({
   const debouncedQuery = useDebouncedValue(query.trim(), 200);
   const hasMinQuery = debouncedQuery.length >= SEARCH_MIN_QUERY_LENGTH;
   const searchResults = useSearch(debouncedQuery);
+
+  // Search telemetry (spec/behavior/observability.md § Search Telemetry).
+  // `track` is `null` outside `AnalyticsProvider` (tests, or an opted-out
+  // chapter) — the call below is a no-op then, same contract as every other
+  // `AnalyticsContext` consumer.
+  const track = useContext(AnalyticsContext);
+  // The debounce settling is when a search attempt actually starts from the
+  // member's perspective, so latency is measured from there — arguably more
+  // relevant than raw fetch time, since it is what the member experienced as
+  // "how long until results appeared."
+  const searchStartRef = useRef(0);
+  useEffect(() => {
+    searchStartRef.current = Date.now();
+  }, [debouncedQuery]);
+  // `dataUpdatedAt` (not the query string) dedupes: `useSearch` sets
+  // `staleTime: 0`, so re-running the identical query in a later session
+  // still refetches and must still be tracked — comparing query strings
+  // would silently skip that repeat.
+  const trackedAtRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (!hasMinQuery) return;
+    if (searchResults.isFetching) return;
+    if (!searchResults.data) return;
+    if (searchResults.dataUpdatedAt === trackedAtRef.current) return;
+    trackedAtRef.current = searchResults.dataUpdatedAt;
+
+    const counts = countSearchResults(searchResults.data.payload);
+    track?.(SEARCH_COMPLETED_EVENT, {
+      surface: "command-menu",
+      query_length: debouncedQuery.length,
+      query_word_count: debouncedQuery.split(/\s+/).filter(Boolean).length,
+      backwork_count: counts.backwork,
+      events_count: counts.events,
+      members_count: counts.members,
+      messages_count: counts.messages,
+      total_count: counts.total,
+      zero_result: counts.total === 0,
+      timed_out: searchResults.data.timedOut,
+      latency_ms: Date.now() - searchStartRef.current,
+    });
+  }, [
+    hasMinQuery,
+    searchResults.isFetching,
+    searchResults.data,
+    searchResults.dataUpdatedAt,
+    debouncedQuery,
+    track,
+  ]);
 
   const groups = useMemo(
     () => (hasMinQuery ? buildSearchGroups(searchResults.data?.payload) : []),

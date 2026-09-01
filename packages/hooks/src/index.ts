@@ -20,6 +20,7 @@ export * from "./use-polls";
 export * from "./use-semesters";
 export * from "./use-reports";
 export * from "./use-search";
+export * from "./search-analytics";
 export * from "./use-chapters";
 export * from "./use-chapter-directory";
 export * from "./use-roles";
