@@ -2,7 +2,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import {
   actOnCard,
+  deleteMessage,
   discardOutboxRow,
+  editMessage,
   react,
   retryOutboxRow,
   sendMessage,
@@ -14,6 +16,8 @@ import {
 import type { OutboxRow, OutboxStore } from "./adapters";
 import { OUTBOX_ANALYTICS_EVENTS } from "./outbox-analytics";
 import { assertContentFreeProperties } from "@repo/validation";
+import { chatMessagesKey } from "./types";
+import { emptyCache, mergeServerRows } from "./cache";
 
 /**
  * Covers #999: a rejected react/unreact must reach `ctx.onError`, the
@@ -191,6 +195,219 @@ describe("unreact", () => {
     await unreact(ctx, { channelId: "chan-1", messageId: "msg-1", emoji: "👍" });
 
     expect(onError).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("editMessage", () => {
+  let toast: ToastFn;
+  let onError: ChatErrorFn;
+
+  beforeEach(() => {
+    toast = vi.fn() as ToastFn;
+    onError = vi.fn() as ChatErrorFn;
+  });
+
+  it("calls neither toast nor onError, and merges the server row into the cache, on success", async () => {
+    const queryClient = new QueryClient();
+    const apiClient = {
+      PATCH: vi.fn().mockResolvedValue({
+        data: {
+          id: "msg-1",
+          channel_id: "chan-1",
+          sender_id: "user-1",
+          content: "edited body",
+          created_at: "2026-01-01T00:00:00.000Z",
+          edited_at: "2026-01-01T00:01:00.000Z",
+        },
+        error: null,
+        response: { status: 200 },
+      }),
+    };
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      queryClient,
+      toast,
+      onError,
+    });
+
+    await editMessage(ctx, {
+      channelId: "chan-1",
+      messageId: "msg-1",
+      content: "edited body",
+    });
+
+    expect(toast).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+    expect(apiClient.PATCH).toHaveBeenCalledWith(
+      "/v1/channels/messages/{messageId}",
+      expect.objectContaining({
+        params: { path: { messageId: "msg-1" } },
+        body: { content: "edited body" },
+      }),
+    );
+    const cache = queryClient.getQueryData(chatMessagesKey("chan-1")) as
+      | ReturnType<typeof emptyCache>
+      | undefined;
+    expect(cache?.byId["msg-1"]?.content).toBe("edited body");
+    expect(cache?.byId["msg-1"]?.edited_at).toBe("2026-01-01T00:01:00.000Z");
+  });
+
+  it("fires both toast and onError, with the same message, and rejects on a denied edit", async () => {
+    const apiClient = {
+      PATCH: vi.fn().mockResolvedValue({
+        data: null,
+        error: { message: "You can only edit your own messages" },
+        response: { status: 403 },
+      }),
+    };
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      toast,
+      onError,
+    });
+
+    await expect(
+      editMessage(ctx, {
+        channelId: "chan-1",
+        messageId: "msg-1",
+        content: "edited body",
+      }),
+    ).rejects.toThrow();
+
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Couldn't edit message",
+        description: "You can only edit your own messages",
+      }),
+    );
+    expect(onError).toHaveBeenCalledWith({
+      title: "Couldn't edit message",
+      description: "You can only edit your own messages",
+    });
+  });
+
+  it("is a no-op with no userId, and never calls onError", async () => {
+    const apiClient = { PATCH: vi.fn() };
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      userId: null,
+      onError,
+    });
+
+    await editMessage(ctx, {
+      channelId: "chan-1",
+      messageId: "msg-1",
+      content: "edited body",
+    });
+
+    expect(apiClient.PATCH).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+  });
+});
+
+describe("deleteMessage", () => {
+  let toast: ToastFn;
+  let onError: ChatErrorFn;
+
+  beforeEach(() => {
+    toast = vi.fn() as ToastFn;
+    onError = vi.fn() as ChatErrorFn;
+  });
+
+  it("calls neither toast nor onError, and merges the deleted server row into the cache, on success", async () => {
+    const queryClient = new QueryClient();
+    // A prior confirmed row, so the merge is provably an *update* rather
+    // than the cache merely being seeded from nothing by `patchCache`'s
+    // `emptyCache()` fallback.
+    queryClient.setQueryData(
+      chatMessagesKey("chan-1"),
+      mergeServerRows(emptyCache(), [
+        {
+          id: "msg-1",
+          channel_id: "chan-1",
+          sender_id: "user-1",
+          content: "hello",
+          created_at: "2026-01-01T00:00:00.000Z",
+        },
+      ]),
+    );
+    const apiClient = {
+      DELETE: vi.fn().mockResolvedValue({
+        data: {
+          id: "msg-1",
+          channel_id: "chan-1",
+          sender_id: "user-1",
+          content: "[message deleted]",
+          is_deleted: true,
+          created_at: "2026-01-01T00:00:00.000Z",
+        },
+        error: null,
+        response: { status: 200 },
+      }),
+    };
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      queryClient,
+      toast,
+      onError,
+    });
+
+    await deleteMessage(ctx, { channelId: "chan-1", messageId: "msg-1" });
+
+    expect(toast).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+    expect(apiClient.DELETE).toHaveBeenCalledWith(
+      "/v1/channels/messages/{messageId}",
+      expect.objectContaining({ params: { path: { messageId: "msg-1" } } }),
+    );
+    const cache = queryClient.getQueryData(chatMessagesKey("chan-1")) as
+      | ReturnType<typeof emptyCache>
+      | undefined;
+    expect(cache?.byId["msg-1"]?.is_deleted).toBe(true);
+    expect(cache?.byId["msg-1"]?.content).toBe("[message deleted]");
+  });
+
+  it("fires both toast and onError, with the same message, and rejects on a denied delete", async () => {
+    const apiClient = {
+      DELETE: vi.fn().mockResolvedValue({
+        data: null,
+        error: {
+          message:
+            "You can only delete your own messages unless you have channels:manage permission",
+        },
+        response: { status: 403 },
+      }),
+    };
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      toast,
+      onError,
+    });
+
+    await expect(
+      deleteMessage(ctx, { channelId: "chan-1", messageId: "msg-1" }),
+    ).rejects.toThrow();
+
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Couldn't delete message" }),
+    );
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Couldn't delete message" }),
+    );
+  });
+
+  it("is a no-op with no userId, and never calls onError", async () => {
+    const apiClient = { DELETE: vi.fn() };
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      userId: null,
+      onError,
+    });
+
+    await deleteMessage(ctx, { channelId: "chan-1", messageId: "msg-1" });
+
+    expect(apiClient.DELETE).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
   });
 });
 

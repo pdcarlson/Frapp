@@ -577,6 +577,95 @@ export async function unreact(
   }
 }
 
+export interface EditMessageArgs {
+  channelId: string;
+  messageId: string;
+  content: string;
+}
+
+/**
+ * Edit a message's content (own messages only — enforced server-side).
+ *
+ * Not optimistic like `react`/`unreact`: the row the server returns is the
+ * one canonical source for the new `content`/`edited_at`, and `mergeServerRow`
+ * is already built to treat this as "a pin/edit UPDATE echo" (see its own
+ * docstring) — the same merge a Realtime echo of this same edit would apply,
+ * so a duplicate echo from Postgres Changes is a harmless no-op.
+ */
+export async function editMessage(
+  ctx: ChatActionContext,
+  args: EditMessageArgs,
+): Promise<void> {
+  if (!ctx.userId) return;
+  try {
+    const { data, error, response } = await ctx.apiClient.PATCH(
+      "/v1/channels/messages/{messageId}",
+      {
+        params: { path: { messageId: args.messageId } },
+        body: { content: args.content },
+      },
+    );
+    if (error) {
+      throwApiError(error, response, "Couldn't edit message");
+    }
+    patchCache(ctx.queryClient, args.channelId, (cache) =>
+      mergeServerRow(cache, data as unknown as RawChatMessage),
+    );
+  } catch (err) {
+    const { message } = classify(err);
+    ctx.toast?.({
+      title: "Couldn't edit message",
+      description: message,
+      variant: "destructive",
+    });
+    ctx.onError?.({ title: "Couldn't edit message", description: message });
+    throw err;
+  }
+}
+
+export interface DeleteMessageArgs {
+  channelId: string;
+  messageId: string;
+}
+
+/**
+ * Soft-delete a message (own message, or any in an accessible channel with
+ * `channels:manage` — the permission check is server-side; the client's job
+ * is only to offer the control when it's likely to succeed, see
+ * `MessageItem`).
+ *
+ * Not optimistic, for the same reason as `editMessage`: the server response
+ * already carries the final `content: '[message deleted]'` / `is_deleted:
+ * true` row, so merging it is both the confirmation and the update.
+ */
+export async function deleteMessage(
+  ctx: ChatActionContext,
+  args: DeleteMessageArgs,
+): Promise<void> {
+  if (!ctx.userId) return;
+  try {
+    const { data, error, response } = await ctx.apiClient.DELETE(
+      "/v1/channels/messages/{messageId}",
+      { params: { path: { messageId: args.messageId } } },
+    );
+    if (error) {
+      throwApiError(error, response, "Couldn't delete message");
+    }
+    patchCache(ctx.queryClient, args.channelId, (cache) =>
+      mergeServerRow(cache, data as unknown as RawChatMessage),
+    );
+  } catch (err) {
+    const { message } = classify(err);
+    ctx.toast?.({
+      title: "Couldn't delete message",
+      description: message,
+      variant: "destructive",
+    });
+    ctx.onError?.({ title: "Couldn't delete message", description: message });
+    throw err;
+  }
+}
+
 export interface CardActionArgs {
   channelId: string;
   messageId: string;

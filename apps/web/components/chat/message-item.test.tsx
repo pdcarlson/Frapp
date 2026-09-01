@@ -312,3 +312,162 @@ describe("MessageItem tap-to-reveal (#1193)", () => {
     expect(onToggleTapReveal).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Edit is server-enforced own-only and, client-side, only offered for the
+ * plain-text bubble kind (`selfBubble`) — a card has no free-text `content`
+ * a member typed. Delete is offered for the viewer's own message, or any
+ * message when `canManageChannel` is set (mirrors the server's
+ * `channels:manage` override).
+ */
+describe("MessageItem edit and delete", () => {
+  it("offers Edit on the viewer's own text message when onEdit is provided", () => {
+    renderItemWithProps({
+      message: message({ sender_id: VIEWER }),
+      onEdit: vi.fn(),
+    });
+
+    expect(screen.getByRole("button", { name: /edit/i })).toBeInTheDocument();
+  });
+
+  it("does not offer Edit on someone else's message", () => {
+    renderItemWithProps({
+      message: message({ sender_id: OTHER }),
+      onEdit: vi.fn(),
+      onDelete: vi.fn(),
+      canManageChannel: true,
+    });
+
+    expect(
+      screen.queryByRole("button", { name: /edit/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not offer Edit on the viewer's own card message (no free-text content)", () => {
+    renderItemWithProps({
+      message: message({ sender_id: VIEWER, kind: "announcement" }),
+      onEdit: vi.fn(),
+    });
+
+    expect(
+      screen.queryByRole("button", { name: /edit/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not offer Edit when no onEdit handler is given", () => {
+    renderItemWithProps({ message: message({ sender_id: VIEWER }) });
+
+    expect(
+      screen.queryByRole("button", { name: /edit/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers Delete on the viewer's own message when onDelete is provided", () => {
+    renderItemWithProps({
+      message: message({ sender_id: VIEWER }),
+      onDelete: vi.fn(),
+    });
+
+    expect(
+      screen.getByRole("button", { name: /delete/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("offers Delete on someone else's message only with channels:manage", () => {
+    const onDelete = vi.fn();
+    const { rerender } = renderItemWithProps({
+      message: message({ sender_id: OTHER }),
+      onDelete,
+      canManageChannel: false,
+    });
+    expect(
+      screen.queryByRole("button", { name: /delete/i }),
+    ).not.toBeInTheDocument();
+
+    rerender(
+      <div role="list">
+        <MessageItem
+          message={message({ sender_id: OTHER })}
+          viewerId={VIEWER}
+          showHeader
+          nameFor={nameFor}
+          onReact={vi.fn()}
+          onUnreact={vi.fn()}
+          isTapRevealed={false}
+          onToggleTapReveal={vi.fn()}
+          onDelete={onDelete}
+          canManageChannel
+        />
+      </div>,
+    );
+    expect(screen.getByRole("button", { name: /delete/i })).toBeInTheDocument();
+  });
+
+  it("calls onDelete with the message id directly — MessageItem does not confirm on its own", async () => {
+    const user = userEvent.setup();
+    const onDelete = vi.fn();
+    renderItemWithProps({
+      message: message({ id: "msg-9", sender_id: VIEWER }),
+      onDelete,
+    });
+
+    await user.click(screen.getByRole("button", { name: /delete/i }));
+
+    expect(onDelete).toHaveBeenCalledWith("msg-9");
+  });
+
+  it("opens an inline editor pre-filled with the current content, and saves on click", async () => {
+    const user = userEvent.setup();
+    const onEdit = vi.fn().mockResolvedValue(undefined);
+    renderItemWithProps({
+      message: message({ id: "msg-2", sender_id: VIEWER, content: "hello" }),
+      onEdit,
+    });
+
+    await user.click(screen.getByRole("button", { name: /edit/i }));
+
+    const textbox = screen.getByRole("textbox");
+    expect(textbox).toHaveValue("hello");
+
+    await user.clear(textbox);
+    await user.type(textbox, "hello, edited");
+    await user.click(screen.getByRole("button", { name: /save/i }));
+
+    expect(onEdit).toHaveBeenCalledWith("msg-2", "hello, edited");
+    // The editor closes once the save resolves.
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
+  it("cancels without calling onEdit and restores the original content", async () => {
+    const user = userEvent.setup();
+    const onEdit = vi.fn();
+    renderItemWithProps({
+      message: message({ sender_id: VIEWER, content: "hello" }),
+      onEdit,
+    });
+
+    await user.click(screen.getByRole("button", { name: /edit/i }));
+    await user.type(screen.getByRole("textbox"), " world");
+    await user.click(screen.getByRole("button", { name: /cancel/i }));
+
+    expect(onEdit).not.toHaveBeenCalled();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.getByText("hello")).toBeInTheDocument();
+  });
+
+  it("keeps the editor open with the draft intact when the save rejects", async () => {
+    const user = userEvent.setup();
+    const onEdit = vi.fn().mockRejectedValue(new Error("network error"));
+    renderItemWithProps({
+      message: message({ sender_id: VIEWER, content: "hello" }),
+      onEdit,
+    });
+
+    await user.click(screen.getByRole("button", { name: /edit/i }));
+    await user.type(screen.getByRole("textbox"), " world");
+    await user.click(screen.getByRole("button", { name: /save/i }));
+
+    expect(onEdit).toHaveBeenCalledWith("msg-1", "hello world");
+    expect(screen.getByRole("textbox")).toHaveValue("hello world");
+  });
+});

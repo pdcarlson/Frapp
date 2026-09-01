@@ -39,6 +39,7 @@ vi.mock("@repo/hooks", () => ({
   useChannelUnreadCounts: () => ({ data: [], isError: false }),
   useOrgConfig: () => ({ data: { isModuleEnabled: () => true }, isError: false, refetch: vi.fn() }),
   useChapterRoster: () => ({ data: [] }),
+  useMyPermissions: () => ({ data: { permissions: [] } }),
   directChannelDisplayName: () => "",
 }));
 
@@ -116,6 +117,8 @@ function chatChannelResult(overrides: Partial<{ isLoading: boolean; messages: ty
     send: vi.fn(),
     react: vi.fn(),
     unreact: vi.fn(),
+    edit: vi.fn(),
+    delete: vi.fn(),
     draft: "",
     setDraft: vi.fn(),
     typingUsers: [],
