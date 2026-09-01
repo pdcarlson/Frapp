@@ -14,13 +14,7 @@ import type {
   FrappSupabaseClient,
   TablesInsert,
 } from '../../infrastructure/supabase/database.types';
-
-/**
- * System sender id for server-originated chat messages. Must exist in the
- * `users` table (seeded via `supabase/seed.sql`). Shared with the
- * removed inline `postAuditMessage` flow in `chapter-config.service.ts`.
- */
-const SYSTEM_SENDER_ID = '00000000-0000-0000-0000-000000000000';
+import { SYSTEM_SENDER_ID } from '../../domain/constants/chat';
 
 interface AuditLogRow {
   id: string;

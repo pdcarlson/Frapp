@@ -4,6 +4,7 @@ export * from "./document-download";
 export * from "./chapter-query-keys";
 export * from "./use-members";
 export * from "./use-events";
+export * from "./use-activity-feed";
 export * from "./use-attendance";
 export * from "./use-points";
 export * from "./use-chat";

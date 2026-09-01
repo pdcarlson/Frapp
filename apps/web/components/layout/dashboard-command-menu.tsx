@@ -23,6 +23,7 @@ import { DASHBOARD_NAV_ITEMS } from "@/components/layout/nav-config";
 import { isNavItemVisible } from "@/components/layout/protected-nav-item";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { asArray } from "@/lib/utils";
+import { chatDeepLink } from "@/lib/chat/chat-links";
 
 type DashboardCommandMenuProps = {
   open: boolean;
@@ -139,7 +140,7 @@ function buildSearchGroups(payload: unknown): SearchGroup[] {
         id: `messages-${row.id ?? row.content ?? Math.random()}`,
         label: row.content?.slice(0, 80) ?? "Untitled message",
         hint: row.channel_id ? `Channel ${row.channel_id}` : undefined,
-        href: "/chat",
+        href: chatDeepLink({ channelId: row.channel_id, messageId: row.id }),
       })),
     });
   }
