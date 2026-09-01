@@ -143,6 +143,26 @@ describe("EventDetailSheet meeting minutes", () => {
     expect(minutes?.textContent).toBe("Line one\nLine two");
   });
 
+  it("preserves line breaks in the description too, same as minutes", () => {
+    render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        event={{ ...baseEvent, description: "Agenda one\nAgenda two" }}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+
+    // Description renders before minutes in the sheet, so it's the first
+    // whitespace-pre-wrap paragraph.
+    const [description] = document.body.querySelectorAll(
+      "p.whitespace-pre-wrap",
+    );
+    expect(description?.textContent).toBe("Agenda one\nAgenda two");
+  });
+
   it("renders no minutes section when the event has none", () => {
     render(
       <EventDetailSheet

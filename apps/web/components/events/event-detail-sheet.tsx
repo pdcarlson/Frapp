@@ -379,7 +379,12 @@ export function EventDetailSheet({
               <p className="mb-1 text-[12.5px] text-muted-foreground">
                 Description
               </p>
-              <p className="text-sm">{description}</p>
+              {/* Same fix as the minutes block below: the source is a
+                  multi-line Textarea, so preserve line breaks instead of
+                  collapsing them. */}
+              <p className="whitespace-pre-wrap break-words text-sm">
+                {description}
+              </p>
             </div>
           ) : null}
 
