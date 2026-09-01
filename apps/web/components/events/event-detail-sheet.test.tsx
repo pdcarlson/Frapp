@@ -3,15 +3,21 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
-const { mockCurrentChapter, mockDownloadIcs, mockToast, mockIcsState } =
-  vi.hoisted(() => ({
-    mockCurrentChapter: vi.fn(),
-    mockDownloadIcs: vi.fn(),
-    mockToast: vi.fn(),
-    // Read directly (not via React state) so a test can flip it before
-    // rendering to cover the pending UI without wiring a stateful mock.
-    mockIcsState: { isPending: false },
-  }));
+const {
+  mockCurrentChapter,
+  mockDownloadIcs,
+  mockResetDownloadIcs,
+  mockToast,
+  mockIcsState,
+} = vi.hoisted(() => ({
+  mockCurrentChapter: vi.fn(),
+  mockDownloadIcs: vi.fn(),
+  mockResetDownloadIcs: vi.fn(),
+  mockToast: vi.fn(),
+  // Read directly (not via React state) so a test can flip it before
+  // rendering to cover the pending UI without wiring a stateful mock.
+  mockIcsState: { isPending: false },
+}));
 
 // usingPreviewData renders from the `event` prop and gates out AttendancePanel;
 // stub the live hooks so the sheet renders without a query client / API.
@@ -21,6 +27,7 @@ vi.mock("@repo/hooks", () => ({
   useDownloadEventIcs: () => ({
     mutateAsync: mockDownloadIcs,
     isPending: mockIcsState.isPending,
+    reset: mockResetDownloadIcs,
   }),
   useRoles: () => ({ data: [{ id: "r1", name: "Exec" }], isError: false }),
   // Edit and Delete both hit paid-ops event routes, so the sheet reads the
@@ -60,6 +67,7 @@ const chapter = chapterSubscription(mockCurrentChapter);
 beforeEach(() => {
   chapter.active();
   mockDownloadIcs.mockReset();
+  mockResetDownloadIcs.mockReset();
   mockToast.mockReset();
   mockIcsState.isPending = false;
 });
@@ -361,5 +369,72 @@ describe("EventDetailSheet Add to calendar", () => {
 
     await user.click(button);
     expect(mockDownloadIcs).not.toHaveBeenCalled();
+  });
+
+  // The downloaded filename should read as the event, not its opaque id —
+  // three exports in a session must not all land as indistinguishable uuids.
+  it("names the download after the event, not its raw id", async () => {
+    const icsBlob = new Blob(["BEGIN:VCALENDAR"], { type: "text/calendar" });
+    mockDownloadIcs.mockResolvedValue(icsBlob);
+    const user = userEvent.setup();
+    let downloadNameAtClick: string | null = null;
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        downloadNameAtClick = this.download;
+      });
+
+    render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData={false}
+        event={{ ...baseEvent, name: "Exec Sync!! (Weekly)" }}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /add to calendar/i }),
+    );
+
+    await waitFor(() => {
+      expect(clickSpy).toHaveBeenCalledTimes(1);
+    });
+    expect(downloadNameAtClick).toBe("exec-sync-weekly.ics");
+
+    clickSpy.mockRestore();
+  });
+
+  // events-page.tsx renders one <EventDetailSheet> and swaps the `event` prop
+  // rather than remounting per event, so without a reset the mutation's
+  // isPending/error state from event A would still be showing while event B
+  // is open.
+  it("resets the mutation state when a different event is opened", () => {
+    const { rerender } = render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData={false}
+        event={baseEvent}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+    mockResetDownloadIcs.mockClear();
+
+    rerender(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData={false}
+        event={{ ...baseEvent, id: "e2", name: "Other Event" }}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+
+    expect(mockResetDownloadIcs).toHaveBeenCalled();
   });
 });

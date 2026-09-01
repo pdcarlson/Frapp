@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { getErrorMessage } from "./utils";
+import { describe, expect, it, vi, beforeEach } from "vitest";
+import { downloadBlob, getErrorMessage } from "./utils";
 
 /**
  * Dashboard toasts use this helper so openapi-fetch's thrown body (a plain
@@ -29,5 +29,47 @@ describe("getErrorMessage", () => {
     expect(
       getErrorMessage({ message: ["lat must be a number", "lng too"] }, fallback),
     ).toBe(fallback);
+  });
+});
+
+describe("downloadBlob", () => {
+  beforeEach(() => {
+    URL.createObjectURL = vi.fn(() => "blob:mock-url");
+    URL.revokeObjectURL = vi.fn();
+  });
+
+  it("creates an object URL, clicks a download anchor, and revokes it", () => {
+    const blob = new Blob(["content"], { type: "text/plain" });
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+
+    downloadBlob(blob, "report.csv");
+
+    expect(URL.createObjectURL).toHaveBeenCalledWith(blob);
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('a[download="report.csv"]')).toBeNull();
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:mock-url");
+
+    clickSpy.mockRestore();
+  });
+
+  // The reviewer finding this regression-locks: an unguarded click that
+  // throws must still remove the anchor and revoke the object URL, or both
+  // leak on every failed download.
+  it("still removes the anchor and revokes the object URL when click() throws", () => {
+    const blob = new Blob(["content"], { type: "text/plain" });
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {
+        throw new Error("blocked by extension");
+      });
+
+    expect(() => downloadBlob(blob, "report.csv")).toThrow("blocked by extension");
+
+    expect(document.querySelector('a[download="report.csv"]')).toBeNull();
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:mock-url");
+
+    clickSpy.mockRestore();
   });
 });

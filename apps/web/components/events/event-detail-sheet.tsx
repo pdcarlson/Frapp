@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { AlertTriangle, CalendarPlus, Loader2, Trash2 } from "lucide-react";
 import {
   PointsGlyph,
@@ -31,7 +31,7 @@ import {
 import { AttendancePanel } from "@/components/events/attendance-panel";
 import { normalizeRoleOptions } from "@/lib/roles";
 import { formatLocaleDateTime as formatDateTime } from "@repo/formatting";
-import { getErrorMessage } from "@/lib/utils";
+import { downloadBlob, getErrorMessage } from "@/lib/utils";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 
 type EventRecord = Record<string, unknown>;
@@ -57,6 +57,15 @@ export function EventDetailSheet({
   const eventQuery = useEvent(!usingPreviewData ? eventId : "");
   const deleteEventMutation = useDeleteEvent();
   const downloadIcsMutation = useDownloadEventIcs();
+  // `events-page.tsx` renders one `<EventDetailSheet>` and swaps `event`/`open`
+  // props rather than remounting per event, so this mutation instance (and
+  // its isPending/error state) would otherwise survive a switch to a
+  // different event — showing event B's button as pending/erroring for a
+  // request that was actually made against event A.
+  const { reset: resetDownloadIcs } = downloadIcsMutation;
+  useEffect(() => {
+    resetDownloadIcs();
+  }, [eventId, resetDownloadIcs]);
   // `DELETE /v1/events/:id` and the `PATCH /v1/events/:id` behind "Edit event"
   // are both paid-ops. Edit is gated here rather than only inside the editor
   // dialog because this button *is* the trigger for that flow (§5 rule 1) —
@@ -192,15 +201,12 @@ export function EventDetailSheet({
 
     try {
       const icsBlob = await downloadIcsMutation.mutateAsync(eventId);
-      const objectUrl = URL.createObjectURL(icsBlob);
-      const anchor = document.createElement("a");
-      anchor.href = objectUrl;
-      anchor.download = `${eventId}.ics`;
-      anchor.style.display = "none";
-      document.body.append(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(objectUrl);
+      const slug =
+        eventName
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "") || "frapp-event";
+      downloadBlob(icsBlob, `${slug}.ics`);
     } catch (error) {
       toast({
         title: "Could not export calendar file",

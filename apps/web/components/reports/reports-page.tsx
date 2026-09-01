@@ -55,6 +55,7 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
+import { downloadBlob } from "@/lib/utils";
 
 type ReportKind = "attendance" | "points" | "roster" | "service";
 
@@ -163,16 +164,8 @@ function truncationSummary(truncation: ReportTruncation): string {
 }
 
 function downloadCsv(kind: ReportKind, csv: string) {
-  if (typeof window === "undefined") return;
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `frapp-${kind}-${new Date().toISOString().slice(0, 10)}.csv`;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
+  downloadBlob(blob, `frapp-${kind}-${new Date().toISOString().slice(0, 10)}.csv`);
 }
 
 export function ReportsPage() {
