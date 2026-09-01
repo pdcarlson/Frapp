@@ -267,7 +267,62 @@ export class TaskService {
     }
 
     const updated = await this.taskRepo.update(id, chapterId, updateData);
+
+    if (newStatus === TaskStatus.COMPLETED) {
+      await this.notifyTaskCompleted(updated, userId, chapterId);
+    }
+
     return toDisplayStatus(updated);
+  }
+
+  /**
+   * A completed task needs a `tasks:manage` holder to confirm it before
+   * points are awarded (spec/behavior/tasks.md), so the task's creator is
+   * notified rather than every `tasks:manage` holder in the chapter — the
+   * same "notify the creator, not a fan-out" rule the OVERDUE sweep already
+   * uses (`scheduled-jobs.service.ts`'s `notifyTaskOverdue`), so completing
+   * one task never turns into an unbounded broadcast to every officer.
+   *
+   * No-ops when the creator is the one who just completed it (self-assigned
+   * task, nothing to tell them) or has since left the chapter.
+   */
+  private async notifyTaskCompleted(
+    task: Task,
+    actorUserId: string,
+    chapterId: string,
+  ): Promise<void> {
+    if (task.created_by === actorUserId) return;
+
+    let creatorMembership: Awaited<
+      ReturnType<typeof this.memberRepo.findByUserAndChapter>
+    >;
+    try {
+      creatorMembership = await this.memberRepo.findByUserAndChapter(
+        task.created_by,
+        chapterId,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `findByUserAndChapter failed while checking task ${task.id} creator membership`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      return;
+    }
+    if (!creatorMembership) return;
+
+    await this.safeNotifyUser(
+      task.created_by,
+      chapterId,
+      {
+        title: 'Task Completed',
+        body: `"${task.title}" was marked complete and needs your confirmation.`,
+        priority: 'NORMAL',
+        category: 'tasks',
+        data: { target: { screen: 'tasks', taskId: task.id } },
+      },
+      task.id,
+      'completion',
+    );
   }
 
   async confirmCompletion(
