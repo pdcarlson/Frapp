@@ -7,7 +7,7 @@ import {
   RolesGlyph,
   SearchGlyph,
 } from "@/components/events/chapter-ops-glyphs";
-import { useAutoAbsent, useEvents } from "@repo/hooks";
+import { useAutoAbsent, useEvents, useNow } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -51,7 +51,6 @@ import { useNetwork } from "@/lib/providers/network-provider";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
 import { formatLocaleDateTime as formatDate } from "@repo/formatting";
 import { useChapterStore } from "@/lib/stores/chapter-store";
-import { useNow } from "@/lib/use-now";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { getErrorMessage } from "@/lib/utils";
 

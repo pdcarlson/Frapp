@@ -12,10 +12,11 @@ import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   POLL_VOTE_ACTION_TYPE,
+  readPollPayload,
+  tallyPollVotes,
   type PollOption,
-  type PollPayload,
-} from "@repo/chat-integrations";
-import { useNow } from "@/lib/use-now";
+} from "@repo/chat-core/polls";
+import { useNow } from "@repo/hooks";
 
 interface PollCardProps {
   message: ChatMessage;
@@ -27,60 +28,6 @@ interface PollCardProps {
     actionType: string,
     payload: Record<string, unknown>,
   ) => void;
-}
-
-function readPayload(message: ChatMessage): PollPayload | null {
-  const raw = message.payload;
-  if (!raw || typeof raw !== "object") return null;
-  const question = (raw as { question?: unknown }).question;
-  const options = (raw as { options?: unknown }).options;
-  const closesAt = (raw as { closes_at?: unknown }).closes_at;
-  if (typeof question !== "string" || !Array.isArray(options)) return null;
-  const parsed: PollOption[] = [];
-  for (const o of options) {
-    if (!o || typeof o !== "object") continue;
-    const id = (o as { id?: unknown }).id;
-    const label = (o as { label?: unknown }).label;
-    if (typeof id === "string" && typeof label === "string") {
-      parsed.push({ id, label });
-    }
-  }
-  if (parsed.length < 2) return null;
-  return {
-    question,
-    options: parsed,
-    closes_at: typeof closesAt === "string" ? closesAt : "",
-  };
-}
-
-/**
- * Per-option tally derived from the raw `chat_message_actions` rows
- * attached to the message. ADR-07: the wire format uses a single
- * `action_type='vote'` row per user, with the option id in
- * `payload.option_id`; vote-change UPSERTs the same row. Counting from
- * `message.actions` (vs the aggregate `reactions`) keeps the per-option
- * breakdown accurate and lets the viewer's chosen option be identified
- * without a server round-trip.
- */
-function tallyByOption(
-  message: ChatMessage,
-  options: PollOption[],
-  viewerId: string | null,
-): { byOption: Record<string, number>; total: number; myVote: string | null } {
-  const byOption: Record<string, number> = {};
-  for (const o of options) byOption[o.id] = 0;
-  let total = 0;
-  let myVote: string | null = null;
-  for (const action of message.actions) {
-    if (action.action_type !== POLL_VOTE_ACTION_TYPE) continue;
-    const optionId = (action.payload as { option_id?: unknown } | null)
-      ?.option_id;
-    if (typeof optionId !== "string" || !(optionId in byOption)) continue;
-    byOption[optionId] = (byOption[optionId] ?? 0) + 1;
-    total += 1;
-    if (viewerId && action.user_id === viewerId) myVote = optionId;
-  }
-  return { byOption, total, myVote };
 }
 
 /**
@@ -95,7 +42,7 @@ export function PollCard({
   isConfirmed,
   onVote,
 }: PollCardProps) {
-  const payload = readPayload(message);
+  const payload = readPollPayload(message);
   const now = useNow();
 
   const {
@@ -104,7 +51,7 @@ export function PollCard({
     myVote: viewerVote,
   } = useMemo(() => {
     if (!payload) return { byOption: {}, total: 0, myVote: null };
-    return tallyByOption(message, payload.options, viewerId);
+    return tallyPollVotes(message, payload.options, viewerId);
   }, [message, payload, viewerId]);
 
   if (!payload) {
@@ -190,5 +137,3 @@ export function PollCard({
     </Card>
   );
 }
-
-export { tallyByOption };

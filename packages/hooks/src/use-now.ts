@@ -36,6 +36,11 @@ function getNow(): number {
 /**
  * A clock that is legal to read during render. The snapshot is stable between
  * 30s ticks so `useSyncExternalStore` does not tear.
+ *
+ * Framework-generic (`setInterval`/`Date.now`/`useSyncExternalStore` all work
+ * identically in React Native), so this is the one implementation both web
+ * and mobile poll cards read the "is this poll closed yet" clock from —
+ * originally web-only (`apps/web/lib/use-now.ts`), moved here for #528.
  */
 export function useNow(): number {
   return useSyncExternalStore(subscribe, getNow, getNow);
