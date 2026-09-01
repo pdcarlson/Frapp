@@ -112,6 +112,7 @@ export class ChapterDocumentController {
   // Folder routes are declared before `:id` on purpose — Nest matches in
   // declaration order, so `@Get(':id')` above would swallow `/documents/folders`
   // and try to load a document whose id is the literal string "folders".
+  // Enforced by `test/route-declaration-order.e2e-spec.ts` (#990).
 
   @Get('folders')
   @ApiOperation({ summary: 'List document folders in display order' })

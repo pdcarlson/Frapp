@@ -112,6 +112,10 @@ export class BackworkController {
     });
   }
 
+  // MUST stay above `@Get(':id')`. Nest matches routes in declaration order and
+  // a single-segment `:id` would otherwise swallow this path, resolving it as
+  // `getOne('departments')` and answering 404 for a route that exists.
+  // Enforced by `test/route-declaration-order.e2e-spec.ts` (#990).
   @Get('departments')
   @ApiOperation({ summary: 'List chapter departments' })
   async listDepartments(@CurrentChapterId() chapterId: string) {
@@ -129,6 +133,10 @@ export class BackworkController {
     return this.backworkService.updateDepartment(id, chapterId, dto);
   }
 
+  // MUST stay above `@Get(':id')`. Nest matches routes in declaration order and
+  // a single-segment `:id` would otherwise swallow this path, resolving it as
+  // `getOne('professors')` and answering 404 for a route that exists.
+  // Enforced by `test/route-declaration-order.e2e-spec.ts` (#990).
   @Get('professors')
   @ApiOperation({ summary: 'List chapter professors' })
   async listProfessors(@CurrentChapterId() chapterId: string) {
