@@ -53,6 +53,18 @@ interface ComposerProps {
    */
   isDirect?: boolean;
   isReadOnly: boolean;
+  /**
+   * Server-decided capability (#704): whether the caller may post in this
+   * channel at all, from `ChatChannel.can_post`. Distinct from `isReadOnly`
+   * — a channel can be postable in general but still deny *this* caller (the
+   * alumni lifecycle restriction is the only case today: alumni read
+   * everywhere they can see but may only post in DMs/group DMs and the
+   * `alumni:post` ROLE_GATED channel). Defaults to `true` so a caller that
+   * hasn't wired this yet — or a channel from the brief window before
+   * `getOrCreateDm`/`createGroupDm`'s response goes through the list
+   * projection — renders a live composer rather than a false-disabled one.
+   */
+  canPost?: boolean;
   draft: string;
   onChangeDraft: (body: string) => void;
   onSend: (
@@ -153,6 +165,7 @@ export function Composer({
   channelName,
   isDirect,
   isReadOnly,
+  canPost = true,
   draft,
   onChangeDraft,
   onSend,
@@ -431,6 +444,20 @@ export function Composer({
       <p className="border-t border-border px-4 py-3 text-[12.5px] text-muted-foreground">
         This channel is read-only. Posting requires the{" "}
         <code className="font-mono">announcements:post</code> permission.
+      </p>
+    );
+  }
+
+  // `canPost` false on a channel that isn't read-only is the alumni lifecycle
+  // restriction (`spec/behavior/alumni.md`) — the only other way `can_post`
+  // comes back false, and it is already handled above. Read access to reach
+  // this channel at all is a precondition of it appearing in the caller's
+  // channel list, so there is no third case to distinguish.
+  if (!canPost) {
+    return (
+      <p className="border-t border-border px-4 py-3 text-[12.5px] text-muted-foreground">
+        Alumni can read this channel but not post. Alumni may post in{" "}
+        <code className="font-mono">#alumni</code> and direct messages.
       </p>
     );
   }

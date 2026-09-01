@@ -75,6 +75,7 @@ describe('ChatService', () => {
   let mockRbac: {
     getEffectivePermissions: jest.Mock;
     hasAlumniRole: jest.Mock;
+    isAlumni: jest.Mock;
   };
   /**
    * The Realtime broadcast goes through `SUPABASE_CLIENT.channel(topic)` →
@@ -227,6 +228,7 @@ describe('ChatService', () => {
       // Active (non-alumni) member by default; alumni posting is covered in
       // channel-access.service.spec.ts.
       hasAlumniRole: jest.fn().mockResolvedValue(false),
+      isAlumni: jest.fn().mockResolvedValue(false),
     };
 
     broadcasts = [];
@@ -734,12 +736,12 @@ describe('ChatService', () => {
     });
 
     describe('getChannel', () => {
-      it('returns a channel the caller can read', async () => {
+      it('returns a channel the caller can read, annotated with can_post (#704)', async () => {
         mockChannelRepo.findById.mockResolvedValue(baseChannel);
 
         await expect(
           service.getChannel('ch-chan-1', 'ch-1', 'user-1'),
-        ).resolves.toEqual(baseChannel);
+        ).resolves.toEqual({ ...baseChannel, can_post: true });
       });
 
       it('rejects a PRIVATE channel the caller is not in', async () => {

@@ -610,6 +610,7 @@ export function ChatShell({
               activeChannel.type === "DM" || activeChannel.type === "GROUP_DM"
             }
             isReadOnly={!!activeChannel.is_read_only}
+            canPost={activeChannel.can_post ?? true}
             draft={channel.draft}
             onChangeDraft={channel.setDraft}
             onSend={(body, attachments) => channel.send(body, { attachments })}

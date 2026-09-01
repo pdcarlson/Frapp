@@ -64,6 +64,29 @@ export function isDirectChannel(channel: ChannelSummary): boolean {
   return channel.type === "DM" || channel.type === "GROUP_DM";
 }
 
+/** Whether the caller may post in a channel right now, and why not (#704). */
+export interface ChannelPostCapability {
+  isReadOnly: boolean;
+  /** From `ChatChannel.can_post` — already folds in the read-only gate. */
+  canPost: boolean;
+}
+
+/**
+ * Parses the single-channel payload the same defensive way `selectChannels`
+ * parses the list — `GET /v1/channels/{id}` infers as `never` in the
+ * generated SDK too. Defaults to `{ isReadOnly: false, canPost: true }` while
+ * the row hasn't loaded yet, so the composer doesn't flash disabled during
+ * the initial fetch; matches web's `canPost = true` default in
+ * `composer.tsx`.
+ */
+export function selectPostCapability(data: unknown): ChannelPostCapability {
+  if (!isRecord(data)) return { isReadOnly: false, canPost: true };
+  return {
+    isReadOnly: data.is_read_only === true,
+    canPost: typeof data.can_post === "boolean" ? data.can_post : true,
+  };
+}
+
 /**
  * DM channels are named by the server, not by a human: `dm-<uuidA>-<uuidB>` for
  * a pair and `group-dm-<epoch>` for a group (`chat.service.ts`). Those are

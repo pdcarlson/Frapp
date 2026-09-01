@@ -8,7 +8,10 @@ import { CHAT_CHANNEL_REPOSITORY } from '../../domain/repositories/chat.reposito
 import type { IChatChannelRepository } from '../../domain/repositories/chat.repository.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
-import type { ChatChannel } from '../../domain/entities/chat.entity';
+import type {
+  ChatChannel,
+  ChatChannelView,
+} from '../../domain/entities/chat.entity';
 import { canAccessChannel, isAlumniPostableChannel } from '@repo/validation';
 import type { ChannelOperation } from '@repo/validation';
 import { RbacService } from './rbac.service';
@@ -207,6 +210,56 @@ export class ChannelAccessService {
     if (!member) return [];
 
     return this.applyReadPredicate(chapterId, userId, inChapter);
+  }
+
+  /**
+   * Annotate already-readable channels with `can_post`, decided by the same
+   * `canAccessChannel` predicate the write path (`assertChannelAccess`)
+   * enforces — so a client's composer state and the server's actual gate
+   * cannot drift. #704: surfaces the alumni-post restriction (and the
+   * existing read-only-without-`announcements:post` case) as one capability
+   * flag instead of shipping the caller's raw alumni status.
+   *
+   * Callers must have already filtered to channels the caller may `read`
+   * (`filterAccessibleChannels` / `assertChannelAccess`) — this only adds the
+   * post-capability projection on top, it does not itself decide visibility.
+   */
+  async withPostCapability(
+    chapterId: string,
+    userId: string,
+    channels: ChatChannel[],
+  ): Promise<ChatChannelView[]> {
+    if (channels.length === 0) return [];
+
+    const needsPermissions = channels.some(
+      (channel) =>
+        channel.type === 'ROLE_GATED' || channel.is_read_only === true,
+    );
+    const permissions = needsPermissions
+      ? await this.rbac.getEffectivePermissions(chapterId, userId)
+      : [];
+
+    // Same short-circuit `assertChannelAccess` uses: skip the Alumni-role
+    // lookup entirely when every candidate is alumni-postable by construction
+    // (DMs, GROUP_DMs), so a chapter with no alumni carries no extra query.
+    const needsAlumniLookup = channels.some(
+      (channel) => !isAlumniPostableChannel(toPredicateChannel(channel)),
+    );
+    const isAlumni = needsAlumniLookup
+      ? await this.rbac.isAlumni(chapterId, userId)
+      : false;
+
+    return channels.map((channel) => ({
+      ...channel,
+      can_post: canAccessChannel({
+        channel: toPredicateChannel(channel),
+        userId,
+        isChapterMember: true,
+        permissions,
+        operation: 'post',
+        isAlumni,
+      }),
+    }));
   }
 
   /**
