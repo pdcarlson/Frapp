@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   BackfillMessagesQuerySchema,
+  canAccessChannel,
   ChatMessageActionSchema,
   CreateCheckoutSchema,
   CurrentChapterPayloadSchema,
@@ -92,5 +93,52 @@ describe("Zod 4 schema smoke", () => {
       CustomFieldOptionsSchema.safeParse({ choices: ["A"], unexpected: 1 })
         .success,
     ).toBe(false);
+  });
+});
+
+// #348: an archived Group DM (chat_channels.archived_at set once membership
+// drops to <= 1 via the leave endpoint) is frozen for writes.
+describe("canAccessChannel — archived channel", () => {
+  const archivedGroupDm = {
+    type: "GROUP_DM" as const,
+    member_ids: ["user-1"],
+    required_permissions: null,
+    archived_at: "2026-01-02T00:00:00.000Z",
+  };
+
+  it("still allows a remaining member to read it", () => {
+    expect(
+      canAccessChannel({
+        channel: archivedGroupDm,
+        userId: "user-1",
+        isChapterMember: true,
+        permissions: [],
+        operation: "read",
+      }),
+    ).toBe(true);
+  });
+
+  it("denies posting into it unconditionally — even a wildcard permission holder", () => {
+    expect(
+      canAccessChannel({
+        channel: archivedGroupDm,
+        userId: "user-1",
+        isChapterMember: true,
+        permissions: ["*"],
+        operation: "post",
+      }),
+    ).toBe(false);
+  });
+
+  it("does not archive a live (non-archived) channel of the same shape", () => {
+    expect(
+      canAccessChannel({
+        channel: { ...archivedGroupDm, archived_at: null },
+        userId: "user-1",
+        isChapterMember: true,
+        permissions: [],
+        operation: "post",
+      }),
+    ).toBe(true);
   });
 });

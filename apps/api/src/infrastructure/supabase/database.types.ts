@@ -255,7 +255,23 @@ export interface Database {
         Returns: Member[];
       };
       /**
-       * `20260901180000` — `returns boolean`. `true` on a successful claim,
+       * `20260901180000` (#348). Atomically removes `p_user_id` from a
+       * GROUP_DM's `member_ids` and archives the row once <= 1 member
+       * remains — `array_remove` referencing the table's own column directly
+       * (not an app-computed value) is what makes concurrent leaves
+       * serialize correctly instead of losing an update. Empty result set
+       * means the row didn't match (wrong id/chapter, or not a GROUP_DM).
+       */
+      leave_group_dm: {
+        Args: {
+          p_channel_id: string;
+          p_chapter_id: string;
+          p_user_id: string;
+        };
+        Returns: ChatChannel[];
+      };
+      /**
+       * `20260901183000` — `returns boolean`. `true` on a successful claim,
        * `false` when the chapter's `needs_president` flag was already clear
        * (race lost to another claimant).
        */

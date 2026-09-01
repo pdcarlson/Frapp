@@ -111,6 +111,7 @@ describe('ChatService', () => {
     category_id: null,
     is_read_only: false,
     created_at: '2026-01-01T00:00:00.000Z',
+    archived_at: null,
   };
 
   const baseMessage: ChatMessage = {
@@ -136,6 +137,7 @@ describe('ChatService', () => {
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      leaveGroupDm: jest.fn(),
     };
 
     mockCategoryRepo = {
@@ -851,6 +853,103 @@ describe('ChatService', () => {
       await expect(service.createGroupDm('ch-1', memberIds)).rejects.toThrow(
         BadRequestException,
       );
+    });
+  });
+
+  // #348: spec/behavior/chat/README.md:47.
+  describe('leaveGroupDm', () => {
+    const groupDm: ChatChannel = {
+      ...baseChannel,
+      type: 'GROUP_DM',
+      member_ids: ['user-1', 'user-2', 'user-3'],
+    };
+
+    it('calls the atomic leave RPC with the caller and target', async () => {
+      mockChannelRepo.findById.mockResolvedValue(groupDm);
+      mockChannelRepo.leaveGroupDm.mockResolvedValue({
+        ...groupDm,
+        member_ids: ['user-2', 'user-3'],
+      });
+
+      await service.leaveGroupDm('ch-chan-1', 'ch-1', 'user-1');
+
+      // The removal + archive-threshold decision is made atomically inside
+      // the `leave_group_dm` RPC (see its migration comment) rather than
+      // computed here and written back — no member_ids/archived_at payload
+      // is built in the service any more.
+      expect(mockChannelRepo.leaveGroupDm).toHaveBeenCalledWith(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+      );
+    });
+
+    it('rejects leaving a non-Group-DM channel', async () => {
+      mockChannelRepo.findById.mockResolvedValue(baseChannel); // PUBLIC
+
+      await expect(
+        service.leaveGroupDm('ch-chan-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockChannelRepo.leaveGroupDm).not.toHaveBeenCalled();
+    });
+
+    it('rejects leaving a 1-on-1 DM', async () => {
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        type: 'DM',
+        member_ids: ['user-1', 'user-2'],
+      });
+
+      await expect(
+        service.leaveGroupDm('ch-chan-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockChannelRepo.leaveGroupDm).not.toHaveBeenCalled();
+    });
+
+    it('rejects a Group DM the caller is not a member of', async () => {
+      mockChannelRepo.findById.mockResolvedValue({
+        ...groupDm,
+        member_ids: ['user-2', 'user-3'],
+      });
+
+      await expect(
+        service.leaveGroupDm('ch-chan-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockChannelRepo.leaveGroupDm).not.toHaveBeenCalled();
+    });
+
+    it('rejects a channel in another chapter as not found', async () => {
+      mockChannelRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.leaveGroupDm('ch-chan-x', 'ch-other', 'user-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockChannelRepo.leaveGroupDm).not.toHaveBeenCalled();
+    });
+
+    // The RPC matching zero rows (lost a race with a concurrent delete/type
+    // change between the `assertChannelAccess` check and the RPC call) must
+    // not be reported as success.
+    it('surfaces a not-found if the RPC matches no row', async () => {
+      mockChannelRepo.findById.mockResolvedValue(groupDm);
+      mockChannelRepo.leaveGroupDm.mockResolvedValue(null);
+
+      await expect(
+        service.leaveGroupDm('ch-chan-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockChannelCache.invalidate).not.toHaveBeenCalled();
+    });
+
+    it('evicts the push worker channel cache on leave', async () => {
+      mockChannelRepo.findById.mockResolvedValue(groupDm);
+      mockChannelRepo.leaveGroupDm.mockResolvedValue({
+        ...groupDm,
+        member_ids: ['user-2', 'user-3'],
+      });
+
+      await service.leaveGroupDm('ch-chan-1', 'ch-1', 'user-1');
+
+      expect(mockChannelCache.invalidate).toHaveBeenCalledWith('ch-chan-1');
     });
   });
 
