@@ -1055,6 +1055,15 @@ After any rollback event:
   ```
 * **Note**: Grant-only change, no data loss and no function body change — restores the pre-migration Postgres-default EXECUTE-to-PUBLIC behavior for `anon`/`authenticated`. Should not be needed: all three RPCs are `security invoker` (RLS still applies under the caller's own privileges) and both callers (`ReportService.getPointsReport`, `SupabasePollVoteRepository`) already go through the API's `service_role` client, which keeps EXECUTE regardless. Only relevant if some other caller was found to invoke these RPCs directly as `anon`/`authenticated` (e.g. via PostgREST) after this migration shipped — confirm that caller's actual need before rolling back, since re-opening the grant is exactly the convention gap #678 closed.
 
+## Rollback Group DM leave + archive (20260901180000)
+* **Migration**: `20260901180000_chat_channels_archived_at.sql`
+* **Action**:
+  ```sql
+  DROP FUNCTION IF EXISTS leave_group_dm(uuid, uuid, uuid);
+  ALTER TABLE chat_channels DROP COLUMN IF EXISTS archived_at;
+  ```
+* **Note**: Additive only — a new nullable `archived_at` column plus a new RPC, no changes to any existing column or row. The API calls the RPC from `SupabaseChatChannelRepository.leaveGroupDm`, so a forward-fix (rather than a bare drop) is required to keep `POST /v1/channels/:id/leave` working: deploy an API revision that stops offering the leave endpoint before dropping the function — otherwise every leave request 500s. Drop the function before the column (the function's body references it). **Data loss on drop**: any channel already archived loses that state — its `archived_at` timestamp is discarded, and it silently reappears in every member's active channel list (`ChannelAccessService.filterAccessibleChannels`/`filterAccessibleChannelIds` both key off this column) even though its membership was already reduced to <= 1 by a completed leave. The membership reduction itself (`member_ids`) is untouched by this rollback and is not restored — a Group DM that shrank to one member before the rollback stays at one member after it, just no longer marked archived.
+
 ## Rollback `idx_point_transactions_chapter_created_at`
 * **Migration**: `20260417120000_point_transactions_chapter_created_at_idx.sql`
 * **Action**: `DROP INDEX IF EXISTS idx_point_transactions_chapter_created_at;`

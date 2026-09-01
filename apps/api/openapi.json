@@ -2012,6 +2012,35 @@
         ]
       }
     },
+    "/v1/channels/{id}/leave": {
+      "post": {
+        "operationId": "ChatController_leaveGroupDm_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Leave a Group DM",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/channels/categories/list": {
       "get": {
         "operationId": "ChatController_listCategories_v1",

@@ -91,4 +91,27 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
       .eq('chapter_id', chapterId);
     if (error) throw error;
   }
+
+  /**
+   * Atomic leave (#348) via the `leave_group_dm` RPC — see its migration
+   * comment for why a plain app-side read-modify-write `update()` is unsafe
+   * under concurrent leaves. `null` means the RPC matched zero rows (wrong
+   * chapter, or the channel is no longer a GROUP_DM); the caller has already
+   * proven both via `assertChannelAccess` immediately before calling this, so
+   * that should not happen outside a genuine race with a concurrent
+   * `deleteChannel`/`updateChannel` — treated as "not found" either way.
+   */
+  async leaveGroupDm(
+    channelId: string,
+    chapterId: string,
+    userId: string,
+  ): Promise<ChatChannel | null> {
+    const { data, error } = await this.supabase.rpc('leave_group_dm', {
+      p_channel_id: channelId,
+      p_chapter_id: chapterId,
+      p_user_id: userId,
+    });
+    if (error) throw error;
+    return (data ?? [])[0] ?? null;
+  }
 }

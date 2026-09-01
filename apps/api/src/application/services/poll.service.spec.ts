@@ -43,6 +43,7 @@ describe('PollService', () => {
     category_id: null,
     is_read_only: false,
     created_at: '2026-01-01T00:00:00.000Z',
+    archived_at: null,
   };
 
   const basePollMessage: ChatMessage = {
@@ -94,6 +95,7 @@ describe('PollService', () => {
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      leaveGroupDm: jest.fn(),
     };
 
     mockVoteRepo = {

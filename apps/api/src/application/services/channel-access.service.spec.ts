@@ -28,6 +28,7 @@ describe('ChannelAccessService', () => {
     category_id: null,
     is_read_only: false,
     created_at: '2026-01-01T00:00:00.000Z',
+    archived_at: null,
   };
 
   const privateChannel: ChatChannel = {
@@ -62,6 +63,7 @@ describe('ChannelAccessService', () => {
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      leaveGroupDm: jest.fn(),
     };
     mockMemberRepo = {
       findById: jest.fn(),
@@ -177,6 +179,31 @@ describe('ChannelAccessService', () => {
       await expect(
         service.assertChannelAccess('ch-announce', 'chap-1', 'user-1', 'post'),
       ).resolves.toBe(readOnlyChannel);
+    });
+
+    // #348: an archived Group DM (membership dropped to <= 1 via leave) stays
+    // readable by whoever remains in `member_ids`, but is frozen for writes.
+    // `canAccessChannel` itself has the unconditional (even a `*` holder
+    // can't override it) version of this test — this one just confirms the
+    // service wires `archived_at` through to the predicate at all.
+    it('lets a remaining member keep reading an archived Group DM but denies posting', async () => {
+      const archivedGroupDm: ChatChannel = {
+        ...publicChannel,
+        id: 'ch-archived',
+        type: 'GROUP_DM',
+        member_ids: ['user-1'],
+        archived_at: '2026-01-02T00:00:00.000Z',
+      };
+      mockChannelRepo.findById.mockResolvedValue(archivedGroupDm);
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
+
+      await expect(
+        service.assertChannelAccess('ch-archived', 'chap-1', 'user-1', 'read'),
+      ).resolves.toBe(archivedGroupDm);
+
+      await expect(
+        service.assertChannelAccess('ch-archived', 'chap-1', 'user-1', 'post'),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 
@@ -479,6 +506,28 @@ describe('ChannelAccessService', () => {
           publicChannel,
           { ...publicChannel, id: 'ch-foreign', chapter_id: 'chap-2' },
         ],
+      );
+
+      expect(result.map((channel) => channel.id)).toEqual(['ch-public']);
+    });
+
+    // #348: an archived Group DM (membership dropped to <= 1 via leave) drops
+    // out of the active list, even though the caller would otherwise still
+    // pass `canAccessChannel` for it.
+    it('drops an archived channel from the active list', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
+      const archivedGroupDm: ChatChannel = {
+        ...publicChannel,
+        id: 'ch-archived',
+        type: 'GROUP_DM',
+        member_ids: ['user-1'],
+        archived_at: '2026-01-02T00:00:00.000Z',
+      };
+
+      const result = await service.filterAccessibleChannels(
+        'chap-1',
+        'user-1',
+        [publicChannel, archivedGroupDm],
       );
 
       expect(result.map((channel) => channel.id)).toEqual(['ch-public']);
