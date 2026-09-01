@@ -9,10 +9,15 @@ import { EVENT_REPOSITORY } from '../../domain/repositories/event.repository.int
 import type { IEventRepository } from '../../domain/repositories/event.repository.interface';
 import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
 import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
+import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import { Event } from '../../domain/entities/event.entity';
 import type { GeofenceCoordinate } from '../../domain/entities/study.entity';
 import { NotificationService } from './notification.service';
+import type { NotifyPayload } from './notification.service';
 import { ChatService } from './chat.service';
+import { RbacService } from './rbac.service';
+import { SystemPermissions } from '../../domain/constants/permissions';
 
 export interface CreateEventInput {
   chapter_id: string;
@@ -104,6 +109,21 @@ function propagatableFields(
 }
 
 /**
+ * `spec/behavior/events.md` § `required_role_ids` wire semantics: `null` and
+ * `[]` are both "untargeted" (visible/counted for everyone). The single
+ * predicate every role-targeting check goes through, so a future change to
+ * the matching rule (e.g. also honouring `custom_role_ids`) can't be applied
+ * to one call site and missed on another.
+ */
+export function hasRequiredRole(
+  requiredRoleIds: string[] | null | undefined,
+  memberRoleIds: readonly string[],
+): boolean {
+  if (!requiredRoleIds || requiredRoleIds.length === 0) return true;
+  return requiredRoleIds.some((roleId) => memberRoleIds.includes(roleId));
+}
+
+/**
  * Normalize an inbound check-in zone to what the column stores.
  *
  * An empty array **clears** the zone, mirroring the `required_role_ids` wire
@@ -132,20 +152,92 @@ export class EventService {
   constructor(
     @Inject(EVENT_REPOSITORY) private readonly eventRepo: IEventRepository,
     @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
+    @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
     private readonly notificationService: NotificationService,
     private readonly chatService: ChatService,
+    private readonly rbac: RbacService,
   ) {}
 
-  async findById(id: string, chapterId: string): Promise<Event> {
+  /**
+   * `spec/behavior/events.md` § Role-based required attendance: a role-targeted
+   * event is visible only to members who hold one of its `required_role_ids`
+   * (an untargeted event, `null`/`[]`, is visible chapter-wide) — **or** who
+   * hold `events:update` (which covers the wildcard President role too, per
+   * `RbacService.memberHasAnyPermission`). Without that exemption, an officer
+   * who can `PATCH`/`DELETE` any event but doesn't hold the specific targeted
+   * role would lose read access to events they are authorized to manage — an
+   * authorization gap in the wrong direction. `viewerId` is omitted by every
+   * internal caller (`update`/`delete`/series ops) — those routes are already
+   * gated on `events:update`/`events:delete`, a stronger authorization than
+   * read visibility, so they must not be narrowed by it. Only the read-only
+   * routes (`list`/`getOne`/`getIcs`) pass a viewer.
+   */
+  private async isVisibleToViewer(
+    event: Event,
+    chapterId: string,
+    viewerId: string,
+  ): Promise<boolean> {
+    if (!event.required_role_ids || event.required_role_ids.length === 0) {
+      return true;
+    }
+    if (
+      await this.rbac.memberHasAnyPermission(chapterId, viewerId, [
+        SystemPermissions.EVENTS_UPDATE,
+      ])
+    ) {
+      return true;
+    }
+    const member = await this.memberRepo.findByUserAndChapter(
+      viewerId,
+      chapterId,
+    );
+    if (!member) return false;
+    return hasRequiredRole(event.required_role_ids, member.role_ids);
+  }
+
+  async findById(
+    id: string,
+    chapterId: string,
+    viewerId?: string,
+  ): Promise<Event> {
     const event = await this.eventRepo.findById(id, chapterId);
-    if (!event) {
+    // A role-targeted event a viewer can't see 404s rather than 403 — the same
+    // "not found" a nonexistent id gets, so the response never confirms a
+    // role-targeted event exists to a caller who isn't cleared to see it.
+    if (
+      !event ||
+      (viewerId && !(await this.isVisibleToViewer(event, chapterId, viewerId)))
+    ) {
       throw new NotFoundException('Event not found');
     }
     return event;
   }
 
-  async findByChapter(chapterId: string): Promise<Event[]> {
-    return this.eventRepo.findByChapter(chapterId);
+  async findByChapter(chapterId: string, viewerId?: string): Promise<Event[]> {
+    const events = await this.eventRepo.findByChapter(chapterId);
+    if (!viewerId) return events;
+    // Skip the permission/member lookups entirely for the common case — a
+    // chapter with no role-targeted events — rather than paying for them on
+    // every list call.
+    const hasTargetedEvents = events.some(
+      (event) => event.required_role_ids && event.required_role_ids.length > 0,
+    );
+    if (!hasTargetedEvents) return events;
+    if (
+      await this.rbac.memberHasAnyPermission(chapterId, viewerId, [
+        SystemPermissions.EVENTS_UPDATE,
+      ])
+    ) {
+      return events;
+    }
+    const member = await this.memberRepo.findByUserAndChapter(
+      viewerId,
+      chapterId,
+    );
+    const memberRoleIds = member?.role_ids ?? [];
+    return events.filter((event) =>
+      hasRequiredRole(event.required_role_ids, memberRoleIds),
+    );
   }
 
   async create(input: CreateEventInput): Promise<Event> {
@@ -184,13 +276,17 @@ export class EventService {
     }
 
     try {
-      await this.notificationService.notifyChapter(input.chapter_id, {
-        title: 'New Event',
-        body: `${parent.name} has been scheduled`,
-        priority: 'SILENT',
-        category: 'events',
-        data: { target: { screen: 'events', eventId: parent.id } },
-      });
+      await this.notifyEligibleMembers(
+        input.chapter_id,
+        parent.required_role_ids,
+        {
+          title: 'New Event',
+          body: `${parent.name} has been scheduled`,
+          priority: 'SILENT',
+          category: 'events',
+          data: { target: { screen: 'events', eventId: parent.id } },
+        },
+      );
     } catch {}
 
     // The `/event` slash command asks us to surface an interactive event card
@@ -501,7 +597,7 @@ export class EventService {
       return;
     }
     try {
-      await this.notificationService.notifyChapter(chapterId, {
+      await this.notifyEligibleMembers(chapterId, updated.required_role_ids, {
         title: 'Event Updated',
         body: `${updated.name} has been updated`,
         priority: 'NORMAL',
@@ -509,6 +605,33 @@ export class EventService {
         data: { target: { screen: 'events', eventId: updated.id } },
       });
     } catch {}
+  }
+
+  /**
+   * Chapter-wide notification, unless the event is role-targeted — then only
+   * members whose `role_ids` intersect `required_role_ids` are notified.
+   * Without this, `notifyChapter`'s "New Event"/"Event Updated" push still
+   * named a role-targeted event (and deep-linked to it) for every member,
+   * even one who now correctly 404s reading the event itself (#1463).
+   */
+  private async notifyEligibleMembers(
+    chapterId: string,
+    requiredRoleIds: string[] | null | undefined,
+    payload: NotifyPayload,
+  ): Promise<void> {
+    if (!requiredRoleIds || requiredRoleIds.length === 0) {
+      await this.notificationService.notifyChapter(chapterId, payload);
+      return;
+    }
+    const members = await this.memberRepo.findByChapter(chapterId);
+    const eligible = members.filter((member) =>
+      hasRequiredRole(requiredRoleIds, member.role_ids),
+    );
+    await Promise.allSettled(
+      eligible.map((member) =>
+        this.notificationService.notifyUser(member.user_id, chapterId, payload),
+      ),
+    );
   }
 
   /**
@@ -940,8 +1063,12 @@ export class EventService {
     await this.eventRepo.delete(parent.id, chapterId);
   }
 
-  async generateIcs(eventId: string, chapterId: string): Promise<string> {
-    const event = await this.findById(eventId, chapterId);
+  async generateIcs(
+    eventId: string,
+    chapterId: string,
+    viewerId?: string,
+  ): Promise<string> {
+    const event = await this.findById(eventId, chapterId, viewerId);
 
     const formatDate = (iso: string): string =>
       new Date(iso)
