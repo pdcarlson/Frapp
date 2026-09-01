@@ -21,7 +21,7 @@
 // its no-deployment branch survives for direct runs and for any future caller
 // that does not gate on the verifier.
 
-import { fetchVercelDeployments } from "./lib/providers.mjs";
+import { findVercelDeploymentBySha, vercelDeploymentCreatedAt } from "./lib/providers.mjs";
 import { VERCEL_NEUTRAL_TERMINAL_STATES } from "./verify-vercel-deploy.mjs";
 import { requireEnv } from "./lib/env.mjs";
 
@@ -46,9 +46,16 @@ export async function ensureVercelStagingAlias({
   stagingAlias,
   fetchImpl = fetch,
 }) {
-  let page;
+  let matches;
+  let pagesSearched;
+  let exhausted;
   try {
-    page = await fetchVercelDeployments({ apiKey, projectId, fetchImpl });
+    ({ matches, pagesSearched, exhausted } = await findVercelDeploymentBySha({
+      apiKey,
+      projectId,
+      sha,
+      fetchImpl,
+    }));
   } catch (error) {
     return {
       status: "failure",
@@ -56,23 +63,21 @@ export async function ensureVercelStagingAlias({
     };
   }
 
-  const deployments = Array.isArray(page?.deployments) ? page.deployments : [];
-  const matches = deployments.filter((d) => d?.meta?.githubCommitSha === sha);
-
   if (matches.length === 0) {
+    const searchNote = exhausted
+      ? `searched all ${pagesSearched} page(s) of deployment history`
+      : `searched ${pagesSearched} page(s) — older deployments may still exist beyond that`;
     return {
       status: "skipped",
       message:
-        `No deployment for commit ${sha}; nothing to alias, skipping. ` +
+        `No deployment for commit ${sha} (${searchNote}); nothing to alias, skipping. ` +
         `verify-vercel-deploy reports this case as a failure.`,
     };
   }
 
-  const latest = [...matches].sort((a, b) => {
-    const aAt = new Date(a.createdAt ?? a.created ?? 0).getTime();
-    const bAt = new Date(b.createdAt ?? b.created ?? 0).getTime();
-    return bAt - aAt;
-  })[0];
+  const latest = [...matches].sort(
+    (a, b) => vercelDeploymentCreatedAt(b) - vercelDeploymentCreatedAt(a),
+  )[0];
 
   const state = latest.state ?? latest.readyState;
   const deploymentId = latest.uid;

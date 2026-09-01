@@ -52,7 +52,7 @@ import { execFileSync } from "node:child_process";
 import { ALL_REQUIRED_CHECKS } from "../configure-branch-protection.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { resilientFetch } from "./lib/http.mjs";
-import { githubHeaders } from "./lib/github.mjs";
+import { ghRequest } from "./lib/github.mjs";
 
 export const SHA_PATTERN = /^[0-9a-f]{40}$/;
 
@@ -94,8 +94,8 @@ export const ACCEPTED_CONCLUSIONS = new Set(["success", "skipped", "neutral"]);
  */
 export const CANCELLED_CONCLUSIONS = new Set(["cancelled", "timed_out", "stale"]);
 
-const CHECK_RUNS_URL = (repo, sha, page) =>
-  `https://api.github.com/repos/${repo}/commits/${sha}/check-runs?per_page=100&page=${page}`;
+const CHECK_RUNS_PATH = (repo, sha, page) =>
+  `/repos/${repo}/commits/${sha}/check-runs?per_page=100&page=${page}`;
 
 /**
  * A 40-character lowercase hex string and nothing else.
@@ -323,14 +323,21 @@ export function jobIdsAtRef({ ref, git = defaultGit }) {
 export async function fetchCheckRuns({ repo, sha, token, fetchImpl = resilientFetch, maxPages = 10 }) {
   const runs = [];
   for (let page = 1; page <= maxPages; page += 1) {
-    const response = await fetchImpl(CHECK_RUNS_URL(repo, sha, page), {
-      headers: githubHeaders({ token }),
-    });
-    if (!response.ok) {
-      throw new Error(`GitHub checks API returned HTTP ${response.status} for ${sha}`);
+    const result = await ghRequest({ token, fetchImpl, path: CHECK_RUNS_PATH(repo, sha, page) });
+    if (!result.ok) {
+      const detail = result.data ? `: ${result.data}` : "";
+      throw new Error(`GitHub checks API returned HTTP ${result.status} for ${sha}${detail}`);
     }
-    const body = await response.json();
-    const batch = Array.isArray(body?.check_runs) ? body.check_runs : [];
+    // A 2xx with an unparseable body (a proxy/CDN error page, say) leaves
+    // `result.data` as the raw response text rather than an object, so
+    // `.check_runs` reads `undefined`. Falling back to `[]` there would read
+    // as "this commit has zero check runs" — a false, definitive FAILURE
+    // verdict downstream — instead of the honest "could not read CI status"
+    // a malformed response deserves.
+    if (!Array.isArray(result.data?.check_runs)) {
+      throw new Error(`GitHub checks API returned an unexpected payload for ${sha} (page ${page})`);
+    }
+    const batch = result.data.check_runs;
     runs.push(...batch);
     if (batch.length < 100) break;
   }
