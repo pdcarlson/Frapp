@@ -261,6 +261,31 @@ export function SettingsGlyph({ className, active }: NavGlyphProps) {
   );
 }
 
+/**
+ * Not drawn on any reference board — Chat Admin is an #920-era Admin-section
+ * addition, not a screen the s04/s09 boards depict. Drawn fresh in the
+ * recipe: a plaque (matches `ReportsGlyph`'s outer rounded-rect) with a `#`
+ * detail, the same channel sigil `iconography.md` §6.2.7 names as a brand
+ * carve-out elsewhere — used here as an ordinary duotone detail, not that
+ * composition.
+ */
+export function ChannelsGlyph({ className, active }: NavGlyphProps) {
+  return (
+    <Svg className={className}>
+      <rect
+        x="4"
+        y="4"
+        width="16"
+        height="16"
+        rx="3.5"
+        {...stroke}
+        {...fillProps(active)}
+      />
+      <path d="M9.5 8v8M14.5 8v8M7 11h10M7 13.5h10" {...detail} />
+    </Svg>
+  );
+}
+
 /* ── Top-bar controls ────────────────────────────────────────────────────── */
 
 export function SearchGlyph({ className, active }: NavGlyphProps) {
