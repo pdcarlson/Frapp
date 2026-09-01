@@ -44,12 +44,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { loadEnvFiles } from "./lib/env-file.mjs";
 import { githubHeaders } from "./ci/lib/github.mjs";
-import {
-  ALL_REQUIRED_CHECKS,
-  CI_CHECKS,
-  DOCS_CHECKS,
-  DRIFT_CHECKS,
-} from "./ci/lib/required-checks.mjs";
+import { fetchWithRetry } from "./ci/lib/http.mjs";
+import { ALL_REQUIRED_CHECKS } from "./ci/lib/required-checks.mjs";
 
 // ── CLI argument parsing ────────────────────────────────────────────────────
 
@@ -106,24 +102,57 @@ function resolveToken() {
 
 // ── GitHub API ──────────────────────────────────────────────────────────────
 
-async function callGitHubApi({ token, method, path, body, allow404 = false }) {
-  const response = await fetch(`https://api.github.com${path}`, {
+async function callGitHubApi({ token, method, path, body, allowUnprotected = false }) {
+  // `fetchWithRetry` rather than a bare `fetch`: it carries a timeout (Node's
+  // global fetch has none, so a hung socket would stall the run indefinitely)
+  // and it scopes retry to idempotent methods, so the reads below retry a
+  // transient 429/5xx while the PUT still gets exactly one attempt.
+  const response = await fetchWithRetry(`https://api.github.com${path}`, {
     method,
     headers: githubHeaders({ token, hasBody: Boolean(body) }),
     body: body ? JSON.stringify(body) : undefined,
   });
 
-  // A branch with no protection rule at all answers 404, which is a legitimate
-  // "before" state for the read-back below rather than an error. Only the
-  // reader opts into it; the PUT still treats 404 as fatal.
-  if (allow404 && response.status === 404) return null;
-
   if (!response.ok) {
     const text = await response.text();
+
+    // A branch with no protection rule answers 404 with "Branch not protected",
+    // which is a legitimate "before" state for the read-back rather than an
+    // error. A 404 for a repo or branch that does not exist — or that this
+    // token cannot see, which GitHub reports as 404 rather than 403 so it does
+    // not leak existence — reads identically on status alone. Collapsing the
+    // two would report a typo'd --repo as "this branch has no protection" and
+    // then prescribe a governance PUT to fix it, so only the first is excused
+    // and the body is what distinguishes them.
+    if (allowUnprotected && response.status === 404 && /branch not protected/i.test(text)) {
+      return null;
+    }
+
     throw new Error(`${method} ${path} failed (${response.status}): ${text}`);
   }
 
   return response.json();
+}
+
+/**
+ * An error's message plus its `cause`, which is where Node's `fetch` puts the
+ * actual diagnosis.
+ *
+ * Without this every transport failure reads `fetch failed` — DNS, connection
+ * refused, a TLS/CA-bundle rejection and a proxy reset are indistinguishable,
+ * so an expired token and a broken CA bundle both get blamed on the sandbox
+ * proxy. The cause is the only thing that tells them apart.
+ */
+function describeError(error) {
+  if (!(error instanceof Error)) return String(error);
+  const cause = error.cause;
+  const causeText =
+    cause instanceof Error
+      ? `${cause.message}${cause.code ? ` (${cause.code})` : ""}`
+      : cause
+        ? String(cause)
+        : "";
+  return causeText ? `${error.message}: ${causeText}` : error.message;
 }
 
 // ── Branch protection payloads ──────────────────────────────────────────────
@@ -159,12 +188,15 @@ function buildProtectionPayload(branch) {
 // the roster.
 //
 // The read is deliberately shaped as pure functions over plain objects, with the
-// network confined to `callGitHubApi`, because the one thing that CANNOT be
-// tested from an agent session is the call itself: `api.github.com` answers 403
-// through the cloud-sandbox proxy to authenticated and unauthenticated requests
-// alike (ADR-20, and #1385 exists because of it). Keeping the semantics in
+// network confined to `callGitHubApi`, because the call itself is the one part
+// that cannot be relied on from an agent session. Reaching `api.github.com` from
+// a cloud sandbox is SESSION-DEPENDENT: ADR-20 and #1385 record 403 for
+// authenticated and unauthenticated requests alike, and the ADR-20 amendment of
+// 2026-09-01 records this same endpoint returning 200 from a sandbox with a PAT
+// loaded from `.env.local`. #680's evidence table records both on the same day.
+// Do not read either observation as the general rule. Keeping the semantics in
 // functions that take a response rather than fetch one is what makes the diff
-// unit-testable despite that.
+// unit-testable regardless of which way a given session falls.
 //
 // The GET shape is NOT the PUT shape, which is the trap here. GitHub returns the
 // booleans wrapped — `enforce_admins: {enabled: true}` — where the PUT takes them
@@ -182,6 +214,21 @@ const PROTECTION_FLAGS = [
   "lock_branch",
   "allow_fork_syncing",
 ];
+
+// `allow_fork_syncing` governs whether users may pull upstream changes WHILE THE
+// BRANCH IS LOCKED. With `lock_branch: false` it describes a situation that
+// cannot arise, and GitHub accepts the written value without persisting it —
+// this payload has sent `true` since 2026-08-27 (f7d03b1) and a read of `main`
+// on 2026-09-01 still returned `false`, after an apply that demonstrably
+// happened in between (it carried `migration-order`, added 2026-08-30).
+//
+// Comparing it on an unlocked branch therefore reports drift that no run can
+// ever resolve, which would make `--verify` exit non-zero forever and turn an
+// apply into a permanent failure. A gate nobody can satisfy is one people learn
+// to route around — the same reasoning that demoted `migration-drift`. So it is
+// compared only where it means something: when the branch is locked on either
+// side. If `lock_branch` is ever set true, this starts being enforced again.
+const LOCK_DEPENDENT_FLAGS = new Set(["allow_fork_syncing"]);
 
 /** `true` / `false` / `{enabled: true}` / absent → a plain boolean. */
 function toBool(value) {
@@ -235,31 +282,37 @@ export function normalizeProtection(raw) {
  */
 export function diffProtection({ current, desired }) {
   const want = normalizeProtection(desired);
+  const have = normalizeProtection(current);
   const wantContexts = want?.required_status_checks?.contexts ?? [];
 
-  if (current === null || current === undefined) {
+  // `normalizeProtection` returns null for anything non-object, so testing its
+  // OUTPUT rather than the raw input covers `null`, `undefined`, `""`, `false`
+  // and a stray string alike. Guarding the input caught only two of those and
+  // left the flag loop below dereferencing null.
+  if (have === null) {
     return {
       unprotected: true,
-      changes: [{ field: "branch protection", from: "not configured", to: "configured" }],
+      changes: [],
       contextsAdded: [...wantContexts],
       contextsRemoved: [],
     };
   }
 
-  const have = normalizeProtection(current);
-  const haveContexts = have?.required_status_checks?.contexts ?? [];
-
+  const haveContexts = have.required_status_checks?.contexts ?? [];
   const contextsAdded = wantContexts.filter((name) => !haveContexts.includes(name));
   const contextsRemoved = haveContexts.filter((name) => !wantContexts.includes(name));
 
   const changes = [];
-  const haveStrict = have?.required_status_checks?.strict ?? null;
+  const haveStrict = have.required_status_checks?.strict ?? null;
   const wantStrict = want?.required_status_checks?.strict ?? null;
   if (haveStrict !== wantStrict) {
     changes.push({ field: "required_status_checks.strict", from: haveStrict, to: wantStrict });
   }
+
+  const locked = Boolean(have.lock_branch) || Boolean(want?.lock_branch);
   for (const key of [...PROTECTION_FLAGS, "required_pull_request_reviews", "restrictions"]) {
-    if (have[key] !== want[key]) changes.push({ field: key, from: have[key], to: want[key] });
+    if (!locked && LOCK_DEPENDENT_FLAGS.has(key)) continue;
+    if (have[key] !== want?.[key]) changes.push({ field: key, from: have[key], to: want?.[key] });
   }
 
   return { unprotected: false, changes, contextsAdded, contextsRemoved };
@@ -267,12 +320,14 @@ export function diffProtection({ current, desired }) {
 
 /** Whether a diff represents any change at all. The no-op test. */
 export function hasProtectionDrift(diff) {
-  if (!diff) return false;
+  if (!diff || typeof diff !== "object") return false;
+  // Length-checked defensively: the `!diff` guard alone caught null and
+  // undefined but still threw on any diff-shaped object missing a key.
   return Boolean(
     diff.unprotected ||
-      diff.changes.length > 0 ||
-      diff.contextsAdded.length > 0 ||
-      diff.contextsRemoved.length > 0,
+      diff.changes?.length ||
+      diff.contextsAdded?.length ||
+      diff.contextsRemoved?.length,
   );
 }
 
@@ -283,13 +338,35 @@ export function formatProtectionDiff(diff) {
   if (diff.unprotected) {
     lines.push("  ! branch has NO protection rule — this would create one from scratch");
   }
-  for (const name of diff.contextsAdded) lines.push(`  + required check   ${name}`);
-  for (const name of diff.contextsRemoved) lines.push(`  - required check   ${name}`);
-  for (const change of diff.changes) {
-    if (change.field === "branch protection") continue;
+  for (const name of diff.contextsAdded ?? []) lines.push(`  + required check   ${name}`);
+  for (const name of diff.contextsRemoved ?? []) lines.push(`  - required check   ${name}`);
+  for (const change of diff.changes ?? []) {
     lines.push(`  ~ ${change.field}: ${String(change.from)} -> ${String(change.to)}`);
   }
   return lines;
+}
+
+/**
+ * The floor. A payload with no required contexts is not a configuration, it is
+ * the removal of every merge gate on `main` in one PUT — and it would print as
+ * an ordinary run of `- required check` lines, indistinguishable from a
+ * deliberate demotion.
+ *
+ * `scripts/ci/validate-deploy-sha.mjs` has exactly this floor on the reading
+ * side ("Narrowing that excuses EVERY required check ... would deploy to
+ * production having verified no CI at all"). The writer is the half that can
+ * actually destroy the gates, so it gets the same refusal.
+ */
+export function assertRosterFloor(contexts) {
+  if (!Array.isArray(contexts) || contexts.length === 0) {
+    throw new Error(
+      "Refusing to apply: the required-check roster is empty, which would remove EVERY " +
+        "required check from the branch. If that is genuinely intended, do it in the GitHub " +
+        "UI deliberately rather than through a script whose job is to keep them in place. " +
+        "Otherwise check scripts/ci/lib/required-checks.mjs — this is what a bad edit or a " +
+        "failed import looks like.",
+    );
+  }
 }
 
 // ── Main ────────────────────────────────────────────────────────────────────
@@ -329,6 +406,7 @@ async function main() {
   for (const branch of ["main"]) {
     const payload = buildProtectionPayload(branch);
     const checks = payload.required_status_checks.contexts;
+    assertRosterFloor(checks);
 
     console.log(`Branch: ${branch}`);
     console.log(`  Required checks (${checks.length}):`);
@@ -367,10 +445,10 @@ async function main() {
           token,
           method: "GET",
           path: `/repos/${repoSlug}/branches/${branch}/protection`,
-          allow404: true,
+          allowUnprotected: true,
         });
       } catch (error) {
-        readFailure = error instanceof Error ? error.message : String(error);
+        readFailure = describeError(error);
       }
     } else {
       readFailure = "no token supplied, and --dry-run does not require one";
@@ -385,19 +463,24 @@ async function main() {
       console.log("  No before/after diff is available for this run.");
       console.log("");
       if (verify) {
+        // The reason above is the reason. Do NOT restate it as the sandbox
+        // proxy: a 403 through the proxy, an expired PAT, a wrong repo slug and
+        // a broken CA bundle all reach here, and naming one of them as the
+        // cause is how the other three get misdiagnosed.
         throw new Error(
           `--verify cannot confirm ${branch}: live protection is unreadable (${readFailure}). ` +
-            "From a cloud sandbox this is expected — api.github.com answers 403 through the " +
-            "proxy to authenticated and unauthenticated requests alike (ADR-20). Run this from " +
-            "a machine with direct network access.",
+            "An unreadable answer is not a passing one, so this fails rather than reporting a " +
+            "match. If the cause is a 403 with no GitHub response headers, that is the sandbox " +
+            "egress proxy and the read has to happen from a machine with direct network access " +
+            "(ADR-20, and its 2026-09-01 amendment — reachability is session-dependent).",
         );
       }
     } else {
       const diff = diffProtection({ current, desired: payload });
-      const lines = formatProtectionDiff(diff);
-      if (lines.length === 0) {
+      if (!hasProtectionDrift(diff)) {
         console.log("  No changes — live protection already matches this roster.");
       } else {
+        const lines = formatProtectionDiff(diff);
         console.log(`  Pending changes (${lines.length}):`);
         for (const line of lines) console.log(line);
         if (verify) driftedBranches.push(branch);
@@ -424,14 +507,18 @@ async function main() {
           token,
           method: "GET",
           path: `/repos/${repoSlug}/branches/${branch}/protection`,
-          allow404: true,
+          allowUnprotected: true,
         });
       } catch (error) {
-        confirmFailure = error instanceof Error ? error.message : String(error);
+        confirmFailure = describeError(error);
       }
 
       if (confirmFailure) {
+        // Falling through to "configured successfully" here would be the exact
+        // checkmark-without-evidence this read-back exists to remove: the PUT
+        // returned 2xx, and 2xx was never the thing in question.
         console.log(`  Applied, but could not re-read to confirm: ${confirmFailure}`);
+        unconfirmedBranches.push(branch);
       } else {
         const residual = diffProtection({ current: applied, desired: payload });
         if (hasProtectionDrift(residual)) {
@@ -461,8 +548,9 @@ async function main() {
     console.log("Remove --dry-run to apply these settings.");
   } else if (unconfirmedBranches.length > 0) {
     throw new Error(
-      `Branch protection was applied but read back differently for: ${unconfirmedBranches.join(", ")}. ` +
-        "The output above shows what still differs.",
+      `Branch protection was applied but NOT confirmed for: ${unconfirmedBranches.join(", ")}. ` +
+        "The output above shows either what still differs, or why the confirming read failed. " +
+        "The PUT itself succeeded — this is about whether the result matches what was written.",
     );
   } else {
     console.log("Branch protection configured successfully for main.");

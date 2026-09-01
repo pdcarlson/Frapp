@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  assertRosterFloor,
   buildProtectionPayload,
   diffProtection,
   formatProtectionDiff,
@@ -10,6 +11,7 @@ import {
   normalizeProtection,
 } from "../../configure-branch-protection.mjs";
 import { ALL_REQUIRED_CHECKS } from "../lib/required-checks.mjs";
+import { parseCheckArray } from "../../check-doc-tables.mjs";
 
 // Before #1383 `configure-branch-protection.mjs` had exactly one API call and
 // exactly one method — PUT — so it could report only what it INTENDED to write.
@@ -22,7 +24,18 @@ import { ALL_REQUIRED_CHECKS } from "../lib/required-checks.mjs";
 // The real GET shape, trimmed. Note every boolean arrives WRAPPED as
 // `{enabled}`, which the PUT payload does not do — that asymmetry is the trap
 // `normalizeProtection` exists to absorb.
-const liveResponse = ({ contexts = ALL_REQUIRED_CHECKS, forkSyncing = true } = {}) => ({
+//
+// `forkSyncing` defaults to FALSE because that is what `main` actually returns.
+// It defaulted to `true` in the first version of this suite — matching the
+// payload rather than reality — which made the happy-path test assert a state
+// live protection does not hold, and hid a bug that would have made every
+// `--verify` run exit 1. A fixture that models the payload instead of the
+// server is not a fixture, it is the assumption under test.
+const liveResponse = ({
+  contexts = ALL_REQUIRED_CHECKS,
+  forkSyncing = false,
+  lockBranch = false,
+} = {}) => ({
   url: "https://api.github.com/repos/o/r/branches/main/protection",
   required_status_checks: { strict: true, contexts: [...contexts] },
   required_signatures: { enabled: false },
@@ -32,7 +45,7 @@ const liveResponse = ({ contexts = ALL_REQUIRED_CHECKS, forkSyncing = true } = {
   allow_deletions: { enabled: false },
   block_creations: { enabled: false },
   required_conversation_resolution: { enabled: false },
-  lock_branch: { enabled: false },
+  lock_branch: { enabled: lockBranch },
   allow_fork_syncing: { enabled: forkSyncing },
 });
 
@@ -45,8 +58,9 @@ describe("normalizeProtection", () => {
   });
 
   it("reads the PUT payload shape identically, so both sides compare like-for-like", () => {
+    // Every field but the one GitHub declines to persist on an unlocked branch.
     const fromPut = normalizeProtection(buildProtectionPayload("main"));
-    const fromGet = normalizeProtection(liveResponse());
+    const fromGet = normalizeProtection(liveResponse({ forkSyncing: true }));
     assert.deepEqual(fromPut, fromGet);
   });
 
@@ -102,13 +116,10 @@ describe("diffProtection", () => {
   });
 
   it("catches a flag difference, and does not mistake it for a missing field", () => {
-    // The live drift this found on its first real run against `main`.
-    const diff = diffProtection({
-      current: liveResponse({ forkSyncing: false }),
-      desired: buildProtectionPayload("main"),
-    });
+    const current = { ...liveResponse(), required_linear_history: { enabled: false } };
+    const diff = diffProtection({ current, desired: buildProtectionPayload("main") });
     assert.deepEqual(diff.changes, [
-      { field: "allow_fork_syncing", from: false, to: true },
+      { field: "required_linear_history", from: false, to: true },
     ]);
     assert.equal(hasProtectionDrift(diff), true);
   });
@@ -154,11 +165,26 @@ describe("one roster, two consumers (#1383 scope item 1)", () => {
     assert.doesNotMatch(src, /from "\.\.\/configure-branch-protection\.mjs"/);
   });
 
-  it("the writer does not re-export the rosters, so no second import path can appear", () => {
-    // A pass-through export would quietly restore the old coupling for any
-    // future caller, which is the drift this test exists to prevent.
+  it("the writer does not re-export the rosters, by any spelling", () => {
+    // A pass-through export quietly restores the old coupling for any future
+    // caller. Matching only the named-export block missed the shape that would
+    // restore it most completely — `export *` re-exports all four rosters and
+    // would have sailed past the first version of this assertion.
     const src = read("../../configure-branch-protection.mjs");
     assert.doesNotMatch(src, /export \{[^}]*ALL_REQUIRED_CHECKS/s);
+    assert.doesNotMatch(src, /export \s*\*\s*from\s*["'][^"']*required-checks\.mjs["']/);
+    assert.doesNotMatch(src, /export \{[^}]*\b(CI_CHECKS|DOCS_CHECKS|DRIFT_CHECKS)\b/s);
+  });
+
+  it("the writer imports only the roster it actually uses", () => {
+    // Dead bindings for CI_CHECKS/DOCS_CHECKS/DRIFT_CHECKS put three names back
+    // on this module's surface and make a grep for them here return hits, which
+    // is the ambiguity the split removed. `scripts/` is not a workspace, so
+    // `turbo run lint` never sees this file and nothing else would catch it.
+    const src = read("../../configure-branch-protection.mjs");
+    const importLine = src.match(/import \{[^}]*\} from "\.\/ci\/lib\/required-checks\.mjs";/s);
+    assert.ok(importLine, "expected an import from the roster module");
+    assert.doesNotMatch(importLine[0], /\b(CI_CHECKS|DOCS_CHECKS|DRIFT_CHECKS)\b/);
   });
 
   it("the doc-table gate parses the rosters from their new home", () => {
@@ -169,10 +195,161 @@ describe("one roster, two consumers (#1383 scope item 1)", () => {
   });
 
   it("the data module stays free of side effects and entry points", () => {
-    // The whole reason the deploy path can import it safely.
+    // The whole reason the deploy path can import it safely. Asserted by
+    // IMPORTING it and watching, rather than by grepping for three spellings of
+    // trouble — a module-scope console.log, a process.env write and a top-level
+    // `await main()` all passed the grep version of this test.
     const src = read("../lib/required-checks.mjs");
     assert.doesNotMatch(src, /process\.argv/);
     assert.doesNotMatch(src, /\bfetch\(/);
     assert.doesNotMatch(src, /function main\b/);
+    assert.doesNotMatch(src, /^\s*(await|console\.|process\.env\s*\[|execSync)/m);
+  });
+
+  it("check-doc-tables can still parse the rosters in their new `export const` form", () => {
+    // The parser builds `const NAME = [` unanchored, so `export const NAME = [`
+    // matches on the substring — but nothing pinned that, and anchoring the
+    // regex to `^const` (a natural hardening) would silently stop the roster
+    // gate parsing anything. That failure lands only on the non-required
+    // doc-tables job, so nothing would block a merge on it.
+    const src = readFileSync(
+      new URL("../lib/required-checks.mjs", import.meta.url),
+      "utf8",
+    );
+    for (const name of ["CI_CHECKS", "DOCS_CHECKS", "DRIFT_CHECKS"]) {
+      assert.ok(
+        parseCheckArray(src, name)?.length > 0,
+        `check-doc-tables must parse ${name} from the roster module`,
+      );
+    }
+    assert.equal(
+      [
+        ...parseCheckArray(src, "CI_CHECKS"),
+        ...parseCheckArray(src, "DOCS_CHECKS"),
+        ...parseCheckArray(src, "DRIFT_CHECKS"),
+      ].length,
+      ALL_REQUIRED_CHECKS.length,
+      "the parsed roster must match the imported one",
+    );
+  });
+});
+
+describe("allow_fork_syncing is only compared where it means something", () => {
+  // Regression tests for the bug that would have made `--verify` exit non-zero
+  // on a correctly-configured repo forever. GitHub only honours fork-syncing on
+  // a LOCKED branch; this payload sends `allow_fork_syncing: true` alongside
+  // `lock_branch: false`, and live has reported `false` since 2026-08-27
+  // through at least one intervening apply. Comparing it on an unlocked branch
+  // produces drift no run can resolve.
+
+  it("ignores the flag on an unlocked branch, where GitHub will not persist it", () => {
+    const diff = diffProtection({
+      current: liveResponse({ forkSyncing: false }), // what `main` really returns
+      desired: buildProtectionPayload("main"), // which asks for true
+    });
+    assert.equal(
+      hasProtectionDrift(diff),
+      false,
+      "an unlocked branch must not report permanent, unresolvable fork-syncing drift",
+    );
+  });
+
+  it("compares it again as soon as the branch is locked", () => {
+    // The exemption is scoped to the case where the field is inert. If
+    // lock_branch is ever set, this is a real setting again and must be diffed.
+    const diff = diffProtection({
+      current: liveResponse({ forkSyncing: false, lockBranch: true }),
+      desired: { ...buildProtectionPayload("main"), lock_branch: true },
+    });
+    assert.ok(
+      diff.changes.some((c) => c.field === "allow_fork_syncing"),
+      "a locked branch must still diff fork-syncing",
+    );
+  });
+
+  it("still reports lock_branch itself changing", () => {
+    const diff = diffProtection({
+      current: liveResponse({ lockBranch: true }),
+      desired: buildProtectionPayload("main"),
+    });
+    assert.ok(diff.changes.some((c) => c.field === "lock_branch"));
+  });
+});
+
+describe("assertRosterFloor", () => {
+  // The writer is the half that can destroy the gates. validate-deploy-sha.mjs
+  // has this floor on the reading side; without it here, one bad edit PUTs
+  // `contexts: []` and every required check on `main` disappears, printed as an
+  // ordinary run of `- required check` lines.
+  it("refuses an empty roster", () => {
+    assert.throws(() => assertRosterFloor([]), /Refusing to apply/);
+  });
+
+  it("refuses a non-array, which is what a failed import looks like", () => {
+    assert.throws(() => assertRosterFloor(undefined), /Refusing to apply/);
+    assert.throws(() => assertRosterFloor(null), /Refusing to apply/);
+  });
+
+  it("accepts the real roster", () => {
+    assert.doesNotThrow(() => assertRosterFloor(ALL_REQUIRED_CHECKS));
+  });
+});
+
+describe("malformed input does not throw out of an exported function", () => {
+  // These are exported, independently callable entry points. Guarding `current`
+  // but not `desired`, and `!diff` but not a diff-shaped object missing a key,
+  // left several shapes throwing TypeError instead of answering.
+  it("diffProtection tolerates every non-object `current`", () => {
+    for (const current of [null, undefined, "", false, 0, "nonsense"]) {
+      const diff = diffProtection({ current, desired: buildProtectionPayload("main") });
+      assert.equal(diff.unprotected, true, `failed for ${JSON.stringify(current)}`);
+    }
+  });
+
+  it("diffProtection tolerates a missing `desired`", () => {
+    const diff = diffProtection({ current: liveResponse(), desired: undefined });
+    assert.equal(diff.unprotected, false);
+    assert.equal(diff.contextsRemoved.length, ALL_REQUIRED_CHECKS.length);
+  });
+
+  it("hasProtectionDrift tolerates a diff-shaped object missing keys", () => {
+    assert.equal(hasProtectionDrift({}), false);
+    assert.equal(hasProtectionDrift(null), false);
+    assert.equal(hasProtectionDrift(undefined), false);
+    assert.equal(hasProtectionDrift({ contextsRemoved: ["x"] }), true);
+  });
+
+  it("formatProtectionDiff renders removals and flag changes, not just additions", () => {
+    const lines = formatProtectionDiff({
+      unprotected: false,
+      changes: [{ field: "enforce_admins", from: true, to: false }],
+      contextsAdded: ["added-check"],
+      contextsRemoved: ["removed-check"],
+    });
+    assert.ok(lines.some((l) => l.includes("+ required check   added-check")));
+    assert.ok(lines.some((l) => l.includes("- required check   removed-check")));
+    assert.ok(lines.some((l) => l.includes("~ enforce_admins: true -> false")));
+  });
+});
+
+describe("normalizeProtection edge cases", () => {
+  it("drops non-string context entries rather than emitting undefined", () => {
+    const normalized = normalizeProtection({
+      required_status_checks: { strict: true, contexts: [], checks: [{ app_id: 1 }, { context: "" }] },
+    });
+    assert.deepEqual(normalized.required_status_checks.contexts, []);
+  });
+
+  it("reports required_status_checks absent as null, not an empty object", () => {
+    const normalized = normalizeProtection({ enforce_admins: { enabled: true } });
+    assert.equal(normalized.required_status_checks, null);
+  });
+
+  it("normalizes `restrictions` to a boolean", () => {
+    assert.equal(normalizeProtection(liveResponse()).restrictions, false);
+    assert.equal(
+      normalizeProtection({ ...liveResponse(), restrictions: { users: [] } }).restrictions,
+      true,
+    );
   });
 });

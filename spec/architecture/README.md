@@ -1103,12 +1103,23 @@ the ones a later reader would otherwise re-litigate.
   is never mistaken for a matching one. A rollout step is now evidenceable wherever the read
   happens to work, and no less safe where it does not.
 
-  **What that read found, on its first run:** live protection on `main` already carried all 21
-  contexts in the roster — `migration-order` and `web-production-build` **required**, and the
-  demoted `migration-drift` **absent** — meaning step 4 of #1378's rollout had already been
-  performed. It also surfaced one genuine divergence, `allow_fork_syncing` live `false` against the
-  roster's `true`, which no one could previously have seen. Both are exactly the class of fact a
-  write-only script structurally cannot report.
+  **What that read found, as a dated observation and not a standing claim.** `CONTRIBUTING.md` and
+  `spec/environments/README.md` both hold the rule that *no doc claims per-check whether a gate is
+  live today*, because live protection is whatever an admin last applied and can lag the roster.
+  This ADR does not get to be the exception, so: **at 2026-09-01, one read** reported `main`
+  carrying all 21 roster contexts, with `migration-order` and `web-production-build` present and
+  the demoted `migration-drift` absent — which, if it still holds when you read this, would mean
+  step 4 of #1378's rollout had already happened. **Re-read it rather than citing this paragraph**
+  (`npm run configure:branch-protection:verify`, or the `gh api` call in the runbook); an admin can
+  change any of it in the UI without touching this repo.
+
+  The same read surfaced `allow_fork_syncing` live `false` against the roster's `true`. That one is
+  **not** drift an apply can fix: GitHub only honours fork-syncing on a locked branch, and this
+  payload pairs it with `lock_branch: false`, so the written value is not persisted. The diff
+  therefore skips it unless the branch is locked — a comparison no run could ever satisfy would
+  have made `--verify` red forever, which is how a check teaches people to route around it. Both
+  facts are the class of thing a write-only script structurally could not report, which is the
+  point of the read-back rather than a claim about this particular repository's settings.
 
 **Trigger to revisit:** the six-stage program completes or is abandoned; production backups exist
 (retiring the decision-2 risk); or a provider gains a readable API for branch protection from an
