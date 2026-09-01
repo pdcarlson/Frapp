@@ -634,6 +634,21 @@ describe('ChannelAccessService', () => {
       expect(result?.can_post).toBe(true);
     });
 
+    // Regression: `needsPermissions` must OR in `isAlumni`, the same way
+    // `assertChannelAccess` does — otherwise an alumni President's `*` is
+    // never fetched and `canAccessChannel`'s wildcard bypass can't see it.
+    it('does not restrict a President who also carries the Alumni role', async () => {
+      mockRbac.isAlumni.mockResolvedValue(true);
+      mockRbac.getEffectivePermissions.mockResolvedValue(['*']);
+
+      const [result] = await service.withPostCapability('chap-1', 'user-1', [
+        publicChannel,
+      ]);
+
+      expect(result?.can_post).toBe(true);
+      expect(mockRbac.getEffectivePermissions).toHaveBeenCalled();
+    });
+
     it('skips the alumni lookup when every candidate is alumni-postable by type', async () => {
       const dmChannel: ChatChannel = {
         ...publicChannel,

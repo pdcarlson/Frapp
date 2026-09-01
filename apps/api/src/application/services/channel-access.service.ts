@@ -231,14 +231,6 @@ export class ChannelAccessService {
   ): Promise<ChatChannelView[]> {
     if (channels.length === 0) return [];
 
-    const needsPermissions = channels.some(
-      (channel) =>
-        channel.type === 'ROLE_GATED' || channel.is_read_only === true,
-    );
-    const permissions = needsPermissions
-      ? await this.rbac.getEffectivePermissions(chapterId, userId)
-      : [];
-
     // Same short-circuit `assertChannelAccess` uses: skip the Alumni-role
     // lookup entirely when every candidate is alumni-postable by construction
     // (DMs, GROUP_DMs), so a chapter with no alumni carries no extra query.
@@ -248,6 +240,27 @@ export class ChannelAccessService {
     const isAlumni = needsAlumniLookup
       ? await this.rbac.isAlumni(chapterId, userId)
       : false;
+
+    // `|| isAlumni` matters here for the same reason it does in
+    // `assertChannelAccess`: an alumni caller who ALSO holds `*` (President)
+    // bypasses the restriction (spec/behavior/alumni.md — "a chapter cannot
+    // lock itself out by assigning the Alumni role to its own President"),
+    // and that bypass is decided inside `canAccessChannel` by checking
+    // `permissions.includes('*')`. Without this clause, an alumni President
+    // posting in an ordinary PUBLIC channel would compute `permissions: []`
+    // (not ROLE_GATED, not read-only), so the wildcard check would never see
+    // `*` and `can_post` would come back `false` for a caller whose actual
+    // send succeeds — the exact client/server drift this method exists to
+    // prevent.
+    const needsPermissions = channels.some(
+      (channel) =>
+        channel.type === 'ROLE_GATED' ||
+        channel.is_read_only === true ||
+        isAlumni,
+    );
+    const permissions = needsPermissions
+      ? await this.rbac.getEffectivePermissions(chapterId, userId)
+      : [];
 
     return channels.map((channel) => ({
       ...channel,
