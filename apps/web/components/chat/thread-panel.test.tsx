@@ -163,4 +163,25 @@ describe("ThreadPanel keyboard behavior (#396)", () => {
 
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it("does not close when Escape's default was already prevented by a nested layer", () => {
+    // A row's emoji-reaction popover (`ReactionQuickPick`, a Radix `Popover`)
+    // dismisses itself on Escape via a document-level listener that calls
+    // `preventDefault()` but not `stopPropagation()` — the same keydown still
+    // bubbles here afterward. Simulating `defaultPrevented` directly, rather
+    // than mounting a real popover, isolates the one thing this panel is
+    // responsible for: not double-handling an Escape someone else already
+    // claimed.
+    const { onClose } = renderPanel();
+    const closeButton = screen.getByRole("button", { name: /close thread/i });
+    const event = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    event.preventDefault();
+    closeButton.dispatchEvent(event);
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
 });

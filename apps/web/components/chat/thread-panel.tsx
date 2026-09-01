@@ -76,7 +76,13 @@ export function ThreadPanel({
     <div
       className="flex h-full min-h-0 flex-col"
       onKeyDown={(event) => {
-        if (event.key === "Escape") {
+        // `event.defaultPrevented` is the guard: Radix's `DismissableLayer`
+        // (the emoji-reaction popover a row renders via `ReactionQuickPick`)
+        // closes itself on Escape through a document-level listener that
+        // calls `preventDefault()` but not `stopPropagation()`, so the same
+        // keydown still reaches here afterward. Without this check, Escape
+        // meant only to dismiss that popover also closed the whole thread.
+        if (event.key === "Escape" && !event.defaultPrevented) {
           event.stopPropagation();
           onClose();
         }

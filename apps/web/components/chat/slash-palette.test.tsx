@@ -113,7 +113,7 @@ describe("SlashPalette", () => {
   });
 
   // #396: Radix's `DialogContent` never sets `aria-modal` on its own
-  // (verified against @radix-ui/react-dialog@1.1.15 — only `role="dialog"`
+  // (verified against @radix-ui/react-dialog@1.1.23 — only `role="dialog"`
   // comes for free), so a screen reader could treat this as a non-modal
   // region and let a swipe/arrow gesture escape into the composer behind it
   // while the palette is open. `apps/web/components/ui/dialog.tsx` now sets

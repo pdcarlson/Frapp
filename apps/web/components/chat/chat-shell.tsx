@@ -25,7 +25,7 @@ import { asArray, cn } from "@/lib/utils";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
 import type { ResolveMember } from "@repo/chat-core/dispatch";
 import type { ChatMessage } from "@repo/chat-core/types";
-import { FOCUS_RING_ALWAYS } from "@/components/ui/focus";
+import { FOCUS_RING, SKIP_LINK_CLASSES } from "@/components/ui/focus";
 import {
   ChannelList,
   type ChannelUnread,
@@ -436,9 +436,57 @@ export function ChatShell({
   }, []);
   const closeThread = useCallback(() => {
     setThreadParentId(null);
-    threadTriggerRef.current?.focus();
+    // The trigger is a row inside the virtualized timeline (`react-virtuoso`
+    // unmounts rows scrolled out of its window), so it can have been removed
+    // from the document entirely while the thread stayed open — `.focus()`
+    // on a detached element is a silent no-op, which would otherwise strand
+    // focus with no explanation. Fall back to the timeline landmark itself,
+    // which #396 also made focusable, rather than leaving focus on nothing.
+    if (threadTriggerRef.current?.isConnected) {
+      threadTriggerRef.current.focus();
+    } else {
+      document.getElementById("chat-timeline")?.focus();
+    }
     threadTriggerRef.current = null;
   }, []);
+  // A channel switch while a thread is open unmounts `ThreadPanel` the same
+  // way `closeThread` does, but the trigger that opened it belongs to the
+  // channel being left — refocusing it would be meaningless at best and
+  // would yank focus back to a message the member just navigated away from
+  // at worst. Only the bookkeeping is shared.
+  const dismissThreadForChannelSwitch = useCallback(() => {
+    setThreadParentId(null);
+    threadTriggerRef.current = null;
+  }, []);
+
+  // A screen-reader announcement for a genuinely new incoming message,
+  // decoupled from `#chat-timeline`'s DOM — see the comment on that `role="log"`
+  // div for why: `MessageTimeline` virtualizes, so a live region wired to its
+  // subtree re-announces old messages on ordinary scrolling. This ref tracks
+  // the last message this effect has already announced, per channel, so a
+  // channel switch or the initial backfill load — the latest message is not
+  // "new" in either of those cases — doesn't narrate the whole history.
+  const lastAnnouncedRef = useRef<{
+    channelId: string | null;
+    messageId: string | null;
+  }>({ channelId: null, messageId: null });
+  const [liveAnnouncement, setLiveAnnouncement] = useState("");
+  useEffect(() => {
+    const latest = channel.messages.at(-1);
+    if (!activeChannelId || !latest) return;
+    const latestKey = latest.client_message_id ?? latest.id;
+    if (lastAnnouncedRef.current.channelId !== activeChannelId) {
+      lastAnnouncedRef.current = { channelId: activeChannelId, messageId: latestKey };
+      return;
+    }
+    if (lastAnnouncedRef.current.messageId === latestKey) return;
+    lastAnnouncedRef.current = { channelId: activeChannelId, messageId: latestKey };
+    if (latest.is_deleted) return;
+    const author =
+      latest.sender_id === userId ? "You" : (nameFor(latest.sender_id ?? "") ?? "Someone");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- announcing a real-time arrival by comparing against the previous render's last-seen id, not syncing render state
+    setLiveAnnouncement(`New message from ${author}`);
+  }, [channel.messages, activeChannelId, userId, nameFor]);
 
   if (!activeChapterId) {
     return (
@@ -489,12 +537,17 @@ export function ChatShell({
         this route needs re-skipping, so it earns its own target rather than
         relying on the app-shell's.
       */}
-      <a
-        href="#chat-timeline"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm"
-      >
+      <a href="#chat-timeline" className={SKIP_LINK_CLASSES}>
         Skip to messages
       </a>
+      {/*
+        Decoupled from `#chat-timeline` below on purpose — see that div's own
+        comment. This is the only thing that announces a genuinely new
+        message; it never mounts inside the virtualized timeline.
+      */}
+      <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+        {liveAnnouncement}
+      </div>
       {/*
         Rails take `--surface-1` (foundations §2: "raised surface — nav bars"),
         the same step the dashboard sidebar uses, so the chat rail and the app
@@ -519,7 +572,7 @@ export function ChatShell({
             activeChannelId={activeChannelId}
             onPick={(ch) => {
               setSelectedChannelId(ch.id);
-              setThreadParentId(null);
+              dismissThreadForChannelSwitch();
             }}
           />
         </div>
@@ -598,16 +651,34 @@ export function ChatShell({
             </p>
           ) : null}
         </header>
+        {/*
+          `role="log"` alone still carries an ARIA-spec *implicit* default of
+          `aria-live="polite"` / `aria-relevant="additions text"` — so making
+          this genuinely non-live takes an explicit `aria-live="off"`, not
+          just omitting the attribute. It has to be non-live at all, because
+          `MessageTimeline` virtualizes (`react-virtuoso`): scrolling back
+          through history unmounts and remounts old rows exactly like a new
+          message arriving, so a live region here would re-announce
+          already-read messages on ordinary scrolling. `liveAnnouncement`
+          below is the decoupled, non-virtualized replacement — it updates
+          only when a genuinely new message lands, never on scroll.
+        */}
         <div
           id="chat-timeline"
           tabIndex={-1}
           role="log"
-          aria-live="polite"
-          aria-relevant="additions"
+          aria-live="off"
           aria-label="Chat timeline"
+          // `FOCUS_RING`, not `FOCUS_RING_ALWAYS`: this container is a large
+          // panel most of whose area is an ordinary mouse-click target (blank
+          // space below the last message), not a control reached only
+          // programmatically — `FOCUS_RING_ALWAYS`'s plain `focus:` would
+          // leave the ring painted after a routine click into that space.
+          // `focus-visible:` still shows it for the skip link's keyboard-
+          // driven jump, which is the case this needs to stay visible for.
           className={cn(
             "min-h-0 flex-1 overflow-hidden rounded-md",
-            FOCUS_RING_ALWAYS,
+            FOCUS_RING,
           )}
         >
           <MessageTimeline

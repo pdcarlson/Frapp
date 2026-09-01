@@ -252,11 +252,38 @@ describe("ChatShell accessibility landmarks (#396)", () => {
     expect(skipLink).toHaveAttribute("href", "#chat-timeline");
   });
 
-  it("marks the timeline region as a live log a screen reader announces into", () => {
+  it("marks the timeline region as a log landmark, but not a live one", () => {
     render(<ChatShell initialChannelId="chan-general" />);
 
+    // `role="log"` alone still carries an ARIA-spec implicit `aria-live:
+    // polite` default, so this has to be explicit `"off"` — MessageTimeline
+    // virtualizes, and a live region wired to its subtree would re-announce
+    // already-read messages every time ordinary scrolling remounts them.
     const log = screen.getByRole("log", { name: /chat timeline/i });
     expect(log).toHaveAttribute("id", "chat-timeline");
-    expect(log).toHaveAttribute("aria-live", "polite");
+    expect(log).toHaveAttribute("aria-live", "off");
+  });
+
+  it("does not narrate the backfilled history as new on initial load", () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.queryByText(/^new message from/i)).not.toBeInTheDocument();
+  });
+
+  it("announces a genuinely new incoming message, decoupled from the virtualized timeline", () => {
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+    expect(screen.queryByText(/^new message from/i)).not.toBeInTheDocument();
+
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({
+        messages: [
+          ...MESSAGES,
+          { id: "msg-3", content: "just landed", created_at: "2026-01-01T00:02:00Z" },
+        ],
+      }),
+    );
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.getByText(/new message from someone/i)).toBeInTheDocument();
   });
 });
