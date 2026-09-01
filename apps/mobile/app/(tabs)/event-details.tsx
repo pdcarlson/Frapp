@@ -282,6 +282,13 @@ export default function EventDetailsScreen() {
         </View>
       ) : null}
 
+      {event.notes ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>INTERNAL NOTES</Text>
+          <Text style={styles.sectionBody}>{event.notes}</Text>
+        </View>
+      ) : null}
+
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Add this event to your calendar"

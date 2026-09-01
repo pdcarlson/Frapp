@@ -25,6 +25,13 @@ export interface EventRow {
 
 export interface EventDetail extends EventRow {
   description: string | null;
+  /**
+   * Meeting minutes (`spec/behavior/events.md` § Meeting minutes) — editable
+   * by admins with `events:update` after the event, visible to any member
+   * with access to it. Web's `event-detail-sheet.tsx` labels the section
+   * "Internal notes"; mirrored here rather than inventing a second label.
+   */
+  notes: string | null;
   check_in_zone_name: string | null;
   /**
    * Whether the event carries a check-in geofence.
@@ -124,6 +131,7 @@ export function selectEventDetail(data: unknown): EventDetail | null {
   return {
     ...row,
     description: str(data, "description"),
+    notes: str(data, "notes"),
     check_in_zone_name: str(data, "check_in_zone_name"),
     hasCheckInZone:
       Array.isArray(data.check_in_zone) && data.check_in_zone.length > 0,
