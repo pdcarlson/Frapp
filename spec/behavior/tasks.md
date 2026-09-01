@@ -22,7 +22,7 @@ A lightweight task management system for chapter operations.
 
 ## Admin Confirmation
 
-- When an assignee marks a task COMPLETED, the admin is notified.
+- When a task is marked COMPLETED, its creator is notified (same "notify the creator, not every `tasks:manage` holder" rule the OVERDUE notification below uses) — unless the creator is the one who marked it complete, in which case there is nothing to tell them.
 - The admin reviews and confirms completion. On confirmation:
   - If a point reward is attached, a point transaction (category: MANUAL, with task ID in metadata) is created for the assignee.
   - The `confirmed_at` timestamp is set.
@@ -56,6 +56,7 @@ A lightweight task management system for chapter operations.
 - Assignee is notified when a task is assigned to them.
 - Assignee is notified 1 day before the due date if the task is not COMPLETED.
 - Assignee and admin are both notified when a task becomes OVERDUE. The admin notified is the task's creator — the member who assigned it — not every `tasks:manage` holder.
+- The task's creator is notified when the task is marked COMPLETED (unless they are the one who marked it, or have since left the chapter) — the same creator-not-fan-out rule as the OVERDUE notification above.
 - The two due-date reminders above are sent by a daily scheduled sweep, each at most once per task: delivery is recorded in `scheduled_notification_dispatches`, so re-running a sweep, or running it on several API instances, cannot duplicate a reminder. A task that went overdue more than 7 days ago is not retro-notified.
 - Assignee is notified when completion is confirmed (and points are awarded).
 

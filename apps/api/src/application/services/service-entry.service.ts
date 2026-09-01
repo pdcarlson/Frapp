@@ -9,6 +9,8 @@ import {
 import {
   isAllowedUploadExtension,
   isAllowedUploadMime,
+  isWithinUploadSizeLimit,
+  MAX_UPLOAD_LABEL,
 } from '@repo/validation';
 import { SERVICE_ENTRY_REPOSITORY } from '../../domain/repositories/service-entry.repository.interface';
 import type { IServiceEntryRepository } from '../../domain/repositories/service-entry.repository.interface';
@@ -55,6 +57,7 @@ export interface RequestProofUploadUrlInput {
   chapterId: string;
   filename: string;
   contentType: string;
+  sizeBytes?: number;
 }
 
 export interface ReviewServiceEntryInput {
@@ -92,6 +95,15 @@ export class ServiceEntryService {
     if (!isAllowedUploadMime('proof', input.contentType)) {
       throw new BadRequestException(
         `Content type "${input.contentType}" is not allowed`,
+      );
+    }
+
+    if (
+      input.sizeBytes !== undefined &&
+      !isWithinUploadSizeLimit(input.sizeBytes)
+    ) {
+      throw new BadRequestException(
+        `File exceeds the ${MAX_UPLOAD_LABEL} upload limit`,
       );
     }
 

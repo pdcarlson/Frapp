@@ -233,6 +233,7 @@ Chapters that pre-date the `#chapter-audit` channel have no mirror; the bridge l
 | Tasks         | Task assigned to you                                               | NORMAL                      |
 | Tasks         | Task due soon (1 day before)                                       | NORMAL                      |
 | Tasks         | Task overdue                                                       | NORMAL                      |
+| Tasks         | Task marked completed (to creator, needs confirmation)             | NORMAL                      |
 | Tasks         | Task completion confirmed (points awarded)                         | NORMAL                      |
 | Service       | Service hours approved                                             | NORMAL                      |
 | Service       | Service hours rejected                                             | NORMAL                      |

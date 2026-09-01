@@ -869,5 +869,188 @@ describe('TaskService', () => {
         }),
       );
     });
+
+    // #358: the creator is notified so a completed task doesn't strand
+    // waiting for a manual board check — mirrors the OVERDUE sweep's
+    // "notify the creator, not every tasks:manage holder" rule.
+    describe('task completion (#358)', () => {
+      const creatorMember: Member = {
+        ...baseMember,
+        id: 'member-admin',
+        user_id: 'admin-1',
+      };
+      const completed: Task = {
+        ...baseTask,
+        status: TaskStatus.COMPLETED,
+        completed_at: '2026-02-26T18:30:00.000Z',
+      };
+
+      it("notifies the task's creator when the assignee marks it completed", async () => {
+        mockTaskRepo.findById.mockResolvedValue({
+          ...baseTask,
+          status: TaskStatus.IN_PROGRESS,
+        });
+        mockTaskRepo.update.mockResolvedValue(completed);
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue(creatorMember);
+
+        await service.updateStatus(
+          'task-1',
+          'ch-1',
+          'user-1', // the assignee
+          false,
+          TaskStatus.COMPLETED,
+        );
+
+        expect(mockMemberRepo.findByUserAndChapter).toHaveBeenCalledWith(
+          'admin-1', // task.created_by
+          'ch-1',
+        );
+        expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+          'admin-1',
+          'ch-1',
+          expect.objectContaining({
+            title: 'Task Completed',
+            priority: 'NORMAL',
+            category: 'tasks',
+            data: { target: { screen: 'tasks', taskId: 'task-1' } },
+          }),
+        );
+      });
+
+      it("notifies the creator when an admin marks a task completed on the assignee's behalf", async () => {
+        mockTaskRepo.findById.mockResolvedValue({
+          ...baseTask,
+          status: TaskStatus.IN_PROGRESS,
+        });
+        mockTaskRepo.update.mockResolvedValue(completed);
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue(creatorMember);
+
+        await service.updateStatus(
+          'task-1',
+          'ch-1',
+          'other-admin', // a different tasks:manage holder, not the creator
+          true,
+          TaskStatus.COMPLETED,
+        );
+
+        expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+          'admin-1',
+          'ch-1',
+          expect.objectContaining({ title: 'Task Completed' }),
+        );
+      });
+
+      it('does not notify when the creator is the one who completed their own task', async () => {
+        const selfAssigned: Task = {
+          ...baseTask,
+          assignee_id: 'admin-1',
+          created_by: 'admin-1',
+          status: TaskStatus.IN_PROGRESS,
+        };
+        mockTaskRepo.findById.mockResolvedValue(selfAssigned);
+        mockTaskRepo.update.mockResolvedValue({
+          ...selfAssigned,
+          status: TaskStatus.COMPLETED,
+        });
+
+        await service.updateStatus(
+          'task-1',
+          'ch-1',
+          'admin-1',
+          false,
+          TaskStatus.COMPLETED,
+        );
+
+        expect(mockMemberRepo.findByUserAndChapter).not.toHaveBeenCalled();
+        expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+      });
+
+      it('does not notify a creator who has since left the chapter', async () => {
+        mockTaskRepo.findById.mockResolvedValue({
+          ...baseTask,
+          status: TaskStatus.IN_PROGRESS,
+        });
+        mockTaskRepo.update.mockResolvedValue(completed);
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+        await service.updateStatus(
+          'task-1',
+          'ch-1',
+          'user-1',
+          false,
+          TaskStatus.COMPLETED,
+        );
+
+        expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+      });
+
+      it('does not notify for a transition other than COMPLETED', async () => {
+        mockTaskRepo.findById.mockResolvedValue(baseTask);
+        mockTaskRepo.update.mockResolvedValue({
+          ...baseTask,
+          status: TaskStatus.IN_PROGRESS,
+        });
+
+        await service.updateStatus(
+          'task-1',
+          'ch-1',
+          'user-1',
+          false,
+          TaskStatus.IN_PROGRESS,
+        );
+
+        expect(mockMemberRepo.findByUserAndChapter).not.toHaveBeenCalled();
+        expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+      });
+
+      it('returns the completed task even when the notification provider fails (best-effort)', async () => {
+        mockTaskRepo.findById.mockResolvedValue({
+          ...baseTask,
+          status: TaskStatus.IN_PROGRESS,
+        });
+        mockTaskRepo.update.mockResolvedValue(completed);
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue(creatorMember);
+        mockNotificationService.notifyUser.mockRejectedValueOnce(
+          new Error('push provider down'),
+        );
+
+        const result = await service.updateStatus(
+          'task-1',
+          'ch-1',
+          'user-1',
+          false,
+          TaskStatus.COMPLETED,
+        );
+
+        expect(result.status).toBe(TaskStatus.COMPLETED);
+        expect(mockTaskRepo.update).toHaveBeenCalledWith(
+          'task-1',
+          'ch-1',
+          expect.objectContaining({ status: TaskStatus.COMPLETED }),
+        );
+      });
+
+      it('returns the completed task even when the creator-membership lookup itself throws', async () => {
+        mockTaskRepo.findById.mockResolvedValue({
+          ...baseTask,
+          status: TaskStatus.IN_PROGRESS,
+        });
+        mockTaskRepo.update.mockResolvedValue(completed);
+        mockMemberRepo.findByUserAndChapter.mockRejectedValueOnce(
+          new Error('connection pool exhausted'),
+        );
+
+        const result = await service.updateStatus(
+          'task-1',
+          'ch-1',
+          'user-1',
+          false,
+          TaskStatus.COMPLETED,
+        );
+
+        expect(result.status).toBe(TaskStatus.COMPLETED);
+        expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+      });
+    });
   });
 });
