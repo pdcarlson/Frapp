@@ -1002,6 +1002,27 @@ After any rollback event:
 * **Migration**: `20260417180000_add_poll_list_vote_aggregate_rpcs.sql`
 * **Action**: Run `DROP FUNCTION IF EXISTS get_poll_vote_option_totals(uuid[]);` and `DROP FUNCTION IF EXISTS get_poll_user_votes_for_messages(uuid[], uuid);`
 
+## Rollback locking EXECUTE on `get_points_report`/poll-vote-aggregate RPCs to `service_role`
+* **Migration**: `20260901170000_lock_down_public_rpc_execute.sql`
+* **Action**: Run:
+  ```sql
+  DO $$
+  BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+      GRANT EXECUTE ON FUNCTION get_points_report(uuid, uuid, timestamptz) TO anon;
+      GRANT EXECUTE ON FUNCTION get_poll_vote_option_totals(uuid[]) TO anon;
+      GRANT EXECUTE ON FUNCTION get_poll_user_votes_for_messages(uuid[], uuid) TO anon;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+      GRANT EXECUTE ON FUNCTION get_points_report(uuid, uuid, timestamptz) TO authenticated;
+      GRANT EXECUTE ON FUNCTION get_poll_vote_option_totals(uuid[]) TO authenticated;
+      GRANT EXECUTE ON FUNCTION get_poll_user_votes_for_messages(uuid[], uuid) TO authenticated;
+    END IF;
+  END
+  $$;
+  ```
+* **Note**: Grant-only change, no data loss and no function body change — restores the pre-migration Postgres-default EXECUTE-to-PUBLIC behavior for `anon`/`authenticated`. Should not be needed: all three RPCs are `security invoker` (RLS still applies under the caller's own privileges) and both callers (`ReportService.getPointsReport`, `SupabasePollVoteRepository`) already go through the API's `service_role` client, which keeps EXECUTE regardless. Only relevant if some other caller was found to invoke these RPCs directly as `anon`/`authenticated` (e.g. via PostgREST) after this migration shipped — confirm that caller's actual need before rolling back, since re-opening the grant is exactly the convention gap #678 closed.
+
 ## Rollback `idx_point_transactions_chapter_created_at`
 * **Migration**: `20260417120000_point_transactions_chapter_created_at_idx.sql`
 * **Action**: `DROP INDEX IF EXISTS idx_point_transactions_chapter_created_at;`
