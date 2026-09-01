@@ -106,6 +106,79 @@ describe("EventDetailSheet role targeting", () => {
   });
 });
 
+describe("EventDetailSheet meeting minutes", () => {
+  it("labels the notes field as meeting minutes, not internal notes", () => {
+    render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        event={{ ...baseEvent, notes: "Line one\nLine two" }}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Meeting minutes")).toBeInTheDocument();
+    expect(screen.queryByText("Internal notes")).not.toBeInTheDocument();
+  });
+
+  it("preserves line breaks members typed instead of collapsing them", () => {
+    render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        event={{ ...baseEvent, notes: "Line one\nLine two" }}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+
+    // The sheet renders into a Radix portal on `document.body`, and RTL's
+    // `getByText` normalizes whitespace (collapsing the newline) — which
+    // would pass even if the markup dropped it — so read the raw node.
+    const minutes = document.body.querySelector("p.whitespace-pre-wrap");
+    expect(minutes).not.toBeNull();
+    expect(minutes?.textContent).toBe("Line one\nLine two");
+  });
+
+  it("preserves line breaks in the description too, same as minutes", () => {
+    render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        event={{ ...baseEvent, description: "Agenda one\nAgenda two" }}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+
+    // Description renders before minutes in the sheet, so it's the first
+    // whitespace-pre-wrap paragraph.
+    const [description] = document.body.querySelectorAll(
+      "p.whitespace-pre-wrap",
+    );
+    expect(description?.textContent).toBe("Agenda one\nAgenda two");
+  });
+
+  it("renders no minutes section when the event has none", () => {
+    render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        event={baseEvent}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+
+    expect(screen.queryByText("Meeting minutes")).not.toBeInTheDocument();
+  });
+});
+
 describe("EventDetailSheet subscription gating", () => {
   // `DELETE /v1/events/:id` and the `PATCH` behind Edit are both paid-ops.
   // Edit is gated here, not only inside the editor dialog, because this button
