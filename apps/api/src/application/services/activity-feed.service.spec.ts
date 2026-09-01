@@ -229,15 +229,24 @@ describe('ActivityFeedService', () => {
 
   it('over-fetches announcements so soft-deleted rows do not crowd out live ones within the cap', async () => {
     mockChatService.getChannels.mockResolvedValue([announcementsChannel]);
-    // Newest 5 are deleted, next 10 are live — a naive `limit: 10` fetch
-    // filtered afterward would surface only 5 live rows (or fewer).
+    // 5 deleted, then 15 live — more live messages than PER_DOMAIN_LIMIT
+    // survive the filter, so the final `.slice(0, PER_DOMAIN_LIMIT)` is what
+    // actually caps the result at 10, not an accident of the fixture size.
     const deleted = Array.from({ length: 5 }, (_, i) =>
       messageFixture({ id: `msg-deleted-${i}`, is_deleted: true }),
     );
-    const live = Array.from({ length: 10 }, (_, i) =>
+    const live = Array.from({ length: 15 }, (_, i) =>
       messageFixture({ id: `msg-live-${i}`, is_deleted: false }),
     );
-    mockChatService.getMessages.mockResolvedValue([...deleted, ...live]);
+    const allMessages = [...deleted, ...live];
+    // Mirrors the real repository: the requested `limit` genuinely bounds
+    // what comes back, so this test also proves the buffer multiplier is
+    // load-bearing — reverting it to `PER_DOMAIN_LIMIT` would starve this
+    // mock down to 5 deleted + 5 live, dropping announcementCount to 5.
+    mockChatService.getMessages.mockImplementation(
+      async (_channelId, _chapterId, _userId, options) =>
+        allMessages.slice(0, options?.limit ?? allMessages.length),
+    );
 
     const result = await service.getFeed(CHAPTER_ID, USER_ID, 50);
     const announcementCount = result.filter(
@@ -245,8 +254,6 @@ describe('ActivityFeedService', () => {
     ).length;
 
     expect(announcementCount).toBe(10);
-    // The buffer multiplier is an implementation detail — assert only that
-    // more than the per-domain floor was requested, not the exact factor.
     const [, , , requestedOptions] = mockChatService.getMessages.mock.calls[0];
     expect(requestedOptions?.limit).toBeGreaterThan(10);
   });
