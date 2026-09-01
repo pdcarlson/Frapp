@@ -17,6 +17,7 @@ import { can } from "@repo/validation";
 import { formatLocaleDate as formatDate } from "@repo/formatting";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useToast } from "@/hooks/use-toast";
+import { chatDeepLink } from "@/lib/chat/chat-links";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -344,7 +345,7 @@ export function MemberDetailSheet({
         throw new Error("No channel id returned");
       }
       onOpenChange(false);
-      router.push(`/chat?channel=${channelId}`);
+      router.push(chatDeepLink({ channelId }));
     } catch (error) {
       if (dmTargetUserIdRef.current !== requestedUserId) return;
       toast({

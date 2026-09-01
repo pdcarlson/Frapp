@@ -723,60 +723,6 @@ export interface paths {
         patch: operations["NotificationController_updateSettings_v1"];
         trace?: never;
     };
-    "/v1/events": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List chapter events */
-        get: operations["EventController_list_v1"];
-        put?: never;
-        /** Create an event */
-        post: operations["EventController_create_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/events/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get event by id */
-        get: operations["EventController_getOne_v1"];
-        put?: never;
-        post?: never;
-        /** Delete an event, or cancel a recurring series from now forward */
-        delete: operations["EventController_delete_v1"];
-        options?: never;
-        head?: never;
-        /** Update an event */
-        patch: operations["EventController_update_v1"];
-        trace?: never;
-    };
-    "/v1/events/{id}/ics": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Download .ics calendar file for an event */
-        get: operations["EventController_getIcs_v1"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/channels": {
         parameters: {
             query?: never;
@@ -1101,6 +1047,60 @@ export interface paths {
         get?: never;
         /** Set the caller's notification level for a channel */
         put: operations["ChatController_setChannelNotificationLevel_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List chapter events */
+        get: operations["EventController_list_v1"];
+        put?: never;
+        /** Create an event */
+        post: operations["EventController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get event by id */
+        get: operations["EventController_getOne_v1"];
+        put?: never;
+        post?: never;
+        /** Delete an event, or cancel a recurring series from now forward */
+        delete: operations["EventController_delete_v1"];
+        options?: never;
+        head?: never;
+        /** Update an event */
+        patch: operations["EventController_update_v1"];
+        trace?: never;
+    };
+    "/v1/events/{id}/ics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download .ics calendar file for an event */
+        get: operations["EventController_getIcs_v1"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -2910,55 +2910,6 @@ export interface components {
              */
             theme?: "light" | "dark" | "system";
         };
-        GeofenceCoordinateDto: {
-            lat: number;
-            lng: number;
-        };
-        CreateEventDto: {
-            name: string;
-            description?: string;
-            location?: string;
-            start_time: string;
-            end_time: string;
-            /** @default 10 */
-            point_value: number;
-            /** @default false */
-            is_mandatory: boolean;
-            /** @description Recurrence rule (e.g. WEEKLY, BIWEEKLY, MONTHLY) */
-            recurrence_rule?: string;
-            required_role_ids?: string[];
-            notes?: string;
-            /** @description Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. */
-            check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
-            /** @description Human-readable name for `check_in_zone`, shown on the mobile scanner ("Inside the Great Hall zone"). */
-            check_in_zone_name?: string;
-            /** @description When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. */
-            channel_id?: string;
-            /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. */
-            client_message_id?: string;
-        };
-        UpdateEventDto: {
-            name?: string;
-            description?: string;
-            location?: string;
-            start_time?: string;
-            end_time?: string;
-            point_value?: number;
-            is_mandatory?: boolean;
-            /** @description Recurrence rule (e.g. WEEKLY, BIWEEKLY, MONTHLY) */
-            recurrence_rule?: string;
-            required_role_ids?: string[];
-            notes?: string;
-            /** @description Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. Send an empty array to clear an existing zone. */
-            check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
-            /** @description Human-readable name for `check_in_zone`, shown on the mobile scanner ("Inside the Great Hall zone"). */
-            check_in_zone_name?: string;
-            /**
-             * @description Which occurrences this applies to. `instance` (default) affects only this event. `series` affects the whole recurring series from now forward — occurrences that have already started are never modified or deleted, so attendance history is preserved.
-             * @enum {string}
-             */
-            scope?: "instance" | "series";
-        };
         ChannelUnreadCountDto: {
             /** Format: uuid */
             channel_id: string;
@@ -3049,6 +3000,55 @@ export interface components {
              * @enum {string}
              */
             level: "all" | "mentions" | "off";
+        };
+        GeofenceCoordinateDto: {
+            lat: number;
+            lng: number;
+        };
+        CreateEventDto: {
+            name: string;
+            description?: string;
+            location?: string;
+            start_time: string;
+            end_time: string;
+            /** @default 10 */
+            point_value: number;
+            /** @default false */
+            is_mandatory: boolean;
+            /** @description Recurrence rule (e.g. WEEKLY, BIWEEKLY, MONTHLY) */
+            recurrence_rule?: string;
+            required_role_ids?: string[];
+            notes?: string;
+            /** @description Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. */
+            check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
+            /** @description Human-readable name for `check_in_zone`, shown on the mobile scanner ("Inside the Great Hall zone"). */
+            check_in_zone_name?: string;
+            /** @description When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. */
+            channel_id?: string;
+            /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. */
+            client_message_id?: string;
+        };
+        UpdateEventDto: {
+            name?: string;
+            description?: string;
+            location?: string;
+            start_time?: string;
+            end_time?: string;
+            point_value?: number;
+            is_mandatory?: boolean;
+            /** @description Recurrence rule (e.g. WEEKLY, BIWEEKLY, MONTHLY) */
+            recurrence_rule?: string;
+            required_role_ids?: string[];
+            notes?: string;
+            /** @description Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. Send an empty array to clear an existing zone. */
+            check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
+            /** @description Human-readable name for `check_in_zone`, shown on the mobile scanner ("Inside the Great Hall zone"). */
+            check_in_zone_name?: string;
+            /**
+             * @description Which occurrences this applies to. `instance` (default) affects only this event. `series` affects the whole recurring series from now forward — occurrences that have already started are never modified or deleted, so attendance history is preserved.
+             * @enum {string}
+             */
+            scope?: "instance" | "series";
         };
         CheckInDto: {
             /** @description Rotating token read from the host QR code (s22). Valid for its 30s window and the one immediately before it. */
@@ -4681,127 +4681,6 @@ export interface operations {
             };
         };
     };
-    EventController_list_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    EventController_create_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateEventDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    EventController_getOne_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    EventController_delete_v1: {
-        parameters: {
-            query?: {
-                /** @description Which occurrences this applies to. `instance` (default) affects only this event. `series` affects the whole recurring series from now forward — occurrences that have already started are never modified or deleted, so attendance history is preserved. */
-                scope?: "instance" | "series";
-            };
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    EventController_update_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateEventDto"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    EventController_getIcs_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     ChatController_listChannels_v1: {
         parameters: {
             query?: never;
@@ -5357,6 +5236,127 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ChannelNotificationPreferenceDto"];
                 };
+            };
+        };
+    };
+    EventController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    EventController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateEventDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    EventController_getOne_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    EventController_delete_v1: {
+        parameters: {
+            query?: {
+                /** @description Which occurrences this applies to. `instance` (default) affects only this event. `series` affects the whole recurring series from now forward — occurrences that have already started are never modified or deleted, so attendance history is preserved. */
+                scope?: "instance" | "series";
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    EventController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateEventDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    EventController_getIcs_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

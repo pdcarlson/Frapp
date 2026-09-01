@@ -182,6 +182,7 @@ describe('Route declaration order — a literal route must not be swallowed by :
     expect(memberServiceMock.searchByChapterAndName).toHaveBeenCalledWith(
       CHAPTER_ID,
       'marcus',
+      'member-1',
     );
     expect(memberServiceMock.findProfileById).not.toHaveBeenCalled();
   });
