@@ -22,9 +22,9 @@ import {
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
-import { useToast } from "@/hooks/use-toast";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
+import { downloadBlob, rowsToCsv } from "@/lib/utils";
 import { PointsAdjustmentDialog } from "@/components/points/points-adjustment-dialog";
 import {
   SubscriptionNotice,
@@ -61,7 +61,6 @@ type PointTransactionRow = {
 
 export default function PointsPage() {
   const { isOffline } = useNetwork();
-  const { toast } = useToast();
   const [window, setWindow] = useState<"all" | "semester" | "month">("all");
   const [leaderboardSearch, setLeaderboardSearch] = useState("");
   const [transactionSearch, setTransactionSearch] = useState("");
@@ -186,11 +185,21 @@ export default function PointsPage() {
     transactionIds.length > 0 &&
     transactionIds.every((transactionId) => selectedTransactionIds.includes(transactionId));
 
-  function handleBulkTransactionAction(actionLabel: string) {
-    toast({
-      title: "Bulk points action queued",
-      description: `${actionLabel} for ${selectedTransactionIds.length} selected transaction${selectedTransactionIds.length > 1 ? "s" : ""} is not available yet.`,
-    });
+  function exportSelectedTransactionsCsv() {
+    const rows = filteredTransactions
+      .filter((transaction) => selectedTransactionIds.includes(transaction.id))
+      .map((transaction) => ({
+        Amount: String(transaction.amount),
+        Category: transaction.category,
+        Description: transaction.description,
+        Time: formatTimestamp(transaction.created_at),
+      }));
+    const csv = rowsToCsv(rows);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    downloadBlob(
+      blob,
+      `frapp-points-${new Date().toISOString().slice(0, 10)}.csv`,
+    );
   }
 
   function toggleAllTransactions(checked: boolean) {
@@ -444,19 +453,19 @@ export default function PointsPage() {
                   {selectedTransactionIds.length > 1 ? "s" : ""} selected
                 </p>
                 <div className="flex gap-2">
+                  {/*
+                    Flag for audit removed rather than wired (#336): flags are
+                    raised automatically whenever a single adjustment exceeds
+                    ±100 points (see PointsAuditCard below) — there is no
+                    manual override to call, and adding one would be a new
+                    moderation feature rather than a wiring fix.
+                  */}
                   <Button
                     size="sm"
                     variant="secondary"
-                    onClick={() => handleBulkTransactionAction("Export selected")}
+                    onClick={exportSelectedTransactionsCsv}
                   >
                     Export selected
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => handleBulkTransactionAction("Flag for audit")}
-                  >
-                    Flag for audit
                   </Button>
                 </div>
               </div>

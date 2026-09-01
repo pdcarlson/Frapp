@@ -21,9 +21,9 @@ import {
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
-import { useToast } from "@/hooks/use-toast";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
+import { downloadBlob, rowsToCsv } from "@/lib/utils";
 import { InvoiceAdminCard } from "@/components/billing/invoice-admin-card";
 import { SubscriptionCheckoutCard } from "@/components/billing/subscription-checkout-card";
 import {
@@ -55,7 +55,6 @@ type InvoicePreview = {
 
 export default function BillingPage() {
   const { isOffline } = useNetwork();
-  const { toast } = useToast();
   const [invoiceSearch, setInvoiceSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "open" | "paid" | "overdue">("all");
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([]);
@@ -126,18 +125,22 @@ export default function BillingPage() {
     );
   }
 
-  function handleInvoiceAction(actionLabel: string) {
-    toast({
-      title: "Billing action queued",
-      description: `${actionLabel} is not available yet. Please continue using current billing workflows.`,
-    });
-  }
-
-  function handleBulkInvoiceAction(actionLabel: string) {
-    toast({
-      title: "Bulk billing action queued",
-      description: `${actionLabel} for ${selectedInvoiceIds.length} selected invoice${selectedInvoiceIds.length > 1 ? "s" : ""} is not available yet.`,
-    });
+  function exportSelectedInvoicesCsv() {
+    const rows = filteredInvoices
+      .filter((invoice) => selectedInvoiceIds.includes(invoice.id))
+      .map((invoice) => ({
+        Title: invoice.title,
+        Amount: formatCurrency(invoice.amount),
+        Status: invoice.status,
+        "Due Date": formatDate(invoice.due_date),
+        "Member ID": invoice.user_id,
+      }));
+    const csv = rowsToCsv(rows);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    downloadBlob(
+      blob,
+      `frapp-invoices-${new Date().toISOString().slice(0, 10)}.csv`,
+    );
   }
 
   if (isOffline) {
@@ -169,14 +172,15 @@ export default function BillingPage() {
       </Suspense>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>Subscription Status</CardTitle>
-            <CardDescription>Monitor chapter billing health and member invoice progress.</CardDescription>
-          </div>
-          <Button onClick={() => handleInvoiceAction("Create Invoice")}>
-            Create Invoice
-          </Button>
+        <CardHeader>
+          {/*
+            No header trigger here on purpose (#336/#1200): a fully working,
+            subscription-gated Create Invoice dialog already ships one card
+            down in `InvoiceAdminCard`. A second, unwired button beside it read
+            as invoicing being unbuilt.
+          */}
+          <CardTitle>Subscription Status</CardTitle>
+          <CardDescription>Monitor chapter billing health and member invoice progress.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-3">
           <div className="rounded-lg border border-border p-4">
@@ -286,18 +290,14 @@ export default function BillingPage() {
                 {selectedInvoiceIds.length > 1 ? "s" : ""} selected
               </p>
               <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => handleBulkInvoiceAction("Send reminder")}
-                >
-                  Send reminder
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => handleBulkInvoiceAction("Export CSV")}
-                >
+                {/*
+                  Send reminder removed rather than wired (#336): overdue
+                  members already get an automatic notification
+                  (`InvoiceAdminCard`'s footer), and there is no manual-remind
+                  endpoint to call — adding one would be a new feature, not a
+                  wiring fix.
+                */}
+                <Button size="sm" variant="secondary" onClick={exportSelectedInvoicesCsv}>
                   Export CSV
                 </Button>
               </div>

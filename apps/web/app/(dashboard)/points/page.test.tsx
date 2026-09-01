@@ -96,6 +96,12 @@ vi.mock("@/lib/providers/network-provider", () => ({
   useNetwork: () => networkState,
 }));
 
+const { downloadBlobSpy } = vi.hoisted(() => ({ downloadBlobSpy: vi.fn() }));
+vi.mock("@/lib/utils", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/utils")>("@/lib/utils");
+  return { ...actual, downloadBlob: downloadBlobSpy };
+});
+
 // Both children own independent queries and error handling; stub them so these
 // tests only exercise the page's own leaderboard/ledger states.
 vi.mock("@/components/points/points-audit-card", () => ({
@@ -179,7 +185,6 @@ describe("PointsPage failure states", () => {
 
     expect(screen.queryByRole("button", { name: /Adjust points/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Export selected/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Flag for audit/ })).not.toBeInTheDocument();
   });
 
   it("retries both reads from the error state", () => {
@@ -489,5 +494,86 @@ describe("PointsPage subscription gating", () => {
     render(<PointsPage />);
 
     expect(adjust()).toBeEnabled();
+  });
+});
+
+// #336: the transaction bulk bar used to toast "not available yet" for both
+// actions. Export selected now genuinely exports; Flag for audit is gone
+// entirely because flags are automatic (±100 points) with no manual override.
+describe("PointsPage transaction bulk actions", () => {
+  beforeEach(() => {
+    downloadBlobSpy.mockClear();
+  });
+
+  function selectFirstTransaction() {
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /select founders day check-in/i }),
+    );
+  }
+
+  it("never renders a manual flag control — flags are automatic", () => {
+    setQueries({
+      summary: {
+        data: {
+          balance: 12,
+          transactions: [
+            {
+              id: "txn-1",
+              amount: 12,
+              category: "ATTENDANCE",
+              description: "Founders Day check-in",
+              created_at: "2026-08-01T12:00:00Z",
+            },
+          ],
+        },
+      },
+    });
+
+    render(<PointsPage />);
+    selectFirstTransaction();
+
+    expect(
+      screen.queryByRole("button", { name: /Flag for audit/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("exports the selected transaction as a downloaded CSV", () => {
+    setQueries({
+      summary: {
+        data: {
+          balance: 12,
+          transactions: [
+            {
+              id: "txn-1",
+              amount: 12,
+              category: "ATTENDANCE",
+              description: "Founders Day check-in",
+              created_at: "2026-08-01T12:00:00Z",
+            },
+            {
+              id: "txn-2",
+              amount: -5,
+              category: "FINE",
+              description: "Late arrival",
+              created_at: "2026-08-02T12:00:00Z",
+            },
+          ],
+        },
+      },
+    });
+
+    render(<PointsPage />);
+    selectFirstTransaction();
+    fireEvent.click(screen.getByRole("button", { name: /export selected/i }));
+
+    expect(downloadBlobSpy).toHaveBeenCalledTimes(1);
+    const [blob, filename] = downloadBlobSpy.mock.calls[0] as [Blob, string];
+    expect(filename).toMatch(/^frapp-points-\d{4}-\d{2}-\d{2}\.csv$/);
+    expect(blob.type).toBe("text/csv;charset=utf-8");
+    return blob.text().then((csv) => {
+      // Only the selected row — the unselected fine is not exported.
+      expect(csv).toContain("Founders Day check-in");
+      expect(csv).not.toContain("Late arrival");
+    });
   });
 });

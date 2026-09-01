@@ -7,7 +7,7 @@ import {
   RolesGlyph,
   SearchGlyph,
 } from "@/components/events/chapter-ops-glyphs";
-import { useEvents } from "@repo/hooks";
+import { useAutoAbsent, useEvents } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -52,6 +52,7 @@ import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
 import { formatLocaleDateTime as formatDate } from "@repo/formatting";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useNow } from "@/lib/use-now";
+import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 
 type EventRow = Record<string, unknown>;
 
@@ -81,6 +82,8 @@ export function EventsPage() {
   const [editorMode, setEditorMode] = useState<"create" | "edit">("create");
   const [activeEvent, setActiveEvent] = useState<EventRow | null>(null);
   const eventsQuery = useEvents();
+  const autoAbsent = useAutoAbsent();
+  const { confirm, confirmDialog } = useConfirmDialog();
 
   // Live updates: any admin creating or editing an event in another tab
   // pushes through immediately. Scoped to the active chapter so we never
@@ -175,11 +178,46 @@ export function EventsPage() {
     );
   }
 
-  function handleBulkAction(actionLabel: string) {
-    toast({
-      title: "Bulk event action queued",
-      description: `${actionLabel} for ${selectedEventIds.length} selected event${selectedEventIds.length > 1 ? "s" : ""} is not available yet.`,
+  // `POST /events/:id/attendance/auto-absent` is real, guarded, per-event
+  // support for this action — it records ABSENT for whoever the event
+  // required and never checked in or was otherwise marked. It refuses (400)
+  // before an event's check-in grace period ends, so a batch spanning an
+  // in-progress event fails that event without blocking the rest.
+  async function markSelectedAttendanceComplete() {
+    const ids = [...selectedEventIds];
+    if (ids.length === 0) return;
+    const confirmed = await confirm({
+      title: `Mark attendance complete for ${ids.length} event${ids.length > 1 ? "s" : ""}?`,
+      description:
+        "Members who didn't check in and weren't otherwise marked will be recorded absent. This cannot be undone.",
+      confirmLabel: "Mark attendance complete",
     });
+    if (!confirmed) return;
+
+    const results = await Promise.allSettled(
+      ids.map((eventId) => autoAbsent.mutateAsync(eventId)),
+    );
+    const failed = results.filter((result) => result.status === "rejected");
+    const succeeded = results.length - failed.length;
+
+    if (failed.length === 0) {
+      const totalMarked = results.reduce(
+        (sum, result) =>
+          sum + (result.status === "fulfilled" ? (result.value?.marked ?? 0) : 0),
+        0,
+      );
+      toast({
+        title: "Attendance finalized",
+        description: `${succeeded} event${succeeded > 1 ? "s" : ""} processed, ${totalMarked} member${totalMarked === 1 ? "" : "s"} marked absent.`,
+      });
+      setSelectedEventIds([]);
+    } else {
+      toast({
+        title: "Some events couldn't be finalized",
+        description: `${succeeded} succeeded, ${failed.length} failed — often because an event hasn't reached its check-in grace period yet.`,
+        variant: "destructive",
+      });
+    }
   }
 
   if (isOffline) {
@@ -307,27 +345,20 @@ export function EventsPage() {
               {selectedEventIds.length} event
               {selectedEventIds.length > 1 ? "s" : ""} selected
             </p>
+            {/*
+              Notify assignees and Archive selected removed rather than wired
+              (#336): events have no assignee concept and no archive state —
+              only delete/cancel — so there is no real mutation to call
+              without inventing one.
+            */}
             <div className="flex flex-wrap gap-2">
               <Button
                 size="sm"
                 variant="secondary"
-                onClick={() => handleBulkAction("Mark attendance complete")}
+                disabled={autoAbsent.isPending}
+                onClick={() => void markSelectedAttendanceComplete()}
               >
                 Mark attendance complete
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => handleBulkAction("Notify assignees")}
-              >
-                Notify assignees
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => handleBulkAction("Archive selected")}
-              >
-                Archive selected
               </Button>
             </div>
           </CardContent>
@@ -503,6 +534,7 @@ export function EventsPage() {
           await eventsQuery.refetch();
         }}
       />
+      {confirmDialog}
     </div>
   );
 }

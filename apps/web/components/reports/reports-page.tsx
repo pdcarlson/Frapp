@@ -55,7 +55,7 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
-import { downloadBlob } from "@/lib/utils";
+import { downloadBlob, rowsToCsv } from "@/lib/utils";
 
 type ReportKind = "attendance" | "points" | "roster" | "service";
 
@@ -99,39 +99,17 @@ function flattenRecord(value: unknown, prefix = ""): Record<string, string> {
   return result;
 }
 
-function quoteCell(value: string): string {
-  if (/[",\n\r]/.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`;
-  }
-  return value;
-}
-
 /**
  * Derive a CSV from any report payload shape.
  *
  * Each API handler returns either `{ rows: [...] }`, `{ entries: [...] }`, or
- * a bare array. We normalize to rows, flatten the first row's keys to compute
- * a stable column order, and emit a UTF-8 CSV with BOM so Excel renders
- * umlauts and emoji correctly on export. The BOM + CRLF output keeps
- * downstream spreadsheet behavior predictable without extra client libs.
+ * a bare array. We normalize to rows and flatten each row's keys before
+ * handing them to the shared `rowsToCsv` (column order, escaping, BOM/CRLF).
  */
 function buildCsv(payload: unknown): string {
   const rows = extractRows(payload);
   if (rows.length === 0) return "";
-  const flatRows = rows.map((row) => flattenRecord(row));
-  const headerSet = new Set<string>();
-  for (const flat of flatRows) {
-    for (const key of Object.keys(flat)) headerSet.add(key);
-  }
-  const headers = Array.from(headerSet);
-  const lines = [headers.map(quoteCell).join(",")];
-  for (const flat of flatRows) {
-    lines.push(
-      headers.map((header) => quoteCell(flat[header] ?? "")).join(","),
-    );
-  }
-  // BOM + CRLF for Excel friendliness.
-  return `\uFEFF${lines.join("\r\n")}`;
+  return rowsToCsv(rows.map((row) => flattenRecord(row)));
 }
 
 function extractRows(payload: unknown): ReportRow[] {

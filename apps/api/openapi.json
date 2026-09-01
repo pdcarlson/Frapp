@@ -2917,7 +2917,14 @@
         ],
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoAbsentResultDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -7748,6 +7755,18 @@
         },
         "required": [
           "status"
+        ]
+      },
+      "AutoAbsentResultDto": {
+        "type": "object",
+        "properties": {
+          "marked": {
+            "type": "number",
+            "description": "Number of members newly recorded ABSENT. 0 when the event is not mandatory and targets no roles, or when everyone required already has an attendance record."
+          }
+        },
+        "required": [
+          "marked"
         ]
       },
       "AdjustPointsDto": {
