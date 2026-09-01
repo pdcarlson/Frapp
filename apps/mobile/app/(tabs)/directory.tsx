@@ -66,8 +66,25 @@ export default function DirectoryScreen() {
   // re-runs once React has caught up with the keystrokes.
   const deferredQuery = useDeferredValue(query.trim());
 
+  // Self-reported alumni fields, mirroring the web alumni directory
+  // (`apps/web/components/alumni/alumni-directory.tsx`) — same three filters,
+  // same `useAlumni` params. Filters persist across a tab switch (the fields
+  // are only shown on the Alumni tab, but staying applied means returning to
+  // it doesn't silently drop what was typed).
+  const [gradYear, setGradYear] = useState("");
+  const [city, setCity] = useState("");
+  const [company, setCompany] = useState("");
+  const deferredGradYear = useDeferredValue(gradYear.trim());
+  const deferredCity = useDeferredValue(city.trim());
+  const deferredCompany = useDeferredValue(company.trim());
+  const hasAlumniFilters = Boolean(deferredGradYear || deferredCity || deferredCompany);
+
   const membersQuery = useMembers();
-  const alumniQuery = useAlumni();
+  const alumniQuery = useAlumni({
+    graduation_year: deferredGradYear || undefined,
+    city: deferredCity || undefined,
+    company: deferredCompany || undefined,
+  });
   const searchQuery = useMemberSearch(deferredQuery);
 
   const isSearching = deferredQuery.length > 0;
@@ -117,6 +134,32 @@ export default function DirectoryScreen() {
           ]}
         />
       )}
+
+      {isSearching || tab !== "alumni" ? null : (
+        <View style={styles.alumniFilters}>
+          <SearchField
+            value={gradYear}
+            onChangeText={setGradYear}
+            placeholder="Graduation year, e.g. 2018"
+            accessibilityLabel="Filter alumni by graduation year"
+            keyboardType="number-pad"
+          />
+          <SearchField
+            value={city}
+            onChangeText={setCity}
+            placeholder="City"
+            accessibilityLabel="Filter alumni by city"
+            autoCapitalize="words"
+          />
+          <SearchField
+            value={company}
+            onChangeText={setCompany}
+            placeholder="Company"
+            accessibilityLabel="Filter alumni by company"
+            autoCapitalize="words"
+          />
+        </View>
+      )}
     </View>
   );
 
@@ -139,6 +182,15 @@ export default function DirectoryScreen() {
           glyph="⌕"
           title="No matches"
           body={`Nobody in this chapter matches “${deferredQuery}”.`}
+        />
+      );
+    }
+    if (tab === "alumni" && hasAlumniFilters) {
+      return (
+        <EmptyState
+          glyph="⌕"
+          title="No alumni match these filters"
+          body="Graduation year, city, and company are self-reported — try loosening a filter."
         />
       );
     }
@@ -243,6 +295,9 @@ function createStyles(tokens: SignetTokens) {
       paddingTop: tokens.spacing.lg,
       gap: tokens.spacing.sm,
       paddingBottom: tokens.spacing.sm,
+    },
+    alumniFilters: {
+      gap: tokens.spacing.sm,
     },
     title: {
       ...typeRole(tokens.typography.role.title),
