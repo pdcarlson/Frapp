@@ -316,6 +316,72 @@ describe("send() failure", () => {
     expect(result.current.draft).toBe("");
     expect(result.current.sendError).toBeNull();
   });
+
+  it("clears on a channel switch, so it never leaks onto the next thread (#1431)", async () => {
+    // Mirrors reactionError's equivalent test below (#999's precedent) —
+    // sendError had no channel-switch reset at all until this fix.
+    mocks.sendMessage.mockImplementation(async () => {
+      throw new Error("offline");
+    });
+    const queryClient = newQueryClient();
+    const client = createClient();
+    const { result, rerender } = renderHook(
+      ({ channelId }: { channelId: string }) => useChatChannel(channelId),
+      {
+        initialProps: { channelId: CHANNEL },
+        wrapper: createWrapper(client, queryClient),
+      },
+    );
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+
+    await act(async () => {
+      await result.current.send("unsent text");
+    });
+    expect(result.current.sendError).toBe("offline");
+
+    rerender({ channelId: "channel-2" });
+
+    expect(result.current.sendError).toBeNull();
+  });
+
+  it("ignores a stale send rejection that resolves after a channel switch", async () => {
+    // The regression the channel/generation guard above closes: channel A's
+    // send is still in flight when the member switches to channel B, then
+    // A's send rejects. Its catch must not paint A's error — or restore A's
+    // failed draft text — onto B, which is exactly the leak this fix exists
+    // to close, just via the in-flight route rather than an already-settled
+    // one (companion to reactionError's equivalent test below, #999).
+    const gate = deferred();
+    mocks.sendMessage.mockImplementation(async () => {
+      await gate.promise;
+    });
+    const queryClient = newQueryClient();
+    const client = createClient();
+    const { result, rerender } = renderHook(
+      ({ channelId }: { channelId: string }) => useChatChannel(channelId),
+      {
+        initialProps: { channelId: CHANNEL },
+        wrapper: createWrapper(client, queryClient),
+      },
+    );
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+
+    let sendPromise: Promise<void> = Promise.resolve();
+    act(() => {
+      sendPromise = result.current.send("unsent text");
+    });
+
+    rerender({ channelId: "channel-2" });
+    expect(result.current.sendError).toBeNull();
+
+    await act(async () => {
+      gate.reject(new Error("too late"));
+      await sendPromise;
+    });
+
+    expect(result.current.sendError).toBeNull();
+    expect(result.current.draft).not.toBe("unsent text");
+  });
 });
 
 describe("send() and the draft debounce", () => {

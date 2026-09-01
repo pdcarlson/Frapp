@@ -82,7 +82,13 @@ export interface UseChatChannelResult {
   unreact: (messageId: string, emoji: string) => Promise<void>;
   draft: string;
   setDraft: (body: string) => void;
-  /** Last send failure. `null` once the member edits the draft or retries. */
+  /**
+   * Last send failure. `null` once a fresh `send` is attempted or the
+   * member switches channels (#1431 — this used to outlive a channel
+   * switch, unlike `reactionError`). Editing the draft or calling `retry`
+   * does **not** clear it on its own — neither touches `sendError` — so a
+   * failed-send composer hint persists until one of the two above.
+   */
   sendError: string | null;
   /**
    * Last `react`/`unreact` rejection. `chat-core` already rolls the
@@ -249,16 +255,23 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   /** Last react/unreact failure, surfaced the same way (#999). */
   const [reactionError, setReactionError] = useState<string | null>(null);
   const clearReactionError = useCallback(() => setReactionError(null), []);
-  // A channel switch must not carry the previous channel's reaction failure
-  // onto this one — nothing here retries or discards it the way `sendError`
-  // can, so it would otherwise sit until the member happened to trigger
-  // another reaction. Reset inline during render (React's "adjusting state
-  // when a prop changes" pattern, https://react.dev/reference/react/useState#storing-information-from-previous-renders)
+  // A channel switch must not carry a previous channel's send or reaction
+  // failure onto this one — nothing here retries or discards it the way a
+  // failed-send bubble can, so it would otherwise sit until the member
+  // happened to trigger another action. Reset inline during render (React's
+  // "adjusting state when a prop changes" pattern, https://react.dev/reference/react/useState#storing-information-from-previous-renders)
   // rather than in an effect, which would fire an extra render after the
   // channel-switch render already committed.
-  const [reactionErrorChannelId, setReactionErrorChannelId] = useState(channelId);
-  if (reactionErrorChannelId !== channelId) {
-    setReactionErrorChannelId(channelId);
+  //
+  // One tracked channel id covers every per-channel error setter (#1431 —
+  // `sendError` had no reset at all until this fix, unlike `reactionError`'s
+  // #999 precedent) rather than a bespoke `<name>ErrorChannelId` copy per
+  // error, so a future failure sink (e.g. an inline-card-action error) only
+  // has to add itself to the list below, not reinvent the pattern.
+  const [errorResetChannelId, setErrorResetChannelId] = useState(channelId);
+  if (errorResetChannelId !== channelId) {
+    setErrorResetChannelId(channelId);
+    if (sendError !== null) setSendError(null);
     if (reactionError !== null) setReactionError(null);
   }
   /**
@@ -329,6 +342,16 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [channelId, cancelDraftTimer],
   );
 
+  /**
+   * Bumped once per `send` dispatch, mirroring `reactionGenerationRef`.
+   * `sendMessage` resolves asynchronously, so without this the catch below
+   * repaints a *stale* channel's failure (and restores its failed draft
+   * text) onto whichever channel is on screen once it finally rejects — the
+   * exact race `errorResetChannelId`'s reset above cannot catch by itself,
+   * since the reset only clears an error already set, not one still to
+   * arrive (#1431).
+   */
+  const sendGenerationRef = useRef(0);
   const send = useCallback(
     async (content: string) => {
       const body = content.trim();
@@ -340,6 +363,8 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       // so the channel gets two identical messages.
       if (!channelId || !ctx || !body || sendingRef.current) return;
       sendingRef.current = true;
+      const forChannelId = channelId;
+      const generation = ++sendGenerationRef.current;
       // Cancel the debounce first, or a keystroke from under 400ms ago
       // re-persists the draft after the send has already cleared it.
       cancelDraftTimer();
@@ -355,13 +380,20 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
         // a full or unavailable AsyncStorage rejects out of it having already
         // drawn the optimistic bubble but queued nothing. There is no toast on
         // this platform, so restoring the text and naming the failure is the
-        // only way the member learns their message did not go anywhere.
-        setDraftState(body);
-        setSendError(
-          error instanceof Error && error.message
-            ? error.message
-            : "Couldn't queue that message. Try again.",
-        );
+        // only way the member learns their message did not go anywhere —
+        // but only onto the channel this send was actually for; see the
+        // generation/channel guard above.
+        if (
+          currentChannelIdRef.current === forChannelId &&
+          sendGenerationRef.current === generation
+        ) {
+          setDraftState(body);
+          setSendError(
+            error instanceof Error && error.message
+              ? error.message
+              : "Couldn't queue that message. Try again.",
+          );
+        }
       } finally {
         sendingRef.current = false;
       }
