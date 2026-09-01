@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Param,
   Patch,
@@ -38,9 +39,10 @@ export class ChapterConfigController {
     summary: 'Get merged chapter config (archetype defaults + overrides)',
   })
   async getConfig(
-    @Param('id') _id: string,
+    @Param('id') id: string,
     @CurrentChapterId() chapterId: string,
   ) {
+    this.assertMatchesActiveChapter(id, chapterId);
     return this.configService.getConfig(chapterId);
   }
 
@@ -54,11 +56,12 @@ export class ChapterConfigController {
       'Update chapter config (writes audit log + posts to #chapter-audit)',
   })
   async patchConfig(
-    @Param('id') _id: string,
+    @Param('id') id: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: PatchChapterConfigDto,
   ) {
+    this.assertMatchesActiveChapter(id, chapterId);
     return this.configService.patchConfig(chapterId, userId, dto);
   }
 
@@ -71,9 +74,31 @@ export class ChapterConfigController {
     summary: 'Recompute and persist derived theme palette from branding.colors',
   })
   async recomputePalette(
-    @Param('id') _id: string,
+    @Param('id') id: string,
     @CurrentChapterId() chapterId: string,
   ) {
+    this.assertMatchesActiveChapter(id, chapterId);
     return this.configService.recomputeAndPersistPalette(chapterId);
+  }
+
+  /**
+   * Every route on this controller takes a `:id` path segment purely for URL
+   * consistency with the rest of the API — the guard-resolved `chapterId` is
+   * what actually gets used. Left unchecked, `:id` disagreeing with it would
+   * be a contract lie (200 on a chapter the caller didn't ask for) rather
+   * than a leak (#866): reject the mismatch instead of silently ignoring it.
+   */
+  private assertMatchesActiveChapter(id: string, chapterId: string): void {
+    // Lowercased: UUIDs are case-insensitive per RFC 4122 and Postgres/JWT
+    // claims are always lowercase, but the URL segment is caller-supplied —
+    // an uppercased-but-otherwise-matching id must not 403 a legitimate
+    // same-chapter request.
+    if (id.toLowerCase() !== chapterId.toLowerCase()) {
+      throw new ForbiddenException({
+        code: 'chapter.context.mismatch',
+        message:
+          'The chapter id in the URL disagrees with your active chapter context.',
+      });
+    }
   }
 }

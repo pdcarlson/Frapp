@@ -9,6 +9,8 @@ import { Event } from '../../domain/entities/event.entity';
 import { NotificationService } from './notification.service';
 import { ChatService } from './chat.service';
 import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
+import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
+import { RbacService } from './rbac.service';
 
 describe('EventService', () => {
   let service: EventService;
@@ -17,7 +19,12 @@ describe('EventService', () => {
     Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
   >;
   let mockUserRepo: { findByIds: jest.Mock };
+  let mockMemberRepo: {
+    findByUserAndChapter: jest.Mock;
+    findByChapter: jest.Mock;
+  };
   let mockChatService: { sendMessage: jest.Mock };
+  let mockRbacService: { memberHasAnyPermission: jest.Mock };
 
   beforeEach(async () => {
     mockEventRepo = {
@@ -37,7 +44,14 @@ describe('EventService', () => {
     };
 
     mockUserRepo = { findByIds: jest.fn().mockResolvedValue([]) };
+    mockMemberRepo = {
+      findByUserAndChapter: jest.fn().mockResolvedValue(null),
+      findByChapter: jest.fn().mockResolvedValue([]),
+    };
     mockChatService = { sendMessage: jest.fn().mockResolvedValue(undefined) };
+    mockRbacService = {
+      memberHasAnyPermission: jest.fn().mockResolvedValue(false),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -45,7 +59,9 @@ describe('EventService', () => {
         { provide: EVENT_REPOSITORY, useValue: mockEventRepo },
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: USER_REPOSITORY, useValue: mockUserRepo },
+        { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
         { provide: ChatService, useValue: mockChatService },
+        { provide: RbacService, useValue: mockRbacService },
       ],
     }).compile();
 
@@ -96,6 +112,173 @@ describe('EventService', () => {
 
     expect(mockEventRepo.findByChapter).toHaveBeenCalledWith('ch-1');
     expect(result).toEqual([baseEvent]);
+  });
+
+  // Role-targeted read visibility (#1463): a role-targeted event is invisible
+  // to a viewer without an intersecting role. No `viewerId` (internal callers
+  // like `update`/`delete`) must skip filtering entirely — those routes are
+  // already gated on a stronger management permission.
+  describe('role-targeted read visibility', () => {
+    const targetedEvent: Event = {
+      ...baseEvent,
+      id: 'evt-targeted',
+      required_role_ids: ['role-officer'],
+    };
+
+    describe('findByChapter', () => {
+      it('omits nothing when no viewerId is supplied (internal callers)', async () => {
+        mockEventRepo.findByChapter.mockResolvedValue([
+          baseEvent,
+          targetedEvent,
+        ]);
+
+        const result = await service.findByChapter('ch-1');
+
+        expect(mockMemberRepo.findByUserAndChapter).not.toHaveBeenCalled();
+        expect(result).toEqual([baseEvent, targetedEvent]);
+      });
+
+      it('drops a role-targeted event for a viewer without a matching role', async () => {
+        mockEventRepo.findByChapter.mockResolvedValue([
+          baseEvent,
+          targetedEvent,
+        ]);
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue({
+          role_ids: ['role-member'],
+        });
+
+        const result = await service.findByChapter('ch-1', 'user-1');
+
+        expect(result).toEqual([baseEvent]);
+      });
+
+      it('keeps a role-targeted event for a viewer with a matching role', async () => {
+        mockEventRepo.findByChapter.mockResolvedValue([targetedEvent]);
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue({
+          role_ids: ['role-officer'],
+        });
+
+        const result = await service.findByChapter('ch-1', 'user-1');
+
+        expect(result).toEqual([targetedEvent]);
+      });
+
+      it('drops a role-targeted event when the viewer is not a chapter member', async () => {
+        mockEventRepo.findByChapter.mockResolvedValue([targetedEvent]);
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+        const result = await service.findByChapter('ch-1', 'user-1');
+
+        expect(result).toEqual([]);
+      });
+
+      it('treats an empty required_role_ids array as untargeted', async () => {
+        const emptyArrayEvent: Event = {
+          ...baseEvent,
+          id: 'evt-empty',
+          required_role_ids: [],
+        };
+        mockEventRepo.findByChapter.mockResolvedValue([emptyArrayEvent]);
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue({
+          role_ids: [],
+        });
+
+        const result = await service.findByChapter('ch-1', 'user-1');
+
+        expect(result).toEqual([emptyArrayEvent]);
+      });
+
+      it('keeps a role-targeted event for a viewer holding events:update, regardless of role', async () => {
+        mockEventRepo.findByChapter.mockResolvedValue([targetedEvent]);
+        mockRbacService.memberHasAnyPermission.mockResolvedValue(true);
+
+        const result = await service.findByChapter('ch-1', 'user-1');
+
+        expect(result).toEqual([targetedEvent]);
+        expect(mockMemberRepo.findByUserAndChapter).not.toHaveBeenCalled();
+        expect(mockRbacService.memberHasAnyPermission).toHaveBeenCalledWith(
+          'ch-1',
+          'user-1',
+          expect.arrayContaining(['events:update']),
+        );
+      });
+
+      it('skips the permission and member lookups when nothing is role-targeted', async () => {
+        mockEventRepo.findByChapter.mockResolvedValue([baseEvent]);
+
+        const result = await service.findByChapter('ch-1', 'user-1');
+
+        expect(result).toEqual([baseEvent]);
+        expect(mockRbacService.memberHasAnyPermission).not.toHaveBeenCalled();
+        expect(mockMemberRepo.findByUserAndChapter).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('findById', () => {
+      it('returns the event when no viewerId is supplied (internal callers)', async () => {
+        mockEventRepo.findById.mockResolvedValue(targetedEvent);
+
+        const result = await service.findById('evt-targeted', 'ch-1');
+
+        expect(mockMemberRepo.findByUserAndChapter).not.toHaveBeenCalled();
+        expect(result).toEqual(targetedEvent);
+      });
+
+      it('404s a role-targeted event for a viewer without a matching role', async () => {
+        mockEventRepo.findById.mockResolvedValue(targetedEvent);
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue({
+          role_ids: ['role-member'],
+        });
+
+        await expect(
+          service.findById('evt-targeted', 'ch-1', 'user-1'),
+        ).rejects.toThrow(NotFoundException);
+      });
+
+      it('returns a role-targeted event for a viewer with a matching role', async () => {
+        mockEventRepo.findById.mockResolvedValue(targetedEvent);
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue({
+          role_ids: ['role-officer'],
+        });
+
+        const result = await service.findById('evt-targeted', 'ch-1', 'user-1');
+
+        expect(result).toEqual(targetedEvent);
+      });
+
+      it('returns an untargeted event to any viewer without a member lookup', async () => {
+        mockEventRepo.findById.mockResolvedValue(baseEvent);
+
+        const result = await service.findById('evt-1', 'ch-1', 'user-1');
+
+        expect(mockMemberRepo.findByUserAndChapter).not.toHaveBeenCalled();
+        expect(result).toEqual(baseEvent);
+      });
+
+      it('treats an empty required_role_ids array as untargeted', async () => {
+        const emptyArrayEvent: Event = {
+          ...baseEvent,
+          id: 'evt-empty',
+          required_role_ids: [],
+        };
+        mockEventRepo.findById.mockResolvedValue(emptyArrayEvent);
+
+        const result = await service.findById('evt-empty', 'ch-1', 'user-1');
+
+        expect(mockMemberRepo.findByUserAndChapter).not.toHaveBeenCalled();
+        expect(result).toEqual(emptyArrayEvent);
+      });
+
+      it('returns a role-targeted event for a viewer holding events:update, regardless of role', async () => {
+        mockEventRepo.findById.mockResolvedValue(targetedEvent);
+        mockRbacService.memberHasAnyPermission.mockResolvedValue(true);
+
+        const result = await service.findById('evt-targeted', 'ch-1', 'user-1');
+
+        expect(result).toEqual(targetedEvent);
+        expect(mockMemberRepo.findByUserAndChapter).not.toHaveBeenCalled();
+      });
+    });
   });
 
   it('should create an event with valid times', async () => {
@@ -442,6 +625,35 @@ describe('EventService', () => {
       expect(ics).not.toContain('DESCRIPTION:');
       expect(ics).not.toContain('LOCATION:');
     });
+
+    it('404s a role-targeted event export for a viewer without a matching role', async () => {
+      mockEventRepo.findById.mockResolvedValue({
+        ...baseEvent,
+        required_role_ids: ['role-officer'],
+      });
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue({
+        role_ids: ['role-member'],
+      });
+
+      await expect(
+        service.generateIcs('evt-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('generates the ICS for a role-targeted event when the viewer holds the role', async () => {
+      mockEventRepo.findById.mockResolvedValue({
+        ...baseEvent,
+        name: 'Exec Meeting',
+        required_role_ids: ['role-officer'],
+      });
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue({
+        role_ids: ['role-officer'],
+      });
+
+      const ics = await service.generateIcs('evt-1', 'ch-1', 'user-1');
+
+      expect(ics).toContain('SUMMARY:Exec Meeting');
+    });
   });
 
   describe('notifications', () => {
@@ -520,6 +732,62 @@ describe('EventService', () => {
       });
 
       expect(result).toEqual(baseEvent);
+    });
+
+    // A role-targeted event's "New Event"/"Event Updated" push must not name
+    // it to a member who now correctly 404s reading the event itself (#1463)
+    // — only members whose role_ids intersect required_role_ids are notified.
+    describe('role-targeted notifications (#1463)', () => {
+      it('notifies only eligible members when a role-targeted event is created', async () => {
+        mockEventRepo.create.mockResolvedValue({
+          ...baseEvent,
+          name: 'Exec Meeting',
+          required_role_ids: ['role-officer'],
+        });
+        mockMemberRepo.findByChapter.mockResolvedValue([
+          { user_id: 'user-officer', role_ids: ['role-officer'] },
+          { user_id: 'user-member', role_ids: ['role-member'] },
+        ]);
+
+        await service.create({
+          chapter_id: 'ch-1',
+          name: 'Exec Meeting',
+          start_time: baseEvent.start_time,
+          end_time: baseEvent.end_time,
+          required_role_ids: ['role-officer'],
+        });
+
+        expect(mockNotificationService.notifyChapter).not.toHaveBeenCalled();
+        expect(mockNotificationService.notifyUser).toHaveBeenCalledTimes(1);
+        expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+          'user-officer',
+          'ch-1',
+          expect.objectContaining({ title: 'New Event' }),
+        );
+      });
+
+      it('notifies only eligible members when a role-targeted event is updated', async () => {
+        mockEventRepo.update.mockResolvedValue({
+          ...baseEvent,
+          name: 'Exec Meeting',
+          required_role_ids: ['role-officer'],
+          location: 'New Location',
+        });
+        mockMemberRepo.findByChapter.mockResolvedValue([
+          { user_id: 'user-officer', role_ids: ['role-officer'] },
+          { user_id: 'user-member', role_ids: ['role-member'] },
+        ]);
+
+        await service.update('evt-1', 'ch-1', { location: 'New Location' });
+
+        expect(mockNotificationService.notifyChapter).not.toHaveBeenCalled();
+        expect(mockNotificationService.notifyUser).toHaveBeenCalledTimes(1);
+        expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+          'user-officer',
+          'ch-1',
+          expect.objectContaining({ title: 'Event Updated' }),
+        );
+      });
     });
   });
 

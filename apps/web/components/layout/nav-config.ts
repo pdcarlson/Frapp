@@ -1,6 +1,7 @@
 import {
   BackworkGlyph,
   BillingGlyph,
+  ChannelsGlyph,
   ChatGlyph,
   DirectoryGlyph,
   DocumentsGlyph,
@@ -279,6 +280,18 @@ export const DASHBOARD_NAV: NavSection[] = [
         status: "available",
         module: "reports",
         requirePermission: "reports:export",
+      },
+      {
+        id: "chat-admin",
+        label: "Chat Admin",
+        icon: ChannelsGlyph,
+        href: "/chat-admin",
+        breadcrumbTitle: "Chat Admin",
+        primaryActionLabel: "New channel",
+        description:
+          "Create, edit, and delete channels; manage categories and pinned messages.",
+        status: "available",
+        requirePermission: "channels:manage",
       },
       {
         id: "discord-import",

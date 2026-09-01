@@ -70,10 +70,22 @@ export class UpdateChannelDto {
   @IsString({ each: true })
   required_permissions?: string[];
 
-  @ApiPropertyOptional()
+  // Nullable, unlike `CreateChannelDto.category_id`: a new channel starting
+  // uncategorized just omits the field, but moving an *existing* channel back
+  // to uncategorized has to be expressible, and `undefined` is indistinguishable
+  // from "don't touch this field" once the body is JSON-serialized.
+  // `@IsOptional()` treats `null` the same as `undefined` (skips `@IsUUID()`),
+  // so this validates and reaches the repository update as a real `null`.
+  // Both `type: String` AND `format: 'uuid'` must be explicit here — verified
+  // empirically. `type` alone with `nullable: true` plus `@IsUUID()` present
+  // emits `{"type":"object","nullable":true}` in the generated schema (an
+  // `@nestjs/swagger` inference quirk this exact combination triggers); adding
+  // `format: 'uuid'` short-circuits whatever path produces that, and the
+  // schema comes out as the intended `{"type":"string","format":"uuid","nullable":true}`.
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
   @IsOptional()
   @IsUUID()
-  category_id?: string;
+  category_id?: string | null;
 
   @ApiPropertyOptional()
   @IsOptional()

@@ -8,6 +8,8 @@ import { canAccessChannel } from '@repo/validation';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { RbacService } from './rbac.service';
+import { hasRequiredRole } from './event.service';
+import { SystemPermissions } from '../../domain/constants/permissions';
 import type { BackworkResource } from '../../domain/entities/backwork.entity';
 import type { Event } from '../../domain/entities/event.entity';
 import type {
@@ -254,7 +256,7 @@ export class SearchService {
     // rather than matching it as a substring.
     const [backwork, events, members, messages] = await Promise.all([
       wrap('backwork', this.searchBackwork(chapterId, q), []),
-      wrap('events', this.searchEvents(chapterId, q), []),
+      wrap('events', this.searchEvents(chapterId, userId, q), []),
       wrap('members', this.searchMembers(chapterId, q), []),
       wrap('messages', this.searchMessages(chapterId, userId, q), []),
     ]);
@@ -295,6 +297,7 @@ export class SearchService {
    */
   private async searchEvents(
     chapterId: string,
+    userId: string,
     query: string,
   ): Promise<Event[]> {
     const { data, error } = (await this.supabase
@@ -304,7 +307,49 @@ export class SearchService {
       .textSearch('search_vector', query, TEXT_SEARCH)
       .limit(SEARCH_LIMIT)) as QueryResult<Event>;
     throwIfError(error);
-    return data ?? [];
+    return this.filterVisibleEvents(chapterId, userId, data ?? []);
+  }
+
+  /**
+   * Search must not become a side-channel around `EventService`'s read
+   * visibility (#1463): a role-targeted event is invisible via `GET
+   * /v1/events` to a member without an intersecting role, so it must be
+   * invisible here too. Mirrors `EventService.isVisibleToViewer`/
+   * `findByChapter` exactly — same `hasRequiredRole` predicate, same
+   * `events:update` (wildcard-inclusive) management exemption — via a raw
+   * query rather than a repository call, consistent with the rest of this
+   * file (`searchMembers`, `accessibleChannelIds`).
+   */
+  private async filterVisibleEvents(
+    chapterId: string,
+    userId: string,
+    events: Event[],
+  ): Promise<Event[]> {
+    const hasTargetedEvents = events.some(
+      (event) => event.required_role_ids && event.required_role_ids.length > 0,
+    );
+    if (!hasTargetedEvents) return events;
+
+    if (
+      await this.rbacService.memberHasAnyPermission(chapterId, userId, [
+        SystemPermissions.EVENTS_UPDATE,
+      ])
+    ) {
+      return events;
+    }
+
+    const { data: members, error } = (await this.supabase
+      .from('members')
+      .select('role_ids')
+      .eq('user_id', userId)
+      .eq('chapter_id', chapterId)
+      .limit(1)) as QueryResult<{ role_ids: string[] }>;
+    throwIfError(error);
+    const memberRoleIds = members?.[0]?.role_ids ?? [];
+
+    return events.filter((event) =>
+      hasRequiredRole(event.required_role_ids, memberRoleIds),
+    );
   }
 
   /**

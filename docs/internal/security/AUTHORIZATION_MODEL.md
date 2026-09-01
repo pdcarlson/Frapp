@@ -65,12 +65,12 @@ composed with **B** or **C** for per-row reads.
 | `alumni` | `GET /` | A+C+P `members:view` | A — chapter-scoped list |
 | `backwork` | `POST /upload-url`, `POST /`, `GET /`, `GET /departments`, `PATCH /departments/:id`, `GET /professors`, `GET /:id`, `DELETE /:id` | A+C+P, `backwork:upload` / `backwork:admin` on writes | B — `resourceRepo.findById(id, chapterId)` (`backwork.service.ts:201,222`) |
 | `billing` | `GET /status`, `POST /checkout`, `POST /portal` | A+C+P `billing:view` / `billing:manage`; `@SubscriptionExempt` | A — chapter is the subject |
-| `chapters/:id/config` | `GET`, `PATCH`, `POST /:id/theme-palette` | A+C+P `chapter_config:view` / `…:manage`\|`*` | A — **path `:id` is deliberately ignored** (bound as `_id`); the guard-resolved chapter is used (`chapter-config.controller.ts:41,57,74`). See §5.1 |
+| `chapters/:id/config` | `GET`, `PATCH`, `POST /:id/theme-palette` | A+C+P `chapter_config:view` / `…:manage`\|`*` | A — data always comes from the guard-resolved chapter; `:id` disagreeing with it is rejected with `403 chapter.context.mismatch` (`chapter-config.controller.ts:45,64,80`, `assertMatchesActiveChapter`). See §5.1 |
 | `documents` | `POST /upload-url`, `POST /`, `GET /`, `GET /folders`, `POST /folders`, `PATCH /folders/:id`, `DELETE /folders/:id`, `GET /:id`, `DELETE /:id` | A+C+P `members:view`, `chapter_docs:upload` / `…:manage` | B — `findById(id, chapterId)` |
 | `channels` (chat) | 23 routes incl. `GET/POST /:id/messages`, `PATCH/DELETE /messages/:messageId`, pins, reactions, `POST /:id/upload-url` | A+C+P `members:view`, `channels:create` / `channels:manage` | B for categories; **C** for channels and messages — the list filters through `filterAccessibleChannels` and `GET /:id` through `assertChannelAccess` (`chat.service.ts:263-290`), messages via `assertMessageAccess` → `assertChannelAccess` (`chat.service.ts:702-753`). The `channels:manage` mutations resolve chapter-scoped only, by design |
 | `custom-fields` | `GET`, `POST`, `PATCH /:id`, `DELETE /:id` | A+C+P `chapter_config:view` | B |
 | `custom-roles` | `GET`, `POST`, `PATCH /:id`, `DELETE /:id` | A+C+P `chapter_config:view` | B — `findByIds(ids, chapterId)` |
-| `events` | `GET`, `GET /:id`, `POST`, `PATCH /:id`, `GET /:id/ics`, `DELETE /:id` | A+C+P `members:view`, `events:create/update/delete` | B — `eventRepo.findById(id, chapterId)` |
+| `events` | `GET`, `GET /:id`, `POST`, `PATCH /:id`, `GET /:id/ics`, `DELETE /:id` | A+C+P `members:view`, `events:create/update/delete` | B — `eventRepo.findById(id, chapterId)`. The three read routes (`GET`, `GET /:id`, `GET /:id/ics`) additionally filter out a role-targeted event (`required_role_ids` non-empty) unless the caller's `member.role_ids` intersects it — `event.service.ts`'s `isVisibleToViewer`, keyed on the optional `viewerId` param the controller passes only on reads; `update`/`delete`/series internals omit it and are unfiltered, since those already require `events:update`/`events:delete` (#1463) |
 | `events/:eventId/attendance` | `POST /check-in`, `GET /`, `PATCH /:userId`, `POST /auto-absent` | A+C (+P `events:update` on writes) | B — event fetched as `findById(eventId, chapterId)` first (`attendance.service.ts:43,136,152,176`); `:userId` only ever writes inside that event |
 | `invoices` | `GET`, `GET /overdue`, `GET /:id`, `POST`, `PATCH /:id`, `POST /:id/status`, `POST /:id/payment-intent`, `GET /:id/transactions` | A+C+P `members:view`, `billing:view` / `billing:manage` | B — `invoiceRepo.findById(id, chapterId)` |
 | `members` | `GET`, `GET /search`, `GET /:id`, `PATCH /:id/roles`, `PATCH /me/onboarding`, `DELETE /:id` | A+C+P `members:view`, `roles:manage`, `members:remove` | **C** — `memberRepo.findById(id)` then `member.chapter_id !== chapterId → 403` (`member.service.ts:112,205,218`) |
@@ -286,17 +286,21 @@ state is tracked in #770.
 
 Neither is a cross-tenant leak; both are tracked so they are not rediscovered.
 
-### 5.1 `chapters/:id/config` ignores its own path parameter
+### 5.1 `chapters/:id/config` ignores its own path parameter — resolved (#866)
 
-`GET|PATCH /v1/chapters/:id/config` and `POST /v1/chapters/:id/theme-palette` bind the path segment
-as `_id` and operate on the guard-resolved chapter instead (`chapter-config.controller.ts:41,57,74`).
+`GET|PATCH /v1/chapters/:id/config` and `POST /v1/chapters/:id/theme-palette` previously bound the
+path segment as `_id` and operated on the guard-resolved chapter instead, without ever checking the
+two agreed — so **another chapter's id returned 200 with your own chapter's config** rather than
+`403`. No data ever crossed a tenant boundary, but the URL asserted something the handler didn't
+honour, which is exactly the shape a later refactor could misread into a real hole (e.g. wiring the
+unused param through "to fix the lint warning").
 
-Passing **another chapter's id returns 200 with your own chapter's config** rather than `403`. No
-data crosses a tenant boundary — the response is always the caller's own chapter — but the URL
-asserts something the handler does not honour, which is exactly the shape a future refactor
-misreads. The fix is a one-line `_id !== chapterId → 403` assertion, or dropping `:id` from the path
-(a breaking route change). Tracked in **#866**; not changed here because the route shape is a
-public-API decision.
+Fixed by keeping the `:id` URL shape (the route rename to `chapters/current/config` was the
+alternative, but that's a breaking public-API change outside this fix's scope) and adding
+`assertMatchesActiveChapter(id, chapterId)` to all three handlers: a disagreement now throws
+`403 chapter.context.mismatch` — the same code `ChapterGuard` uses for a JWT/header disagreement —
+before the service is ever called (`chapter-config.controller.ts`). Regression coverage in
+`apps/api/test/cross-tenant-isolation.e2e-spec.ts` (`chapter config: URL id vs active chapter`).
 
 ### 5.2 The Realtime carrier was never connected — resolved 2026-08-16 (#867)
 

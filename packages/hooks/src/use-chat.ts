@@ -255,7 +255,8 @@ export function useUpdateChannel() {
         name?: string;
         description?: string;
         required_permissions?: string[];
-        category_id?: string;
+        /** `null` clears the channel back to uncategorized; `undefined` leaves it untouched. */
+        category_id?: string | null;
         is_read_only?: boolean;
       };
     }) => {
@@ -684,6 +685,12 @@ export function useDeleteCategory() {
       queryClient.invalidateQueries({
         queryKey: ["channels", "categories"],
       });
+      // Deleting a category sets every channel that referenced it back to
+      // uncategorized server-side (`ON DELETE SET NULL`). `["channels"]` is a
+      // sibling key, not a descendant of `["channels", "categories"]`, so the
+      // invalidation above alone leaves cached channel rows pointing at a
+      // category id that no longer exists.
+      queryClient.invalidateQueries({ queryKey: ["channels"] });
     },
   });
 }
