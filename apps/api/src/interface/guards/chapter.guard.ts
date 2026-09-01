@@ -127,7 +127,11 @@ export class ChapterGuard implements CanActivate {
     const jwtChapterId = getActiveChapterClaim(request.jwtClaims);
     const headerChapterId = getHeaderValue(request.headers, 'x-chapter-id');
 
-    if (jwtChapterId && headerChapterId && jwtChapterId !== headerChapterId) {
+    if (
+      jwtChapterId &&
+      headerChapterId &&
+      jwtChapterId.toLowerCase() !== headerChapterId.toLowerCase()
+    ) {
       throw new ForbiddenException({
         code: 'chapter.context.mismatch',
         message:
@@ -137,7 +141,16 @@ export class ChapterGuard implements CanActivate {
 
     const explicit = jwtChapterId ?? headerChapterId;
     if (explicit) {
-      return { chapterId: explicit };
+      // #688: Postgres `uuid` comparison is case-insensitive, so an
+      // uppercase-cased header/claim is authorized normally — but storage
+      // prefix math (profileFolderPrefix, backwork/chapter-document/chat
+      // attachment paths, the chapter logo path) is exact-case string
+      // concatenation. Normalizing once here, at the single place every
+      // `@CurrentChapterId()` consumer reads from, keeps every write path
+      // canonical without patching each storage key builder individually —
+      // and matches what a chapter-id column read back from the DB already
+      // is, since `chapters.id` is always generated lowercase.
+      return { chapterId: explicit.toLowerCase() };
     }
 
     // Two rows is all it takes to tell "exactly one" from "more than one".
