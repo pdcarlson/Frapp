@@ -588,6 +588,12 @@ export function ChatShell({
         </div>
         {activeChannel ? (
           <Composer
+            // Remounts the editor per channel so a baked-in-at-creation
+            // extension (the Tiptap `Placeholder`) is rebuilt from the new
+            // channel's name rather than showing the previous channel's —
+            // see #1014. The existing `draft`-sync effect below re-seeds
+            // content on mount, so this costs only focus/selection.
+            key={activeChannel.id}
             channelId={activeChannel.id}
             channelName={activeChannelName}
             isDirect={
