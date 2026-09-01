@@ -7,6 +7,7 @@ import {
   ErrorState,
   LoadingState,
 } from "@/components/shared/async-states";
+import { useTapRevealedMessage } from "@/hooks/use-tap-revealed-message";
 import { MessageItem } from "./message-item";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { authorGroupingKey } from "@repo/hooks";
@@ -119,6 +120,11 @@ export const MessageTimeline = forwardRef<
 ) {
   const virtuoso = useRef<VirtuosoHandle | null>(null);
 
+  // Which row's action cluster a tap revealed — one id for the whole list, so
+  // tapping a second row dismisses the first's, matching the reference
+  // affordance (#1193). Same key basis as `computeItemKey` below.
+  const tapRevealed = useTapRevealedMessage();
+
   // Precompute "showHeader" so we don't recompute per render in the renderer.
   const decorated = useMemo(() => {
     return messages.map((message, index) => {
@@ -220,6 +226,8 @@ export const MessageTimeline = forwardRef<
             onRetry={onRetry}
             onDiscard={onDiscard}
             onAct={onAct}
+            isTapRevealed={tapRevealed.isRevealed(entry.message)}
+            onToggleTapReveal={() => tapRevealed.toggle(entry.message)}
           />
           </>
         )}
