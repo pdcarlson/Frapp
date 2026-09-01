@@ -11,6 +11,10 @@ import { CustomRoleService } from '../../application/services/custom-role.servic
 import { CustomRoleController } from '../../interface/controllers/custom-role.controller';
 import { CustomFieldService } from '../../application/services/custom-field.service';
 import { CustomFieldController } from '../../interface/controllers/custom-field.controller';
+import { ChapterAuditLogService } from '../../application/services/chapter-audit-log.service';
+import { ChapterAuditLogController } from '../../interface/controllers/chapter-audit-log.controller';
+import { CHAPTER_AUDIT_LOG_REPOSITORY } from '../../domain/repositories/chapter-audit-log.repository.interface';
+import { SupabaseChapterAuditLogRepository } from '../../infrastructure/supabase/repositories/supabase-chapter-audit-log.repository';
 import { ActivationModule } from '../activation/activation.module';
 
 @Module({
@@ -19,6 +23,7 @@ import { ActivationModule } from '../activation/activation.module';
     ChapterConfigController,
     CustomRoleController,
     CustomFieldController,
+    ChapterAuditLogController,
   ],
   providers: [
     ChapterConfigService,
@@ -28,6 +33,11 @@ import { ActivationModule } from '../activation/activation.module';
     { provide: ORG_WORKFLOWS_SEED, useValue: WORKFLOWS_SEED },
     CustomRoleService,
     CustomFieldService,
+    ChapterAuditLogService,
+    {
+      provide: CHAPTER_AUDIT_LOG_REPOSITORY,
+      useClass: SupabaseChapterAuditLogRepository,
+    },
   ],
   exports: [
     ChapterConfigService,
@@ -35,6 +45,7 @@ import { ActivationModule } from '../activation/activation.module';
     ChapterServiceConfigService,
     CustomRoleService,
     CustomFieldService,
+    ChapterAuditLogService,
   ],
 })
 export class ChapterConfigModule {}
