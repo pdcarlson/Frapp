@@ -66,7 +66,7 @@ describe('NotificationService', () => {
       delete: jest.fn(),
     };
     mockPushProvider = {
-      sendToUser: jest.fn().mockResolvedValue(undefined),
+      sendToUser: jest.fn().mockResolvedValue({ invalidTokens: [] }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -284,6 +284,75 @@ describe('NotificationService', () => {
           priority: 'URGENT',
         }),
       );
+    });
+
+    describe('pruning invalid tokens', () => {
+      it('deletes a token the provider reports as invalid', async () => {
+        mockSettingsRepo.findByUser.mockResolvedValue(null);
+        mockNotificationRepo.create.mockResolvedValue(baseNotification);
+        mockPushTokenRepo.findByUser.mockResolvedValue([basePushToken]);
+        mockPushProvider.sendToUser.mockResolvedValue({
+          invalidTokens: [basePushToken.token],
+        });
+
+        await service.notifyUser('u-1', 'ch-1', {
+          title: 'Test',
+          body: 'Body',
+          category: 'chat',
+        });
+
+        expect(mockPushTokenRepo.deleteByToken).toHaveBeenCalledWith(
+          basePushToken.token,
+        );
+      });
+
+      it('deletes nothing when the provider reports no invalid tokens', async () => {
+        mockSettingsRepo.findByUser.mockResolvedValue(null);
+        mockNotificationRepo.create.mockResolvedValue(baseNotification);
+        mockPushTokenRepo.findByUser.mockResolvedValue([basePushToken]);
+        mockPushProvider.sendToUser.mockResolvedValue({ invalidTokens: [] });
+
+        await service.notifyUser('u-1', 'ch-1', {
+          title: 'Test',
+          body: 'Body',
+          category: 'chat',
+        });
+
+        expect(mockPushTokenRepo.deleteByToken).not.toHaveBeenCalled();
+      });
+
+      it('does not let a pruning failure read as a push delivery failure', async () => {
+        mockSettingsRepo.findByUser.mockResolvedValue(null);
+        mockNotificationRepo.create.mockResolvedValue(baseNotification);
+        mockPushTokenRepo.findByUser.mockResolvedValue([basePushToken]);
+        mockPushProvider.sendToUser.mockResolvedValue({
+          invalidTokens: [basePushToken.token],
+        });
+        mockPushTokenRepo.deleteByToken.mockRejectedValue(
+          new Error('db unavailable'),
+        );
+        const warnSpy = jest
+          .spyOn(Logger.prototype, 'warn')
+          .mockImplementation(() => undefined);
+
+        await expect(
+          service.notifyUser('u-1', 'ch-1', {
+            title: 'Test',
+            body: 'Body',
+            category: 'chat',
+          }),
+        ).resolves.toBeUndefined();
+
+        expect(warnSpy).toHaveBeenCalledWith(
+          'Failed to prune invalid push token',
+          expect.any(Error),
+        );
+        expect(warnSpy).not.toHaveBeenCalledWith(
+          expect.stringContaining('Push delivery failed'),
+          expect.anything(),
+        );
+        warnSpy.mockRestore();
+      });
     });
 
     // #687: `quiet_hours_tz` predates server-side validation, so stored rows can
