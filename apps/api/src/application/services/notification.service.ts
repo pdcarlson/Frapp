@@ -137,7 +137,7 @@ export class NotificationService {
       const pushTokens = await this.pushTokenRepo.findByUser(userId);
       if (pushTokens.length === 0) return;
 
-      await this.pushProvider.sendToUser(
+      const { invalidTokens } = await this.pushProvider.sendToUser(
         pushTokens.map((t) => t.token),
         {
           title: payload.title,
@@ -148,6 +148,18 @@ export class NotificationService {
           // records be sliced by category (see the Expo provider).
           category,
         },
+      );
+
+      // Pruning stays in the application layer — the provider only classifies
+      // Expo's response, it never touches `push_tokens` itself. Best-effort
+      // and outside the outer catch's concern: a delete failure here must
+      // never read as "push delivery failed" in the log line below.
+      await Promise.allSettled(
+        invalidTokens.map((token) =>
+          this.pushTokenRepo.deleteByToken(token).catch((err) => {
+            this.logger.warn(`Failed to prune invalid push token`, err);
+          }),
+        ),
       );
     } catch (err) {
       this.logger.warn(`Push delivery failed for user ${userId}`, err);

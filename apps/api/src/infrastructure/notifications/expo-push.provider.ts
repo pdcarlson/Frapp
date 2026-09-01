@@ -3,6 +3,7 @@ import Expo, { ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk';
 import type {
   INotificationProvider,
   PushPayload,
+  SendToUserResult,
 } from '../../domain/adapters/notification.interface';
 
 /**
@@ -60,7 +61,10 @@ export class ExpoPushProvider implements INotificationProvider {
   private readonly expo = new Expo();
   private readonly logger = new Logger(ExpoPushProvider.name);
 
-  async sendToUser(pushTokens: string[], payload: PushPayload): Promise<void> {
+  async sendToUser(
+    pushTokens: string[],
+    payload: PushPayload,
+  ): Promise<SendToUserResult> {
     const tally: DeliveryTally = {
       attempted: pushTokens.length,
       invalidTokens: 0,
@@ -69,6 +73,11 @@ export class ExpoPushProvider implements INotificationProvider {
       providerErrors: 0,
       errorCodes: {},
     };
+    // Populated by `recordTickets` below. A plain array pushed to from inside
+    // `Promise.allSettled`'s callbacks is safe here — JS has no thread
+    // preemption mid-synchronous-block, so two chunks' `push` calls can never
+    // interleave even though the chunks run concurrently.
+    const invalidTokens: string[] = [];
 
     const validTokens = pushTokens.filter((t) => Expo.isExpoPushToken(t));
     tally.invalidTokens = pushTokens.length - validTokens.length;
@@ -78,7 +87,7 @@ export class ExpoPushProvider implements INotificationProvider {
       // outage this instrumentation exists to surface, and it used to return
       // silently — indistinguishable from "nothing to do".
       this.emit(tally, payload);
-      return;
+      return { invalidTokens };
     }
 
     const messages: ExpoPushMessage[] = validTokens.map((token) => ({
@@ -101,7 +110,7 @@ export class ExpoPushProvider implements INotificationProvider {
       chunks.map(async (chunk) => {
         try {
           const tickets = await this.expo.sendPushNotificationsAsync(chunk);
-          this.recordTickets(tickets, tally);
+          this.recordTickets(tickets, chunk, tally, invalidTokens);
         } catch (error) {
           // The whole chunk is unaccounted for: Expo never returned per-message
           // tickets, so every message in it counts as a provider failure. The
@@ -114,6 +123,7 @@ export class ExpoPushProvider implements INotificationProvider {
     );
 
     this.emit(tally, payload);
+    return { invalidTokens };
   }
 
   /**
@@ -123,16 +133,39 @@ export class ExpoPushProvider implements INotificationProvider {
    * `MessageRateExceeded`, …). Counting tickets as sends — which is what the
    * previous `Sent ${receipts.length}` line did — reports a total outage as a
    * complete success.
+   *
+   * `chunkMessages` is the same chunk `sendPushNotificationsAsync` was called
+   * with — the SDK guarantees "the nth ticket is for the nth message", so
+   * zipping by index is the documented way to recover which token a ticket
+   * belongs to (Expo hands back no other correlation).
+   *
+   * Only `DeviceNotRegistered` feeds `invalidTokens`. It is the one error code
+   * that says the *token* is permanently dead — every other code (rate limit,
+   * oversized message, bad app credentials, Expo's own outage) is transient or
+   * describes something other than this token, and deleting a token on one of
+   * those would silently unregister a device that is still perfectly valid.
    */
-  private recordTickets(tickets: ExpoPushTicket[], tally: DeliveryTally): void {
-    for (const ticket of tickets) {
+  private recordTickets(
+    tickets: ExpoPushTicket[],
+    chunkMessages: readonly ExpoPushMessage[],
+    tally: DeliveryTally,
+    invalidTokens: string[],
+  ): void {
+    tickets.forEach((ticket, index) => {
       if (ticket.status === 'ok') {
         tally.accepted += 1;
-        continue;
+        return;
       }
       tally.ticketErrors += 1;
-      this.countCode(tally, ticket.details?.error ?? 'unknown');
-    }
+      const code = ticket.details?.error ?? 'unknown';
+      this.countCode(tally, code);
+      if (code === 'DeviceNotRegistered') {
+        const token = chunkMessages[index]?.to;
+        if (typeof token === 'string') {
+          invalidTokens.push(token);
+        }
+      }
+    });
   }
 
   /**
