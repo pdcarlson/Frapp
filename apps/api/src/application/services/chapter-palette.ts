@@ -7,13 +7,20 @@ import { deriveSignetPalette } from '@repo/chapter-theme';
  */
 export type ChapterBrandColors = { accent?: string };
 
+/** One Signet §8 text-contrast check that came back below the 4.5:1 AA floor. */
+export type FailedContrastCheck = {
+  role: string;
+  against: string;
+  ratio: number;
+};
+
 export type ChapterPaletteBuild = {
   /** The Signet accent role map, keyed `--signet-*`. */
   palette: Record<string, string>;
   /** True when the accent seed failed to parse and house gold was substituted. */
   invalidSeed: boolean;
   /** Signet contrast checks that came back below AA. Empty in the normal case. */
-  failedContrastChecks: { role: string; against: string; ratio: number }[];
+  failedContrastChecks: FailedContrastCheck[];
 };
 
 /**

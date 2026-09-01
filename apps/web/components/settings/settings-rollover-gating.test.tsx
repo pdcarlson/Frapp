@@ -3,8 +3,9 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
-const { mockCurrentChapter } = vi.hoisted(() => ({
+const { mockCurrentChapter, mockUpdateChapter } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
+  mockUpdateChapter: vi.fn(),
 }));
 
 const PERMISSIONS = [
@@ -27,7 +28,7 @@ vi.mock("@repo/hooks", () => ({
   usePermissionsCatalog: () => ({ data: [], isPending: false, isError: false }),
   useSemesters: () => ({ data: [], isPending: false, isError: false }),
   useSemesterRollover: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUpdateChapter: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateChapter: () => ({ mutateAsync: mockUpdateChapter, isPending: false }),
   useCreatePortal: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useOrgConfig: () => ({
     data: { org_archetype: "ifc" },
@@ -204,6 +205,84 @@ describe("the accent preview reports its own legibility", () => {
     const hex = screen.getByLabelText(/accent color hex value/i);
     await user.clear(hex);
     await user.type(hex, "#F2B72E");
+    expect(screen.queryByText(/under the 4\.5:1 minimum/i)).toBeNull();
+  });
+});
+
+describe("the accent form surfaces the server's own §8 disclosure (#1183)", () => {
+  /*
+   * A third, independent question from the pair above — those are client-side
+   * checks of the unsaved draft against one fixed backdrop each, computed by
+   * `resolveChapterAccentColor`/`pickAccessibleColor`. This is the real
+   * Signet engine's verdict on the colour actually saved, returned by
+   * `PATCH /v1/chapters/current` and disclosed rather than corrected: §8
+   * forbids a runtime substitution, so a failing save still succeeds.
+   */
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chapter.active();
+  });
+
+  async function saveAccent(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole("tab", { name: /theme/i }));
+    const hex = screen.getByLabelText(/accent color hex value/i);
+    await user.clear(hex);
+    await user.type(hex, "#222222");
+    await user.click(screen.getByRole("button", { name: /save accent color/i }));
+  }
+
+  it("names the failing role, its ratio, and a next action", async () => {
+    mockUpdateChapter.mockResolvedValue({
+      id: "chap-1",
+      failedContrastChecks: [
+        { role: "--signet-accent-text", against: "#0E0D0B", ratio: 3.21 },
+      ],
+    });
+    const user = userEvent.setup();
+    render(<SettingsPage />);
+
+    await saveAccent(user);
+
+    expect(
+      screen.getByText(/accent text on the app background reads at 3\.2:1/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/under the 4\.5:1 minimum/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/try a lighter or darker shade of this hue/i),
+    ).toBeInTheDocument();
+  });
+
+  it("stays quiet when the save reports no failing checks", async () => {
+    mockUpdateChapter.mockResolvedValue({
+      id: "chap-1",
+      failedContrastChecks: [],
+    });
+    const user = userEvent.setup();
+    render(<SettingsPage />);
+
+    await saveAccent(user);
+
+    expect(screen.queryByText(/under the 4\.5:1 minimum/i)).toBeNull();
+  });
+
+  it("clears the warning as soon as the officer edits the draft again", async () => {
+    mockUpdateChapter.mockResolvedValue({
+      id: "chap-1",
+      failedContrastChecks: [
+        { role: "--signet-accent-on-primary", against: "--signet-accent-primary", ratio: 2.5 },
+      ],
+    });
+    const user = userEvent.setup();
+    render(<SettingsPage />);
+
+    await saveAccent(user);
+    expect(screen.getByText(/under the 4\.5:1 minimum/i)).toBeInTheDocument();
+
+    const hex = screen.getByLabelText(/accent color hex value/i);
+    await user.type(hex, "1");
+
+    // A stale server verdict describing a colour the officer already changed
+    // away from would be actively misleading — it must not survive the edit.
     expect(screen.queryByText(/under the 4\.5:1 minimum/i)).toBeNull();
   });
 });

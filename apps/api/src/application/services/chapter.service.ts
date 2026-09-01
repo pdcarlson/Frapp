@@ -13,7 +13,10 @@ import {
   isAllowedUploadMime,
 } from '@repo/validation';
 import { assertSafeStoragePath } from '../../domain/utils/storage-path';
-import { buildChapterPalette } from './chapter-palette';
+import {
+  buildChapterPalette,
+  type FailedContrastCheck,
+} from './chapter-palette';
 import {
   toChapterMemberView,
   type ChapterMemberView,
@@ -245,9 +248,27 @@ export class ChapterService {
     return chapter;
   }
 
-  async update(id: string, data: Partial<Chapter>): Promise<Chapter> {
+  async update(
+    id: string,
+    data: Partial<Chapter>,
+  ): Promise<{
+    chapter: Chapter;
+    /**
+     * Signet §8 text-contrast checks that came back below AA for this save's
+     * generated accent, or empty. Empty in effectively every real case — the
+     * generator's text roles are contrast-correct by construction for the
+     * whole directory-seed corpus and every hue this repo has sampled — but an
+     * officer can enter arbitrary hex, and the guarantee is by construction,
+     * not by proof (#1183). The save still succeeds either way: §8 forbids a
+     * runtime substitution here, this is disclosure, not correction.
+     */
+    failedContrastChecks: FailedContrastCheck[];
+  }> {
     if (!data.accent_color) {
-      return this.chapterRepo.update(id, data);
+      return {
+        chapter: await this.chapterRepo.update(id, data),
+        failedContrastChecks: [],
+      };
     }
 
     // No contrast gate here any more, and its removal is the point rather than
@@ -304,12 +325,24 @@ export class ChapterService {
         `Invalid accent seed for chapter ${id}: accent="${data.accent_color}" — substituted house gold. Expected #RRGGBB.`,
       );
     }
+    // The engine guarantees these by construction (accent-engine.md §8), so a
+    // failure means either an unusual hex or the vendored generator changed
+    // behaviour under us — worth a log trace either way (#1183).
+    if (build.failedContrastChecks.length > 0) {
+      this.logger.warn(
+        `Signet accent contrast below AA for chapter ${id}: ${build.failedContrastChecks
+          .map((c) => `${c.role} on ${c.against} = ${c.ratio.toFixed(2)}:1`)
+          .join(', ')}`,
+      );
+    }
 
-    return this.chapterRepo.update(id, {
+    const chapter = await this.chapterRepo.update(id, {
       ...data,
       branding: { ...branding, colors },
       theme_palette: build.palette,
     });
+
+    return { chapter, failedContrastChecks: build.failedContrastChecks };
   }
 
   async requestLogoUploadUrl(
