@@ -9,6 +9,7 @@ import { AuthModule } from '../auth/auth.module';
 import { NotificationModule } from '../notification/notification.module';
 import { ActivationModule } from '../activation/activation.module';
 import { EmailModule } from '../email/email.module';
+import { ChatModule } from '../chat/chat.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { EmailModule } from '../email/email.module';
     NotificationModule,
     ActivationModule,
     EmailModule,
+    ChatModule,
   ],
   controllers: [InviteController],
   providers: [
