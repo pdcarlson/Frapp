@@ -889,8 +889,15 @@ console.log("\n=== Functional smoke: anonymize_user ===");
   // every assertion above stayed green while inserts into them were broken,
   // which is precisely how the defect reached review. Keep at least one write
   // per ping table here.
+  // A swallowed `realtime.send` failure must still be observable (#978) — each
+  // trigger's exception handler now `raise warning`s with SQLERRM before
+  // swallowing. PGlite has no `realtime` schema, so every insert below already
+  // exercises the swallow; capture the notices this exec produces and assert
+  // one WARNING per ping table rather than only that the writes survived.
   try {
-    await db.exec(`
+    const notices = [];
+    await db.exec(
+      `
       begin;
       insert into chapters (id, name, university)
         values ('11111111-1111-1111-1111-111111111111', 'Ping', 'RPI');
@@ -904,8 +911,24 @@ console.log("\n=== Functional smoke: anonymize_user ===");
       insert into event_attendance (event_id, user_id, status)
         values ('33333333-3333-3333-3333-333333333333', '22222222-2222-2222-2222-222222222222', 'PRESENT');
       commit;
-    `);
+    `,
+      { onNotice: (n) => notices.push(n) },
+    );
     console.log("OK    change-ping tables accept writes with no `realtime` schema");
+
+    const warnings = notices.filter((n) => n.severity === "WARNING");
+    const pingTables = ["notifications", "events", "event_attendance"];
+    const unwarned = pingTables.filter(
+      (t) => !warnings.some((n) => new RegExp(`realtime\\.send failed for ${t}\\b`).test(n.message ?? "")),
+    );
+    if (unwarned.length === 0) {
+      console.log("OK    each swallowed realtime.send failure raised an observable WARNING");
+    } else {
+      missing += 1;
+      console.log(
+        `ERR   each swallowed realtime.send failure raised an observable WARNING\n        ↳ no WARNING seen for: ${unwarned.join(", ")} (got ${warnings.length} warning(s) total: ${JSON.stringify(warnings.map((n) => n.message))})`,
+      );
+    }
   } catch (e) {
     missing += 1;
     console.log(
