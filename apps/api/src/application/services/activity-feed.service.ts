@@ -44,6 +44,8 @@ export interface ActivityFeedItem {
 const PER_DOMAIN_LIMIT = 10;
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
+/** How many extra announcement rows to fetch, to absorb soft-deleted ones filtered out afterward — see {@link ActivityFeedService['announcementItems']}. */
+const ANNOUNCEMENT_FETCH_BUFFER = 3;
 /** "New event created" only surfaces events created within this window — otherwise a chapter's entire history reads as "new" forever. */
 const EVENT_CREATED_LOOKBACK_MS = 14 * 24 * 60 * 60 * 1000;
 
@@ -149,6 +151,13 @@ export class ActivityFeedService {
       ]),
     );
 
+    const domainNames = [
+      'events',
+      'points',
+      'members',
+      'announcements',
+      'backwork',
+    ] as const;
     const domains = await Promise.allSettled([
       this.eventItems(chapterId),
       this.pointsItems(chapterId, userId),
@@ -160,7 +169,7 @@ export class ActivityFeedService {
     const items = domains.flatMap((result, index) => {
       if (result.status === 'fulfilled') return result.value;
       this.logger.warn(
-        `Activity feed domain ${index} failed for chapter ${chapterId}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`,
+        `Activity feed domain '${domainNames[index]}' failed for chapter ${chapterId}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`,
       );
       return [];
     });
@@ -287,15 +296,24 @@ export class ActivityFeedService {
     );
     if (!announcementChannel) return [];
 
+    // Over-fetch before filtering: `getMessages` applies its `limit` at the
+    // SQL level with no `is_deleted` predicate (deleted rows stay in place so
+    // chat threads can render a "[message deleted]" placeholder), so asking
+    // for exactly PER_DOMAIN_LIMIT and filtering afterward could hand back
+    // fewer live announcements than actually exist — or none, if the newest
+    // PER_DOMAIN_LIMIT rows all happen to be deleted. The buffer trades one
+    // slightly larger read for not silently under-reporting a channel's
+    // actual recent activity.
     const messages = await this.chatService.getMessages(
       announcementChannel.id,
       chapterId,
       userId,
-      { limit: PER_DOMAIN_LIMIT },
+      { limit: PER_DOMAIN_LIMIT * ANNOUNCEMENT_FETCH_BUFFER },
     );
 
     return messages
       .filter((message) => !message.is_deleted)
+      .slice(0, PER_DOMAIN_LIMIT)
       .map((message): ActivityFeedItem => ({
         id: `announcement:${message.id}`,
         type: 'announcement',

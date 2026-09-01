@@ -35,7 +35,8 @@ Feed items are pulled from existing data (events, point_transactions, backwork_r
   (`parent_event_id` set) never count as "created," since editing a series' time regenerates them
   with a fresh `created_at` that has nothing to do with a member's sense of "something new happened."
 - Each domain contributes at most 10 rows before the merged, newest-first list is capped to the
-  caller's requested `limit` (1–50, default 20).
+  caller's requested `limit` (1–50, default 20) — except events, which draws from two separate
+  10-row buckets ("starting soon" and "created," see above), so it alone can contribute up to 20.
 - The five domains are fetched independently: one domain failing (a transient DB error) degrades
   that domain to an empty contribution rather than failing the whole feed.
 - An `actor` whose `user_id` cannot be resolved against the current chapter roster (a member who has

@@ -227,6 +227,30 @@ describe('ActivityFeedService', () => {
     expect(announcementIds).toEqual(['announcement:msg-live']);
   });
 
+  it('over-fetches announcements so soft-deleted rows do not crowd out live ones within the cap', async () => {
+    mockChatService.getChannels.mockResolvedValue([announcementsChannel]);
+    // Newest 5 are deleted, next 10 are live — a naive `limit: 10` fetch
+    // filtered afterward would surface only 5 live rows (or fewer).
+    const deleted = Array.from({ length: 5 }, (_, i) =>
+      messageFixture({ id: `msg-deleted-${i}`, is_deleted: true }),
+    );
+    const live = Array.from({ length: 10 }, (_, i) =>
+      messageFixture({ id: `msg-live-${i}`, is_deleted: false }),
+    );
+    mockChatService.getMessages.mockResolvedValue([...deleted, ...live]);
+
+    const result = await service.getFeed(CHAPTER_ID, USER_ID, 50);
+    const announcementCount = result.filter(
+      (item) => item.type === 'announcement',
+    ).length;
+
+    expect(announcementCount).toBe(10);
+    // The buffer multiplier is an implementation detail — assert only that
+    // more than the per-domain floor was requested, not the exact factor.
+    const [, , , requestedOptions] = mockChatService.getMessages.mock.calls[0];
+    expect(requestedOptions?.limit).toBeGreaterThan(10);
+  });
+
   it('gives a departed member an empty-name actor rather than dropping or nulling it', async () => {
     mockRbacService.getEffectivePermissions.mockResolvedValue(['*']);
     mockBackworkService.findByChapter.mockResolvedValue([
