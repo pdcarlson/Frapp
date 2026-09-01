@@ -7495,7 +7495,9 @@
             }
           },
           "category_id": {
-            "type": "string"
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
           },
           "is_read_only": {
             "type": "boolean"
