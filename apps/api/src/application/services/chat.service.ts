@@ -12,6 +12,8 @@ import {
   extractMentionTokens,
   isAllowedUploadExtension,
   isAllowedUploadMime,
+  isWithinUploadSizeLimit,
+  MAX_UPLOAD_LABEL,
   resolveMentions,
   validateCardPollVote,
 } from '@repo/validation';
@@ -1317,6 +1319,7 @@ export class ChatService {
     userId: string,
     filename: string,
     contentType: string,
+    sizeBytes?: number,
   ) {
     await this.assertChannelAccess(channelId, chapterId, userId);
 
@@ -1331,6 +1334,12 @@ export class ChatService {
     if (!isAllowedUploadMime('document', contentType)) {
       throw new BadRequestException(
         `Content type "${contentType}" is not allowed`,
+      );
+    }
+
+    if (sizeBytes !== undefined && !isWithinUploadSizeLimit(sizeBytes)) {
+      throw new BadRequestException(
+        `File exceeds the ${MAX_UPLOAD_LABEL} upload limit`,
       );
     }
 

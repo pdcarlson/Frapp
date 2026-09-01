@@ -5,7 +5,7 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
-import { canAccessChannel } from '@repo/validation';
+import { canAccessChannel, MAX_UPLOAD_BYTES } from '@repo/validation';
 import { ChatService } from './chat.service';
 import {
   CHAT_CHANNEL_REPOSITORY,
@@ -2536,6 +2536,52 @@ describe('ChatService', () => {
 
       expect(result.signedUrl).toBeDefined();
       expect(result.storagePath).toContain('/document.pdf');
+    });
+
+    it('should accept a declared size at exactly the upload ceiling', async () => {
+      mockStorageProvider.getSignedUploadUrl.mockResolvedValue(
+        'https://storage.example.com/signed-url',
+      );
+
+      const result = await service.requestChatUploadUrl(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+        'photo.png',
+        'image/png',
+        MAX_UPLOAD_BYTES,
+      );
+
+      expect(result.signedUrl).toBeDefined();
+    });
+
+    it('should reject a declared size one byte over the upload ceiling', async () => {
+      await expect(
+        service.requestChatUploadUrl(
+          'ch-chan-1',
+          'ch-1',
+          'user-1',
+          'photo.png',
+          'image/png',
+          MAX_UPLOAD_BYTES + 1,
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should not require a declared size', async () => {
+      mockStorageProvider.getSignedUploadUrl.mockResolvedValue(
+        'https://storage.example.com/signed-url',
+      );
+
+      const result = await service.requestChatUploadUrl(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+        'photo.png',
+        'image/png',
+      );
+
+      expect(result.signedUrl).toBeDefined();
     });
   });
 
