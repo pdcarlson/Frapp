@@ -10,7 +10,22 @@
             "description": ""
           }
         },
-        "summary": "Health check",
+        "summary": "Liveness check (always 2xx while the process is up)",
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "operationId": "HealthController_ready",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Readiness check (503 when a dependency is degraded)",
         "tags": [
           "Health"
         ]
