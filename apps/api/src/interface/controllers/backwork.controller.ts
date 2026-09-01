@@ -60,6 +60,7 @@ export class BackworkController {
       chapterId,
       filename: dto.filename,
       contentType: dto.content_type,
+      sizeBytes: dto.size_bytes,
     });
   }
 

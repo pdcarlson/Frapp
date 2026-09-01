@@ -24,7 +24,9 @@ Legacy Office stays on `document` because the API and every matching storage buc
 Validate the filename with `isAllowedUploadExtension(kind, filename)`. If the extension is not in the kind, reject. Blocklists must not be used.
 
 ### 3. Size
-`MAX_UPLOAD_BYTES` (25 MB / 26214400) is the shared cap, matching `supabase/config.toml` and every bucket `file_size_limit`. Clients must check `file.size` via `inspectUploadFile` / `isWithinUploadSizeLimit` before requesting a signed URL. The signed-URL request itself does not carry a byte length — the bucket column is still the server-side size gate.
+`MAX_UPLOAD_BYTES` (25 MB / 26214400) is the shared cap, matching `supabase/config.toml` and every bucket `file_size_limit`. Clients must check `file.size` via `inspectUploadFile` / `isWithinUploadSizeLimit` before requesting a signed URL.
+
+The four signed-upload-URL requests (chat, backwork, chapter documents, service-entry proof) also accept an optional `size_bytes`, checked with `isWithinUploadSizeLimit` before the URL is issued. It has the same issuance-only caveat as §1's content-type gate: the field is optional and nothing forces a caller to send an accurate value — a caller can omit it entirely, exactly as every client did before this field existed. So the bucket's `file_size_limit` column remains the only gate that actually constrains the bytes written to storage; the request-level check only turns a declared oversize into a readable 400 instead of a failed or wasted PUT.
 
 ## Error Handling
 If either validation fails, the service must throw a `BadRequestException` immediately, returning an HTTP 400 response and preventing the signed URL from being generated.

@@ -9,6 +9,8 @@ import {
 import {
   isAllowedUploadExtension,
   isAllowedUploadMime,
+  isWithinUploadSizeLimit,
+  MAX_UPLOAD_LABEL,
 } from '@repo/validation';
 import {
   CHAPTER_DOCUMENT_REPOSITORY,
@@ -33,6 +35,7 @@ export interface RequestUploadUrlInput {
   chapterId: string;
   filename: string;
   contentType: string;
+  sizeBytes?: number;
 }
 
 export interface ConfirmUploadInput {
@@ -71,6 +74,15 @@ export class ChapterDocumentService {
     if (!isAllowedUploadMime('document', input.contentType)) {
       throw new BadRequestException(
         `Content type "${input.contentType}" is not allowed`,
+      );
+    }
+
+    if (
+      input.sizeBytes !== undefined &&
+      !isWithinUploadSizeLimit(input.sizeBytes)
+    ) {
+      throw new BadRequestException(
+        `File exceeds the ${MAX_UPLOAD_LABEL} upload limit`,
       );
     }
 
