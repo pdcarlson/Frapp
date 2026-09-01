@@ -313,21 +313,26 @@ What follows is the behaviour the archive has once it is in.
   all four to satisfy a foreign key. A DB constraint guarantees every message
   names its author through one column or the other.
 - **`author_avatar_path` is served through its own signed-URL endpoint,
-  `POST /v1/channels/avatars`** (`ChatService.resolveAuthorAvatars`, #1231) —
-  not a field on the message read, for the same reason attachment URLs
-  aren't: the URL expires, and the message cache is fed partly by Realtime
-  rows, which cannot carry a join. Chapter-scoped rather than
-  channel-scoped: an author's avatar is chapter-wide identity (the storage
-  layout groups them under `authors/{external_id}/`, shared across every
-  channel that author posted in), so the caller passes a batch of
-  already-fetched `author_avatar_path` values and the check is "does this
-  path belong to my own chapter" — the `chat-archive` bucket carries no
-  storage RLS (its own migration's header: reads are API-issued signed
-  URLs, which never consult RLS), so that chapter-prefix check **is** the
-  tenant-isolation boundary here, not a redundant one on top of a
-  database-level check. A message whose avatar path resolves to nothing —
-  no avatar, a path outside the caller's chapter, or a signing failure —
-  falls back to initials, same as before this shipped.
+  `POST /v1/channels/{id}/messages/avatars`** (`ChatService.resolveAuthorAvatars`,
+  #1231) — not a field on the message read, for the same reason attachment
+  URLs aren't: the URL expires, and the message cache is fed partly by
+  Realtime rows, which cannot carry a join. Channel-scoped, like
+  `listMessageAttachments`, and **deliberately never a function of a
+  caller-supplied path**: an avatar's `storage_path` and a message
+  attachment's live under the exact same `chat-archive` object layout
+  (`archiveMediaObjectPath` — nothing in the path shape distinguishes
+  "avatar" from "attachment"), and that bucket carries no storage RLS (its
+  own migration's header: reads are API-issued signed URLs, which never
+  consult RLS). Trusting a raw path from the caller would therefore let a
+  caller who knows — or guesses — an attachment's path fetch a signed URL
+  for it under the guise of "avatar", bypassing channel access entirely.
+  Instead the caller sends message ids it already has from this channel;
+  the service runs the ordinary `assertChannelAccess` check and then derives
+  the avatar path set itself via `IChatMessageRepository.findAuthorAvatarPaths`,
+  which scopes its query by `channel_id` in the same statement — a message id
+  from another channel contributes nothing. A message whose avatar resolves
+  to nothing — no avatar, a message id outside the channel, or a signing
+  failure — falls back to initials, same as before this shipped.
 - **Read-only.** `imported` is in `SERVER_ONLY_KINDS`: a client cannot post one.
   Ownership checks compare `sender_id` to the caller, and `null` matches nobody,
   so an imported message is editable by no one and deletable only by a

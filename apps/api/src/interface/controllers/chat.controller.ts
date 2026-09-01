@@ -347,21 +347,28 @@ export class ChatController {
    *
    * A route of its own for the same reason `listMessageAttachments` is: the
    * URLs expire, so they mint on request rather than riding a cacheable
-   * message field. Not nested under `:id` — an author's avatar is
-   * chapter-wide, not channel-specific, so `ChatService.resolveAuthorAvatars`
-   * checks the caller's chapter rather than a channel's access rules; the
-   * class-level guards (chapter member, free-tier) are already the right
-   * gate for that.
+   * message field. Nested under `:id` like `listMessageAttachments` — the
+   * avatar path set is derived server-side from the given message ids
+   * (`ChatService.resolveAuthorAvatars` → `findAuthorAvatarPaths`), never
+   * from a caller-supplied storage path, so the ordinary channel-access
+   * check applies exactly as it does for attachments.
    */
-  @Post('avatars')
+  @Post(':id/messages/avatars')
   @ApiOperation({
-    summary: 'Signed download URLs for imported-author avatar paths',
+    summary: "Signed download URLs for a set of messages' author avatars",
   })
   async resolveAuthorAvatars(
+    @Param('id') channelId: string,
     @Body() dto: ResolveAuthorAvatarsDto,
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
   ) {
-    return this.chatService.resolveAuthorAvatars(chapterId, dto.paths);
+    return this.chatService.resolveAuthorAvatars(
+      channelId,
+      chapterId,
+      userId,
+      dto.message_ids,
+    );
   }
 
   @Patch('messages/:messageId')

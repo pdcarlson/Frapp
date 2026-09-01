@@ -70,6 +70,7 @@ describe("ThreadPanel tap-to-reveal shares one id across its rows (#1193)", () =
 
     return render(
       <ThreadPanel
+        channelId={parent.channel_id}
         parent={parent}
         allMessages={[parent, reply]}
         viewerId={VIEWER}

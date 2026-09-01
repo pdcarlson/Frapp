@@ -1,7 +1,11 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useChannelUnreadCounts, useMarkChannelRead } from "./use-chat";
+import {
+  useChannelUnreadCounts,
+  useMarkChannelRead,
+  useAuthorAvatars,
+} from "./use-chat";
 import { FrappClientProvider } from "./use-frapp-client";
 import React from "react";
 
@@ -116,5 +120,84 @@ describe("useMarkChannelRead", () => {
 
     expect(result.current.error).toEqual(mockError);
     expect(invalidateSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("useAuthorAvatars", () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = createTestQueryClient();
+  });
+
+  it("sends one representative message id per distinct avatar path, not one per message", async () => {
+    const mockPost = vi.fn().mockResolvedValue({
+      data: { "path/a": "https://signed/a" },
+      error: null,
+    });
+    const mockClient = { POST: mockPost };
+    const messages = [
+      { id: "msg-1", author_avatar_path: "path/a" },
+      { id: "msg-2", author_avatar_path: "path/a" },
+      { id: "msg-3", author_avatar_path: null },
+    ];
+
+    const { result } = renderHook(() => useAuthorAvatars("chan-1", messages), {
+      wrapper: createWrapper(queryClient, mockClient),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(mockPost).toHaveBeenCalledWith(
+      "/v1/channels/{id}/messages/avatars",
+      {
+        params: { path: { id: "chan-1" } },
+        body: { message_ids: ["msg-1"] },
+      },
+    );
+    expect(result.current.data).toEqual({ "path/a": "https://signed/a" });
+  });
+
+  it("is disabled — never calls POST — when no message carries an avatar path", async () => {
+    const mockPost = vi.fn();
+    const mockClient = { POST: mockPost };
+    const messages = [{ id: "msg-1", author_avatar_path: null }];
+
+    const { result } = renderHook(() => useAuthorAvatars("chan-1", messages), {
+      wrapper: createWrapper(queryClient, mockClient),
+    });
+
+    expect(result.current.fetchStatus).toBe("idle");
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it("chunks past the server's per-request cap and merges the results", async () => {
+    // 60 distinct authors — one more than the server's 50-id cap
+    // (MAX_AUTHOR_AVATAR_PATHS_PER_REQUEST in chat.dto.ts) — should split
+    // into two requests rather than 400 the whole batch.
+    const messages = Array.from({ length: 60 }, (_, i) => ({
+      id: `msg-${i}`,
+      author_avatar_path: `path/${i}`,
+    }));
+    const mockPost = vi.fn().mockImplementation(async (_url, { body }) => ({
+      data: Object.fromEntries(
+        (body.message_ids as string[]).map((id: string) => [
+          `path/${id.slice(4)}`,
+          `https://signed/${id}`,
+        ]),
+      ),
+      error: null,
+    }));
+    const mockClient = { POST: mockPost };
+
+    const { result } = renderHook(() => useAuthorAvatars("chan-1", messages), {
+      wrapper: createWrapper(queryClient, mockClient),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(mockPost).toHaveBeenCalledTimes(2);
+    expect(Object.keys(result.current.data ?? {})).toHaveLength(60);
   });
 });

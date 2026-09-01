@@ -75,13 +75,13 @@ export function MessageAttachments({
             // boundary" section is explicit this is a security mitigation,
             // not a UX one: it's what keeps a member-uploaded object whose
             // declared MIME lied about its content from rendering as HTML).
-            // What changed under #1231's batched signing is only the saved
-            // *filename* — the batch API takes one `download` option for the
-            // whole call, not a per-file name, so it can no longer force
-            // `row.filename` the way the old per-row call did. This
-            // attribute is the client-side best-effort restoration of that
-            // display name; the security-relevant disposition itself needs
-            // no client help.
+            // That disposition header already carries a filename of its own
+            // (the storage object's basename, not `row.filename`), so this
+            // attribute is a harmless no-op for the actual deployment shape
+            // here: a cross-origin Supabase Storage signed URL, for which
+            // browsers ignore `download`'s suggested-filename value per the
+            // HTML spec — only same-origin / `blob:` / `data:` URLs honour
+            // it. Left in case that ever changes; it costs nothing today.
             download={attachment.filename}
             className={cn(
               "flex items-center gap-2 rounded-md border border-border bg-surface-1 px-2 py-1.5",

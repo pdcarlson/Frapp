@@ -25,6 +25,7 @@
 //   node scripts/backfill-chat-attachment-byte-size.mjs [--dry-run]
 
 import { createClient } from "@supabase/supabase-js";
+import { requireEnv } from "./ci/lib/env.mjs";
 
 /**
  * Comfortably above any realistic attachment count from a single Discord
@@ -37,12 +38,6 @@ import { createClient } from "@supabase/supabase-js";
  * run it again and the remainder is picked up, reported via the summary line.
  */
 const MAX_ROWS = 20_000;
-
-function requireEnv(name) {
-  const value = process.env[name];
-  if (!value) throw new Error(`Missing required env var: ${name}`);
-  return value;
-}
 
 /**
  * Splits a bucket-relative object path into its parent folder and basename,

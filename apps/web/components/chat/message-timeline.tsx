@@ -65,6 +65,8 @@ export interface MessageTimelineHandle {
 }
 
 export interface MessageTimelineProps {
+  /** Undefined while no channel is selected — avatar resolution just no-ops. */
+  channelId: string | undefined;
   messages: ChatMessage[];
   viewerId: string | null;
   /** Resolves `users.id` → display name; `null` when unresolvable. */
@@ -103,6 +105,7 @@ export const MessageTimeline = forwardRef<
   MessageTimelineProps
 >(function MessageTimeline(
   {
+    channelId,
     messages,
     viewerId,
     nameFor,
@@ -123,9 +126,7 @@ export const MessageTimeline = forwardRef<
   // One batched request for every distinct imported-author avatar visible in
   // this window, rather than one per message (#1231). A miss (no avatar, out
   // of chapter, or unsigned) just means that row keeps its initials fallback.
-  const avatars = useAuthorAvatars(
-    messages.map((message) => message.author_avatar_path),
-  );
+  const avatars = useAuthorAvatars(channelId, messages);
 
   // Which row's action cluster a tap revealed — one id for the whole list, so
   // tapping a second row dismisses the first's, matching the reference

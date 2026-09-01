@@ -598,35 +598,75 @@ export function useMessageAttachments(
 }
 
 /**
- * Signed URLs for imported-author avatars (#1231), batched across every
- * distinct `author_avatar_path` the caller passes — one request no matter
- * how many visible messages share an author. `ChatMessage.author_avatar_path`
- * is the same opaque, private-bucket path already riding on message rows the
- * caller fetched; this only turns it into something renderable.
- *
- * Returns a `path → signedUrl` map covering only the paths that resolved — a
- * path missing from the result (a message with no avatar, one the server
- * rejected as out of chapter, or a signing failure) has nothing to render, so
- * callers should fall back to initials rather than treat a miss as loading.
+ * Server caps one `avatars` request at this many message ids
+ * (`MAX_AUTHOR_AVATAR_PATHS_PER_REQUEST` in `chat.dto.ts`) — kept in sync by
+ * hand since the two packages don't share a constants module.
  */
-export function useAuthorAvatars(paths: (string | null | undefined)[]) {
+const AVATAR_REQUEST_CHUNK_SIZE = 50;
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+}
+
+/**
+ * Signed URLs for imported-author avatars (#1231), batched across every
+ * distinct `author_avatar_path` among the given messages — one representative
+ * message id per distinct path, so a channel with many messages from few
+ * authors costs one small request rather than one per message.
+ *
+ * The server derives the avatar path set itself from `channelId` plus these
+ * message ids rather than trusting a caller-supplied storage path (the
+ * `chat-archive` bucket has no storage RLS, and an avatar path is otherwise
+ * indistinguishable from another message's attachment path) — see
+ * `ChatService.resolveAuthorAvatars`. `ChatMessage.author_avatar_path` itself
+ * never leaves the client in this call; it's only the lookup key used against
+ * the result below.
+ *
+ * Requests are chunked at the server's per-call cap so a channel with more
+ * distinct imported authors than that doesn't 400 the whole batch — chunks
+ * merge into one `path → signedUrl` map. A path missing from the result (no
+ * avatar, or a signing failure) has nothing to render, so callers should fall
+ * back to initials rather than treat a miss as loading.
+ */
+export function useAuthorAvatars(
+  channelId: string | undefined,
+  messages: { id: string; author_avatar_path?: string | null }[],
+) {
   const client = useFrappClient();
-  const distinctPaths = useMemo(
-    () => [...new Set(paths.filter((p): p is string => !!p))].sort(),
-    [paths],
-  );
+  const messageIdsByDistinctPath = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const message of messages) {
+      if (message.author_avatar_path && !seen.has(message.author_avatar_path)) {
+        seen.set(message.author_avatar_path, message.id);
+      }
+    }
+    return [...seen.values()].sort();
+  }, [messages]);
+
   return useQuery({
-    queryKey: ["channels", "avatars", distinctPaths],
-    enabled: distinctPaths.length > 0,
+    queryKey: ["channels", channelId, "avatars", messageIdsByDistinctPath],
+    enabled: !!channelId && messageIdsByDistinctPath.length > 0,
     // Comfortably inside the API's signed-URL TTL, so a URL handed to the DOM
     // is still live when it renders.
     staleTime: 10 * 60_000,
     queryFn: async () => {
-      const { data, error } = await client.POST("/v1/channels/avatars", {
-        body: { paths: distinctPaths },
-      });
-      if (error) throw error;
-      return (data ?? {}) as Record<string, string>;
+      const result: Record<string, string> = {};
+      for (const ids of chunk(messageIdsByDistinctPath, AVATAR_REQUEST_CHUNK_SIZE)) {
+        const { data, error } = await client.POST(
+          "/v1/channels/{id}/messages/avatars",
+          {
+            params: { path: { id: channelId! } },
+            body: { message_ids: ids },
+          },
+        );
+        if (error) throw error;
+        Object.assign(result, data ?? {});
+      }
+      return result;
     },
   });
 }

@@ -1585,21 +1585,25 @@ export class ChatService {
    * `resolveAuthorLabel` on the client falls back to initials for every
    * archived message.
    *
-   * Chapter-scoped rather than channel-scoped like `listMessageAttachments`:
-   * an author's avatar is chapter-wide identity, shared across every channel
-   * they posted in (the storage layout groups them under
-   * `authors/{external_id}/`, not per-message), so the check here is "does
-   * this path belong to the caller's own chapter" rather than a specific
-   * channel's access rules.
+   * Channel-scoped, like `listMessageAttachments` — and deliberately never a
+   * function of a caller-supplied path at all. `author_avatar_path` and an
+   * attachment's `storage_path` are written under the exact same
+   * `chapters/{chapterId}/chat-archive/imports/{importId}/media/...` layout
+   * (`archiveMediaObjectPath` — there is no `authors/`-vs-`attachments/`
+   * split in the path shape), and this bucket carries no storage RLS (its
+   * migration's own header: reads are API-issued signed URLs, which never
+   * consult RLS). A raw path handed back by the caller would be
+   * structurally indistinguishable from another message's attachment path,
+   * so trusting one here would let a caller who knows — or guesses — an
+   * attachment path get a signed URL for it under the guise of "avatar",
+   * bypassing `assertChannelAccess` entirely.
    *
-   * This bucket carries no storage RLS (its migration's own header: reads
-   * are API-issued signed URLs, which never consult RLS), so the prefix
-   * check below IS the tenant-isolation boundary, not a redundant one on
-   * top of a database-level check. `author_avatar_path` values ride on
-   * message rows the client already fetched, but nothing re-verifies
-   * server-side that a given string actually came from *this chapter's*
-   * data — a path outside `chapters/{chapterId}/chat-archive/authors/` is
-   * silently dropped rather than signed.
+   * Instead the path set is derived server-side from `messageIds` via
+   * `findAuthorAvatarPaths`, which scopes the lookup by `channelId` in the
+   * same query — a message id from another channel contributes nothing,
+   * the same pattern `findByMessage` uses to scope attachments by chapter.
+   * `assertChannelAccess` above that is what makes `channelId` itself
+   * trustworthy.
    *
    * Does NOT force a download (`getSignedDownloadUrls`' 4th argument stays
    * default `false`), unlike `listMessageAttachments`. An avatar only ever
@@ -1610,17 +1614,23 @@ export class ChatService {
    * forcing it would just break inline rendering.
    */
   async resolveAuthorAvatars(
+    channelId: string,
     chapterId: string,
-    paths: string[],
+    userId: string,
+    messageIds: string[],
   ): Promise<Record<string, string>> {
-    const prefix = `chapters/${chapterId}/chat-archive/authors/`;
-    const validPaths = [...new Set(paths)].filter((p) => p.startsWith(prefix));
-    if (validPaths.length === 0) return {};
+    await this.assertChannelAccess(channelId, chapterId, userId);
+
+    const paths = await this.messageRepo.findAuthorAvatarPaths(
+      channelId,
+      messageIds,
+    );
+    if (paths.length === 0) return {};
 
     try {
       return await this.storageProvider.getSignedDownloadUrls(
         CHAT_ARCHIVE_BUCKET,
-        validPaths,
+        paths,
         AUTHOR_AVATAR_URL_TTL_SECONDS,
       );
     } catch (error) {
@@ -1630,6 +1640,7 @@ export class ChatService {
       this.logger.warn(
         'Could not sign a batch of author avatars; omitting them',
         {
+          channelId,
           chapterId,
           error: error instanceof Error ? error.message : String(error),
         },

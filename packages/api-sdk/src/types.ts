@@ -952,7 +952,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/channels/avatars": {
+    "/v1/channels/{id}/messages/avatars": {
         parameters: {
             query?: never;
             header?: never;
@@ -961,7 +961,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Signed download URLs for imported-author avatar paths */
+        /** Signed download URLs for a set of messages' author avatars */
         post: operations["ChatController_resolveAuthorAvatars_v1"];
         delete?: never;
         options?: never;
@@ -3067,8 +3067,8 @@ export interface components {
             metadata?: Record<string, never>;
         };
         ResolveAuthorAvatarsDto: {
-            /** @description `chat_messages.author_avatar_path` values off already-fetched message rows. Each must be a `chat-archive` object path under the caller's own chapter — a path outside that prefix is silently dropped rather than signed. */
-            paths: string[];
+            /** @description IDs of already-fetched messages in this channel to resolve avatar paths for. The server derives the avatar path set itself (`chat_messages.author_avatar_path` for rows matching both this channel and this id list) rather than trusting a caller-supplied storage path — the `chat-archive` bucket has no storage RLS, and an avatar path is otherwise indistinguishable from another message's attachment path. */
+            message_ids: string[];
         };
         EditMessageDto: {
             content: string;
@@ -5172,7 +5172,9 @@ export interface operations {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                id: string;
+            };
             cookie?: never;
         };
         requestBody: {

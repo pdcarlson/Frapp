@@ -155,6 +155,7 @@ describe('ChatService', () => {
       countPinnedByChannel: jest.fn(),
       findPollsByChapter: jest.fn(),
       findByClientMessageId: jest.fn(),
+      findAuthorAvatarPaths: jest.fn().mockResolvedValue([]),
       create: jest.fn(),
       update: jest.fn(),
     };
@@ -1268,17 +1269,32 @@ describe('ChatService', () => {
   });
 
   describe('resolveAuthorAvatars', () => {
+    // Matches `baseChannel`/`baseMember` wired in the outer `beforeEach`, so
+    // `assertChannelAccess` succeeds without per-test setup.
+    const CHANNEL = 'ch-chan-1';
     const CHAPTER = 'ch-1';
-    const validPath = `chapters/${CHAPTER}/chat-archive/authors/discord-123/avatar.png`;
+    const USER = 'user-1';
+    const validPath =
+      'chapters/ch-1/chat-archive/imports/import-1/media/abc-avatar.png';
 
-    it('signs a valid path', async () => {
+    it('signs the paths findAuthorAvatarPaths derives from the given message ids', async () => {
+      mockMessageRepo.findAuthorAvatarPaths.mockResolvedValue([validPath]);
       mockStorageProvider.getSignedDownloadUrls.mockResolvedValue({
         [validPath]: 'https://signed/avatar.png',
       });
 
-      const result = await service.resolveAuthorAvatars(CHAPTER, [validPath]);
+      const result = await service.resolveAuthorAvatars(
+        CHANNEL,
+        CHAPTER,
+        USER,
+        ['msg-1', 'msg-2'],
+      );
 
       expect(result).toEqual({ [validPath]: 'https://signed/avatar.png' });
+      expect(mockMessageRepo.findAuthorAvatarPaths).toHaveBeenCalledWith(
+        CHANNEL,
+        ['msg-1', 'msg-2'],
+      );
       expect(mockStorageProvider.getSignedDownloadUrls).toHaveBeenCalledWith(
         'chat-archive',
         [validPath],
@@ -1286,56 +1302,60 @@ describe('ChatService', () => {
       );
     });
 
-    it('drops a path outside the caller chapter without signing it — this bucket has no storage RLS', async () => {
-      // The bucket's migration is explicit: "reads are API-issued signed
-      // download URLs, which do not consult RLS" — so this prefix check IS
-      // the tenant-isolation boundary, not a redundant one.
-      const otherChapterPath =
-        'chapters/ch-2/chat-archive/authors/discord-123/avatar.png';
+    it('never signs anything from a raw path — only from what findAuthorAvatarPaths returns for this channel', async () => {
+      // A message id from another channel contributes nothing because
+      // `findAuthorAvatarPaths` scopes its own query by `channelId` — proven
+      // at the repository layer (supabase-chat-message.repository.spec.ts);
+      // here it's proven that the service never bypasses that lookup with a
+      // caller-supplied path of its own.
+      mockMessageRepo.findAuthorAvatarPaths.mockResolvedValue([]);
 
-      const result = await service.resolveAuthorAvatars(CHAPTER, [
-        otherChapterPath,
-      ]);
-
-      expect(result).toEqual({});
-      expect(mockStorageProvider.getSignedDownloadUrls).not.toHaveBeenCalled();
-    });
-
-    it('drops a path that is not under the authors/ prefix', async () => {
-      const messagePath = `chapters/${CHAPTER}/chat-archive/chan-1/msg-1/photo.png`;
-
-      const result = await service.resolveAuthorAvatars(CHAPTER, [messagePath]);
-
-      expect(result).toEqual({});
-      expect(mockStorageProvider.getSignedDownloadUrls).not.toHaveBeenCalled();
-    });
-
-    it('dedupes repeated paths before signing', async () => {
-      mockStorageProvider.getSignedDownloadUrls.mockResolvedValue({
-        [validPath]: 'https://signed/avatar.png',
-      });
-
-      await service.resolveAuthorAvatars(CHAPTER, [validPath, validPath]);
-
-      expect(mockStorageProvider.getSignedDownloadUrls).toHaveBeenCalledWith(
-        'chat-archive',
-        [validPath],
-        expect.any(Number),
+      const result = await service.resolveAuthorAvatars(
+        CHANNEL,
+        CHAPTER,
+        USER,
+        ['msg-from-another-channel'],
       );
+
+      expect(result).toEqual({});
+      expect(mockStorageProvider.getSignedDownloadUrls).not.toHaveBeenCalled();
+    });
+
+    it('rejects a caller with no access to the channel before deriving any paths', async () => {
+      mockChannelRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.resolveAuthorAvatars(CHANNEL, CHAPTER, USER, ['msg-1']),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockMessageRepo.findAuthorAvatarPaths).not.toHaveBeenCalled();
+      expect(mockStorageProvider.getSignedDownloadUrls).not.toHaveBeenCalled();
     });
 
     it('returns an empty map rather than throwing when signing fails entirely', async () => {
+      mockMessageRepo.findAuthorAvatarPaths.mockResolvedValue([validPath]);
       mockStorageProvider.getSignedDownloadUrls.mockRejectedValue(
         new Error('bucket unreachable'),
       );
 
-      const result = await service.resolveAuthorAvatars(CHAPTER, [validPath]);
+      const result = await service.resolveAuthorAvatars(
+        CHANNEL,
+        CHAPTER,
+        USER,
+        ['msg-1'],
+      );
 
       expect(result).toEqual({});
     });
 
-    it('is a no-op that never calls the storage provider when every path is invalid', async () => {
-      const result = await service.resolveAuthorAvatars(CHAPTER, []);
+    it('is a no-op that never calls the storage provider when no message has an avatar path', async () => {
+      mockMessageRepo.findAuthorAvatarPaths.mockResolvedValue([]);
+
+      const result = await service.resolveAuthorAvatars(
+        CHANNEL,
+        CHAPTER,
+        USER,
+        [],
+      );
 
       expect(result).toEqual({});
       expect(mockStorageProvider.getSignedDownloadUrls).not.toHaveBeenCalled();

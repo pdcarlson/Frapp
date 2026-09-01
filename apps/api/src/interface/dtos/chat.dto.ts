@@ -357,11 +357,12 @@ export const MAX_AUTHOR_AVATAR_PATHS_PER_REQUEST = 50;
 export class ResolveAuthorAvatarsDto {
   @ApiProperty({
     type: [String],
+    format: 'uuid',
     description:
-      "`chat_messages.author_avatar_path` values off already-fetched message rows. Each must be a `chat-archive` object path under the caller's own chapter — a path outside that prefix is silently dropped rather than signed.",
+      "IDs of already-fetched messages in this channel to resolve avatar paths for. The server derives the avatar path set itself (`chat_messages.author_avatar_path` for rows matching both this channel and this id list) rather than trusting a caller-supplied storage path — the `chat-archive` bucket has no storage RLS, and an avatar path is otherwise indistinguishable from another message's attachment path.",
   })
   @IsArray()
   @ArrayMaxSize(MAX_AUTHOR_AVATAR_PATHS_PER_REQUEST)
-  @IsString({ each: true })
-  paths: string[];
+  @IsUUID(undefined, { each: true })
+  message_ids: string[];
 }

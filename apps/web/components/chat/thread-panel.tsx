@@ -9,6 +9,7 @@ import type { ChatMessage } from "@repo/chat-core/types";
 import { useAuthorAvatars } from "@repo/hooks";
 
 interface ThreadPanelProps {
+  channelId: string;
   parent: ChatMessage | null;
   /** All messages in the channel — the panel filters by `reply_to_id`. */
   allMessages: ChatMessage[];
@@ -27,6 +28,7 @@ interface ThreadPanelProps {
  * `chat-shell.tsx`.
  */
 export function ThreadPanel({
+  channelId,
   parent,
   allMessages,
   viewerId,
@@ -44,7 +46,8 @@ export function ThreadPanel({
   // author's, rather than one per row (#1231) — same pattern as the centre
   // timeline, a separate list here.
   const avatars = useAuthorAvatars(
-    [parent, ...replies].map((message) => message?.author_avatar_path),
+    channelId,
+    parent ? [parent, ...replies] : [],
   );
 
   // Own reveal state, separate from the centre timeline's: this panel is a
