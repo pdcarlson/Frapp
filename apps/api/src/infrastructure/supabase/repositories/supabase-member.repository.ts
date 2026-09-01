@@ -161,11 +161,13 @@ export class SupabaseMemberRepository implements IMemberRepository {
   async claimPresidencyAtomic(
     chapterId: string,
     claimingMemberId: string,
+    eligibleRoleId: string,
     presidentRoleId: string,
   ): Promise<boolean> {
     const { data, error } = await this.supabase.rpc('claim_presidency', {
       p_chapter_id: chapterId,
       p_claiming_member_id: claimingMemberId,
+      p_eligible_role_id: eligibleRoleId,
       p_president_role_id: presidentRoleId,
     });
     if (error) throw error;

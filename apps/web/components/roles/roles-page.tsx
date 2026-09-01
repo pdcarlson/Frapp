@@ -155,6 +155,12 @@ function PresidencyClaimBanner() {
   let description: string;
   if (statusQuery.isLoading) {
     description = "Checking who can claim it...";
+  } else if (statusQuery.isError) {
+    // Distinct from "no eligible role was found" below — an error here means
+    // eligibility genuinely could not be determined, not that it was checked
+    // and came back empty. Conflating the two told an actually-eligible
+    // officer to contact support over a transient network blip.
+    description = "Couldn't check who can claim it. Retry in a moment.";
   } else if (eligible) {
     description = nextRoleName
       ? `As the highest-ranked remaining officer (${nextRoleName}), you can claim the presidency now.`

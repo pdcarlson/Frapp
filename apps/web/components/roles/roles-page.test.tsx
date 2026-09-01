@@ -57,6 +57,7 @@ const {
       | { needs_president: boolean; eligible: boolean; next_role_name: string | null }
       | undefined,
     isLoading: false,
+    isError: false,
   },
   claimPresidency: { mutateAsync: vi.fn(), isPending: false },
 }));
@@ -140,7 +141,11 @@ beforeEach(() => {
   claimPresidency.mutateAsync.mockReset().mockResolvedValue(undefined);
   claimPresidency.isPending = false;
   Object.assign(currentChapter, { data: { needs_president: false } });
-  Object.assign(presidencyClaimStatus, { data: undefined, isLoading: false });
+  Object.assign(presidencyClaimStatus, {
+    data: undefined,
+    isLoading: false,
+    isError: false,
+  });
   settled();
 });
 
@@ -327,6 +332,24 @@ describe("the orphan-president claim banner", () => {
     });
     render(<RolesAndPermissionsPage />);
     expect(screen.getByText(/treasurer/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /claim presidency/i }),
+    ).toBeNull();
+  });
+
+  it("shows a retry-able error rather than the support message when the status fetch fails", () => {
+    // A failed fetch and a genuine "no eligible role" result must not read
+    // the same — the former is retry-able, the latter tells a real officer
+    // to contact support over a transient network blip.
+    Object.assign(currentChapter, { data: { needs_president: true } });
+    Object.assign(presidencyClaimStatus, {
+      data: undefined,
+      isLoading: false,
+      isError: true,
+    });
+    render(<RolesAndPermissionsPage />);
+    expect(screen.getByText(/couldn't check who can claim it/i)).toBeInTheDocument();
+    expect(screen.queryByText(/contact frapp support/i)).toBeNull();
     expect(
       screen.queryByRole("button", { name: /claim presidency/i }),
     ).toBeNull();

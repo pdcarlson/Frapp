@@ -263,6 +263,7 @@ export interface Database {
         Args: {
           p_chapter_id: string;
           p_claiming_member_id: string;
+          p_eligible_role_id: string;
           p_president_role_id: string;
         };
         Returns: boolean;

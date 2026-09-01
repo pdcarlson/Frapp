@@ -660,6 +660,20 @@ describe('RbacService', () => {
       color: null,
       created_at: '2024-01-01',
     };
+    // The eligibility floor: any role ranked at or below this is the
+    // ordinary-member baseline, not an admin tier, and is never eligible to
+    // claim — see the "does not let an ordinary Member claim" test below.
+    const memberRole: Role = {
+      id: 'role-member',
+      chapter_id: 'ch-1',
+      name: 'Member',
+      system_key: SystemRoleKeys.MEMBER,
+      permissions: [SystemPermissions.MEMBERS_VIEW],
+      is_system: true,
+      display_order: 5,
+      color: null,
+      created_at: '2024-01-01',
+    };
 
     const makeMember = (overrides: Partial<Member>): Member => ({
       id: 'member-x',
@@ -798,6 +812,7 @@ describe('RbacService', () => {
           presidentRole,
           treasurerRole,
           secretaryRole,
+          memberRole,
         ]);
         mockMemberRepo.findByChapter.mockResolvedValue([
           makeMember({ id: 'member-1', role_ids: [treasurerRole.id] }),
@@ -824,6 +839,7 @@ describe('RbacService', () => {
           presidentRole,
           treasurerRole,
           secretaryRole,
+          memberRole,
         ]);
         mockMemberRepo.findByChapter.mockResolvedValue([
           makeMember({ id: 'member-1', role_ids: [treasurerRole.id] }),
@@ -842,13 +858,14 @@ describe('RbacService', () => {
         });
       });
 
-      it('reports no eligible role when nobody holds any non-President role — the support-fallback case', async () => {
+      it('reports no eligible role when nobody holds any admin-tier role — the support-fallback case', async () => {
         mockChapterRepo.findById.mockResolvedValue(
           makeChapter({ needs_president: true }),
         );
         mockRoleRepo.findByChapter.mockResolvedValue([
           presidentRole,
           treasurerRole,
+          memberRole,
         ]);
         mockMemberRepo.findByChapter.mockResolvedValue([]);
 
@@ -862,6 +879,71 @@ describe('RbacService', () => {
           eligible: false,
           next_role_name: null,
         });
+      });
+
+      // #349 hunk-scan finding: without a floor, the eligibility walk fell
+      // through vacant officer roles all the way to the ordinary "Member"
+      // role — any of its (typically many) holders could then claim the
+      // wildcard. The floor at the chapter's own Member role's display_order
+      // must hold even when every officer seat is empty but rank-and-file
+      // members exist.
+      it('does not fall through to the ordinary Member role when every officer seat is vacant', async () => {
+        mockChapterRepo.findById.mockResolvedValue(
+          makeChapter({ needs_president: true }),
+        );
+        mockRoleRepo.findByChapter.mockResolvedValue([
+          presidentRole,
+          treasurerRole,
+          secretaryRole,
+          memberRole,
+        ]);
+        // Nobody holds Treasurer or Secretary, but plenty of ordinary members
+        // hold the ordinary Member role.
+        mockMemberRepo.findByChapter.mockResolvedValue([
+          makeMember({ id: 'member-1', role_ids: [memberRole.id] }),
+          makeMember({ id: 'member-2', role_ids: [memberRole.id] }),
+        ]);
+
+        const result = await service.getPresidencyClaimStatus(
+          'ch-1',
+          'member-1',
+        );
+
+        expect(result).toEqual({
+          needs_president: true,
+          eligible: false,
+          next_role_name: null,
+        });
+      });
+
+      it('fails closed (nobody eligible) when the chapter has no resolvable Member role', async () => {
+        // The legacy system_key backfill gap (spec/behavior/rbac.md): a
+        // chapter that renamed its Member role before the backfill has no
+        // key on it, so the floor cannot be established. Since this decision
+        // grants `*`, the safe direction is "nobody eligible", not "no
+        // floor".
+        mockChapterRepo.findById.mockResolvedValue(
+          makeChapter({ needs_president: true }),
+        );
+        mockRoleRepo.findByChapter.mockResolvedValue([
+          presidentRole,
+          treasurerRole,
+        ]);
+        mockMemberRepo.findByChapter.mockResolvedValue([
+          makeMember({ id: 'member-1', role_ids: [treasurerRole.id] }),
+        ]);
+
+        const result = await service.getPresidencyClaimStatus(
+          'ch-1',
+          'member-1',
+        );
+
+        expect(result).toEqual({
+          needs_president: true,
+          eligible: false,
+          next_role_name: null,
+        });
+        expect(mockMemberRepo.findByChapter).not.toHaveBeenCalled();
       });
     });
 
@@ -908,6 +990,7 @@ describe('RbacService', () => {
           presidentRole,
           treasurerRole,
           secretaryRole,
+          memberRole,
         ]);
         mockMemberRepo.findByChapter.mockResolvedValue([
           makeMember({ id: 'member-1', role_ids: [treasurerRole.id] }),
@@ -950,6 +1033,7 @@ describe('RbacService', () => {
         mockRoleRepo.findByChapter.mockResolvedValue([
           presidentRole,
           treasurerRole,
+          memberRole,
         ]);
         mockMemberRepo.findByChapter.mockResolvedValue([
           makeMember({
@@ -962,9 +1046,13 @@ describe('RbacService', () => {
 
         await service.claimPresidency('ch-1', 'member-1');
 
+        // Third argument is the role that made the claimant eligible
+        // (re-verified atomically by the RPC, not just the President role
+        // being granted) — see the claim_presidency migration.
         expect(mockMemberRepo.claimPresidencyAtomic).toHaveBeenCalledWith(
           'ch-1',
           'member-1',
+          treasurerRole.id,
           presidentRole.id,
         );
         expect(mockChapterAuditLogService.record).toHaveBeenCalledWith({
@@ -987,6 +1075,7 @@ describe('RbacService', () => {
         mockRoleRepo.findByChapter.mockResolvedValue([
           presidentRole,
           treasurerRole,
+          memberRole,
         ]);
         mockMemberRepo.findByChapter.mockResolvedValue([
           makeMember({ id: 'member-1', role_ids: [treasurerRole.id] }),

@@ -125,11 +125,15 @@ describe('SupabaseMemberRepository — tenant scope', () => {
     // Same tenancy contract as transferPresidencyAtomic: `p_chapter_id` is the
     // only scoping visible outside the RPC's own SQL.
     const ok = await harness.expectTenantScoped(CHAPTER_B, () =>
-      repo.claimPresidencyAtomic(CHAPTER_B, MEMBER_B, 'role'),
+      repo.claimPresidencyAtomic(CHAPTER_B, MEMBER_B, 'eligible-role', 'role'),
     );
 
     expect(ok).toBe(true);
-    expect(harness.rpcCalls[0].args).toMatchObject({ p_chapter_id: CHAPTER_B });
+    expect(harness.rpcCalls[0].args).toMatchObject({
+      p_chapter_id: CHAPTER_B,
+      p_eligible_role_id: 'eligible-role',
+      p_president_role_id: 'role',
+    });
   });
 
   describe('deliberately unscoped surfaces', () => {

@@ -308,6 +308,19 @@ export class MemberService {
       throw new ForbiddenException('Member not in current chapter');
     }
     await this.memberRepo.delete(memberId);
+    // Written before the orphan-presidency check below, not after: that check
+    // deliberately fails loud (spec/behavior/rbac.md's flag is security-load-
+    // bearing, so a failure to set it must not be silently swallowed), and
+    // this removal's own audit trail must land regardless of whether that
+    // later, unrelated check succeeds — the member is already gone either way.
+    await this.auditLogService.record({
+      chapterId,
+      actorUserId,
+      action: 'member_removed',
+      targetType: 'member',
+      targetId: memberId,
+      diff: { user_id: member.user_id },
+    });
     // Removing the current President is one of the two ways a chapter can be
     // orphaned (spec/behavior/rbac.md § Presidency Transfer "Edge case") — the
     // other is account deletion, flagged from AccountDeletionService. No-ops
@@ -317,14 +330,6 @@ export class MemberService {
       member.role_ids,
       actorUserId,
     );
-    await this.auditLogService.record({
-      chapterId,
-      actorUserId,
-      action: 'member_removed',
-      targetType: 'member',
-      targetId: memberId,
-      diff: { user_id: member.user_id },
-    });
   }
 
   async findProfileById(

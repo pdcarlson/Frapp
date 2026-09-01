@@ -110,19 +110,13 @@ export class AccountDeletionService {
 
     // Account deletion is the other orphaning cause spec/behavior/rbac.md's
     // Presidency Transfer "Edge case" names (the first is MemberService.remove
-    // via members:remove). Best-effort: erasure must complete even if this
+    // via members:remove). Best-effort, per chapter (see
+    // flagOrphanedPresidencies): erasure must complete even if this
     // bookkeeping step fails — there is no equivalent of the report sweep's
     // independent backstop for it, but blocking a right-to-erasure request on
     // a secondary side effect would be worse than a chapter briefly missing
     // its needs_president flag.
-    try {
-      await this.flagOrphanedPresidencies(memberships);
-    } catch (error) {
-      this.logger.error(
-        `Failed to flag orphaned presidencies for deleted user ${userId}; a chapter this user presided over may be missing its needs_president flag — investigate manually`,
-        error instanceof Error ? error.stack : String(error),
-      );
-    }
+    await this.flagOrphanedPresidencies(userId, memberships);
 
     const forgotten = await this.analytics.forgetUser(userId);
     if (!forgotten) {
@@ -271,14 +265,29 @@ export class AccountDeletionService {
    * chapter if that membership carried the President role — mirrors
    * `MemberService.remove`'s call for the manual-removal case. `actorUserId`
    * is null: account deletion has no acting member, only the system itself.
+   *
+   * Each membership is isolated in its own try/catch: a user who presided
+   * over multiple chapters must not have chapter B (and C, and...) silently
+   * skipped because chapter A's flag write failed. This method therefore
+   * never rejects — the caller does not need its own wrapping try/catch.
    */
-  private async flagOrphanedPresidencies(memberships: Member[]): Promise<void> {
+  private async flagOrphanedPresidencies(
+    userId: string,
+    memberships: Member[],
+  ): Promise<void> {
     for (const membership of memberships) {
-      await this.rbacService.flagIfPresidentRemoved(
-        membership.chapter_id,
-        membership.role_ids,
-        null,
-      );
+      try {
+        await this.rbacService.flagIfPresidentRemoved(
+          membership.chapter_id,
+          membership.role_ids,
+          null,
+        );
+      } catch (error) {
+        this.logger.error(
+          `Failed to flag orphaned presidency for chapter ${membership.chapter_id} (deleted user ${userId}); that chapter may be missing its needs_president flag — investigate manually`,
+          error instanceof Error ? error.stack : String(error),
+        );
+      }
     }
   }
 }

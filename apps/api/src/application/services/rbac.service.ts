@@ -223,18 +223,37 @@ export class RbacService {
    * Walk the chapter's roles by ascending `display_order` (i.e. descending
    * rank), skipping the vacant President role, and return the first role that
    * still has at least one live member holding it. That role's holders are
-   * the pool "the next member with the highest-ranked admin role" in
+   * the pool "the next member with the highest-ranked **admin** role" in
    * spec/behavior/rbac.md resolves to — not a hardcoded `SystemRoleKeys` list,
    * since `display_order` is chapter-editable and a chapter may add, rename or
    * reorder roles freely.
+   *
+   * The walk is floored at the chapter's seeded "Member" role's
+   * `display_order` — roles ranked at or below that are the ordinary-member
+   * baseline, not an admin tier, and every active chapter has at least one
+   * member holding one. Without this floor, a chapter with every officer
+   * seat vacant would fall all the way through to "Member" and let any
+   * ordinary member (there may be dozens) claim the wildcard. Returns `null`
+   * (the support-fallback case) when the chapter's Member role cannot be
+   * resolved by `system_key` at all (the legacy backfill gap) — fail closed
+   * rather than removing the floor, since this decision grants `*`.
    */
   private async resolveEligibleClaimants(
     chapterId: string,
     roles: Role[],
     presidentRole: Role,
   ): Promise<EligibleClaimants | null> {
-    const candidateRoles = [...roles]
-      .filter((r) => r.id !== presidentRole.id)
+    const memberRole = roles.find(
+      (r) => r.system_key === SystemRoleKeys.MEMBER,
+    );
+    if (!memberRole) return null;
+
+    const candidateRoles = roles
+      .filter(
+        (r) =>
+          r.id !== presidentRole.id &&
+          r.display_order < memberRole.display_order,
+      )
       .sort((a, b) => a.display_order - b.display_order);
     if (!candidateRoles.length) return null;
 
@@ -368,6 +387,7 @@ export class RbacService {
     const claimed = await this.memberRepo.claimPresidencyAtomic(
       chapterId,
       claimingMemberId,
+      eligible.role.id,
       presidentRole.id,
     );
     if (!claimed) {

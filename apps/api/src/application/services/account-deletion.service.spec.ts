@@ -495,6 +495,44 @@ describe('AccountDeletionService', () => {
       expect(mockAuthAdmin.deleteAuthUser).toHaveBeenCalledWith('auth-1');
     });
 
+    it('still flags every other chapter when one chapter fails, rather than aborting the whole loop', async () => {
+      // A President-of-multiple-chapters deleting their account must not have
+      // chapter B (and C) silently skipped because chapter A's flag write
+      // failed — each membership is isolated in its own try/catch.
+      mockUserRepo.findById.mockResolvedValue(liveUser);
+      mockMemberRepo.findByUser.mockResolvedValue([
+        membership('chapter-a', ['role-president']),
+        membership('chapter-b', ['role-president']),
+        membership('chapter-c', ['role-president']),
+      ]);
+      mockRbacService.flagIfPresidentRemoved.mockImplementation(
+        async (chapterId: string) => {
+          if (chapterId === 'chapter-a') {
+            throw new Error('chapters table down for chapter-a');
+          }
+        },
+      );
+
+      await expect(service.deleteAccount('user-1')).resolves.toBeUndefined();
+
+      expect(mockRbacService.flagIfPresidentRemoved).toHaveBeenCalledWith(
+        'chapter-a',
+        ['role-president'],
+        null,
+      );
+      expect(mockRbacService.flagIfPresidentRemoved).toHaveBeenCalledWith(
+        'chapter-b',
+        ['role-president'],
+        null,
+      );
+      expect(mockRbacService.flagIfPresidentRemoved).toHaveBeenCalledWith(
+        'chapter-c',
+        ['role-president'],
+        null,
+      );
+      expect(mockAuthAdmin.deleteAuthUser).toHaveBeenCalledWith('auth-1');
+    });
+
     it('does not check a chapter the member has already left', async () => {
       mockUserRepo.findById.mockResolvedValue(liveUser);
       mockMemberRepo.findByUser.mockResolvedValue([]);
