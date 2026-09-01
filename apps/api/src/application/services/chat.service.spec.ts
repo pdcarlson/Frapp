@@ -493,6 +493,29 @@ describe('ChatService', () => {
 
       expect(mockChannelRepo.update).toHaveBeenCalled();
     });
+
+    // Regression for the Chat Admin UI (#327): `category_id: undefined` is
+    // dropped by JSON serialization before the request even leaves the
+    // client, so "move this channel back to uncategorized" is only
+    // expressible as a literal `null` in the body. `UpdateChannelDto.category_id`
+    // is `@IsOptional() @IsUUID()`, which class-validator treats `null` the
+    // same as `undefined` (both skip `@IsUUID()`), so the DTO accepts it and
+    // this pins that the service passes it straight through rather than
+    // coercing it back to `undefined` — which would silently un-fix the bug.
+    it('should pass category_id: null through to the repository, clearing the category', async () => {
+      const categorized = { ...baseChannel, category_id: 'cat-1' };
+      mockChannelRepo.findById.mockResolvedValue(categorized);
+      mockChannelRepo.update.mockResolvedValue({
+        ...categorized,
+        category_id: null,
+      });
+
+      await service.updateChannel('chan-1', 'ch-1', { category_id: null });
+
+      expect(mockChannelRepo.update).toHaveBeenCalledWith('chan-1', 'ch-1', {
+        category_id: null,
+      });
+    });
   });
 
   // A channel row is not neutral metadata. `name` + `member_ids` +

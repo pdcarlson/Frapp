@@ -2964,7 +2964,8 @@ export interface components {
             name?: string;
             description?: string;
             required_permissions?: string[];
-            category_id?: string;
+            /** Format: uuid */
+            category_id?: string | null;
             is_read_only?: boolean;
         };
         CreateDmDto: {

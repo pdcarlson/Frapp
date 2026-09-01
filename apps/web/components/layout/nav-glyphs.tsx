@@ -265,7 +265,7 @@ export function SettingsGlyph({ className, active }: NavGlyphProps) {
  * Not drawn on any reference board — Chat Admin is an #920-era Admin-section
  * addition, not a screen the s04/s09 boards depict. Drawn fresh in the
  * recipe: a plaque (matches `ReportsGlyph`'s outer rounded-rect) with a `#`
- * detail, the same channel sigil `iconography.md` §6.2.7 names as a brand
+ * detail, the same channel sigil `iconography.md` §6.2.2 names as a brand
  * carve-out elsewhere — used here as an ordinary duotone detail, not that
  * composition.
  */

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { Loader2, Pencil, PinOff, Plus, Trash2 } from "lucide-react";
 import {
@@ -115,6 +115,77 @@ const CREATABLE_TYPES: Extract<ChannelType, "PUBLIC" | "PRIVATE" | "ROLE_GATED">
 /** Sentinel for "no category" — Radix `Select` rejects an empty-string item value. */
 const NO_CATEGORY = "__none__";
 
+/** Add/remove `value` from a `Set` state, without mutating the previous set. */
+function useToggleSet(setState: (updater: (prev: Set<string>) => Set<string>) => void) {
+  return useCallback(
+    (value: string) => {
+      setState((prev) => {
+        const next = new Set(prev);
+        if (next.has(value)) next.delete(value);
+        else next.add(value);
+        return next;
+      });
+    },
+    [setState],
+  );
+}
+
+/**
+ * The required-permissions picker, shared by the create dialog and the edit
+ * panel — both need the identical catalog checkbox grid, and both need to
+ * degrade the same way when the catalog can't load.
+ */
+function PermissionCheckboxGrid({
+  catalog,
+  catalogLoading,
+  catalogUnavailable,
+  selected,
+  onToggle,
+}: {
+  catalog: PermissionCatalogEntry[];
+  catalogLoading: boolean;
+  catalogUnavailable: boolean;
+  selected: Set<string>;
+  onToggle: (permission: string) => void;
+}) {
+  if (catalogUnavailable) {
+    return (
+      <p className="mt-2 rounded-md border border-border p-3 text-xs text-muted-foreground">
+        Couldn&apos;t load the permission catalog — you may be missing the{" "}
+        <code>members:view</code> permission it requires. Existing selections
+        are unaffected; ask your chapter president for access to change them.
+      </p>
+    );
+  }
+  if (catalogLoading) {
+    return (
+      <p className="mt-2 text-xs text-muted-foreground">Loading permissions…</p>
+    );
+  }
+  return (
+    <div className="mt-2 grid gap-2 rounded-md border border-border p-3 max-h-48 overflow-y-auto">
+      {catalog
+        .filter((entry) => entry.permission !== "*")
+        .map((entry) => (
+          <label
+            key={entry.permission}
+            className="flex cursor-pointer items-center gap-2 text-sm"
+          >
+            <span className={dashboardCheckboxHitAreaClassName}>
+              <input
+                type="checkbox"
+                className={dashboardTableCheckboxClassName}
+                checked={selected.has(entry.permission)}
+                onChange={() => onToggle(entry.permission)}
+              />
+            </span>
+            <code className="text-xs">{entry.permission}</code>
+          </label>
+        ))}
+    </div>
+  );
+}
+
 export function ChatAdminPage() {
   return (
     <Can
@@ -199,7 +270,12 @@ function ChatAdminBody() {
     const name = newCategoryName.trim();
     if (!name) return;
     try {
-      await createCategory.mutateAsync({ name, display_order: categories.length });
+      // Max + 1, not `categories.length`: after any deletion the length no
+      // longer equals "one past the highest order," and two categories can
+      // end up tied on `display_order`.
+      const nextOrder =
+        categories.reduce((max, c) => Math.max(max, c.display_order), -1) + 1;
+      await createCategory.mutateAsync({ name, display_order: nextOrder });
       toast({ description: `Category "${name}" created.` });
       setNewCategoryName("");
     } catch (error) {
@@ -270,31 +346,38 @@ function ChatAdminBody() {
     setPermissionsDraft(new Set(channel.required_permissions ?? []));
   }
 
-  function togglePermission(permission: string) {
-    setPermissionsDraft((prev) => {
-      const next = new Set(prev);
-      if (next.has(permission)) next.delete(permission);
-      else next.add(permission);
-      return next;
-    });
-  }
+  const togglePermission = useToggleSet(setPermissionsDraft);
 
   async function handleSaveChannel() {
     if (!selectedChannel) return;
+    const name = nameDraft.trim();
+    if (!name) {
+      toast({ variant: "destructive", description: "Name can't be empty." });
+      return;
+    }
+    if (selectedChannel.type === "ROLE_GATED" && permissionsDraft.size === 0) {
+      toast({
+        variant: "destructive",
+        description: "A role-gated channel needs at least one required permission.",
+      });
+      return;
+    }
     try {
       await updateChannel.mutateAsync({
         id: selectedChannel.id,
         body: {
-          name: nameDraft.trim() || undefined,
+          name,
           description: descriptionDraft.trim(),
-          category_id: categoryDraft === NO_CATEGORY ? undefined : categoryDraft,
+          // `null` clears the category; `NO_CATEGORY` selected means "make this
+          // uncategorized," which is a real write, not "leave it alone."
+          category_id: categoryDraft === NO_CATEGORY ? null : categoryDraft,
           is_read_only: readOnlyDraft,
           ...(selectedChannel.type === "ROLE_GATED"
             ? { required_permissions: Array.from(permissionsDraft) }
             : {}),
         },
       });
-      toast({ description: `#${nameDraft || selectedChannel.name} saved.` });
+      toast({ description: `#${name} saved.` });
     } catch (error) {
       toast({
         variant: "destructive",
@@ -335,14 +418,7 @@ function ChatAdminBody() {
     new Set(),
   );
 
-  function toggleCreatePermission(permission: string) {
-    setCreatePermissions((prev) => {
-      const next = new Set(prev);
-      if (next.has(permission)) next.delete(permission);
-      else next.add(permission);
-      return next;
-    });
-  }
+  const toggleCreatePermission = useToggleSet(setCreatePermissions);
 
   function resetCreateDraft() {
     setCreateName("");
@@ -357,6 +433,13 @@ function ChatAdminBody() {
     event.preventDefault();
     const name = createName.trim();
     if (!name) return;
+    if (createType === "ROLE_GATED" && createPermissions.size === 0) {
+      toast({
+        variant: "destructive",
+        description: "A role-gated channel needs at least one required permission.",
+      });
+      return;
+    }
     try {
       await createChannel.mutateAsync({
         name,
@@ -407,15 +490,20 @@ function ChatAdminBody() {
     void catalogQuery.refetch();
   }
 
+  // The permissions catalog (`GET /v1/roles/permissions-catalog`) is gated
+  // server-side on `members:view`, a *different* permission from this page's
+  // own `channels:manage` gate — a custom role can hold one without the
+  // other. Blocking the whole page on it would 500 out plain PUBLIC/PRIVATE
+  // channel management for an admin who has no need to touch a ROLE_GATED
+  // channel's permission list. It degrades locally instead, wherever the
+  // permission checkboxes actually render.
   const channelsReady = channelsQuery.data !== undefined;
   const categoriesReady = categoriesQuery.data !== undefined;
-  const catalogReady = catalogQuery.data !== undefined;
   const paused =
     (channelsQuery.isPending && channelsQuery.fetchStatus === "paused") ||
-    (categoriesQuery.isPending && categoriesQuery.fetchStatus === "paused") ||
-    (catalogQuery.isPending && catalogQuery.fetchStatus === "paused");
+    (categoriesQuery.isPending && categoriesQuery.fetchStatus === "paused");
 
-  if (isOffline && !(channelsReady && categoriesReady && catalogReady)) {
+  if (isOffline && !(channelsReady && categoriesReady)) {
     return (
       <OfflineState
         title="Chat Admin unavailable offline"
@@ -424,10 +512,10 @@ function ChatAdminBody() {
       />
     );
   }
-  if (channelsQuery.isLoading || categoriesQuery.isLoading || catalogQuery.isLoading || paused) {
+  if (channelsQuery.isLoading || categoriesQuery.isLoading || paused) {
     return <LoadingState message="Loading channels..." />;
   }
-  if (channelsQuery.isError || categoriesQuery.isError || catalogQuery.isError) {
+  if (channelsQuery.isError || categoriesQuery.isError) {
     return (
       <ErrorState
         title="Couldn't load Chat Admin"
@@ -436,6 +524,9 @@ function ChatAdminBody() {
       />
     );
   }
+
+  const catalogUnavailable = catalogQuery.isError;
+  const catalogLoading = catalogQuery.isLoading;
 
   return (
     <div className="space-y-6">
@@ -552,28 +643,13 @@ function ChatAdminBody() {
                   <p className="mt-1 text-xs text-muted-foreground">
                     A member needs at least one of these to read or post.
                   </p>
-                  <div className="mt-2 grid gap-2 rounded-md border border-border p-3 max-h-48 overflow-y-auto">
-                    {catalog
-                      .filter((entry) => entry.permission !== "*")
-                      .map((entry) => (
-                        <label
-                          key={entry.permission}
-                          className="flex cursor-pointer items-center gap-2 text-sm"
-                        >
-                          <span className={dashboardCheckboxHitAreaClassName}>
-                            <input
-                              type="checkbox"
-                              className={dashboardTableCheckboxClassName}
-                              checked={createPermissions.has(entry.permission)}
-                              onChange={() =>
-                                toggleCreatePermission(entry.permission)
-                              }
-                            />
-                          </span>
-                          <code className="text-xs">{entry.permission}</code>
-                        </label>
-                      ))}
-                  </div>
+                  <PermissionCheckboxGrid
+                    catalog={catalog}
+                    catalogLoading={catalogLoading}
+                    catalogUnavailable={catalogUnavailable}
+                    selected={createPermissions}
+                    onToggle={toggleCreatePermission}
+                  />
                 </div>
               ) : null}
             </form>
@@ -588,7 +664,11 @@ function ChatAdminBody() {
               <Button
                 form="channel-create-form"
                 type="submit"
-                disabled={createChannel.isPending}
+                disabled={
+                  createChannel.isPending ||
+                  !createName.trim() ||
+                  (createType === "ROLE_GATED" && createPermissions.size === 0)
+                }
               >
                 {createChannel.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -831,28 +911,13 @@ function ChatAdminBody() {
                     <Label className="text-xs uppercase tracking-wide text-muted-foreground">
                       Required permissions ({permissionsDraft.size})
                     </Label>
-                    <div className="mt-2 grid gap-2 rounded-md border border-border p-3 max-h-48 overflow-y-auto">
-                      {catalog
-                        .filter((entry) => entry.permission !== "*")
-                        .map((entry) => (
-                          <label
-                            key={entry.permission}
-                            className="flex cursor-pointer items-center gap-2 text-sm"
-                          >
-                            <span className={dashboardCheckboxHitAreaClassName}>
-                              <input
-                                type="checkbox"
-                                className={dashboardTableCheckboxClassName}
-                                checked={permissionsDraft.has(entry.permission)}
-                                onChange={() =>
-                                  togglePermission(entry.permission)
-                                }
-                              />
-                            </span>
-                            <code className="text-xs">{entry.permission}</code>
-                          </label>
-                        ))}
-                    </div>
+                    <PermissionCheckboxGrid
+                      catalog={catalog}
+                      catalogLoading={catalogLoading}
+                      catalogUnavailable={catalogUnavailable}
+                      selected={permissionsDraft}
+                      onToggle={togglePermission}
+                    />
                   </div>
                 ) : null}
 
@@ -916,7 +981,12 @@ function ChatAdminBody() {
                 </Button>
                 <Button
                   onClick={() => void handleSaveChannel()}
-                  disabled={updateChannel.isPending}
+                  disabled={
+                    updateChannel.isPending ||
+                    !nameDraft.trim() ||
+                    (selectedChannel.type === "ROLE_GATED" &&
+                      permissionsDraft.size === 0)
+                  }
                 >
                   {updateChannel.isPending ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
