@@ -26,6 +26,7 @@ import { ActivationModule } from '../activation/activation.module';
 import { ChapterModule } from '../chapter/chapter.module';
 import { AuthModule } from '../auth/auth.module';
 import { ChatNotificationPreferenceRepository } from '../chat-push-worker/chat-notification-preference.repository';
+import { ChannelCacheModule } from '../chat-push-worker/channel-cache.module';
 
 @Module({
   // RbacModule → RbacService, which the delete-message route uses to resolve
@@ -34,6 +35,12 @@ import { ChatNotificationPreferenceRepository } from '../chat-push-worker/chat-n
   // are needed by `sendMessage`'s server-side `@`-mention resolution, which
   // walks the chapter roster to turn an `@`-token into a `users.id`.
   // `ChannelAccessModule` is not a substitute: it exports only its service.
+  // `ChannelCacheModule` → `ChannelCacheService`, so `updateChannel` can evict
+  // the push worker's cached authorization inputs on write (#988) — imported
+  // rather than `ChatPushWorkerModule` itself for the same reason
+  // `ChatNotificationPreferenceRepository` is provided directly below: that
+  // module's `OnApplicationBootstrap` opens a Realtime subscription, which has
+  // no business starting up for a request-path module.
   imports: [
     NotificationModule,
     ChannelAccessModule,
@@ -41,6 +48,7 @@ import { ChatNotificationPreferenceRepository } from '../chat-push-worker/chat-n
     ActivationModule,
     ChapterModule,
     AuthModule,
+    ChannelCacheModule,
   ],
   controllers: [ChatController],
   providers: [
