@@ -10,6 +10,7 @@ import {
 } from './chat-notification-preference.repository';
 import { RbacService } from '../../application/services/rbac.service';
 import type { ChatMessage } from '../../domain/entities';
+import { ChannelCacheService } from './channel-cache.service';
 
 /**
  * Recipient-filter proofs driven through the **real Realtime payload path**.
@@ -200,6 +201,7 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
     const mod = await Test.createTestingModule({
       providers: [
         ChatPushWorkerService,
+        ChannelCacheService,
         {
           provide: SUPABASE_CLIENT,
           useValue: { channel: () => channelStub, removeChannel },
