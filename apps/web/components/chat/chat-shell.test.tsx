@@ -236,3 +236,27 @@ describe("ChatShell composer remount per channel (#1014)", () => {
     expect(mockComposerMount).toHaveBeenLastCalledWith("chan-random");
   });
 });
+
+/**
+ * #396: `/chat` never repeated `dashboard-shell.tsx`'s "Skip to main content"
+ * pattern, so a keyboard user re-tabbed through the whole channel rail on
+ * every visit to reach the timeline — and the timeline carried no `log`/
+ * `feed` semantics at all, so a screen reader had no live-region cue that new
+ * messages were being appended.
+ */
+describe("ChatShell accessibility landmarks (#396)", () => {
+  it("renders a skip link that targets the timeline", () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    const skipLink = screen.getByRole("link", { name: /skip to messages/i });
+    expect(skipLink).toHaveAttribute("href", "#chat-timeline");
+  });
+
+  it("marks the timeline region as a live log a screen reader announces into", () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    const log = screen.getByRole("log", { name: /chat timeline/i });
+    expect(log).toHaveAttribute("id", "chat-timeline");
+    expect(log).toHaveAttribute("aria-live", "polite");
+  });
+});

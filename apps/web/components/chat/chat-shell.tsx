@@ -21,9 +21,11 @@ import {
 } from "@repo/hooks";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
-import { asArray } from "@/lib/utils";
+import { asArray, cn } from "@/lib/utils";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
 import type { ResolveMember } from "@repo/chat-core/dispatch";
+import type { ChatMessage } from "@repo/chat-core/types";
+import { FOCUS_RING_ALWAYS } from "@/components/ui/focus";
 import {
   ChannelList,
   type ChannelUnread,
@@ -419,6 +421,24 @@ export function ChatShell({
     if (!threadParentId) return null;
     return channel.messages.find((m) => m.id === threadParentId) ?? null;
   }, [channel.messages, threadParentId]);
+  // What had focus when a thread was opened (the row's Reply control, most
+  // often) — restored when the panel closes, per the keyboard-navigation
+  // acceptance criterion in #396. The thread panel is a persistent aside, not
+  // a dialog, so nothing else returns focus here for free the way Radix does
+  // for the slash palette.
+  const threadTriggerRef = useRef<HTMLElement | null>(null);
+  const openThread = useCallback((message: ChatMessage) => {
+    threadTriggerRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    setThreadParentId(message.id);
+  }, []);
+  const closeThread = useCallback(() => {
+    setThreadParentId(null);
+    threadTriggerRef.current?.focus();
+    threadTriggerRef.current = null;
+  }, []);
 
   if (!activeChapterId) {
     return (
@@ -462,6 +482,19 @@ export function ChatShell({
 
   return (
     <div className="grid gap-4 md:grid-cols-[260px_1fr_300px]">
+      {/*
+        `dashboard-shell.tsx`'s "Skip to main content" link lands the keyboard
+        user at the top of `/chat`, which is still the whole 3-pane grid —
+        including the channel rail this link exists to skip past. Every visit
+        this route needs re-skipping, so it earns its own target rather than
+        relying on the app-shell's.
+      */}
+      <a
+        href="#chat-timeline"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm"
+      >
+        Skip to messages
+      </a>
       {/*
         Rails take `--surface-1` (foundations §2: "raised surface — nav bars"),
         the same step the dashboard sidebar uses, so the chat rail and the app
@@ -566,8 +599,16 @@ export function ChatShell({
           ) : null}
         </header>
         <div
-          className="min-h-0 flex-1 overflow-hidden"
+          id="chat-timeline"
+          tabIndex={-1}
+          role="log"
+          aria-live="polite"
+          aria-relevant="additions"
           aria-label="Chat timeline"
+          className={cn(
+            "min-h-0 flex-1 overflow-hidden rounded-md",
+            FOCUS_RING_ALWAYS,
+          )}
         >
           <MessageTimeline
             ref={timeline}
@@ -579,7 +620,7 @@ export function ChatShell({
             loadError={channel.loadError}
             onReact={channel.react}
             onUnreact={channel.unreact}
-            onOpenThread={(message) => setThreadParentId(message.id)}
+            onOpenThread={openThread}
             onRetry={channel.retry}
             onDiscard={channel.discard}
             onAct={(messageId, actionType, payload) =>
@@ -646,7 +687,7 @@ export function ChatShell({
             parent={threadParent}
             allMessages={channel.messages}
             viewerId={userId}
-            onClose={() => setThreadParentId(null)}
+            onClose={closeThread}
             onReact={channel.react}
             onUnreact={channel.unreact}
           />

@@ -243,6 +243,20 @@ export function Composer({
     });
   }, [draft, editor]);
 
+  // Radix's default `onCloseAutoFocus` returns focus to whatever rendered
+  // `<DialogTrigger>` — this palette has none, since it opens from typing "/"
+  // as often as from clicking the toolbar button, so that handler is a no-op
+  // here and focus was landing nowhere (effectively `document.body`) on every
+  // close. The composer editor is the one place a member always means to end
+  // up, whichever of open/select/Escape/backspace-the-slash closed it.
+  const paletteWasOpen = useRef(palette.open);
+  useEffect(() => {
+    if (paletteWasOpen.current && !palette.open) {
+      editor?.commands.focus();
+    }
+    paletteWasOpen.current = palette.open;
+  }, [palette.open, editor]);
+
   // Staged attachments are per-channel and need no separate reset: `pending`
   // (above) already starts `[]` via `useState`, and `chat-shell.tsx` keys
   // `<Composer>` on the channel (id + resolved name, per #1014), so a channel
@@ -535,6 +549,8 @@ export function Composer({
               variant="ghost"
               size="icon"
               aria-label="Open slash commands (Command Slash)"
+              aria-haspopup="dialog"
+              aria-expanded={palette.open}
               onClick={() => setPalette({ open: true, query: "" })}
             >
               <SlashCommandGlyph className="h-5 w-5" />

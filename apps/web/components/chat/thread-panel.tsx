@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MessageItem } from "./message-item";
@@ -55,10 +55,33 @@ export function ThreadPanel({
   // hold within one list (#1193).
   const tapRevealed = useTapRevealedMessage();
 
+  // Focus moves into the panel whenever a (new) thread opens — this is a
+  // persistent aside, not a dialog, so nothing does that for free the way
+  // Radix does for the slash palette. `chat-shell.tsx` restores focus to
+  // whatever triggered the open (the row's Reply control, most often) once
+  // `onClose` fires, whether that's this button or Escape below.
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (parent) closeButtonRef.current?.focus();
+    // Keyed on the parent's identity, not the object: an edit or a reaction
+    // lands a new `parent` reference on every render of an already-open
+    // thread, and re-stealing focus back to the close button on each of
+    // those would fight whatever the member is doing inside the panel.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parent?.id]);
+
   if (!parent) return null;
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div
+      className="flex h-full min-h-0 flex-col"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.stopPropagation();
+          onClose();
+        }
+      }}
+    >
       <div className="flex items-start justify-between gap-2 border-b border-border px-3 py-3">
         <div className="min-w-0">
           <p className="text-[12.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
@@ -69,6 +92,7 @@ export function ThreadPanel({
           </p>
         </div>
         <Button
+          ref={closeButtonRef}
           variant="ghost"
           size="icon"
           aria-label="Close thread"
