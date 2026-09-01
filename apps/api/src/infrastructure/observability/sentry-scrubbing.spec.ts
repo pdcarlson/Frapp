@@ -292,17 +292,16 @@ describe('scrubSentryEvent', () => {
       },
     } as unknown as ErrorEvent);
 
-    const meta = (
-      scrubbed as unknown as { sdkProcessingMetadata: Record<string, unknown> }
-    ).sdkProcessingMetadata;
-    expect(meta.dynamicSamplingContext).toEqual({
+    const meta = (scrubbed as { sdkProcessingMetadata?: Record<string, unknown> })
+      ?.sdkProcessingMetadata;
+    expect(meta?.dynamicSamplingContext).toEqual({
       trace_id: 'trace123',
       public_key: 'abc123',
       sample_rate: '0.1',
       environment: 'production',
       transaction: '/v1/chapters',
     });
-    expect(meta.spanCountBeforeProcessing).toBe(7);
+    expect(meta?.spanCountBeforeProcessing).toBe(7);
     expect(meta).not.toHaveProperty('normalizedRequest');
     expect(JSON.stringify(scrubbed)).not.toContain('super-secret');
   });
