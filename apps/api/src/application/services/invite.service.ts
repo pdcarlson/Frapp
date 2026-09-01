@@ -24,11 +24,41 @@ import {
   resolveAppOrigin,
   buildJoinUrl,
 } from '../../infrastructure/email/invite-link.util';
+import { dedupeEmails } from '@repo/validation';
 
 export interface BulkEmailInviteResult {
   invites: Invite[];
   /** Addresses whose invite token was created but the email failed to send. */
   failed: string[];
+}
+
+/**
+ * Resend's default rate limit is low (2 requests/second on the standard
+ * tier), and a bulk invite can carry up to 50 addresses (`BulkEmailInviteDto`).
+ * Firing all of them as one `Promise.all` would send up to 50 concurrent
+ * requests and turn a healthy provider into a wall of spurious 429s reported
+ * back as address failures. A small worker pool keeps genuine delivery
+ * failures distinguishable from self-inflicted rate-limiting.
+ */
+const EMAIL_SEND_CONCURRENCY = 2;
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+  async function worker(): Promise<void> {
+    while (cursor < items.length) {
+      const index = cursor++;
+      results[index] = await fn(items[index]);
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, worker),
+  );
+  return results;
 }
 
 @Injectable()
@@ -110,34 +140,44 @@ export class InviteService {
     role: string,
     emails: string[],
   ): Promise<BulkEmailInviteResult> {
-    // Case-insensitive de-dup (the same address typed with different casing
-    // should not mint two tokens), preserving the first-seen casing to send to.
-    const seen = new Set<string>();
-    const uniqueEmails: string[] = [];
-    for (const email of emails) {
-      const trimmed = email.trim();
-      const key = trimmed.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      uniqueEmails.push(trimmed);
-    }
+    const uniqueEmails = dedupeEmails(emails);
 
     const inviteData = uniqueEmails.map(() =>
       this.prepareInviteData(chapterId, createdBy, role),
     );
     const invites = await this.inviteRepo.createMany(inviteData);
 
-    const origin = resolveAppOrigin(this.config);
-    const delivered = await Promise.all(
-      invites.map((invite, i) =>
-        this.emailProvider.sendInviteEmail({
-          to: uniqueEmails[i],
-          joinUrl: buildJoinUrl(invite.token, origin),
-          role,
-        }),
-      ),
+    // Correlate by token rather than by array position: each token was
+    // generated here, before the insert, so it is a stable key regardless of
+    // what order the repository happens to return rows in — `createMany`'s
+    // interface makes no ordering guarantee, and a positional zip would
+    // silently mis-attribute which address gets which join link if that ever
+    // changed.
+    const emailByToken = new Map(
+      inviteData.map((data, i) => [data.token as string, uniqueEmails[i]]),
     );
-    const failed = uniqueEmails.filter((_, i) => !delivered[i]);
+
+    const origin = resolveAppOrigin(this.config);
+    const deliveries = await mapWithConcurrency(
+      invites,
+      EMAIL_SEND_CONCURRENCY,
+      async (invite) => {
+        const to = emailByToken.get(invite.token)!;
+        // `sendInviteEmail` is documented to never throw, but that guarantee
+        // is convention rather than something the type system enforces —
+        // the `.catch` keeps one misbehaving provider implementation from
+        // rejecting the whole batch and losing every already-created token.
+        const sent = await this.emailProvider
+          .sendInviteEmail({
+            to,
+            joinUrl: buildJoinUrl(invite.token, origin),
+            role,
+          })
+          .catch(() => false);
+        return { to, sent };
+      },
+    );
+    const failed = deliveries.filter((d) => !d.sent).map((d) => d.to);
 
     await this.activation.record(chapterId, 'activation-first-invite-created', {
       batch_size: invites.length,

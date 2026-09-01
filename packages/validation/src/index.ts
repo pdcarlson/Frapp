@@ -121,6 +121,26 @@ export const EmailInviteSchema = z.object({
   emails: z.array(z.string().email()).min(1).max(50),
 });
 
+/**
+ * Case-insensitively de-dupes email addresses, preserving the first-seen
+ * casing to send to. Shared between the API (`InviteService.createWithEmails`)
+ * and the web onboarding wizard so the two runtimes' notion of "how many
+ * unique addresses" can never drift apart.
+ */
+export function dedupeEmails(emails: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const raw of emails) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(trimmed);
+  }
+  return result;
+}
+
 export const RedeemInviteSchema = z.object({
   token: z.string().uuid(),
 });

@@ -1,7 +1,19 @@
-jest.mock('node:crypto', () => ({
-  ...jest.requireActual<typeof import('node:crypto')>('node:crypto'),
-  randomUUID: () => 'test-uuid',
-}));
+jest.mock('node:crypto', () => {
+  let counter = 0;
+  return {
+    ...jest.requireActual<typeof import('node:crypto')>('node:crypto'),
+    // Unique per call, unlike a fixed string — several tests below (batch and
+    // bulk-email creation) rely on each generated invite having its own
+    // token, the way real UUIDs would.
+    randomUUID: () => `test-uuid-${++counter}`,
+  };
+});
+
+/** Flushes both the microtask queue and one macrotask turn — enough for a
+ * chain of `await`s (including one through `.catch()`) to fully settle. */
+function flushMicrotasks(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
 
 import { Test, TestingModule } from '@nestjs/testing';
 import {
@@ -114,20 +126,21 @@ describe('InviteService', () => {
 
     expect(mockInviteRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        token: 'test-uuid',
         chapter_id: 'ch-1',
         role: 'Member',
         created_by: 'user-1',
       }),
     );
     const createCall = mockInviteRepo.create.mock.calls[0][0];
+    expect(typeof createCall.token).toBe('string');
+    expect(createCall.token!.length).toBeGreaterThan(0);
     const expiresAt = new Date(createCall.expires_at);
     const now = new Date();
     expect(expiresAt.getTime()).toBeGreaterThan(now.getTime());
     expect(expiresAt.getTime() - now.getTime()).toBeLessThanOrEqual(
       24 * 60 * 60 * 1000 + 5000,
     );
-    expect(result.token).toBe('test-uuid');
+    expect(result.token).toBe(createCall.token);
   });
 
   it('should create batch invites using createMany', async () => {
@@ -151,13 +164,16 @@ describe('InviteService', () => {
     expect(mockInviteRepo.createMany).toHaveBeenCalledWith(
       expect.arrayContaining([
         expect.objectContaining({
-          token: 'test-uuid',
           chapter_id: 'ch-1',
           role: 'Member',
           created_by: 'user-1',
         }),
       ]),
     );
+    const batchTokens = mockInviteRepo.createMany.mock.calls[0][0].map(
+      (d) => d.token,
+    );
+    expect(new Set(batchTokens).size).toBe(3);
     expect(mockInviteRepo.createMany).toHaveBeenCalledTimes(1);
     expect(result).toHaveLength(3);
     // Activation funnel step 2 (#267) — a batch is still one milestone.
@@ -170,11 +186,14 @@ describe('InviteService', () => {
 
   describe('createWithEmails', () => {
     beforeEach(() => {
+      // Echoes back the token exactly as `createMany` receives it — the same
+      // shape a real `.insert(data).select()` round-trip has, and the
+      // property the token-correlation fix (below) depends on.
       mockInviteRepo.createMany.mockImplementation((data) =>
         Promise.resolve(
           data.map((d, i) => ({
             id: `inv-${i + 1}`,
-            token: `token-${i + 1}`,
+            token: d.token!,
             chapter_id: d.chapter_id!,
             role: d.role!,
             expires_at: d.expires_at!,
@@ -199,15 +218,109 @@ describe('InviteService', () => {
           expect.objectContaining({ chapter_id: 'ch-1', role: 'Member' }),
         ]),
       );
-      expect(mockInviteRepo.createMany.mock.calls[0][0]).toHaveLength(2);
+      const inviteData = mockInviteRepo.createMany.mock.calls[0][0];
+      expect(inviteData).toHaveLength(2);
       expect(mockEmailProvider.sendInviteEmail).toHaveBeenCalledTimes(2);
       expect(mockEmailProvider.sendInviteEmail).toHaveBeenCalledWith({
         to: 'a@example.com',
-        joinUrl: 'https://app.frapp.live/join?token=token-1',
+        joinUrl: `https://app.frapp.live/join?token=${inviteData[0].token}`,
+        role: 'Member',
+      });
+      expect(mockEmailProvider.sendInviteEmail).toHaveBeenCalledWith({
+        to: 'b@example.com',
+        joinUrl: `https://app.frapp.live/join?token=${inviteData[1].token}`,
         role: 'Member',
       });
       expect(result.invites).toHaveLength(2);
       expect(result.failed).toEqual([]);
+    });
+
+    it('correlates by token rather than array position, even if the repository returns rows out of order', async () => {
+      mockInviteRepo.createMany.mockImplementation((data) =>
+        Promise.resolve(
+          // Deliberately reversed to prove the correlation isn't positional.
+          [...data].reverse().map((d, i) => ({
+            id: `inv-${i + 1}`,
+            token: d.token!,
+            chapter_id: d.chapter_id!,
+            role: d.role!,
+            expires_at: d.expires_at!,
+            created_by: d.created_by!,
+            used_at: null,
+            created_at: '2024-01-01',
+          })),
+        ),
+      );
+
+      await service.createWithEmails('ch-1', 'user-1', 'Member', [
+        'a@example.com',
+        'b@example.com',
+      ]);
+
+      const inviteData = mockInviteRepo.createMany.mock.calls[0][0];
+      expect(mockEmailProvider.sendInviteEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: 'a@example.com',
+          joinUrl: `https://app.frapp.live/join?token=${inviteData[0].token}`,
+        }),
+      );
+      expect(mockEmailProvider.sendInviteEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: 'b@example.com',
+          joinUrl: `https://app.frapp.live/join?token=${inviteData[1].token}`,
+        }),
+      );
+    });
+
+    it('caps concurrent email sends rather than firing every address at once', async () => {
+      const pending: Array<() => void> = [];
+      mockEmailProvider.sendInviteEmail.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            pending.push(() => resolve(true));
+          }),
+      );
+
+      const promise = service.createWithEmails('ch-1', 'user-1', 'Member', [
+        'a@example.com',
+        'b@example.com',
+        'c@example.com',
+        'd@example.com',
+        'e@example.com',
+      ]);
+
+      await flushMicrotasks();
+      expect(mockEmailProvider.sendInviteEmail).toHaveBeenCalledTimes(2);
+
+      pending.shift()!();
+      await flushMicrotasks();
+      expect(mockEmailProvider.sendInviteEmail).toHaveBeenCalledTimes(3);
+
+      // Drain the rest: each resolution schedules a microtask that starts the
+      // next send (pushing a new resolver), so this has to alternate
+      // drain-then-flush rather than resolve everything in one synchronous
+      // pass — otherwise the later sends it triggers are never reached.
+      for (let i = 0; i < 10; i++) {
+        while (pending.length) pending.shift()!();
+        await flushMicrotasks();
+      }
+      await promise;
+    });
+
+    it('treats a rejected sendInviteEmail call as a delivery failure rather than crashing the batch', async () => {
+      mockEmailProvider.sendInviteEmail
+        .mockRejectedValueOnce(new Error('boom'))
+        .mockResolvedValueOnce(true);
+
+      const result = await service.createWithEmails(
+        'ch-1',
+        'user-1',
+        'Member',
+        ['bad@example.com', 'ok@example.com'],
+      );
+
+      expect(result.invites).toHaveLength(2);
+      expect(result.failed).toEqual(['bad@example.com']);
     });
 
     it('de-dupes case-insensitively, keeping the first-seen casing', async () => {
@@ -231,9 +344,10 @@ describe('InviteService', () => {
         'a@example.com',
       ]);
 
+      const inviteData = mockInviteRepo.createMany.mock.calls[0][0];
       expect(mockEmailProvider.sendInviteEmail).toHaveBeenCalledWith(
         expect.objectContaining({
-          joinUrl: 'https://app.staging.frapp.live/join?token=token-1',
+          joinUrl: `https://app.staging.frapp.live/join?token=${inviteData[0].token}`,
         }),
       );
     });

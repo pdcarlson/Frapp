@@ -27,7 +27,7 @@ import {
   useOnboardChapter,
   type ChapterDirectoryResult,
 } from "@repo/hooks";
-import { EmailInviteSchema } from "@repo/validation";
+import { EmailInviteSchema, dedupeEmails } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -285,19 +285,11 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
   }
 
   function parseEmailInput(value: string): string[] {
-    // Comma- or newline-separated, matching the placeholder copy; case-
-    // insensitive de-dup mirrors the server (InviteService.createWithEmails).
-    const seen = new Set<string>();
-    const emails: string[] = [];
-    for (const raw of value.split(/[,\n]/)) {
-      const trimmed = raw.trim();
-      if (!trimmed) continue;
-      const key = trimmed.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      emails.push(trimmed);
-    }
-    return emails;
+    // Comma- or newline-separated, matching the placeholder copy.
+    // `dedupeEmails` is the same de-dup the server runs in
+    // `InviteService.createWithEmails`, shared via @repo/validation so the
+    // two runtimes' notion of "how many unique addresses" can't drift apart.
+    return dedupeEmails(value.split(/[,\n]/));
   }
 
   async function sendEmailInvites() {
