@@ -267,7 +267,7 @@ jobs:
           # that 503s on a degraded dependency (see #302) — hit that here so
           # this gate actually fails on a DB/Storage outage instead of reading
           # a 200 with a discarded "degraded" body.
-          READY_URL="${API_HEALTHCHECK_URL}/ready"
+          READY_URL="${API_HEALTHCHECK_URL%/}/ready"
           echo "Waiting for staging API to become healthy..."
           for i in 1 2 3 4 5 6; do
             if curl --fail --silent --show-error --location --connect-timeout 2 --max-time 5 "$READY_URL" >/dev/null 2>&1; then

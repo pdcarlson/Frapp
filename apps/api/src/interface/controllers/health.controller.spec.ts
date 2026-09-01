@@ -1,7 +1,20 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ServiceUnavailableException } from '@nestjs/common';
+import { Logger, ServiceUnavailableException } from '@nestjs/common';
 import { HealthController } from './health.controller';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import { AllExceptionsFilter } from '../filters/all-exceptions.filter';
+
+jest.mock('@sentry/nestjs', () => ({
+  captureException: jest.fn(),
+  captureMessage: jest.fn(),
+  withScope: jest.fn((callback: (scope: unknown) => void) =>
+    callback({
+      setLevel: jest.fn(),
+      setTag: jest.fn(),
+      setUser: jest.fn(),
+    }),
+  ),
+}));
 
 describe('HealthController', () => {
   let controller: HealthController;
@@ -65,6 +78,23 @@ describe('HealthController', () => {
         storage: 'error',
       });
     });
+
+    it('resolves within the probe timeout, as degraded, when a dependency hangs rather than rejects', async () => {
+      jest.useFakeTimers();
+      // A reachable-but-slow dependency: the promise never settles on its own.
+      supabase.storage.listBuckets.mockReturnValueOnce(new Promise(() => {}));
+
+      const resultPromise = controller.check();
+      await jest.advanceTimersByTimeAsync(3000);
+      const result = await resultPromise;
+
+      expect(result).toMatchObject({
+        status: 'degraded',
+        database: 'connected',
+        storage: 'error',
+      });
+      jest.useRealTimers();
+    });
   });
 
   describe('ready (/health/ready, readiness)', () => {
@@ -94,7 +124,7 @@ describe('HealthController', () => {
       );
     });
 
-    it('carries the degraded payload on the thrown exception', async () => {
+    it('carries a string `message` naming the degraded dependency, matching the exception-response shape the global filter reads', async () => {
       dbError = { message: 'connection refused' };
 
       try {
@@ -103,12 +133,52 @@ describe('HealthController', () => {
       } catch (err) {
         expect(err).toBeInstanceOf(ServiceUnavailableException);
         const response = (err as ServiceUnavailableException).getResponse();
+        // AllExceptionsFilter's extractMessage() only reads a `message` key
+        // (string or string[]) off the exception response — see the
+        // "goes through the real global filter" test below for the proof.
         expect(response).toMatchObject({
-          status: 'degraded',
-          database: 'error',
-          storage: 'connected',
+          code: 'DEGRADED',
+          message: 'database: error, storage: connected',
         });
       }
+    });
+
+    // health.controller.ts's own comment records why this matters: throwing
+    // ServiceUnavailableException({status, database, storage, uptime}) (an
+    // earlier version of this route) reads fine from a unit test that inspects
+    // getResponse() directly, but AllExceptionsFilter drops every key except
+    // `message` — so the diagnostic payload silently never reached a real
+    // client. This test goes through the actual filter to prove the wire body.
+    it('goes through the real AllExceptionsFilter and produces a response body carrying the degraded detail', () => {
+      dbError = { message: 'connection refused' };
+      jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
+      const filter = new AllExceptionsFilter();
+      const json = jest.fn();
+      const status = jest.fn(() => ({ json }));
+      const host = {
+        switchToHttp: () => ({
+          getResponse: () => ({ status }),
+          getRequest: () => ({
+            requestId: 'req-1',
+            method: 'GET',
+            url: '/health/ready',
+          }),
+        }),
+      };
+
+      return controller.ready().catch((exception) => {
+        filter.catch(exception, host as never);
+
+        expect(status).toHaveBeenCalledWith(503);
+        expect(json).toHaveBeenCalledWith(
+          expect.objectContaining({
+            statusCode: 503,
+            message: 'database: error, storage: connected',
+          }),
+        );
+
+        jest.restoreAllMocks();
+      });
     });
   });
 });
