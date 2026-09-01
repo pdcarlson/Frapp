@@ -1,6 +1,7 @@
-import { useDeferredValue, useMemo, useState } from "react";
-import { FlatList, StyleSheet, Text, View } from "react-native";
+import { useDeferredValue, useMemo, useRef, useState } from "react";
+import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useActiveChapterId,
   useAlumni,
@@ -15,6 +16,7 @@ import {
   SkeletonLines,
 } from "@/components/state-block";
 import { FilterChips, SearchField } from "@/components/filter-chips";
+import { MemberDetailSheet } from "@/components/directory/member-detail-sheet";
 import { type DirectoryRow, selectDirectoryRows } from "@/lib/more/directory";
 import { records, str } from "@/lib/more/narrow";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
@@ -31,13 +33,15 @@ import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
  * (`spec/ui/mobile/patterns.md`), with the title, chips and search field riding
  * in `ListHeaderComponent` so the chrome still matches.
  *
- * ## Rows do not navigate
+ * ## Rows open a member detail sheet, not a route
  *
- * Canvas draws a chevron on each row. There is nowhere for it to go: a member
- * detail screen would need a new route file, and `app/(tabs)/_layout.tsx` is
- * frozen — a `Tabs.Screen` needs a backing file, so adding one is an integrator
- * change, not a screen slice. A chevron that does nothing is worse than no
- * chevron, so the rows are plain. TODO-DESIGN: member detail, as a sheet.
+ * Canvas draws a chevron on each row, and a new route file is not an option:
+ * `app/(tabs)/_layout.tsx` is frozen, and a `Tabs.Screen` needs a backing
+ * file. `MemberDetailSheet` reaches the same fields
+ * `spec/behavior/members.md`'s detail view specifies (name, email, role,
+ * joined date) via a `@gorhom/bottom-sheet`, the pattern `new-task-sheet.tsx`
+ * established, without one. Still no chevron drawn: TODO-DESIGN tracks the
+ * affordance, not the behavior.
  *
  * ## `useMembers()` here is not the over-fetch #986 objected to
  *
@@ -53,6 +57,8 @@ export default function DirectoryScreen() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const chapterId = useActiveChapterId();
+  const detailSheetRef = useRef<BottomSheetModal>(null);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
   const [tab, setTab] = useState<Tab>("actives");
   const [query, setQuery] = useState("");
@@ -152,9 +158,22 @@ export default function DirectoryScreen() {
         keyExtractor={(row) => row.userId}
         ListHeaderComponent={header}
         ListEmptyComponent={<View style={styles.emptyWrap}>{renderBody()}</View>}
-        renderItem={({ item }) => <MemberRow row={item} />}
+        renderItem={({ item }) => (
+          <MemberRow
+            row={item}
+            onPress={() => {
+              setSelectedUserId(item.userId);
+              detailSheetRef.current?.present();
+            }}
+          />
+        )}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
+      />
+      <MemberDetailSheet
+        ref={detailSheetRef}
+        userId={selectedUserId}
+        onDismiss={() => setSelectedUserId(null)}
       />
     </SafeAreaView>
   );
@@ -164,12 +183,23 @@ export default function DirectoryScreen() {
  * Exported so a spec can assert on a row directly: `vitest.setup.ts` renders
  * `FlatList` as a string stand-in that never invokes `renderItem`.
  */
-export function MemberRow({ row }: { row: DirectoryRow }) {
+export function MemberRow({
+  row,
+  onPress,
+}: {
+  row: DirectoryRow;
+  onPress?: () => void;
+}) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
 
   return (
-    <View style={styles.row}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`View ${row.displayName}'s profile`}
+      onPress={onPress}
+      style={styles.row}
+    >
       <View style={styles.avatar}>
         <Text style={styles.avatarText}>{row.initials}</Text>
       </View>
@@ -177,7 +207,7 @@ export function MemberRow({ row }: { row: DirectoryRow }) {
         <Text style={styles.rowName}>{row.displayName}</Text>
         {row.meta ? <Text style={styles.rowMeta}>{row.meta}</Text> : null}
       </View>
-    </View>
+    </Pressable>
   );
 }
 
