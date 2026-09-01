@@ -276,10 +276,19 @@ export default function EventDetailsScreen() {
       ) : null}
 
       {event.description ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>DETAILS</Text>
-          <Text style={styles.sectionBody}>{event.description}</Text>
-        </View>
+        <DetailSection
+          label="DETAILS"
+          body={event.description}
+          styles={styles}
+        />
+      ) : null}
+
+      {event.notes ? (
+        <DetailSection
+          label="INTERNAL NOTES"
+          body={event.notes}
+          styles={styles}
+        />
       ) : null}
 
       <Pressable
@@ -303,6 +312,24 @@ export default function EventDetailsScreen() {
         </Text>
       </Pressable>
     </ScreenShell>
+  );
+}
+
+/** DETAILS and INTERNAL NOTES share this shape; only the label and body differ. */
+function DetailSection({
+  label,
+  body,
+  styles,
+}: {
+  label: string;
+  body: string;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionLabel}>{label}</Text>
+      <Text style={styles.sectionBody}>{body}</Text>
+    </View>
   );
 }
 
