@@ -215,6 +215,15 @@ export interface SendMessageArgs {
   attachments?: OutboxAttachment[] | null;
   /** Reuse a previously-generated id (outbox flush, idempotent retry). */
   clientMessageId?: string;
+  /**
+   * How many prior attempts have already failed for this message — for
+   * analytics only. `ctx.outbox.enqueue`'s return value always reports
+   * `attempts: 0` (every enqueue is a fresh `put`, including a retry's
+   * re-enqueue of the same `clientId`), so a retry/flush resend passes the
+   * outbox row's real count through here rather than reading the reset
+   * value. Omitted (a first-time compose send) reads as `0`.
+   */
+  priorAttempts?: number;
 }
 
 /**
@@ -263,9 +272,10 @@ export async function sendMessage(
     body: args.content,
     ...intent,
   });
+  const attempts = args.priorAttempts ?? 0;
   ctx.track?.(OUTBOX_ANALYTICS_EVENTS.queued, {
     channel_id: args.channelId,
-    attempts: enqueued.attempts,
+    attempts,
   });
   // Offline: the row is safely queued; the reconnect flush will POST it.
   if ((ctx.net ?? browserNetworkState).isOffline()) return;
@@ -310,7 +320,7 @@ export async function sendMessage(
     ctx.track?.(OUTBOX_ANALYTICS_EVENTS.confirmed, {
       channel_id: args.channelId,
       elapsed_ms: Date.now() - enqueued.queuedAt,
-      attempts: enqueued.attempts,
+      attempts,
     });
   } catch (err) {
     const { terminal, status, message } = classify(err);
@@ -322,7 +332,7 @@ export async function sendMessage(
       ctx.track?.(OUTBOX_ANALYTICS_EVENTS.failedTerminal, {
         channel_id: args.channelId,
         elapsed_ms: Date.now() - enqueued.queuedAt,
-        attempts: enqueued.attempts,
+        attempts,
         status: status ?? null,
       });
       ctx.toast?.({
@@ -335,7 +345,7 @@ export async function sendMessage(
       ctx.track?.(OUTBOX_ANALYTICS_EVENTS.failedTransient, {
         channel_id: args.channelId,
         elapsed_ms: Date.now() - enqueued.queuedAt,
-        attempts: enqueued.attempts,
+        attempts,
       });
     }
   }
@@ -394,6 +404,7 @@ function sendArgsFromOutbox(row: OutboxRow): SendMessageArgs {
     replyToId: row.replyToId ?? null,
     attachments: row.attachments ?? null,
     clientMessageId: row.clientId,
+    priorAttempts: row.attempts,
   };
 }
 

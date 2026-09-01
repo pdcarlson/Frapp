@@ -333,6 +333,49 @@ describe("outbox analytics", () => {
     );
   });
 
+  it("carries the row's real prior-attempt count through a retry's own queued/confirmed events, not the outbox store's always-reset 0", async () => {
+    // `enqueue()`'s return value always reports `attempts: 0` — every enqueue
+    // is a fresh row write, including a retry's re-enqueue of the same
+    // clientId — so `sendMessage` must use the caller-supplied `priorAttempts`
+    // (threaded by `sendArgsFromOutbox`) rather than the outbox store's
+    // reset-on-write value, or every resend's queued/confirmed/failed events
+    // would silently under-report as attempt 0 no matter how many times the
+    // message had actually failed before.
+    const track = vi.fn();
+    const apiClient = {
+      POST: vi.fn().mockResolvedValue({
+        data: { message: { id: "msg-1", client_message_id: "c-1" } },
+        error: null,
+        response: { status: 201 },
+      }),
+    };
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      outbox: buildOutbox(),
+      track,
+    });
+    const row: OutboxRow = {
+      clientId: "c-1",
+      channelId: "chan-1",
+      body: "hi",
+      attempts: 2,
+      status: "failed",
+      queuedAt: Date.now() - 5000,
+      lastError: "Couldn't reach chat server",
+    };
+
+    await retryOutboxRow(ctx, row);
+
+    expect(track).toHaveBeenCalledWith(
+      OUTBOX_ANALYTICS_EVENTS.queued,
+      expect.objectContaining({ attempts: 2 }),
+    );
+    expect(track).toHaveBeenCalledWith(
+      OUTBOX_ANALYTICS_EVENTS.confirmed,
+      expect.objectContaining({ attempts: 2 }),
+    );
+  });
+
   it("emits discarded when a failed row is dropped", async () => {
     const track = vi.fn();
     const ctx = buildCtx({ outbox: buildOutbox(), track });

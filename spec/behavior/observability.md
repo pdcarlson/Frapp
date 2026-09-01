@@ -204,6 +204,8 @@ Web chat queues offline sends in Dexie (`apps/web/lib/chat/offline-queue.ts`) an
 
 `elapsed_ms` is measured from the row's current `queuedAt` (reset on every enqueue, including a retry's re-enqueue) to the point of confirmation or failure — so it reads as "how long did *this* attempt take," not cumulative time since the message was first composed.
 
+`attempts` is the number of *prior* failed attempts before this event — `0` for a first-time send. It cannot be read back from `ctx.outbox.enqueue()`'s return value (every enqueue is a fresh row write, including a retry's, so the store's own `attempts` field always comes back `0`); a retry or reconnect-flush resend instead passes the outbox row's real count in explicitly, so `outbox-queued`/`outbox-confirmed`/`outbox-failed-*` report the true attempt number on a resend, not always `0`.
+
 Unlike the activation funnel above, these events carry **no durable Frapp-owned table** — they are unconditional, unpaced client events routed through the same pseudonymous pipeline as every other client analytics call (`AnalyticsContext` → `POST /v1/analytics/events` → `hmac_sha256(salt, user_id)` distinct id, per [`data-retention.md`](data-retention.md#analytics-events-pseudonymous)), the general path this section's own "client-only analytics is not sufficient" warning is about — acceptable here because nothing downstream (billing, a gate, a promise to a member) depends on outbox telemetry landing.
 
 ### PII exclusion
