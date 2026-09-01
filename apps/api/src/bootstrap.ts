@@ -3,6 +3,7 @@ import {
   ValidationPipe,
   VersioningType,
 } from '@nestjs/common';
+import helmet from 'helmet';
 import { AllExceptionsFilter } from './interface/filters/all-exceptions.filter';
 import { requestIdMiddleware } from './interface/middleware/request-id.middleware';
 import { VALIDATION_PIPE_OPTIONS } from './interface/pipes/validation-pipe.options';
@@ -28,7 +29,11 @@ import { LoggingInterceptor } from './interface/interceptors/logging.interceptor
  *
  * Deliberately NOT here: CORS and Swagger. Both are server-lifecycle concerns
  * with no bearing on how a handler's result is turned into a response, and
- * neither is meaningful against an in-memory test app.
+ * neither is meaningful against an in-memory test app. Helmet's security
+ * headers (#483) are the opposite of that: every response carries them the
+ * same way regardless of caller, and `supertest` against the in-memory app
+ * asserts them exactly as it does for `trust proxy` below — so they belong
+ * here, not in `main.ts`.
  */
 /**
  * Express `trust proxy` hop count for the Render deployment.
@@ -73,7 +78,39 @@ interface ExpressSettable {
   set: (setting: string, value: unknown) => void;
 }
 
+/**
+ * Helmet's *default* CSP already fits Swagger UI without loosening anything:
+ * `@nestjs/swagger`'s generated `/docs` page (`SwaggerModule.setup` in
+ * `main.ts`, no `customJs`/`customJsStr`) loads its bundle via same-origin
+ * `<script src="...">` tags only — covered by the default `script-src
+ * 'self'` — and inlines only `<style>` blocks, which the default `style-src`
+ * already permits (`'self' https: 'unsafe-inline'`). Its icon `background-image`
+ * is a `data:` URI, and the default `img-src` already includes `data:` too.
+ * So the right move is to change nothing about CSP — verified by booting the
+ * app and loading `/docs` and its bundle/CSS/init-script assets (see
+ * `docs/internal/security/SECURITY_FIXES.md`) — rather than add an
+ * `'unsafe-inline'` `script-src` exception Swagger never needed, which would
+ * have weakened XSS protection on every route, not just `/docs`.
+ *
+ * The one directive this API does override: Helmet's default
+ * `Cross-Origin-Resource-Policy` is `same-origin`, which Chrome/Firefox
+ * enforce independently of CORS. The dashboard is deliberately cross-origin
+ * from this API (`enableCors()` above allowlists `*.frapp.live` and the local
+ * dev ports, with `credentials: true`) — left at the default, every
+ * dashboard `fetch()` response body would be silently blocked client-side
+ * even with a matching `Access-Control-Allow-Origin`. `'cross-origin'` is
+ * correct here because the actual authorization boundary is CORS plus bearer
+ * auth, not this header.
+ */
+const HELMET_OPTIONS = {
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+} as const;
+
 export function configureApp(app: INestApplication): void {
+  // First, so every response — success, error, or a guard rejection before
+  // any handler runs — carries the same security headers.
+  app.use(helmet(HELMET_OPTIONS));
+
   // Behind Render, Express must resolve the caller from `X-Forwarded-For`, or
   // `req.ip` is the proxy's address and every unauthenticated caller shares one
   // rate-limit bucket (`custom-throttler.guard.ts` falls back to `ip:` keying)
