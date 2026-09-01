@@ -3,6 +3,7 @@ import {
   ValidationPipe,
   VersioningType,
 } from '@nestjs/common';
+import helmet from 'helmet';
 import { AllExceptionsFilter } from './interface/filters/all-exceptions.filter';
 import { requestIdMiddleware } from './interface/middleware/request-id.middleware';
 import { VALIDATION_PIPE_OPTIONS } from './interface/pipes/validation-pipe.options';
@@ -28,7 +29,11 @@ import { LoggingInterceptor } from './interface/interceptors/logging.interceptor
  *
  * Deliberately NOT here: CORS and Swagger. Both are server-lifecycle concerns
  * with no bearing on how a handler's result is turned into a response, and
- * neither is meaningful against an in-memory test app.
+ * neither is meaningful against an in-memory test app. Helmet's security
+ * headers (#483) are the opposite of that: every response carries them the
+ * same way regardless of caller, and `supertest` against the in-memory app
+ * asserts them exactly as it does for `trust proxy` below — so they belong
+ * here, not in `main.ts`.
  */
 /**
  * Express `trust proxy` hop count for the Render deployment.
@@ -73,7 +78,33 @@ interface ExpressSettable {
   set: (setting: string, value: unknown) => void;
 }
 
+/**
+ * The CSP directives Helmet ships by default block Swagger UI's self-hosted
+ * bundle outright: `swagger-ui-dist`'s `index.html` (served verbatim by
+ * `SwaggerModule.setup`) inlines its bootstrap `<script>` and `<style>`
+ * tags, so a default-strict `script-src`/`style-src` leaves `/docs` blank
+ * with no console error pointing at why. `/docs` is not environment-gated
+ * (`main.ts` calls `SwaggerModule.setup` unconditionally), so the relaxation
+ * applies everywhere Swagger does rather than being split by environment.
+ * Every other Helmet default (frameguard, `X-Content-Type-Options`, HSTS,
+ * referrer policy, …) stays on. Documented in AGENT_INFRA.md.
+ */
+const HELMET_OPTIONS = {
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: [`'self'`],
+      scriptSrc: [`'self'`, `'unsafe-inline'`],
+      styleSrc: [`'self'`, `'unsafe-inline'`],
+      imgSrc: [`'self'`, 'data:'],
+    },
+  },
+} as const;
+
 export function configureApp(app: INestApplication): void {
+  // First, so every response — success, error, or a guard rejection before
+  // any handler runs — carries the same security headers.
+  app.use(helmet(HELMET_OPTIONS));
+
   // Behind Render, Express must resolve the caller from `X-Forwarded-For`, or
   // `req.ip` is the proxy's address and every unauthenticated caller shares one
   // rate-limit bucket (`custom-throttler.guard.ts` falls back to `ip:` keying)

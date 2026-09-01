@@ -423,3 +423,53 @@ the applied catalog (the `security definer search_path` tier) and fails the `pgl
 any function that does not, so the eighth one cannot land silently. The check reads the catalog rather
 than scanning migration SQL, because migrations are immutable — the three files that introduced the
 bare setting keep it in their text permanently, and only the end state is meaningful.
+
+## Helmet security headers on the Nest API (#483)
+
+### Overview
+`apps/api/src/main.ts` enabled CORS and the validation pipeline but never registered
+[`helmet`](https://helmetjs.github.io/), so the API shipped none of the standard hardening headers
+(`X-Content-Type-Options`, `X-Frame-Options`, HSTS, a Content-Security-Policy, …) despite being a
+public internet-facing service whose only HTML surface is the self-hosted Swagger UI at `/docs`.
+
+### Details
+`helmet(HELMET_OPTIONS)` is registered as the first `app.use()` in `configureApp()`
+(`apps/api/src/bootstrap.ts`) — the shared function both `main.ts` and every e2e spec call — so
+production and the test suite can never drift apart on this the way the exception filter drifted
+before #1020, and a `supertest` assertion against the in-memory app is a real assertion about
+production's headers.
+
+**Why `configureApp()` and not `main.ts`.** That file's own docstring carves out CORS and Swagger as
+deliberately *not* shared, because neither is "meaningful against an in-memory test app." Helmet's
+headers are the opposite: they're set the same way for every response regardless of caller, exactly
+like the `trust proxy` hop count already tested there.
+
+**The one CSP relaxation, and why it's not narrower.** Helmet's default `script-src`/`style-src`
+(`'self'` only) block Swagger UI outright — `swagger-ui-dist`'s `index.html`, served verbatim by
+`SwaggerModule.setup`, inlines a `<style>` block the default CSP has no exception for. `HELMET_OPTIONS`
+in `bootstrap.ts` adds `'unsafe-inline'` to `script-src`/`style-src` and `data:` to `img-src` to cover
+it. `/docs` is not environment-gated — `main.ts` calls `SwaggerModule.setup` unconditionally in every
+environment — so the relaxation is applied globally rather than split by environment or scoped to the
+`/docs` prefix; scoping it would need per-route middleware ordering for a saving that doesn't exist
+today (Swagger is already public everywhere). Every other Helmet default (frameguard, `noSniff`, HSTS,
+`referrerPolicy`, hidden `X-Powered-By`, …) is untouched. The Stripe webhook route
+(`POST /v1/webhooks/stripe`, `apps/api/src/interface/controllers/webhook.controller.ts`) is unaffected
+by any of this — CSP is a response header interpreted by browsers, and the webhook is a server-to-server
+POST verified against `rawBody: true`, which Helmet does not touch.
+
+### Verification
+- `apps/api/src/bootstrap.spec.ts` (`configureApp — security headers (#483)`) asserts the hardening
+  headers on a 200 and a 404 alike (proving the middleware runs ahead of routing, not inside a
+  handler), and asserts the CSP string contains exactly the relaxed directives with no wildcard origin.
+- Booted the API against the local sandbox stack: `GET /health` and `GET /docs` both carry the full
+  Helmet header set; `/docs`, `/docs/swagger-ui-bundle.js`, `/docs/swagger-ui.css`,
+  `/docs/swagger-ui-init.js`, and `/docs-json` all still return `200` with their expected content types.
+- `POST /v1/webhooks/stripe` with an unsigned body still returns its normal `400` (invalid signature),
+  not a crash — the raw-body path is unaffected. The full `billing-webhook.e2e-spec.ts` and
+  `apps/api`'s unit suite (2509 tests) pass unchanged.
+
+### Prevention
+Any future Swagger UI upgrade that changes its bundled HTML (a new inline script, a remote font, a
+CDN asset) needs a matching `HELMET_OPTIONS` directive in `apps/api/src/bootstrap.ts` — a page that
+silently renders blank under CSP is easy to miss without opening the browser console, which is why
+`bootstrap.spec.ts` pins the exact directive strings rather than only asserting the header exists.
