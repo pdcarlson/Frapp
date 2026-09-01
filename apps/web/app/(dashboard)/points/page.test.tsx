@@ -27,6 +27,25 @@ const summaryQuery: QueryState = {
   refetch: summaryRefetch,
 };
 
+// Archived semesters (#377). Empty by default so the existing suites — none
+// of which care about the picker — see no select and no behavior change.
+const semestersQuery: QueryState = {
+  data: [] as { id: string; label: string }[],
+  isLoading: false,
+  isError: false,
+  refetch: vi.fn(),
+};
+
+const { useLeaderboardSpy, useMyPointsSpy } = vi.hoisted(() => ({
+  useLeaderboardSpy: vi.fn(),
+  useMyPointsSpy: vi.fn(),
+}));
+// `clearAllMocks()` (beforeEach) resets calls, not implementations, so these
+// survive for the whole file — set once, right after the query state they
+// close over exists.
+useLeaderboardSpy.mockImplementation(() => leaderboardQuery);
+useMyPointsSpy.mockImplementation(() => summaryQuery);
+
 const { mockCurrentChapter } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
 }));
@@ -57,8 +76,9 @@ vi.mock("@repo/hooks", () => ({
     isPending: false,
     isError: false,
   }),
-  useLeaderboard: () => leaderboardQuery,
-  useMyPoints: () => summaryQuery,
+  useLeaderboard: useLeaderboardSpy,
+  useMyPoints: useMyPointsSpy,
+  useSemesters: () => semestersQuery,
   // Mirrors the real pure helper (`packages/hooks/src/display-names.ts`), which
   // has its own unit test; this module is mocked wholesale, so it cannot be
   // imported through. Kept in step by `display-names.spec.ts` asserting the
@@ -116,6 +136,7 @@ import PointsPage from "./page";
 function setQueries(overrides: {
   leaderboard?: Partial<QueryState>;
   summary?: Partial<QueryState>;
+  semesters?: Partial<QueryState>;
   offline?: boolean;
   roster?: Partial<typeof rosterState>;
 }) {
@@ -130,6 +151,12 @@ function setQueries(overrides: {
     isLoading: false,
     isError: false,
     ...overrides.summary,
+  });
+  Object.assign(semestersQuery, {
+    data: [],
+    isLoading: false,
+    isError: false,
+    ...overrides.semesters,
   });
   networkState.isOffline = overrides.offline ?? false;
   Object.assign(rosterState, {
@@ -606,5 +633,75 @@ describe("PointsPage transaction bulk actions", () => {
     expect(
       screen.queryByText(/transaction.*selected/i),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("PointsPage archived period picker (#377)", () => {
+  it("renders no picker for a chapter with no archived semesters", () => {
+    render(<PointsPage />);
+
+    expect(
+      screen.queryByLabelText(/view an archived semester/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders a picker option per archive once the chapter has rolled over", () => {
+    setQueries({
+      semesters: {
+        data: [
+          { id: "sa-1", label: "Fall 2025" },
+          { id: "sa-2", label: "Spring 2026" },
+        ],
+      },
+    });
+
+    render(<PointsPage />);
+
+    const picker = screen.getByLabelText(/view an archived semester/i);
+    expect(screen.getByRole("option", { name: "Fall 2025" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "Spring 2026" }),
+    ).toBeInTheDocument();
+    expect(picker).toHaveValue("");
+  });
+
+  it("selecting an archive queries the leaderboard and summary by its id, overriding the window buttons", () => {
+    setQueries({ semesters: { data: [{ id: "sa-1", label: "Fall 2025" }] } });
+    render(<PointsPage />);
+
+    fireEvent.change(screen.getByLabelText(/view an archived semester/i), {
+      target: { value: "sa-1" },
+    });
+
+    // Last call after the selection — the leaderboard/summary hooks are
+    // called on every render, so this is the one made with the new value.
+    const lastLeaderboardArgs =
+      useLeaderboardSpy.mock.calls[useLeaderboardSpy.mock.calls.length - 1];
+    const lastSummaryArgs =
+      useMyPointsSpy.mock.calls[useMyPointsSpy.mock.calls.length - 1];
+    expect(lastLeaderboardArgs).toEqual(["all", "sa-1"]);
+    expect(lastSummaryArgs).toEqual(["all", "sa-1"]);
+
+    // None of the window buttons read as active (the "default" variant's
+    // filled background) while an archive is selected.
+    expect(screen.getByRole("button", { name: "All Time" })).not.toHaveClass(
+      "bg-primary",
+    );
+  });
+
+  it("reselecting a window button clears the archive selection", () => {
+    setQueries({ semesters: { data: [{ id: "sa-1", label: "Fall 2025" }] } });
+    render(<PointsPage />);
+
+    const picker = screen.getByLabelText(/view an archived semester/i);
+    fireEvent.change(picker, { target: { value: "sa-1" } });
+    expect(picker).toHaveValue("sa-1");
+
+    fireEvent.click(screen.getByRole("button", { name: "Month" }));
+
+    expect(picker).toHaveValue("");
+    const lastLeaderboardArgs =
+      useLeaderboardSpy.mock.calls[useLeaderboardSpy.mock.calls.length - 1];
+    expect(lastLeaderboardArgs).toEqual(["month", undefined]);
   });
 });

@@ -38,6 +38,14 @@ export class PointsReportDto {
   @IsOptional()
   @IsEnum(POINTS_WINDOWS)
   window?: PointsWindow;
+
+  @ApiPropertyOptional({
+    description:
+      'Select one specific archived semester by id (from GET /v1/semesters), overriding `window` entirely. 404s if the id does not belong to this chapter.',
+  })
+  @IsOptional()
+  @IsUUID()
+  semester_archive_id?: string;
 }
 
 export class ServiceReportDto {

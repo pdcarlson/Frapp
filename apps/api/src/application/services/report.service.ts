@@ -1,9 +1,10 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { SEMESTER_ARCHIVE_REPOSITORY } from '../../domain/repositories/semester-archive.repository.interface';
 import type { ISemesterArchiveRepository } from '../../domain/repositories/semester-archive.repository.interface';
 import {
   resolveWindowSince,
+  resolveArchiveRange,
   type PointsWindow,
 } from '../../domain/utils/points-window';
 import { chunkIds } from '../../domain/utils/chunk-ids';
@@ -48,6 +49,8 @@ export interface AttendanceReportInput {
 export interface PointsReportInput {
   user_id?: string;
   window?: PointsWindow;
+  /** Selects one archived period by id, overriding `window`. See `PointsService`. */
+  semester_archive_id?: string;
 }
 
 export interface ServiceReportInput {
@@ -356,20 +359,38 @@ export class ReportService {
     chapterId: string,
     input: PointsReportInput,
   ): Promise<ReportResult<PointsReportRow>> {
-    const window: PointsWindow = input.window ?? 'all';
-    // Resolve the window's lower bound with the same helper the leaderboard uses
-    // (points.service.ts) so report totals match the leaderboard for the same
-    // window. Only the semester window needs the latest archive.
-    let latestArchiveEndDate: string | null = null;
-    if (window === 'semester') {
-      const archive =
-        await this.semesterArchiveRepo.findLatestByChapter(chapterId);
-      latestArchiveEndDate = archive?.end_date ?? null;
+    // Selecting a specific archived period by id overrides `window` entirely —
+    // same precedence as PointsService.getLeaderboard/getUserSummary, and the
+    // same chapter-scoped lookup so a foreign id 404s like an unknown one.
+    let since: Date | null;
+    let until: Date | null = null;
+    if (input.semester_archive_id) {
+      const archive = await this.semesterArchiveRepo.findById(
+        input.semester_archive_id,
+        chapterId,
+      );
+      const range = archive ? resolveArchiveRange(archive) : null;
+      if (!range) {
+        throw new NotFoundException('Semester archive not found');
+      }
+      since = range.since;
+      until = range.until;
+    } else {
+      const window: PointsWindow = input.window ?? 'all';
+      // Resolve the window's lower bound with the same helper the leaderboard
+      // uses (points.service.ts) so report totals match the leaderboard for
+      // the same window. Only the semester window needs the latest archive.
+      let latestArchiveEndDate: string | null = null;
+      if (window === 'semester') {
+        const archive =
+          await this.semesterArchiveRepo.findLatestByChapter(chapterId);
+        latestArchiveEndDate = archive?.end_date ?? null;
+      }
+      since = resolveWindowSince(window, {
+        now: new Date(),
+        latestArchiveEndDate,
+      });
     }
-    const since = resolveWindowSince(window, {
-      now: new Date(),
-      latestArchiveEndDate,
-    });
 
     // An RPC result set is subject to `max_rows` exactly like a table read, so
     // this pages too — and on the same terms, deliberately. PostgREST applies
@@ -394,6 +415,7 @@ export class ReportService {
             p_chapter_id: chapterId,
             p_user_id: input.user_id || null,
             p_since: since ? since.toISOString() : null,
+            p_until: until ? until.toISOString() : null,
           })
           .order('member_name', { ascending: true })
           .range(from, to),

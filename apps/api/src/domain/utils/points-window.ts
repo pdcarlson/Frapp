@@ -59,3 +59,37 @@ export function resolveWindowSince(
     }
   }
 }
+
+/**
+ * Resolve the `[since, until]` bounds for one specific archived period,
+ * selected by `semester_archive_id` rather than the `all | semester | month`
+ * enum above. Unlike {@link resolveWindowSince}'s `semester` case — which
+ * always means "since the *latest* archive, through now" — this looks
+ * backward at an archive's own recorded range, so it works for any archive,
+ * not only the most recent one.
+ *
+ * Both bounds are calendar days, matching `semester-rollover.md`'s "the
+ * archived period covers the whole calendar days `[start_date, end_date]`":
+ * `since` is exclusive (one millisecond before `start_date` at 00:00Z) and
+ * `until` is inclusive (`end_date` at 23:59:59.999Z), so a transaction
+ * recorded anywhere on `start_date` or `end_date` is included, and the
+ * `since`/`until` pair composes with the leaderboard's and the report RPC's
+ * existing `created_at > since` / `created_at <= until` comparisons.
+ *
+ * Returns `null` for an archive with unparseable dates, so the caller can
+ * fall back the same way `resolveWindowSince` does for a missing archive.
+ */
+export function resolveArchiveRange(archive: {
+  start_date: string;
+  end_date: string;
+}): { since: Date; until: Date } | null {
+  const startOfDay = new Date(
+    `${archive.start_date.slice(0, 10)}T00:00:00.000Z`,
+  );
+  const until = new Date(`${archive.end_date.slice(0, 10)}T23:59:59.999Z`);
+  if (Number.isNaN(startOfDay.getTime()) || Number.isNaN(until.getTime())) {
+    return null;
+  }
+  const since = new Date(startOfDay.getTime() - 1);
+  return { since, until };
+}
