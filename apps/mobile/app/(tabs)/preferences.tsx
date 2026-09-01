@@ -389,6 +389,21 @@ export default function PreferencesScreen() {
     router.replace("/(auth)/sign-in");
   }
 
+  /**
+   * Shared by every external-link row below (donation + legal). Clearing
+   * `linkFailed` up front, not just setting it on rejection, matters because
+   * the footnote is a single shared slot: without the clear, a failed donation
+   * open followed by a successful Terms tap would leave "Support the Chapter
+   * couldn't be opened" showing indefinitely.
+   */
+  function openExternalLink(label: string, url: string) {
+    setLinkFailed(null);
+    // A rejection here is real — iOS rejects a second presentation while one
+    // is already showing — so it is surfaced rather than left as an
+    // unhandled promise.
+    WebBrowser.openBrowserAsync(url).catch(() => setLinkFailed(label));
+  }
+
   function confirmDeleteAccount() {
     // Native `Alert.alert` with a destructive button, per the native-feel table
     // in `spec/ui/mobile/README.md`. `window.confirm` is banned everywhere.
@@ -531,14 +546,7 @@ export default function PreferencesScreen() {
             label="Support the Chapter"
             description="Opens the chapter's donation page in your browser."
             accessibilityHint="Opens the chapter's donation page in your browser."
-            onPress={() => {
-              // A rejection here is real — iOS rejects a second presentation
-              // while one is already showing — so it is surfaced rather than
-              // left as an unhandled promise.
-              WebBrowser.openBrowserAsync(donationUrl).catch(() =>
-                setLinkFailed("Support the Chapter"),
-              );
-            }}
+            onPress={() => openExternalLink("Support the Chapter", donationUrl)}
           />
         ) : null}
         {LEGAL_LINKS.map((link) => (
@@ -546,14 +554,7 @@ export default function PreferencesScreen() {
             key={link.url}
             label={link.label}
             accessibilityHint="Opens in your browser."
-            onPress={() => {
-              // A rejection here is real — iOS rejects a second presentation
-              // while one is already showing — so it is surfaced rather than
-              // left as an unhandled promise.
-              WebBrowser.openBrowserAsync(link.url).catch(() =>
-                setLinkFailed(link.label),
-              );
-            }}
+            onPress={() => openExternalLink(link.label, link.url)}
           />
         ))}
         <ListRow
