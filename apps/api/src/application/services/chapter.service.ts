@@ -13,7 +13,11 @@ import {
   isAllowedUploadMime,
 } from '@repo/validation';
 import { assertSafeStoragePath } from '../../domain/utils/storage-path';
-import { buildChapterPalette } from './chapter-palette';
+import {
+  buildChapterPalette,
+  logChapterPaletteWarnings,
+  type FailedContrastCheck,
+} from './chapter-palette';
 import {
   toChapterMemberView,
   type ChapterMemberView,
@@ -245,9 +249,27 @@ export class ChapterService {
     return chapter;
   }
 
-  async update(id: string, data: Partial<Chapter>): Promise<Chapter> {
+  async update(
+    id: string,
+    data: Partial<Chapter>,
+  ): Promise<{
+    chapter: Chapter;
+    /**
+     * Signet §8 text-contrast checks that came back below AA for this save's
+     * generated accent, or empty. Empty in effectively every real case — the
+     * generator's text roles are contrast-correct by construction for the
+     * whole directory-seed corpus and every hue this repo has sampled — but an
+     * officer can enter arbitrary hex, and the guarantee is by construction,
+     * not by proof (#1183). The save still succeeds either way: §8 forbids a
+     * runtime substitution here, this is disclosure, not correction.
+     */
+    failedContrastChecks: FailedContrastCheck[];
+  }> {
     if (!data.accent_color) {
-      return this.chapterRepo.update(id, data);
+      return {
+        chapter: await this.chapterRepo.update(id, data),
+        failedContrastChecks: [],
+      };
     }
 
     // No contrast gate here any more, and its removal is the point rather than
@@ -299,17 +321,15 @@ export class ChapterService {
     // `buildChapterPalette` never throws and always yields at least the Signet
     // map, so this cannot turn a legitimate accent save into a failed request.
     const build = buildChapterPalette({ accent: colors.accent });
-    if (build.invalidSeed) {
-      this.logger.warn(
-        `Invalid accent seed for chapter ${id}: accent="${data.accent_color}" — substituted house gold. Expected #RRGGBB.`,
-      );
-    }
+    logChapterPaletteWarnings(this.logger, id, data.accent_color, build);
 
-    return this.chapterRepo.update(id, {
+    const chapter = await this.chapterRepo.update(id, {
       ...data,
       branding: { ...branding, colors },
       theme_palette: build.palette,
     });
+
+    return { chapter, failedContrastChecks: build.failedContrastChecks };
   }
 
   async requestLogoUploadUrl(
