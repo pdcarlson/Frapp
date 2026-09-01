@@ -778,13 +778,13 @@ export function EventEditorDialog({
           </div>
 
           <div className="grid gap-1">
-            <Label htmlFor="event-internal-notes">Internal notes</Label>
+            <Label htmlFor="event-meeting-minutes">Meeting minutes</Label>
             <Textarea
-              id="event-internal-notes"
+              id="event-meeting-minutes"
               value={notes}
               onChange={(eventValue) => setNotes(eventValue.target.value)}
               rows={2}
-              placeholder="Optional notes for event planners."
+              placeholder="Optional meeting minutes, visible to members with access to this event."
             />
           </div>
         </div>
