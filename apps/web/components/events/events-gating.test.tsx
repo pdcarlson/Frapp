@@ -39,6 +39,7 @@ vi.mock("@repo/hooks", () => ({
   useUpdateAttendanceStatus: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useAutoAbsent: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useEvents: () => ({ data: [], isLoading: false, isError: false, refetch: vi.fn() }),
+  useNow: () => Date.now(),
 }));
 
 vi.mock("@/lib/providers/network-provider", () => ({

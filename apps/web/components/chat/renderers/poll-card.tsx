@@ -15,7 +15,7 @@ import {
   type PollOption,
   type PollPayload,
 } from "@repo/chat-integrations";
-import { useNow } from "@/lib/use-now";
+import { useNow } from "@repo/hooks";
 
 interface PollCardProps {
   message: ChatMessage;

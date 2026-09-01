@@ -31,6 +31,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  actOnCard,
   discardOutboxRow,
   flushOutbox,
   hydrateOutboxIntoCache,
@@ -38,6 +39,7 @@ import {
   retryOutboxRow,
   sendMessage,
   unreact as unreactAction,
+  type CardActionArgs,
 } from "@repo/chat-core/chat-client";
 import {
   applyReactionInsert,
@@ -80,6 +82,12 @@ export interface UseChatChannelResult {
   send: (content: string) => Promise<void>;
   react: (messageId: string, emoji: string) => Promise<void>;
   unreact: (messageId: string, emoji: string) => Promise<void>;
+  /** Inline-card action dispatch (poll votes, #528; RSVP/Done in a future card). */
+  act: (
+    messageId: string,
+    actionType: string,
+    payload?: Record<string, unknown>,
+  ) => Promise<void>;
   draft: string;
   setDraft: (body: string) => void;
   /** Last send failure. `null` once the member edits the draft or retries. */
@@ -93,6 +101,16 @@ export interface UseChatChannelResult {
   reactionError: string | null;
   /** Dismisses `reactionError` — call on the next successful action or navigation away. */
   clearReactionError: () => void;
+  /**
+   * Last `act` (inline-card action, e.g. a poll vote) rejection. Same reason
+   * and same shape as `reactionError` — `actOnCard` fires the same
+   * platform-neutral `onError` sink `react`/`unreact` do (#999) — kept as its
+   * own state rather than merged into `reactionError` so a failed vote and a
+   * failed reaction can't dismiss each other's message.
+   */
+  actionError: string | null;
+  /** Dismisses `actionError` — call on the next successful action or navigation away. */
+  clearActionError: () => void;
   typingUsers: string[];
   emitTyping: () => void;
   connection: ConnectionStatus;
@@ -249,10 +267,13 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   /** Last react/unreact failure, surfaced the same way (#999). */
   const [reactionError, setReactionError] = useState<string | null>(null);
   const clearReactionError = useCallback(() => setReactionError(null), []);
-  // A channel switch must not carry the previous channel's reaction failure
-  // onto this one — nothing here retries or discards it the way `sendError`
-  // can, so it would otherwise sit until the member happened to trigger
-  // another reaction. Reset inline during render (React's "adjusting state
+  /** Last inline-card-action (e.g. poll vote, #528) failure — see the field doc. */
+  const [actionError, setActionError] = useState<string | null>(null);
+  const clearActionError = useCallback(() => setActionError(null), []);
+  // A channel switch must not carry the previous channel's reaction/action
+  // failure onto this one — nothing here retries or discards it the way
+  // `sendError` can, so it would otherwise sit until the member happened to
+  // trigger another one. Reset inline during render (React's "adjusting state
   // when a prop changes" pattern, https://react.dev/reference/react/useState#storing-information-from-previous-renders)
   // rather than in an effect, which would fire an extra render after the
   // channel-switch render already committed.
@@ -260,6 +281,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   if (reactionErrorChannelId !== channelId) {
     setReactionErrorChannelId(channelId);
     if (reactionError !== null) setReactionError(null);
+    if (actionError !== null) setActionError(null);
   }
   /**
    * Always the current `channelId`, for the generation check below. Refs
@@ -299,6 +321,38 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
               return;
             }
             setReactionError(input.description ?? input.title);
+          },
+        },
+        args,
+      );
+    },
+    [ctx, channelId],
+  );
+
+  /**
+   * Bumped once per `act` dispatch (e.g. a poll vote, #528) — same
+   * stale-closure guard as `reactionGenerationRef`, kept as its own ref so a
+   * card action in flight and a reaction in flight don't supersede each
+   * other's generation check.
+   */
+  const actionGenerationRef = useRef(0);
+  const actWithErrorSink = useCallback(
+    (args: CardActionArgs) => {
+      if (!ctx) return Promise.resolve();
+      const forChannelId = channelId;
+      const generation = ++actionGenerationRef.current;
+      setActionError(null);
+      return actOnCard(
+        {
+          ...ctx,
+          onError: (input) => {
+            if (
+              currentChannelIdRef.current !== forChannelId ||
+              actionGenerationRef.current !== generation
+            ) {
+              return;
+            }
+            setActionError(input.description ?? input.title);
           },
         },
         args,
@@ -385,6 +439,18 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [channelId, reactWithErrorSink],
   );
 
+  const act = useCallback(
+    async (
+      messageId: string,
+      actionType: string,
+      payload?: Record<string, unknown>,
+    ) => {
+      if (!channelId) return;
+      await actWithErrorSink({ channelId, messageId, actionType, payload });
+    },
+    [channelId, actWithErrorSink],
+  );
+
   const emitTyping = useCallback(() => {
     if (!channelId || !viewerId) return;
     chatRealtime.emitTyping(channelId, viewerId);
@@ -437,11 +503,14 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     send,
     react,
     unreact,
+    act,
     draft,
     setDraft,
     sendError,
     reactionError,
     clearReactionError,
+    actionError,
+    clearActionError,
     typingUsers,
     emitTyping,
     connection,
