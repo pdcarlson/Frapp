@@ -20,6 +20,7 @@ import {
 import { CustomFieldService } from './custom-field.service';
 import { CustomRoleService } from './custom-role.service';
 import { RbacService } from './rbac.service';
+import { ChapterAuditLogService } from './chapter-audit-log.service';
 import { allowedVisibilities } from './custom-field-visibility';
 import type { MemberCustomFieldValue } from '../../domain/entities/chapter-custom-field.entity';
 
@@ -76,6 +77,7 @@ export class MemberService {
     private readonly customFieldService: CustomFieldService,
     private readonly customRoleService: CustomRoleService,
     private readonly rbacService: RbacService,
+    private readonly auditLogService: ChapterAuditLogService,
   ) {}
 
   async findByChapter(chapterId: string): Promise<MemberSummary[]> {
@@ -252,13 +254,25 @@ export class MemberService {
     });
   }
 
-  async remove(memberId: string, chapterId: string): Promise<void> {
+  async remove(
+    memberId: string,
+    chapterId: string,
+    actorUserId: string,
+  ): Promise<void> {
     const member = await this.memberRepo.findById(memberId);
     if (!member) throw new NotFoundException('Member not found');
     if (member.chapter_id !== chapterId) {
       throw new ForbiddenException('Member not in current chapter');
     }
     await this.memberRepo.delete(memberId);
+    await this.auditLogService.record({
+      chapterId,
+      actorUserId,
+      action: 'member_removed',
+      targetType: 'member',
+      targetId: memberId,
+      diff: { user_id: member.user_id },
+    });
   }
 
   async findProfileById(

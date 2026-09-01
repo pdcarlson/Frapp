@@ -119,8 +119,12 @@ export class MemberController {
   @Delete(':id')
   @ApiOperation({ summary: 'Remove member from chapter' })
   @RequirePermissions(SystemPermissions.MEMBERS_REMOVE)
-  async remove(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
-    await this.memberService.remove(id, chapterId);
+  async remove(
+    @CurrentChapterId() chapterId: string,
+    @Param('id') id: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    await this.memberService.remove(id, chapterId, userId);
     return { success: true };
   }
 }

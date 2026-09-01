@@ -15,6 +15,7 @@ import { SystemRoleKeys } from '../../domain/constants/permissions';
 import { CustomFieldService } from './custom-field.service';
 import { CustomRoleService } from './custom-role.service';
 import { RbacService } from './rbac.service';
+import { ChapterAuditLogService } from './chapter-audit-log.service';
 
 describe('MemberService', () => {
   let service: MemberService;
@@ -24,6 +25,7 @@ describe('MemberService', () => {
   let mockCustomFieldService: { findVisibleValuesForMember: jest.Mock };
   let mockCustomRoleService: { findByIds: jest.Mock };
   let mockRbacService: { getEffectivePermissions: jest.Mock };
+  let mockAuditLogService: { record: jest.Mock };
 
   beforeEach(async () => {
     mockRepo = {
@@ -66,6 +68,9 @@ describe('MemberService', () => {
     mockRbacService = {
       getEffectivePermissions: jest.fn().mockResolvedValue([]),
     };
+    mockAuditLogService = {
+      record: jest.fn().mockResolvedValue(undefined),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -76,6 +81,7 @@ describe('MemberService', () => {
         { provide: CustomFieldService, useValue: mockCustomFieldService },
         { provide: CustomRoleService, useValue: mockCustomRoleService },
         { provide: RbacService, useValue: mockRbacService },
+        { provide: ChapterAuditLogService, useValue: mockAuditLogService },
       ],
     }).compile();
 
@@ -689,19 +695,36 @@ describe('MemberService', () => {
       mockRepo.findById.mockResolvedValue(existingMember);
       mockRepo.delete.mockResolvedValue(undefined);
 
-      await service.remove('member-1', 'chapter-1');
+      await service.remove('member-1', 'chapter-1', 'actor-1');
 
       expect(mockRepo.findById).toHaveBeenCalledWith('member-1');
       expect(mockRepo.delete).toHaveBeenCalledWith('member-1');
     });
 
+    it('writes a chapter_audit_log entry after a successful removal', async () => {
+      mockRepo.findById.mockResolvedValue(existingMember);
+      mockRepo.delete.mockResolvedValue(undefined);
+
+      await service.remove('member-1', 'chapter-1', 'actor-1');
+
+      expect(mockAuditLogService.record).toHaveBeenCalledWith({
+        chapterId: 'chapter-1',
+        actorUserId: 'actor-1',
+        action: 'member_removed',
+        targetType: 'member',
+        targetId: 'member-1',
+        diff: { user_id: existingMember.user_id },
+      });
+    });
+
     it('throws when member is not found', async () => {
       mockRepo.findById.mockResolvedValue(null);
 
-      await expect(service.remove('member-x', 'chapter-1')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.remove('member-x', 'chapter-1', 'actor-1'),
+      ).rejects.toThrow(NotFoundException);
       expect(mockRepo.delete).not.toHaveBeenCalled();
+      expect(mockAuditLogService.record).not.toHaveBeenCalled();
     });
 
     it('throws when member belongs to a different chapter', async () => {
@@ -710,10 +733,11 @@ describe('MemberService', () => {
         chapter_id: 'chapter-other',
       });
 
-      await expect(service.remove('member-1', 'chapter-1')).rejects.toThrow(
-        ForbiddenException,
-      );
+      await expect(
+        service.remove('member-1', 'chapter-1', 'actor-1'),
+      ).rejects.toThrow(ForbiddenException);
       expect(mockRepo.delete).not.toHaveBeenCalled();
+      expect(mockAuditLogService.record).not.toHaveBeenCalled();
     });
   });
 
