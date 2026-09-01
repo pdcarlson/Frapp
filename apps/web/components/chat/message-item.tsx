@@ -110,14 +110,51 @@ export function MessageItem({
    * reach (#1193). `onClick`, not `onTouchStart` or a press handler: a native
    * click already fires only on a tap the browser did not treat as a scroll
    * or a drag, which is the "must not fire on an accidental scroll-touch"
-   * acceptance criterion for free. The `getSelection` guard is the other
-   * half — without it, finishing a text selection inside the bubble with a
-   * lift-off (which does end in a click on most engines) would also toggle
-   * the cluster right as the member is trying to copy something.
+   * acceptance criterion for free.
+   *
+   * Two things a plain row-level `onClick` gets wrong without the guards
+   * below, both found by review:
+   *
+   * - **Every interactive descendant bubbles into it.** Reply, the quick
+   *   reaction chips, the emoji-picker trigger (and its Radix `Popover`
+   *   content — portalled elsewhere in the DOM, but the *click target* is
+   *   still a real descendant of whatever it visually sits over, so
+   *   `closest()` still finds it), and a card's own buttons (poll Vote, a
+   *   task checkbox, an RSVP) all live inside this row. With no guard, using
+   *   any of them also re-toggles the cluster in the same gesture — reacting
+   *   collapses the tray that action needed to be reachable through, and a
+   *   plain mouse click anywhere in the row (not just these controls) would
+   *   pin the tray open indefinitely, since a `click` bubbles from a mouse
+   *   too, not only from a tap. Bailing out on `closest("button, a, input,
+   *   textarea, select, [role='button']")` covers every control in this file
+   *   *and* every renderer under `./renderers/`, present or future, without
+   *   each one having to remember `stopPropagation`.
+   * - **A selection elsewhere in the thread must not block this row.**
+   *   Finishing a text selection inside *this* bubble with a lift-off (which
+   *   does end in a click on most engines) must not also toggle the cluster
+   *   right as the member is trying to copy something — but checking
+   *   `window.getSelection()` globally would also suppress a legitimate tap
+   *   on this row while a stale selection from a *different* message
+   *   lingers (observed on iOS Safari, where the Selection API can lag the
+   *   visual clear by one tap). Scoping the check to whether the selection
+   *   is actually anchored inside this row's own subtree gets both right.
    */
-  function handleRowTap() {
+  function handleRowTap(event: React.MouseEvent<HTMLDivElement>) {
     if (!showActions) return;
-    if ((window.getSelection()?.toString().length ?? 0) > 0) return;
+    if (
+      event.target instanceof Element &&
+      event.target.closest("button, a, input, textarea, select, [role='button']")
+    ) {
+      return;
+    }
+    const selection = window.getSelection();
+    if (
+      selection &&
+      selection.toString().length > 0 &&
+      event.currentTarget.contains(selection.anchorNode)
+    ) {
+      return;
+    }
     onToggleTapReveal();
   }
 

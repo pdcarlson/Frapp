@@ -245,23 +245,70 @@ describe("MessageItem tap-to-reveal (#1193)", () => {
     expect(onToggleTapReveal).not.toHaveBeenCalled();
   });
 
-  it("does not toggle when the tap ends a text selection inside the bubble", async () => {
+  it("does not toggle when the tap ends a text selection inside this row", () => {
     // A click firing after the member lifted off from selecting text must
     // not also flip the action cluster open — that would be swallowing the
     // selection gesture with an unrelated UI change (acceptance criterion).
     const onToggleTapReveal = vi.fn();
     const { container } = renderItemWithProps({ onToggleTapReveal });
 
-    const getSelectionSpy = vi.spyOn(window, "getSelection").mockReturnValue({
-      toString: () => "hello",
-    } as Selection);
-
     const row = container.querySelector('[role="listitem"]');
     if (!row) throw new Error("no row rendered");
+    // A real node inside the row, so `currentTarget.contains(anchorNode)`
+    // is genuinely true — the scoped check this guards against a false
+    // suppress from a *different* row's leftover selection (below).
+    const anchorNode = row.querySelector("p, span") ?? row.firstElementChild;
+    if (!anchorNode) throw new Error("row has no child to anchor a selection on");
+    const getSelectionSpy = vi.spyOn(window, "getSelection").mockReturnValue({
+      toString: () => "hello",
+      anchorNode,
+    } as unknown as Selection);
+
     row.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     expect(onToggleTapReveal).not.toHaveBeenCalled();
 
     getSelectionSpy.mockRestore();
+  });
+
+  it("still toggles when a *different* row's selection is stale (iOS Safari lag)", () => {
+    // The unscoped version of this guard (`window.getSelection()` checked
+    // globally) would wrongly suppress this tap — the exact regression the
+    // scoped `currentTarget.contains(anchorNode)` check exists to avoid.
+    const onToggleTapReveal = vi.fn();
+    const { container } = renderItemWithProps({ onToggleTapReveal });
+
+    const elsewhere = document.createElement("div");
+    document.body.appendChild(elsewhere);
+    elsewhere.textContent = "leftover selection from another message";
+
+    const row = container.querySelector('[role="listitem"]');
+    if (!row) throw new Error("no row rendered");
+    const getSelectionSpy = vi.spyOn(window, "getSelection").mockReturnValue({
+      toString: () => "leftover selection from another message",
+      anchorNode: elsewhere.firstChild,
+    } as unknown as Selection);
+
+    row.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(onToggleTapReveal).toHaveBeenCalledTimes(1);
+
+    getSelectionSpy.mockRestore();
+    elsewhere.remove();
+  });
+
+  it("does not toggle for a click on a button nested inside the row", async () => {
+    // The reaction chips, Reply, and the emoji-picker trigger all live
+    // inside this row; without this guard, using any of them would also
+    // re-toggle the cluster in the same gesture (review finding).
+    const user = userEvent.setup();
+    const onToggleTapReveal = vi.fn();
+    const onOpenThread = vi.fn();
+    renderItemWithProps({ onToggleTapReveal, onOpenThread, isTapRevealed: true });
+
+    await user.click(screen.getByRole("button", { name: /reply/i }));
+
+    expect(onOpenThread).toHaveBeenCalledTimes(1);
+    expect(onToggleTapReveal).not.toHaveBeenCalled();
   });
 });
