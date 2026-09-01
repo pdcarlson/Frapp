@@ -50,6 +50,25 @@ export function githubHeaders({ token, hasBody = false } = {}) {
  * `retry` opts into the bounded retry in `./http.mjs`; `retryOptions` is passed
  * straight through (attempts, backoff, timeout, sleep) so tests stay offline.
  */
+/**
+ * A thrown transport error as one line: its message, plus the `cause` undici
+ * hangs the real diagnosis on (and that cause's `code`, where it has one).
+ */
+function describeThrown(error) {
+  // Non-Error throws keep the exact prior behaviour (`error?.message ?? null`).
+  // Widening that to String(error) would have changed a standing assertion in
+  // github.test.mjs, which is not something to do as a side effect of adding
+  // cause-folding.
+  if (!(error instanceof Error)) return error?.message ?? null;
+  const cause = error.cause;
+  if (!cause) return error.message;
+  const detail =
+    cause instanceof Error
+      ? `${cause.message}${cause.code ? ` (${cause.code})` : ""}`
+      : String(cause);
+  return detail ? `${error.message}: ${detail}` : error.message;
+}
+
 export async function ghRequest({
   token,
   fetchImpl = fetch,
@@ -83,12 +102,19 @@ export async function ghRequest({
     return { ok: response.ok, status: response.status, data };
   } catch (error) {
     // A network-level rejection (DNS, ECONNRESET, an exhausted retry
-    // rethrowing) has no HTTP response to carry a message, so `error.message`
+    // rethrowing) has no HTTP response to carry a message, so the error itself
     // is the only diagnostic left. Putting it in `data` rather than dropping
     // it keeps a throwing caller's error text meaningful — `callGitHubApi`
     // formats `data` straight into its thrown message, and without this a
     // network outage read as the literal string "null", indistinguishable
     // from a server that genuinely returned no body.
-    return { ok: false, status: 0, data: error?.message ?? null };
+    //
+    // The `cause` is folded in for the same reason, one level down: undici puts
+    // the actual diagnosis there and leaves `message` as the bare, useless
+    // "fetch failed". Without it a DNS outage, a TLS/CA-bundle rejection, a
+    // proxy reset and a refused connection all reach the operator as the same
+    // four words — and `configure-branch-protection.mjs --verify` asks them to
+    // tell exactly those apart.
+    return { ok: false, status: 0, data: describeThrown(error) };
   }
 }

@@ -14,8 +14,11 @@
 //     before the merge. A dispatch has no PR and therefore no required checks,
 //     so this asks the checks API directly, against the same
 //     `ALL_REQUIRED_CHECKS` list `configure-branch-protection.mjs` writes to
-//     GitHub. Importing that list rather than restating it is deliberate: two
-//     copies drift, and the copy that drifts is the one nobody reads.
+//     GitHub — imported from `lib/required-checks.mjs`, which is where that
+//     roster lives, rather than from the script that applies it (#1383: the
+//     deploy path must not import a module that writes governance). Importing
+//     the list rather than restating it is deliberate: two copies drift, and
+//     the copy that drifts is the one nobody reads.
 //
 // Both assertions are fatal. "Could not tell" is never a pass — an unreadable
 // checks API fails the deploy, for the same reason `check-migration-drift.mjs`
@@ -49,7 +52,7 @@
 
 import { execFileSync } from "node:child_process";
 
-import { ALL_REQUIRED_CHECKS } from "../configure-branch-protection.mjs";
+import { ALL_REQUIRED_CHECKS } from "./lib/required-checks.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { resilientFetch } from "./lib/http.mjs";
 import { ghRequest } from "./lib/github.mjs";
@@ -59,7 +62,7 @@ export const SHA_PATTERN = /^[0-9a-f]{40}$/;
 // GitHub counts all three as satisfying a required check, and so does branch
 // protection. `skipped` is the load-bearing one: this repo path-gates several
 // required jobs with a job-level `if:`, and a job skipped that way reports
-// Success. See the long note in `configure-branch-protection.mjs`.
+// Success. See the long note in `lib/required-checks.mjs`.
 export const ACCEPTED_CONCLUSIONS = new Set(["success", "skipped", "neutral"]);
 
 /**

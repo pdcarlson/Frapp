@@ -68,8 +68,18 @@ echo 'GITHUB_PAT=<token>' >> .env
 > with broader scopes.** The 403 carries no `Server: github.com` and no `X-Github-Request-Id`, while
 > `GET /user` from the same session returns both; the repo-scoped request never reaches GitHub at all.
 > The GitHub MCP server does hold repo write access — it is how agent sessions push branches, open PRs
-> and comment — but it exposes no branch-protection tool, so there is no sanctioned agent path to this
-> setting at all.
+> and comment — but it exposes no branch-protection tool.
+>
+> **Amended 2026-09-01 (#1383): the read half of this is session-dependent, not settled.** The same
+> `GET .../branches/main/protection` returned **HTTP 200** from a cloud sandbox, using `GITHUB_PAT`
+> loaded from `.env.local` through `node`'s `fetch` — where the 2026-08-27 probe above was `curl`
+> through the agent proxy. #680's evidence table records this endpoint class answering 403 and 200
+> **on the same day in different sessions**, so neither observation is the general rule and the
+> sentence that used to sit here — "there is no sanctioned agent path to this setting at all" — was
+> too strong. What is unchanged: **applying** still needs a human with an admin PAT, and an agent
+> must never treat a successful read in one session as evidence the next will work. Try
+> `npm run configure:branch-protection:verify`; it fails loudly rather than passing when the read is
+> refused, so attempting it costs nothing and never produces a false green.
 >
 > What this leaves an agent is the preparation: confirm every intended context has reported green on the
 > target branch, and confirm the job names match the array strings exactly. Both are the preconditions
@@ -84,6 +94,29 @@ npm run configure:branch-protection -- --dry-run
 ```
 
 This prints the exact configuration that will be applied without making any changes. Review the output carefully.
+
+Since #1383 a dry run also **reads live protection back and prints the difference**, so the output
+answers "what would this actually change?" rather than only "what would this write?". A run that
+changes nothing says so explicitly:
+
+```
+  No changes — live protection already matches this roster.
+```
+
+### Checking without applying (`--verify`)
+
+```bash
+npm run configure:branch-protection:verify
+```
+
+Reads and diffs but never writes, and **exits non-zero** when live protection differs from the
+roster. This is the mode that turns "the rollout step was run" into evidence: it produces an exit
+code and a printed delta rather than a checkmark.
+
+> **From an agent session this may or may not work, and that is expected.** Reaching
+> `api.github.com` from a cloud sandbox is session-dependent — see the ADR-20 amendment of
+> 2026-09-01 and the evidence table in #680. `--verify` **fails** rather than passes when the read
+> is refused, so an unreadable answer is never mistaken for a matching one.
 
 ## Step 2: Apply
 
@@ -142,13 +175,13 @@ approval, not the merge.
 
 **A path-gated job can still be required.** `web-tests` and `web-responsive-floor` run only when the `changes` filter matches (`apps/web/**`, `packages/**`, the lockfile, `turbo.json`), and that is compatible with being required: GitHub reports a job skipped by a **job-level** conditional as *Success*, and `success` / `skipped` / `neutral` all satisfy a required check. The blocking case is a whole **workflow** skipped by path or branch filtering, whose checks never report at all — `ci.yml` has no workflow-level `paths:` filter, so it cannot happen here. See [Troubleshooting required status checks](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/collaborating-on-repositories-with-code-quality-features/troubleshooting-required-status-checks).
 
-**Not required on branches (informational):** `pglite-migrations` is advisory, as is `duplicate-detection` — jscpd has no clone-level baseline, so its only lever is a repo-wide percentage, which is too coarse to block a merge on ([`QUALITY_GATES.md`](../ci-cd/QUALITY_GATES.md)). Both are intentionally omitted from [`scripts/configure-branch-protection.mjs`](../../../scripts/configure-branch-protection.mjs).
+**Not required on branches (informational):** `pglite-migrations` is advisory, as is `duplicate-detection` — jscpd has no clone-level baseline, so its only lever is a repo-wide percentage, which is too coarse to block a merge on ([`QUALITY_GATES.md`](../ci-cd/QUALITY_GATES.md)). Both are intentionally omitted from [`scripts/ci/lib/required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs).
 
 > **`web-visual-regression` is gone — don't re-add it to any roster.** It ran Playwright **snapshots** and was advisory, because baselines pinned to CI's Chromium build drift with it. Until #1152 the 375px floor gate ran inside it and inherited that posture by sharing a directory, so a breached floor was a red mark a PR could merge past; #1152 split the floor into its own **required** `web-responsive-floor` job, and the snapshot job has since been deleted outright along with its spec and baselines ([`QUALITY_GATES.md`](../ci-cd/QUALITY_GATES.md)). If a stale live branch-protection config still lists it, a `npm run configure:branch-protection` run clears it — the script's arrays are the intent.
 
-> **Script vs live drift — check before you assume.** The arrays in the script are the *intended* state; the live config is whatever the last manual run applied, and the two drift apart silently because only a human re-run closes the gap. It has happened before: `main` sat at 12 contexts against 17 intended until a run on **2026-08-21** closed the gap. Verified **2026-08-27**: `main` carried all **19** intended contexts with nothing extra — script and live agreed, `web-responsive-floor` and `migration-drift` included. **They no longer do:** #1374 raised the intent to **21** by adding `web-production-build`, and the migration-correctness pass then swapped `migration-drift` out for `migration-order` — still **21**, but two entries different. No run has happened since either change, so live still carries `migration-drift` and lacks both new checks until `npm run configure:branch-protection` is run. Until then those checks report but do not block **merges** — the inverse of the usual hazard, and just as bad, since `web-production-build` exists to stop a `next build`-breaking change reaching production.
+> **Script vs live drift — check before you assume.** The arrays in the script are the *intended* state; the live config is whatever the last manual run applied, and the two drift apart silently because only a human re-run closes the gap. It has happened before: `main` sat at 12 contexts against 17 intended until a run on **2026-08-21** closed the gap. Verified **2026-08-27**: `main` carried all **19** intended contexts with nothing extra — script and live agreed, `web-responsive-floor` and `migration-drift` included. #1374 then raised the intent to **21** by adding `web-production-build`, and the migration-correctness pass swapped `migration-drift` out for `migration-order` — still **21**, but two entries different. This paragraph used to say no run had happened since, so live still lacked both new checks; a read on **2026-09-01** found the opposite — all 21 roster contexts present, `migration-drift` absent — so an apply evidently happened in between. **Do not trust either dated observation as current state.** That is the whole point of this section: the count here is a snapshot, the arrays are the intent, and only a re-run makes intent live. Read it rather than infer it — `npm run configure:branch-protection:verify` exits non-zero on any difference, or use the `gh api` call below.
 >
-> **"Not applied yet" does NOT mean "not enforced anywhere".** `scripts/ci/validate-deploy-sha.mjs` imports `ALL_REQUIRED_CHECKS` from the script directly rather than reading GitHub's live config, so a check is **blocking on the production deploy path from the moment it is added to the array** — before any `configure:branch-protection` run, and whether or not branch protection has ever heard of it. The asymmetry is deliberate (a `workflow_dispatch` has no PR and therefore no required checks, so the deploy gate has to ask the checks API against some list) but it is easy to be surprised by: a PR can merge with `migration-order` red and then be undeployable. Read the array as the deploy gate's live config and branch protection's *intended* one. Any count written here is a dated observation, not a source of truth — the arrays are the intent, and only a re-run makes it live. Read live state from the API:
+> **"Not applied yet" does NOT mean "not enforced anywhere".** `scripts/ci/validate-deploy-sha.mjs` imports `ALL_REQUIRED_CHECKS` from [`scripts/ci/lib/required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs) rather than reading GitHub's live config (until #1383 it imported the same roster from `configure-branch-protection.mjs`, which put a module that writes governance on the deploy path), so a check is **blocking on the production deploy path from the moment it is added to the array** — before any `configure:branch-protection` run, and whether or not branch protection has ever heard of it. The asymmetry is deliberate (a `workflow_dispatch` has no PR and therefore no required checks, so the deploy gate has to ask the checks API against some list) but it is easy to be surprised by: a PR can merge with `migration-order` red and then be undeployable. Read the array as the deploy gate's live config and branch protection's *intended* one. Any count written here is a dated observation, not a source of truth — the arrays are the intent, and only a re-run makes it live. Read live state from the API:
 >
 > ```sh
 > gh api repos/pdcarlson/Frapp/branches/main/protection/required_status_checks --jq '.contexts'
@@ -235,13 +268,18 @@ Common causes and fixes:
 - **Workflow path filters + required checks:** if a required workflow is skipped by `paths`, GitHub waits forever for a check that never runs.  
   **Fix:** required workflows must run on every PR to protected branches.
 - **Job/workflow renames:** required check name no longer matches emitted name.  
-  **Fix:** update `scripts/configure-branch-protection.mjs` and re-run `npm run configure:branch-protection`.
+  **Fix:** update `scripts/ci/lib/required-checks.mjs` and re-run `npm run configure:branch-protection`.
 - **Stale required check reference:** a required context name no longer exists because the underlying workflow was removed.  
-  **Fix:** remove the orphan context from `ALL_REQUIRED_CHECKS` in `scripts/configure-branch-protection.mjs`, then `gh api -X DELETE repos/<owner>/<repo>/branches/main/protection/required_status_checks/contexts -f 'contexts[]=<orphan>'`, and re-run the branch-protection script.
+  **Fix:** remove the orphan context from the arrays in `scripts/ci/lib/required-checks.mjs`, then `gh api -X DELETE repos/<owner>/<repo>/branches/main/protection/required_status_checks/contexts -f 'contexts[]=<orphan>'`, and re-run the branch-protection script.
 
 ## Verification Checklist
 
-After running the script, verify in the GitHub UI (Settings → Branches):
+The script now re-reads protection after the PUT and reports whether the result actually matches
+what it wrote, so a 2xx that silently dropped a context no longer reads as success. Run
+`npm run configure:branch-protection:verify` for the same check at any time.
+
+The manual pass below is still worth doing for the things the API does not answer — but it is no
+longer the only way to know. In the GitHub UI (Settings → Branches):
 
 - [ ] A branch protection rule exists for `main`
 - [ ] All required status checks are listed
@@ -271,12 +309,14 @@ If you need to merge urgently and a check is broken:
 
 If CI job names change (e.g., renaming a workflow job), update:
 
-1. `scripts/configure-branch-protection.mjs` — `CI_CHECKS`, `DOCS_CHECKS` arrays
+1. `scripts/ci/lib/required-checks.mjs` — `CI_CHECKS`, `DOCS_CHECKS` arrays (moved out of
+   `configure-branch-protection.mjs` in #1383)
 2. This runbook — required checks tables
 3. `CONTRIBUTING.md` — required checks section
 4. `spec/environments/README.md` — CI job matrix
 5. `docs/internal/ci-cd/DOCS_CI.md` — the docs-gate table and its **Required?** column
 6. Re-run `npm run configure:branch-protection` to apply the new names
+7. Confirm with `npm run configure:branch-protection:verify` — it exits non-zero if anything was missed
 
 This list is the drift engine, not a safety net — one source and four hand-kept copies is why
 `@repo/theme` and `packages/chat-integrations` went missing from every table at once. Steps 2–4 are
