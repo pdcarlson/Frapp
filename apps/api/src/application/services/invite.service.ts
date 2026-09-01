@@ -5,6 +5,7 @@ import {
   GoneException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -14,17 +15,26 @@ import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.i
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
 import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
+import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
+import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
 import { Invite } from '../../domain/entities/invite.entity';
 import { SystemRoleKeys } from '../../domain/constants/permissions';
 import { NotificationService } from './notification.service';
 import { ActivationService } from './activation.service';
+import { ChatService } from './chat.service';
 import { EMAIL_PROVIDER } from '../../domain/adapters/email.interface';
 import type { IEmailProvider } from '../../domain/adapters/email.interface';
+import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+} from '../../infrastructure/supabase/database.types';
 import {
   resolveAppOrigin,
   buildJoinUrl,
 } from '../../infrastructure/email/invite-link.util';
 import { dedupeEmails } from '@repo/validation';
+import { SYSTEM_SENDER_ID } from '../../domain/constants/chat';
 
 export interface BulkEmailInviteResult {
   invites: Invite[];
@@ -63,14 +73,19 @@ async function mapWithConcurrency<T, R>(
 
 @Injectable()
 export class InviteService {
+  private readonly logger = new Logger(InviteService.name);
+
   constructor(
     @Inject(INVITE_REPOSITORY) private readonly inviteRepo: IInviteRepository,
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
     @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
+    @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
     private readonly notificationService: NotificationService,
     private readonly activation: ActivationService,
+    private readonly chatService: ChatService,
     @Inject(EMAIL_PROVIDER) private readonly emailProvider: IEmailProvider,
     private readonly config: ConfigService,
+    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
   ) {}
 
   private prepareInviteData(
@@ -242,7 +257,59 @@ export class InviteService {
       });
     } catch {}
 
+    await this.notifyInviterOfAcceptance(invite, userId);
+
     return { chapterId: invite.chapter_id, memberId: member.id };
+  }
+
+  /**
+   * Posts a `system_audit` DM to the inviter naming who accepted, per
+   * spec/behavior/chat/README.md. Mirrors the raw-insert pattern
+   * `chapter-onboarding.service.ts` uses for its welcome message —
+   * `ChatService.sendMessage` would reject `SYSTEM_SENDER_ID` as a poster in a
+   * DM it isn't one of the two members of, so this bypasses it the same way.
+   * Never allowed to fail the redemption itself: an inviter who left the
+   * chapter, a missing accepter profile, or any insert error is logged and
+   * swallowed, not thrown.
+   */
+  private async notifyInviterOfAcceptance(
+    invite: Invite,
+    accepterUserId: string,
+  ): Promise<void> {
+    // A rejoin (the inviter left the chapter, then redeems their own
+    // still-valid token) makes accepter === inviter — `getOrCreateDm` only
+    // checks array length, so [x, x] would silently pass and produce a
+    // degenerate self-DM. Nothing to announce to the accepter about
+    // themselves, so skip it outright.
+    if (invite.created_by === accepterUserId) return;
+
+    try {
+      const accepter = await this.userRepo.findById(accepterUserId);
+      if (!accepter) return;
+
+      const dm = await this.chatService.getOrCreateDm({
+        chapter_id: invite.chapter_id,
+        member_ids: [invite.created_by, accepterUserId],
+      });
+
+      const message: TablesInsert<'chat_messages'> = {
+        channel_id: dm.id,
+        sender_id: SYSTEM_SENDER_ID,
+        content: `${accepter.display_name} accepted your invite.`,
+        kind: 'system_audit',
+      };
+      const { error } = await this.supabase
+        .from('chat_messages')
+        .insert(message);
+      if (error) {
+        this.logger.warn(
+          'Invite-accept system_audit message insert failed',
+          error,
+        );
+      }
+    } catch (error) {
+      this.logger.warn('Failed to notify inviter of invite acceptance', error);
+    }
   }
 
   async findByChapter(chapterId: string): Promise<Invite[]> {

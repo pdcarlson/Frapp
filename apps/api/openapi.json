@@ -1751,189 +1751,6 @@
         ]
       }
     },
-    "/v1/events": {
-      "get": {
-        "operationId": "EventController_list_v1",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "List chapter events",
-        "tags": [
-          "Events"
-        ]
-      },
-      "post": {
-        "operationId": "EventController_create_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateEventDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Create an event",
-        "tags": [
-          "Events"
-        ]
-      }
-    },
-    "/v1/events/{id}": {
-      "get": {
-        "operationId": "EventController_getOne_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Get event by id",
-        "tags": [
-          "Events"
-        ]
-      },
-      "patch": {
-        "operationId": "EventController_update_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateEventDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Update an event",
-        "tags": [
-          "Events"
-        ]
-      },
-      "delete": {
-        "operationId": "EventController_delete_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "scope",
-            "required": false,
-            "in": "query",
-            "description": "Which occurrences this applies to. `instance` (default) affects only this event. `series` affects the whole recurring series from now forward — occurrences that have already started are never modified or deleted, so attendance history is preserved.",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "instance",
-                "series"
-              ]
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Delete an event, or cancel a recurring series from now forward",
-        "tags": [
-          "Events"
-        ]
-      }
-    },
-    "/v1/events/{id}/ics": {
-      "get": {
-        "operationId": "EventController_getIcs_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Download .ics calendar file for an event",
-        "tags": [
-          "Events"
-        ]
-      }
-    },
     "/v1/channels": {
       "get": {
         "operationId": "ChatController_listChannels_v1",
@@ -2810,6 +2627,189 @@
         ]
       }
     },
+    "/v1/events": {
+      "get": {
+        "operationId": "EventController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List chapter events",
+        "tags": [
+          "Events"
+        ]
+      },
+      "post": {
+        "operationId": "EventController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEventDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create an event",
+        "tags": [
+          "Events"
+        ]
+      }
+    },
+    "/v1/events/{id}": {
+      "get": {
+        "operationId": "EventController_getOne_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get event by id",
+        "tags": [
+          "Events"
+        ]
+      },
+      "patch": {
+        "operationId": "EventController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateEventDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update an event",
+        "tags": [
+          "Events"
+        ]
+      },
+      "delete": {
+        "operationId": "EventController_delete_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "scope",
+            "required": false,
+            "in": "query",
+            "description": "Which occurrences this applies to. `instance` (default) affects only this event. `series` affects the whole recurring series from now forward — occurrences that have already started are never modified or deleted, so attendance history is preserved.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "instance",
+                "series"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete an event, or cancel a recurring series from now forward",
+        "tags": [
+          "Events"
+        ]
+      }
+    },
+    "/v1/events/{id}/ics": {
+      "get": {
+        "operationId": "EventController_getIcs_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Download .ics calendar file for an event",
+        "tags": [
+          "Events"
+        ]
+      }
+    },
     "/v1/events/{eventId}/attendance/check-in": {
       "post": {
         "description": "Accepts a bare body (plain self check-in, e.g. the chat event card), a rotating `token` scanned from the host QR, or a typed `manualCode`. `lat`/`lng` are required when the event defines a check-in geofence.",
@@ -2971,7 +2971,14 @@
         ],
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoAbsentResultDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -5390,6 +5397,51 @@
         ]
       }
     },
+    "/v1/activity-feed": {
+      "get": {
+        "description": "Normalized, newest-first rows aggregated from events, the caller’s own point changes, backwork uploads (only when the caller can view Backwork), new members, and the announcements channel. Read-only aggregation — no separate feed table (`spec/behavior/activity-feed.md`).",
+        "operationId": "ActivityFeedController_getFeed_v1",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Max feed rows to return across all domains combined. Clamped to 1–50 inclusive; omitted defaults to 20.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ActivityFeedItemDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get the chapter activity feed",
+        "tags": [
+          "Activity Feed"
+        ]
+      }
+    },
     "/v1/chapter-directory/search": {
       "get": {
         "operationId": "ChapterDirectoryController_search_v1",
@@ -7368,144 +7420,6 @@
           }
         }
       },
-      "GeofenceCoordinateDto": {
-        "type": "object",
-        "properties": {
-          "lat": {
-            "type": "number"
-          },
-          "lng": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "lat",
-          "lng"
-        ]
-      },
-      "CreateEventDto": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "location": {
-            "type": "string"
-          },
-          "start_time": {
-            "type": "string"
-          },
-          "end_time": {
-            "type": "string"
-          },
-          "point_value": {
-            "type": "number",
-            "default": 10
-          },
-          "is_mandatory": {
-            "type": "boolean",
-            "default": false
-          },
-          "recurrence_rule": {
-            "type": "string",
-            "description": "Recurrence rule (e.g. WEEKLY, BIWEEKLY, MONTHLY)"
-          },
-          "required_role_ids": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "notes": {
-            "type": "string"
-          },
-          "check_in_zone": {
-            "description": "Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/GeofenceCoordinateDto"
-            }
-          },
-          "check_in_zone_name": {
-            "type": "string",
-            "description": "Human-readable name for `check_in_zone`, shown on the mobile scanner (\"Inside the Great Hall zone\")."
-          },
-          "channel_id": {
-            "type": "string",
-            "description": "When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates."
-          },
-          "client_message_id": {
-            "type": "string",
-            "description": "Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`."
-          }
-        },
-        "required": [
-          "name",
-          "start_time",
-          "end_time"
-        ]
-      },
-      "UpdateEventDto": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "location": {
-            "type": "string"
-          },
-          "start_time": {
-            "type": "string"
-          },
-          "end_time": {
-            "type": "string"
-          },
-          "point_value": {
-            "type": "number"
-          },
-          "is_mandatory": {
-            "type": "boolean"
-          },
-          "recurrence_rule": {
-            "type": "string",
-            "description": "Recurrence rule (e.g. WEEKLY, BIWEEKLY, MONTHLY)"
-          },
-          "required_role_ids": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "notes": {
-            "type": "string"
-          },
-          "check_in_zone": {
-            "description": "Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. Send an empty array to clear an existing zone.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/GeofenceCoordinateDto"
-            }
-          },
-          "check_in_zone_name": {
-            "type": "string",
-            "description": "Human-readable name for `check_in_zone`, shown on the mobile scanner (\"Inside the Great Hall zone\")."
-          },
-          "scope": {
-            "type": "string",
-            "enum": [
-              "instance",
-              "series"
-            ],
-            "description": "Which occurrences this applies to. `instance` (default) affects only this event. `series` affects the whole recurring series from now forward — occurrences that have already started are never modified or deleted, so attendance history is preserved."
-          }
-        }
-      },
       "ChannelUnreadCountDto": {
         "type": "object",
         "properties": {
@@ -7814,6 +7728,144 @@
           "level"
         ]
       },
+      "GeofenceCoordinateDto": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number"
+          },
+          "lng": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "lat",
+          "lng"
+        ]
+      },
+      "CreateEventDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "start_time": {
+            "type": "string"
+          },
+          "end_time": {
+            "type": "string"
+          },
+          "point_value": {
+            "type": "number",
+            "default": 10
+          },
+          "is_mandatory": {
+            "type": "boolean",
+            "default": false
+          },
+          "recurrence_rule": {
+            "type": "string",
+            "description": "Recurrence rule (e.g. WEEKLY, BIWEEKLY, MONTHLY)"
+          },
+          "required_role_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notes": {
+            "type": "string"
+          },
+          "check_in_zone": {
+            "description": "Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeofenceCoordinateDto"
+            }
+          },
+          "check_in_zone_name": {
+            "type": "string",
+            "description": "Human-readable name for `check_in_zone`, shown on the mobile scanner (\"Inside the Great Hall zone\")."
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates."
+          },
+          "client_message_id": {
+            "type": "string",
+            "description": "Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`."
+          }
+        },
+        "required": [
+          "name",
+          "start_time",
+          "end_time"
+        ]
+      },
+      "UpdateEventDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "start_time": {
+            "type": "string"
+          },
+          "end_time": {
+            "type": "string"
+          },
+          "point_value": {
+            "type": "number"
+          },
+          "is_mandatory": {
+            "type": "boolean"
+          },
+          "recurrence_rule": {
+            "type": "string",
+            "description": "Recurrence rule (e.g. WEEKLY, BIWEEKLY, MONTHLY)"
+          },
+          "required_role_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notes": {
+            "type": "string"
+          },
+          "check_in_zone": {
+            "description": "Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. Send an empty array to clear an existing zone.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeofenceCoordinateDto"
+            }
+          },
+          "check_in_zone_name": {
+            "type": "string",
+            "description": "Human-readable name for `check_in_zone`, shown on the mobile scanner (\"Inside the Great Hall zone\")."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "instance",
+              "series"
+            ],
+            "description": "Which occurrences this applies to. `instance` (default) affects only this event. `series` affects the whole recurring series from now forward — occurrences that have already started are never modified or deleted, so attendance history is preserved."
+          }
+        }
+      },
       "CheckInDto": {
         "type": "object",
         "properties": {
@@ -7854,6 +7906,18 @@
         },
         "required": [
           "status"
+        ]
+      },
+      "AutoAbsentResultDto": {
+        "type": "object",
+        "properties": {
+          "marked": {
+            "type": "number",
+            "description": "Number of members newly recorded ABSENT. 0 when the event is not mandatory and targets no roles, or when everyone required already has an attendance record."
+          }
+        },
+        "required": [
+          "marked"
         ]
       },
       "AdjustPointsDto": {
@@ -8633,6 +8697,82 @@
             "description": "End date (YYYY-MM-DD)"
           }
         }
+      },
+      "ActivityFeedActorDto": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "display_name": {
+            "type": "string",
+            "description": "Empty when the actor could not be resolved against the current roster (e.g. a member who has since left the chapter) — the server does not invent a placeholder name."
+          },
+          "avatar_url": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "user_id",
+          "display_name",
+          "avatar_url"
+        ]
+      },
+      "ActivityFeedItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable within one response; not a database primary key."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "event_created",
+              "event_upcoming",
+              "points_change",
+              "backwork_upload",
+              "member_joined",
+              "announcement"
+            ]
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Feed ordering key — newest first."
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string",
+            "nullable": true
+          },
+          "actor": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ActivityFeedActorDto"
+              }
+            ]
+          },
+          "target_id": {
+            "type": "string",
+            "description": "The underlying record id (event, point transaction, backwork resource, joining member’s user id, or announcement channel id) for client-side navigation."
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "timestamp",
+          "title",
+          "body",
+          "actor",
+          "target_id"
+        ]
       },
       "CreateDiscordImportDto": {
         "type": "object",

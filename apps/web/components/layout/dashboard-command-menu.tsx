@@ -8,6 +8,7 @@ import {
   useMyPermissions,
   useOrgConfig,
   useSearch,
+  type SearchSource,
 } from "@repo/hooks";
 import {
   CommandDialog,
@@ -22,6 +23,7 @@ import { DASHBOARD_NAV_ITEMS } from "@/components/layout/nav-config";
 import { isNavItemVisible } from "@/components/layout/protected-nav-item";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { asArray } from "@/lib/utils";
+import { chatDeepLink } from "@/lib/chat/chat-links";
 
 type DashboardCommandMenuProps = {
   open: boolean;
@@ -59,6 +61,13 @@ export const navigationCommands = DASHBOARD_NAV_ITEMS.filter(
 type SearchGroup = {
   heading: string;
   results: Array<{ id: string; label: string; hint?: string; href: string }>;
+};
+
+const SOURCE_LABELS: Record<SearchSource, string> = {
+  backwork: "Backwork",
+  events: "Events",
+  members: "Members",
+  messages: "Chat",
 };
 
 function buildSearchGroups(payload: unknown): SearchGroup[] {
@@ -131,12 +140,24 @@ function buildSearchGroups(payload: unknown): SearchGroup[] {
         id: `messages-${row.id ?? row.content ?? Math.random()}`,
         label: row.content?.slice(0, 80) ?? "Untitled message",
         hint: row.channel_id ? `Channel ${row.channel_id}` : undefined,
-        href: "/chat",
+        href: chatDeepLink({ channelId: row.channel_id, messageId: row.id }),
       })),
     });
   }
 
   return groups;
+}
+
+function describeTimeoutNotice(sources: SearchSource[]): string {
+  const labels = sources.map((source) => SOURCE_LABELS[source]);
+  const list =
+    labels.length <= 1
+      ? (labels[0] ?? "")
+      : labels.length === 2
+        ? `${labels[0]} and ${labels[1]}`
+        : `${labels.slice(0, -1).join(", ")}, and ${labels[labels.length - 1]}`;
+  const verb = labels.length > 1 ? "were" : "was";
+  return `${list} search ${verb} incomplete — results may be missing.`;
 }
 
 function useDebouncedValue<T>(value: T, delay: number): T {
@@ -159,9 +180,10 @@ export function DashboardCommandMenu({
   const searchResults = useSearch(debouncedQuery);
 
   const groups = useMemo(
-    () => (hasMinQuery ? buildSearchGroups(searchResults.data) : []),
+    () => (hasMinQuery ? buildSearchGroups(searchResults.data?.payload) : []),
     [hasMinQuery, searchResults.data],
   );
+  const timedOutSources = searchResults.data?.timedOutSources ?? [];
 
   // Gating for the command palette (#264). The sidebar hides nav items the
   // caller cannot reach; without this the Cmd+K menu stayed a way around it.
@@ -194,12 +216,50 @@ export function DashboardCommandMenu({
         onOpenChange(value);
         if (!value) setQuery("");
       }}
+      // Every item here is already filtered by its own source — navigation
+      // by `filteredNavigation`'s own substring match, search results by the
+      // server (which matches via Postgres full-text stemming, not a literal
+      // substring). cmdk's own client-side re-filter has no visibility into
+      // either and would only risk hiding an item that matched for a reason
+      // it can't see.
+      shouldFilter={false}
     >
       <CommandInput
         value={query}
         onValueChange={setQuery}
         placeholder="Search members, events, backwork, or jump to a route..."
       />
+      {/*
+        Timeout notices (spec/behavior/search.md: the 500ms budget applies per
+        source, so a slow chat scan can time out while members, events and
+        backwork still return real hits). Two cases need a banner here rather
+        than relying on CommandEmpty below:
+          - Partial degradation: search groups render, so CommandEmpty never
+            mounts to carry the notice itself.
+          - Full timeout with a Navigation match: with shouldFilter={false},
+            cmdk mounts CommandEmpty only when the *total* item count (nav +
+            search groups) is zero — a query that happens to substring-match
+            a nav command (e.g. "eve" -> "Go to Events") keeps that count
+            above zero even when every search source timed out, so
+            CommandEmpty's own timeout copy would silently never render.
+        A query that reaches neither case (no nav match, no search groups)
+        still gets its timeout copy from CommandEmpty, unchanged below.
+      */}
+      {hasMinQuery && !searchResults.isFetching && groups.length > 0 && timedOutSources.length > 0 ? (
+        <div className="border-b border-border px-3 py-2 text-[12.5px] text-muted-foreground">
+          {describeTimeoutNotice(timedOutSources)}
+        </div>
+      ) : hasMinQuery &&
+        !searchResults.isFetching &&
+        groups.length === 0 &&
+        filteredNavigation.length > 0 &&
+        searchResults.data?.timedOut ? (
+        <div className="border-b border-border px-3 py-2 text-[12.5px] text-muted-foreground">
+          {timedOutSources.length > 0
+            ? describeTimeoutNotice(timedOutSources)
+            : "Search timed out — try a shorter query or try again."}
+        </div>
+      ) : null}
       <CommandList>
         <CommandEmpty>
           {searchResults.isFetching ? (
@@ -208,6 +268,8 @@ export function DashboardCommandMenu({
             </span>
           ) : debouncedQuery && !hasMinQuery ? (
             `Type at least ${SEARCH_MIN_QUERY_LENGTH} characters to search.`
+          ) : hasMinQuery && searchResults.data?.timedOut ? (
+            "Search timed out — try a shorter query or try again."
           ) : hasMinQuery ? (
             "No matches across chapter data."
           ) : (

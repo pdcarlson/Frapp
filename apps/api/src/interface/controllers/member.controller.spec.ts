@@ -101,14 +101,15 @@ describe('MemberController', () => {
   });
 
   describe('search', () => {
-    it('forwards chapter-scoped search queries', async () => {
+    it('forwards chapter-scoped search queries with the viewer id', async () => {
       memberService.searchByChapterAndName.mockResolvedValue([]);
 
-      await controller.search('chapter-1', 'jordan');
+      await controller.search('chapter-1', 'jordan', 'viewer-1');
 
       expect(memberService.searchByChapterAndName).toHaveBeenCalledWith(
         'chapter-1',
         'jordan',
+        'viewer-1',
       );
     });
   });

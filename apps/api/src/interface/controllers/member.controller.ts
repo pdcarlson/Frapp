@@ -60,8 +60,13 @@ export class MemberController {
   async search(
     @CurrentChapterId() chapterId: string,
     @Query('q') query: string,
+    @CurrentUser('id') viewerUserId: string,
   ) {
-    return this.memberService.searchByChapterAndName(chapterId, query ?? '');
+    return this.memberService.searchByChapterAndName(
+      chapterId,
+      query ?? '',
+      viewerUserId,
+    );
   }
 
   // MUST stay above `@Get(':id')`. Nest matches routes in declaration order and

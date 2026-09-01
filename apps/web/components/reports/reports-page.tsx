@@ -55,7 +55,7 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
-import { downloadBlob } from "@/lib/utils";
+import { downloadCsv } from "@/lib/utils";
 
 type ReportKind = "attendance" | "points" | "roster" | "service";
 
@@ -99,39 +99,15 @@ function flattenRecord(value: unknown, prefix = ""): Record<string, string> {
   return result;
 }
 
-function quoteCell(value: string): string {
-  if (/[",\n\r]/.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`;
-  }
-  return value;
-}
-
 /**
- * Derive a CSV from any report payload shape.
+ * Flatten any report payload shape into rows ready for `downloadCsv`.
  *
  * Each API handler returns either `{ rows: [...] }`, `{ entries: [...] }`, or
- * a bare array. We normalize to rows, flatten the first row's keys to compute
- * a stable column order, and emit a UTF-8 CSV with BOM so Excel renders
- * umlauts and emoji correctly on export. The BOM + CRLF output keeps
- * downstream spreadsheet behavior predictable without extra client libs.
+ * a bare array. We normalize to rows and flatten each row's keys — column
+ * order, escaping, and BOM/CRLF are the shared `downloadCsv`'s job.
  */
-function buildCsv(payload: unknown): string {
-  const rows = extractRows(payload);
-  if (rows.length === 0) return "";
-  const flatRows = rows.map((row) => flattenRecord(row));
-  const headerSet = new Set<string>();
-  for (const flat of flatRows) {
-    for (const key of Object.keys(flat)) headerSet.add(key);
-  }
-  const headers = Array.from(headerSet);
-  const lines = [headers.map(quoteCell).join(",")];
-  for (const flat of flatRows) {
-    lines.push(
-      headers.map((header) => quoteCell(flat[header] ?? "")).join(","),
-    );
-  }
-  // BOM + CRLF for Excel friendliness.
-  return `\uFEFF${lines.join("\r\n")}`;
+function buildRows(payload: unknown): Record<string, string>[] {
+  return extractRows(payload).map((row) => flattenRecord(row));
 }
 
 function extractRows(payload: unknown): ReportRow[] {
@@ -161,11 +137,6 @@ function truncationSummary(truncation: ReportTruncation): string {
   return truncation.rowLimit
     ? `Capped at ${truncation.rowLimit.toLocaleString()} rows.`
     : "The API reported this report as incomplete.";
-}
-
-function downloadCsv(kind: ReportKind, csv: string) {
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  downloadBlob(blob, `frapp-${kind}-${new Date().toISOString().slice(0, 10)}.csv`);
 }
 
 export function ReportsPage() {
@@ -368,8 +339,7 @@ export function ReportsPage() {
 
   function exportCsv() {
     if (!preview || preview.length === 0) return;
-    const csv = buildCsv(preview);
-    downloadCsv(kind, csv);
+    downloadCsv(buildRows(preview), kind);
     // The CSV is serialized from the preview, so it inherits the preview's
     // truncation. Saying so at download time is the last point before the file
     // leaves the app and stops carrying any context at all.

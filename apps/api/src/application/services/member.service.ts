@@ -68,6 +68,11 @@ export interface MemberRosterEntry {
   avatar_url: string | null;
 }
 
+/** A {@link MemberRosterEntry} plus the membership's join timestamp. */
+export interface RecentMemberJoin extends MemberRosterEntry {
+  joined_at: string;
+}
+
 @Injectable()
 export class MemberService {
   constructor(
@@ -139,6 +144,44 @@ export class MemberService {
         user_id: user.id,
         display_name: user.display_name,
         avatar_url: user.avatar_url,
+      });
+    }
+    return roster;
+  }
+
+  /**
+   * The full roster, each entry also carrying its membership join timestamp —
+   * for the Activity Feed (`spec/behavior/activity-feed.md`), which needs
+   * both a `user_id → {display_name, avatar_url}` lookup (to name the actor
+   * behind a backwork upload or announcement) *and* the most recently joined
+   * members, from one caller. Built as one combined method rather than two —
+   * {@link findRosterByChapter} plus a separate recent-joins query — so that
+   * caller does one membership read and one identity batch, not two of each.
+   *
+   * `Member.created_at` is the membership row's timestamp, i.e. when this
+   * person joined *this chapter* — not `users.created_at`, which is account
+   * creation and could predate the membership by any amount (a re-join, an
+   * alumni account reactivated years later).
+   */
+  async findRosterWithJoinDates(
+    chapterId: string,
+  ): Promise<RecentMemberJoin[]> {
+    const members = await this.memberRepo.findByChapter(chapterId);
+    if (!members.length) return [];
+
+    const userIds = [...new Set(members.map((member) => member.user_id))];
+    const identities = await this.userRepo.findDisplayIdentitiesByIds(userIds);
+    const byId = new Map(identities.map((user) => [user.id, user]));
+
+    const roster: RecentMemberJoin[] = [];
+    for (const member of members) {
+      const user = byId.get(member.user_id);
+      if (!user) continue;
+      roster.push({
+        user_id: user.id,
+        display_name: user.display_name,
+        avatar_url: user.avatar_url,
+        joined_at: member.created_at,
       });
     }
     return roster;
@@ -315,32 +358,103 @@ export class MemberService {
     };
   }
 
+  /**
+   * Directory search (#579/#588): name, email, and visibility-scoped
+   * custom-field values, per spec/behavior/members.md → Directory. Field
+   * values are matched separately from the name/email pass because they need
+   * the viewer's resolved visibility tiers rather than a plain substring
+   * check on an already-fetched column.
+   */
   async searchByChapterAndName(
     chapterId: string,
     query: string,
+    viewerUserId: string,
   ): Promise<MemberProfile[]> {
     const members = await this.memberRepo.findByChapter(chapterId);
     if (!members.length) return [];
 
     const userIds = [...new Set(members.map((m) => m.user_id))];
     const users = await this.userRepo.findByIds(userIds);
+    const userMap = new Map(users.map((u) => [u.id, u]));
 
     const q = query.trim().toLowerCase();
-    const filteredUsers = users.filter((u) =>
-      u.display_name.toLowerCase().includes(q),
+    const nameOrEmailMatchedUserIds = new Set(
+      users
+        .filter(
+          (u) =>
+            u.display_name.toLowerCase().includes(q) ||
+            u.email.toLowerCase().includes(q),
+        )
+        .map((u) => u.id),
     );
-    if (!filteredUsers.length) return [];
 
-    const userMap = new Map(filteredUsers.map((u) => [u.id, u]));
+    const matchedMemberIds = await this.searchCustomFieldMatches(
+      chapterId,
+      members,
+      viewerUserId,
+      q,
+    );
 
     const results: MemberProfile[] = [];
     for (const member of members) {
       const user = userMap.get(member.user_id);
-      if (user) {
+      if (!user) continue;
+      if (
+        nameOrEmailMatchedUserIds.has(user.id) ||
+        matchedMemberIds.has(member.id)
+      ) {
         results.push(this.mergeMemberWithUser(member, user));
       }
     }
     return results;
+  }
+
+  /**
+   * Member ids in `members` whose visible custom-field values match `q`,
+   * scoped to what `viewerUserId` may see (spec/behavior/members.md →
+   * Directory: "a viewer can only match on field values they are permitted
+   * to see"). `self`-tier fields only ever match the viewer's own row — a
+   * value the viewer cannot read on `GET /members/:id` must never surface
+   * another member in search either.
+   */
+  private async searchCustomFieldMatches(
+    chapterId: string,
+    members: Member[],
+    viewerUserId: string,
+    q: string,
+  ): Promise<Set<string>> {
+    const permissions = await this.rbacService.getEffectivePermissions(
+      chapterId,
+      viewerUserId,
+    );
+    // isSelf=true so the caller's own `self`-tier fields are candidates; the
+    // per-row self scoping below still restricts a match to their own member id.
+    const allowed = allowedVisibilities(permissions, true);
+    const fields = await this.customFieldService.findFieldIdsByVisibility(
+      chapterId,
+      allowed,
+    );
+    if (!fields.length) return new Set();
+
+    const selfFieldIds = new Set(
+      fields.filter((f) => f.visibility === 'self').map((f) => f.id),
+    );
+    const values = await this.customFieldService.findValuesByFieldIds(
+      fields.map((f) => f.id),
+    );
+
+    const viewerMemberId = members.find((m) => m.user_id === viewerUserId)?.id;
+
+    const matched = new Set<string>();
+    for (const row of values) {
+      if (!row.value?.toLowerCase().includes(q)) continue;
+      if (selfFieldIds.has(row.field_id)) {
+        if (row.member_id === viewerMemberId) matched.add(row.member_id);
+      } else {
+        matched.add(row.member_id);
+      }
+    }
+    return matched;
   }
 
   async findAlumniByChapter(

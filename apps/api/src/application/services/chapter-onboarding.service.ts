@@ -11,10 +11,7 @@ import { ChapterService } from './chapter.service';
 import { ActivationService } from './activation.service';
 import type { Chapter } from '../../domain/entities/chapter.entity';
 import type { ChapterOnboardingDto } from '../../interface/dtos/chapter-onboarding.dto';
-
-// Well-known system user UUID (seeded in supabase/migrations). Sender for
-// system_audit chat messages — the welcome post and the Chunk 02 audit bridge.
-const SYSTEM_SENDER_ID = '00000000-0000-0000-0000-000000000000';
+import { SYSTEM_SENDER_ID } from '../../domain/constants/chat';
 
 type Branding = Record<string, unknown>;
 
