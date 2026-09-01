@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { useBillingStatus, useCurrentUser, useInvoices } from "@repo/hooks";
 import { Badge } from "@/components/ui/badge";
@@ -23,7 +23,7 @@ import {
 } from "@/components/shared/table-controls";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
-import { downloadBlob, rowsToCsv } from "@/lib/utils";
+import { downloadCsv } from "@/lib/utils";
 import { InvoiceAdminCard } from "@/components/billing/invoice-admin-card";
 import { SubscriptionCheckoutCard } from "@/components/billing/subscription-checkout-card";
 import {
@@ -99,6 +99,17 @@ export default function BillingPage() {
       );
     });
   }, [visibleInvoices, invoiceSearch, statusFilter]);
+
+  // Changing the search or status filter swaps the visible population, so drop
+  // the selection — otherwise the bulk bar keeps counting invoices that are no
+  // longer shown, and Export CSV silently exports fewer rows than it claims
+  // (or an empty file once none of the selection remains visible).
+  /* eslint-disable react-hooks/set-state-in-effect -- reset selection when the visible invoice set changes */
+  useEffect(() => {
+    setSelectedInvoiceIds([]);
+  }, [invoiceSearch, statusFilter]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
   const invoiceIds = filteredInvoices.map((invoice) => invoice.id);
   const allInvoicesSelected =
     invoiceIds.length > 0 &&
@@ -135,12 +146,7 @@ export default function BillingPage() {
         "Due Date": formatDate(invoice.due_date),
         "Member ID": invoice.user_id,
       }));
-    const csv = rowsToCsv(rows);
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    downloadBlob(
-      blob,
-      `frapp-invoices-${new Date().toISOString().slice(0, 10)}.csv`,
-    );
+    downloadCsv(rows, "invoices");
   }
 
   if (isOffline) {
@@ -289,18 +295,16 @@ export default function BillingPage() {
                 {selectedInvoiceIds.length} invoice
                 {selectedInvoiceIds.length > 1 ? "s" : ""} selected
               </p>
-              <div className="flex gap-2">
-                {/*
-                  Send reminder removed rather than wired (#336): overdue
-                  members already get an automatic notification
-                  (`InvoiceAdminCard`'s footer), and there is no manual-remind
-                  endpoint to call — adding one would be a new feature, not a
-                  wiring fix.
-                */}
-                <Button size="sm" variant="secondary" onClick={exportSelectedInvoicesCsv}>
-                  Export CSV
-                </Button>
-              </div>
+              {/*
+                Send reminder removed rather than wired (#336): overdue
+                members already get an automatic notification
+                (`InvoiceAdminCard`'s footer), and there is no manual-remind
+                endpoint to call — adding one would be a new feature, not a
+                wiring fix.
+              */}
+              <Button size="sm" variant="secondary" onClick={exportSelectedInvoicesCsv}>
+                Export CSV
+              </Button>
             </div>
           ) : null}
           {filteredInvoices.length === 0 ? (

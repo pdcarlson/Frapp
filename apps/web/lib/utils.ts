@@ -78,3 +78,14 @@ export function downloadBlob(blob: Blob, filename: string): void {
     URL.revokeObjectURL(objectUrl);
   }
 }
+
+/**
+ * Serialize rows to CSV and download them as `frapp-<filenamePrefix>-<date>.csv`.
+ * Shared so the MIME type and filename convention live in one place — the
+ * reports export and the dashboard bulk-export actions (Billing, Points) used
+ * to each hand-roll this same three-line sequence.
+ */
+export function downloadCsv(rows: Record<string, string>[], filenamePrefix: string): void {
+  const blob = new Blob([rowsToCsv(rows)], { type: "text/csv;charset=utf-8" });
+  downloadBlob(blob, `frapp-${filenamePrefix}-${new Date().toISOString().slice(0, 10)}.csv`);
+}

@@ -7,10 +7,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Send reminder and the header button are gone (no manual-remind endpoint
 // exists, and the working Create Invoice dialog lives one card down).
 
-const { downloadBlobSpy } = vi.hoisted(() => ({ downloadBlobSpy: vi.fn() }));
+const { downloadCsvSpy } = vi.hoisted(() => ({ downloadCsvSpy: vi.fn() }));
 vi.mock("@/lib/utils", async () => {
   const actual = await vi.importActual<typeof import("@/lib/utils")>("@/lib/utils");
-  return { ...actual, downloadBlob: downloadBlobSpy };
+  return { ...actual, downloadCsv: downloadCsvSpy };
 });
 
 const billingStatusQuery = {
@@ -124,18 +124,31 @@ describe("BillingPage invoice bulk actions", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("exports the selected invoice as a downloaded CSV", async () => {
+  it("exports the selected invoice as a downloaded CSV", () => {
     render(<BillingPage />);
     selectFirstInvoice();
     fireEvent.click(screen.getByRole("button", { name: /export csv/i }));
 
-    expect(downloadBlobSpy).toHaveBeenCalledTimes(1);
-    const [blob, filename] = downloadBlobSpy.mock.calls[0] as [Blob, string];
-    expect(filename).toMatch(/^frapp-invoices-\d{4}-\d{2}-\d{2}\.csv$/);
-    expect(blob.type).toBe("text/csv;charset=utf-8");
-    const csv = await blob.text();
+    expect(downloadCsvSpy).toHaveBeenCalledTimes(1);
+    const [rows, prefix] = downloadCsvSpy.mock.calls[0] as [
+      Record<string, string>[],
+      string,
+    ];
+    expect(prefix).toBe("invoices");
     // Only the selected row — the unselected paid invoice is not exported.
-    expect(csv).toContain("Fall dues");
-    expect(csv).not.toContain("Spring dues");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ Title: "Fall dues" });
+  });
+
+  it("drops the selection when the status filter changes, so a stale count can't export the wrong rows", () => {
+    render(<BillingPage />);
+    selectFirstInvoice();
+    expect(screen.getByText(/1 invoice selected/i)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/invoice status filter/i), {
+      target: { value: "paid" },
+    });
+
+    expect(screen.queryByText(/invoice.*selected/i)).not.toBeInTheDocument();
   });
 });

@@ -96,10 +96,10 @@ vi.mock("@/lib/providers/network-provider", () => ({
   useNetwork: () => networkState,
 }));
 
-const { downloadBlobSpy } = vi.hoisted(() => ({ downloadBlobSpy: vi.fn() }));
+const { downloadCsvSpy } = vi.hoisted(() => ({ downloadCsvSpy: vi.fn() }));
 vi.mock("@/lib/utils", async () => {
   const actual = await vi.importActual<typeof import("@/lib/utils")>("@/lib/utils");
-  return { ...actual, downloadBlob: downloadBlobSpy };
+  return { ...actual, downloadCsv: downloadCsvSpy };
 });
 
 // Both children own independent queries and error handling; stub them so these
@@ -502,7 +502,7 @@ describe("PointsPage subscription gating", () => {
 // entirely because flags are automatic (±100 points) with no manual override.
 describe("PointsPage transaction bulk actions", () => {
   beforeEach(() => {
-    downloadBlobSpy.mockClear();
+    downloadCsvSpy.mockClear();
   });
 
   function selectFirstTransaction() {
@@ -566,14 +566,45 @@ describe("PointsPage transaction bulk actions", () => {
     selectFirstTransaction();
     fireEvent.click(screen.getByRole("button", { name: /export selected/i }));
 
-    expect(downloadBlobSpy).toHaveBeenCalledTimes(1);
-    const [blob, filename] = downloadBlobSpy.mock.calls[0] as [Blob, string];
-    expect(filename).toMatch(/^frapp-points-\d{4}-\d{2}-\d{2}\.csv$/);
-    expect(blob.type).toBe("text/csv;charset=utf-8");
-    return blob.text().then((csv) => {
-      // Only the selected row — the unselected fine is not exported.
-      expect(csv).toContain("Founders Day check-in");
-      expect(csv).not.toContain("Late arrival");
+    expect(downloadCsvSpy).toHaveBeenCalledTimes(1);
+    const [rows, prefix] = downloadCsvSpy.mock.calls[0] as [
+      Record<string, string>[],
+      string,
+    ];
+    expect(prefix).toBe("points");
+    // Only the selected row — the unselected fine is not exported.
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ Description: "Founders Day check-in" });
+  });
+
+  it("drops the selection when the category filter changes, so a stale count can't export the wrong rows", () => {
+    setQueries({
+      summary: {
+        data: {
+          balance: 12,
+          transactions: [
+            {
+              id: "txn-1",
+              amount: 12,
+              category: "ATTENDANCE",
+              description: "Founders Day check-in",
+              created_at: "2026-08-01T12:00:00Z",
+            },
+          ],
+        },
+      },
     });
+
+    render(<PointsPage />);
+    selectFirstTransaction();
+    expect(screen.getByText(/1 transaction selected/i)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/filter transactions by category/i), {
+      target: { value: "fine" },
+    });
+
+    expect(
+      screen.queryByText(/transaction.*selected/i),
+    ).not.toBeInTheDocument();
   });
 });

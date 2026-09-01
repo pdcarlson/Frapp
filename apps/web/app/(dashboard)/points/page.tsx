@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AdjustGlyph, SearchGlyph } from "@/components/points/points-glyphs";
 import {
   memberFallbackLabel,
@@ -24,7 +24,7 @@ import {
 } from "@/components/shared/table-controls";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
-import { downloadBlob, rowsToCsv } from "@/lib/utils";
+import { downloadCsv } from "@/lib/utils";
 import { PointsAdjustmentDialog } from "@/components/points/points-adjustment-dialog";
 import {
   SubscriptionNotice,
@@ -180,6 +180,18 @@ export default function PointsPage() {
       return true;
     });
   }, [transactions, transactionSearch, amountFilter, categoryFilter]);
+
+  // Changing the window, search, or amount/category filter swaps the visible
+  // population, so drop the selection — otherwise the bulk bar keeps counting
+  // transactions that are no longer shown, and Export selected silently
+  // exports fewer rows than it claims (or an empty file once none of the
+  // selection remains visible).
+  /* eslint-disable react-hooks/set-state-in-effect -- reset selection when the visible transaction set changes */
+  useEffect(() => {
+    setSelectedTransactionIds([]);
+  }, [window, transactionSearch, amountFilter, categoryFilter]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
   const transactionIds = filteredTransactions.map((transaction) => transaction.id);
   const allTransactionsSelected =
     transactionIds.length > 0 &&
@@ -194,12 +206,7 @@ export default function PointsPage() {
         Description: transaction.description,
         Time: formatTimestamp(transaction.created_at),
       }));
-    const csv = rowsToCsv(rows);
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    downloadBlob(
-      blob,
-      `frapp-points-${new Date().toISOString().slice(0, 10)}.csv`,
-    );
+    downloadCsv(rows, "points");
   }
 
   function toggleAllTransactions(checked: boolean) {
@@ -452,22 +459,20 @@ export default function PointsPage() {
                   {selectedTransactionIds.length} transaction
                   {selectedTransactionIds.length > 1 ? "s" : ""} selected
                 </p>
-                <div className="flex gap-2">
-                  {/*
-                    Flag for audit removed rather than wired (#336): flags are
-                    raised automatically whenever a single adjustment exceeds
-                    ±100 points (see PointsAuditCard below) — there is no
-                    manual override to call, and adding one would be a new
-                    moderation feature rather than a wiring fix.
-                  */}
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={exportSelectedTransactionsCsv}
-                  >
-                    Export selected
-                  </Button>
-                </div>
+                {/*
+                  Flag for audit removed rather than wired (#336): flags are
+                  raised automatically whenever a single adjustment exceeds
+                  ±100 points (see PointsAuditCard below) — there is no
+                  manual override to call, and adding one would be a new
+                  moderation feature rather than a wiring fix.
+                */}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={exportSelectedTransactionsCsv}
+                >
+                  Export selected
+                </Button>
               </div>
             ) : null}
             {filteredTransactions.length === 0 ? (

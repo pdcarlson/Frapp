@@ -53,6 +53,7 @@ import { formatLocaleDateTime as formatDate } from "@repo/formatting";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useNow } from "@/lib/use-now";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import { getErrorMessage } from "@/lib/utils";
 
 type EventRow = Record<string, unknown>;
 
@@ -197,10 +198,16 @@ export function EventsPage() {
     const results = await Promise.allSettled(
       ids.map((eventId) => autoAbsent.mutateAsync(eventId)),
     );
-    const failed = results.filter((result) => result.status === "rejected");
-    const succeeded = results.length - failed.length;
+    // `results` is positionally aligned with `ids`, which is the only way to
+    // name which event failed — `Promise.allSettled` itself carries no id.
+    const failures = results.flatMap((result, index) =>
+      result.status === "rejected"
+        ? [{ eventId: ids[index]!, reason: result.reason }]
+        : [],
+    );
+    const succeeded = results.length - failures.length;
 
-    if (failed.length === 0) {
+    if (failures.length === 0) {
       const totalMarked = results.reduce(
         (sum, result) =>
           sum + (result.status === "fulfilled" ? (result.value?.marked ?? 0) : 0),
@@ -212,9 +219,20 @@ export function EventsPage() {
       });
       setSelectedEventIds([]);
     } else {
+      const eventName = (eventId: string) =>
+        String(
+          events.find((event) => String(event.id ?? event.name ?? "") === eventId)
+            ?.name ?? eventId,
+        );
+      const detail = failures
+        .map(
+          ({ eventId, reason }) =>
+            `${eventName(eventId)}: ${getErrorMessage(reason, "unknown error")}`,
+        )
+        .join("; ");
       toast({
         title: "Some events couldn't be finalized",
-        description: `${succeeded} succeeded, ${failed.length} failed — often because an event hasn't reached its check-in grace period yet.`,
+        description: `${succeeded} succeeded, ${failures.length} failed. ${detail}`,
         variant: "destructive",
       });
     }
@@ -351,16 +369,14 @@ export function EventsPage() {
               only delete/cancel — so there is no real mutation to call
               without inventing one.
             */}
-            <div className="flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={autoAbsent.isPending}
-                onClick={() => void markSelectedAttendanceComplete()}
-              >
-                Mark attendance complete
-              </Button>
-            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={autoAbsent.isPending}
+              onClick={() => void markSelectedAttendanceComplete()}
+            >
+              Mark attendance complete
+            </Button>
           </CardContent>
         </Card>
       ) : null}

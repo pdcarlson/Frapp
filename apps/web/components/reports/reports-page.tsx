@@ -55,7 +55,7 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
-import { downloadBlob, rowsToCsv } from "@/lib/utils";
+import { downloadCsv } from "@/lib/utils";
 
 type ReportKind = "attendance" | "points" | "roster" | "service";
 
@@ -100,16 +100,14 @@ function flattenRecord(value: unknown, prefix = ""): Record<string, string> {
 }
 
 /**
- * Derive a CSV from any report payload shape.
+ * Flatten any report payload shape into rows ready for `downloadCsv`.
  *
  * Each API handler returns either `{ rows: [...] }`, `{ entries: [...] }`, or
- * a bare array. We normalize to rows and flatten each row's keys before
- * handing them to the shared `rowsToCsv` (column order, escaping, BOM/CRLF).
+ * a bare array. We normalize to rows and flatten each row's keys — column
+ * order, escaping, and BOM/CRLF are the shared `downloadCsv`'s job.
  */
-function buildCsv(payload: unknown): string {
-  const rows = extractRows(payload);
-  if (rows.length === 0) return "";
-  return rowsToCsv(rows.map((row) => flattenRecord(row)));
+function buildRows(payload: unknown): Record<string, string>[] {
+  return extractRows(payload).map((row) => flattenRecord(row));
 }
 
 function extractRows(payload: unknown): ReportRow[] {
@@ -139,11 +137,6 @@ function truncationSummary(truncation: ReportTruncation): string {
   return truncation.rowLimit
     ? `Capped at ${truncation.rowLimit.toLocaleString()} rows.`
     : "The API reported this report as incomplete.";
-}
-
-function downloadCsv(kind: ReportKind, csv: string) {
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  downloadBlob(blob, `frapp-${kind}-${new Date().toISOString().slice(0, 10)}.csv`);
 }
 
 export function ReportsPage() {
@@ -346,8 +339,7 @@ export function ReportsPage() {
 
   function exportCsv() {
     if (!preview || preview.length === 0) return;
-    const csv = buildCsv(preview);
-    downloadCsv(kind, csv);
+    downloadCsv(buildRows(preview), kind);
     // The CSV is serialized from the preview, so it inherits the preview's
     // truncation. Saying so at download time is the last point before the file
     // leaves the app and stops carrying any context at all.

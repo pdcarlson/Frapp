@@ -151,6 +151,12 @@ describe("EventsPage bulk actions", () => {
         expect.objectContaining({
           title: "Some events couldn't be finalized",
           variant: "destructive",
+          // Names the event and the real rejection reason, rather than a
+          // generic "probably the grace period" guess that would be wrong
+          // here — the mutation actually rejected with a different message.
+          description: expect.stringContaining(
+            "Chapter Meeting: Cannot mark auto-absent before the grace period ends",
+          ),
         }),
       ),
     );
