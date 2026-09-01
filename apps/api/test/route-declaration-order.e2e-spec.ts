@@ -91,7 +91,9 @@ describe('Route declaration order — a literal route must not be swallowed by :
 
   const financialInvoiceServiceMock = {
     findOverdue: jest.fn().mockResolvedValue([]),
-    findById: jest.fn().mockResolvedValue({ id: 'wrong-handler', user_id: 'member-1' }),
+    findById: jest
+      .fn()
+      .mockResolvedValue({ id: 'wrong-handler', user_id: 'member-1' }),
   };
 
   const backworkServiceMock = {
@@ -253,9 +255,7 @@ describe('Route declaration order — a literal route must not be swallowed by :
       .set('x-chapter-id', CHAPTER_ID)
       .expect(200);
 
-    expect(backworkServiceMock.getDepartments).toHaveBeenCalledWith(
-      CHAPTER_ID,
-    );
+    expect(backworkServiceMock.getDepartments).toHaveBeenCalledWith(CHAPTER_ID);
     expect(backworkServiceMock.findById).not.toHaveBeenCalled();
   });
 
@@ -266,9 +266,7 @@ describe('Route declaration order — a literal route must not be swallowed by :
       .set('x-chapter-id', CHAPTER_ID)
       .expect(200);
 
-    expect(backworkServiceMock.getProfessors).toHaveBeenCalledWith(
-      CHAPTER_ID,
-    );
+    expect(backworkServiceMock.getProfessors).toHaveBeenCalledWith(CHAPTER_ID);
     expect(backworkServiceMock.findById).not.toHaveBeenCalled();
   });
 });
