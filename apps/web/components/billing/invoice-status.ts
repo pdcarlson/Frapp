@@ -27,13 +27,15 @@ import type { BadgeKind } from "@/components/ui/badge";
  * An earlier cut of this mapper carried an `OVERDUE` branch that could never be
  * reached.
  *
- * The parameter is `string` rather than that union because one of the two call
- * sites types its rows loosely and compares against `"OVERDUE"` — the dead
- * comparison #1196 is about. Tightening this signature is the right end state
- * and will surface that bug as a compile error; it is #1196's to do, not a
- * repaint's.
+ * The parameter used to be `string` because one of the two call sites
+ * (`app/(dashboard)/billing/page.tsx`) typed its rows loosely and compared
+ * against `"OVERDUE"` — the dead comparison #1196/#707 was about. Both call
+ * sites now type their rows against this same union, so the dead comparison
+ * is a compile error if it comes back.
  */
-export function invoiceStatusKind(status: string): BadgeKind {
+export function invoiceStatusKind(
+  status: "DRAFT" | "OPEN" | "PAID" | "VOID",
+): BadgeKind {
   switch (status) {
     case "PAID":
       return "success";
