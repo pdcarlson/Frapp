@@ -144,6 +144,68 @@ describe("ensureVercelStagingAlias", () => {
     assert.match(result.message, /BUILDING/);
   });
 
+  // #1377: a deployment that has fallen off the first page must still be
+  // found, not read as "no deployment exists".
+  it("finds a deployment on a later page via the cursor", async () => {
+    let deploymentsCallCount = 0;
+    const fetchImpl = async (url, options) => {
+      if (url.includes("/v6/deployments")) {
+        deploymentsCallCount += 1;
+        if (!url.includes("until=")) {
+          return okJson({
+            deployments: [
+              { uid: "dpl_other", state: "READY", created: 200, meta: { githubCommitSha: "other" } },
+            ],
+            pagination: { next: 100 },
+          });
+        }
+        assert.match(url, /until=100/);
+        return okJson({
+          deployments: [
+            { uid: "dpl_target", state: "READY", created: 50, meta: { githubCommitSha: SHA } },
+          ],
+        });
+      }
+      if (url.includes("/v2/deployments/dpl_target/aliases") && options?.method !== "POST") {
+        return okJson({ aliases: [{ alias: STAGING }] });
+      }
+      assert.fail(`unexpected url ${url}`);
+    };
+
+    const result = await ensureVercelStagingAlias({
+      apiKey: API_KEY,
+      projectId: PROJECT_ID,
+      sha: SHA,
+      stagingAlias: STAGING,
+      fetchImpl,
+    });
+
+    assert.equal(result.status, "success");
+    assert.equal(deploymentsCallCount, 2);
+  });
+
+  it("names how many pages it searched when nothing matches", async () => {
+    const fetchImpl = async (url) => {
+      assert.match(url, /\/v6\/deployments/);
+      return okJson({
+        deployments: [
+          { uid: "dpl_other", state: "READY", createdAt: "2026-04-16T00:00:00Z", meta: { githubCommitSha: "other" } },
+        ],
+      });
+    };
+
+    const result = await ensureVercelStagingAlias({
+      apiKey: API_KEY,
+      projectId: PROJECT_ID,
+      sha: SHA,
+      stagingAlias: STAGING,
+      fetchImpl,
+    });
+
+    assert.equal(result.status, "skipped");
+    assert.match(result.message, /searched all 1 page/);
+  });
+
   it("skips when latest deployment for SHA is CANCELED", async () => {
     const fetchImpl = async (url) => {
       if (url.includes("/v6/deployments")) {
