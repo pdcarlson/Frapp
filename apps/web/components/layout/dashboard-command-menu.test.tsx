@@ -1,5 +1,6 @@
-import { render, screen } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // The menu only needs a router object present; navigation itself isn't exercised.
 vi.mock("next/navigation", () => ({
@@ -8,12 +9,15 @@ vi.mock("next/navigation", () => ({
 
 const useOrgConfig = vi.fn();
 const useMyPermissions = vi.fn();
+const useSearch = vi.fn();
+useSearch.mockReturnValue({ data: undefined, isFetching: false });
 
-// Search is a separate surface (#264 is about the Navigation group), so keep it
-// quiet and let the navigation filter be the only thing under test.
+// Search is a separate surface (#264 is about the Navigation group), so the
+// module-gating/permission-gating suites below keep it quiet — only the
+// "search timeout" suite further down overrides this default.
 vi.mock("@repo/hooks", () => ({
   SEARCH_MIN_QUERY_LENGTH: 2,
-  useSearch: () => ({ data: undefined, isFetching: false }),
+  useSearch: () => useSearch(),
   useOrgConfig: () => useOrgConfig(),
   useMyPermissions: () => useMyPermissions(),
 }));
@@ -206,5 +210,128 @@ describe("the palette and the sidebar are one list", () => {
     for (const command of navigationCommands) {
       expect(command.item.href).toBe(command.href);
     }
+  });
+});
+
+// #604: spec/behavior/search.md requires the client to distinguish "we found
+// nothing" (no header) from "we stopped looking here" (x-search-timeout).
+describe("DashboardCommandMenu search timeout", () => {
+  beforeEach(() => {
+    useOrgConfig.mockReset();
+    useMyPermissions.mockReset();
+    withModules([]);
+    withPermissions(["*"]);
+  });
+
+  afterEach(() => {
+    useSearch.mockReturnValue({ data: undefined, isFetching: false });
+  });
+
+  async function typeQuery(text: string) {
+    const input = screen.getByPlaceholderText(
+      "Search members, events, backwork, or jump to a route...",
+    );
+    await userEvent.type(input, text);
+    // The palette debounces the query 200ms before it counts as "hasMinQuery" —
+    // "No matching commands." is the no-query/short-query default and always
+    // clears once the debounce elapses, regardless of which branch follows.
+    await waitFor(
+      () =>
+        expect(screen.queryByText("No matching commands.")).not.toBeInTheDocument(),
+      { timeout: 1000 },
+    );
+  }
+
+  it("shows the generic empty copy for a true empty result (no timeout)", async () => {
+    useSearch.mockReturnValue({
+      data: { payload: {}, timedOut: false, timedOutSources: [] },
+      isFetching: false,
+    });
+    render(<DashboardCommandMenu open onOpenChange={() => {}} />);
+
+    await typeQuery("nomatch");
+
+    expect(screen.getByText("No matches across chapter data.")).toBeInTheDocument();
+    expect(screen.queryByText(/timed out/i)).not.toBeInTheDocument();
+  });
+
+  it("shows timeout-specific copy instead of the generic empty state", async () => {
+    useSearch.mockReturnValue({
+      data: { payload: {}, timedOut: true, timedOutSources: [] },
+      isFetching: false,
+    });
+    render(<DashboardCommandMenu open onOpenChange={() => {}} />);
+
+    await typeQuery("slowterm");
+
+    expect(
+      screen.getByText("Search timed out — try a shorter query or try again."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("No matches across chapter data."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows a partial-degradation notice when some sources timed out but others returned hits", async () => {
+    useSearch.mockReturnValue({
+      data: {
+        payload: { members: [{ user_id: "u1", display_name: "Alex Chen" }] },
+        timedOut: true,
+        timedOutSources: ["messages"],
+      },
+      isFetching: false,
+    });
+    render(<DashboardCommandMenu open onOpenChange={() => {}} />);
+
+    await typeQuery("alex");
+
+    expect(screen.getByText("Alex Chen")).toBeInTheDocument();
+    expect(
+      screen.getByText("Chat search was incomplete — results may be missing."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a full-timeout notice even when a navigation command also matches the query", async () => {
+    // "eve" both clears SEARCH_MIN_QUERY_LENGTH and substring-matches "Go to
+    // Events", so cmdk (shouldFilter={false}) never mounts CommandEmpty —
+    // the only place the timeout copy lived before this notice existed.
+    useSearch.mockReturnValue({
+      data: {
+        payload: {},
+        timedOut: true,
+        timedOutSources: ["backwork", "events", "members", "messages"],
+      },
+      isFetching: false,
+    });
+    render(<DashboardCommandMenu open onOpenChange={() => {}} />);
+
+    const input = screen.getByPlaceholderText(
+      "Search members, events, backwork, or jump to a route...",
+    );
+    await userEvent.type(input, "eve");
+
+    expect(screen.getByText("Go to Events")).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        "Backwork, Events, Members, and Chat search were incomplete — results may be missing.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("shows no timeout notice when nothing timed out", async () => {
+    useSearch.mockReturnValue({
+      data: {
+        payload: { members: [{ user_id: "u1", display_name: "Alex Chen" }] },
+        timedOut: false,
+        timedOutSources: [],
+      },
+      isFetching: false,
+    });
+    render(<DashboardCommandMenu open onOpenChange={() => {}} />);
+
+    await typeQuery("alex");
+
+    expect(screen.getByText("Alex Chen")).toBeInTheDocument();
+    expect(screen.queryByText(/incomplete/i)).not.toBeInTheDocument();
   });
 });
