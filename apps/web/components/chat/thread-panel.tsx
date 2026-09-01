@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MessageItem } from "./message-item";
@@ -37,6 +37,11 @@ export function ThreadPanel({
     if (!parent) return [];
     return allMessages.filter((message) => message.reply_to_id === parent.id);
   }, [allMessages, parent]);
+
+  // Own reveal state, separate from the centre timeline's: this panel is a
+  // different list, and "tapping elsewhere dismisses this" only needs to
+  // hold within one list (#1193).
+  const [tapRevealedId, setTapRevealedId] = useState<string | null>(null);
 
   if (!parent) return null;
 
@@ -82,6 +87,13 @@ export function ThreadPanel({
             showHeader
             onReact={onReact}
             onUnreact={onUnreact}
+            isTapRevealed={
+              tapRevealedId === (parent.client_message_id ?? parent.id)
+            }
+            onToggleTapReveal={() => {
+              const id = parent.client_message_id ?? parent.id;
+              setTapRevealedId((current) => (current === id ? null : id));
+            }}
           />
           {replies.length === 0 ? (
             <p className="px-5 py-4 text-[12.5px] text-muted-foreground">
@@ -97,6 +109,14 @@ export function ThreadPanel({
                 showHeader
                 onReact={onReact}
                 onUnreact={onUnreact}
+                isTapRevealed={
+                  tapRevealedId ===
+                  (message.client_message_id ?? message.id)
+                }
+                onToggleTapReveal={() => {
+                  const id = message.client_message_id ?? message.id;
+                  setTapRevealedId((current) => (current === id ? null : id));
+                }}
               />
             ))
           )}

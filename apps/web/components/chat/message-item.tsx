@@ -38,6 +38,16 @@ export interface MessageItemProps {
     actionType: string,
     payload: Record<string, unknown>,
   ) => void;
+  /**
+   * Whether *this* row's action cluster is the one a tap revealed. Required,
+   * not owned locally: a coarse pointer has no `:hover`, so the reveal has to
+   * be tap-to-toggle (#1193), and "tapping one row dismisses any other" needs
+   * one id the parent list holds — a `useState` per row could not enforce
+   * that a second tap elsewhere closes the first.
+   */
+  isTapRevealed: boolean;
+  /** Toggles `isTapRevealed` for this row, and dismisses every other row's. */
+  onToggleTapReveal: () => void;
 }
 
 /**
@@ -71,6 +81,8 @@ export function MessageItem({
   onRetry,
   onDiscard,
   onAct,
+  isTapRevealed,
+  onToggleTapReveal,
 }: MessageItemProps) {
   const isMine = !!viewerId && message.sender_id === viewerId;
   // Resolved for every sender including the viewer: the label says "You" for its
@@ -92,6 +104,22 @@ export function MessageItem({
   const isConfirmed = message._status === "confirmed";
   const selfBubble = isMine && rendersAsBubble(message);
   const showActions = !message.is_deleted && isConfirmed;
+
+  /*
+   * Tap-to-reveal, for the pointer the hover/focus-within reveal below cannot
+   * reach (#1193). `onClick`, not `onTouchStart` or a press handler: a native
+   * click already fires only on a tap the browser did not treat as a scroll
+   * or a drag, which is the "must not fire on an accidental scroll-touch"
+   * acceptance criterion for free. The `getSelection` guard is the other
+   * half — without it, finishing a text selection inside the bubble with a
+   * lift-off (which does end in a click on most engines) would also toggle
+   * the cluster right as the member is trying to copy something.
+   */
+  function handleRowTap() {
+    if (!showActions) return;
+    if ((window.getSelection()?.toString().length ?? 0) > 0) return;
+    onToggleTapReveal();
+  }
 
   const renderer = (
     <>
@@ -146,14 +174,27 @@ export function MessageItem({
    *   permanent ~32px strip, which is most of the compactness the 5-minute
    *   grouping exists to buy. It is absolutely positioned against the row
    *   instead, on the side away from the bubble's tail.
+   *
+   * `:hover`/`:focus-within` still reach nothing on a coarse pointer, which
+   * left the cluster genuinely unreachable there (#1193) — `isTapRevealed`
+   * below is the third way in, driven by `handleRowTap`.
    */
   const actions = showActions ? (
     <div
       className={cn(
         "absolute top-0 z-10 flex items-center gap-1.5 rounded-sm bg-background p-1",
-        "pointer-events-none opacity-0 transition-opacity",
+        "transition-opacity",
         "group-hover/message:pointer-events-auto group-hover/message:opacity-100",
         "group-focus-within/message:pointer-events-auto group-focus-within/message:opacity-100",
+        // Coarse-pointer path: a tap on the row sets `isTapRevealed`, since
+        // `:hover`/`:focus-within` never fire there. Kept as a JS-driven
+        // class rather than a `pointer-coarse:` variant so the same row also
+        // works from a stylus or a mouse click, and so "tapping elsewhere
+        // dismisses this" (the parent list's single `tapRevealedId`) has
+        // something to key off.
+        isTapRevealed
+          ? "pointer-events-auto opacity-100"
+          : "pointer-events-none opacity-0",
         selfBubble ? "left-5" : "right-5",
       )}
     >
@@ -185,6 +226,7 @@ export function MessageItem({
           showHeader ? "pt-4" : "pt-1",
         )}
         data-status={message._status}
+        onClick={handleRowTap}
       >
         <div className="flex max-w-[86%] flex-col items-end">
           {renderer}
@@ -258,6 +300,7 @@ export function MessageItem({
         showHeader ? "pt-4" : "pt-1",
       )}
       data-status={message._status}
+      onClick={handleRowTap}
     >
       {/* 32px avatar + 10px gap, s05. The gutter is held open on grouped rows. */}
       <div className="w-8 shrink-0">
