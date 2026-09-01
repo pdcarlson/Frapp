@@ -30,6 +30,7 @@ describe('UserService', () => {
     mockStorageProvider = {
       getSignedUploadUrl: jest.fn(),
       getSignedDownloadUrl: jest.fn(),
+      getSignedDownloadUrls: jest.fn().mockResolvedValue({}),
       uploadFile: jest.fn(),
       downloadFile: jest.fn(),
       deleteFile: jest.fn(),

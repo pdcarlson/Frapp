@@ -195,6 +195,27 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
     return data;
   }
 
+  async findAuthorAvatarPaths(
+    channelId: string,
+    messageIds: string[],
+  ): Promise<string[]> {
+    if (messageIds.length === 0) return [];
+    const { data, error } = await this.supabase
+      .from('chat_messages')
+      .select('author_avatar_path')
+      .eq('channel_id', channelId)
+      .in('id', messageIds)
+      .not('author_avatar_path', 'is', null);
+    if (error) throw error;
+    return [
+      ...new Set(
+        (data ?? [])
+          .map((row) => row.author_avatar_path)
+          .filter((path): path is string => !!path),
+      ),
+    ];
+  }
+
   async create(data: TablesInsert<'chat_messages'>): Promise<ChatMessage> {
     const { data: created, error } = await this.supabase
       .from('chat_messages')

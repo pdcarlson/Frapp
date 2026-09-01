@@ -1,7 +1,7 @@
 "use client";
 
 import { Loader2, Trash2 } from "lucide-react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { CHIP, CHIP_HIT_AREA } from "./chip";
 import { PinGlyph, ThreadGlyph } from "./chat-glyphs";
@@ -19,6 +19,13 @@ import { cn, initials } from "@/lib/utils";
 
 export interface MessageItemProps {
   message: ChatMessage;
+  /**
+   * Signed URL for `message.author_avatar_path`, or `undefined` when there is
+   * none, it hasn't resolved yet, or resolving it failed (#1231) — every case
+   * degrades to the initials fallback identically, so callers don't need to
+   * distinguish "loading" from "no avatar".
+   */
+  avatarUrl?: string;
   viewerId: string | null;
   showHeader: boolean;
   /**
@@ -72,6 +79,7 @@ export interface MessageItemProps {
  */
 export function MessageItem({
   message,
+  avatarUrl,
   viewerId,
   showHeader,
   nameFor,
@@ -343,6 +351,7 @@ export function MessageItem({
       <div className="w-8 shrink-0">
         {showHeader ? (
           <Avatar className="h-8 w-8" aria-hidden="true">
+            {avatarUrl ? <AvatarImage src={avatarUrl} alt="" /> : null}
             <AvatarFallback>
               {authorName
                 ? initials(authorName)

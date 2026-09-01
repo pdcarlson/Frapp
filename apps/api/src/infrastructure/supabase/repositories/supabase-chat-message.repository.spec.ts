@@ -32,15 +32,28 @@ import {
 
 const CHANNEL_A = '0a000000-0000-4000-8000-000000000160';
 const CHANNEL_B = '0b000000-0000-4000-8000-000000000160';
+// A second channel per chapter, kept apart from CHANNEL_A/CHANNEL_B so the
+// extra fixture rows below don't perturb `findByChannel`/`findPollsByChapter`'s
+// existing single-message assertions. Seeded as an A/B pair (CHANNEL_A2 empty)
+// because the tenant harness requires every table seeded evenly across both
+// chapters to keep its cross-tenant collision guard meaningful.
+const CHANNEL_A2 = '0a000000-0000-4000-8000-000000000170';
+const CHANNEL_B2 = '0b000000-0000-4000-8000-000000000170';
 const POLL_A = '0a000000-0000-4000-8000-000000000161';
 const POLL_B = '0b000000-0000-4000-8000-000000000161';
 
-const message = (id: string, channelId: string, chapterId: string) => ({
+const message = (
+  id: string,
+  channelId: string,
+  chapterId: string,
+  authorAvatarPath: string | null = null,
+  type: string = 'POLL',
+) => ({
   id,
   channel_id: channelId,
   sender_id: USER_SHARED,
   content: 'Are you coming to formal?',
-  type: 'POLL',
+  type,
   reply_to_id: null,
   metadata: { expires_at: null },
   is_pinned: false,
@@ -48,18 +61,46 @@ const message = (id: string, channelId: string, chapterId: string) => ({
   edited_at: null,
   is_deleted: false,
   created_at: '2026-01-01T00:00:00.000Z',
+  author_avatar_path: authorAvatarPath,
   // How PostgREST projects `chat_channels!inner(chapter_id)` back onto the row.
   chat_channels: { chapter_id: chapterId },
 });
+
+const AVATAR_A =
+  'chapters/ch-a/chat-archive/imports/import-a/media/aaa-avatar.png';
+const AVATAR_B =
+  'chapters/ch-b/chat-archive/imports/import-b/media/bbb-avatar.png';
+const SHARED_AVATAR_B =
+  'chapters/ch-b/chat-archive/imports/import-b/media/shared.png';
+const WITH_SHARED_AVATAR_1 = '0b000000-0000-4000-8000-000000000162';
+const WITH_SHARED_AVATAR_2 = '0b000000-0000-4000-8000-000000000163';
+const WITHOUT_AVATAR = '0b000000-0000-4000-8000-000000000164';
 
 const seed = () => ({
   chat_channels: [
     inA({ id: CHANNEL_A, name: 'general', type: 'PUBLIC' }),
     inB({ id: CHANNEL_B, name: 'general', type: 'PUBLIC' }),
+    inA({ id: CHANNEL_A2, name: 'random', type: 'PUBLIC' }),
+    inB({ id: CHANNEL_B2, name: 'random', type: 'PUBLIC' }),
   ],
   chat_messages: [
-    message(POLL_A, CHANNEL_A, CHAPTER_A),
-    message(POLL_B, CHANNEL_B, CHAPTER_B),
+    message(POLL_A, CHANNEL_A, CHAPTER_A, AVATAR_A),
+    message(POLL_B, CHANNEL_B, CHAPTER_B, AVATAR_B),
+    message(
+      WITH_SHARED_AVATAR_1,
+      CHANNEL_B2,
+      CHAPTER_B,
+      SHARED_AVATAR_B,
+      'TEXT',
+    ),
+    message(
+      WITH_SHARED_AVATAR_2,
+      CHANNEL_B2,
+      CHAPTER_B,
+      SHARED_AVATAR_B,
+      'TEXT',
+    ),
+    message(WITHOUT_AVATAR, CHANNEL_B2, CHAPTER_B, null, 'TEXT'),
   ],
 });
 
@@ -133,5 +174,25 @@ describe('SupabaseChatMessageRepository — tenant scope', () => {
 
     expect(foreign?.id).toBe(POLL_A);
     expect(harness.ops[0].filters.map((f) => f.column)).toEqual(['id']);
+  });
+
+  it('findAuthorAvatarPaths ignores a message id belonging to another channel (#1231)', async () => {
+    // `ChatService.resolveAuthorAvatars` never trusts a caller-supplied
+    // storage path — it derives the path set from message ids the caller
+    // already proved access to via `channelId`. A POLL_A id handed to
+    // channel B's lookup must contribute nothing, or that boundary is a lie.
+    const paths = await repo.findAuthorAvatarPaths(CHANNEL_B, [POLL_A, POLL_B]);
+
+    expect(paths).toEqual([AVATAR_B]);
+  });
+
+  it('findAuthorAvatarPaths dedupes repeated paths and drops nulls', async () => {
+    const paths = await repo.findAuthorAvatarPaths(CHANNEL_B2, [
+      WITH_SHARED_AVATAR_1,
+      WITH_SHARED_AVATAR_2,
+      WITHOUT_AVATAR,
+    ]);
+
+    expect(paths).toEqual([SHARED_AVATAR_B]);
   });
 });

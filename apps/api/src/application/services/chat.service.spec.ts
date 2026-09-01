@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import {
+  Logger,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
@@ -155,6 +156,7 @@ describe('ChatService', () => {
       countPinnedByChannel: jest.fn(),
       findPollsByChapter: jest.fn(),
       findByClientMessageId: jest.fn(),
+      findAuthorAvatarPaths: jest.fn().mockResolvedValue([]),
       create: jest.fn(),
       update: jest.fn(),
     };
@@ -186,6 +188,7 @@ describe('ChatService', () => {
     mockStorageProvider = {
       getSignedUploadUrl: jest.fn(),
       getSignedDownloadUrl: jest.fn(),
+      getSignedDownloadUrls: jest.fn().mockResolvedValue({}),
       uploadFile: jest.fn(),
       downloadFile: jest.fn(),
       deleteFile: jest.fn(),
@@ -1152,13 +1155,16 @@ describe('ChatService', () => {
       await expect(
         service.listMessageAttachments('ch-chan-1', 'ch-1', 'user-1', 'msg-1'),
       ).rejects.toThrow(NotFoundException);
-      expect(mockStorageProvider.getSignedDownloadUrl).not.toHaveBeenCalled();
+      expect(mockStorageProvider.getSignedDownloadUrls).not.toHaveBeenCalled();
     });
 
     it('omits an attachment it cannot sign rather than failing the whole list', async () => {
-      // One stale path used to reject the Promise.all and take every intact
-      // attachment on the message down with it — the reader saw "attachments
-      // couldn't be loaded" for files that were perfectly fine.
+      // One stale path missing from the batch-sign response used to reject
+      // the per-row Promise.all and take every intact attachment on the
+      // message down with it — the reader saw "attachments couldn't be
+      // loaded" for files that were perfectly fine. `getSignedDownloadUrls`
+      // omits an unsignable path from its result rather than rejecting, so
+      // this now exercises that same guarantee one level up.
       mockChannelRepo.findById.mockResolvedValue(baseChannel);
       mockMessageRepo.findById.mockResolvedValue(baseMessage);
       mockAttachmentRepo.findByMessage.mockResolvedValue([
@@ -1169,9 +1175,10 @@ describe('ChatService', () => {
           storage_path: 'chapters/ch-1/chat/ch-chan-1/msg-1/gone.pdf',
         },
       ]);
-      mockStorageProvider.getSignedDownloadUrl
-        .mockResolvedValueOnce('https://signed/minutes.pdf')
-        .mockRejectedValueOnce(new Error('Object not found'));
+      mockStorageProvider.getSignedDownloadUrls.mockResolvedValue({
+        [attachmentRow.storage_path]: 'https://signed/minutes.pdf',
+        // 'gone.pdf' deliberately absent — the stale-path case.
+      });
 
       const rows = await service.listMessageAttachments(
         'ch-chan-1',
@@ -1182,6 +1189,215 @@ describe('ChatService', () => {
 
       expect(rows).toHaveLength(1);
       expect(rows[0].download_url).toBe('https://signed/minutes.pdf');
+      expect(mockStorageProvider.getSignedDownloadUrls).toHaveBeenCalledTimes(
+        1,
+      );
+      expect(mockStorageProvider.getSignedDownloadUrls).toHaveBeenCalledWith(
+        'chat',
+        [
+          attachmentRow.storage_path,
+          'chapters/ch-1/chat/ch-chan-1/msg-1/gone.pdf',
+        ],
+        expect.any(Number),
+        true,
+      );
+    });
+
+    it('omits every attachment on a bucket rather than throwing when the whole batch fails to sign', async () => {
+      // The same guarantee as the single-row case, one level up: a
+      // whole-bucket failure (network error, bucket unreachable) must not
+      // 500 the request — it degrades to an empty list, same as before this
+      // was batched.
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockMessageRepo.findById.mockResolvedValue(baseMessage);
+      mockAttachmentRepo.findByMessage.mockResolvedValue([attachmentRow]);
+      mockStorageProvider.getSignedDownloadUrls.mockRejectedValue(
+        new Error('bucket unreachable'),
+      );
+
+      const rows = await service.listMessageAttachments(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+        'msg-1',
+      );
+
+      expect(rows).toHaveLength(0);
+    });
+
+    it('logs the whole-bucket failure once, not once per row it took down', async () => {
+      // Before this was deduped, a bucket-level failure produced one warn for
+      // the bucket (with the real error) plus one more per row in it (with
+      // no error) — N+1 log lines carrying one cause. Only the bucket-level
+      // warn should fire; the per-row warn is for a path missing from an
+      // otherwise-successful bucket, not this case.
+      const warnSpy = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockMessageRepo.findById.mockResolvedValue(baseMessage);
+      mockAttachmentRepo.findByMessage.mockResolvedValue([
+        attachmentRow,
+        {
+          ...attachmentRow,
+          id: 'att-2',
+          storage_path: 'chapters/ch-1/chat/ch-chan-1/msg-1/other.pdf',
+        },
+      ]);
+      mockStorageProvider.getSignedDownloadUrls.mockRejectedValue(
+        new Error('bucket unreachable'),
+      );
+
+      await service.listMessageAttachments(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+        'msg-1',
+      );
+
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy).toHaveBeenCalledWith(
+        'Could not sign a batch of chat attachments; omitting them',
+        expect.objectContaining({ error: 'bucket unreachable' }),
+      );
+      warnSpy.mockRestore();
+    });
+
+    it('signs each bucket in its own batched call when attachments span more than one bucket', async () => {
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockMessageRepo.findById.mockResolvedValue(baseMessage);
+      const otherBucketRow = {
+        ...attachmentRow,
+        id: 'att-2',
+        bucket: 'chat-archive',
+        storage_path: 'chapters/ch-1/chat-archive/ch-chan-1/msg-1/legacy.pdf',
+      };
+      mockAttachmentRepo.findByMessage.mockResolvedValue([
+        attachmentRow,
+        otherBucketRow,
+      ]);
+      mockStorageProvider.getSignedDownloadUrls.mockImplementation(
+        async (bucket: string, paths: string[]) =>
+          Object.fromEntries(paths.map((p) => [p, `https://signed/${bucket}`])),
+      );
+
+      const rows = await service.listMessageAttachments(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+        'msg-1',
+      );
+
+      expect(rows).toHaveLength(2);
+      expect(mockStorageProvider.getSignedDownloadUrls).toHaveBeenCalledTimes(
+        2,
+      );
+      expect(mockStorageProvider.getSignedDownloadUrls).toHaveBeenCalledWith(
+        'chat',
+        [attachmentRow.storage_path],
+        expect.any(Number),
+        true,
+      );
+      expect(mockStorageProvider.getSignedDownloadUrls).toHaveBeenCalledWith(
+        'chat-archive',
+        [otherBucketRow.storage_path],
+        expect.any(Number),
+        true,
+      );
+    });
+  });
+
+  describe('resolveAuthorAvatars', () => {
+    // Matches `baseChannel`/`baseMember` wired in the outer `beforeEach`, so
+    // `assertChannelAccess` succeeds without per-test setup.
+    const CHANNEL = 'ch-chan-1';
+    const CHAPTER = 'ch-1';
+    const USER = 'user-1';
+    const validPath =
+      'chapters/ch-1/chat-archive/imports/import-1/media/abc-avatar.png';
+
+    it('signs the paths findAuthorAvatarPaths derives from the given message ids', async () => {
+      mockMessageRepo.findAuthorAvatarPaths.mockResolvedValue([validPath]);
+      mockStorageProvider.getSignedDownloadUrls.mockResolvedValue({
+        [validPath]: 'https://signed/avatar.png',
+      });
+
+      const result = await service.resolveAuthorAvatars(
+        CHANNEL,
+        CHAPTER,
+        USER,
+        ['msg-1', 'msg-2'],
+      );
+
+      expect(result).toEqual({ [validPath]: 'https://signed/avatar.png' });
+      expect(mockMessageRepo.findAuthorAvatarPaths).toHaveBeenCalledWith(
+        CHANNEL,
+        ['msg-1', 'msg-2'],
+      );
+      expect(mockStorageProvider.getSignedDownloadUrls).toHaveBeenCalledWith(
+        'chat-archive',
+        [validPath],
+        expect.any(Number),
+      );
+    });
+
+    it('never signs anything from a raw path — only from what findAuthorAvatarPaths returns for this channel', async () => {
+      // A message id from another channel contributes nothing because
+      // `findAuthorAvatarPaths` scopes its own query by `channelId` — proven
+      // at the repository layer (supabase-chat-message.repository.spec.ts);
+      // here it's proven that the service never bypasses that lookup with a
+      // caller-supplied path of its own.
+      mockMessageRepo.findAuthorAvatarPaths.mockResolvedValue([]);
+
+      const result = await service.resolveAuthorAvatars(
+        CHANNEL,
+        CHAPTER,
+        USER,
+        ['msg-from-another-channel'],
+      );
+
+      expect(result).toEqual({});
+      expect(mockStorageProvider.getSignedDownloadUrls).not.toHaveBeenCalled();
+    });
+
+    it('rejects a caller with no access to the channel before deriving any paths', async () => {
+      mockChannelRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.resolveAuthorAvatars(CHANNEL, CHAPTER, USER, ['msg-1']),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockMessageRepo.findAuthorAvatarPaths).not.toHaveBeenCalled();
+      expect(mockStorageProvider.getSignedDownloadUrls).not.toHaveBeenCalled();
+    });
+
+    it('returns an empty map rather than throwing when signing fails entirely', async () => {
+      mockMessageRepo.findAuthorAvatarPaths.mockResolvedValue([validPath]);
+      mockStorageProvider.getSignedDownloadUrls.mockRejectedValue(
+        new Error('bucket unreachable'),
+      );
+
+      const result = await service.resolveAuthorAvatars(
+        CHANNEL,
+        CHAPTER,
+        USER,
+        ['msg-1'],
+      );
+
+      expect(result).toEqual({});
+    });
+
+    it('is a no-op that never calls the storage provider when no message has an avatar path', async () => {
+      mockMessageRepo.findAuthorAvatarPaths.mockResolvedValue([]);
+
+      const result = await service.resolveAuthorAvatars(
+        CHANNEL,
+        CHAPTER,
+        USER,
+        [],
+      );
+
+      expect(result).toEqual({});
+      expect(mockStorageProvider.getSignedDownloadUrls).not.toHaveBeenCalled();
     });
   });
 

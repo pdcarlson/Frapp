@@ -10,6 +10,7 @@ describe('SupabaseStorageService', () => {
   let download: jest.Mock;
   let upload: jest.Mock;
   let createSignedUrl: jest.Mock;
+  let createSignedUrls: jest.Mock;
   let createSignedUploadUrl: jest.Mock;
 
   beforeEach(async () => {
@@ -20,6 +21,7 @@ describe('SupabaseStorageService', () => {
     createSignedUrl = jest
       .fn()
       .mockResolvedValue({ data: { signedUrl: 'd' }, error: null });
+    createSignedUrls = jest.fn().mockResolvedValue({ data: [], error: null });
     createSignedUploadUrl = jest
       .fn()
       .mockResolvedValue({ data: { signedUrl: 'u' }, error: null });
@@ -31,6 +33,7 @@ describe('SupabaseStorageService', () => {
           download,
           upload,
           createSignedUrl,
+          createSignedUrls,
           createSignedUploadUrl,
         })),
       },
@@ -252,6 +255,102 @@ describe('SupabaseStorageService', () => {
         service.deleteFiles('profiles', ['p/x.png']),
       ).rejects.toBeTruthy();
     });
+  });
+
+  describe('getSignedDownloadUrls', () => {
+    it('returns a path → signedUrl map from the batch response', async () => {
+      createSignedUrls.mockResolvedValueOnce({
+        data: [
+          { path: 'p/a.png', signedUrl: 'https://signed/a', error: null },
+          { path: 'p/b.png', signedUrl: 'https://signed/b', error: null },
+        ],
+        error: null,
+      });
+
+      const result = await service.getSignedDownloadUrls('profiles', [
+        'p/a.png',
+        'p/b.png',
+      ]);
+
+      expect(result).toEqual({
+        'p/a.png': 'https://signed/a',
+        'p/b.png': 'https://signed/b',
+      });
+    });
+
+    it('omits a path the batch reports an error for, rather than failing the whole call', async () => {
+      createSignedUrls.mockResolvedValueOnce({
+        data: [
+          { path: 'p/a.png', signedUrl: 'https://signed/a', error: null },
+          { path: 'p/gone.png', signedUrl: null, error: 'not found' },
+        ],
+        error: null,
+      });
+
+      const result = await service.getSignedDownloadUrls('profiles', [
+        'p/a.png',
+        'p/gone.png',
+      ]);
+
+      expect(result).toEqual({ 'p/a.png': 'https://signed/a' });
+    });
+
+    it('signs paths in chunks of at most 100 per call', async () => {
+      const paths = Array.from({ length: 150 }, (_, i) => `p/${i}.png`);
+      createSignedUrls.mockImplementation(async (chunk: string[]) => ({
+        data: chunk.map((p) => ({ path: p, signedUrl: `s/${p}`, error: null })),
+        error: null,
+      }));
+
+      const result = await service.getSignedDownloadUrls('profiles', paths);
+
+      expect(createSignedUrls).toHaveBeenCalledTimes(2);
+      expect(createSignedUrls.mock.calls[0][0]).toHaveLength(100);
+      expect(createSignedUrls.mock.calls[1][0]).toHaveLength(50);
+      expect(Object.keys(result)).toHaveLength(150);
+    });
+
+    it('propagates a whole-batch error', async () => {
+      createSignedUrls.mockResolvedValueOnce({
+        data: null,
+        error: { message: 'bucket unreachable' },
+      });
+
+      await expect(
+        service.getSignedDownloadUrls('profiles', ['p/a.png']),
+      ).rejects.toBeTruthy();
+    });
+
+    it('omits the download option by default', async () => {
+      await service.getSignedDownloadUrls('profiles', ['p/a.png']);
+
+      expect(createSignedUrls).toHaveBeenCalledWith(
+        ['p/a.png'],
+        3600,
+        undefined,
+      );
+    });
+
+    it('forces Content-Disposition: attachment when forceDownload is true — the mislabeled-MIME mitigation spec/behavior/chat/README.md documents for attachments', async () => {
+      await service.getSignedDownloadUrls('chat', ['p/a.pdf'], 3600, true);
+
+      expect(createSignedUrls).toHaveBeenCalledWith(['p/a.pdf'], 3600, {
+        download: true,
+      });
+    });
+
+    it.each([
+      'chapters/a/branding/../../../reports/chapters/b/secret.pdf',
+      '../outside.png',
+    ])(
+      'rejects a traversal path %p without calling the provider',
+      async (path) => {
+        await expect(
+          service.getSignedDownloadUrls('profiles', ['p/ok.png', path]),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(createSignedUrls).not.toHaveBeenCalled();
+      },
+    );
   });
 
   /**
