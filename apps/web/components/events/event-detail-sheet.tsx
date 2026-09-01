@@ -386,9 +386,14 @@ export function EventDetailSheet({
           {notes ? (
             <div className="rounded-lg border border-border p-3">
               <p className="mb-1 text-[12.5px] text-muted-foreground">
-                Internal notes
+                Meeting minutes
               </p>
-              <p className="text-sm">{notes}</p>
+              {/* Same plain-text convention as chat's TextRenderer (#369 owns
+                  a real markdown renderer if that lands later) — preserve the
+                  line breaks admins typed instead of collapsing them. */}
+              <p className="whitespace-pre-wrap break-words text-sm">
+                {notes}
+              </p>
             </div>
           ) : null}
 
