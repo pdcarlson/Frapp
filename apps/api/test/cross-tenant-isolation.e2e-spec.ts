@@ -357,6 +357,41 @@ describe('Cross-tenant isolation (e2e)', () => {
 
       expect(res.status).toBe(200);
     });
+
+    // The assertion is duplicated per handler rather than centralized, so a
+    // future edit could drop it from one route without the others noticing —
+    // each of the three needs its own rejection case, not just GET's.
+    it('rejects a mismatched URL chapter id on PATCH', async () => {
+      app = await boot({ active_chapter_id: CHAPTER_B });
+
+      const res = await asBob(
+        request(app.getHttpServer())
+          .patch(`${V1}/chapters/${CHAPTER_A}/config`)
+          .send({ org_archetype: 'ifc' }),
+      );
+
+      expect(res.status).toBe(403);
+      expectDeniedBody(
+        res.body,
+        'The chapter id in the URL disagrees with your active chapter context.',
+      );
+    });
+
+    it('rejects a mismatched URL chapter id on POST theme-palette', async () => {
+      app = await boot({ active_chapter_id: CHAPTER_B });
+
+      const res = await asBob(
+        request(app.getHttpServer()).post(
+          `${V1}/chapters/${CHAPTER_A}/theme-palette`,
+        ),
+      );
+
+      expect(res.status).toBe(403);
+      expectDeniedBody(
+        res.body,
+        'The chapter id in the URL disagrees with your active chapter context.',
+      );
+    });
   });
 
   describe('client-supplied chapter id outside ChapterGuard', () => {

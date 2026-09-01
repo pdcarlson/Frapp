@@ -89,7 +89,11 @@ export class ChapterConfigController {
    * than a leak (#866): reject the mismatch instead of silently ignoring it.
    */
   private assertMatchesActiveChapter(id: string, chapterId: string): void {
-    if (id !== chapterId) {
+    // Lowercased: UUIDs are case-insensitive per RFC 4122 and Postgres/JWT
+    // claims are always lowercase, but the URL segment is caller-supplied —
+    // an uppercased-but-otherwise-matching id must not 403 a legitimate
+    // same-chapter request.
+    if (id.toLowerCase() !== chapterId.toLowerCase()) {
       throw new ForbiddenException({
         code: 'chapter.context.mismatch',
         message:
