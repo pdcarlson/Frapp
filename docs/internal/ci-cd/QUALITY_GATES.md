@@ -312,6 +312,32 @@ There is **no coverage threshold and no coverage gate.** Coverage is a measureme
 target — the point is to be able to see the refactor's real impact. Adding a threshold is a separate
 decision.
 
+### The spec's "minimum 80%" claim, resolved (#321)
+
+`spec/architecture/README.md` used to state a flat "Minimum 80% line coverage for API modules" with
+nothing in CI enforcing it. Measured 2026-09-01 on `main` with `npm run test:cov -w apps/api`
+(`coverageProvider: "v8"`, `collectCoverageFrom: ["**/*.(t|j)s"]` — every file, including
+zero-logic `*.module.ts` DI wiring): **80.05% lines**, 2506 tests across 136 suites. Excluding the 35
+`*.module.ts` files (1,141 lines, each legitimately 0% since they carry no branches) raises it to
+82.25% lines, but function coverage stays under 80% (79.80%) either way.
+
+**Decision: keep coverage a measurement, not a gate — the spec was amended instead of adding a
+threshold.** Two reasons, not one:
+
+1. **No margin.** 80.05% against an 80% floor is not "meets the bar," it is "one refactor away from
+   a red build with no code defect behind it." A threshold that thin fails on noise, not
+   regressions — the exact "a check nobody can satisfy teaches people to route around it" failure
+   the `migration-drift` demotion (ADR-20) exists to avoid elsewhere in this repo.
+2. **No settled definition of the denominator.** `*.module.ts` wiring files are ~9% of tracked lines
+   and always read 0% — they are not undertested code, they are DI glue with no branches to test.
+   Whether they belong in the ratio at all is an unmade call, and picking one silently inside this
+   fix would bake in an unreviewed answer to a question nobody was asked.
+
+If a future PR wants to gate this, the honest path is: settle the denominator question first (most
+likely `collectCoverageFrom` excluding `*.module.ts`/`main.ts`), then set the floor a few points
+**below** the resulting measurement so it has room to absorb normal variance, and only ever raise it
+— never lower it to make a red run green, same rule as the jscpd ratchet above.
+
 `coverage/**` is ignored by the shared ESLint config
 ([`packages/eslint-config/base.js`](../../../packages/eslint-config/base.js)), and that line is
 load-bearing rather than tidiness: istanbul's HTML report assets carry an `/* eslint-disable */`
