@@ -588,12 +588,22 @@ export function ChatShell({
         </div>
         {activeChannel ? (
           <Composer
-            // Remounts the editor per channel so a baked-in-at-creation
-            // extension (the Tiptap `Placeholder`) is rebuilt from the new
-            // channel's name rather than showing the previous channel's —
-            // see #1014. The existing `draft`-sync effect below re-seeds
-            // content on mount, so this costs only focus/selection.
-            key={activeChannel.id}
+            // Remounts the editor whenever the channel *or its resolved
+            // display name* changes, so a baked-in-at-creation extension
+            // (the Tiptap `Placeholder`) is rebuilt from the current name
+            // rather than freezing a stale one — see #1014. Name alone
+            // matters too, not just id: a DM's `activeChannelName` can
+            // still read the `directChannelDisplayName` fallback
+            // ("Direct message") at mount, before `useChapterRoster()` /
+            // `useMemberDisplayNames()` resolve the participant's real
+            // name a moment later — same `activeChannel.id` throughout, so
+            // an id-only key would never pick up the correction. Costs
+            // focus/selection per switch, and can briefly seed the fresh
+            // editor from the outgoing channel's still-loading draft until
+            // `useChatChannel`'s async Dexie read resolves and the
+            // `draft`-sync effect below corrects it — tracked as #1497,
+            // pre-existing and not introduced by this `key`.
+            key={`${activeChannel.id}:${activeChannelName}`}
             channelId={activeChannel.id}
             channelName={activeChannelName}
             isDirect={
