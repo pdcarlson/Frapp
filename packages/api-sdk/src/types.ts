@@ -11,8 +11,25 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Health check */
+        /** Liveness check (always 2xx while the process is up) */
         get: operations["HealthController_check"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/health/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Readiness check (503 when a dependency is degraded) */
+        get: operations["HealthController_ready"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3460,6 +3477,23 @@ export interface components {
 export type $defs = Record<string, never>;
 export interface operations {
     HealthController_check: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    HealthController_ready: {
         parameters: {
             query?: never;
             header?: never;

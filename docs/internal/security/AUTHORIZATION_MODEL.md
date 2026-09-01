@@ -91,6 +91,7 @@ The interesting half. Each takes either **no** chapter id, or a client-supplied 
 | Route | Guards | Why it is safe |
 | --- | --- | --- |
 | `GET /health` | none | Liveness only; no tenant data |
+| `GET /health/ready` | none | Readiness probe for deploy smoke checks; no tenant data |
 | `POST /webhooks/stripe` | none (throttler skipped) | **HMAC signature** verified against `STRIPE_WEBHOOK_SECRET` before the body is parsed; an invalid signature is `401` (`webhook.controller.ts:52-66`). Not user-authenticated by design |
 | `GET /chapter-directory/search` | A | Public reference dataset (Greek orgs + universities). Contains no chapter-owned data |
 | `GET /analytics/identity` | A | **D** — returns the caller's own pseudonymous id |
