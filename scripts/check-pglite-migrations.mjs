@@ -889,11 +889,13 @@ console.log("\n=== Functional smoke: anonymize_user ===");
   // every assertion above stayed green while inserts into them were broken,
   // which is precisely how the defect reached review. Keep at least one write
   // per ping table here.
-  // A swallowed `realtime.send` failure must still be observable (#978) — each
+  // A swallowed ping-trigger failure must still be observable (#978) — each
   // trigger's exception handler now `raise warning`s with SQLERRM before
-  // swallowing. PGlite has no `realtime` schema, so every insert below already
-  // exercises the swallow; capture the notices this exec produces and assert
-  // one WARNING per ping table rather than only that the writes survived.
+  // swallowing (labeled "ping trigger failed", not "realtime.send failed":
+  // the handler also wraps the `changed` scan above the send call). PGlite
+  // has no `realtime` schema, so every insert below already exercises the
+  // swallow; capture the notices this exec produces and assert exactly one
+  // WARNING per ping table rather than only that the writes survived.
   try {
     const notices = [];
     await db.exec(
@@ -918,15 +920,23 @@ console.log("\n=== Functional smoke: anonymize_user ===");
 
     const warnings = notices.filter((n) => n.severity === "WARNING");
     const pingTables = ["notifications", "events", "event_attendance"];
-    const unwarned = pingTables.filter(
-      (t) => !warnings.some((n) => new RegExp(`realtime\\.send failed for ${t}\\b`).test(n.message ?? "")),
+    // Exact count, not merely "at least one": each table's trigger fires
+    // once for this transaction (one INSERT each), so a table reporting
+    // zero or more than one WARNING is itself a regression worth catching
+    // — e.g. a future migration accidentally double-registering a trigger.
+    const counts = Object.fromEntries(
+      pingTables.map((t) => [
+        t,
+        warnings.filter((n) => new RegExp(`ping trigger failed for ${t}\\b`).test(n.message ?? "")).length,
+      ]),
     );
-    if (unwarned.length === 0) {
-      console.log("OK    each swallowed realtime.send failure raised an observable WARNING");
+    const wrongCount = pingTables.filter((t) => counts[t] !== 1);
+    if (wrongCount.length === 0) {
+      console.log("OK    each swallowed realtime.send failure raised exactly one observable WARNING");
     } else {
       missing += 1;
       console.log(
-        `ERR   each swallowed realtime.send failure raised an observable WARNING\n        ↳ no WARNING seen for: ${unwarned.join(", ")} (got ${warnings.length} warning(s) total: ${JSON.stringify(warnings.map((n) => n.message))})`,
+        `ERR   each swallowed realtime.send failure raised exactly one observable WARNING\n        ↳ wrong count for: ${wrongCount.map((t) => `${t}=${counts[t]}`).join(", ")} (got ${warnings.length} warning(s) total: ${JSON.stringify(warnings.map((n) => n.message))})`,
       );
     }
   } catch (e) {
