@@ -316,17 +316,25 @@ export function useGetOrCreateDm() {
       if (error) throw error;
       return data;
     },
+    // Returning (not just starting) this promise makes mutateAsync's caller
+    // wait for it: the member directory's "Message" action navigates to
+    // /chat?channel=<id> right after this resolves, mounting a fresh
+    // useChannels() observer there. Without awaiting, invalidateQueries'
+    // default `refetchType: "active"` also silently no-ops here — the
+    // directory route has no mounted ["channels"] observer to refetch — so
+    // the new chat page would render the stale pre-DM channel list until a
+    // later background refetch caught up. `refetchType: "all"` refetches the
+    // cache entry regardless of whether anything currently observes it.
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["channels"] });
-      // The effective-level response is a function of the channel SET and each
-      // channel NAME (`defaultLevelFor` is name-keyed), so a create, rename or
-      // delete can change it. Lifting the prefs key out of the ["channels"]
-      // prefix removed the incidental coupling that used to cover this, so the
-      // channel-set mutations name it explicitly. Message-level and
-      // read-receipt mutations deliberately do NOT.
-      queryClient.invalidateQueries({
-        queryKey: ["channel-notification-preferences"],
-      });
+      return Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["channels"],
+          refetchType: "all",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["channel-notification-preferences"],
+        }),
+      ]);
     },
   });
 }
