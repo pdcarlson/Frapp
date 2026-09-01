@@ -9,14 +9,28 @@ const SAFE_URL_SCHEMES = new Set(["http", "https", "mailto"]);
 /**
  * A markdown link's `href` is user-typed text, not a vetted URL —
  * `[text](javascript:alert(1))` parses to a real anchor with that href.
- * react-markdown never renders raw HTML, but it does not vet link schemes,
- * so that check is this component's job. A schemeless href (`example.com`,
- * `/path`) is left alone: it resolves relative to this site, which is not
- * an injection vector, just a link that likely doesn't go where the sender
- * meant.
+ * react-markdown's own `urlTransform` already blocks a dangerous scheme
+ * before any component sees `href` (including a control-character-obfuscated
+ * one like `jav\tascript:`, which it neutralizes to `""` regardless of this
+ * function), so this check is defense in depth, not the only layer — but it
+ * has to hold on its own rather than quietly lean on that upstream behavior.
+ *
+ * One thing neither layer stops on its own: a **protocol-relative** href
+ * (`//attacker.example/login`) has no scheme to reject, so both react-
+ * markdown's transform and a naive version of this check wave it through as
+ * "relative." A browser resolves it against the current page's scheme to a
+ * real, external, clickable link — a phishing vector, not code execution,
+ * but exactly the kind of link a schemeless-href-is-safe assumption misses.
+ * A same-origin relative href (`example.com`, `/path`) has no such risk and
+ * is left alone.
  */
 function isSafeHref(href: string): boolean {
-  const scheme = /^([a-zA-Z][a-zA-Z\d+.-]*):/.exec(href)?.[1];
+  // Strip the same control characters a browser ignores when parsing a URL
+  // scheme, so `jav\tascript:` can't slip past the regex below by breaking
+  // the match rather than the intent.
+  const normalized = href.replace(/[\t\n\r]/g, "");
+  if (normalized.startsWith("//")) return false;
+  const scheme = /^([a-zA-Z][a-zA-Z\d+.-]*):/.exec(normalized)?.[1];
   return scheme === undefined || SAFE_URL_SCHEMES.has(scheme.toLowerCase());
 }
 

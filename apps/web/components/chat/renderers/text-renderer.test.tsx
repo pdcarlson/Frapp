@@ -79,6 +79,35 @@ describe("TextRenderer formatting", () => {
     expect(container.textContent).toContain("click me");
   });
 
+  it("neuters a tab-obfuscated javascript: link", () => {
+    const { container } = render(
+      <TextRenderer
+        message={message("[click me](jav\tascript:alert(1))")}
+        isSelf={false}
+      />,
+    );
+    expect(container.querySelector("a")).toBeNull();
+  });
+
+  it("neuters a protocol-relative link instead of linking off-site", () => {
+    const { container } = render(
+      <TextRenderer
+        message={message("[click me](//attacker.example/login)")}
+        isSelf={false}
+      />,
+    );
+    expect(container.querySelector("a")).toBeNull();
+    expect(container.textContent).toContain("click me");
+  });
+
+  it("still links a normal relative path on this site", () => {
+    render(
+      <TextRenderer message={message("see [settings](/settings)")} isSelf={false} />,
+    );
+    const link = screen.getByRole("link", { name: "settings" });
+    expect(link).toHaveAttribute("href", "/settings");
+  });
+
   it("never injects raw HTML from message content", () => {
     const { container } = render(
       <TextRenderer
