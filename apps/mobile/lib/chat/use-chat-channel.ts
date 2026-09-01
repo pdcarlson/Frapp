@@ -261,6 +261,51 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     setReactionErrorChannelId(channelId);
     if (reactionError !== null) setReactionError(null);
   }
+  /**
+   * Always the current `channelId`, for the generation check below. Refs
+   * cannot be read or written during render (`react-hooks/refs`), so this
+   * mirrors `channelId` via an effect rather than joining the render-time
+   * reset above.
+   */
+  const currentChannelIdRef = useRef(channelId);
+  useEffect(() => {
+    currentChannelIdRef.current = channelId;
+  }, [channelId]);
+  /**
+   * Bumped once per `react`/`unreact` dispatch. `reactAction`/`unreactAction`
+   * resolve asynchronously, so without a generation check a request that is
+   * still in flight when the member switches channels — or fires a second
+   * reaction before the first settles — reports its failure through a stale
+   * closure: `setReactionError` would run against whatever channel or action
+   * is on screen *by then*, not the one the request was actually for.
+   */
+  const reactionGenerationRef = useRef(0);
+  const reactWithErrorSink = useCallback(
+    (fn: typeof reactAction, args: Parameters<typeof reactAction>[1]) => {
+      if (!ctx) return Promise.resolve();
+      const forChannelId = channelId;
+      const generation = ++reactionGenerationRef.current;
+      setReactionError(null);
+      return fn(
+        {
+          ...ctx,
+          onError: (input) => {
+            // Stale if the channel has moved on, or a later react/unreact on
+            // this same channel has already superseded this one.
+            if (
+              currentChannelIdRef.current !== forChannelId ||
+              reactionGenerationRef.current !== generation
+            ) {
+              return;
+            }
+            setReactionError(input.description ?? input.title);
+          },
+        },
+        args,
+      );
+    },
+    [ctx, channelId],
+  );
 
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelDraftTimer = useCallback(() => {
@@ -326,26 +371,18 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
 
   const react = useCallback(
     async (messageId: string, emoji: string) => {
-      if (!channelId || !ctx) return;
-      setReactionError(null);
-      await reactAction(
-        { ...ctx, onError: (input) => setReactionError(input.description ?? input.title) },
-        { channelId, messageId, emoji },
-      );
+      if (!channelId) return;
+      await reactWithErrorSink(reactAction, { channelId, messageId, emoji });
     },
-    [channelId, ctx],
+    [channelId, reactWithErrorSink],
   );
 
   const unreact = useCallback(
     async (messageId: string, emoji: string) => {
-      if (!channelId || !ctx) return;
-      setReactionError(null);
-      await unreactAction(
-        { ...ctx, onError: (input) => setReactionError(input.description ?? input.title) },
-        { channelId, messageId, emoji },
-      );
+      if (!channelId) return;
+      await reactWithErrorSink(unreactAction, { channelId, messageId, emoji });
     },
-    [channelId, ctx],
+    [channelId, reactWithErrorSink],
   );
 
   const emitTyping = useCallback(() => {
