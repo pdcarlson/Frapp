@@ -121,6 +121,55 @@ export class CustomFieldService {
     }));
   }
 
+  /**
+   * Field ids + visibility for a chapter's fields whose `visibility` is in
+   * `allowed`, with no value lookup — the search path (#579/#588) needs the
+   * visibility tag alongside each id to scope `self`-tier matches to one
+   * member, which {@link findVisibleValuesForMember}'s single-member shape
+   * doesn't carry.
+   */
+  async findFieldIdsByVisibility(
+    chapterId: string,
+    allowed: Set<CustomFieldVisibility>,
+  ): Promise<{ id: string; visibility: CustomFieldVisibility }[]> {
+    if (allowed.size === 0) return [];
+
+    const { data, error } = (await this.supabase
+      .from('chapter_custom_fields')
+      .select('id, visibility')
+      .eq('chapter_id', chapterId)
+      .in('visibility', Array.from(allowed))) as {
+      data: { id: string; visibility: CustomFieldVisibility }[] | null;
+      error: PostgrestError | null;
+    };
+    if (error) throw error;
+    return data ?? [];
+  }
+
+  /**
+   * Raw `member_custom_field_values` rows for a set of field ids, across
+   * every member holding one — the caller (search) already restricted
+   * `fieldIds` to what the requesting viewer may see via
+   * {@link findFieldIdsByVisibility}, so this performs no visibility check of
+   * its own.
+   */
+  async findValuesByFieldIds(
+    fieldIds: string[],
+  ): Promise<{ member_id: string; field_id: string; value: string | null }[]> {
+    if (!fieldIds.length) return [];
+
+    const { data, error } = (await this.supabase
+      .from('member_custom_field_values')
+      .select('member_id, field_id, value')
+      .in('field_id', fieldIds)) as {
+      data:
+        { member_id: string; field_id: string; value: string | null }[] | null;
+      error: PostgrestError | null;
+    };
+    if (error) throw error;
+    return data ?? [];
+  }
+
   async create(
     chapterId: string,
     actorUserId: string,
