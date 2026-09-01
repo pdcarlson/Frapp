@@ -137,10 +137,32 @@ export function MessageItem({
 
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(message.content);
+  const [editDirty, setEditDirty] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  // A row is not remounted by a content update — it's the same component
+  // instance, keyed by id (`message-timeline.tsx`) — so an untouched-but-open
+  // editor would otherwise keep showing what `message.content` was *when Edit
+  // was clicked*, not what it is now. Only auto-refreshes while nothing has
+  // been typed yet (`!editDirty`): the same viewer editing this message from a
+  // second tab is the only way `content` can change while it's their own open
+  // editor (edit is own-message-only), and once they've actually started
+  // typing here, syncing out from under them would be its own kind of data
+  // loss.
+  if (isEditing && !editDirty && editValue !== message.content) {
+    setEditValue(message.content);
+  }
+  // Someone else with `channels:manage` (or the sender from another tab) can
+  // delete this message out from under an editor that's already open — the
+  // server correctly rejects a save against a deleted message, but the row
+  // should not sit there still showing a stale, now-pointless draft form.
+  if (isEditing && message.is_deleted) {
+    setIsEditing(false);
+  }
 
   function startEdit() {
     setEditValue(message.content);
+    setEditDirty(false);
     setIsEditing(true);
   }
 
@@ -241,7 +263,13 @@ export function MessageItem({
     </>
   );
 
-  const reactions = (
+  // Deleted content has nothing left to react to. Reaction rows for a message
+  // are never deleted server-side (only the message's own content/metadata
+  // are), so without this a deleted row would keep showing its old chips as
+  // still-live react/unreact targets — the Delete button added here is the
+  // first UI path that can set `is_deleted` on a message a viewer is looking
+  // at without a reload, so this case was unreachable before.
+  const reactions = message.is_deleted ? null : (
     <ReactionChips
       reactions={message.reactions}
       viewerId={viewerId}
@@ -336,7 +364,10 @@ export function MessageItem({
       <Textarea
         autoFocus
         value={editValue}
-        onChange={(event) => setEditValue(event.target.value)}
+        onChange={(event) => {
+          setEditValue(event.target.value);
+          setEditDirty(true);
+        }}
         onKeyDown={(event) => {
           if (event.key === "Escape") {
             event.preventDefault();

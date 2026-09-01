@@ -2,13 +2,21 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { useEffect } from "react";
 
-const { mockScrollToMessage, mockRefetch, mockUseChatChannel, mockComposerMount } =
-  vi.hoisted(() => ({
-    mockScrollToMessage: vi.fn(),
-    mockRefetch: vi.fn(),
-    mockUseChatChannel: vi.fn(),
-    mockComposerMount: vi.fn(),
-  }));
+const {
+  mockScrollToMessage,
+  mockRefetch,
+  mockUseChatChannel,
+  mockComposerMount,
+  mockUseMyPermissions,
+} = vi.hoisted(() => ({
+  mockScrollToMessage: vi.fn(),
+  mockRefetch: vi.fn(),
+  mockUseChatChannel: vi.fn(),
+  mockComposerMount: vi.fn(),
+  mockUseMyPermissions: vi.fn(() => ({
+    data: { permissions: [] as string[] },
+  })),
+}));
 
 const CHANNELS = [
   { id: "chan-general", name: "general", type: "PUBLIC", member_ids: [] },
@@ -39,7 +47,7 @@ vi.mock("@repo/hooks", () => ({
   useChannelUnreadCounts: () => ({ data: [], isError: false }),
   useOrgConfig: () => ({ data: { isModuleEnabled: () => true }, isError: false, refetch: vi.fn() }),
   useChapterRoster: () => ({ data: [] }),
-  useMyPermissions: () => ({ data: { permissions: [] } }),
+  useMyPermissions: () => mockUseMyPermissions(),
   directChannelDisplayName: () => "",
 }));
 
@@ -98,12 +106,21 @@ vi.mock("./reconnect-pill", () => ({
 }));
 vi.mock("./message-timeline", async () => {
   const React = await import("react");
-  const MessageTimeline = React.forwardRef<{ scrollToMessage: (id: string) => void }>(
-    function MessageTimeline(_props, ref) {
-      React.useImperativeHandle(ref, () => ({ scrollToMessage: mockScrollToMessage }));
-      return <div data-testid="message-timeline" />;
-    },
-  );
+  const MessageTimeline = React.forwardRef<
+    { scrollToMessage: (id: string) => void },
+    {
+      onDelete?: (messageId: string) => void;
+      canManageChannel?: boolean;
+    }
+  >(function MessageTimeline({ onDelete, canManageChannel }, ref) {
+    React.useImperativeHandle(ref, () => ({ scrollToMessage: mockScrollToMessage }));
+    return (
+      <div data-testid="message-timeline">
+        <span data-testid="can-manage-channel">{String(canManageChannel)}</span>
+        <button onClick={() => onDelete?.("msg-1")}>trigger-delete</button>
+      </div>
+    );
+  });
   return { MessageTimeline };
 });
 
@@ -137,6 +154,8 @@ beforeEach(() => {
   mockUseChatChannel.mockReset();
   mockUseChatChannel.mockReturnValue(chatChannelResult());
   mockComposerMount.mockClear();
+  mockUseMyPermissions.mockReset();
+  mockUseMyPermissions.mockReturnValue({ data: { permissions: [] } });
 });
 
 describe("ChatShell deep-link targets", () => {
@@ -237,5 +256,93 @@ describe("ChatShell composer remount per channel (#1014)", () => {
     });
     expect(screen.getByTestId("composer")).toHaveTextContent("chan-random");
     expect(mockComposerMount).toHaveBeenLastCalledWith("chan-random");
+  });
+});
+
+/**
+ * `ChatShell` computes `canManageChannel` and owns the delete-confirmation
+ * flow itself (`MessageTimeline`/`ThreadPanel` only render the button and
+ * call the handler back) — this is the one place that logic can be tested
+ * without a real Virtuoso/DOM-heavy `MessageTimeline`.
+ */
+describe("ChatShell delete-message wiring", () => {
+  it("derives canManageChannel from the channels:manage permission", async () => {
+    mockUseMyPermissions.mockReturnValue({
+      data: { permissions: ["channels:manage"] },
+    });
+
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("can-manage-channel")).toHaveTextContent("true");
+    });
+  });
+
+  it("defaults canManageChannel to false without the permission", async () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("can-manage-channel")).toHaveTextContent("false");
+    });
+  });
+
+  it("does not delete when the confirmation is cancelled", async () => {
+    const channel = chatChannelResult();
+    mockUseChatChannel.mockReturnValue(channel);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByText("trigger-delete"));
+    await waitFor(() => {
+      expect(screen.getByText("Delete this message?")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => {
+      expect(
+        screen.queryByText("Delete this message?"),
+      ).not.toBeInTheDocument();
+    });
+    expect(channel.delete).not.toHaveBeenCalled();
+  });
+
+  it("deletes the confirmed message id once the dialog is confirmed", async () => {
+    const channel = chatChannelResult();
+    mockUseChatChannel.mockReturnValue(channel);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByText("trigger-delete"));
+    await waitFor(() => {
+      expect(screen.getByText("Delete this message?")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Delete message" }));
+
+    await waitFor(() => {
+      expect(channel.delete).toHaveBeenCalledWith("msg-1");
+    });
+  });
+
+  it("swallows a rejected delete rather than throwing — the delete action already toasted", async () => {
+    const channel = chatChannelResult();
+    channel.delete = vi.fn().mockRejectedValue(new Error("network error"));
+    mockUseChatChannel.mockReturnValue(channel);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByText("trigger-delete"));
+    await waitFor(() => {
+      expect(screen.getByText("Delete this message?")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Delete message" }));
+
+    // No unhandled rejection reaches the test runner, and the dialog closes
+    // normally — the failure was already surfaced by `channel.delete` itself
+    // (it toasts before rejecting; see `chat-client.ts`'s `deleteMessage`).
+    await waitFor(() => {
+      expect(channel.delete).toHaveBeenCalledWith("msg-1");
+    });
+    await waitFor(() => {
+      expect(
+        screen.queryByText("Delete this message?"),
+      ).not.toBeInTheDocument();
+    });
   });
 });

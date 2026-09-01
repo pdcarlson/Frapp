@@ -605,7 +605,7 @@ export async function editMessage(
         body: { content: args.content },
       },
     );
-    if (error) {
+    if (error || !data) {
       throwApiError(error, response, "Couldn't edit message");
     }
     patchCache(ctx.queryClient, args.channelId, (cache) =>
@@ -648,7 +648,7 @@ export async function deleteMessage(
       "/v1/channels/messages/{messageId}",
       { params: { path: { messageId: args.messageId } } },
     );
-    if (error) {
+    if (error || !data) {
       throwApiError(error, response, "Couldn't delete message");
     }
     patchCache(ctx.queryClient, args.channelId, (cache) =>

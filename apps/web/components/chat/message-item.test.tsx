@@ -455,6 +455,69 @@ describe("MessageItem edit and delete", () => {
     expect(screen.getByText("hello")).toBeInTheDocument();
   });
 
+  it("picks up a content change from elsewhere while the untouched editor is still open", async () => {
+    // Same component instance across a content update (rows are keyed by
+    // id, not remounted) — an edit landing from another of the viewer's own
+    // sessions while this editor sits open-but-untouched must not leave it
+    // showing what the message *used to* say.
+    const user = userEvent.setup();
+    const onEdit = vi.fn();
+    const { rerender } = renderItemWithProps({
+      message: message({ id: "msg-1", sender_id: VIEWER, content: "hello" }),
+      onEdit,
+    });
+    await user.click(screen.getByRole("button", { name: /edit/i }));
+    expect(screen.getByRole("textbox")).toHaveValue("hello");
+
+    rerender(
+      <div role="list">
+        <MessageItem
+          message={message({ id: "msg-1", sender_id: VIEWER, content: "hello v2" })}
+          viewerId={VIEWER}
+          showHeader
+          nameFor={nameFor}
+          onReact={vi.fn()}
+          onUnreact={vi.fn()}
+          isTapRevealed={false}
+          onToggleTapReveal={vi.fn()}
+          onEdit={onEdit}
+        />
+      </div>,
+    );
+
+    expect(screen.getByRole("textbox")).toHaveValue("hello v2");
+  });
+
+  it("does not clobber an in-progress draft when content changes elsewhere after typing has started", async () => {
+    const user = userEvent.setup();
+    const onEdit = vi.fn();
+    const { rerender } = renderItemWithProps({
+      message: message({ id: "msg-1", sender_id: VIEWER, content: "hello" }),
+      onEdit,
+    });
+    await user.click(screen.getByRole("button", { name: /edit/i }));
+    await user.type(screen.getByRole("textbox"), " there");
+    expect(screen.getByRole("textbox")).toHaveValue("hello there");
+
+    rerender(
+      <div role="list">
+        <MessageItem
+          message={message({ id: "msg-1", sender_id: VIEWER, content: "hello v2" })}
+          viewerId={VIEWER}
+          showHeader
+          nameFor={nameFor}
+          onReact={vi.fn()}
+          onUnreact={vi.fn()}
+          isTapRevealed={false}
+          onToggleTapReveal={vi.fn()}
+          onEdit={onEdit}
+        />
+      </div>,
+    );
+
+    expect(screen.getByRole("textbox")).toHaveValue("hello there");
+  });
+
   it("keeps the editor open with the draft intact when the save rejects", async () => {
     const user = userEvent.setup();
     const onEdit = vi.fn().mockRejectedValue(new Error("network error"));
@@ -469,5 +532,54 @@ describe("MessageItem edit and delete", () => {
 
     expect(onEdit).toHaveBeenCalledWith("msg-1", "hello world");
     expect(screen.getByRole("textbox")).toHaveValue("hello world");
+  });
+
+  it("hides reaction chips on a deleted message — nothing left to react to", () => {
+    renderItemWithProps({
+      message: message({
+        sender_id: VIEWER,
+        is_deleted: true,
+        reactions: { "👍": [OTHER] },
+      }),
+    });
+
+    expect(screen.queryByText("👍")).not.toBeInTheDocument();
+  });
+
+  it("closes an open editor rather than leaving a stale draft when the message is deleted out from under it", async () => {
+    const user = userEvent.setup();
+    const onEdit = vi.fn();
+    const { rerender } = renderItemWithProps({
+      message: message({ id: "msg-1", sender_id: VIEWER, content: "hello" }),
+      onEdit,
+    });
+    await user.click(screen.getByRole("button", { name: /edit/i }));
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
+
+    // A `channels:manage` holder (or the sender from another tab) deletes it
+    // while this row's editor is still open.
+    rerender(
+      <div role="list">
+        <MessageItem
+          message={message({
+            id: "msg-1",
+            sender_id: VIEWER,
+            content: "hello",
+            is_deleted: true,
+          })}
+          viewerId={VIEWER}
+          showHeader
+          nameFor={nameFor}
+          onReact={vi.fn()}
+          onUnreact={vi.fn()}
+          isTapRevealed={false}
+          onToggleTapReveal={vi.fn()}
+          onEdit={onEdit}
+        />
+      </div>,
+    );
+
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.getByText("[message deleted]")).toBeInTheDocument();
   });
 });

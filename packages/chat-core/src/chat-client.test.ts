@@ -252,6 +252,38 @@ describe("editMessage", () => {
     expect(cache?.byId["msg-1"]?.edited_at).toBe("2026-01-01T00:01:00.000Z");
   });
 
+  it("rejects rather than crash-toasting when the response carries no error but no body either", async () => {
+    // The OpenAPI contract for this route documents no response schema
+    // (`"200": {"description": ""}`), so nothing guarantees the client
+    // always gets a parsed row back even on a genuine success — this is
+    // the same `!data` guard `sendMessage`/`react`/`actOnCard` already use
+    // before touching `data`.
+    const apiClient = {
+      PATCH: vi.fn().mockResolvedValue({
+        data: undefined,
+        error: null,
+        response: { status: 200 },
+      }),
+    };
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      toast,
+      onError,
+    });
+
+    await expect(
+      editMessage(ctx, {
+        channelId: "chan-1",
+        messageId: "msg-1",
+        content: "edited body",
+      }),
+    ).rejects.toThrow();
+
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Couldn't edit message" }),
+    );
+  });
+
   it("fires both toast and onError, with the same message, and rejects on a denied edit", async () => {
     const apiClient = {
       PATCH: vi.fn().mockResolvedValue({
@@ -365,6 +397,29 @@ describe("deleteMessage", () => {
       | undefined;
     expect(cache?.byId["msg-1"]?.is_deleted).toBe(true);
     expect(cache?.byId["msg-1"]?.content).toBe("[message deleted]");
+  });
+
+  it("rejects rather than crash-toasting when the response carries no error but no body either", async () => {
+    const apiClient = {
+      DELETE: vi.fn().mockResolvedValue({
+        data: undefined,
+        error: null,
+        response: { status: 200 },
+      }),
+    };
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      toast,
+      onError,
+    });
+
+    await expect(
+      deleteMessage(ctx, { channelId: "chan-1", messageId: "msg-1" }),
+    ).rejects.toThrow();
+
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Couldn't delete message" }),
+    );
   });
 
   it("fires both toast and onError, with the same message, and rejects on a denied delete", async () => {
