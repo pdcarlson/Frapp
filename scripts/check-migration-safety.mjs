@@ -114,6 +114,15 @@ function validateMigrationFiles() {
 }
 
 function validatePromotionDocs(base, head) {
+  if (!base || !head) {
+    const missing = [!base && "--base", !head && "--head"].filter(Boolean).join(" and ");
+    console.log(
+      `Migration safety check: ${missing} not given, skipping the promotion-docs check ` +
+        "(cannot diff for a supabase/migrations/ change without a commit range).",
+    );
+    return;
+  }
+
   const changedFiles = getChangedFiles(base, head);
   if (changedFiles.length === 0) return;
 
