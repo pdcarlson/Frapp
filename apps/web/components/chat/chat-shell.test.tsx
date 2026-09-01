@@ -165,11 +165,26 @@ describe("ChatShell deep-link targets", () => {
     expect(mockScrollToMessage).not.toHaveBeenCalled();
 
     // More history "arrives" — the target is now in range, and should still
-    // fire because the ref was never cleared on the earlier miss.
+    // fire because the pending target was never cleared on the earlier miss.
     mockUseChatChannel.mockReturnValue(
       chatChannelResult({ messages: [...MESSAGES, { id: "msg-not-loaded-yet", content: "old", created_at: "2025-01-01T00:00:00Z" }] }),
     );
     rerender(<ChatShell initialChannelId="chan-general" initialMessageId="msg-not-loaded-yet" />);
     expect(mockScrollToMessage).toHaveBeenCalledWith("msg-not-loaded-yet");
+  });
+
+  it("jumps to a second message target in the same already-loaded channel", () => {
+    const { rerender } = render(
+      <ChatShell initialChannelId="chan-general" initialMessageId="msg-1" />,
+    );
+    expect(mockScrollToMessage).toHaveBeenCalledWith("msg-1");
+    mockScrollToMessage.mockClear();
+
+    // Same channel, already active, messages already loaded (the mocked
+    // `useChatChannel` return value is unchanged) — only the message target
+    // itself changes, as it would for a second command-palette/notification
+    // click into a channel the member never left.
+    rerender(<ChatShell initialChannelId="chan-general" initialMessageId="msg-2" />);
+    expect(mockScrollToMessage).toHaveBeenCalledWith("msg-2");
   });
 });

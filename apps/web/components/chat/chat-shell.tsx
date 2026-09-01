@@ -188,7 +188,10 @@ export function ChatShell({
   // separately from "no target was requested at all", and surfaces its own
   // empty state below rather than folding into the general fallback.
   const [channelTargetDismissed, setChannelTargetDismissed] = useState(false);
-  const pendingMessageId = useRef(initialMessageId);
+  // State, not a ref: the jump effect below needs to re-run when *only* this
+  // changes (a second message-only link into an already-active, already-
+  // loaded channel touches nothing else the effect depends on).
+  const [pendingMessageId, setPendingMessageId] = useState(initialMessageId);
   // `initialChannelId`/`initialMessageId` are only read by `useState`'s
   // initializer on first mount. A second deep link (another notification, a
   // second command-palette hit) navigated to while `/chat` is already
@@ -213,7 +216,7 @@ export function ChatShell({
     };
     setSelectedChannelId(initialChannelId);
     setChannelTargetDismissed(false);
-    pendingMessageId.current = initialMessageId;
+    setPendingMessageId(initialMessageId);
   }, [initialChannelId, initialMessageId]);
 
   // `useChannels()` can serve a read up to its `staleTime` old. A channel
@@ -389,8 +392,7 @@ export function ChatShell({
   // gets a free retry as more history loads, rather than being silently
   // spent on an id `scrollToMessage` couldn't find.
   useEffect(() => {
-    const targetId = pendingMessageId.current;
-    if (!targetId) return;
+    if (!pendingMessageId) return;
     // A named channel target must resolve to it first — a message id paired
     // with one channel would be nonsense to look up in another. No channel
     // was named (message-only link): proceed against whatever channel ended
@@ -399,10 +401,12 @@ export function ChatShell({
       return;
     }
     if (channel.isLoading) return;
-    if (!channel.messages.some((m) => m.id === targetId)) return;
-    jumpToMessage(targetId);
-    pendingMessageId.current = null;
+    if (!channel.messages.some((m) => m.id === pendingMessageId)) return;
+    jumpToMessage(pendingMessageId);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- consuming a one-shot deep-link target once it's been acted on, not syncing render state
+    setPendingMessageId(null);
   }, [
+    pendingMessageId,
     activeChannelId,
     initialChannelId,
     channel.isLoading,
