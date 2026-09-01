@@ -3,6 +3,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Shared spy so tests can assert the exact mutation payload the sheet sends.
 const updateRolesMutateAsync = vi.fn().mockResolvedValue({});
+const { dmMutateAsync, mockRouterPush, mockToast, mockCurrentUserId } =
+  vi.hoisted(() => ({
+    dmMutateAsync: vi.fn(),
+    mockRouterPush: vi.fn(),
+    mockToast: vi.fn(),
+    // Distinct from every test's member `user_id` ("u1") so the Message
+    // button renders by default; self-DM cases override this.
+    mockCurrentUserId: { current: "viewer-1" as string | null },
+  }));
 
 // The sheet pulls live data + mutations from @repo/hooks; stub them so the
 // component renders from its `member` prop (usingPreviewData bypasses useMember).
@@ -11,13 +20,25 @@ vi.mock("@repo/hooks", () => ({
   useRoles: () => ({ data: [], isError: false }),
   useRemoveMember: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateMemberRoles: () => ({ mutateAsync: updateRolesMutateAsync, isPending: false }),
+  useGetOrCreateDm: () => ({ mutateAsync: dmMutateAsync, isPending: false }),
   // The custom-roles section is permission-gated; grant everything by default.
   useMyPermissions: () => ({ data: { permissions: ["*"] } }),
   useCustomRoles: () => customRolesState,
 }));
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: mockRouterPush }),
+}));
+
+vi.mock("@/lib/auth/use-frapp-user", () => ({
+  useFrappUser: () => ({
+    userId: mockCurrentUserId.current,
+    isLoading: false,
+  }),
+}));
+
 vi.mock("@/hooks/use-toast", () => ({
-  useToast: () => ({ toast: vi.fn() }),
+  useToast: () => ({ toast: mockToast }),
 }));
 
 // Custom-role assignment (bridge model): the list read is stubbed per-test via
@@ -207,5 +228,96 @@ describe("MemberDetailSheet save payload", () => {
       id: "m1",
       role_ids: [],
     });
+  });
+});
+
+describe("MemberDetailSheet Message action", () => {
+  beforeEach(() => {
+    dmMutateAsync.mockReset();
+    mockRouterPush.mockReset();
+    mockToast.mockReset();
+    mockCurrentUserId.current = "viewer-1";
+  });
+
+  it("creates or reuses the DM and navigates to it with the channel selected", async () => {
+    dmMutateAsync.mockResolvedValue({ id: "dm-channel-1" });
+
+    render(
+      <MemberDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData={false}
+        member={baseMember}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /message/i }));
+
+    await waitFor(() =>
+      expect(dmMutateAsync).toHaveBeenCalledWith({ member_id: "u1" }),
+    );
+    expect(mockRouterPush).toHaveBeenCalledWith("/chat?channel=dm-channel-1");
+  });
+
+  it("toasts an error rather than navigating when the DM call fails", async () => {
+    dmMutateAsync.mockRejectedValue(new Error("network down"));
+
+    render(
+      <MemberDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData={false}
+        member={baseMember}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /message/i }));
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Could not start conversation",
+          description: "network down",
+          variant: "destructive",
+        }),
+      ),
+    );
+    expect(mockRouterPush).not.toHaveBeenCalled();
+  });
+
+  // Self-DM is not rejected server-side (member_ids: [callerId, callerId] still
+  // passes the "exactly 2" check), so the guard has to be here: hide the
+  // control entirely rather than let a member start a conversation with
+  // themselves.
+  it("hides the Message action on the viewer's own row", () => {
+    mockCurrentUserId.current = "u1";
+
+    render(
+      <MemberDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData={false}
+        member={baseMember}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /message/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the Message action in preview mode", () => {
+    render(
+      <MemberDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        member={baseMember}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /message/i }),
+    ).not.toBeInTheDocument();
   });
 });
