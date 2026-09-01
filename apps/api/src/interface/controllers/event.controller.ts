@@ -46,14 +46,21 @@ export class EventController {
 
   @Get()
   @ApiOperation({ summary: 'List chapter events' })
-  async list(@CurrentChapterId() chapterId: string) {
-    return this.eventService.findByChapter(chapterId);
+  async list(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.eventService.findByChapter(chapterId, userId);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get event by id' })
-  async getOne(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
-    return this.eventService.findById(id, chapterId);
+  async getOne(
+    @CurrentChapterId() chapterId: string,
+    @Param('id') id: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.eventService.findById(id, chapterId, userId);
   }
 
   @Post()
@@ -98,9 +105,10 @@ export class EventController {
   async getIcs(
     @CurrentChapterId() chapterId: string,
     @Param('id') id: string,
+    @CurrentUser('id') userId: string,
     @Res() res: Response,
   ) {
-    const ics = await this.eventService.generateIcs(id, chapterId);
+    const ics = await this.eventService.generateIcs(id, chapterId, userId);
     res.set({
       'Content-Type': 'text/calendar; charset=utf-8',
       'Content-Disposition': `attachment; filename="${id}.ics"`,

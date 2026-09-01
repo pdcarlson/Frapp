@@ -11,7 +11,10 @@ import type { FrappSupabaseClient } from '../../infrastructure/supabase/database
 describe('SearchService', () => {
   let service: SearchService;
   let mockSupabase: jest.Mocked<Pick<FrappSupabaseClient, 'from'>>;
-  let mockRbacService: { getEffectivePermissions: jest.Mock };
+  let mockRbacService: {
+    getEffectivePermissions: jest.Mock;
+    memberHasAnyPermission: jest.Mock;
+  };
 
   const makeChain = (resolveValue: { data: unknown[]; error: unknown }) => {
     const chain: Record<string, unknown> = {};
@@ -40,6 +43,7 @@ describe('SearchService', () => {
 
     mockRbacService = {
       getEffectivePermissions: jest.fn().mockResolvedValue([]),
+      memberHasAnyPermission: jest.fn().mockResolvedValue(false),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -333,6 +337,101 @@ describe('SearchService', () => {
       // and the tsvector is still excluded, which is why the list is explicit
       expect(EVENT_SEARCH_COLUMNS).not.toContain('search_vector');
       expect(BACKWORK_SEARCH_COLUMNS).not.toContain('search_vector');
+    });
+
+    // Search must not become a side-channel around EventService's read
+    // visibility (#1463): a role-targeted event a viewer can't see via
+    // `GET /v1/events` must not surface here either.
+    describe('role-targeted event visibility (#1463)', () => {
+      const targetedEvent = {
+        id: 'ev-targeted',
+        chapter_id: 'ch-1',
+        name: 'Exec Meeting',
+        description: null,
+        start_time: '2026-02-26T10:00:00Z',
+        end_time: '2026-02-26T11:00:00Z',
+        point_value: 10,
+        is_mandatory: false,
+        required_role_ids: ['role-officer'],
+      };
+
+      const mockFrom = (opts: { events: unknown[]; memberRow: unknown }) => {
+        (mockSupabase.from as jest.Mock).mockImplementation((table: string) => {
+          if (table === 'events') {
+            return makeChain({ data: opts.events, error: null });
+          }
+          if (table === 'chat_channels') {
+            // Short-circuits accessibleChannelIds before it queries `members`,
+            // so the `members` chain below is only ever read by
+            // `filterVisibleEvents` (and by `searchMembers`, whose join-shaped
+            // read of the same row simply yields no member match).
+            return makeChain({ data: [], error: null });
+          }
+          if (table === 'members') {
+            return makeChain({ data: [opts.memberRow], error: null });
+          }
+          return makeChain({ data: [], error: null });
+        });
+      };
+
+      it('drops a role-targeted event for a viewer without a matching role', async () => {
+        mockFrom({
+          events: [targetedEvent],
+          memberRow: { role_ids: ['role-member'] },
+        });
+
+        const result = await service.search('ch-1', 'user-1', 'exec');
+
+        expect(result.events).toEqual([]);
+      });
+
+      it('keeps a role-targeted event for a viewer with a matching role', async () => {
+        mockFrom({
+          events: [targetedEvent],
+          memberRow: { role_ids: ['role-officer'] },
+        });
+
+        const result = await service.search('ch-1', 'user-1', 'exec');
+
+        expect(result.events).toHaveLength(1);
+        expect(result.events[0].id).toBe('ev-targeted');
+      });
+
+      it('keeps a role-targeted event for a viewer holding events:update, regardless of role', async () => {
+        mockFrom({
+          events: [targetedEvent],
+          memberRow: { role_ids: ['role-member'] },
+        });
+        mockRbacService.memberHasAnyPermission.mockResolvedValue(true);
+
+        const result = await service.search('ch-1', 'user-1', 'exec');
+
+        expect(result.events).toHaveLength(1);
+        // The events:update check short-circuits before the `members` role
+        // lookup — no need to resolve the caller's own role_ids at all.
+        expect(mockRbacService.memberHasAnyPermission).toHaveBeenCalledWith(
+          'ch-1',
+          'user-1',
+          expect.arrayContaining(['events:update']),
+        );
+      });
+
+      it('does not query members at all when no matched event is role-targeted', async () => {
+        const untargeted = { ...targetedEvent, required_role_ids: null };
+        const fromCalls: string[] = [];
+        (mockSupabase.from as jest.Mock).mockImplementation((table: string) => {
+          fromCalls.push(table);
+          if (table === 'events') {
+            return makeChain({ data: [untargeted], error: null });
+          }
+          return makeChain({ data: [], error: null });
+        });
+
+        const result = await service.search('ch-1', 'user-1', 'exec');
+
+        expect(result.events).toHaveLength(1);
+        expect(mockRbacService.memberHasAnyPermission).not.toHaveBeenCalled();
+      });
     });
 
     it('never raises on punctuation that would break to_tsquery', async () => {
