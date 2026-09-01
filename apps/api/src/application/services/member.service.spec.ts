@@ -21,7 +21,11 @@ describe('MemberService', () => {
   let mockRepo: jest.Mocked<IMemberRepository>;
   let mockUserRepo: jest.Mocked<IUserRepository>;
   let mockRoleRepo: jest.Mocked<IRoleRepository>;
-  let mockCustomFieldService: { findVisibleValuesForMember: jest.Mock };
+  let mockCustomFieldService: {
+    findVisibleValuesForMember: jest.Mock;
+    findFieldIdsByVisibility: jest.Mock;
+    findValuesByFieldIds: jest.Mock;
+  };
   let mockCustomRoleService: { findByIds: jest.Mock };
   let mockRbacService: { getEffectivePermissions: jest.Mock };
 
@@ -59,6 +63,8 @@ describe('MemberService', () => {
 
     mockCustomFieldService = {
       findVisibleValuesForMember: jest.fn().mockResolvedValue([]),
+      findFieldIdsByVisibility: jest.fn().mockResolvedValue([]),
+      findValuesByFieldIds: jest.fn().mockResolvedValue([]),
     };
     mockCustomRoleService = {
       findByIds: jest.fn().mockResolvedValue([]),
@@ -892,7 +898,11 @@ describe('MemberService', () => {
       mockRepo.findByChapter.mockResolvedValue(members);
       mockUserRepo.findByIds.mockResolvedValue(users);
 
-      const result = await service.searchByChapterAndName('chapter-1', 'john');
+      const result = await service.searchByChapterAndName(
+        'chapter-1',
+        'john',
+        'viewer-user-1',
+      );
 
       expect(mockRepo.findByChapter).toHaveBeenCalledWith('chapter-1');
       expect(mockUserRepo.findByIds).toHaveBeenCalledWith(['user-1']);
@@ -903,9 +913,242 @@ describe('MemberService', () => {
     it('should return empty array when no members match', async () => {
       mockRepo.findByChapter.mockResolvedValue([]);
 
-      const result = await service.searchByChapterAndName('chapter-1', 'xyz');
+      const result = await service.searchByChapterAndName(
+        'chapter-1',
+        'xyz',
+        'viewer-user-1',
+      );
 
       expect(result).toEqual([]);
+    });
+
+    it('should match on email as well as display name (#588)', async () => {
+      const members = [
+        {
+          id: 'member-1',
+          user_id: 'user-1',
+          chapter_id: 'chapter-1',
+          role_ids: [],
+          custom_role_ids: [],
+          has_completed_onboarding: true,
+          created_at: '2024-01-01',
+          updated_at: '2024-01-01',
+        },
+      ];
+      const users = [
+        {
+          id: 'user-1',
+          supabase_auth_id: 'auth-1',
+          email: 'jdoe@school.edu',
+          display_name: 'Jane Roe',
+          avatar_url: null,
+          bio: null,
+          graduation_year: null,
+          current_city: null,
+          current_company: null,
+          created_at: '2024-01-01',
+          updated_at: '2024-01-01',
+        },
+      ];
+      mockRepo.findByChapter.mockResolvedValue(members);
+      mockUserRepo.findByIds.mockResolvedValue(users);
+
+      const result = await service.searchByChapterAndName(
+        'chapter-1',
+        'jdoe@school',
+        'viewer-user-1',
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0].email).toBe('jdoe@school.edu');
+    });
+
+    it('should match a member solely by a visible custom-field value', async () => {
+      const members = [
+        {
+          id: 'member-1',
+          user_id: 'user-1',
+          chapter_id: 'chapter-1',
+          role_ids: [],
+          custom_role_ids: [],
+          has_completed_onboarding: true,
+          created_at: '2024-01-01',
+          updated_at: '2024-01-01',
+        },
+      ];
+      const users = [
+        {
+          id: 'user-1',
+          supabase_auth_id: 'auth-1',
+          email: 'john@example.com',
+          display_name: 'John Doe',
+          avatar_url: null,
+          bio: null,
+          graduation_year: null,
+          current_city: null,
+          current_company: null,
+          created_at: '2024-01-01',
+          updated_at: '2024-01-01',
+        },
+      ];
+      mockRepo.findByChapter.mockResolvedValue(members);
+      mockUserRepo.findByIds.mockResolvedValue(users);
+      mockRbacService.getEffectivePermissions.mockResolvedValue([
+        'members:view',
+      ]);
+      mockCustomFieldService.findFieldIdsByVisibility.mockResolvedValue([
+        { id: 'field-1', visibility: 'chapter' },
+      ]);
+      mockCustomFieldService.findValuesByFieldIds.mockResolvedValue([
+        {
+          member_id: 'member-1',
+          field_id: 'field-1',
+          value: 'Mechanical Engineering',
+        },
+      ]);
+
+      const result = await service.searchByChapterAndName(
+        'chapter-1',
+        'mechanical',
+        'viewer-user-1',
+      );
+
+      expect(
+        mockCustomFieldService.findFieldIdsByVisibility,
+      ).toHaveBeenCalledWith('chapter-1', new Set(['chapter', 'self']));
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('member-1');
+    });
+
+    it('never matches an exec-tier field value for a baseline member viewer (#588)', async () => {
+      const members = [
+        {
+          id: 'member-1',
+          user_id: 'user-1',
+          chapter_id: 'chapter-1',
+          role_ids: [],
+          custom_role_ids: [],
+          has_completed_onboarding: true,
+          created_at: '2024-01-01',
+          updated_at: '2024-01-01',
+        },
+      ];
+      const users = [
+        {
+          id: 'user-1',
+          supabase_auth_id: 'auth-1',
+          email: 'john@example.com',
+          display_name: 'John Doe',
+          avatar_url: null,
+          bio: null,
+          graduation_year: null,
+          current_city: null,
+          current_company: null,
+          created_at: '2024-01-01',
+          updated_at: '2024-01-01',
+        },
+      ];
+      mockRepo.findByChapter.mockResolvedValue(members);
+      mockUserRepo.findByIds.mockResolvedValue(users);
+      // Baseline member: members:view only, so allowedVisibilities() never
+      // includes 'exec' — the exec-tier field must not even be a candidate.
+      mockRbacService.getEffectivePermissions.mockResolvedValue([
+        'members:view',
+      ]);
+
+      await service.searchByChapterAndName(
+        'chapter-1',
+        'secret',
+        'viewer-user-2',
+      );
+
+      expect(
+        mockCustomFieldService.findFieldIdsByVisibility,
+      ).toHaveBeenCalledWith('chapter-1', new Set(['chapter', 'self']));
+    });
+
+    it('matches a self-tier field value only on the viewer’s own row', async () => {
+      const members = [
+        {
+          id: 'member-1',
+          user_id: 'viewer-user-1',
+          chapter_id: 'chapter-1',
+          role_ids: [],
+          custom_role_ids: [],
+          has_completed_onboarding: true,
+          created_at: '2024-01-01',
+          updated_at: '2024-01-01',
+        },
+        {
+          id: 'member-2',
+          user_id: 'user-2',
+          chapter_id: 'chapter-1',
+          role_ids: [],
+          custom_role_ids: [],
+          has_completed_onboarding: true,
+          created_at: '2024-01-01',
+          updated_at: '2024-01-01',
+        },
+      ];
+      const users = [
+        {
+          id: 'viewer-user-1',
+          supabase_auth_id: 'auth-1',
+          email: 'me@example.com',
+          display_name: 'Me',
+          avatar_url: null,
+          bio: null,
+          graduation_year: null,
+          current_city: null,
+          current_company: null,
+          created_at: '2024-01-01',
+          updated_at: '2024-01-01',
+        },
+        {
+          id: 'user-2',
+          supabase_auth_id: 'auth-2',
+          email: 'them@example.com',
+          display_name: 'Them',
+          avatar_url: null,
+          bio: null,
+          graduation_year: null,
+          current_city: null,
+          current_company: null,
+          created_at: '2024-01-01',
+          updated_at: '2024-01-01',
+        },
+      ];
+      mockRepo.findByChapter.mockResolvedValue(members);
+      mockUserRepo.findByIds.mockResolvedValue(users);
+      mockRbacService.getEffectivePermissions.mockResolvedValue([
+        'members:view',
+      ]);
+      mockCustomFieldService.findFieldIdsByVisibility.mockResolvedValue([
+        { id: 'field-self', visibility: 'self' },
+      ]);
+      // Both the viewer's own row and another member's row hold a matching
+      // value on the self-tier field — only the viewer's own row may match.
+      mockCustomFieldService.findValuesByFieldIds.mockResolvedValue([
+        {
+          member_id: 'member-1',
+          field_id: 'field-self',
+          value: 'private note',
+        },
+        {
+          member_id: 'member-2',
+          field_id: 'field-self',
+          value: 'private note',
+        },
+      ]);
+
+      const result = await service.searchByChapterAndName(
+        'chapter-1',
+        'private',
+        'viewer-user-1',
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('member-1');
     });
   });
 
