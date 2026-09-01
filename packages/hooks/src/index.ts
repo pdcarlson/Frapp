@@ -1,4 +1,5 @@
 export * from "./use-frapp-client";
+export * from "./use-now";
 export * from "./display-names";
 export * from "./document-download";
 export * from "./chapter-query-keys";

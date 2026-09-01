@@ -316,7 +316,14 @@ function MineMessageBubble({
   );
 }
 
-function ReactionRow({
+/**
+ * Exported so a non-bubble card (e.g. `PollCard`, #528) can carry the same
+ * reaction affordance `MessageBubble` gives every other kind — `styles` is
+ * narrowed to just the keys this component reads so a caller with its own
+ * `createStyles` only has to match that slice, not `MessageBubble`'s full
+ * (bubble-specific) style sheet.
+ */
+export function ReactionRow({
   reactions,
   messageId,
   disabled,
@@ -330,7 +337,14 @@ function ReactionRow({
   disabled: boolean;
   onReact: (messageId: string, emoji: string) => void;
   onUnreact: (messageId: string, emoji: string) => void;
-  styles: ReturnType<typeof createStyles>;
+  styles: Pick<
+    ReturnType<typeof createStyles>,
+    | "reactionRow"
+    | "reactionChip"
+    | "reactionChipMine"
+    | "reactionText"
+    | "reactionTextMine"
+  >;
   align: "flex-start" | "flex-end";
 }) {
   // The add chip is what makes the *first* reaction on a message possible.

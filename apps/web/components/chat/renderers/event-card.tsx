@@ -2,7 +2,7 @@
 
 import { Check } from "lucide-react";
 import { EventsGlyph, LocationGlyph } from "../chat-glyphs";
-import { useAttendance, useCheckIn, useMyPermissions } from "@repo/hooks";
+import { useAttendance, useCheckIn, useMyPermissions, useNow } from "@repo/hooks";
 import { EYEBROW, MESSAGE_CARD } from "../chip";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -17,7 +17,6 @@ import {
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
-import { useNow } from "@/lib/use-now";
 
 interface EventCardProps {
   message: ChatMessage;

@@ -44,6 +44,13 @@ vi.mock("@repo/hooks", async (importOriginal) => {
       get(target, prop: string) {
         // Every hook is stubbed — the real ones need the client provider this
         // test deliberately does not mount. Plain helpers pass through.
+        //
+        // `useNow` is the one exception: it reaches no client (a plain
+        // `useSyncExternalStore` clock, safe to mount here), and stubbing it
+        // to the query shape above would silently turn `now` into `NaN` in
+        // every card's `closesAt.getTime() < now` / window-open arithmetic
+        // instead of a real timestamp.
+        if (prop === "useNow") return target[prop as keyof typeof target];
         if (prop.startsWith("use")) {
           return () =>
             /^use(Update|Confirm|Reject|Check|Create|Delete|Mark|Send|Request|Upload)/.test(prop)

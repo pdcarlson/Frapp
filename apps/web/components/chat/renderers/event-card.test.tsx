@@ -23,6 +23,7 @@ vi.mock("@repo/hooks", () => ({
   useAttendance: (id: string) => mockUseAttendance(id),
   useCheckIn: () => ({ mutateAsync: checkIn, isPending: false }),
   useMyPermissions: () => mockUseMyPermissions(),
+  useNow: () => Date.now(),
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import {
+  actOnCard,
   discardOutboxRow,
   react,
   retryOutboxRow,
@@ -190,6 +191,116 @@ describe("unreact", () => {
     await unreact(ctx, { channelId: "chan-1", messageId: "msg-1", emoji: "👍" });
 
     expect(onError).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("actOnCard", () => {
+  let toast: ToastFn;
+  let onError: ChatErrorFn;
+
+  beforeEach(() => {
+    toast = vi.fn() as ToastFn;
+    onError = vi.fn() as ChatErrorFn;
+  });
+
+  it("calls neither toast nor onError on success", async () => {
+    const apiClient = {
+      POST: vi.fn().mockResolvedValue({
+        data: { action: { id: "act-1", message_id: "msg-1" } },
+        error: null,
+        response: { status: 201 },
+      }),
+    };
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      toast,
+      onError,
+    });
+
+    await actOnCard(ctx, {
+      channelId: "chan-1",
+      messageId: "msg-1",
+      actionType: "vote",
+      payload: { option_id: "opt-1" },
+    });
+
+    expect(toast).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("fires both toast and onError, with the same message, on a rejected action", async () => {
+    const apiClient = {
+      POST: vi.fn().mockResolvedValue({
+        data: null,
+        error: { message: "Poll is closed" },
+        response: { status: 409 },
+      }),
+    };
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      toast,
+      onError,
+    });
+
+    await actOnCard(ctx, {
+      channelId: "chan-1",
+      messageId: "msg-1",
+      actionType: "vote",
+      payload: { option_id: "opt-1" },
+    });
+
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Couldn't record action",
+        description: "Poll is closed",
+      }),
+    );
+    expect(onError).toHaveBeenCalledWith({
+      title: "Couldn't record action",
+      description: "Poll is closed",
+    });
+  });
+
+  it("still fires onError when no toast is supplied (the mobile shape)", async () => {
+    const apiClient = {
+      POST: vi.fn().mockResolvedValue({
+        data: null,
+        error: { message: "Poll is closed" },
+        response: { status: 409 },
+      }),
+    };
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      onError,
+    });
+
+    await actOnCard(ctx, {
+      channelId: "chan-1",
+      messageId: "msg-1",
+      actionType: "vote",
+      payload: { option_id: "opt-1" },
+    });
+
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+
+  it("is a no-op with no userId, and never calls onError", async () => {
+    const apiClient = { POST: vi.fn() };
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      userId: null,
+      onError,
+    });
+
+    await actOnCard(ctx, {
+      channelId: "chan-1",
+      messageId: "msg-1",
+      actionType: "vote",
+      payload: { option_id: "opt-1" },
+    });
+
+    expect(apiClient.POST).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
   });
 });
 

@@ -39,6 +39,7 @@ vi.mock("@repo/hooks", () => ({
   useRoles: () => ({ data: [{ id: "r1", name: "Exec" }], isError: false }),
   useEvents: () => ({ data: EVENTS, isLoading: false, isError: false, refetch: vi.fn() }),
   useAutoAbsent: () => ({ mutateAsync: autoAbsentMutateAsync, isPending: false }),
+  useNow: () => Date.now(),
 }));
 
 vi.mock("@/lib/providers/network-provider", () => ({

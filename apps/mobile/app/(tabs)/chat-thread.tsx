@@ -16,6 +16,7 @@ import { useMarkChannelRead, useMemberDisplayNames } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { MessageBubble } from "@/components/chat/message-bubble";
+import { PollCard } from "@/components/chat/poll-card";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
 import { getKeyboardPath } from "@/lib/keyboard";
 import { useConnection } from "@/lib/connection/use-connection";
@@ -65,11 +66,14 @@ export default function ChatThreadScreen() {
     send,
     react,
     unreact,
+    act,
     draft,
     setDraft,
     sendError,
     reactionError,
     clearReactionError,
+    actionError,
+    clearActionError,
     typingUsers,
     emitTyping,
     connection,
@@ -126,21 +130,41 @@ export default function ChatThreadScreen() {
   const inverted = useMemo(() => [...messages].reverse(), [messages]);
 
   const renderItem = useCallback(
-    ({ item }: { item: ChatMessage }) => (
-      <MessageBubble
-        message={item}
-        viewerId={viewerId}
-        nameFor={nameFor}
-        onRetry={(id) => void retry(id)}
-        onDiscard={(id) => void discard(id)}
-        onReact={(id, emoji) => void react(id, emoji)}
-        onUnreact={(id, emoji) => void unreact(id, emoji)}
-      />
-    ),
+    ({ item }: { item: ChatMessage }) => {
+      // Cards render unsided, full-width — not wrapped in `MessageBubble` —
+      // matching web's `rendersAsBubble` exclusion for every card kind.
+      if (item.kind === "poll") {
+        return (
+          <PollCard
+            message={item}
+            viewerId={viewerId}
+            isConfirmed={item._status === "confirmed"}
+            onVote={(id, actionType, payload) =>
+              void act(id, actionType, payload)
+            }
+            onRetry={(id) => void retry(id)}
+            onDiscard={(id) => void discard(id)}
+            onReact={(id, emoji) => void react(id, emoji)}
+            onUnreact={(id, emoji) => void unreact(id, emoji)}
+          />
+        );
+      }
+      return (
+        <MessageBubble
+          message={item}
+          viewerId={viewerId}
+          nameFor={nameFor}
+          onRetry={(id) => void retry(id)}
+          onDiscard={(id) => void discard(id)}
+          onReact={(id, emoji) => void react(id, emoji)}
+          onUnreact={(id, emoji) => void unreact(id, emoji)}
+        />
+      );
+    },
     // `nameFor` belongs here: it changes identity when the roster resolves, and
     // omitting it leaves a stale closure rendering truncated ids until some
     // other dep happens to change.
-    [viewerId, nameFor, retry, discard, react, unreact],
+    [viewerId, nameFor, retry, discard, react, unreact, act],
   );
 
   const isOffline = connection === "offline";
@@ -262,22 +286,26 @@ export default function ChatThreadScreen() {
         ) : null}
 
         {/*
-          react/unreact have no failed-bubble equivalent to render inline —
-          chat-core's rollback of the optimistic toggle is silent — so this
-          banner is the only report of a rejected reaction (#999). Dismissible
+          react/unreact and inline card actions (poll votes, #528) have no
+          failed-bubble equivalent to render inline — chat-core's rollback of
+          the optimistic state is silent — so this banner is the only report
+          of a rejected reaction or vote (#999). `reactionError` takes
+          priority since the two can't fire from the same tap; dismissible
           because, unlike `sendError`, there is nothing to retry or discard.
         */}
-        {reactionError ? (
+        {reactionError || actionError ? (
           <View
             style={styles.reactionErrorBanner}
             accessibilityLiveRegion="polite"
           >
-            <Text style={styles.reactionErrorText}>{reactionError}</Text>
+            <Text style={styles.reactionErrorText}>
+              {reactionError ?? actionError}
+            </Text>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Dismiss"
               hitSlop={8}
-              onPress={clearReactionError}
+              onPress={reactionError ? clearReactionError : clearActionError}
               style={({ pressed }) => (pressed ? styles.pressed : null)}
             >
               <Text style={styles.reactionErrorDismiss}>Dismiss</Text>
