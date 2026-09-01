@@ -1,4 +1,5 @@
 import { useConnectionRuntime } from "@/lib/connection/use-connection";
+import { useBadgeSyncRuntime } from "@/lib/notifications/use-badge-sync";
 import { usePushRuntime } from "@/lib/notifications/use-push-runtime";
 import { useOnboardingRedirect } from "@/lib/onboarding/use-onboarding-redirect";
 
@@ -26,10 +27,15 @@ import { useOnboardingRedirect } from "@/lib/onboarding/use-onboarding-redirect"
  * **Onboarding** is the third runtime for the same freeze: `(tabs)/_layout.tsx`
  * cannot learn about join/welcome without becoming an integrator PR, so walking
  * a member out of the tabs onto s02/s03 lives here.
+ *
+ * **Badge sync** is the fourth: it reacts to the same notification and chat
+ * queries wherever they're already fetched, and needs no screen of its own
+ * (`lib/notifications/use-badge-sync.ts`).
  */
 export function AppRuntime(): null {
   useConnectionRuntime();
   usePushRuntime();
   useOnboardingRedirect();
+  useBadgeSyncRuntime();
   return null;
 }

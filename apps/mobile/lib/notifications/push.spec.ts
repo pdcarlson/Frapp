@@ -58,6 +58,7 @@ function fakeModule() {
     cancelScheduledNotificationAsync: vi.fn().mockResolvedValue(undefined),
     dismissNotificationAsync: vi.fn().mockResolvedValue(undefined),
     setNotificationHandler: vi.fn(),
+    setBadgeCountAsync: vi.fn().mockResolvedValue(true),
   };
 }
 
@@ -192,6 +193,34 @@ describe("push isolation module", () => {
 
     expect(push.takeLastNotificationResponse()).toBeNull();
     expect(mod.clearLastNotificationResponse).not.toHaveBeenCalled();
+  });
+
+  it("sets the badge count, needing no EAS project id", async () => {
+    // No projectId configured — mirrors `has no token to register` above.
+    // Badge setting must still work, since it never leaves the device.
+    constantsState.projectId = undefined;
+    const push = await importPush();
+    const mod = fakeModule();
+    push.setPushLoaderForTests(() => mod);
+
+    await push.setBadgeCount(4);
+    expect(mod.setBadgeCountAsync).toHaveBeenCalledWith(4);
+  });
+
+  it("floors a negative badge count at zero", async () => {
+    const push = await importPush();
+    const mod = fakeModule();
+    push.setPushLoaderForTests(() => mod);
+
+    await push.setBadgeCount(-1);
+    expect(mod.setBadgeCountAsync).toHaveBeenCalledWith(0);
+  });
+
+  it("is a no-op when the module can't load", async () => {
+    const push = await importPush();
+    push.setPushLoaderForTests(() => null);
+
+    await expect(push.setBadgeCount(3)).resolves.toBeUndefined();
   });
 
   it("push.ts never imports the package statically, and never reaches for the device token", () => {
