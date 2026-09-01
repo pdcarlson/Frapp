@@ -3088,6 +3088,10 @@ export interface components {
             status: "PRESENT" | "EXCUSED" | "ABSENT" | "LATE";
             excuse_reason?: string;
         };
+        AutoAbsentResultDto: {
+            /** @description Number of members newly recorded ABSENT. 0 when the event is not mandatory and targets no roles, or when everyone required already has an attendance record. */
+            marked: number;
+        };
         AdjustPointsDto: {
             /** Format: uuid */
             target_user_id: string;
@@ -5499,7 +5503,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AutoAbsentResultDto"];
+                };
             };
         };
     };
