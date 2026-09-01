@@ -20,7 +20,7 @@ export function useActivityFeed(limit?: number) {
     queryKey: ["activity-feed", chapterId, limit],
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/activity-feed", {
-        params: { query: limit ? { limit } : {} },
+        params: { query: limit !== undefined ? { limit } : {} },
       });
       if (error) throw error;
       return data;

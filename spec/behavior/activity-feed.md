@@ -28,4 +28,19 @@ The activity aggregation for the user's active chapter covers:
 
 Feed items are pulled from existing data (events, point_transactions, backwork_resources, members, chat_messages where channel = announcements). This is a **read-only aggregation view**, not a separate data store.
 
+**Implementation notes** (`ActivityFeedService`):
+
+- "New event created" only surfaces events created within the last 14 days — otherwise a chapter's
+  entire history would read as "new" forever. A recurring event's regenerated future occurrences
+  (`parent_event_id` set) never count as "created," since editing a series' time regenerates them
+  with a fresh `created_at` that has nothing to do with a member's sense of "something new happened."
+- Each domain contributes at most 10 rows before the merged, newest-first list is capped to the
+  caller's requested `limit` (1–50, default 20).
+- The five domains are fetched independently: one domain failing (a transient DB error) degrades
+  that domain to an empty contribution rather than failing the whole feed.
+- An `actor` whose `user_id` cannot be resolved against the current chapter roster (a member who has
+  since left) still appears with an empty `display_name` rather than being dropped or given an
+  invented placeholder — the same "empty means unresolved" convention `MemberRosterEntry` uses
+  elsewhere.
+
 **Leaderboard name resolution** (retained rule; no web surface currently renders it — `apps/web/lib/activity-feed-leaderboard.ts` has no importer but its own test since the home screen was removed): leaderboard lines in the activity feed resolve member display names by trying every id shape the API may send (`user_id`, `member_id`, and generic `id`) against the chapter member list, so mismatched field names between points totals and `MemberProfileDto` do not silently fall back to a generic label.

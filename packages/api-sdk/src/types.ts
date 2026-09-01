@@ -3400,6 +3400,29 @@ export interface components {
             /** @description End date (YYYY-MM-DD) */
             end_date?: string;
         };
+        ActivityFeedActorDto: {
+            /** Format: uuid */
+            user_id: string;
+            /** @description Empty when the actor could not be resolved against the current roster (e.g. a member who has since left the chapter) — the server does not invent a placeholder name. */
+            display_name: string;
+            avatar_url: string | null;
+        };
+        ActivityFeedItemDto: {
+            /** @description Stable within one response; not a database primary key. */
+            id: string;
+            /** @enum {string} */
+            type: "event_created" | "event_upcoming" | "points_change" | "backwork_upload" | "member_joined" | "announcement";
+            /**
+             * Format: date-time
+             * @description Feed ordering key — newest first.
+             */
+            timestamp: string;
+            title: string;
+            body: string | null;
+            actor: components["schemas"]["ActivityFeedActorDto"] | null;
+            /** @description The underlying record id (event, point transaction, backwork resource, joining member’s user id, or announcement channel id) for client-side navigation. */
+            target_id: string;
+        };
         CreateDiscordImportDto: {
             /** @description The admin confirms they have posted an in-channel notice in their Discord server telling members the history is being archived into Signet. Required — the API refuses without it, and the column is NOT NULL, so no import can exist that was not preceded by this. */
             consent_acknowledged: boolean;
@@ -6959,7 +6982,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ActivityFeedItemDto"][];
+                };
             };
         };
     };

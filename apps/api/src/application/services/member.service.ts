@@ -148,42 +148,41 @@ export class MemberService {
   }
 
   /**
-   * The chapter's most recently joined members, roster-projected (see
-   * {@link findRosterByChapter} for why: no email/bio/etc.), for the Activity
-   * Feed's "new member joined" item (`spec/behavior/activity-feed.md`).
+   * The full roster, each entry also carrying its membership join timestamp —
+   * for the Activity Feed (`spec/behavior/activity-feed.md`), which needs
+   * both a `user_id → {display_name, avatar_url}` lookup (to name the actor
+   * behind a backwork upload or announcement) *and* the most recently joined
+   * members, from one caller. Built as one combined method rather than two —
+   * {@link findRosterByChapter} plus a separate recent-joins query — so that
+   * caller does one membership read and one identity batch, not two of each.
    *
    * `Member.created_at` is the membership row's timestamp, i.e. when this
    * person joined *this chapter* — not `users.created_at`, which is account
    * creation and could predate the membership by any amount (a re-join, an
    * alumni account reactivated years later).
    */
-  async findRecentJoins(
+  async findRosterWithJoinDates(
     chapterId: string,
-    limit: number,
   ): Promise<RecentMemberJoin[]> {
     const members = await this.memberRepo.findByChapter(chapterId);
     if (!members.length) return [];
 
-    const recent = [...members]
-      .sort((a, b) => b.created_at.localeCompare(a.created_at))
-      .slice(0, limit);
-
-    const userIds = [...new Set(recent.map((member) => member.user_id))];
+    const userIds = [...new Set(members.map((member) => member.user_id))];
     const identities = await this.userRepo.findDisplayIdentitiesByIds(userIds);
     const byId = new Map(identities.map((user) => [user.id, user]));
 
-    const joins: RecentMemberJoin[] = [];
-    for (const member of recent) {
+    const roster: RecentMemberJoin[] = [];
+    for (const member of members) {
       const user = byId.get(member.user_id);
       if (!user) continue;
-      joins.push({
+      roster.push({
         user_id: user.id,
         display_name: user.display_name,
         avatar_url: user.avatar_url,
         joined_at: member.created_at,
       });
     }
-    return joins;
+    return roster;
   }
 
   async findByUserAndChapter(

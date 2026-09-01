@@ -1,6 +1,12 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { ActivityFeedService } from '../../application/services/activity-feed.service';
+import type { ActivityFeedItem } from '../../application/services/activity-feed.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
@@ -10,7 +16,10 @@ import {
   CurrentUser,
 } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '../../domain/constants/permissions';
-import { ListActivityFeedQueryDto } from '../dtos/activity-feed.dto';
+import {
+  ActivityFeedItemDto,
+  ListActivityFeedQueryDto,
+} from '../dtos/activity-feed.dto';
 
 // No `@RequireModule` — every domain this feed reads from (events, points,
 // members, chat, backwork) is either always-on or, for backwork, itself
@@ -30,11 +39,12 @@ export class ActivityFeedController {
     description:
       'Normalized, newest-first rows aggregated from events, the caller’s own point changes, backwork uploads (only when the caller can view Backwork), new members, and the announcements channel. Read-only aggregation — no separate feed table (`spec/behavior/activity-feed.md`).',
   })
+  @ApiOkResponse({ type: ActivityFeedItemDto, isArray: true })
   async getFeed(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Query() query: ListActivityFeedQueryDto,
-  ) {
+  ): Promise<ActivityFeedItem[]> {
     return this.activityFeedService.getFeed(chapterId, userId, query.limit);
   }
 }

@@ -277,6 +277,82 @@ describe('MemberService', () => {
     });
   });
 
+  describe('findRosterWithJoinDates', () => {
+    const memberRow = (
+      userId: string,
+      createdAt: string,
+      id = `member-${userId}`,
+    ) => ({
+      id,
+      user_id: userId,
+      chapter_id: 'chapter-1',
+      role_ids: ['role-1'],
+      custom_role_ids: [],
+      has_completed_onboarding: true,
+      created_at: createdAt,
+      updated_at: createdAt,
+    });
+
+    it('carries each membership join timestamp alongside the roster projection', async () => {
+      mockRepo.findByChapter.mockResolvedValue([
+        memberRow('user-1', '2026-01-15T00:00:00.000Z'),
+      ]);
+      mockUserRepo.findDisplayIdentitiesByIds.mockResolvedValue([
+        { id: 'user-1', display_name: 'Marcus Reid', avatar_url: null },
+      ]);
+
+      const result = await service.findRosterWithJoinDates('chapter-1');
+
+      expect(result).toEqual([
+        {
+          user_id: 'user-1',
+          display_name: 'Marcus Reid',
+          avatar_url: null,
+          joined_at: '2026-01-15T00:00:00.000Z',
+        },
+      ]);
+    });
+
+    it('does one membership read and one identity batch for the whole chapter', async () => {
+      mockRepo.findByChapter.mockResolvedValue([
+        memberRow('user-1', '2026-01-15T00:00:00.000Z'),
+        memberRow('user-2', '2026-02-01T00:00:00.000Z'),
+      ]);
+      mockUserRepo.findDisplayIdentitiesByIds.mockResolvedValue([
+        { id: 'user-1', display_name: 'Marcus Reid', avatar_url: null },
+        { id: 'user-2', display_name: 'Dana Lowe', avatar_url: null },
+      ]);
+
+      await service.findRosterWithJoinDates('chapter-1');
+
+      expect(mockRepo.findByChapter).toHaveBeenCalledTimes(1);
+      expect(mockUserRepo.findDisplayIdentitiesByIds).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips a member whose user row is missing instead of throwing', async () => {
+      mockRepo.findByChapter.mockResolvedValue([
+        memberRow('user-1', '2026-01-15T00:00:00.000Z'),
+        memberRow('user-ghost', '2026-01-16T00:00:00.000Z'),
+      ]);
+      mockUserRepo.findDisplayIdentitiesByIds.mockResolvedValue([
+        { id: 'user-1', display_name: 'Marcus Reid', avatar_url: null },
+      ]);
+
+      const result = await service.findRosterWithJoinDates('chapter-1');
+
+      expect(result).toHaveLength(1);
+    });
+
+    it('returns an empty roster without a user lookup for an empty chapter', async () => {
+      mockRepo.findByChapter.mockResolvedValue([]);
+
+      const result = await service.findRosterWithJoinDates('chapter-1');
+
+      expect(result).toEqual([]);
+      expect(mockUserRepo.findDisplayIdentitiesByIds).not.toHaveBeenCalled();
+    });
+  });
+
   describe('updateRoles', () => {
     const existingMember = {
       id: 'member-1',
