@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Loader2, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Loader2, MessageSquare, Trash2 } from "lucide-react";
 import { DirectoryGlyph, RolesGlyph } from "@/components/members/directory-glyphs";
 import {
   useCustomRoles,
+  useGetOrCreateDm,
   useMember,
   useMyPermissions,
   useRemoveMember,
@@ -13,6 +15,7 @@ import {
 } from "@repo/hooks";
 import { can } from "@repo/validation";
 import { formatLocaleDate as formatDate } from "@repo/formatting";
+import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -162,6 +165,9 @@ export function MemberDetailSheet({
   const memberQuery = useMember(!usingPreviewData ? memberId : "");
   const updateRolesMutation = useUpdateMemberRoles();
   const removeMemberMutation = useRemoveMember();
+  const dmMutation = useGetOrCreateDm();
+  const router = useRouter();
+  const { userId: currentUserId, isLoading: isCurrentUserLoading } = useFrappUser();
   const { toast } = useToast();
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
   const [selectedCustomRoleIds, setSelectedCustomRoleIds] = useState<string[]>([]);
@@ -235,6 +241,22 @@ export function MemberDetailSheet({
       : "Unknown member";
   const userId =
     typeof resolvedMember?.user_id === "string" ? resolvedMember.user_id : "unknown-user";
+  // Distinct from the display-formatted `userId` above: this is null rather
+  // than the "unknown-user" placeholder, so the Message button and its
+  // handler can never fire a DM request at a fallback string.
+  const dmTargetUserId =
+    typeof resolvedMember?.user_id === "string" && resolvedMember.user_id.length > 0
+      ? resolvedMember.user_id
+      : null;
+  // members-directory.tsx keeps one MemberDetailSheet instance mounted and
+  // swaps `member` as rows are opened, so a slow DM request started for one
+  // member can still resolve after the sheet has moved to another — this ref
+  // lets that continuation notice it's now stale instead of navigating the
+  // viewer to the wrong conversation.
+  const dmTargetUserIdRef = useRef(dmTargetUserId);
+  useEffect(() => {
+    dmTargetUserIdRef.current = dmTargetUserId;
+  }, [dmTargetUserId]);
   const email = typeof resolvedMember?.email === "string" ? resolvedMember.email : "Unavailable";
   const hasCompletedOnboarding =
     typeof resolvedMember?.has_completed_onboarding === "boolean"
@@ -296,6 +318,46 @@ export function MemberDetailSheet({
     }
   }
 
+  // `POST /v1/channels/dm` doesn't reject a self-DM (member_ids: [userId, userId]
+  // still passes the "exactly 2 members" check) — it silently creates a
+  // degenerate channel. Guarding here, not server-side, since this issue is
+  // scoped to the web UI; the button is simply absent for the viewer's own row.
+  async function handleMessage() {
+    // `currentUserId` is null until /v1/users/me resolves; treating that as
+    // "not the viewer" would let a self-DM through during that window, so
+    // require the load to finish before comparing.
+    if (!dmTargetUserId || isCurrentUserLoading || dmTargetUserId === currentUserId) {
+      return;
+    }
+    const requestedUserId = dmTargetUserId;
+
+    try {
+      const dm = await dmMutation.mutateAsync({ member_id: requestedUserId });
+      // The sheet may have moved on to a different member while this request
+      // was in flight — ignore a result that's no longer for the open member.
+      if (dmTargetUserIdRef.current !== requestedUserId) return;
+      const channelId =
+        dm && typeof dm === "object" && typeof (dm as { id?: unknown }).id === "string"
+          ? (dm as { id: string }).id
+          : null;
+      if (!channelId) {
+        throw new Error("No channel id returned");
+      }
+      onOpenChange(false);
+      router.push(`/chat?channel=${channelId}`);
+    } catch (error) {
+      if (dmTargetUserIdRef.current !== requestedUserId) return;
+      toast({
+        title: "Could not start conversation",
+        description: getErrorMessage(
+          error,
+          "Something went wrong. Please retry.",
+        ),
+        variant: "destructive",
+      });
+    }
+  }
+
   function handleRoleChange(roleId: string, isChecked: boolean) {
     toggleSelection(setSelectedRoleIds, roleId, isChecked);
   }
@@ -316,6 +378,26 @@ export function MemberDetailSheet({
             Review member profile context and update chapter role assignments.
           </SheetDescription>
         </SheetHeader>
+
+        {!usingPreviewData &&
+        dmTargetUserId &&
+        !isCurrentUserLoading &&
+        dmTargetUserId !== currentUserId ? (
+          <div className="mt-4">
+            <Button
+              variant="secondary"
+              onClick={handleMessage}
+              disabled={dmMutation.isPending}
+            >
+              {dmMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <MessageSquare className="h-4 w-4" />
+              )}
+              Message
+            </Button>
+          </div>
+        ) : null}
 
         {memberQuery.isLoading && !usingPreviewData ? (
           <div className="mt-6 flex items-center gap-2 text-sm text-muted-foreground">
