@@ -10,7 +10,7 @@ import {
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { resolveDisplayName, type DisplayNameMap } from "./display-names";
 
-export function useMembers() {
+export function useMembers(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   return useQuery({
@@ -21,7 +21,7 @@ export function useMembers() {
       return data;
     },
     staleTime: 60_000,
-    enabled: !!chapterId,
+    enabled: (options?.enabled ?? true) && !!chapterId,
   });
 }
 

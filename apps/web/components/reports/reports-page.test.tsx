@@ -3,15 +3,36 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
-const { mockCurrentChapter, mockAttendanceReport } = vi.hoisted(() => ({
+const {
+  mockCurrentChapter,
+  mockAttendanceReport,
+  mockUseEvents,
+  mockUseMembers,
+  mockUseMyPermissions,
+} = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
   mockAttendanceReport: vi.fn(),
+  mockUseEvents: vi.fn(),
+  mockUseMembers: vi.fn(),
+  mockUseMyPermissions: vi.fn(),
 }));
 
 // Only the chapter payload is stubbed — `useSubscriptionWriteState` and
 // `subscriptionWriteState` run for real, so this covers the whole path from the
 // wire format to the disabled control.
 const idle = () => ({ mutateAsync: vi.fn(), isPending: false });
+const emptyList = () => ({
+  data: [],
+  isPending: false,
+  isError: false,
+  refetch: vi.fn(),
+});
+// Granted by default so the existing picker tests don't have to think about
+// the `reports:export` gate on `useEvents`/`useMembers` — the tests that do
+// care about it override this per-case.
+const grantedPermissions = () => ({
+  data: { permissions: ["reports:export"] },
+});
 
 vi.mock("@repo/hooks", () => ({
   useCurrentChapter: () => mockCurrentChapter(),
@@ -19,6 +40,9 @@ vi.mock("@repo/hooks", () => ({
   usePointsReport: () => idle(),
   useRosterReport: () => idle(),
   useServiceReport: () => idle(),
+  useEvents: (options?: { enabled?: boolean }) => mockUseEvents(options),
+  useMembers: (options?: { enabled?: boolean }) => mockUseMembers(options),
+  useMyPermissions: () => mockUseMyPermissions(),
   isReportExportEnvelope: () => false,
 }));
 
@@ -46,6 +70,9 @@ describe("ReportsPage subscription gating", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockAttendanceReport.mockReturnValue(idle());
+    mockUseEvents.mockReturnValue(emptyList());
+    mockUseMembers.mockReturnValue(emptyList());
+    mockUseMyPermissions.mockReturnValue(grantedPermissions());
   });
 
   it("leaves both export triggers alone on an active chapter", () => {
@@ -99,8 +126,8 @@ describe("ReportsPage subscription gating", () => {
     chapter.incomplete();
     render(<ReportsPage />);
 
-    expect(screen.getByRole("combobox")).toBeEnabled();
-    expect(screen.getByLabelText(/event id/i)).toBeEnabled();
+    expect(screen.getByLabelText(/^report$/i)).toBeEnabled();
+    expect(screen.getByLabelText(/^event/i)).toBeEnabled();
     expect(csvButton()).not.toHaveAttribute("aria-describedby");
   });
 
@@ -171,6 +198,9 @@ describe("ReportsPage preview states", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     chapter.active();
+    mockUseEvents.mockReturnValue(emptyList());
+    mockUseMembers.mockReturnValue(emptyList());
+    mockUseMyPermissions.mockReturnValue(grantedPermissions());
   });
 
   it("renders an error with a retry when a run fails, not the idle copy", async () => {
@@ -285,5 +315,198 @@ describe("ReportsPage preview states", () => {
 
     expect(await screen.findByText("Paul")).toBeInTheDocument();
     expect(screen.queryByText(/incomplete report/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("ReportsPage event and member pickers", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chapter.active();
+    mockAttendanceReport.mockReturnValue(idle());
+    mockUseEvents.mockReturnValue(emptyList());
+    mockUseMembers.mockReturnValue(emptyList());
+    mockUseMyPermissions.mockReturnValue(grantedPermissions());
+  });
+
+  it("lists events by name and start time instead of asking for a raw UUID", () => {
+    mockUseEvents.mockReturnValue({
+      data: [
+        {
+          id: "evt-1",
+          name: "Chapter Meeting",
+          start_time: "2026-09-01T18:00:00Z",
+        },
+      ],
+      isPending: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+
+    render(<ReportsPage />);
+
+    expect(
+      screen.getByRole("option", { name: /chapter meeting/i }),
+    ).toHaveValue("evt-1");
+    expect(screen.queryByPlaceholderText(/uuid/i)).not.toBeInTheDocument();
+  });
+
+  it("scopes the attendance report to the event selected from the picker", async () => {
+    const user = userEvent.setup();
+    const mutateAsync = vi.fn().mockResolvedValue({
+      payload: [],
+      truncation: { truncated: false, rowLimit: null, note: null },
+    });
+    mockAttendanceReport.mockReturnValue({ mutateAsync, isPending: false });
+    mockUseEvents.mockReturnValue({
+      data: [
+        {
+          id: "evt-1",
+          name: "Chapter Meeting",
+          start_time: "2026-09-01T18:00:00Z",
+        },
+      ],
+      isPending: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+
+    render(<ReportsPage />);
+    await user.selectOptions(screen.getByLabelText(/^event/i), "evt-1");
+    await user.click(generateButton());
+
+    expect(mutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({ event_id: "evt-1" }),
+      }),
+    );
+  });
+
+  it("keeps the event picker usable and names the failure when the event list errors", () => {
+    const refetch = vi.fn();
+    mockUseEvents.mockReturnValue({
+      data: undefined,
+      isPending: false,
+      isError: true,
+      refetch,
+    });
+
+    render(<ReportsPage />);
+
+    expect(screen.getByText(/couldn't load events/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^event/i)).toBeEnabled();
+  });
+
+  it("says so when the chapter has no events yet", () => {
+    mockUseEvents.mockReturnValue({
+      data: [],
+      isPending: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+
+    render(<ReportsPage />);
+
+    expect(screen.getByText(/no events yet/i)).toBeInTheDocument();
+  });
+
+  it("disables the event picker while the event list is loading", () => {
+    mockUseEvents.mockReturnValue({
+      data: undefined,
+      isPending: true,
+      isError: false,
+      refetch: vi.fn(),
+    });
+
+    render(<ReportsPage />);
+
+    expect(screen.getByLabelText(/^event/i)).toBeDisabled();
+  });
+
+  it("lists members by display name and email for the points report, not a raw UUID", async () => {
+    const user = userEvent.setup();
+    mockUseMembers.mockReturnValue({
+      data: [
+        {
+          user_id: "user-1",
+          display_name: "Paul Carlson",
+          email: "paul@example.com",
+        },
+      ],
+      isPending: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+
+    render(<ReportsPage />);
+    await user.click(screen.getByLabelText(/^report$/i));
+    await user.click(await screen.findByRole("option", { name: "Points" }));
+
+    const option = await screen.findByRole("option", {
+      name: /paul carlson \(paul@example\.com\)/i,
+    });
+    expect(option).toHaveValue("user-1");
+    expect(screen.queryByPlaceholderText(/uuid/i)).not.toBeInTheDocument();
+  });
+
+  it("scopes the event/member list fetch to reports:export, not just the page render", () => {
+    // `useEvents`/`useMembers` are eager queries, unlike the four report
+    // mutations — firing them for a visitor who cannot even see this page
+    // (denied by the outer `<Can permission="reports:export">`) would still
+    // download every member's full profile as a side effect.
+    mockUseMyPermissions.mockReturnValue({ data: { permissions: [] } });
+
+    render(<ReportsPage />);
+
+    expect(mockUseEvents).toHaveBeenCalledWith({ enabled: false });
+    expect(mockUseMembers).toHaveBeenCalledWith({ enabled: false });
+  });
+
+  it("enables the event/member list fetch once reports:export is confirmed", () => {
+    render(<ReportsPage />);
+
+    expect(mockUseEvents).toHaveBeenCalledWith({ enabled: true });
+    expect(mockUseMembers).toHaveBeenCalledWith({ enabled: true });
+  });
+
+  it("lets an officer target an event the picker doesn't list, via the manual-id fallback", async () => {
+    const user = userEvent.setup();
+    const mutateAsync = vi.fn().mockResolvedValue({
+      payload: [],
+      truncation: { truncated: false, rowLimit: null, note: null },
+    });
+    mockAttendanceReport.mockReturnValue({ mutateAsync, isPending: false });
+    // Simulates a role-targeted event `EventService.findByChapter` filters
+    // out of the list for this caller, or a chapter with `members:view`
+    // withheld from a `reports:export`-only custom role — either way the
+    // picker's list can be empty or incomplete while a known id still works.
+    mockUseEvents.mockReturnValue(emptyList());
+
+    render(<ReportsPage />);
+    await user.click(screen.getByText(/can't find the event/i));
+    await user.type(
+      screen.getByPlaceholderText(/event id/i),
+      "evt-not-listed",
+    );
+    await user.click(generateButton());
+
+    expect(mutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({ event_id: "evt-not-listed" }),
+      }),
+    );
+  });
+
+  it("tells the officer a manually-entered id isn't in the picker's list, rather than looking ignored", async () => {
+    const user = userEvent.setup();
+    mockUseEvents.mockReturnValue(emptyList());
+
+    render(<ReportsPage />);
+    await user.click(screen.getByText(/can't find the event/i));
+    await user.type(
+      screen.getByPlaceholderText(/event id/i),
+      "evt-not-listed",
+    );
+
+    expect(screen.getByText(/not in the list above/i)).toBeInTheDocument();
   });
 });
