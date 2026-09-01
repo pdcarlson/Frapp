@@ -113,7 +113,13 @@ export class StudySessionController {
     @CurrentChapterId() chapterId: string,
     @Body() dto: StudySessionHeartbeatDto,
   ) {
-    return this.studyService.heartbeat(userId, chapterId, dto.lat, dto.lng);
+    return this.studyService.heartbeat(
+      userId,
+      chapterId,
+      dto.lat,
+      dto.lng,
+      dto.accuracy_meters,
+    );
   }
 
   @Post('pause')

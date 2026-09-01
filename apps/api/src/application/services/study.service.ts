@@ -23,6 +23,11 @@ import { pointInPolygon } from '../../domain/utils/geofence';
 const HEARTBEAT_STALE_MINUTES = 10;
 const MS_PER_MINUTE = 60 * 1000;
 
+/** `spec/behavior/study-sessions.md`: GPS accuracy worse than this is spoofed/unreliable. */
+const GPS_ACCURACY_REJECT_METERS = 100;
+/** Consecutive rejected-accuracy heartbeats before the session expires as LOCATION_INVALID. */
+const LOCATION_REJECT_STREAK_LIMIT = 2;
+
 /**
  * Fallback grace window for rows written before `pause_grace_minutes` existed
  * and for any geofence that somehow carries a null. Matches the column default
@@ -116,6 +121,25 @@ export class StudyService {
       (now.getTime() - new Date(session.last_heartbeat_at).getTime()) /
       MS_PER_MINUTE;
     return gap > HEARTBEAT_STALE_MINUTES;
+  }
+
+  /**
+   * An out-of-polygon fix expires the session immediately as EXPIRED, never
+   * LOCATION_INVALID — that status is reserved for the consecutive-poor-
+   * accuracy streak. Shared by heartbeat()'s active and implicit-resume
+   * branches and by resumeSession(), which must all agree on this exact
+   * payload for the same real-world scenario (member left the zone).
+   */
+  private expireOutOfZone(
+    session: StudySession,
+    chapterId: string,
+    now: Date,
+  ): Promise<StudySession> {
+    return this.sessionRepo.update(session.id, chapterId, {
+      status: 'EXPIRED',
+      end_time: now.toISOString(),
+      location_reject_streak: 0,
+    });
   }
 
   /**
@@ -337,6 +361,7 @@ export class StudyService {
     chapterId: string,
     lat: number,
     lng: number,
+    accuracyMeters?: number,
   ): Promise<StudySession> {
     await this.assertNotAlumni(chapterId, userId);
 
@@ -371,6 +396,44 @@ export class StudyService {
     );
     if (expired) return expired;
 
+    // Staleness reflects the *gap* since the last heartbeat and is checked
+    // before accuracy: a session that already went 10+ minutes silent should
+    // expire for that reason regardless of how good or bad this heartbeat's
+    // fix is. Only non-paused sessions can be stale this way — a paused
+    // session's clock is `paused_at`/the grace window, already resolved above.
+    if (!session.paused_at && this.isStale(session, now)) {
+      return this.sessionRepo.update(session.id, chapterId, {
+        status: 'EXPIRED',
+        end_time: now.toISOString(),
+      });
+    }
+
+    // A poor-accuracy fix cannot be trusted for the polygon check below, so it
+    // is rejected before that check runs rather than treated as "outside the
+    // zone". Two *consecutive* rejections are required before the session
+    // expires — one bad fix among otherwise-good ones is normal GPS jitter,
+    // not spoofing — and LOCATION_INVALID is reserved for exactly this path;
+    // an out-of-polygon miss below expires immediately as EXPIRED instead.
+    if (
+      typeof accuracyMeters === 'number' &&
+      accuracyMeters > GPS_ACCURACY_REJECT_METERS
+    ) {
+      // `?? 0` guards a row read before the migration's schema-cache reload
+      // finishes propagating, the same deploy-ordering risk
+      // `DEFAULT_PAUSE_GRACE_MINUTES` exists for on `pause_grace_minutes`.
+      const streak = (session.location_reject_streak ?? 0) + 1;
+      if (streak >= LOCATION_REJECT_STREAK_LIMIT) {
+        return this.sessionRepo.update(session.id, chapterId, {
+          status: 'LOCATION_INVALID',
+          end_time: now.toISOString(),
+          location_reject_streak: streak,
+        });
+      }
+      return this.sessionRepo.update(session.id, chapterId, {
+        location_reject_streak: streak,
+      });
+    }
+
     // Location is checked before the implicit resume below, not after: the
     // member may have left the zone while backgrounded, and this heartbeat is
     // the only evidence available until the next one five minutes out.
@@ -378,31 +441,21 @@ export class StudyService {
 
     if (session.paused_at) {
       if (!inside) {
-        return this.sessionRepo.update(session.id, chapterId, {
-          status: 'LOCATION_INVALID',
-          end_time: now.toISOString(),
-        });
+        return this.expireOutOfZone(session, chapterId, now);
       }
       // Inside grace and back in the zone. Paused time does not accrue, so
       // restart the watermark — carrying the pre-pause remainder with it.
       return this.sessionRepo.update(session.id, chapterId, {
         paused_at: null,
         last_heartbeat_at: this.resumeWatermark(session, now),
+        location_reject_streak: 0,
       });
     }
 
-    if (this.isStale(session, now)) {
-      return this.sessionRepo.update(session.id, chapterId, {
-        status: 'EXPIRED',
-        end_time: now.toISOString(),
-      });
-    }
-
+    // Staleness for a non-paused session was already checked above, before
+    // the accuracy gate — reaching here means this heartbeat is timely.
     if (!inside) {
-      return this.sessionRepo.update(session.id, chapterId, {
-        status: 'LOCATION_INVALID',
-        end_time: now.toISOString(),
-      });
+      return this.expireOutOfZone(session, chapterId, now);
     }
 
     const { totalMinutes, watermark } = this.accrue(session, now);
@@ -410,6 +463,7 @@ export class StudyService {
     return this.sessionRepo.update(session.id, chapterId, {
       last_heartbeat_at: watermark,
       total_foreground_minutes: totalMinutes,
+      location_reject_streak: 0,
     });
   }
 
@@ -523,16 +577,19 @@ export class StudyService {
 
     if (!session.paused_at) return session;
 
+    // Same rule as the implicit resume in `heartbeat()`: an out-of-polygon
+    // fix expires the session immediately as EXPIRED, not LOCATION_INVALID —
+    // that status is reserved for the consecutive-poor-accuracy path, and a
+    // client that never calls `/resume` reaches this exact scenario through
+    // its next heartbeat, so the two paths must agree.
     if (!pointInPolygon(lat, lng, geofence.coordinates)) {
-      return this.sessionRepo.update(session.id, chapterId, {
-        status: 'LOCATION_INVALID',
-        end_time: now.toISOString(),
-      });
+      return this.expireOutOfZone(session, chapterId, now);
     }
 
     return this.sessionRepo.update(session.id, chapterId, {
       paused_at: null,
       last_heartbeat_at: this.resumeWatermark(session, now),
+      location_reject_streak: 0,
     });
   }
 
