@@ -424,7 +424,7 @@ Splitting these into a standalone Render Background Worker is not currently warr
 In each Render service → Settings → Deploy Hook → copy the URL. Store secrets as GitHub **environment-scoped** secrets (same names in both environments, different values):
 
 - `RENDER_DEPLOY_HOOK_URL` → deploy hook URL for that environment
-- `API_HEALTHCHECK_URL` → smoke-check URL for that environment (e.g. `https://api-staging.frapp.live/health` or `https://api.frapp.live/health`)
+- `API_HEALTHCHECK_URL` → smoke-check URL for that environment (e.g. `https://api-staging.frapp.live/health` or `https://api.frapp.live/health`). The deploy workflows append `/ready` to this value themselves (`.../health/ready`) rather than polling `/health` directly — `/health` is Render's own `healthCheckPath` and always returns 2xx, while `/health/ready` 503s on a degraded dependency (see `spec/behavior/observability.md` § Health Check). Set this secret to the `/health` URL, not `/health/ready` — the `/ready` suffix is added at call time.
 
 ---
 
