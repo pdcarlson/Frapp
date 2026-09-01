@@ -36,6 +36,14 @@ export interface MessageAttachmentsProps {
   count: number;
   /** Self bubbles take the chapter accent, so their text colour differs. */
   isMine: boolean;
+  /**
+   * `--signet-accent-on-primary` (or its house-gold fallback) from the
+   * caller's own `useChapterBranding()` call — passed down rather than
+   * re-resolved here, so the note text on a self bubble always matches the
+   * bubble fill it sits on (#1007). Required when `isMine` is true, omitted
+   * by the incoming-message caller, which never reads chapter branding.
+   */
+  accentOnPrimary?: string;
 }
 
 /** Content types rendered as an inline preview rather than a download row. */
@@ -48,6 +56,7 @@ export function MessageAttachments({
   messageId,
   count,
   isMine,
+  accentOnPrimary,
 }: MessageAttachmentsProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -55,7 +64,9 @@ export function MessageAttachments({
   const [openFailed, setOpenFailed] = useState(false);
   const [openingId, setOpeningId] = useState<string | null>(null);
 
-  const noteStyle = isMine ? styles.noteMine : styles.noteTheirs;
+  const noteStyle = isMine
+    ? [styles.noteMine, { color: accentOnPrimary ?? tokens.color.gold.onHouse }]
+    : styles.noteTheirs;
 
   if (count === 0) return null;
 
@@ -195,8 +206,9 @@ function createStyles(tokens: SignetTokens) {
       marginTop: tokens.spacing.xs,
     },
     noteMine: {
+      // No color here — the chapter accent's on-primary pairing is applied
+      // inline from the caller's accentOnPrimary prop (#1007).
       ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.gold.onHouse,
       marginTop: tokens.spacing.xs,
     },
     error: {

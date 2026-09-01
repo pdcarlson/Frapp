@@ -217,6 +217,18 @@ describe("the states that must stay visible", () => {
   });
 });
 
+// #1007: a self bubble's note text sits on the chapter accent fill, so it
+// needs that fill's contrast-checked on-primary colour, not a fixed one.
+describe("the mine note colour", () => {
+  it("colours the loading note with the caller's accentOnPrimary", () => {
+    hookState.result = { isPending: true, isError: false, data: undefined };
+    const tree = render({ isMine: true, accentOnPrimary: "#2B2009", count: 1 });
+
+    const [note] = tree.root.findAllByType("Text" as unknown as React.ElementType);
+    expect(JSON.stringify(note!.props.style)).toContain('"color":"#2B2009"');
+  });
+});
+
 describe("isPreviewable", () => {
   it("is true only for image content types", () => {
     expect(isPreviewable("image/png")).toBe(true);

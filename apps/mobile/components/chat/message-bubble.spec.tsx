@@ -216,3 +216,35 @@ describe("attachment rendering is gated on the message", () => {
     expect(rendered).not.toContain("open on web");
   });
 });
+
+// #1007: the self bubble is the one surface that takes the chapter accent
+// (components.md:210) via the mocked `useChapterBranding()` pair above.
+describe("self bubble takes the chapter accent (#1007)", () => {
+  it("fills the bubble with accentPrimary and colours its text accentOnPrimary", () => {
+    const rendered = renderBubble(
+      message({ sender_id: VIEWER, content: "hello" }),
+    ).toJSON();
+
+    // Flatten style arrays the way RN itself would, and pull every resolved
+    // backgroundColor/color across the tree — asserting on the JSON string
+    // would also pass for a coincidental substring match, and asserting only
+    // the outermost node would miss the fill living on a nested View.
+    const flat = JSON.stringify(rendered);
+    expect(flat).toContain('"backgroundColor":"#C49A3A"');
+    expect(flat).toContain('"color":"#2B2009"');
+  });
+
+  it("never resolves branding colours for an incoming message", () => {
+    // Guards the split in MessageBubble: an incoming row must not call
+    // useChapterBranding() at all, so its rendered tree carries neither
+    // mocked colour — regression coverage for that isolation, not just this
+    // test's own fixture values.
+    const rendered = renderBubble(
+      message({ sender_id: OTHER, content: "hello" }),
+    ).toJSON();
+
+    const flat = JSON.stringify(rendered);
+    expect(flat).not.toContain("#C49A3A");
+    expect(flat).not.toContain("#2B2009");
+  });
+});
