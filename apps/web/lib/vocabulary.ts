@@ -27,3 +27,22 @@ export function vocab(key: VocabKey, chapterConfig?: VocabConfig): string {
   }
   return IFC_DEFAULTS[key];
 }
+
+/**
+ * Title-case every word in a vocab term, for callers that use it as a
+ * role-name-style reference (e.g. "New Member" alongside "Member") rather
+ * than inline sentence-case prose. `vocab()`'s own multi-word defaults are
+ * sentence case — only the first word capitalized ("New member", "Pledge
+ * class") — but the seeded role these terms describe is always displayed
+ * fully capitalized elsewhere (e.g. the Discord-import role mapping step's
+ * "New Member"), so a caller quoting the term as a proper noun should apply
+ * this rather than assume `vocab()`'s casing.
+ */
+export function titleCase(term: string): string {
+  return term
+    .split(" ")
+    .map((word) =>
+      word ? word.charAt(0).toUpperCase() + word.slice(1) : word,
+    )
+    .join(" ");
+}
