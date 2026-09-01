@@ -572,6 +572,35 @@ describe('StudyService', () => {
 
         jest.useRealTimers();
       });
+
+      // Regression: the accuracy check used to run before the staleness
+      // check, so a poor-accuracy fix on an already-stale session (a cold
+      // GPS lock after the app was killed/backgrounded for 10+ minutes with
+      // no /pause) was diverted into the reject-streak path instead of
+      // expiring for staleness — silently extending an already-lapsed
+      // session, or later mislabeling the lapse as LOCATION_INVALID.
+      it('expires for staleness rather than counting a poor-accuracy fix on an already-stale session', async () => {
+        mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(
+          baseSession,
+        );
+        mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
+        const expired = { ...baseSession, status: 'EXPIRED' as const };
+        mockSessionRepo.update.mockResolvedValue(expired);
+
+        jest.useFakeTimers();
+        // 15 min since the 10:05 watermark — past the 10-minute stale window.
+        jest.setSystemTime(new Date('2026-02-26T10:20:00.000Z'));
+
+        const result = await service.heartbeat('user-1', 'ch-1', 5, 5, 150);
+
+        expect(mockSessionRepo.update).toHaveBeenCalledWith('sess-1', 'ch-1', {
+          status: 'EXPIRED',
+          end_time: '2026-02-26T10:20:00.000Z',
+        });
+        expect(result.status).toBe('EXPIRED');
+
+        jest.useRealTimers();
+      });
     });
   });
 

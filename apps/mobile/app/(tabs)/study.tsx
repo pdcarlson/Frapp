@@ -235,7 +235,7 @@ export default function StudyScreen() {
    * incoming-call banner. None of those is the member leaving, and treating
    * them as a pause fires a `/resume` with a fresh fix seconds later — which the
    * server re-checks against the polygon, so an indoor GPS jitter closes the
-   * session `LOCATION_INVALID` with no points, for someone who never moved.
+   * session `EXPIRED` with no points, for someone who never moved.
    * Android never emits `inactive`, so this would not have shown up there.
    */
   const isForeground = appState !== "background";
