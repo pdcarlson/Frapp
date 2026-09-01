@@ -40,6 +40,14 @@ const REQUIRED_ENV_VARS = [
 //                            Developer Portal EXACTLY as
 //                            `${API_URL}/v1/discord/connect/callback`, and the
 //                            callback sends the browser back to `APP_URL`.
+//
+// Also optional, same reasoning (#238): email-based bulk invites. Unset,
+// `selectEmailProvider()` uses a no-op provider that logs instead of sending,
+// so local dev / tests / CI never need a real email credential — the invite
+// tokens still get created either way, only delivery is skipped.
+//   - RESEND_API_KEY    enables the Resend transport for invite emails
+//   - RESEND_FROM_EMAIL optional from-address override (default a Frapp address
+//                       that must be verified with Resend before it will send)
 
 type EnvVar = (typeof REQUIRED_ENV_VARS)[number];
 
