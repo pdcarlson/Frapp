@@ -2,7 +2,12 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
-import { useBillingStatus, useCurrentUser, useInvoices } from "@repo/hooks";
+import {
+  useBillingStatus,
+  useCurrentUser,
+  useInvoices,
+  useOverdueInvoices,
+} from "@repo/hooks";
 import { Badge } from "@/components/ui/badge";
 import {
   invoiceStatusKind,
@@ -34,6 +39,7 @@ import { useChapterSubscription } from "@/lib/hooks/use-subscription-write-state
 import { isStripeConfigured } from "@/lib/stripe";
 import { formatCurrency } from "@/lib/currency";
 import { formatLocaleDate as formatDate } from "@repo/formatting";
+import { asArray } from "@/lib/utils";
 
 // Mirrors what `BillingService.getChapterBillingStatus` actually returns. The
 // Stripe identifiers have no other source; `subscription_status` is kept as a
@@ -48,7 +54,7 @@ type InvoicePreview = {
   id: string;
   title: string;
   amount: number;
-  status: string;
+  status: "DRAFT" | "OPEN" | "PAID" | "VOID";
   due_date: string;
   user_id: string;
 };
@@ -63,6 +69,7 @@ export default function BillingPage() {
   );
   const statusQuery = useBillingStatus();
   const invoicesQuery = useInvoices();
+  const overdueQuery = useOverdueInvoices();
   const currentUserQuery = useCurrentUser();
   // One reader for subscription state across the whole client (§5, "read
   // subscription state from one place"). `GET /v1/billing/status` and the
@@ -85,11 +92,33 @@ export default function BillingPage() {
     ? (invoicesQuery.data as InvoicePreview[])
     : [];
   const visibleInvoices = invoices;
+  // Overdue is server-defined (GET /invoices/overdue applies the chapter's
+  // dues grace policy), so the filter and the count derive from that list
+  // rather than re-deriving `due_date < now` locally — see the identical
+  // reasoning in invoice-admin-card.tsx, whose overdueIds this mirrors.
+  const overdue = useMemo(
+    () => asArray<InvoicePreview>(overdueQuery.data),
+    [overdueQuery.data],
+  );
+  const overdueIds = useMemo(
+    () => new Set(overdue.map((invoice) => invoice.id)),
+    [overdue],
+  );
+  // GET /invoices/overdue requires `billing:view`, which most members do not
+  // hold — this page is not admin-only (`canPay` below exists precisely so a
+  // member without that permission can pay their own OPEN invoice here), so
+  // that 403 is the common case, not an edge case. Without this flag,
+  // `overdueIds` degrading to an empty set on error reads as "nothing is
+  // overdue" rather than "we don't know" — silently reintroducing the exact
+  // confidently-wrong signal #707 exists to fix, for most of the userbase.
+  const overdueUnavailable = overdueQuery.isError;
   const filteredInvoices = useMemo(() => {
     const query = invoiceSearch.trim().toLowerCase();
     return visibleInvoices.filter((invoice) => {
       const statusLower = invoice.status.toLowerCase();
-      if (statusFilter !== "all" && statusLower !== statusFilter) {
+      if (statusFilter === "overdue") {
+        if (!overdueIds.has(invoice.id)) return false;
+      } else if (statusFilter !== "all" && statusLower !== statusFilter) {
         return false;
       }
       if (!query) return true;
@@ -98,7 +127,7 @@ export default function BillingPage() {
         statusLower.includes(query)
       );
     });
-  }, [visibleInvoices, invoiceSearch, statusFilter]);
+  }, [visibleInvoices, invoiceSearch, statusFilter, overdueIds]);
 
   // Changing the search or status filter swaps the visible population, so drop
   // the selection — otherwise the bulk bar keeps counting invoices that are no
@@ -115,7 +144,7 @@ export default function BillingPage() {
     invoiceIds.length > 0 &&
     invoiceIds.every((invoiceId) => selectedInvoiceIds.includes(invoiceId));
   const openCount = visibleInvoices.filter((invoice) => invoice.status === "OPEN").length;
-  const overdueCount = visibleInvoices.filter((invoice) => invoice.status === "OVERDUE").length;
+  const overdueCount = visibleInvoices.filter((invoice) => overdueIds.has(invoice.id)).length;
   const paidCount = visibleInvoices.filter((invoice) => invoice.status === "PAID").length;
 
   // A treasurer's table legitimately contains other members' invoices — the
@@ -280,13 +309,33 @@ export default function BillingPage() {
             >
               <option value="all">Status: All</option>
               <option value="open">Open</option>
-              <option value="overdue">Overdue</option>
+              <option
+                value="overdue"
+                disabled={overdueUnavailable}
+                title={
+                  overdueUnavailable
+                    ? "Overdue status is unavailable right now"
+                    : undefined
+                }
+              >
+                Overdue
+              </option>
               <option value="paid">Paid</option>
             </select>
           </div>
           <div className="mb-4 flex flex-wrap gap-2 text-[12.5px]">
             <Badge variant="secondary" className="tabular-nums">Open: {openCount}</Badge>
-            <Badge variant="secondary" className="tabular-nums">Overdue: {overdueCount}</Badge>
+            <Badge
+              variant="secondary"
+              className="tabular-nums"
+              title={
+                overdueUnavailable
+                  ? "Overdue status is unavailable right now"
+                  : undefined
+              }
+            >
+              Overdue: {overdueUnavailable ? "—" : overdueCount}
+            </Badge>
             <Badge variant="secondary" className="tabular-nums">Paid: {paidCount}</Badge>
           </div>
           {selectedInvoiceIds.length > 0 ? (
