@@ -728,6 +728,15 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
       const breadcrumbs = scrubBreadcrumbs(event.breadcrumbs);
       if (breadcrumbs?.length) scrubbed.breadcrumbs = breadcrumbs;
 
+      // Read back by the SDK *after* this returns, on the error path exactly
+      // as on the transaction path below — see the helper for why it is
+      // rebuilt rather than allowlisted. Without this, `beforeSend` ships
+      // every error event with no `trace` envelope header (#966).
+      const sdkMetadata = scrubSdkProcessingMetadata(
+        event.sdkProcessingMetadata,
+      );
+      if (sdkMetadata) scrubbed.sdkProcessingMetadata = sdkMetadata;
+
       // `user` is rebuilt from the id alone, and only when that id is already a
       // pseudonym (64 lowercase hex). Anything else — a raw uuid a stray
       // `setUser` call put there, an email, an ip — is dropped rather than

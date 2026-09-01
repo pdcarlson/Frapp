@@ -268,6 +268,44 @@ describe('scrubSentryEvent', () => {
 
     expect(scrubSentryEvent(hostile as unknown as ErrorEvent)).toBeNull();
   });
+
+  it('carries the dynamic sampling context the SDK reads back after the hook (#966)', () => {
+    // `createEventEnvelopeHeaders` reads this *after* beforeSend returns, so a
+    // rebuilt event that omits it silently costs every **error** event its
+    // `trace` envelope header — the same hole #896 closed on the transaction
+    // path. Only the routing fields survive — the same bag holds
+    // `normalizedRequest`, a full request object including the query string.
+    const scrubbed = scrubSentryEvent({
+      sdkProcessingMetadata: {
+        dynamicSamplingContext: {
+          trace_id: 'trace123',
+          public_key: 'abc123',
+          sample_rate: '0.1',
+          environment: 'production',
+          transaction: `/v1/chapters?notify=member@example.com`,
+        },
+        spanCountBeforeProcessing: 7,
+        normalizedRequest: {
+          url: 'https://api.frapp.live/v1/x?token=super-secret',
+          headers: { cookie: 'session=super-secret' },
+        },
+      },
+    } as unknown as ErrorEvent);
+
+    const meta = (
+      scrubbed as unknown as { sdkProcessingMetadata: Record<string, unknown> }
+    ).sdkProcessingMetadata;
+    expect(meta.dynamicSamplingContext).toEqual({
+      trace_id: 'trace123',
+      public_key: 'abc123',
+      sample_rate: '0.1',
+      environment: 'production',
+      transaction: '/v1/chapters',
+    });
+    expect(meta.spanCountBeforeProcessing).toBe(7);
+    expect(meta).not.toHaveProperty('normalizedRequest');
+    expect(JSON.stringify(scrubbed)).not.toContain('super-secret');
+  });
 });
 
 /**
