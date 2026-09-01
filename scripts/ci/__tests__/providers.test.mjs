@@ -1,7 +1,13 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { fetchJson, fetchRenderDeploys, fetchVercelDeployments } from "../lib/providers.mjs";
+import {
+  fetchJson,
+  fetchRenderDeploys,
+  fetchVercelDeployments,
+  findRenderDeployBySha,
+  findVercelDeploymentBySha,
+} from "../lib/providers.mjs";
 
 function recorder(response) {
   const calls = [];
@@ -64,6 +70,66 @@ describe("fetchRenderDeploys", () => {
       /Render API for service srv-1 returned HTTP 503/,
     );
   });
+
+  it("passes `cursor` through as the pagination param", async () => {
+    const { calls, fetchImpl } = recorder(jsonOk([]));
+    await fetchRenderDeploys({ apiKey: "k", serviceId: "srv-1", cursor: "cur-abc", fetchImpl });
+    assert.match(calls[0].url, /cursor=cur-abc/);
+  });
+});
+
+// Same class of bug as the Vercel finder above (#1377): Render's list is also
+// a single un-paginated page.
+describe("findRenderDeployBySha", () => {
+  function page(entries) {
+    return jsonOk(entries);
+  }
+
+  it("finds a match on the first page without paginating further", async () => {
+    const { calls, fetchImpl } = recorder(
+      page([{ cursor: "c1", deploy: { commit: { id: "sha1" }, createdAt: "2026-04-16T00:00:00Z" } }]),
+    );
+    const result = await findRenderDeployBySha({ apiKey: "k", serviceId: "srv-1", sha: "sha1", fetchImpl });
+    assert.ok(result.match);
+    assert.equal(result.pagesSearched, 1);
+    assert.equal(calls.length, 1);
+  });
+
+  it("follows the row cursor to a later page and finds the match there", async () => {
+    let callIndex = 0;
+    const responses = [
+      page([{ cursor: "c1", deploy: { commit: { id: "other" }, createdAt: "2026-04-16T01:00:00Z" } }]),
+      page([{ cursor: "c2", deploy: { commit: { id: "sha1" }, createdAt: "2026-04-15T00:00:00Z" } }]),
+    ];
+    const calls = [];
+    const fetchImpl = async (url) => {
+      calls.push(url);
+      return responses[callIndex++];
+    };
+
+    const result = await findRenderDeployBySha({ apiKey: "k", serviceId: "srv-1", sha: "sha1", fetchImpl });
+
+    assert.ok(result.match);
+    assert.equal(result.pagesSearched, 2);
+    assert.match(calls[1], /cursor=c1/);
+  });
+
+  it("reports exhausted when the last page has no cursor and no match", async () => {
+    const { fetchImpl } = recorder(
+      page([{ deploy: { commit: { id: "other" }, createdAt: "2026-04-16T00:00:00Z" } }]),
+    );
+    const result = await findRenderDeployBySha({ apiKey: "k", serviceId: "srv-1", sha: "sha1", fetchImpl });
+    assert.equal(result.match, null);
+    assert.equal(result.exhausted, true);
+  });
+
+  it("throws rather than treating a malformed page as empty", async () => {
+    const { fetchImpl } = recorder(jsonOk({ notAnArray: true }));
+    await assert.rejects(
+      () => findRenderDeployBySha({ apiKey: "k", serviceId: "srv-1", sha: "sha1", fetchImpl }),
+      /unexpected payload/,
+    );
+  });
 });
 
 describe("fetchVercelDeployments", () => {
@@ -86,5 +152,87 @@ describe("fetchVercelDeployments", () => {
       () => fetchVercelDeployments({ apiKey: "k", projectId: "prj_1", fetchImpl }),
       /Vercel API for project prj_1 returned HTTP 401/,
     );
+  });
+
+  it("passes `until` through as the pagination cursor", async () => {
+    const { calls, fetchImpl } = recorder(jsonOk({ deployments: [] }));
+    await fetchVercelDeployments({ apiKey: "k", projectId: "prj_1", until: 1700000000000, fetchImpl });
+    assert.match(calls[0].url, /until=1700000000000/);
+  });
+});
+
+// The class #1377 exists to fix: a single un-paginated page only holds the
+// newest slice, so a re-run against an old SHA reads "no deployment exists"
+// once enough newer deployments have pushed it off page one.
+describe("findVercelDeploymentBySha", () => {
+  function page(deployments, next) {
+    return jsonOk({ deployments, pagination: next ? { next } : {} });
+  }
+
+  it("finds a match on the first page without paginating further", async () => {
+    const { calls, fetchImpl } = recorder(page([{ meta: { githubCommitSha: "sha1" }, created: 100 }]));
+    const result = await findVercelDeploymentBySha({ apiKey: "k", projectId: "prj_1", sha: "sha1", fetchImpl });
+    assert.equal(result.matches.length, 1);
+    assert.equal(result.pagesSearched, 1);
+    assert.equal(calls.length, 1);
+  });
+
+  // The exact failure scenario in #1377: the SHA's deployment fell off page
+  // one, and is only visible after following the cursor to page two.
+  it("follows the cursor to a later page and finds the match there", async () => {
+    let callIndex = 0;
+    const responses = [
+      page([{ meta: { githubCommitSha: "other" }, created: 200 }], 100),
+      page([{ meta: { githubCommitSha: "sha1" }, created: 50 }]),
+    ];
+    const calls = [];
+    const fetchImpl = async (url) => {
+      calls.push(url);
+      return responses[callIndex++];
+    };
+
+    const result = await findVercelDeploymentBySha({ apiKey: "k", projectId: "prj_1", sha: "sha1", fetchImpl });
+
+    assert.equal(result.matches.length, 1);
+    assert.equal(result.pagesSearched, 2);
+    assert.match(calls[1], /until=100/);
+  });
+
+  it("reports exhausted when pagination runs out with no match", async () => {
+    const { fetchImpl } = recorder(page([{ meta: { githubCommitSha: "other" }, created: 100 }]));
+    const result = await findVercelDeploymentBySha({ apiKey: "k", projectId: "prj_1", sha: "sha1", fetchImpl });
+    assert.equal(result.matches.length, 0);
+    assert.equal(result.exhausted, true);
+    assert.equal(result.pagesSearched, 1);
+    assert.equal(result.oldestSeenMs, 100);
+  });
+
+  // A malformed page must not read as "zero deployments here" — that would
+  // silently trip the exhaustion check and report a false "genuinely
+  // absent" verdict instead of an honest "could not read".
+  it("throws rather than treating a malformed page as empty", async () => {
+    const { fetchImpl } = recorder(jsonOk({ notDeployments: [] }));
+    await assert.rejects(
+      () => findVercelDeploymentBySha({ apiKey: "k", projectId: "prj_1", sha: "sha1", fetchImpl }),
+      /unexpected payload/,
+    );
+  });
+
+  it("stops at maxPages, not exhausted, when the cursor still has more history", async () => {
+    let callIndex = 0;
+    const fetchImpl = async () => {
+      callIndex += 1;
+      return page([{ meta: { githubCommitSha: "other" }, created: 1000 - callIndex }], callIndex);
+    };
+    const result = await findVercelDeploymentBySha({
+      apiKey: "k",
+      projectId: "prj_1",
+      sha: "sha1",
+      maxPages: 3,
+      fetchImpl,
+    });
+    assert.equal(result.matches.length, 0);
+    assert.equal(result.pagesSearched, 3);
+    assert.equal(result.exhausted, false);
   });
 });

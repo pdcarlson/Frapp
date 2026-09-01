@@ -66,8 +66,21 @@ describe("ghRequest", () => {
     assert.deepEqual(await ghRequest({ token: "t", path: "/x", fetchImpl }), {
       ok: false,
       status: 0,
-      data: null,
+      data: "ECONNRESET",
     });
+  });
+
+  // A throwing caller (`fetchPrLabels`, `fetchCheckRuns`, `callGitHubApi`) puts
+  // `data` straight into its thrown message. Losing the original error text
+  // here means every network outage reads as the identical, uninformative
+  // "HTTP 0" or "failed (0): null" regardless of what actually went wrong.
+  it("preserves the rejection's message when the caller has no `.message`", async () => {
+    const fetchImpl = async () => {
+      // eslint-disable-next-line no-throw-literal
+      throw "ECONNRESET";
+    };
+    const result = await ghRequest({ token: "t", path: "/x", fetchImpl });
+    assert.equal(result.data, null);
   });
 
   it("serialises a body and marks the method", async () => {
