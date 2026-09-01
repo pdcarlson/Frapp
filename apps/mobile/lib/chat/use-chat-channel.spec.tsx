@@ -89,6 +89,7 @@ const mocks = vi.hoisted(() => {
   discardOutboxRow: vi.fn<(ctx: unknown, row: unknown) => Promise<void>>(),
   reactAction: vi.fn(async () => undefined),
   unreactAction: vi.fn(async () => undefined),
+  actOnCard: vi.fn<(ctx: unknown, args: unknown) => Promise<void>>(),
   bootChatAdapters: vi.fn((): Promise<void> => Promise.resolve()),
   listForChannel: vi.fn(async () => [] as unknown[]),
   draftLoad: vi.fn(async () => ""),
@@ -115,6 +116,7 @@ vi.mock("@repo/chat-core/chat-client", () => ({
   discardOutboxRow: mocks.discardOutboxRow,
   react: mocks.reactAction,
   unreact: mocks.unreactAction,
+  actOnCard: mocks.actOnCard,
 }));
 
 vi.mock("@repo/chat-core/realtime-manager", () => ({
@@ -956,5 +958,118 @@ describe("react()/unreact() failure surfacing (#999)", () => {
     act(() => staleOnError!({ title: "Couldn't react", description: "too late" }));
 
     expect(result.current.reactionError).toBeNull();
+  });
+});
+
+describe("act() failure surfacing (#528/#999)", () => {
+  // Mirrors the react()/unreact() suite above — `actWithErrorSink` is the
+  // same generation-guarded pattern, kept as its own `actionError` state
+  // (see the field doc in use-chat-channel.ts) so a failed vote can't
+  // dismiss a failed reaction or vice versa.
+  function captureOnError(mock: { mock: { calls: unknown[][] } }) {
+    const call = mock.mock.calls.at(-1);
+    const ctxArg = call?.[0] as
+      | { onError?: (input: { title: string; description?: string }) => void }
+      | undefined;
+    return ctxArg?.onError;
+  }
+
+  it("dispatches through actOnCard with the given args, and starts actionError null", async () => {
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+    expect(result.current.actionError).toBeNull();
+
+    await act(async () => {
+      await result.current.act("msg-1", "vote", { option_id: "opt-1" });
+    });
+
+    expect(mocks.actOnCard).toHaveBeenCalledTimes(1);
+    expect(mocks.actOnCard.mock.calls[0]?.[1]).toEqual({
+      channelId: CHANNEL,
+      messageId: "msg-1",
+      actionType: "vote",
+      payload: { option_id: "opt-1" },
+    });
+    expect(result.current.actionError).toBeNull();
+  });
+
+  it("reports a rejected action through onError into actionError, independent of reactionError", async () => {
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+
+    await act(async () => {
+      await result.current.act("msg-1", "vote", { option_id: "opt-1" });
+    });
+
+    const onError = captureOnError(mocks.actOnCard);
+    act(() => onError!({ title: "Couldn't record action", description: "Poll is closed" }));
+
+    expect(result.current.actionError).toBe("Poll is closed");
+    expect(result.current.reactionError).toBeNull();
+  });
+
+  it("clears via clearActionError", async () => {
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+
+    await act(async () => {
+      await result.current.act("msg-1", "vote", { option_id: "opt-1" });
+    });
+    const onError = captureOnError(mocks.actOnCard);
+    act(() => onError!({ title: "Couldn't record action", description: "nope" }));
+    expect(result.current.actionError).toBe("nope");
+
+    act(() => result.current.clearActionError());
+
+    expect(result.current.actionError).toBeNull();
+  });
+
+  it("clears on a channel switch, so it never leaks onto the next thread", async () => {
+    const queryClient = newQueryClient();
+    const client = createClient();
+    const { result, rerender } = renderHook(
+      ({ channelId }: { channelId: string }) => useChatChannel(channelId),
+      {
+        initialProps: { channelId: CHANNEL },
+        wrapper: createWrapper(client, queryClient),
+      },
+    );
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+
+    await act(async () => {
+      await result.current.act("msg-1", "vote", { option_id: "opt-1" });
+    });
+    const onError = captureOnError(mocks.actOnCard);
+    act(() => onError!({ title: "Couldn't record action", description: "nope" }));
+    expect(result.current.actionError).toBe("nope");
+
+    rerender({ channelId: "channel-2" });
+
+    expect(result.current.actionError).toBeNull();
+  });
+
+  it("ignores a stale action rejection that resolves after a channel switch", async () => {
+    const queryClient = newQueryClient();
+    const client = createClient();
+    const { result, rerender } = renderHook(
+      ({ channelId }: { channelId: string }) => useChatChannel(channelId),
+      {
+        initialProps: { channelId: CHANNEL },
+        wrapper: createWrapper(client, queryClient),
+      },
+    );
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+
+    await act(async () => {
+      await result.current.act("msg-1", "vote", { option_id: "opt-1" });
+    });
+    const staleOnError = captureOnError(mocks.actOnCard);
+
+    rerender({ channelId: "channel-2" });
+    expect(result.current.actionError).toBeNull();
+
+    act(() => staleOnError!({ title: "Couldn't record action", description: "too late" }));
+
+    expect(result.current.actionError).toBeNull();
   });
 });

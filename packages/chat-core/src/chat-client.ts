@@ -632,5 +632,9 @@ export async function actOnCard(
       description: message,
       variant: "destructive",
     });
+    // Same platform-neutral sink `react`/`unreact` fire alongside `toast`
+    // (#999) — a caller with no toast (mobile) has no other way to learn a
+    // card action (e.g. a poll vote, #528) failed.
+    ctx.onError?.({ title: "Couldn't record action", description: message });
   }
 }

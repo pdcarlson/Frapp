@@ -1,11 +1,14 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { useEffect } from "react";
 
-const { mockScrollToMessage, mockRefetch, mockUseChatChannel } = vi.hoisted(() => ({
-  mockScrollToMessage: vi.fn(),
-  mockRefetch: vi.fn(),
-  mockUseChatChannel: vi.fn(),
-}));
+const { mockScrollToMessage, mockRefetch, mockUseChatChannel, mockComposerMount } =
+  vi.hoisted(() => ({
+    mockScrollToMessage: vi.fn(),
+    mockRefetch: vi.fn(),
+    mockUseChatChannel: vi.fn(),
+    mockComposerMount: vi.fn(),
+  }));
 
 const CHANNELS = [
   { id: "chan-general", name: "general", type: "PUBLIC", member_ids: [] },
@@ -58,8 +61,27 @@ vi.mock("@/lib/chat/use-chat-channel", () => ({
 vi.mock("./channel-list", () => ({
   ChannelList: () => <div data-testid="channel-list" />,
 }));
+// Mounts (not renders) are the signal #1014's fix depends on: the real
+// `<Composer>` bakes its placeholder into a Tiptap extension at editor
+// creation, so it only shows the right channel's name if the component
+// actually remounts on a channel switch (chat-shell.tsx keys `<Composer>` on
+// the channel), not merely re-renders with a new `channelId`/`channelName`
+// prop. `useEffect` with no deps fires once per mount, never on a prop-only
+// re-render, so counting it is how this suite tells the two apart without a
+// real ProseMirror view (jsdom can't render one; see composer.test.tsx).
+// Keyed off `channelId` rather than `channelName` because this file's
+// `directChannelDisplayName` stub always returns `""`.
 vi.mock("./composer", () => ({
-  Composer: () => <div data-testid="composer" />,
+  Composer: ({ channelId }: { channelId: string }) => {
+    // Deliberately mount-only: the assertion below needs "did this
+    // component get a fresh instance", which an exhaustive `[channelId]`
+    // dep array would defeat by firing on every prop update too.
+    useEffect(() => {
+      mockComposerMount(channelId);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+    return <div data-testid="composer">{channelId}</div>;
+  },
 }));
 vi.mock("./thread-panel", () => ({
   ThreadPanel: () => <div data-testid="thread-panel" />,
@@ -111,6 +133,7 @@ beforeEach(() => {
   mockRefetch.mockClear();
   mockUseChatChannel.mockReset();
   mockUseChatChannel.mockReturnValue(chatChannelResult());
+  mockComposerMount.mockClear();
 });
 
 describe("ChatShell deep-link targets", () => {
@@ -186,5 +209,30 @@ describe("ChatShell deep-link targets", () => {
     // click into a channel the member never left.
     rerender(<ChatShell initialChannelId="chan-general" initialMessageId="msg-2" />);
     expect(mockScrollToMessage).toHaveBeenCalledWith("msg-2");
+  });
+});
+
+describe("ChatShell composer remount per channel (#1014)", () => {
+  it("remounts the composer — not just re-renders it — on every channel switch", async () => {
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+    await waitFor(() => {
+      expect(mockComposerMount).toHaveBeenCalledWith("chan-general");
+    });
+    expect(mockComposerMount).toHaveBeenCalledTimes(1);
+
+    rerender(<ChatShell initialChannelId="chan-random" />);
+    // A second mount call — not a re-render of the same instance — is what
+    // rebuilds the Tiptap `Placeholder` extension from the new channel. If
+    // `<Composer key={activeChannel.id}>` regressed back to no `key`, this
+    // component would merely re-render and the mount effect would not fire
+    // again, leaving this at 1. Waited for rather than asserted immediately:
+    // the switch chains through ChatShell's own `initialChannelId` →
+    // `selectedChannelId` sync effect before the new Composer instance's
+    // mount effect fires, so it can land a tick after the DOM text updates.
+    await waitFor(() => {
+      expect(mockComposerMount).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.getByTestId("composer")).toHaveTextContent("chan-random");
+    expect(mockComposerMount).toHaveBeenLastCalledWith("chan-random");
   });
 });
