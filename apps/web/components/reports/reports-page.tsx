@@ -5,6 +5,8 @@ import { Download, Loader2 } from "lucide-react";
 import {
   isReportExportEnvelope,
   useAttendanceReport,
+  useEvents,
+  useMembers,
   usePointsReport,
   useRosterReport,
   useServiceReport,
@@ -12,6 +14,7 @@ import {
   type ReportResponse,
   type ReportTruncation,
 } from "@repo/hooks";
+import { formatLocaleDateTime } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -50,12 +53,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Can } from "@/components/shared/can";
+import { dashboardFilterSelectClassName } from "@/components/shared/table-controls";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
-import { downloadCsv } from "@/lib/utils";
+import { asArray, downloadCsv } from "@/lib/utils";
 
 type ReportKind = "attendance" | "points" | "roster" | "service";
 
@@ -78,6 +82,39 @@ const reportDescription: Record<ReportKind, string> = {
 };
 
 type ReportRow = Record<string, unknown>;
+
+type PickerOption = { id: string; label: string };
+
+/** Options for the event picker: name plus start time, so two same-named events stay distinguishable. */
+function buildEventOptions(data: unknown): PickerOption[] {
+  return asArray<Record<string, unknown>>(data)
+    .map((event) => {
+      const id = String(event.id ?? "");
+      if (!id) return null;
+      const name = String(event.name ?? "Untitled event");
+      return { id, label: `${name} — ${formatLocaleDateTime(event.start_time)}` };
+    })
+    .filter((option): option is PickerOption => option !== null);
+}
+
+/** Options for the member picker: display name plus email, falling back to a short id when both are missing. */
+function buildMemberOptions(data: unknown): PickerOption[] {
+  return asArray<Record<string, unknown>>(data)
+    .map((member) => {
+      const id = String(member.user_id ?? "");
+      if (!id) return null;
+      const displayName =
+        typeof member.display_name === "string" ? member.display_name : "";
+      const email = typeof member.email === "string" ? member.email : "";
+      const label = displayName
+        ? email
+          ? `${displayName} (${email})`
+          : displayName
+        : email || `Member ${id.slice(0, 8)}`;
+      return { id, label };
+    })
+    .filter((option): option is PickerOption => option !== null);
+}
 
 function flattenRecord(value: unknown, prefix = ""): Record<string, string> {
   const result: Record<string, string> = {};
@@ -151,6 +188,16 @@ export function ReportsPage() {
   const points = usePointsReport();
   const roster = useRosterReport();
   const service = useServiceReport();
+  const eventsQuery = useEvents();
+  const membersQuery = useMembers();
+  const eventOptions = useMemo(
+    () => buildEventOptions(eventsQuery.data),
+    [eventsQuery.data],
+  );
+  const memberOptions = useMemo(
+    () => buildMemberOptions(membersQuery.data),
+    [membersQuery.data],
+  );
 
   const [kind, setKind] = useState<ReportKind>("attendance");
   const [startDate, setStartDate] = useState("");
@@ -518,15 +565,41 @@ export function ReportsPage() {
             {kind === "attendance" ? (
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="grid gap-1">
-                  <Label htmlFor="report-event">Event ID (optional)</Label>
-                  <Input
+                  <Label htmlFor="report-event">Event (optional)</Label>
+                  <select
                     id="report-event"
                     value={eventId}
                     onChange={(event) =>
                       onFilterChange(setEventId)(event.target.value)
                     }
-                    placeholder="UUID — leave blank for chapter-wide"
-                  />
+                    disabled={eventsQuery.isPending}
+                    className={`${dashboardFilterSelectClassName} w-full`}
+                  >
+                    <option value="">Chapter-wide (all events)</option>
+                    {eventOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  {eventsQuery.isError ? (
+                    <p className="text-xs text-destructive">
+                      Couldn&apos;t load events — leave blank for a
+                      chapter-wide report, or{" "}
+                      <button
+                        type="button"
+                        onClick={() => eventsQuery.refetch()}
+                        className="underline underline-offset-2"
+                      >
+                        retry
+                      </button>
+                      .
+                    </p>
+                  ) : !eventsQuery.isPending && eventOptions.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      No events yet — every report will be chapter-wide.
+                    </p>
+                  ) : null}
                 </div>
                 <div className="grid gap-1">
                   <Label htmlFor="report-start">Start date</Label>
@@ -556,15 +629,41 @@ export function ReportsPage() {
             {kind === "points" ? (
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="grid gap-1">
-                  <Label htmlFor="report-member">Member ID (optional)</Label>
-                  <Input
+                  <Label htmlFor="report-member">Member (optional)</Label>
+                  <select
                     id="report-member"
                     value={memberId}
                     onChange={(event) =>
                       onFilterChange(setMemberId)(event.target.value)
                     }
-                    placeholder="UUID — leave blank for chapter-wide"
-                  />
+                    disabled={membersQuery.isPending}
+                    className={`${dashboardFilterSelectClassName} w-full`}
+                  >
+                    <option value="">Chapter-wide (all members)</option>
+                    {memberOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  {membersQuery.isError ? (
+                    <p className="text-xs text-destructive">
+                      Couldn&apos;t load members — leave blank for a
+                      chapter-wide report, or{" "}
+                      <button
+                        type="button"
+                        onClick={() => membersQuery.refetch()}
+                        className="underline underline-offset-2"
+                      >
+                        retry
+                      </button>
+                      .
+                    </p>
+                  ) : !membersQuery.isPending && memberOptions.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      No members yet — every report will be chapter-wide.
+                    </p>
+                  ) : null}
                 </div>
                 <div className="grid gap-1">
                   <Label htmlFor="report-window">Time window</Label>
@@ -593,15 +692,42 @@ export function ReportsPage() {
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="grid gap-1">
                   <Label htmlFor="service-report-member">
-                    Member ID (optional)
+                    Member (optional)
                   </Label>
-                  <Input
+                  <select
                     id="service-report-member"
                     value={memberId}
                     onChange={(event) =>
                       onFilterChange(setMemberId)(event.target.value)
                     }
-                  />
+                    disabled={membersQuery.isPending}
+                    className={`${dashboardFilterSelectClassName} w-full`}
+                  >
+                    <option value="">Chapter-wide (all members)</option>
+                    {memberOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  {membersQuery.isError ? (
+                    <p className="text-xs text-destructive">
+                      Couldn&apos;t load members — leave blank for a
+                      chapter-wide report, or{" "}
+                      <button
+                        type="button"
+                        onClick={() => membersQuery.refetch()}
+                        className="underline underline-offset-2"
+                      >
+                        retry
+                      </button>
+                      .
+                    </p>
+                  ) : !membersQuery.isPending && memberOptions.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      No members yet — every report will be chapter-wide.
+                    </p>
+                  ) : null}
                 </div>
                 <div className="grid gap-1">
                   <Label htmlFor="service-report-start">Start date</Label>
