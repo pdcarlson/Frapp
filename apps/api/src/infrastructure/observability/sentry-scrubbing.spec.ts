@@ -292,8 +292,9 @@ describe('scrubSentryEvent', () => {
       },
     } as unknown as ErrorEvent);
 
-    const meta = (scrubbed as { sdkProcessingMetadata?: Record<string, unknown> })
-      ?.sdkProcessingMetadata;
+    const meta = (
+      scrubbed as { sdkProcessingMetadata?: Record<string, unknown> }
+    )?.sdkProcessingMetadata;
     expect(meta?.dynamicSamplingContext).toEqual({
       trace_id: 'trace123',
       public_key: 'abc123',
