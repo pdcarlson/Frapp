@@ -79,6 +79,12 @@ export class CurrentChapterResponseDto {
   })
   analytics_opt_out?: boolean;
 
+  @ApiPropertyOptional({
+    description:
+      'Set when the chapter has lost its President outside a voluntary transfer (spec/behavior/rbac.md § Presidency Transfer). Every member reads this, not just `roles:manage` holders — see `PresidencyClaimBanner`.',
+  })
+  needs_president?: boolean;
+
   @ApiProperty({
     type: String,
     nullable: true,
@@ -180,6 +186,12 @@ export class UpdateChapterResponseDto {
       'Per-chapter opt-out for the pseudonymous analytics pipeline. Mobile reads it off this payload.',
   })
   analytics_opt_out?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Set when the chapter has lost its President outside a voluntary transfer (spec/behavior/rbac.md § Presidency Transfer). Every member reads this, not just `roles:manage` holders — see `PresidencyClaimBanner`.',
+  })
+  needs_president?: boolean;
 
   @ApiProperty({
     type: [FailedContrastCheckDto],

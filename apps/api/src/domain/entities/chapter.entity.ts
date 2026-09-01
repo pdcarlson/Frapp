@@ -44,4 +44,11 @@ export interface Chapter {
   // false` in the database — optional here only because the narrower
   // projections don't select it, same as the columns above.
   analytics_opt_out?: boolean;
+  // #349: set by `RbacService.flagIfPresidentRemoved` when the member holding
+  // the wildcard-carrying President role is removed or their account is
+  // anonymized outside a voluntary `transfer_presidency`. Cleared atomically
+  // by the `claim_presidency` RPC once an eligible officer claims the role
+  // (spec/behavior/rbac.md § Presidency Transfer). `not null default false` in
+  // the database — optional here for the same reason as the columns above.
+  needs_president?: boolean;
 }

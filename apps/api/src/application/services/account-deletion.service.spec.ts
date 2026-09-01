@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadGatewayException, NotFoundException } from '@nestjs/common';
 import { AccountDeletionService } from './account-deletion.service';
 import { AnalyticsService } from './analytics.service';
+import { RbacService } from './rbac.service';
 import { ReportRetentionService } from './report-retention.service';
 import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
 import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
@@ -41,10 +42,11 @@ const tombstone = {
   deleted_at: '2026-08-03T00:00:00Z',
 };
 
-const membership = (chapterId: string) => ({
+const membership = (chapterId: string, roleIds: string[] = []) => ({
   id: `m-${chapterId}`,
   user_id: 'user-1',
   chapter_id: chapterId,
+  role_ids: roleIds,
 });
 
 describe('AccountDeletionService', () => {
@@ -54,6 +56,7 @@ describe('AccountDeletionService', () => {
   let mockStorage: jest.Mocked<IStorageProvider>;
   let mockAuthAdmin: jest.Mocked<IAuthAdminProvider>;
   let mockAnalytics: { forgetUser: jest.Mock };
+  let mockRbacService: { flagIfPresidentRemoved: jest.Mock };
   let callOrder: string[];
 
   beforeEach(async () => {
@@ -105,6 +108,9 @@ describe('AccountDeletionService', () => {
         return true;
       }),
     };
+    mockRbacService = {
+      flagIfPresidentRemoved: jest.fn().mockResolvedValue(undefined),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -114,6 +120,7 @@ describe('AccountDeletionService', () => {
         { provide: STORAGE_PROVIDER, useValue: mockStorage },
         { provide: AUTH_ADMIN_PROVIDER, useValue: mockAuthAdmin },
         { provide: AnalyticsService, useValue: mockAnalytics },
+        { provide: RbacService, useValue: mockRbacService },
         // The real service, not a mock: it shares `mockStorage`, so the
         // report sweep's prefixes and its position relative to the scrub are
         // asserted against the code that actually runs in production.
@@ -435,5 +442,104 @@ describe('AccountDeletionService', () => {
       NotFoundException,
     );
     expect(mockAuthAdmin.deleteAuthUser).not.toHaveBeenCalled();
+  });
+
+  // #349: account deletion is the other orphaning cause spec/behavior/rbac.md's
+  // Presidency Transfer "Edge case" names, alongside MemberService.remove.
+  describe('orphan-president flagging', () => {
+    it('checks every chapter membership held before anonymize for the President role', async () => {
+      mockUserRepo.findById.mockResolvedValue(liveUser);
+      mockMemberRepo.findByUser.mockResolvedValue([
+        membership('chapter-a', ['role-president']),
+        membership('chapter-b', ['role-member']),
+      ]);
+
+      await service.deleteAccount('user-1');
+
+      expect(mockRbacService.flagIfPresidentRemoved).toHaveBeenCalledTimes(2);
+      expect(mockRbacService.flagIfPresidentRemoved).toHaveBeenCalledWith(
+        'chapter-a',
+        ['role-president'],
+        null,
+      );
+      expect(mockRbacService.flagIfPresidentRemoved).toHaveBeenCalledWith(
+        'chapter-b',
+        ['role-member'],
+        null,
+      );
+    });
+
+    it('runs the check after anonymize (so it reads the pre-deletion membership snapshot) and before analytics forget', async () => {
+      mockUserRepo.findById.mockResolvedValue(liveUser);
+      mockRbacService.flagIfPresidentRemoved.mockImplementation(async () => {
+        callOrder.push('flagIfPresidentRemoved');
+      });
+
+      await service.deleteAccount('user-1');
+
+      const anonymizeIndex = callOrder.indexOf('anonymize');
+      const flagIndex = callOrder.indexOf('flagIfPresidentRemoved');
+      const forgetIndex = callOrder.indexOf('forgetUser');
+      expect(anonymizeIndex).toBeLessThan(flagIndex);
+      expect(flagIndex).toBeLessThan(forgetIndex);
+    });
+
+    it('completes deletion when orphan-flagging fails, rather than blocking erasure', async () => {
+      mockUserRepo.findById.mockResolvedValue(liveUser);
+      mockRbacService.flagIfPresidentRemoved.mockRejectedValue(
+        new Error('chapters table down'),
+      );
+
+      await expect(service.deleteAccount('user-1')).resolves.toBeUndefined();
+      expect(mockAnalytics.forgetUser).toHaveBeenCalledWith('user-1');
+      expect(mockAuthAdmin.deleteAuthUser).toHaveBeenCalledWith('auth-1');
+    });
+
+    it('still flags every other chapter when one chapter fails, rather than aborting the whole loop', async () => {
+      // A President-of-multiple-chapters deleting their account must not have
+      // chapter B (and C) silently skipped because chapter A's flag write
+      // failed — each membership is isolated in its own try/catch.
+      mockUserRepo.findById.mockResolvedValue(liveUser);
+      mockMemberRepo.findByUser.mockResolvedValue([
+        membership('chapter-a', ['role-president']),
+        membership('chapter-b', ['role-president']),
+        membership('chapter-c', ['role-president']),
+      ]);
+      mockRbacService.flagIfPresidentRemoved.mockImplementation(
+        async (chapterId: string) => {
+          if (chapterId === 'chapter-a') {
+            throw new Error('chapters table down for chapter-a');
+          }
+        },
+      );
+
+      await expect(service.deleteAccount('user-1')).resolves.toBeUndefined();
+
+      expect(mockRbacService.flagIfPresidentRemoved).toHaveBeenCalledWith(
+        'chapter-a',
+        ['role-president'],
+        null,
+      );
+      expect(mockRbacService.flagIfPresidentRemoved).toHaveBeenCalledWith(
+        'chapter-b',
+        ['role-president'],
+        null,
+      );
+      expect(mockRbacService.flagIfPresidentRemoved).toHaveBeenCalledWith(
+        'chapter-c',
+        ['role-president'],
+        null,
+      );
+      expect(mockAuthAdmin.deleteAuthUser).toHaveBeenCalledWith('auth-1');
+    });
+
+    it('does not check a chapter the member has already left', async () => {
+      mockUserRepo.findById.mockResolvedValue(liveUser);
+      mockMemberRepo.findByUser.mockResolvedValue([]);
+
+      await service.deleteAccount('user-1');
+
+      expect(mockRbacService.flagIfPresidentRemoved).not.toHaveBeenCalled();
+    });
   });
 });

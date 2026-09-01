@@ -22,8 +22,10 @@ import {
   profileFolderPrefix,
 } from '../../domain/constants/storage';
 import type { User } from '../../domain/entities/user.entity';
+import type { Member } from '../../domain/entities/member.entity';
 import { isUnsafeStoragePath } from '../../domain/utils/storage-path';
 import { AnalyticsService } from './analytics.service';
+import { RbacService } from './rbac.service';
 import {
   REPORT_RETENTION_HOURS,
   ReportRetentionService,
@@ -76,14 +78,23 @@ export class AccountDeletionService {
     private readonly authAdmin: IAuthAdminProvider,
     private readonly analytics: AnalyticsService,
     private readonly reportRetention: ReportRetentionService,
+    private readonly rbacService: RbacService,
   ) {}
 
   async deleteAccount(userId: string): Promise<void> {
     const user = await this.userRepo.findById(userId);
     if (!user) throw new NotFoundException('User not found');
 
+    // Read once and shared with both the storage purge and the post-anonymize
+    // orphan-presidency check below — `anonymize_user` hard-deletes these
+    // `members` rows (step 2), so this is the last point either can see them.
+    // Folded into the same try/catch as the purge itself: failing to even
+    // enumerate memberships means the purge cannot know what to sweep, so it
+    // is the same "nothing was touched yet, client should retry" failure mode.
+    let memberships: Member[];
     try {
-      await this.purgeStorageObjects(user);
+      memberships = await this.memberRepo.findByUser(user.id);
+      await this.purgeStorageObjects(user, memberships);
     } catch (error) {
       this.logger.error(
         `Storage PII purge failed for user ${userId}; aborting before any ACCOUNT DATA was changed (objects swept before the failure are already gone) — client should retry`,
@@ -96,6 +107,16 @@ export class AccountDeletionService {
 
     const tombstone = await this.userRepo.anonymize(userId);
     if (!tombstone) throw new NotFoundException('User not found');
+
+    // Account deletion is the other orphaning cause spec/behavior/rbac.md's
+    // Presidency Transfer "Edge case" names (the first is MemberService.remove
+    // via members:remove). Best-effort, per chapter (see
+    // flagOrphanedPresidencies): erasure must complete even if this
+    // bookkeeping step fails — there is no equivalent of the report sweep's
+    // independent backstop for it, but blocking a right-to-erasure request on
+    // a secondary side effect would be worse than a chapter briefly missing
+    // its needs_president flag.
+    await this.flagOrphanedPresidencies(userId, memberships);
 
     const forgotten = await this.analytics.forgetUser(userId);
     if (!forgotten) {
@@ -140,12 +161,16 @@ export class AccountDeletionService {
    * Every storage object holding this user's PII, purged before the scrub
    * that would destroy the memberships locating them.
    *
-   * Memberships are read once and shared: the two purges must agree on the
-   * chapter set, and a second read could straddle a membership change and
-   * leave one of them sweeping a prefix the other did not.
+   * `memberships` is passed in from {@link deleteAccount} rather than read
+   * here: the caller also needs the same snapshot afterward for
+   * {@link flagOrphanedPresidencies}, and a second read could straddle a
+   * membership change and leave the two purges (or the purge and the orphan
+   * check) disagreeing on the chapter set.
    */
-  private async purgeStorageObjects(user: User): Promise<void> {
-    const memberships = await this.memberRepo.findByUser(user.id);
+  private async purgeStorageObjects(
+    user: User,
+    memberships: Member[],
+  ): Promise<void> {
     const chapterIds = memberships.map((membership) => membership.chapter_id);
 
     await this.purgeAvatarObjects(user, chapterIds);
@@ -233,5 +258,36 @@ export class AccountDeletionService {
     // one; the membership-derived prefixes above still sweep the real objects.
     if (isUnsafeStoragePath(folder)) return null;
     return folder;
+  }
+
+  /**
+   * For each chapter membership this (now-anonymized) user held, flag the
+   * chapter if that membership carried the President role — mirrors
+   * `MemberService.remove`'s call for the manual-removal case. `actorUserId`
+   * is null: account deletion has no acting member, only the system itself.
+   *
+   * Each membership is isolated in its own try/catch: a user who presided
+   * over multiple chapters must not have chapter B (and C, and...) silently
+   * skipped because chapter A's flag write failed. This method therefore
+   * never rejects — the caller does not need its own wrapping try/catch.
+   */
+  private async flagOrphanedPresidencies(
+    userId: string,
+    memberships: Member[],
+  ): Promise<void> {
+    for (const membership of memberships) {
+      try {
+        await this.rbacService.flagIfPresidentRemoved(
+          membership.chapter_id,
+          membership.role_ids,
+          null,
+        );
+      } catch (error) {
+        this.logger.error(
+          `Failed to flag orphaned presidency for chapter ${membership.chapter_id} (deleted user ${userId}); that chapter may be missing its needs_president flag — investigate manually`,
+          error instanceof Error ? error.stack : String(error),
+        );
+      }
+    }
   }
 }

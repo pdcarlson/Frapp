@@ -45,4 +45,21 @@ export interface IMemberRepository {
     targetMemberId: string,
     presidentRoleId: string,
   ): Promise<boolean>;
+  /**
+   * Atomically claim the vacant President (wildcard) role via the
+   * `claim_presidency` RPC (single DB transaction). `eligibleRoleId` is
+   * re-verified against the member's current `role_ids` inside the same
+   * transaction as the grant, so a role reassignment racing the caller's own
+   * eligibility check cannot smuggle an ineligible member into the role.
+   * Resolves to `true` on success, or `false` when the chapter no longer
+   * needs a new President (race lost — another eligible member already
+   * claimed it, or the flag was otherwise cleared) so the caller can surface
+   * a 409.
+   */
+  claimPresidencyAtomic(
+    chapterId: string,
+    claimingMemberId: string,
+    eligibleRoleId: string,
+    presidentRoleId: string,
+  ): Promise<boolean>;
 }

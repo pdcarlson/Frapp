@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { networkMock } from "@/tests/network";
@@ -19,26 +19,48 @@ import { networkMock } from "@/tests/network";
  * `window.confirm`, and the wildcard rule the API enforces on the other side.
  */
 
-const { mockOffline, roles, catalog, deleteRole, transferPresidency } =
-  vi.hoisted(() => ({
-    mockOffline: { value: false },
-    roles: {
-      data: undefined as unknown,
-      isPending: true,
-      isLoading: true,
-      isError: false,
-      fetchStatus: "fetching" as string,
-    },
-    catalog: {
-      data: undefined as unknown,
-      isPending: true,
-      isLoading: true,
-      isError: false,
-      fetchStatus: "fetching" as string,
-    },
-    deleteRole: { mutateAsync: vi.fn(), isPending: false },
-    transferPresidency: { mutateAsync: vi.fn(), isPending: false },
-  }));
+const {
+  mockOffline,
+  roles,
+  catalog,
+  deleteRole,
+  transferPresidency,
+  currentChapter,
+  presidencyClaimStatus,
+  claimPresidency,
+} = vi.hoisted(() => ({
+  mockOffline: { value: false },
+  roles: {
+    data: undefined as unknown,
+    isPending: true,
+    isLoading: true,
+    isError: false,
+    fetchStatus: "fetching" as string,
+  },
+  catalog: {
+    data: undefined as unknown,
+    isPending: true,
+    isLoading: true,
+    isError: false,
+    fetchStatus: "fetching" as string,
+  },
+  deleteRole: { mutateAsync: vi.fn(), isPending: false },
+  transferPresidency: { mutateAsync: vi.fn(), isPending: false },
+  // Defaults to "this chapter has a President" so the pre-existing tests
+  // below render the page exactly as before — the claim banner opts itself
+  // out via `needs_president: false`.
+  currentChapter: {
+    data: { needs_president: false } as { needs_president: boolean } | undefined,
+  },
+  presidencyClaimStatus: {
+    data: undefined as
+      | { needs_president: boolean; eligible: boolean; next_role_name: string | null }
+      | undefined,
+    isLoading: false,
+    isError: false,
+  },
+  claimPresidency: { mutateAsync: vi.fn(), isPending: false },
+}));
 
 const permissions = { value: ["roles:manage"] as string[] };
 
@@ -52,6 +74,9 @@ vi.mock("@repo/hooks", () => ({
   useUpdateRole: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDeleteRole: () => deleteRole,
   useTransferPresidency: () => transferPresidency,
+  useCurrentChapter: () => currentChapter,
+  usePresidencyClaimStatus: () => presidencyClaimStatus,
+  useClaimPresidency: () => claimPresidency,
   useMyPermissions: () => ({
     data: { permissions: permissions.value },
     isPending: false,
@@ -113,6 +138,14 @@ beforeEach(() => {
   permissions.value = ["roles:manage"];
   deleteRole.mutateAsync.mockReset().mockResolvedValue(undefined);
   transferPresidency.mutateAsync.mockReset().mockResolvedValue(undefined);
+  claimPresidency.mutateAsync.mockReset().mockResolvedValue(undefined);
+  claimPresidency.isPending = false;
+  Object.assign(currentChapter, { data: { needs_president: false } });
+  Object.assign(presidencyClaimStatus, {
+    data: undefined,
+    isLoading: false,
+    isError: false,
+  });
   settled();
 });
 
@@ -250,5 +283,110 @@ describe("an open confirmation survives a state change", () => {
     await waitFor(() =>
       expect(deleteRole.mutateAsync).toHaveBeenCalledWith("r2"),
     );
+  });
+});
+
+// #349: the orphan-president recovery flow (spec/behavior/rbac.md §
+// Presidency Transfer "Edge case"). The banner renders OUTSIDE the
+// `roles:manage` gate, so every test here exercises that placement directly
+// by leaving `permissions.value` at its default `["roles:manage"]` OR
+// explicitly emptying it — both must still show the banner.
+describe("the orphan-president claim banner", () => {
+  it("renders nothing when the chapter has a President", () => {
+    Object.assign(currentChapter, { data: { needs_president: false } });
+    render(<RolesAndPermissionsPage />);
+    expect(screen.queryByText(/needs a new president/i)).toBeNull();
+  });
+
+  it("is visible to a member without roles:manage — the point of rendering outside the gate", () => {
+    permissions.value = [];
+    Object.assign(currentChapter, { data: { needs_president: true } });
+    Object.assign(presidencyClaimStatus, {
+      data: { needs_president: true, eligible: true, next_role_name: "Treasurer" },
+      isLoading: false,
+    });
+    render(<RolesAndPermissionsPage />);
+    expect(screen.getByText(/needs a new president/i)).toBeInTheDocument();
+    // The gated body underneath still shows its denied fallback.
+    expect(screen.getByText(/requires the/i)).toBeInTheDocument();
+  });
+
+  it("offers a claim button and names the eligible role when the caller is eligible", () => {
+    Object.assign(currentChapter, { data: { needs_president: true } });
+    Object.assign(presidencyClaimStatus, {
+      data: { needs_president: true, eligible: true, next_role_name: "Treasurer" },
+      isLoading: false,
+    });
+    render(<RolesAndPermissionsPage />);
+    expect(screen.getByText(/treasurer/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /claim presidency/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("names the eligible role but offers no claim button when the caller is ineligible", () => {
+    Object.assign(currentChapter, { data: { needs_president: true } });
+    Object.assign(presidencyClaimStatus, {
+      data: { needs_president: true, eligible: false, next_role_name: "Treasurer" },
+      isLoading: false,
+    });
+    render(<RolesAndPermissionsPage />);
+    expect(screen.getByText(/treasurer/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /claim presidency/i }),
+    ).toBeNull();
+  });
+
+  it("shows a retry-able error rather than the support message when the status fetch fails", () => {
+    // A failed fetch and a genuine "no eligible role" result must not read
+    // the same — the former is retry-able, the latter tells a real officer
+    // to contact support over a transient network blip.
+    Object.assign(currentChapter, { data: { needs_president: true } });
+    Object.assign(presidencyClaimStatus, {
+      data: undefined,
+      isLoading: false,
+      isError: true,
+    });
+    render(<RolesAndPermissionsPage />);
+    expect(screen.getByText(/couldn't check who can claim it/i)).toBeInTheDocument();
+    expect(screen.queryByText(/contact frapp support/i)).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /claim presidency/i }),
+    ).toBeNull();
+  });
+
+  it("directs to Frapp support when no eligible role exists", () => {
+    Object.assign(currentChapter, { data: { needs_president: true } });
+    Object.assign(presidencyClaimStatus, {
+      data: { needs_president: true, eligible: false, next_role_name: null },
+      isLoading: false,
+    });
+    render(<RolesAndPermissionsPage />);
+    expect(screen.getByText(/contact frapp support/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /claim presidency/i }),
+    ).toBeNull();
+  });
+
+  it("claims the presidency only after an in-product confirmation", async () => {
+    const user = userEvent.setup();
+    Object.assign(currentChapter, { data: { needs_president: true } });
+    Object.assign(presidencyClaimStatus, {
+      data: { needs_president: true, eligible: true, next_role_name: "Treasurer" },
+      isLoading: false,
+    });
+    render(<RolesAndPermissionsPage />);
+
+    await user.click(screen.getByRole("button", { name: /claim presidency/i }));
+    expect(claimPresidency.mutateAsync).not.toHaveBeenCalled();
+
+    // Scoped to the dialog: its confirm button shares the trigger's exact
+    // label ("Claim presidency"), same as this screen's existing
+    // transfer-presidency confirmation.
+    const dialog = screen.getByRole("dialog");
+    await user.click(
+      within(dialog).getByRole("button", { name: /claim presidency/i }),
+    );
+    await waitFor(() => expect(claimPresidency.mutateAsync).toHaveBeenCalled());
   });
 });

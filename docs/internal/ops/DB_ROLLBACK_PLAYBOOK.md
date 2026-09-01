@@ -297,6 +297,13 @@ After any rollback event:
 - create/update postmortem entry with timeline and root cause
 - add preventive checks to migration or CI workflow
 
+## Rollback the orphan-president claim flow
+
+* **Migration**: `20260901183000_orphan_president_claim.sql`
+* **Action**: `ALTER TABLE chapters DROP COLUMN IF EXISTS needs_president;` drops the flag column; the `claim_presidency` function can be dropped separately if desired (`DROP FUNCTION IF EXISTS claim_presidency(uuid, uuid, text, text);`) but doing so with the column still present is harmless — the function simply becomes unreachable. **Redeploy the API at the pre-#349 revision first**: with the column gone, `RbacService.flagIfPresidentRemoved`'s write fails — `MemberService.remove` has no catch around that call and 500s on every President removal even though the member is already deleted, while `AccountDeletionService.deleteAccount` catches it per-chapter (best-effort by design) and merely logs, so account deletion itself keeps working. Both new `/v1/roles/*` endpoints (`presidency-claim-status`, `claim-presidency`) also read the column and 500 outright without it.
+* **Note**: Purely additive — one `boolean not null default false` column plus one new function; no existing column, row, policy, or function body is touched, so nothing that predates the migration can be lost. Dropping it removes the ability to recover a chapter that loses its President outside a voluntary `transfer_presidency` — such a chapter would then have no path back to having a President at all short of a manual `UPDATE members ... role_ids = array_append(...)` by an operator with direct database access. Prefer a forward fix over rolling this back.
+* **Data caveat**: `needs_president` is pure derived state (recomputable from "does any member hold the wildcard-carrying President role?"), not a record of anything that happened — no snapshot is needed before dropping, and nothing needs restoring on re-apply. A chapter that was correctly flagged and then had the column dropped simply loses that flag; if it still has no President when the column is re-added, nothing re-flags it automatically (the flag is set only at the moment a President is removed, not on a schedule) — an operator would need to set it by hand: `UPDATE chapters SET needs_president = true WHERE id = '<chapter_id>';`.
+
 ## Rollback the `security definer` search_path pin
 
 * **Migration**: `20260827190000_secdef_search_path_pg_temp.sql`

@@ -10,20 +10,26 @@ import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.inter
 import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
+import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
+import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
 import {
   ALUMNI_ROLE_NAME,
   SystemPermissions,
   SystemRoleKeys,
 } from '../../domain/constants/permissions';
 import { CustomRoleService } from './custom-role.service';
+import { ChapterAuditLogService } from './chapter-audit-log.service';
 import type { Role } from '../../domain/entities/role.entity';
 import type { Member } from '../../domain/entities/member.entity';
+import type { Chapter } from '../../domain/entities/chapter.entity';
 
 describe('RbacService', () => {
   let service: RbacService;
   let mockRoleRepo: jest.Mocked<IRoleRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
+  let mockChapterRepo: jest.Mocked<IChapterRepository>;
   let mockCustomRoleService: { findByIds: jest.Mock };
+  let mockChapterAuditLogService: { record: jest.Mock };
 
   beforeEach(async () => {
     mockRoleRepo = {
@@ -45,10 +51,22 @@ describe('RbacService', () => {
       update: jest.fn(),
       delete: jest.fn(),
       transferPresidencyAtomic: jest.fn(),
+      claimPresidencyAtomic: jest.fn(),
+    };
+
+    mockChapterRepo = {
+      findById: jest.fn(),
+      findBySubscriptionId: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
     };
 
     mockCustomRoleService = {
       findByIds: jest.fn().mockResolvedValue([]),
+    };
+
+    mockChapterAuditLogService = {
+      record: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -56,7 +74,12 @@ describe('RbacService', () => {
         RbacService,
         { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
+        { provide: CHAPTER_REPOSITORY, useValue: mockChapterRepo },
         { provide: CustomRoleService, useValue: mockCustomRoleService },
+        {
+          provide: ChapterAuditLogService,
+          useValue: mockChapterAuditLogService,
+        },
       ],
     }).compile();
 
@@ -601,6 +624,484 @@ describe('RbacService', () => {
       await expect(
         service.transferPresidency('ch-1', 'member-1', 'member-2'),
       ).rejects.toThrow('db boom');
+    });
+  });
+
+  // #349: the orphan-president recovery flow (spec/behavior/rbac.md §
+  // Presidency Transfer "Edge case").
+  describe('orphan-president flow', () => {
+    const presidentRole: Role = {
+      id: 'role-president',
+      chapter_id: 'ch-1',
+      name: 'President',
+      permissions: [SystemPermissions.WILDCARD],
+      is_system: true,
+      display_order: 1,
+      color: '#FFD700',
+      created_at: '2024-01-01',
+    };
+    const treasurerRole: Role = {
+      id: 'role-treasurer',
+      chapter_id: 'ch-1',
+      name: 'Treasurer',
+      permissions: [SystemPermissions.BILLING_MANAGE],
+      is_system: true,
+      display_order: 2,
+      color: null,
+      created_at: '2024-01-01',
+    };
+    const secretaryRole: Role = {
+      id: 'role-secretary',
+      chapter_id: 'ch-1',
+      name: 'Secretary',
+      permissions: [SystemPermissions.MEMBERS_VIEW],
+      is_system: true,
+      display_order: 4,
+      color: null,
+      created_at: '2024-01-01',
+    };
+    // The eligibility floor: any role ranked at or below this is the
+    // ordinary-member baseline, not an admin tier, and is never eligible to
+    // claim — see the "does not let an ordinary Member claim" test below.
+    const memberRole: Role = {
+      id: 'role-member',
+      chapter_id: 'ch-1',
+      name: 'Member',
+      system_key: SystemRoleKeys.MEMBER,
+      permissions: [SystemPermissions.MEMBERS_VIEW],
+      is_system: true,
+      display_order: 5,
+      color: null,
+      created_at: '2024-01-01',
+    };
+
+    const makeMember = (overrides: Partial<Member>): Member => ({
+      id: 'member-x',
+      user_id: 'user-x',
+      chapter_id: 'ch-1',
+      role_ids: [],
+      custom_role_ids: [],
+      has_completed_onboarding: true,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+      ...overrides,
+    });
+
+    const makeChapter = (overrides: Partial<Chapter>): Chapter => ({
+      id: 'ch-1',
+      name: 'Test Chapter',
+      university: 'Test U',
+      stripe_customer_id: null,
+      subscription_status: 'active',
+      subscription_id: null,
+      past_due_since: null,
+      last_stripe_webhook_at: null,
+      accent_color: null,
+      logo_path: null,
+      donation_url: null,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+      needs_president: false,
+      ...overrides,
+    });
+
+    describe('flagIfPresidentRemoved', () => {
+      it('is a no-op when the removed member held no roles at all', async () => {
+        await service.flagIfPresidentRemoved('ch-1', [], 'actor-1');
+
+        expect(mockRoleRepo.findByChapter).not.toHaveBeenCalled();
+        expect(mockChapterRepo.update).not.toHaveBeenCalled();
+      });
+
+      it('is a no-op when the removed member did not hold the President role', async () => {
+        mockRoleRepo.findByChapter.mockResolvedValue([
+          presidentRole,
+          treasurerRole,
+        ]);
+
+        await service.flagIfPresidentRemoved(
+          'ch-1',
+          [treasurerRole.id],
+          'actor-1',
+        );
+
+        expect(mockChapterRepo.update).not.toHaveBeenCalled();
+        expect(mockChapterAuditLogService.record).not.toHaveBeenCalled();
+      });
+
+      it('is a no-op when the chapter has no President role', async () => {
+        mockRoleRepo.findByChapter.mockResolvedValue([treasurerRole]);
+
+        await service.flagIfPresidentRemoved(
+          'ch-1',
+          [presidentRole.id],
+          'actor-1',
+        );
+
+        expect(mockChapterRepo.update).not.toHaveBeenCalled();
+      });
+
+      it('flags the chapter and audit-logs when the removed member held the President role', async () => {
+        mockRoleRepo.findByChapter.mockResolvedValue([
+          presidentRole,
+          treasurerRole,
+        ]);
+
+        await service.flagIfPresidentRemoved(
+          'ch-1',
+          [presidentRole.id],
+          'actor-1',
+        );
+
+        expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
+          needs_president: true,
+        });
+        expect(mockChapterAuditLogService.record).toHaveBeenCalledWith({
+          chapterId: 'ch-1',
+          actorUserId: 'actor-1',
+          action: 'president_orphaned',
+          targetType: 'chapter',
+          targetId: 'ch-1',
+          diff: {},
+        });
+      });
+
+      it('accepts a null actorUserId for the account-deletion path', async () => {
+        mockRoleRepo.findByChapter.mockResolvedValue([presidentRole]);
+
+        await service.flagIfPresidentRemoved('ch-1', [presidentRole.id], null);
+
+        expect(mockChapterAuditLogService.record).toHaveBeenCalledWith(
+          expect.objectContaining({ actorUserId: null }),
+        );
+      });
+    });
+
+    describe('getPresidencyClaimStatus', () => {
+      it('throws NotFound when the chapter does not exist', async () => {
+        mockChapterRepo.findById.mockResolvedValue(null);
+
+        await expect(
+          service.getPresidencyClaimStatus('ch-1', 'member-1'),
+        ).rejects.toThrow(NotFoundException);
+      });
+
+      it('short-circuits when the chapter does not need a new President', async () => {
+        mockChapterRepo.findById.mockResolvedValue(
+          makeChapter({ needs_president: false }),
+        );
+
+        const result = await service.getPresidencyClaimStatus(
+          'ch-1',
+          'member-1',
+        );
+
+        expect(result).toEqual({
+          needs_president: false,
+          eligible: false,
+          next_role_name: null,
+        });
+        expect(mockRoleRepo.findByChapter).not.toHaveBeenCalled();
+      });
+
+      it('reports eligible for a member holding the highest-ranked remaining role', async () => {
+        mockChapterRepo.findById.mockResolvedValue(
+          makeChapter({ needs_president: true }),
+        );
+        mockRoleRepo.findByChapter.mockResolvedValue([
+          presidentRole,
+          treasurerRole,
+          secretaryRole,
+          memberRole,
+        ]);
+        mockMemberRepo.findByChapter.mockResolvedValue([
+          makeMember({ id: 'member-1', role_ids: [treasurerRole.id] }),
+          makeMember({ id: 'member-2', role_ids: [secretaryRole.id] }),
+        ]);
+
+        const result = await service.getPresidencyClaimStatus(
+          'ch-1',
+          'member-1',
+        );
+
+        expect(result).toEqual({
+          needs_president: true,
+          eligible: true,
+          next_role_name: 'Treasurer',
+        });
+      });
+
+      it('reports ineligible (with the eligible role name) for a member holding a lower-ranked role', async () => {
+        mockChapterRepo.findById.mockResolvedValue(
+          makeChapter({ needs_president: true }),
+        );
+        mockRoleRepo.findByChapter.mockResolvedValue([
+          presidentRole,
+          treasurerRole,
+          secretaryRole,
+          memberRole,
+        ]);
+        mockMemberRepo.findByChapter.mockResolvedValue([
+          makeMember({ id: 'member-1', role_ids: [treasurerRole.id] }),
+          makeMember({ id: 'member-2', role_ids: [secretaryRole.id] }),
+        ]);
+
+        const result = await service.getPresidencyClaimStatus(
+          'ch-1',
+          'member-2',
+        );
+
+        expect(result).toEqual({
+          needs_president: true,
+          eligible: false,
+          next_role_name: 'Treasurer',
+        });
+      });
+
+      it('reports no eligible role when nobody holds any admin-tier role — the support-fallback case', async () => {
+        mockChapterRepo.findById.mockResolvedValue(
+          makeChapter({ needs_president: true }),
+        );
+        mockRoleRepo.findByChapter.mockResolvedValue([
+          presidentRole,
+          treasurerRole,
+          memberRole,
+        ]);
+        mockMemberRepo.findByChapter.mockResolvedValue([]);
+
+        const result = await service.getPresidencyClaimStatus(
+          'ch-1',
+          'member-1',
+        );
+
+        expect(result).toEqual({
+          needs_president: true,
+          eligible: false,
+          next_role_name: null,
+        });
+      });
+
+      // #349 hunk-scan finding: without a floor, the eligibility walk fell
+      // through vacant officer roles all the way to the ordinary "Member"
+      // role — any of its (typically many) holders could then claim the
+      // wildcard. The floor at the chapter's own Member role's display_order
+      // must hold even when every officer seat is empty but rank-and-file
+      // members exist.
+      it('does not fall through to the ordinary Member role when every officer seat is vacant', async () => {
+        mockChapterRepo.findById.mockResolvedValue(
+          makeChapter({ needs_president: true }),
+        );
+        mockRoleRepo.findByChapter.mockResolvedValue([
+          presidentRole,
+          treasurerRole,
+          secretaryRole,
+          memberRole,
+        ]);
+        // Nobody holds Treasurer or Secretary, but plenty of ordinary members
+        // hold the ordinary Member role.
+        mockMemberRepo.findByChapter.mockResolvedValue([
+          makeMember({ id: 'member-1', role_ids: [memberRole.id] }),
+          makeMember({ id: 'member-2', role_ids: [memberRole.id] }),
+        ]);
+
+        const result = await service.getPresidencyClaimStatus(
+          'ch-1',
+          'member-1',
+        );
+
+        expect(result).toEqual({
+          needs_president: true,
+          eligible: false,
+          next_role_name: null,
+        });
+      });
+
+      it('fails closed (nobody eligible) when the chapter has no resolvable Member role', async () => {
+        // The legacy system_key backfill gap (spec/behavior/rbac.md): a
+        // chapter that renamed its Member role before the backfill has no
+        // key on it, so the floor cannot be established. Since this decision
+        // grants `*`, the safe direction is "nobody eligible", not "no
+        // floor".
+        mockChapterRepo.findById.mockResolvedValue(
+          makeChapter({ needs_president: true }),
+        );
+        mockRoleRepo.findByChapter.mockResolvedValue([
+          presidentRole,
+          treasurerRole,
+        ]);
+        mockMemberRepo.findByChapter.mockResolvedValue([
+          makeMember({ id: 'member-1', role_ids: [treasurerRole.id] }),
+        ]);
+
+        const result = await service.getPresidencyClaimStatus(
+          'ch-1',
+          'member-1',
+        );
+
+        expect(result).toEqual({
+          needs_president: true,
+          eligible: false,
+          next_role_name: null,
+        });
+        expect(mockMemberRepo.findByChapter).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('claimPresidency', () => {
+      it('throws NotFound when the chapter does not exist', async () => {
+        mockChapterRepo.findById.mockResolvedValue(null);
+
+        await expect(
+          service.claimPresidency('ch-1', 'member-1'),
+        ).rejects.toThrow(NotFoundException);
+        expect(mockMemberRepo.claimPresidencyAtomic).not.toHaveBeenCalled();
+      });
+
+      it('throws BadRequest when the chapter does not need a new President', async () => {
+        mockChapterRepo.findById.mockResolvedValue(
+          makeChapter({ needs_president: false }),
+        );
+
+        await expect(
+          service.claimPresidency('ch-1', 'member-1'),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockMemberRepo.claimPresidencyAtomic).not.toHaveBeenCalled();
+      });
+
+      it('throws NotFound when the claiming member does not exist or is in another chapter', async () => {
+        mockChapterRepo.findById.mockResolvedValue(
+          makeChapter({ needs_president: true }),
+        );
+        mockMemberRepo.findById.mockResolvedValue(null);
+
+        await expect(
+          service.claimPresidency('ch-1', 'member-1'),
+        ).rejects.toThrow(NotFoundException);
+      });
+
+      it('throws Forbidden when the claiming member does not hold the eligible role', async () => {
+        mockChapterRepo.findById.mockResolvedValue(
+          makeChapter({ needs_president: true }),
+        );
+        mockMemberRepo.findById.mockResolvedValue(
+          makeMember({ id: 'member-2', role_ids: [secretaryRole.id] }),
+        );
+        mockRoleRepo.findByChapter.mockResolvedValue([
+          presidentRole,
+          treasurerRole,
+          secretaryRole,
+          memberRole,
+        ]);
+        mockMemberRepo.findByChapter.mockResolvedValue([
+          makeMember({ id: 'member-1', role_ids: [treasurerRole.id] }),
+          makeMember({ id: 'member-2', role_ids: [secretaryRole.id] }),
+        ]);
+
+        await expect(
+          service.claimPresidency('ch-1', 'member-2'),
+        ).rejects.toThrow(ForbiddenException);
+        expect(mockMemberRepo.claimPresidencyAtomic).not.toHaveBeenCalled();
+      });
+
+      it('throws Forbidden when no eligible role exists at all (support-fallback case)', async () => {
+        mockChapterRepo.findById.mockResolvedValue(
+          makeChapter({ needs_president: true }),
+        );
+        mockMemberRepo.findById.mockResolvedValue(
+          makeMember({ id: 'member-1', role_ids: [] }),
+        );
+        mockRoleRepo.findByChapter.mockResolvedValue([presidentRole]);
+        mockMemberRepo.findByChapter.mockResolvedValue([]);
+
+        await expect(
+          service.claimPresidency('ch-1', 'member-1'),
+        ).rejects.toThrow(ForbiddenException);
+        expect(mockMemberRepo.claimPresidencyAtomic).not.toHaveBeenCalled();
+      });
+
+      it('claims atomically and audit-logs on success', async () => {
+        mockChapterRepo.findById.mockResolvedValue(
+          makeChapter({ needs_president: true }),
+        );
+        mockMemberRepo.findById.mockResolvedValue(
+          makeMember({
+            id: 'member-1',
+            user_id: 'user-1',
+            role_ids: [treasurerRole.id],
+          }),
+        );
+        mockRoleRepo.findByChapter.mockResolvedValue([
+          presidentRole,
+          treasurerRole,
+          memberRole,
+        ]);
+        mockMemberRepo.findByChapter.mockResolvedValue([
+          makeMember({
+            id: 'member-1',
+            user_id: 'user-1',
+            role_ids: [treasurerRole.id],
+          }),
+        ]);
+        mockMemberRepo.claimPresidencyAtomic.mockResolvedValue(true);
+
+        await service.claimPresidency('ch-1', 'member-1');
+
+        // Third argument is the role that made the claimant eligible
+        // (re-verified atomically by the RPC, not just the President role
+        // being granted) — see the claim_presidency migration.
+        expect(mockMemberRepo.claimPresidencyAtomic).toHaveBeenCalledWith(
+          'ch-1',
+          'member-1',
+          treasurerRole.id,
+          presidentRole.id,
+        );
+        expect(mockChapterAuditLogService.record).toHaveBeenCalledWith({
+          chapterId: 'ch-1',
+          actorUserId: 'user-1',
+          action: 'presidency_claimed',
+          targetType: 'chapter',
+          targetId: 'ch-1',
+          diff: { claimed_by_member_id: 'member-1' },
+        });
+      });
+
+      it('maps a false RPC result (race lost) to Conflict', async () => {
+        mockChapterRepo.findById.mockResolvedValue(
+          makeChapter({ needs_president: true }),
+        );
+        mockMemberRepo.findById.mockResolvedValue(
+          makeMember({ id: 'member-1', role_ids: [treasurerRole.id] }),
+        );
+        mockRoleRepo.findByChapter.mockResolvedValue([
+          presidentRole,
+          treasurerRole,
+          memberRole,
+        ]);
+        mockMemberRepo.findByChapter.mockResolvedValue([
+          makeMember({ id: 'member-1', role_ids: [treasurerRole.id] }),
+        ]);
+        mockMemberRepo.claimPresidencyAtomic.mockResolvedValue(false);
+
+        await expect(
+          service.claimPresidency('ch-1', 'member-1'),
+        ).rejects.toThrow(ConflictException);
+        expect(mockChapterAuditLogService.record).not.toHaveBeenCalled();
+      });
+
+      it('throws NotFound when the chapter has no President role', async () => {
+        mockChapterRepo.findById.mockResolvedValue(
+          makeChapter({ needs_president: true }),
+        );
+        mockMemberRepo.findById.mockResolvedValue(
+          makeMember({ id: 'member-1', role_ids: [] }),
+        );
+        mockRoleRepo.findByChapter.mockResolvedValue([]);
+
+        await expect(
+          service.claimPresidency('ch-1', 'member-1'),
+        ).rejects.toThrow('President role not found');
+        expect(mockMemberRepo.claimPresidencyAtomic).not.toHaveBeenCalled();
+      });
     });
   });
 

@@ -24,6 +24,8 @@ describe('RbacController', () => {
       update: jest.fn(),
       delete: jest.fn(),
       transferPresidency: jest.fn(),
+      getPresidencyClaimStatus: jest.fn(),
+      claimPresidency: jest.fn(),
     } as any;
 
     const module: TestingModule = await Test.createTestingModule({
@@ -156,6 +158,43 @@ describe('RbacController', () => {
         chapterId,
         currentMember.id,
         dto.target_member_id,
+      );
+      expect(result).toEqual({ success: true });
+    });
+  });
+
+  describe('presidencyClaimStatus', () => {
+    it('returns the claim status for the current member', async () => {
+      const chapterId = 'chapter-1';
+      const member = { id: 'member-1' };
+      const status = {
+        needs_president: true,
+        eligible: true,
+        next_role_name: 'Treasurer',
+      };
+      rbacService.getPresidencyClaimStatus.mockResolvedValue(status as any);
+
+      const result = await controller.presidencyClaimStatus(chapterId, member);
+
+      expect(rbacService.getPresidencyClaimStatus).toHaveBeenCalledWith(
+        chapterId,
+        member.id,
+      );
+      expect(result).toEqual(status);
+    });
+  });
+
+  describe('claimPresidency', () => {
+    it('claims the presidency for the current member', async () => {
+      const chapterId = 'chapter-1';
+      const member = { id: 'member-1' };
+      rbacService.claimPresidency.mockResolvedValue(undefined);
+
+      const result = await controller.claimPresidency(chapterId, member);
+
+      expect(rbacService.claimPresidency).toHaveBeenCalledWith(
+        chapterId,
+        member.id,
       );
       expect(result).toEqual({ success: true });
     });
