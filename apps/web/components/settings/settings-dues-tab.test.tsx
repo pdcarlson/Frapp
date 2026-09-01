@@ -17,7 +17,14 @@ const DUES: OrgDues = {
 
 describe("SettingsDuesTab", () => {
   it("prefills the per-class amount and grace inputs from the dues config", () => {
-    render(<SettingsDuesTab dues={DUES} canManage onSave={() => {}} />);
+    render(
+      <SettingsDuesTab
+        dues={DUES}
+        canManage
+        onSave={() => {}}
+        pledgeTerm="New member"
+      />,
+    );
     expect(
       screen.getByRole("spinbutton", { name: /active member dues/i }),
     ).toHaveValue(85000);
@@ -27,7 +34,14 @@ describe("SettingsDuesTab", () => {
   });
 
   it("shows the installment count only while installments are allowed", () => {
-    render(<SettingsDuesTab dues={DUES} canManage onSave={() => {}} />);
+    render(
+      <SettingsDuesTab
+        dues={DUES}
+        canManage
+        onSave={() => {}}
+        pledgeTerm="New member"
+      />,
+    );
     // Off by default → no count input.
     expect(
       screen.queryByRole("spinbutton", { name: /number of installments/i }),
@@ -39,7 +53,14 @@ describe("SettingsDuesTab", () => {
   });
 
   it("guard-parses a cents input: negative/empty rejected (previous kept)", () => {
-    render(<SettingsDuesTab dues={DUES} canManage onSave={() => {}} />);
+    render(
+      <SettingsDuesTab
+        dues={DUES}
+        canManage
+        onSave={() => {}}
+        pledgeTerm="New member"
+      />,
+    );
     const input = screen.getByRole("spinbutton", {
       name: /active member dues/i,
     });
@@ -54,7 +75,14 @@ describe("SettingsDuesTab", () => {
   });
 
   it("guard-parses the installment count: rejects values below 1", () => {
-    render(<SettingsDuesTab dues={DUES} canManage onSave={() => {}} />);
+    render(
+      <SettingsDuesTab
+        dues={DUES}
+        canManage
+        onSave={() => {}}
+        pledgeTerm="New member"
+      />,
+    );
     fireEvent.click(screen.getByRole("switch", { name: /allow installments/i }));
     const count = screen.getByRole("spinbutton", {
       name: /number of installments/i,
@@ -67,7 +95,14 @@ describe("SettingsDuesTab", () => {
 
   it("saves the full dues config with current state", () => {
     const onSave = vi.fn();
-    render(<SettingsDuesTab dues={DUES} canManage onSave={onSave} />);
+    render(
+      <SettingsDuesTab
+        dues={DUES}
+        canManage
+        onSave={onSave}
+        pledgeTerm="New member"
+      />,
+    );
     fireEvent.change(
       screen.getByRole("spinbutton", { name: /late fee/i }),
       { target: { value: "3000" } },
@@ -76,8 +111,34 @@ describe("SettingsDuesTab", () => {
     expect(onSave).toHaveBeenCalledWith({ ...DUES, late_fee_cents: 3000 });
   });
 
+  // #351: the "new member" amount field's label reads in the chapter's own
+  // vocabulary rather than a hardcoded IFC term.
+  it("labels the pledge-tier dues field with the chapter's own vocabulary term", () => {
+    render(
+      <SettingsDuesTab
+        dues={DUES}
+        canManage
+        onSave={() => {}}
+        pledgeTerm="Aspirant"
+      />,
+    );
+    expect(
+      screen.getByRole("spinbutton", { name: /aspirant dues/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("spinbutton", { name: /new member dues/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("disables controls when the caller cannot manage", () => {
-    render(<SettingsDuesTab dues={DUES} canManage={false} onSave={() => {}} />);
+    render(
+      <SettingsDuesTab
+        dues={DUES}
+        canManage={false}
+        onSave={() => {}}
+        pledgeTerm="New member"
+      />,
+    );
     expect(
       screen.getByRole("spinbutton", { name: /active member dues/i }),
     ).toBeDisabled();

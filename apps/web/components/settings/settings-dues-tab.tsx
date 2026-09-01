@@ -31,6 +31,11 @@ type Props = {
   /** Persist the full dues config through `usePatchOrgConfig`. */
   onSave: (dues: OrgDues) => void;
   isSaving?: boolean;
+  /**
+   * This chapter's term for the pre-promotion role (#351), e.g. "New member"
+   * (IFC default), "Aspirant" (NPHC) — labels the amount field below.
+   */
+  pledgeTerm: string;
 };
 
 const CADENCE_OPTIONS: ReadonlyArray<{ value: OrgDues["cadence"]; label: string }> =
@@ -41,13 +46,20 @@ const CADENCE_OPTIONS: ReadonlyArray<{ value: OrgDues["cadence"]; label: string 
   ];
 
 /** Cents-valued fields shown as plain integer inputs (amounts are stored in cents). */
-const CENTS_FIELDS: ReadonlyArray<{ key: keyof OrgDues; label: string }> = [
-  { key: "active_amount_cents", label: "Active member dues (cents)" },
-  { key: "new_member_amount_cents", label: "New member dues (cents)" },
-  { key: "alumni_amount_cents", label: "Alumni dues (cents)" },
-  { key: "late_fee_cents", label: "Late fee (cents)" },
-  { key: "scholarship_pool_cents", label: "Scholarship pool (cents)" },
-];
+function centsFieldsFor(
+  pledgeTerm: string,
+): ReadonlyArray<{ key: keyof OrgDues; label: string }> {
+  return [
+    { key: "active_amount_cents", label: "Active member dues (cents)" },
+    {
+      key: "new_member_amount_cents",
+      label: `${pledgeTerm} dues (cents)`,
+    },
+    { key: "alumni_amount_cents", label: "Alumni dues (cents)" },
+    { key: "late_fee_cents", label: "Late fee (cents)" },
+    { key: "scholarship_pool_cents", label: "Scholarship pool (cents)" },
+  ];
+}
 
 /**
  * Settings → Dues. Edits the chapter's singleton `chapter_dues_config` row:
@@ -60,8 +72,15 @@ const CENTS_FIELDS: ReadonlyArray<{ key: keyof OrgDues; label: string }> = [
  * invalid, negative, or empty intermediate value keeps the previous value rather
  * than storing `NaN`.
  */
-export function SettingsDuesTab({ dues, canManage, onSave, isSaving }: Props) {
+export function SettingsDuesTab({
+  dues,
+  canManage,
+  onSave,
+  isSaving,
+  pledgeTerm,
+}: Props) {
   const [draft, setDraft] = useState<OrgDues>(dues);
+  const centsFields = centsFieldsFor(pledgeTerm);
 
   // Reconcile the local draft when the server config refetches after a save.
   useEffect(() => {
@@ -125,7 +144,7 @@ export function SettingsDuesTab({ dues, canManage, onSave, isSaving }: Props) {
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            {CENTS_FIELDS.map((field) => (
+            {centsFields.map((field) => (
               <div key={field.key} className="grid gap-1.5">
                 <Label htmlFor={`dues-${field.key}`}>{field.label}</Label>
                 <Input

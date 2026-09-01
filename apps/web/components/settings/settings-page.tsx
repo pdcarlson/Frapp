@@ -24,6 +24,7 @@ import {
 import { resolveChapterAccentColor } from "@repo/theme/accent";
 import { AA_NORMAL, contrastRatio, parseHex } from "@repo/color";
 import { signetDarkTokens } from "@repo/theme/signet";
+import { titleCase, vocab } from "@/lib/vocabulary";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -328,6 +329,21 @@ function SettingsPageContent() {
   const config = orgConfigQuery.data;
   const archetypeKey = config?.org_archetype ?? "ifc";
   const vocabulary = config?.vocabulary ?? {};
+  // #351: this chapter's term for the pre-promotion role, e.g. "New Member"
+  // (IFC default), "Aspirant" (NPHC), "Candidate" (professional) — the
+  // rollover copy below promotes members holding this role, so it should
+  // read in the chapter's own vocabulary rather than the hardcoded IFC term.
+  // Capitalized: the rollover copy uses it as a role-name reference
+  // alongside "Member" (itself always capitalized), and `vocab()`'s own
+  // defaults are sentence-case prose ("New member") rather than the title
+  // case the seeded role is actually displayed with elsewhere (e.g. the
+  // Discord-import role mapping step).
+  const pledgeTerm = titleCase(vocab("pledge", config));
+  // "every X", not "Xs": `pledgeTerm` can be an officer-typed free-text
+  // override with no plural-form guarantee (see settings-org-tab.tsx's
+  // vocab editor) — naively appending "s" breaks for a term already plural
+  // or ending in s/x/z/ch/sh.
+  const promoteToggleLabel = `Also promote every ${pledgeTerm} to Member`;
   const brandingRaw = config?.branding ?? {};
   const branding: Branding = {
     greek_letters:
@@ -481,7 +497,7 @@ function SettingsPageContent() {
     const confirmed = await confirm({
       title: `Start a new semester labelled "${semesterLabel}"?`,
       description: promoteNewMembers
-        ? "The current leaderboard period is archived and a new one begins. Points already awarded are kept — only the leaderboard's default window moves. Every New Member is also promoted to Member; they keep any other roles they hold, and this cannot be undone in one step."
+        ? `The current leaderboard period is archived and a new one begins. Points already awarded are kept — only the leaderboard's default window moves. Every ${pledgeTerm} is also promoted to Member; they keep any other roles they hold, and this cannot be undone in one step.`
         : "The current leaderboard period is archived and a new one begins. Points already awarded are kept — only the leaderboard's default window moves.",
       confirmLabel: "Start new semester",
       // Not destructive: a rollover archives rather than deletes, and
@@ -502,7 +518,7 @@ function SettingsPageContent() {
       toast({
         title: "Semester archived",
         description: promoteNewMembers
-          ? `${semesterLabel} is now the active period, and New Members were promoted to Member.`
+          ? `${semesterLabel} is now the active period, and every ${pledgeTerm} was promoted to Member.`
           : `${semesterLabel} is now the active period.`,
       });
       setSemesterLabel("");
@@ -729,16 +745,15 @@ function SettingsPageContent() {
                       <label className="flex items-start gap-2 text-sm md:col-span-3">
                         <Switch
                           id="semester-promote"
-                          aria-label="Also promote New Members to Member"
+                          aria-label={promoteToggleLabel}
                           checked={promoteNewMembers}
                           onCheckedChange={setPromoteNewMembers}
                           {...rolloverGate.controlProps(rollover.isPending)}
                         />
                         <span>
-                          Also promote New Members to Member
+                          {promoteToggleLabel}
                           <span className="block text-xs text-muted-foreground">
-                            Everyone currently holding the New Member role
-                            becomes a Member. Other roles they hold are kept.
+                            {`Everyone currently holding the ${pledgeTerm} role becomes a Member. Other roles they hold are kept.`}
                           </span>
                         </span>
                       </label>
@@ -898,6 +913,7 @@ function SettingsPageContent() {
                 canManage={canManage}
                 isSaving={pendingConfigKeys.has("dues")}
                 onSave={(next) => patchConfig({ dues: next }, "Dues saved")}
+                pledgeTerm={pledgeTerm}
               />,
             )}
           </TabsContent>
