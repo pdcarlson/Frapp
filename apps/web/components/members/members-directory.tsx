@@ -498,7 +498,7 @@ export function MembersDirectory() {
             <CardTitle className="text-lg">Member Records</CardTitle>
             <CardDescription>
               {usingSearch
-                ? `Search results for “${trimmedQuery}”`
+                ? `Search results for “${deferredQuery}”`
                 : `${sortedMembers.length} member${sortedMembers.length === 1 ? "" : "s"}`}
             </CardDescription>
           </CardHeader>

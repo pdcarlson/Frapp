@@ -270,15 +270,16 @@ export function SubscriptionCheckoutCard() {
   }
 
   // `past_due` and `canceled` are a working subscription that regressed —
-  // §5's danger. `incomplete` never started, so it stays a neutral/pending
-  // border rather than reading as a lapse. Reuses `subscriptionStatusKind`
-  // (`invoice-status.ts`) rather than a second status→tone mapping.
+  // §5's danger. `incomplete` never started, so it takes the warning (amber)
+  // tone rather than reading as a lapse. `status` is narrowed to those three
+  // values by this point (`null` and `active` both return above), so
+  // `subscriptionStatusKind` only ever answers `warning` or `destructive`
+  // here. Reuses that mapper (`invoice-status.ts`) rather than a second
+  // status→tone mapping.
   const cardToneClassName =
     subscriptionStatusKind(status) === "destructive"
       ? "border-destructive/45 bg-destructive/10"
-      : subscriptionStatusKind(status) === "warning"
-        ? "border-warning/45 bg-warning/10"
-        : "border-accent-border";
+      : "border-warning/45 bg-warning/10";
 
   return (
     <Card className={cardToneClassName}>
