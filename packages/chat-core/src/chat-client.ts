@@ -47,6 +47,8 @@ import {
   type OutboxStore,
 } from "./adapters";
 import { randomClientId } from "./random-id";
+import { OUTBOX_ANALYTICS_EVENTS } from "./outbox-analytics";
+import type { AnalyticsProperties } from "@repo/validation";
 
 export interface ToastFn {
   (input: {
@@ -103,6 +105,15 @@ export interface ChatActionContext {
    * explanation is missing.
    */
   onError?: ChatErrorFn;
+  /**
+   * Product analytics sink for the outbox lifecycle
+   * (`spec/behavior/observability.md` § Outbox Telemetry) — omitted → no
+   * events. Web supplies the pseudonymous `track` from `AnalyticsContext`;
+   * fire-and-forget by the same contract that context documents. Properties
+   * must be behavioral only — never pass `OutboxRow.body` or anything
+   * content-derived (see `outbox-analytics.ts`).
+   */
+  track?: (event: string, properties?: AnalyticsProperties) => void;
 }
 
 function patchCache(
@@ -246,11 +257,15 @@ export async function sendMessage(
     attachments: args.attachments ?? null,
   } as const;
 
-  await ctx.outbox.enqueue({
+  const enqueued = await ctx.outbox.enqueue({
     clientId,
     channelId: args.channelId,
     body: args.content,
     ...intent,
+  });
+  ctx.track?.(OUTBOX_ANALYTICS_EVENTS.queued, {
+    channel_id: args.channelId,
+    attempts: enqueued.attempts,
   });
   // Offline: the row is safely queued; the reconnect flush will POST it.
   if ((ctx.net ?? browserNetworkState).isOffline()) return;
@@ -292,13 +307,24 @@ export async function sendMessage(
       mergeServerRow(cache, message),
     );
     await ctx.outbox.dequeue(clientId);
+    ctx.track?.(OUTBOX_ANALYTICS_EVENTS.confirmed, {
+      channel_id: args.channelId,
+      elapsed_ms: Date.now() - enqueued.queuedAt,
+      attempts: enqueued.attempts,
+    });
   } catch (err) {
-    const { terminal, message } = classify(err);
+    const { terminal, status, message } = classify(err);
     if (terminal) {
       patchCache(ctx.queryClient, args.channelId, (cache) =>
         markFailed(cache, clientId, message),
       );
       await ctx.outbox.markFailed(clientId, message);
+      ctx.track?.(OUTBOX_ANALYTICS_EVENTS.failedTerminal, {
+        channel_id: args.channelId,
+        elapsed_ms: Date.now() - enqueued.queuedAt,
+        attempts: enqueued.attempts,
+        status: status ?? null,
+      });
       ctx.toast?.({
         title: "Message rejected",
         description: message,
@@ -306,6 +332,11 @@ export async function sendMessage(
       });
     } else {
       await ctx.outbox.bumpAttempt(clientId, message);
+      ctx.track?.(OUTBOX_ANALYTICS_EVENTS.failedTransient, {
+        channel_id: args.channelId,
+        elapsed_ms: Date.now() - enqueued.queuedAt,
+        attempts: enqueued.attempts,
+      });
     }
   }
 }
@@ -371,6 +402,10 @@ export async function retryOutboxRow(
   ctx: ChatActionContext,
   row: OutboxRow,
 ): Promise<void> {
+  ctx.track?.(OUTBOX_ANALYTICS_EVENTS.retried, {
+    channel_id: row.channelId,
+    attempts: row.attempts,
+  });
   await ctx.outbox.requeue(row.clientId);
   await sendMessage(ctx, sendArgsFromOutbox(row));
 }
@@ -384,6 +419,10 @@ export async function discardOutboxRow(
     removeMessage(cache, row.clientId),
   );
   await ctx.outbox.dequeue(row.clientId);
+  ctx.track?.(OUTBOX_ANALYTICS_EVENTS.discarded, {
+    channel_id: row.channelId,
+    attempts: row.attempts,
+  });
 }
 
 /**
