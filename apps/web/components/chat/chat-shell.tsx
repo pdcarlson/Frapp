@@ -571,6 +571,7 @@ export function ChatShell({
         >
           <MessageTimeline
             ref={timeline}
+            channelId={activeChannel?.id}
             nameFor={nameFor}
             messages={channel.messages}
             viewerId={userId}
@@ -641,6 +642,7 @@ export function ChatShell({
         {threadParent ? (
           <ThreadPanel
             nameFor={nameFor}
+            channelId={threadParent.channel_id}
             parent={threadParent}
             allMessages={channel.messages}
             viewerId={userId}

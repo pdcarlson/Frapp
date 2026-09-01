@@ -71,6 +71,7 @@ describe('ServiceEntryService', () => {
       getSignedDownloadUrl: jest
         .fn()
         .mockResolvedValue('https://signed-download'),
+      getSignedDownloadUrls: jest.fn().mockResolvedValue({}),
       uploadFile: jest.fn().mockResolvedValue(undefined),
       downloadFile: jest.fn().mockResolvedValue(null),
       deleteFile: jest.fn().mockResolvedValue(undefined),
