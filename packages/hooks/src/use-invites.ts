@@ -50,6 +50,22 @@ export function useBatchCreateInvites() {
   });
 }
 
+export function useEmailInvites() {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: { role: string; emails: string[] }) => {
+      const { data, error } = await client.POST("/v1/invites/email", { body });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["invites", chapterId] });
+    },
+  });
+}
+
 export function useRedeemInvite() {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
