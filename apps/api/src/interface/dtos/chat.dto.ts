@@ -350,3 +350,18 @@ export class ChannelNotificationPreferenceDto {
   @ApiProperty({ enum: CHAT_NOTIFICATION_LEVELS })
   level: (typeof CHAT_NOTIFICATION_LEVELS)[number];
 }
+
+/** Bounds one request to roughly one page of distinct message authors (#1231). */
+export const MAX_AUTHOR_AVATAR_PATHS_PER_REQUEST = 50;
+
+export class ResolveAuthorAvatarsDto {
+  @ApiProperty({
+    type: [String],
+    description:
+      "`chat_messages.author_avatar_path` values off already-fetched message rows. Each must be a `chat-archive` object path under the caller's own chapter — a path outside that prefix is silently dropped rather than signed.",
+  })
+  @IsArray()
+  @ArrayMaxSize(MAX_AUTHOR_AVATAR_PATHS_PER_REQUEST)
+  @IsString({ each: true })
+  paths: string[];
+}

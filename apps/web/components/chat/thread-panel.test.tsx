@@ -4,6 +4,16 @@ import { describe, it, expect, vi } from "vitest";
 import { ThreadPanel } from "./thread-panel";
 import type { ChatMessage } from "@repo/chat-core/types";
 
+// `useAuthorAvatars` (#1231) is the one hook `ThreadPanel` calls unconditionally
+// (every other `@repo/hooks` usage on this surface is a plain, non-hook helper),
+// and it reaches for `FrappClientProvider`, which this file's bare `render()`
+// does not mount. Stub just this one hook rather than replacing the module, so
+// a future addition here doesn't need "No export is defined on the mock".
+vi.mock("@repo/hooks", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, useAuthorAvatars: () => ({ data: {} }) };
+});
+
 const VIEWER = "11111111-1111-4111-8111-111111111111";
 const OTHER = "22222222-2222-4222-8222-222222222222";
 

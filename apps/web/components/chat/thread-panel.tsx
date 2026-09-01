@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { MessageItem } from "./message-item";
 import { useTapRevealedMessage } from "@/hooks/use-tap-revealed-message";
 import type { ChatMessage } from "@repo/chat-core/types";
+import { useAuthorAvatars } from "@repo/hooks";
 
 interface ThreadPanelProps {
   parent: ChatMessage | null;
@@ -38,6 +39,13 @@ export function ThreadPanel({
     if (!parent) return [];
     return allMessages.filter((message) => message.reply_to_id === parent.id);
   }, [allMessages, parent]);
+
+  // One batched request for the parent's avatar plus every distinct reply
+  // author's, rather than one per row (#1231) — same pattern as the centre
+  // timeline, a separate list here.
+  const avatars = useAuthorAvatars(
+    [parent, ...replies].map((message) => message?.author_avatar_path),
+  );
 
   // Own reveal state, separate from the centre timeline's: this panel is a
   // different list, and "tapping elsewhere dismisses this" only needs to
@@ -84,6 +92,11 @@ export function ThreadPanel({
           <MessageItem
             nameFor={nameFor}
             message={parent}
+            avatarUrl={
+              parent.author_avatar_path
+                ? avatars.data?.[parent.author_avatar_path]
+                : undefined
+            }
             viewerId={viewerId}
             showHeader
             onReact={onReact}
@@ -101,6 +114,11 @@ export function ThreadPanel({
                 nameFor={nameFor}
                 key={message.client_message_id}
                 message={message}
+                avatarUrl={
+                  message.author_avatar_path
+                    ? avatars.data?.[message.author_avatar_path]
+                    : undefined
+                }
                 viewerId={viewerId}
                 showHeader
                 onReact={onReact}

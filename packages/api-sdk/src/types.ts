@@ -952,6 +952,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/avatars": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Signed download URLs for imported-author avatar paths */
+        post: operations["ChatController_resolveAuthorAvatars_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/channels/messages/{messageId}": {
         parameters: {
             query?: never;
@@ -3049,6 +3066,10 @@ export interface components {
             reply_to_id?: string;
             metadata?: Record<string, never>;
         };
+        ResolveAuthorAvatarsDto: {
+            /** @description `chat_messages.author_avatar_path` values off already-fetched message rows. Each must be a `chat-archive` object path under the caller's own chapter — a path outside that prefix is silently dropped rather than signed. */
+            paths: string[];
+        };
         EditMessageDto: {
             content: string;
         };
@@ -5140,6 +5161,27 @@ export interface operations {
         requestBody?: never;
         responses: {
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChatController_resolveAuthorAvatars_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveAuthorAvatarsDto"];
+            };
+        };
+        responses: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };

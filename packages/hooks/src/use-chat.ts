@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useFrappClient } from "./use-frapp-client";
 
@@ -592,6 +593,40 @@ export function useMessageAttachments(
       );
       if (error) throw error;
       return (data ?? []) as MessageAttachment[];
+    },
+  });
+}
+
+/**
+ * Signed URLs for imported-author avatars (#1231), batched across every
+ * distinct `author_avatar_path` the caller passes — one request no matter
+ * how many visible messages share an author. `ChatMessage.author_avatar_path`
+ * is the same opaque, private-bucket path already riding on message rows the
+ * caller fetched; this only turns it into something renderable.
+ *
+ * Returns a `path → signedUrl` map covering only the paths that resolved — a
+ * path missing from the result (a message with no avatar, one the server
+ * rejected as out of chapter, or a signing failure) has nothing to render, so
+ * callers should fall back to initials rather than treat a miss as loading.
+ */
+export function useAuthorAvatars(paths: (string | null | undefined)[]) {
+  const client = useFrappClient();
+  const distinctPaths = useMemo(
+    () => [...new Set(paths.filter((p): p is string => !!p))].sort(),
+    [paths],
+  );
+  return useQuery({
+    queryKey: ["channels", "avatars", distinctPaths],
+    enabled: distinctPaths.length > 0,
+    // Comfortably inside the API's signed-URL TTL, so a URL handed to the DOM
+    // is still live when it renders.
+    staleTime: 10 * 60_000,
+    queryFn: async () => {
+      const { data, error } = await client.POST("/v1/channels/avatars", {
+        body: { paths: distinctPaths },
+      });
+      if (error) throw error;
+      return (data ?? {}) as Record<string, string>;
     },
   });
 }

@@ -69,6 +69,20 @@ export function MessageAttachments({
             href={attachment.download_url}
             target="_blank"
             rel="noreferrer"
+            // The server still forces `Content-Disposition: attachment` on
+            // every signed URL (`ChatService.listMessageAttachments` passes
+            // `forceDownload: true` — spec/behavior/chat/README.md's "trust
+            // boundary" section is explicit this is a security mitigation,
+            // not a UX one: it's what keeps a member-uploaded object whose
+            // declared MIME lied about its content from rendering as HTML).
+            // What changed under #1231's batched signing is only the saved
+            // *filename* — the batch API takes one `download` option for the
+            // whole call, not a per-file name, so it can no longer force
+            // `row.filename` the way the old per-row call did. This
+            // attribute is the client-side best-effort restoration of that
+            // display name; the security-relevant disposition itself needs
+            // no client help.
+            download={attachment.filename}
             className={cn(
               "flex items-center gap-2 rounded-md border border-border bg-surface-1 px-2 py-1.5",
               "text-[12.5px] hover:bg-accent-subtle hover:text-accent-text",

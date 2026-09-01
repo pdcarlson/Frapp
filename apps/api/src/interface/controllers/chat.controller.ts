@@ -47,6 +47,7 @@ import {
   ChannelUnreadCountDto,
   SetChannelNotificationLevelDto,
   ChannelNotificationPreferenceDto,
+  ResolveAuthorAvatarsDto,
 } from '../dtos/chat.dto';
 import type { ChannelType } from '../../domain/entities/chat.entity';
 
@@ -339,6 +340,28 @@ export class ChatController {
       userId,
       messageId,
     );
+  }
+
+  /**
+   * Signed URLs for imported-author avatars (#1231).
+   *
+   * A route of its own for the same reason `listMessageAttachments` is: the
+   * URLs expire, so they mint on request rather than riding a cacheable
+   * message field. Not nested under `:id` — an author's avatar is
+   * chapter-wide, not channel-specific, so `ChatService.resolveAuthorAvatars`
+   * checks the caller's chapter rather than a channel's access rules; the
+   * class-level guards (chapter member, free-tier) are already the right
+   * gate for that.
+   */
+  @Post('avatars')
+  @ApiOperation({
+    summary: 'Signed download URLs for imported-author avatar paths',
+  })
+  async resolveAuthorAvatars(
+    @Body() dto: ResolveAuthorAvatarsDto,
+    @CurrentChapterId() chapterId: string,
+  ) {
+    return this.chatService.resolveAuthorAvatars(chapterId, dto.paths);
   }
 
   @Patch('messages/:messageId')

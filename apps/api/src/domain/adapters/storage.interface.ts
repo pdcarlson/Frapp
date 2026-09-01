@@ -74,6 +74,36 @@ export interface IStorageProvider {
     downloadAs?: string,
   ): Promise<string>;
   /**
+   * Batch counterpart to {@link getSignedDownloadUrl} — signs many paths in
+   * as few provider calls as the backend allows, mirroring `deleteFiles`.
+   * Returns a `path → signedUrl` map covering only the paths that could be
+   * signed; a path missing from the result failed and the caller decides how
+   * to handle that (the same omit-rather-than-fail contract callers of
+   * `getSignedDownloadUrl` already build with `Promise.allSettled`).
+   *
+   * `forceDownload`, unlike the singular form's `downloadAs`, cannot carry a
+   * per-path filename — the underlying batch API takes one `download` option
+   * for the whole call, not one per path — so every path in the batch either
+   * forces `Content-Disposition: attachment` (saved under the storage key's
+   * own basename, not a caller-chosen name) or none of them do. **This is a
+   * security-relevant choice, not a UX one**, for any path whose bucket
+   * cannot pin a content type: `spec/behavior/chat/README.md`'s "The trust
+   * boundary is the `chat` bucket's `allowed_mime_types`" section records
+   * that a member can store HTML under an `image/png` declaration, and that
+   * forcing a download — not the declared MIME type — is what keeps a
+   * mislabeled object from rendering as HTML when a caller navigates to its
+   * URL directly (e.g. a non-previewable attachment opened via `target=
+   * "_blank"`). Pass `true` for any batch of paths reachable that way. A
+   * batch used only behind an `<img>` tag (which never executes a response
+   * as HTML/script regardless of `Content-Disposition`) does not need it.
+   */
+  getSignedDownloadUrls(
+    bucket: string,
+    paths: string[],
+    expiresIn?: number,
+    forceDownload?: boolean,
+  ): Promise<Record<string, string>>;
+  /**
    * Upload content the API produced or fetched itself (as opposed to handing a
    * client a signed upload URL) — server-side report rendering, and the Discord
    * bot importer streaming an attachment out of Discord's CDN.

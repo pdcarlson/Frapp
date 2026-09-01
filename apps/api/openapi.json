@@ -2286,6 +2286,36 @@
         ]
       }
     },
+    "/v1/channels/avatars": {
+      "post": {
+        "operationId": "ChatController_resolveAuthorAvatars_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveAuthorAvatarsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Signed download URLs for imported-author avatar paths",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/channels/messages/{messageId}": {
       "patch": {
         "operationId": "ChatController_editMessage_v1",
@@ -7681,6 +7711,21 @@
         "required": [
           "client_message_id",
           "content"
+        ]
+      },
+      "ResolveAuthorAvatarsDto": {
+        "type": "object",
+        "properties": {
+          "paths": {
+            "description": "`chat_messages.author_avatar_path` values off already-fetched message rows. Each must be a `chat-archive` object path under the caller's own chapter — a path outside that prefix is silently dropped rather than signed.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "paths"
         ]
       },
       "EditMessageDto": {
