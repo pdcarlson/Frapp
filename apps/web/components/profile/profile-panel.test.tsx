@@ -1,6 +1,15 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+
+// A successful sign-out (or account deletion, which signs out on success)
+// replaces the document; jsdom's real location.assign throws "not
+// implemented", so stand in for it and assert the destination.
+const locationAssign = vi.fn();
+Object.defineProperty(window, "location", {
+  value: { ...window.location, assign: locationAssign },
+  writable: true,
+});
 
 // Every mocked hook must return a STABLE reference. The panel's effects depend
 // on `userQuery.data` / `settingsQuery.data`, so a fresh object per render loops
@@ -44,6 +53,11 @@ const mocks = vi.hoisted(() => {
       // mutation optimistic — see the rollback test at the bottom of this file.
       isError: false,
     },
+    deleteAccount: {
+      mutateAsync: vi.fn(() => Promise.resolve({})),
+      isPending: false,
+    },
+    signOutCurrentSession: vi.fn(() => Promise.resolve()),
   };
 });
 
@@ -53,12 +67,15 @@ vi.mock("@repo/hooks", () => ({
   useUpdateUser: () => mocks.noopMutation,
   useUpdateUserSettings: () => mocks.updateSettings,
   useUpdateOnboarding: () => mocks.noopMutation,
+  useDeleteAccount: () => mocks.deleteAccount,
 }));
 
 vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: mocks.toast }),
 }));
-vi.mock("@/lib/auth/session", () => ({ signOutCurrentSession: vi.fn() }));
+vi.mock("@/lib/auth/session", () => ({
+  signOutCurrentSession: () => mocks.signOutCurrentSession(),
+}));
 vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
 
 import { networkMock } from "@/tests/network";
@@ -469,5 +486,146 @@ describe("ProfilePanel — the theme control is gone, not hidden", () => {
   it("says Signet, not Frapp", () => {
     render(<ProfilePanel />);
     expect(screen.queryByText(/frapp/i)).not.toBeInTheDocument();
+  });
+});
+
+// #713: mobile already shipped a delete-account surface
+// (apps/mobile/app/(tabs)/preferences.tsx); this is the web half, gated
+// behind the shared confirm dialog rather than `window.confirm`
+// (spec/ui/design-system/README.md §9's every-surface ban, #1198).
+describe("ProfilePanel — delete account (#713)", () => {
+  beforeEach(() => {
+    resetQueries();
+    vi.clearAllMocks();
+    mocks.deleteAccount.mutateAsync = vi.fn(() => Promise.resolve({}));
+    mocks.deleteAccount.isPending = false;
+    mocks.signOutCurrentSession = vi.fn(() => Promise.resolve());
+  });
+
+  // The trigger and the dialog's own confirm button would otherwise share the
+  // exact accessible name "Delete account" — the trailing ellipsis (a
+  // standard "this opens a confirmation" affordance) is what keeps
+  // `getByRole` unambiguous outside of `within(dialog)` scoping too.
+  async function openDeleteConfirmation() {
+    await userEvent.click(
+      screen.getByRole("button", { name: /^delete account…$/i }),
+    );
+    await screen.findByRole("dialog");
+  }
+
+  function clickDialogConfirm() {
+    const dialog = screen.getByRole("dialog");
+    return userEvent.click(
+      within(dialog).getByRole("button", { name: /^delete account$/i }),
+    );
+  }
+
+  it("does not call the delete mutation until the confirmation dialog is accepted", async () => {
+    render(<ProfilePanel />);
+    await openDeleteConfirmation();
+
+    expect(mocks.deleteAccount.mutateAsync).not.toHaveBeenCalled();
+    expect(screen.getByText(/cannot be undone/i)).toBeInTheDocument();
+  });
+
+  it("does nothing when the confirmation is canceled", async () => {
+    render(<ProfilePanel />);
+    await openDeleteConfirmation();
+
+    await userEvent.click(screen.getByRole("button", { name: /^cancel$/i }));
+
+    expect(mocks.deleteAccount.mutateAsync).not.toHaveBeenCalled();
+    expect(locationAssign).not.toHaveBeenCalled();
+  });
+
+  it("deletes the account and signs out locally once confirmed", async () => {
+    render(<ProfilePanel />);
+    await openDeleteConfirmation();
+    await clickDialogConfirm();
+
+    await waitFor(() => {
+      expect(mocks.deleteAccount.mutateAsync).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(mocks.signOutCurrentSession).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(locationAssign).toHaveBeenCalledWith("/sign-in");
+    });
+  });
+
+  it("reports a retry-safe failure and leaves the trigger clickable when deletion errors", async () => {
+    mocks.deleteAccount.mutateAsync = vi.fn(() =>
+      Promise.reject(new Error("boom")),
+    );
+    render(<ProfilePanel />);
+    await openDeleteConfirmation();
+    await clickDialogConfirm();
+
+    await waitFor(() => {
+      expect(mocks.toast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Deletion didn't finish",
+        }),
+      );
+    });
+    expect(locationAssign).not.toHaveBeenCalled();
+    expect(mocks.signOutCurrentSession).not.toHaveBeenCalled();
+    // A deletion that never succeeded is safe — and meaningful — to retry.
+    expect(
+      screen.getByRole("button", { name: /^delete account…$/i }),
+    ).toBeEnabled();
+  });
+
+  // The account is already gone once the mutation resolves; a sign-out
+  // hiccup right after must not strand the member on this page with a stale
+  // cache and a re-enabled trigger inviting a pointless second delete against
+  // an account that no longer exists (the bug three independent /diff-review
+  // lenses converged on: the old code awaited `handleSignOut()` — which
+  // swallows its own errors and only navigates on its own success path —
+  // inside the same try, so a sign-out failure here left the page fully
+  // interactive with nothing telling the member their account was deleted).
+  it("still redirects when sign-out fails right after a successful deletion", async () => {
+    mocks.signOutCurrentSession = vi.fn(() =>
+      Promise.reject(new Error("network blip")),
+    );
+    render(<ProfilePanel />);
+    await openDeleteConfirmation();
+    await clickDialogConfirm();
+
+    await waitFor(() => {
+      expect(mocks.deleteAccount.mutateAsync).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(locationAssign).toHaveBeenCalledWith("/sign-in");
+    });
+    // No "Couldn't sign out" (or any) toast — the deletion itself succeeded,
+    // and the redirect already happened; a toast here would be stale by the
+    // time anyone could read it.
+    expect(mocks.toast).not.toHaveBeenCalled();
+  });
+
+  it("disables Sign out while a delete is in flight, so it can't abort the in-flight request", async () => {
+    let resolveDelete!: () => void;
+    mocks.deleteAccount.mutateAsync = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveDelete = () => resolve({});
+        }),
+    );
+    render(<ProfilePanel />);
+    await openDeleteConfirmation();
+    await clickDialogConfirm();
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /^sign out$/i }),
+      ).toBeDisabled();
+    });
+
+    resolveDelete();
+    await waitFor(() => {
+      expect(locationAssign).toHaveBeenCalledWith("/sign-in");
+    });
   });
 });
