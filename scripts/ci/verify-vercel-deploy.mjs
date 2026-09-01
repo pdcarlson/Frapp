@@ -24,7 +24,7 @@
 // Exits 0 on success/neutral, 1 on terminal failure or overall timeout.
 
 import { createClock, pollUntilTerminal } from "./lib/polling.mjs";
-import { fetchVercelDeployments } from "./lib/providers.mjs";
+import { findVercelDeploymentBySha, vercelDeploymentCreatedAt } from "./lib/providers.mjs";
 import { requireEnv } from "./lib/env.mjs";
 
 // ── State semantics ─────────────────────────────────────────────────────────
@@ -51,11 +51,10 @@ export const VERCEL_OVERALL_TIMEOUT_MS = 30 * 60 * 1000;
 
 // ── Deployment helpers ──────────────────────────────────────────────────────
 
-/** Vercel's list endpoint returns `created` (epoch ms); tests and some
- *  responses carry `createdAt` (ISO). `new Date` handles both. */
-function deploymentCreatedAt(deployment) {
-  return new Date(deployment?.createdAt ?? deployment?.created ?? 0).getTime();
-}
+// `deploymentCreatedAt` moved to `lib/providers.mjs` (`vercelDeploymentCreatedAt`)
+// so the paginated finder and this file's sorting/supersession logic read the
+// same field. Re-exported locally under the old name for the rest of this file.
+const deploymentCreatedAt = vercelDeploymentCreatedAt;
 
 function deploymentState(deployment) {
   // Vercel's v6 deployments endpoint uses `state` (with `readyState` as a
@@ -134,12 +133,9 @@ export async function verifyVercelDeploy({
     logger,
     fetchOne: async () => {
       try {
-        const page = await fetchVercelDeployments({ apiKey, projectId, fetchImpl });
-        const deployments = Array.isArray(page?.deployments) ? page.deployments : [];
-        const matches = deployments.filter(
-          (deployment) => deployment?.meta?.githubCommitSha === sha,
-        );
-        return { deployments, matches };
+        const { deployments, matches, pagesSearched, oldestSeenMs, exhausted } =
+          await findVercelDeploymentBySha({ apiKey, projectId, sha, fetchImpl });
+        return { deployments, matches, pagesSearched, oldestSeenMs, exhausted };
       } catch (error) {
         return { error };
       }
@@ -152,15 +148,21 @@ export async function verifyVercelDeploy({
         };
       }
 
-      const { deployments, matches } = state;
+      const { deployments, matches, pagesSearched, oldestSeenMs, exhausted } = state;
 
       if (matches.length === 0) {
         if (elapsedMs >= noDeployGraceMs) {
+          const cutoff = oldestSeenMs != null ? new Date(oldestSeenMs).toISOString() : "the start";
+          const searchNote = exhausted
+            ? `searched all ${pagesSearched} page(s) of Vercel's deployment history for this ` +
+              `project, back to ${cutoff}`
+            : `searched ${pagesSearched} page(s) back to ${cutoff} — older deployments may still ` +
+              `exist beyond that`;
           return {
             status: "failure",
             message:
               `No Vercel deployment found for ${sha} on ${label} within ` +
-              `${Math.round(noDeployGraceMs / 1000)}s. No build should be skippable — ` +
+              `${Math.round(noDeployGraceMs / 1000)}s (${searchNote}). No build should be skippable — ` +
               `each app's vercel.json is expected to pin \`ignoreCommand: "exit 1"\` and ` +
               `\`git.deploymentEnabled.main\` is true — so a missing deployment row means ` +
               `either that Ignored Build Step was changed or the Git integration did not ` +

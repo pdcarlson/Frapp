@@ -15,8 +15,10 @@ import {
 
 const quiet = { log: () => {} };
 
+// `fetchPrLabels` now goes through `ghRequest`, which reads `.text()` and
+// JSON-parses it — not `.json()`. Test doubles must be `.text()`-shaped.
 function okJson(body) {
-  return { ok: true, status: 200, json: async () => body };
+  return { ok: true, status: 200, text: async () => JSON.stringify(body) };
 }
 
 describe("prNumberFromSubject", () => {
@@ -137,7 +139,7 @@ describe("resolveReleaseBump", () => {
           repo: "o/r",
           token: "t",
           logger: quiet,
-          fetchImpl: async () => ({ ok: false, status: 404 }),
+          fetchImpl: async () => ({ ok: false, status: 404, text: async () => "" }),
         }),
       /HTTP 404 for PR #10/,
     );

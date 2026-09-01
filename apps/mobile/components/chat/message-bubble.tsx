@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { emojiFromActionType } from "@repo/chat-core/types";
 import { SignetTokens } from "@repo/theme/signet";
+import { useChapterBranding } from "@/lib/chapter-branding";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 import {
   authorInitialsFallback,
@@ -103,8 +104,37 @@ export function MessageBubble({
 }: MessageBubbleProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-
   const isMine = !!viewerId && message.sender_id === viewerId;
+  // Reactions address a server id, so a message still in flight has nothing to
+  // address. Web gates the same affordance on the same condition.
+  const isConfirmed = message._status === "confirmed";
+  const reactions = groupReactions(message, viewerId);
+  const time = formatMessageTime(message.created_at);
+
+  // Split by branch, rather than one component reading useChapterBranding()
+  // unconditionally, so only self bubbles pull it in. That hook reaches for
+  // `FrappClientProvider`; before #1007 an incoming-message row never needed
+  // one, and incoming rows are the overwhelming majority. Same reasoning as
+  // `MessageAttachments` below, mounted only when a message has files.
+  // `isMine` is derived from the message's fixed `sender_id` and the thread's
+  // `viewerId`, neither of which changes for a given row, so a message never
+  // switches which of these two components renders it.
+  if (isMine) {
+    return (
+      <MineMessageBubble
+        message={message}
+        time={time}
+        isConfirmed={isConfirmed}
+        reactions={reactions}
+        onRetry={onRetry}
+        onDiscard={onDiscard}
+        onReact={onReact}
+        onUnreact={onUnreact}
+        styles={styles}
+      />
+    );
+  }
+
   // Resolved once and used for both the meta line and the avatar initials — two
   // lookups would be two chances for them to drift apart.
   //
@@ -114,11 +144,6 @@ export function MessageBubble({
   // surfaces cannot drift, which is why the local `senderLabel` is gone.
   const authorName = resolveAuthorName(message, nameFor);
   const authorLabel = resolveAuthorLabel(message, nameFor, viewerId);
-  // Reactions address a server id, so a message still in flight has nothing to
-  // address. Web gates the same affordance on the same condition.
-  const isConfirmed = message._status === "confirmed";
-  const reactions = groupReactions(message, viewerId);
-  const time = formatMessageTime(message.created_at);
 
   // Mount the renderer only when the message actually has files. The query hook
   // inside reaches for `FrappClientProvider`, so mounting unconditionally would
@@ -134,7 +159,7 @@ export function MessageBubble({
         channelId={message.channel_id}
         messageId={message.id}
         count={message.attachment_count}
-        isMine={isMine}
+        isMine={false}
       />
     ) : null;
 
@@ -143,64 +168,11 @@ export function MessageBubble({
   ) : (
     <>
       {message.content.length > 0 ? (
-        <Text style={isMine ? styles.bodyMine : styles.bodyTheirs}>
-          {message.content}
-        </Text>
+        <Text style={styles.bodyTheirs}>{message.content}</Text>
       ) : null}
       {attachments}
     </>
   );
-
-  if (isMine) {
-    return (
-      <View style={styles.rowMine}>
-        <View style={styles.bubbleMine}>{body}</View>
-
-        <View style={styles.metaMine}>
-          {message._status === "pending" ? (
-            <Text style={styles.metaText}>{`${time} · sending`}</Text>
-          ) : message._status === "failed" ? (
-            <Text style={styles.metaFailed}>
-              {message._error ?? "Send failed"}
-            </Text>
-          ) : (
-            <Text style={styles.metaText}>{time}</Text>
-          )}
-        </View>
-
-        {message._status === "failed" ? (
-          <View style={styles.failedActions}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Retry sending this message"
-              hitSlop={8}
-              onPress={() => onRetry(message.client_message_id)}
-            >
-              <Text style={styles.retryText}>Retry</Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Discard this message"
-              hitSlop={8}
-              onPress={() => onDiscard(message.client_message_id)}
-            >
-              <Text style={styles.discardText}>Discard</Text>
-            </Pressable>
-          </View>
-        ) : null}
-
-        <ReactionRow
-          reactions={reactions}
-          messageId={message.id}
-          disabled={!isConfirmed}
-          onReact={onReact}
-          onUnreact={onUnreact}
-          styles={styles}
-          align="flex-end"
-        />
-      </View>
-    );
-  }
 
   return (
     <View style={styles.rowTheirs}>
@@ -226,6 +198,120 @@ export function MessageBubble({
           align="flex-start"
         />
       </View>
+    </View>
+  );
+}
+
+/**
+ * The self-bubble branch, split out so `useChapterBranding()` is only ever
+ * called for a message the viewer sent — see the comment at its call site
+ * in {@link MessageBubble}.
+ */
+function MineMessageBubble({
+  message,
+  time,
+  isConfirmed,
+  reactions,
+  onRetry,
+  onDiscard,
+  onReact,
+  onUnreact,
+  styles,
+}: {
+  message: ChatMessage;
+  time: string;
+  isConfirmed: boolean;
+  reactions: ReactionGroup[];
+  onRetry: (clientMessageId: string) => void;
+  onDiscard: (clientMessageId: string) => void;
+  onReact: (messageId: string, emoji: string) => void;
+  onUnreact: (messageId: string, emoji: string) => void;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  // The chapter accent, not Signet's house gold — components.md:210 makes the
+  // self bubble the one surface that carries tenant identity in the timeline.
+  // `--signet-accent-primary`/`--signet-accent-on-primary` are the
+  // contrast-checked solid-fill pair (accent-engine.md §8); a chapter whose
+  // palette predates the Signet map falls back to house gold, same as it did
+  // before this pair existed (#1007).
+  const { accentPrimary, accentOnPrimary } = useChapterBranding();
+
+  // A deleted message shows none: the API 404s the attachment list anyway, but
+  // the client must not offer the affordance in the first place.
+  const attachments =
+    !message.is_deleted && message.attachment_count > 0 ? (
+      <MessageAttachments
+        channelId={message.channel_id}
+        messageId={message.id}
+        count={message.attachment_count}
+        isMine
+        accentOnPrimary={accentOnPrimary}
+      />
+    ) : null;
+
+  const body = message.is_deleted ? (
+    <Text style={[styles.deleted, { color: accentOnPrimary }]}>
+      Message deleted
+    </Text>
+  ) : (
+    <>
+      {message.content.length > 0 ? (
+        <Text style={[styles.bodyMine, { color: accentOnPrimary }]}>
+          {message.content}
+        </Text>
+      ) : null}
+      {attachments}
+    </>
+  );
+
+  return (
+    <View style={styles.rowMine}>
+      <View style={[styles.bubbleMine, { backgroundColor: accentPrimary }]}>
+        {body}
+      </View>
+
+      <View style={styles.metaMine}>
+        {message._status === "pending" ? (
+          <Text style={styles.metaText}>{`${time} · sending`}</Text>
+        ) : message._status === "failed" ? (
+          <Text style={styles.metaFailed}>
+            {message._error ?? "Send failed"}
+          </Text>
+        ) : (
+          <Text style={styles.metaText}>{time}</Text>
+        )}
+      </View>
+
+      {message._status === "failed" ? (
+        <View style={styles.failedActions}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Retry sending this message"
+            hitSlop={8}
+            onPress={() => onRetry(message.client_message_id)}
+          >
+            <Text style={styles.retryText}>Retry</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Discard this message"
+            hitSlop={8}
+            onPress={() => onDiscard(message.client_message_id)}
+          >
+            <Text style={styles.discardText}>Discard</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      <ReactionRow
+        reactions={reactions}
+        messageId={message.id}
+        disabled={!isConfirmed}
+        onReact={onReact}
+        onUnreact={onUnreact}
+        styles={styles}
+        align="flex-end"
+      />
     </View>
   );
 }
@@ -345,11 +431,9 @@ function createStyles(tokens: SignetTokens) {
     bubbleMine: {
       paddingVertical: tokens.spacing.md - 1,
       paddingHorizontal: tokens.spacing.md + 2,
-      // Signet's house gold, not the chapter accent: the accent engine has not
-      // delivered an `on-primary` pair to mobile yet, and `gold.onHouse` is the
-      // one on-fill text colour that is specified today. Retinting per chapter
-      // without a contrast-checked foreground is how unreadable bubbles ship.
-      backgroundColor: tokens.color.gold.house,
+      // No backgroundColor here — the chapter accent (or its house-gold
+      // fallback) is applied inline from useChapterBranding() at the render
+      // site, since it varies per chapter rather than per theme (#1007).
       borderTopLeftRadius: tokens.radius.bubble,
       borderTopRightRadius: tokens.radius.bubble,
       borderBottomLeftRadius: tokens.radius.bubble,
@@ -360,8 +444,8 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.foreground,
     },
     bodyMine: {
+      // No color here — see bubbleMine; applied inline alongside the fill.
       ...typeRole(tokens.typography.role.body),
-      color: tokens.color.gold.onHouse,
     },
     deleted: {
       ...typeRole(tokens.typography.role.body),

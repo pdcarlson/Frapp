@@ -37,7 +37,7 @@ import { execSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { loadEnvFiles } from "./lib/env-file.mjs";
-import { githubHeaders } from "./ci/lib/github.mjs";
+import { ghRequest } from "./ci/lib/github.mjs";
 
 // ── Required status checks ──────────────────────────────────────────────────
 // These must match check-run names exactly as reported on PRs.
@@ -338,18 +338,12 @@ function resolveToken() {
 // ── GitHub API ──────────────────────────────────────────────────────────────
 
 async function callGitHubApi({ token, method, path, body }) {
-  const response = await fetch(`https://api.github.com${path}`, {
-    method,
-    headers: githubHeaders({ token, hasBody: true }),
-    body: body ? JSON.stringify(body) : undefined,
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`${method} ${path} failed (${response.status}): ${text}`);
+  const result = await ghRequest({ token, method, path, body });
+  if (!result.ok) {
+    const text = typeof result.data === "string" ? result.data : JSON.stringify(result.data);
+    throw new Error(`${method} ${path} failed (${result.status}): ${text}`);
   }
-
-  return response.json();
+  return result.data;
 }
 
 // ── Branch protection payloads ──────────────────────────────────────────────
