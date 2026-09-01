@@ -1211,5 +1211,49 @@ describe('ServiceEntryService', () => {
         }),
       );
     });
+
+    // #578: the review comment used to be persisted but dropped from the
+    // push body, unlike TaskService's rejection copy which already includes it.
+    it('includes the admin review comment in the rejection notification body', async () => {
+      const rejected = {
+        ...baseEntry,
+        status: 'REJECTED' as const,
+        reviewed_by: 'admin-1',
+        review_comment: 'Insufficient proof',
+      };
+      mockServiceEntryRepo.findById.mockResolvedValue(baseEntry);
+      mockServiceEntryRepo.update.mockResolvedValue(rejected);
+
+      await service.reject('se-1', 'ch-1', 'admin-1', 'Insufficient proof');
+
+      expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+        'user-1',
+        'ch-1',
+        expect.objectContaining({
+          body: `Your service entry "${baseEntry.description}" has been rejected: Insufficient proof`,
+        }),
+      );
+    });
+
+    it('falls back to the generic rejection body when no comment was given', async () => {
+      const rejected = {
+        ...baseEntry,
+        status: 'REJECTED' as const,
+        reviewed_by: 'admin-1',
+        review_comment: null,
+      };
+      mockServiceEntryRepo.findById.mockResolvedValue(baseEntry);
+      mockServiceEntryRepo.update.mockResolvedValue(rejected);
+
+      await service.reject('se-1', 'ch-1', 'admin-1', null);
+
+      expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+        'user-1',
+        'ch-1',
+        expect.objectContaining({
+          body: `Your service entry "${baseEntry.description}" has been rejected`,
+        }),
+      );
+    });
   });
 });

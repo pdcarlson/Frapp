@@ -172,6 +172,7 @@ This table is the intent → glyph map; it MUST change in the same PR as
 | Roles | `RolesGlyph` |
 | Study Zones | `StudyZonesGlyph` |
 | Discord Import | `ImportGlyph` |
+| Chat Admin | `ChannelsGlyph` |
 | Reports | `ReportsGlyph` |
 | Settings | `SettingsGlyph` |
 | Search (top bar) | `SearchGlyph` |

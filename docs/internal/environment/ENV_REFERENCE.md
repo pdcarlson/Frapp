@@ -141,6 +141,21 @@ Product analytics is pseudonymous by construction: the API keys every event by `
 >
 > Set it wherever `SENTRY_DSN` is set. **Rotating it re-keys every pseudonym at once** — analytics continuity, Sentry grouping, and in-flight spike windows all break together. That is the intended blast radius of a salt rotation, but do it deliberately.
 
+### Invite Email (Optional — API-only)
+
+Powers the bulk-email invite path (`POST /v1/invites/email`, #238) — the onboarding wizard's "Or invite by email" field. The share-link invite path is unaffected either way.
+
+| Variable            | `dev`                                                          | `staging`                                                                | `prod`                                                                   |
+| ------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `RESEND_API_KEY`    | _(leave empty → no-op provider, invite emails logged at debug only)_ | Resend API key (`re_...`) for the Signet Resend account                    | Resend API key (`re_...`) — a **separate** key from staging is recommended |
+| `RESEND_FROM_EMAIL` | _(leave empty → default `Frapp <invites@frapp.live>`)_          | Override only if sending from a different verified domain                 | Override only if sending from a different verified domain                   |
+
+> Both are **optional**. With no `RESEND_API_KEY` the API uses a no-op provider that logs instead of sending — the invite tokens are still created either way, so local dev, tests, and CI never need a real email credential; only delivery is skipped. `selectEmailProvider()` logs its choice under the `EmailProvider` context at boot, same posture as `selectAnalyticsProvider()`.
+
+> **The From address must be on a domain verified with Resend**, or sends will bounce at request time regardless of the key's validity. The default `invites@frapp.live` is a placeholder — verify the domain in the Resend dashboard before relying on it in a deployed environment.
+
+> The join link an invite email carries is built from `APP_URL` (above), with the same production-origin fallback the mobile app uses when its own `EXPO_PUBLIC_APP_URL` twin is unset — see `apps/api/src/infrastructure/email/invite-link.util.ts`.
+
 ### CD Secrets (Deploy Workflows Only)
 
 These are only used by GitHub Actions. Leave them empty in the `dev` environment — they're not needed for local development.
@@ -225,6 +240,8 @@ Reads these directly (no prefix needed):
 | `ANALYTICS_HMAC_SALT`         | `analytics.service.ts` (analytics keying) · `infrastructure/observability/pseudonyms.ts` (Sentry user/chapter hashes + security-event `originHash`); analytics disabled and pseudonyms omitted when unset                                                                | ❌       |
 | `POSTHOG_API_KEY`             | `analytics.module.ts` — `selectAnalyticsProvider()` (selects PostHog vs no-op provider; **the choice is logged at boot** under the `AnalyticsProvider` context, and a salt set with no key warns)                                                                        | ❌       |
 | `POSTHOG_HOST`                | `analytics.module.ts` (provider host override; default PostHog US)                                                                                                                                                                                                       | ❌       |
+| `RESEND_API_KEY`              | `modules/email/email.module.ts` — `selectEmailProvider()` (selects Resend vs no-op provider for invite emails; **the choice is logged at boot** under the `EmailProvider` context)                                                                                       | ❌       |
+| `RESEND_FROM_EMAIL`           | `modules/email/email.module.ts` (from-address override; default `Frapp <invites@frapp.live>`)                                                                                                                                                                            | ❌       |
 | `DISCORD_BOT_TOKEN`           | `infrastructure/discord/discord-bot-gateway.service.ts` (the one global Signet bot token; unset → the bot import path reports itself unavailable and every `/v1/discord/*` route 503s)                                                                                   | ❌       |
 | `DISCORD_CLIENT_ID`           | `infrastructure/discord/discord-oauth-client.service.ts` (builds the authorize URL)                                                                                                                                                                                      | ❌       |
 | `DISCORD_CLIENT_SECRET`       | `infrastructure/discord/discord-oauth-client.service.ts` (HTTP Basic on the token exchange and revoke — the step that proves the authorizing human administers the guild)                                                                                                | ❌       |
