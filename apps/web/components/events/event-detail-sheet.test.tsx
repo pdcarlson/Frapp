@@ -1,9 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
-const { mockCurrentChapter } = vi.hoisted(() => ({
+const {
+  mockCurrentChapter,
+  mockDownloadIcs,
+  mockResetDownloadIcs,
+  mockToast,
+  mockIcsState,
+} = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
+  mockDownloadIcs: vi.fn(),
+  mockResetDownloadIcs: vi.fn(),
+  mockToast: vi.fn(),
+  // Read directly (not via React state) so a test can flip it before
+  // rendering to cover the pending UI without wiring a stateful mock.
+  mockIcsState: { isPending: false },
 }));
 
 // usingPreviewData renders from the `event` prop and gates out AttendancePanel;
@@ -11,6 +24,11 @@ const { mockCurrentChapter } = vi.hoisted(() => ({
 vi.mock("@repo/hooks", () => ({
   useEvent: () => ({ data: undefined, isLoading: false, isError: false }),
   useDeleteEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDownloadEventIcs: () => ({
+    mutateAsync: mockDownloadIcs,
+    isPending: mockIcsState.isPending,
+    reset: mockResetDownloadIcs,
+  }),
   useRoles: () => ({ data: [{ id: "r1", name: "Exec" }], isError: false }),
   // Edit and Delete both hit paid-ops event routes, so the sheet reads the
   // chapter's subscription now (#841). Existing cases default to active.
@@ -28,7 +46,7 @@ vi.mock("@/lib/stores/chapter-store", () => ({
 }));
 
 vi.mock("@/hooks/use-toast", () => ({
-  useToast: () => ({ toast: vi.fn() }),
+  useToast: () => ({ toast: mockToast }),
 }));
 
 vi.mock("@/components/events/attendance-panel", () => ({
@@ -48,6 +66,10 @@ const chapter = chapterSubscription(mockCurrentChapter);
 
 beforeEach(() => {
   chapter.active();
+  mockDownloadIcs.mockReset();
+  mockResetDownloadIcs.mockReset();
+  mockToast.mockReset();
+  mockIcsState.isPending = false;
 });
 
 describe("EventDetailSheet role targeting", () => {
@@ -238,5 +260,181 @@ describe("EventDetailSheet zone validity mirrors the server", () => {
     expect(screen.getByText(/zone is incomplete/)).toBeInTheDocument();
     expect(screen.queryByText(/3 points/)).toBeNull();
     expect(screen.queryByText(/can check in from anywhere/)).toBeNull();
+  });
+});
+
+describe("EventDetailSheet Add to calendar", () => {
+  // jsdom does not implement the Blob URL APIs the download path uses.
+  beforeEach(() => {
+    URL.createObjectURL = vi.fn(() => "blob:mock-url");
+    URL.revokeObjectURL = vi.fn();
+  });
+
+  it("downloads the .ics returned by the API on click", async () => {
+    const icsBlob = new Blob(["BEGIN:VCALENDAR"], { type: "text/calendar" });
+    mockDownloadIcs.mockResolvedValue(icsBlob);
+    const user = userEvent.setup();
+
+    render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData={false}
+        event={baseEvent}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /add to calendar/i }),
+    );
+
+    await waitFor(() => {
+      expect(mockDownloadIcs).toHaveBeenCalledWith("e1");
+    });
+    expect(URL.createObjectURL).toHaveBeenCalledWith(icsBlob);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:mock-url");
+    expect(mockToast).not.toHaveBeenCalled();
+  });
+
+  it("toasts an error rather than downloading when the API call fails", async () => {
+    mockDownloadIcs.mockRejectedValue(new Error("network down"));
+    const user = userEvent.setup();
+
+    render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData={false}
+        event={baseEvent}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /add to calendar/i }),
+    );
+
+    await waitFor(() => {
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Could not export calendar file",
+          description: "network down",
+          variant: "destructive",
+        }),
+      );
+    });
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+  });
+
+  it("shows a spinner and disables the button while the export is pending", () => {
+    mockIcsState.isPending = true;
+
+    render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData={false}
+        event={baseEvent}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+
+    const button = screen.getByRole("button", { name: /add to calendar/i });
+    expect(button).toBeDisabled();
+    expect(button.querySelector(".animate-spin")).not.toBeNull();
+  });
+
+  // Preview mode has no live event id to export, so the button must not
+  // attempt a download — the whole point of this state.
+  it("disables the button and never calls the API in preview mode", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        event={baseEvent}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+
+    const button = screen.getByRole("button", { name: /add to calendar/i });
+    expect(button).toBeDisabled();
+
+    await user.click(button);
+    expect(mockDownloadIcs).not.toHaveBeenCalled();
+  });
+
+  // The downloaded filename should read as the event, not its opaque id —
+  // three exports in a session must not all land as indistinguishable uuids.
+  it("names the download after the event, not its raw id", async () => {
+    const icsBlob = new Blob(["BEGIN:VCALENDAR"], { type: "text/calendar" });
+    mockDownloadIcs.mockResolvedValue(icsBlob);
+    const user = userEvent.setup();
+    let downloadNameAtClick: string | null = null;
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        downloadNameAtClick = this.download;
+      });
+
+    render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData={false}
+        event={{ ...baseEvent, name: "Exec Sync!! (Weekly)" }}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /add to calendar/i }),
+    );
+
+    await waitFor(() => {
+      expect(clickSpy).toHaveBeenCalledTimes(1);
+    });
+    expect(downloadNameAtClick).toBe("exec-sync-weekly.ics");
+
+    clickSpy.mockRestore();
+  });
+
+  // events-page.tsx renders one <EventDetailSheet> and swaps the `event` prop
+  // rather than remounting per event, so without a reset the mutation's
+  // isPending/error state from event A would still be showing while event B
+  // is open.
+  it("resets the mutation state when a different event is opened", () => {
+    const { rerender } = render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData={false}
+        event={baseEvent}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+    mockResetDownloadIcs.mockClear();
+
+    rerender(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData={false}
+        event={{ ...baseEvent, id: "e2", name: "Other Event" }}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+
+    expect(mockResetDownloadIcs).toHaveBeenCalled();
   });
 });

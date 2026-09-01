@@ -140,6 +140,44 @@ const COMING_SOON_TABS: ReadonlyArray<{
   },
 ];
 
+/**
+ * Names the surface a server-reported §8 contrast failure was measured
+ * against, for the fixed three checks `deriveSignetPalette` can return
+ * (`packages/chapter-theme/src/signet.ts`). Falls back to the raw values for
+ * a shape a future engine change adds — never hides a real failure behind an
+ * unrecognized pair.
+ */
+function describeFailedContrastCheck(check: {
+  role: string;
+  against: string;
+  ratio: number;
+}): string {
+  const ratio = check.ratio.toFixed(1);
+  if (
+    check.role === "--signet-accent-text" &&
+    check.against === "--signet-accent-subtle-bg"
+  ) {
+    return `Accent text on its own tinted background reads at ${ratio}:1, under the 4.5:1 minimum.`;
+  }
+  // Only claim "app background" when `against` is the literal background hex
+  // this check is actually specified for — never inferred from `role` alone,
+  // so a future engine check on `--signet-accent-text` against some other
+  // surface falls to the raw fallback below instead of being mislabeled.
+  if (
+    check.role === "--signet-accent-text" &&
+    !check.against.startsWith("--signet-")
+  ) {
+    return `Accent text on the app background reads at ${ratio}:1, under the 4.5:1 minimum.`;
+  }
+  if (
+    check.role === "--signet-accent-on-primary" &&
+    check.against === "--signet-accent-primary"
+  ) {
+    return `Text on the accent's solid fill reads at ${ratio}:1, under the 4.5:1 minimum.`;
+  }
+  return `${check.role} against ${check.against} reads at ${ratio}:1, under the 4.5:1 minimum.`;
+}
+
 function SettingsPageContent() {
   const { toast } = useToast();
   const { confirm, confirmDialog } = useConfirmDialog();
@@ -186,6 +224,13 @@ function SettingsPageContent() {
   }, [tabParam]);
 
   const [accentDraft, setAccentDraft] = useState("");
+  // The server's own §8 disclosure from the last successful save — distinct
+  // from `previewInkFailsAA` below, which is a client-side check of the
+  // unsaved draft. Cleared on the next edit so a stale warning never survives
+  // past the accent it was measured against (#1183).
+  const [accentContrastWarning, setAccentContrastWarning] = useState<
+    { role: string; against: string; ratio: number }[] | null
+  >(null);
   const [semesterLabel, setSemesterLabel] = useState("");
   const [semesterStart, setSemesterStart] = useState("");
   const [semesterEnd, setSemesterEnd] = useState("");
@@ -198,6 +243,10 @@ function SettingsPageContent() {
     if (!parsed.success) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- seed the accent draft from the chapter query
     setAccentDraft(parsed.data.accent_color ?? "");
+    // A resync (chapter switch, another tab's save, a background refetch) can
+    // change the draft out from under a still-displayed warning, which would
+    // otherwise describe a colour this render no longer shows (#1183).
+    setAccentContrastWarning(null);
   }, [chapterQuery.data]);
 
   if (!activeChapterId) {
@@ -396,12 +445,20 @@ function SettingsPageContent() {
     }
   }
 
+  function updateAccentDraft(value: string) {
+    setAccentDraft(value);
+    // A new edit invalidates the previous save's server-reported warning —
+    // it described a different colour.
+    setAccentContrastWarning(null);
+  }
+
   async function saveAccent(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
-      await updateChapter.mutateAsync({
+      const result = await updateChapter.mutateAsync({
         accent_color: accentDraft || undefined,
       });
+      setAccentContrastWarning(result?.failedContrastChecks ?? null);
       toast({
         title: "Accent color saved",
         description: "Buttons, chat tags, and branded reports use it.",
@@ -863,13 +920,17 @@ function SettingsPageContent() {
                       type="color"
                       aria-label="Accent color picker"
                       value={accentDraft || accent.resolvedAccent}
-                      onChange={(event) => setAccentDraft(event.target.value)}
+                      onChange={(event) =>
+                        updateAccentDraft(event.target.value)
+                      }
                       className="h-12 w-24 p-1"
                     />
                     <Input
                       aria-label="Accent color hex value"
                       value={accentDraft}
-                      onChange={(event) => setAccentDraft(event.target.value)}
+                      onChange={(event) =>
+                        updateAccentDraft(event.target.value)
+                      }
                       placeholder={signetDarkTokens.color.gold.seed}
                       className="max-w-xs font-mono"
                     />
@@ -931,6 +992,24 @@ function SettingsPageContent() {
                       {previewInkRatio.toFixed(1)}:1, under the 4.5:1 minimum.
                       Buttons and name tags using it will be hard to read —
                       pick a lighter or darker shade.
+                    </p>
+                  ) : null}
+                  {/*
+                    A third, independent question from the two above — those
+                    are client-side checks of the unsaved draft against a
+                    single fixed backdrop each. This is the server's own §8
+                    verdict on the colour actually saved, generated through
+                    the real Signet pipeline. §8 forbids a runtime
+                    substitution here, so a failing save still succeeds — this
+                    discloses rather than corrects (#1183).
+                  */}
+                  {accentContrastWarning && accentContrastWarning.length > 0 ? (
+                    <p className="text-xs text-warning">
+                      {accentContrastWarning
+                        .map(describeFailedContrastCheck)
+                        .join(" ")}{" "}
+                      Try a lighter or darker shade of this hue and save
+                      again.
                     </p>
                   ) : null}
                 </CardContent>

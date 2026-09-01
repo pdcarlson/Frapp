@@ -77,6 +77,10 @@ export class FinancialInvoiceController {
     return this.invoiceService.findByUser(userId, chapterId);
   }
 
+  // MUST stay above `@Get(':id')`. Nest matches routes in declaration order and
+  // a single-segment `:id` would otherwise swallow this path, resolving it as
+  // `getOne('overdue')` and answering 404 for a route that exists.
+  // Enforced by `test/route-declaration-order.e2e-spec.ts` (#990).
   @Get('overdue')
   @RequirePermissions(SystemPermissions.BILLING_VIEW)
   @ApiOperation({
