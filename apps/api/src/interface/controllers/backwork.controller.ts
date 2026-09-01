@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiCreatedResponse,
   ApiOperation,
   ApiQuery,
   ApiTags,
@@ -34,6 +35,9 @@ import {
   RequestBackworkUploadUrlDto,
   ConfirmBackworkUploadDto,
   UpdateDepartmentDto,
+  UpdateProfessorDto,
+  MergeBackworkTaxonomyDto,
+  MergeBackworkTaxonomyResponseDto,
 } from '../dtos/backwork.dto';
 
 @ApiTags('Backwork')
@@ -134,6 +138,33 @@ export class BackworkController {
     return this.backworkService.updateDepartment(id, chapterId, dto);
   }
 
+  @Delete('departments/:id')
+  @RequirePermissions(SystemPermissions.BACKWORK_ADMIN)
+  @ApiOperation({
+    summary: 'Delete a department (blocked while any resource references it)',
+  })
+  async deleteDepartment(
+    @CurrentChapterId() chapterId: string,
+    @Param('id') id: string,
+  ) {
+    await this.backworkService.deleteDepartment(id, chapterId);
+    return { success: true };
+  }
+
+  @Post('departments/:id/merge')
+  @RequirePermissions(SystemPermissions.BACKWORK_ADMIN)
+  @ApiOperation({
+    summary: 'Merge a department into another, reassigning its resources',
+  })
+  @ApiCreatedResponse({ type: MergeBackworkTaxonomyResponseDto })
+  async mergeDepartments(
+    @CurrentChapterId() chapterId: string,
+    @Param('id') id: string,
+    @Body() dto: MergeBackworkTaxonomyDto,
+  ) {
+    return this.backworkService.mergeDepartments(id, dto.target_id, chapterId);
+  }
+
   // MUST stay above `@Get(':id')`. Nest matches routes in declaration order and
   // a single-segment `:id` would otherwise swallow this path, resolving it as
   // `getOne('professors')` and answering 404 for a route that exists.
@@ -142,6 +173,44 @@ export class BackworkController {
   @ApiOperation({ summary: 'List chapter professors' })
   async listProfessors(@CurrentChapterId() chapterId: string) {
     return this.backworkService.getProfessors(chapterId);
+  }
+
+  @Patch('professors/:id')
+  @RequirePermissions(SystemPermissions.BACKWORK_ADMIN)
+  @ApiOperation({ summary: 'Update professor name' })
+  async updateProfessor(
+    @CurrentChapterId() chapterId: string,
+    @Param('id') id: string,
+    @Body() dto: UpdateProfessorDto,
+  ) {
+    return this.backworkService.updateProfessor(id, chapterId, dto);
+  }
+
+  @Delete('professors/:id')
+  @RequirePermissions(SystemPermissions.BACKWORK_ADMIN)
+  @ApiOperation({
+    summary: 'Delete a professor (blocked while any resource references it)',
+  })
+  async deleteProfessor(
+    @CurrentChapterId() chapterId: string,
+    @Param('id') id: string,
+  ) {
+    await this.backworkService.deleteProfessor(id, chapterId);
+    return { success: true };
+  }
+
+  @Post('professors/:id/merge')
+  @RequirePermissions(SystemPermissions.BACKWORK_ADMIN)
+  @ApiOperation({
+    summary: 'Merge a professor into another, reassigning its resources',
+  })
+  @ApiCreatedResponse({ type: MergeBackworkTaxonomyResponseDto })
+  async mergeProfessors(
+    @CurrentChapterId() chapterId: string,
+    @Param('id') id: string,
+    @Body() dto: MergeBackworkTaxonomyDto,
+  ) {
+    return this.backworkService.mergeProfessors(id, dto.target_id, chapterId);
   }
 
   @Get(':id')

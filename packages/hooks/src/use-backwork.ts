@@ -165,3 +165,120 @@ export function useUpdateDepartment() {
     },
   });
 }
+
+export function useDeleteDepartment() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { data, error } = await client.DELETE(
+        "/v1/backwork/departments/{id}",
+        { params: { path: { id } } },
+      );
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["backwork", "departments"],
+      });
+    },
+  });
+}
+
+/** Reassigns every resource tagged `id` to `targetId`, then deletes `id`. */
+export function useMergeDepartments() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      targetId,
+    }: {
+      id: string;
+      targetId: string;
+    }) => {
+      const { data, error } = await client.POST(
+        "/v1/backwork/departments/{id}/merge",
+        { params: { path: { id } }, body: { target_id: targetId } },
+      );
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      // Reassignment also changes every affected resource's department_id.
+      queryClient.invalidateQueries({ queryKey: ["backwork"] });
+    },
+  });
+}
+
+export function useUpdateProfessor() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      body,
+    }: {
+      id: string;
+      body: { name?: string };
+    }) => {
+      const { data, error } = await client.PATCH(
+        "/v1/backwork/professors/{id}",
+        { params: { path: { id } }, body },
+      );
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["backwork", "professors"],
+      });
+    },
+  });
+}
+
+export function useDeleteProfessor() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { data, error } = await client.DELETE(
+        "/v1/backwork/professors/{id}",
+        { params: { path: { id } } },
+      );
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["backwork", "professors"],
+      });
+    },
+  });
+}
+
+/** Reassigns every resource tagged `id` to `targetId`, then deletes `id`. */
+export function useMergeProfessors() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      targetId,
+    }: {
+      id: string;
+      targetId: string;
+    }) => {
+      const { data, error } = await client.POST(
+        "/v1/backwork/professors/{id}/merge",
+        { params: { path: { id } }, body: { target_id: targetId } },
+      );
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["backwork"] });
+    },
+  });
+}

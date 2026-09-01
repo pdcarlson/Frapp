@@ -125,4 +125,60 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
       .eq('chapter_id', chapterId);
     if (error) throw error;
   }
+
+  async countByDepartment(
+    chapterId: string,
+    departmentId: string,
+  ): Promise<number> {
+    const { count, error } = await this.supabase
+      .from('backwork_resources')
+      .select('id', { count: 'exact', head: true })
+      .eq('chapter_id', chapterId)
+      .eq('department_id', departmentId);
+    if (error) throw error;
+    return count ?? 0;
+  }
+
+  async countByProfessor(
+    chapterId: string,
+    professorId: string,
+  ): Promise<number> {
+    const { count, error } = await this.supabase
+      .from('backwork_resources')
+      .select('id', { count: 'exact', head: true })
+      .eq('chapter_id', chapterId)
+      .eq('professor_id', professorId);
+    if (error) throw error;
+    return count ?? 0;
+  }
+
+  async reassignDepartment(
+    chapterId: string,
+    fromId: string,
+    toId: string,
+  ): Promise<number> {
+    const { data, error } = await this.supabase
+      .from('backwork_resources')
+      .update({ department_id: toId })
+      .eq('chapter_id', chapterId)
+      .eq('department_id', fromId)
+      .select('id');
+    if (error) throw error;
+    return data?.length ?? 0;
+  }
+
+  async reassignProfessor(
+    chapterId: string,
+    fromId: string,
+    toId: string,
+  ): Promise<number> {
+    const { data, error } = await this.supabase
+      .from('backwork_resources')
+      .update({ professor_id: toId })
+      .eq('chapter_id', chapterId)
+      .eq('professor_id', fromId)
+      .select('id');
+    if (error) throw error;
+    return data?.length ?? 0;
+  }
 }

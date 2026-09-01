@@ -5,6 +5,8 @@ import {
   RequestBackworkUploadUrlDto,
   ConfirmBackworkUploadDto,
   UpdateDepartmentDto,
+  UpdateProfessorDto,
+  MergeBackworkTaxonomyDto,
 } from '../dtos/backwork.dto';
 
 describe('BackworkController', () => {
@@ -17,7 +19,12 @@ describe('BackworkController', () => {
     findByChapter: jest.fn(),
     getDepartments: jest.fn(),
     updateDepartment: jest.fn(),
+    deleteDepartment: jest.fn(),
+    mergeDepartments: jest.fn(),
     getProfessors: jest.fn(),
+    updateProfessor: jest.fn(),
+    deleteProfessor: jest.fn(),
+    mergeProfessors: jest.fn(),
     findById: jest.fn(),
     delete: jest.fn(),
   };
@@ -173,6 +180,38 @@ describe('BackworkController', () => {
     });
   });
 
+  describe('deleteDepartment', () => {
+    it('should call backworkService.deleteDepartment with correct parameters', async () => {
+      const chapterId = 'chapter-123';
+      const id = 'dept-1';
+      mockBackworkService.deleteDepartment.mockResolvedValue(undefined);
+
+      const result = await controller.deleteDepartment(chapterId, id);
+
+      expect(service.deleteDepartment).toHaveBeenCalledWith(id, chapterId);
+      expect(result).toEqual({ success: true });
+    });
+  });
+
+  describe('mergeDepartments', () => {
+    it('should call backworkService.mergeDepartments with correct parameters', async () => {
+      const chapterId = 'chapter-123';
+      const id = 'dept-1';
+      const dto: MergeBackworkTaxonomyDto = { target_id: 'dept-2' };
+      const expectedResult = { reassigned: 3 };
+      mockBackworkService.mergeDepartments.mockResolvedValue(expectedResult);
+
+      const result = await controller.mergeDepartments(chapterId, id, dto);
+
+      expect(service.mergeDepartments).toHaveBeenCalledWith(
+        id,
+        dto.target_id,
+        chapterId,
+      );
+      expect(result).toEqual(expectedResult);
+    });
+  });
+
   describe('listProfessors', () => {
     it('should call backworkService.getProfessors with correct parameters', async () => {
       const chapterId = 'chapter-123';
@@ -182,6 +221,53 @@ describe('BackworkController', () => {
       const result = await controller.listProfessors(chapterId);
 
       expect(service.getProfessors).toHaveBeenCalledWith(chapterId);
+      expect(result).toEqual(expectedResult);
+    });
+  });
+
+  describe('updateProfessor', () => {
+    it('should call backworkService.updateProfessor with correct parameters', async () => {
+      const chapterId = 'chapter-123';
+      const id = 'prof-1';
+      const dto: UpdateProfessorDto = { name: 'Dr. Jones' };
+      const expectedResult = { id: 'prof-1', name: 'Dr. Jones' };
+      mockBackworkService.updateProfessor.mockResolvedValue(expectedResult);
+
+      const result = await controller.updateProfessor(chapterId, id, dto);
+
+      expect(service.updateProfessor).toHaveBeenCalledWith(id, chapterId, dto);
+      expect(result).toEqual(expectedResult);
+    });
+  });
+
+  describe('deleteProfessor', () => {
+    it('should call backworkService.deleteProfessor with correct parameters', async () => {
+      const chapterId = 'chapter-123';
+      const id = 'prof-1';
+      mockBackworkService.deleteProfessor.mockResolvedValue(undefined);
+
+      const result = await controller.deleteProfessor(chapterId, id);
+
+      expect(service.deleteProfessor).toHaveBeenCalledWith(id, chapterId);
+      expect(result).toEqual({ success: true });
+    });
+  });
+
+  describe('mergeProfessors', () => {
+    it('should call backworkService.mergeProfessors with correct parameters', async () => {
+      const chapterId = 'chapter-123';
+      const id = 'prof-1';
+      const dto: MergeBackworkTaxonomyDto = { target_id: 'prof-2' };
+      const expectedResult = { reassigned: 2 };
+      mockBackworkService.mergeProfessors.mockResolvedValue(expectedResult);
+
+      const result = await controller.mergeProfessors(chapterId, id, dto);
+
+      expect(service.mergeProfessors).toHaveBeenCalledWith(
+        id,
+        dto.target_id,
+        chapterId,
+      );
       expect(result).toEqual(expectedResult);
     });
   });
