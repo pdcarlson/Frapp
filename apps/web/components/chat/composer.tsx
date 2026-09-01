@@ -138,6 +138,11 @@ function buildDocFromPlainText(text: string): JSONContent {
   };
 }
 
+/** `#` only for an actual channel — a DM's name is a person's. */
+export function composerPlaceholder(channelName: string, isDirect?: boolean) {
+  return isDirect ? `Message ${channelName}` : `Message #${channelName}`;
+}
+
 /**
  * Composer: Tiptap WYSIWYG editor + slash palette + emoji insert + pre-signed
  * file upload. Drafts persist as serialized text (Tiptap → plain text) so the
@@ -185,10 +190,7 @@ export function Composer({
         // Hard break stays on Shift+Enter via StarterKit defaults.
       }),
       Placeholder.configure({
-        // `#` only for an actual channel — a DM's name is a person's.
-        placeholder: isDirect
-          ? `Message ${channelName}`
-          : `Message #${channelName}`,
+        placeholder: composerPlaceholder(channelName, isDirect),
       }),
       // Tiptap registers this shortcut while constructing the editor. The
       // closure reads `sendRef.current` only on Enter, not during render.
@@ -241,26 +243,13 @@ export function Composer({
     });
   }, [draft, editor]);
 
-  // Staged attachments are per-channel, and nothing else resets them.
-  //
-  // The editor body is channel-scoped already — the `draft` effect above
-  // re-syncs it whenever the channel changes — but this state is not, and the
-  // paths in it are validated server-side against
-  // `chapters/{chapterId}/chat/{channelId}/`. Without this, attaching a file in
-  // #general and then switching to #announcements leaves the chip visible and
-  // the next send is rejected with "Attachment does not belong to this
-  // channel", losing the typed message and orphaning the object. Newly
-  // reachable: this state used to live in the editor document, which is scoped.
-  //
-  // Adjusted during render rather than in an effect — React's documented pattern
-  // for resetting state when a prop changes. An effect would re-render the
-  // subtree once with the stale chips still on screen, which is the cascading
-  // render the lint rule is there to catch.
-  const [pendingChannelId, setPendingChannelId] = useState(channelId);
-  if (pendingChannelId !== channelId) {
-    setPendingChannelId(channelId);
-    setPending([]);
-  }
+  // Staged attachments are per-channel and need no separate reset: `pending`
+  // (above) already starts `[]` via `useState`, and `chat-shell.tsx` keys
+  // `<Composer>` on the channel (id + resolved name, per #1014), so a channel
+  // switch always unmounts this instance rather than changing `channelId` on
+  // a live one. `channelId` is therefore effectively immutable for the
+  // lifetime of one Composer instance — nothing here needs to react to it
+  // changing, because it never does.
 
   const submit = useCallback(() => {
     if (!editor) return;
