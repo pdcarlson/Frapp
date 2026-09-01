@@ -79,25 +79,31 @@ interface ExpressSettable {
 }
 
 /**
- * The CSP directives Helmet ships by default block Swagger UI's self-hosted
- * bundle outright: `swagger-ui-dist`'s `index.html` (served verbatim by
- * `SwaggerModule.setup`) inlines its bootstrap `<script>` and `<style>`
- * tags, so a default-strict `script-src`/`style-src` leaves `/docs` blank
- * with no console error pointing at why. `/docs` is not environment-gated
- * (`main.ts` calls `SwaggerModule.setup` unconditionally), so the relaxation
- * applies everywhere Swagger does rather than being split by environment.
- * Every other Helmet default (frameguard, `X-Content-Type-Options`, HSTS,
- * referrer policy, …) stays on. Documented in AGENT_INFRA.md.
+ * Helmet's *default* CSP already fits Swagger UI without loosening anything:
+ * `@nestjs/swagger`'s generated `/docs` page (`SwaggerModule.setup` in
+ * `main.ts`, no `customJs`/`customJsStr`) loads its bundle via same-origin
+ * `<script src="...">` tags only — covered by the default `script-src
+ * 'self'` — and inlines only `<style>` blocks, which the default `style-src`
+ * already permits (`'self' https: 'unsafe-inline'`). Its icon `background-image`
+ * is a `data:` URI, and the default `img-src` already includes `data:` too.
+ * So the right move is to change nothing about CSP — verified by booting the
+ * app and loading `/docs` and its bundle/CSS/init-script assets (see
+ * `docs/internal/security/SECURITY_FIXES.md`) — rather than add an
+ * `'unsafe-inline'` `script-src` exception Swagger never needed, which would
+ * have weakened XSS protection on every route, not just `/docs`.
+ *
+ * The one directive this API does override: Helmet's default
+ * `Cross-Origin-Resource-Policy` is `same-origin`, which Chrome/Firefox
+ * enforce independently of CORS. The dashboard is deliberately cross-origin
+ * from this API (`enableCors()` above allowlists `*.frapp.live` and the local
+ * dev ports, with `credentials: true`) — left at the default, every
+ * dashboard `fetch()` response body would be silently blocked client-side
+ * even with a matching `Access-Control-Allow-Origin`. `'cross-origin'` is
+ * correct here because the actual authorization boundary is CORS plus bearer
+ * auth, not this header.
  */
 const HELMET_OPTIONS = {
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: [`'self'`],
-      scriptSrc: [`'self'`, `'unsafe-inline'`],
-      styleSrc: [`'self'`, `'unsafe-inline'`],
-      imgSrc: [`'self'`, 'data:'],
-    },
-  },
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
 } as const;
 
 export function configureApp(app: INestApplication): void {

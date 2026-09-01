@@ -444,32 +444,63 @@ deliberately *not* shared, because neither is "meaningful against an in-memory t
 headers are the opposite: they're set the same way for every response regardless of caller, exactly
 like the `trust proxy` hop count already tested there.
 
-**The one CSP relaxation, and why it's not narrower.** Helmet's default `script-src`/`style-src`
-(`'self'` only) block Swagger UI outright — `swagger-ui-dist`'s `index.html`, served verbatim by
-`SwaggerModule.setup`, inlines a `<style>` block the default CSP has no exception for. `HELMET_OPTIONS`
-in `bootstrap.ts` adds `'unsafe-inline'` to `script-src`/`style-src` and `data:` to `img-src` to cover
-it. `/docs` is not environment-gated — `main.ts` calls `SwaggerModule.setup` unconditionally in every
-environment — so the relaxation is applied globally rather than split by environment or scoped to the
-`/docs` prefix; scoping it would need per-route middleware ordering for a saving that doesn't exist
-today (Swagger is already public everywhere). Every other Helmet default (frameguard, `noSniff`, HSTS,
-`referrerPolicy`, hidden `X-Powered-By`, …) is untouched. The Stripe webhook route
+**CSP is left at Helmet's unmodified default — no exception was needed.** The first draft of this
+change added `'unsafe-inline'` to `script-src` on the assumption that Swagger UI's self-hosted
+`/docs` page needed it. That assumption was wrong and `/diff-review` caught it before it shipped:
+`@nestjs/swagger`'s generated HTML loads its bundle via same-origin `<script src="...">` tags only —
+covered by the default `script-src 'self'` — and inlines only `<style>` blocks, which Helmet's
+*default* `style-src` (`'self' https: 'unsafe-inline'`) already permits. Its icon `background-image`
+is a `data:` URI, already covered by the default `img-src`. So the correct diff touches zero CSP
+directives; the draft's `'unsafe-inline'` on `script-src` would have disabled inline-script XSS
+protection on every route in the API, not just `/docs`, for a Swagger requirement that doesn't exist.
+
+**The one directive this API does override: `crossOriginResourcePolicy`.** Helmet defaults
+`Cross-Origin-Resource-Policy` to `same-origin`, which Chrome and Firefox enforce **independently of
+CORS** — a second review pass caught that this would have silently broken every dashboard `fetch()`
+to this API even with a matching `Access-Control-Allow-Origin`, because `app.frapp.live` and
+`api.frapp.live` are different origins (`main.ts`'s `enableCors()`, called just before
+`configureApp()`, explicitly allowlists `*.frapp.live` plus the local dev ports with
+`credentials: true` — this API is cross-origin by design, not by accident). `supertest` never enforces
+CORP, so nothing in the test suite would have caught this before a real browser did. `HELMET_OPTIONS`
+sets `crossOriginResourcePolicy: { policy: 'cross-origin' }`; the actual authorization boundary stays
+CORS plus bearer auth, which this header does not touch. Every other Helmet default (frameguard,
+`noSniff`, HSTS, `referrerPolicy`, hidden `X-Powered-By`, COOP, …) is untouched — none of them
+conflict with anything in this API (no `window.opener`-dependent flow exists; every `window.open` call
+in `apps/web` already passes `noopener`). The Stripe webhook route
 (`POST /v1/webhooks/stripe`, `apps/api/src/interface/controllers/webhook.controller.ts`) is unaffected
-by any of this — CSP is a response header interpreted by browsers, and the webhook is a server-to-server
-POST verified against `rawBody: true`, which Helmet does not touch.
+by any of this — these are response headers interpreted by browsers, and the webhook is a
+server-to-server POST verified against `rawBody: true`, which Helmet does not touch.
 
 ### Verification
-- `apps/api/src/bootstrap.spec.ts` (`configureApp — security headers (#483)`) asserts the hardening
-  headers on a 200 and a 404 alike (proving the middleware runs ahead of routing, not inside a
-  handler), and asserts the CSP string contains exactly the relaxed directives with no wildcard origin.
-- Booted the API against the local sandbox stack: `GET /health` and `GET /docs` both carry the full
-  Helmet header set; the `/docs` page, its `swagger-ui-dist` bundle/CSS/init-script assets, and
-  `/docs-json` all still return `200` with their expected content types.
+- `/diff-review` at `high` (6 parallel finder angles + independent verification) ran on the first
+  draft and returned two real, `CONFIRMED` findings — the unnecessary `script-src 'unsafe-inline'`
+  and the missing `crossOriginResourcePolicy` override above — plus test-rigor findings on the first
+  draft's assertions (a `toContain` substring check that would not catch a widened CSP directive, an
+  `hsts` presence check that would not catch a neutered `maxAge`, and a test whose name claimed to
+  prove middleware *ordering* but only proved it runs on an unmatched route). All fixed in this diff,
+  not deferred.
+- `apps/api/src/bootstrap.spec.ts` (`configureApp — security headers (#483)`) now asserts: the
+  hardening headers including HSTS's exact value; the CSP header as an **exact string match** against
+  Helmet's real default (catches any future directive drift, not just a wildcard); the
+  `cross-origin-resource-policy` header's exact value; and that headers reach an unmatched route (a
+  404), with that last test's name corrected to claim only what it proves.
+- Booted the API against the local sandbox stack twice — once against the flawed first draft, once
+  against the fix: `GET /health` confirmed `script-src` carries no `'unsafe-inline'` and
+  `Cross-Origin-Resource-Policy: cross-origin` is present; a request with `Origin: https://app.frapp.live`
+  confirmed `Access-Control-Allow-Origin` and `Cross-Origin-Resource-Policy: cross-origin` both appear
+  together. `GET /docs`, its `swagger-ui-dist` bundle/CSS/init-script assets, and `/docs-json` all
+  still return `200` with their expected content types under the unmodified default CSP.
 - `POST /v1/webhooks/stripe` with an unsigned body still returns its normal `400` (invalid signature),
-  not a crash — the raw-body path is unaffected. The full `billing-webhook.e2e-spec.ts` and
-  `apps/api`'s unit suite (2509 tests) pass unchanged.
+  not a crash — the raw-body path is unaffected. The full `billing-webhook.e2e-spec.ts`, the rest of
+  the e2e suite (13 suites / 66 tests), and `apps/api`'s unit suite (2510 tests) pass.
 
 ### Prevention
 Any future Swagger UI upgrade that changes its bundled HTML (a new inline script, a remote font, a
-CDN asset) needs a matching `HELMET_OPTIONS` directive in `apps/api/src/bootstrap.ts` — a page that
-silently renders blank under CSP is easy to miss without opening the browser console, which is why
-`bootstrap.spec.ts` pins the exact directive strings rather than only asserting the header exists.
+CDN asset) needs a matching CSP directive added to `HELMET_OPTIONS` in `apps/api/src/bootstrap.ts` —
+a page that silently renders blank under CSP is easy to miss without opening the browser console,
+which is why `bootstrap.spec.ts` pins the exact CSP string rather than only asserting the header
+exists. More generally: **don't add a Helmet directive override to satisfy an assumption — verify
+what the target actually requires first.** The unnecessary `'unsafe-inline'` in the first draft of
+this change was a real, if narrowly-scoped, security regression that shipped from “Swagger probably
+needs this” rather than from reading what Swagger's generated HTML and Helmet's real defaults
+actually are.

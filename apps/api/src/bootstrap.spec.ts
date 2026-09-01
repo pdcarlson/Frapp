@@ -124,28 +124,54 @@ describe('configureApp — security headers (#483)', () => {
     // frame-ancestors; both are asserted so a config change that drops either
     // protection is caught.
     expect(res.headers['x-frame-options']).toBe('SAMEORIGIN');
-    expect(res.headers['strict-transport-security']).toBeDefined();
+    // The exact value, not just presence — `toBeDefined()` would still pass
+    // if a future change set `hsts: { maxAge: 0 }` and neutered it.
+    expect(res.headers['strict-transport-security']).toBe(
+      'max-age=31536000; includeSubDomains',
+    );
     // Helmet's whole point includes NOT advertising the framework — this is
     // the header a default Express/Nest app sends and Helmet suppresses.
     expect(res.headers['x-powered-by']).toBeUndefined();
   });
 
-  it('relaxes CSP script-src/style-src for Swagger UI’s inlined bundle, not beyond it', async () => {
+  it('leaves CSP at Helmet defaults — Swagger needs no exception (#483)', async () => {
     const res = await request(app.getHttpServer()).get('/v1/echo').expect(200);
-    const csp = res.headers['content-security-policy'];
 
-    expect(csp).toBeDefined();
-    expect(csp).toContain("default-src 'self'");
-    expect(csp).toContain("script-src 'self' 'unsafe-inline'");
-    expect(csp).toContain("style-src 'self' 'unsafe-inline'");
-    // No wildcard or remote origin sneaks into the loosened directives.
-    expect(csp).not.toMatch(/script-src[^;]*\*/);
+    // Exact match, not `toContain`: a substring check would still pass if a
+    // future change widened e.g. script-src to add a remote origin, which is
+    // exactly the regression a CSP test exists to catch. This is Helmet's
+    // *unmodified* default — see the HELMET_OPTIONS comment in bootstrap.ts
+    // for why Swagger UI already fits inside it without any directive
+    // override (verified by a live /docs boot, recorded in
+    // docs/internal/security/SECURITY_FIXES.md).
+    expect(res.headers['content-security-policy']).toBe(
+      "default-src 'self';base-uri 'self';font-src 'self' https: data:;" +
+        "form-action 'self';frame-ancestors 'self';img-src 'self' data:;" +
+        "object-src 'none';script-src 'self';script-src-attr 'none';" +
+        "style-src 'self' https: 'unsafe-inline';upgrade-insecure-requests",
+    );
   });
 
-  it('applies before request-id and the exception filter, so even a rejected request is covered', async () => {
-    // A 404 from a route that does not exist never reaches EchoController, so
-    // this proves the header comes from middleware registered ahead of
-    // routing rather than from the handler.
+  it('sets Cross-Origin-Resource-Policy to cross-origin, not Helmet’s same-origin default', async () => {
+    // The one directive this API does override, and the one a plain
+    // `helmet()` call would have gotten wrong here: Helmet defaults
+    // Cross-Origin-Resource-Policy to 'same-origin', which Chrome/Firefox
+    // enforce independently of CORS — supertest never enforces it, so this
+    // is the only place a regression would be caught before production. Left
+    // at the default, this would silently break every dashboard fetch() to
+    // this API (api.frapp.live vs app.frapp.live are different origins).
+    const res = await request(app.getHttpServer()).get('/v1/echo').expect(200);
+
+    expect(res.headers['cross-origin-resource-policy']).toBe('cross-origin');
+  });
+
+  it('runs as global middleware, ahead of routing — not skipped for an unmatched route', async () => {
+    // A 404 from a route that does not exist never reaches EchoController.
+    // This proves Helmet is registered as Express middleware that sees every
+    // request, not scoped to matched routes the way a Nest guard or
+    // interceptor would be — it does not by itself prove anything about
+    // relative ordering against requestIdMiddleware or AllExceptionsFilter,
+    // both of which also run unconditionally.
     const res = await request(app.getHttpServer())
       .get('/v1/does-not-exist')
       .expect(404);
