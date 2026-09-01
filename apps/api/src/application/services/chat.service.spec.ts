@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import {
+  Logger,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
@@ -1222,6 +1223,44 @@ describe('ChatService', () => {
       );
 
       expect(rows).toHaveLength(0);
+    });
+
+    it('logs the whole-bucket failure once, not once per row it took down', async () => {
+      // Before this was deduped, a bucket-level failure produced one warn for
+      // the bucket (with the real error) plus one more per row in it (with
+      // no error) — N+1 log lines carrying one cause. Only the bucket-level
+      // warn should fire; the per-row warn is for a path missing from an
+      // otherwise-successful bucket, not this case.
+      const warnSpy = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockMessageRepo.findById.mockResolvedValue(baseMessage);
+      mockAttachmentRepo.findByMessage.mockResolvedValue([
+        attachmentRow,
+        {
+          ...attachmentRow,
+          id: 'att-2',
+          storage_path: 'chapters/ch-1/chat/ch-chan-1/msg-1/other.pdf',
+        },
+      ]);
+      mockStorageProvider.getSignedDownloadUrls.mockRejectedValue(
+        new Error('bucket unreachable'),
+      );
+
+      await service.listMessageAttachments(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+        'msg-1',
+      );
+
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy).toHaveBeenCalledWith(
+        'Could not sign a batch of chat attachments; omitting them',
+        expect.objectContaining({ error: 'bucket unreachable' }),
+      );
+      warnSpy.mockRestore();
     });
 
     it('signs each bucket in its own batched call when attachments span more than one bucket', async () => {

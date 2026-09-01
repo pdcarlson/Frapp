@@ -200,4 +200,39 @@ describe("useAuthorAvatars", () => {
     expect(mockPost).toHaveBeenCalledTimes(2);
     expect(Object.keys(result.current.data ?? {})).toHaveLength(60);
   });
+
+  it("keeps one chunk's avatars when a different chunk's request fails", async () => {
+    // 60 distinct authors again — two chunks. Only the second one fails, so
+    // the first chunk's 50 avatars should still render rather than the whole
+    // query degrading every author to initials over one bad chunk.
+    const messages = Array.from({ length: 60 }, (_, i) => ({
+      id: `msg-${i}`,
+      author_avatar_path: `path/${i}`,
+    }));
+    const mockPost = vi
+      .fn()
+      .mockImplementationOnce(async (_url, { body }) => ({
+        data: Object.fromEntries(
+          (body.message_ids as string[]).map((id: string) => [
+            `path/${id.slice(4)}`,
+            `https://signed/${id}`,
+          ]),
+        ),
+        error: null,
+      }))
+      .mockImplementationOnce(async () => ({
+        data: null,
+        error: new Error("chunk 2 failed"),
+      }));
+    const mockClient = { POST: mockPost };
+
+    const { result } = renderHook(() => useAuthorAvatars("chan-1", messages), {
+      wrapper: createWrapper(queryClient, mockClient),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(mockPost).toHaveBeenCalledTimes(2);
+    expect(Object.keys(result.current.data ?? {})).toHaveLength(50);
+  });
 });

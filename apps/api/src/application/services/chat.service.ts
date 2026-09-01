@@ -1567,13 +1567,20 @@ export class ChatService {
     );
 
     return rows.flatMap((row) => {
-      const downloadUrl = urlByBucket.get(row.bucket)?.[row.storage_path];
+      const bucketUrls = urlByBucket.get(row.bucket);
+      const downloadUrl = bucketUrls?.[row.storage_path];
       if (downloadUrl) return [{ ...row, download_url: downloadUrl }];
-      this.logger.warn('Could not sign a chat attachment; omitting it', {
-        messageId,
-        channelId,
-        storagePath: row.storage_path,
-      });
+      // Only warn per-row for a path missing from an otherwise-successful
+      // bucket. A whole-bucket failure already logged once above with the
+      // real error — re-warning here for every row in it would just repeat
+      // "omitting it" with no reason, N times, for one cause.
+      if (bucketUrls) {
+        this.logger.warn('Could not sign a chat attachment; omitting it', {
+          messageId,
+          channelId,
+          storagePath: row.storage_path,
+        });
+      }
       return [];
     });
   }

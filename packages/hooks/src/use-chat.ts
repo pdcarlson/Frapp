@@ -631,6 +631,11 @@ function chunk<T>(items: T[], size: number): T[][] {
  * merge into one `path → signedUrl` map. A path missing from the result (no
  * avatar, or a signing failure) has nothing to render, so callers should fall
  * back to initials rather than treat a miss as loading.
+ *
+ * Chunks are isolated from each other: one chunk's request failing does not
+ * throw the other chunks' already-fetched avatars away. A channel with 120
+ * distinct imported authors sends 3 chunked requests — a transient failure on
+ * the third should degrade those 20 authors to initials, not all 120.
  */
 export function useAuthorAvatars(
   channelId: string | undefined,
@@ -654,17 +659,19 @@ export function useAuthorAvatars(
     // is still live when it renders.
     staleTime: 10 * 60_000,
     queryFn: async () => {
-      const result: Record<string, string> = {};
-      for (const ids of chunk(messageIdsByDistinctPath, AVATAR_REQUEST_CHUNK_SIZE)) {
-        const { data, error } = await client.POST(
-          "/v1/channels/{id}/messages/avatars",
-          {
+      const chunks = chunk(messageIdsByDistinctPath, AVATAR_REQUEST_CHUNK_SIZE);
+      const settled = await Promise.allSettled(
+        chunks.map((ids) =>
+          client.POST("/v1/channels/{id}/messages/avatars", {
             params: { path: { id: channelId! } },
             body: { message_ids: ids },
-          },
-        );
-        if (error) throw error;
-        Object.assign(result, data ?? {});
+          }),
+        ),
+      );
+      const result: Record<string, string> = {};
+      for (const outcome of settled) {
+        if (outcome.status !== "fulfilled" || outcome.value.error) continue;
+        Object.assign(result, outcome.value.data ?? {});
       }
       return result;
     },
