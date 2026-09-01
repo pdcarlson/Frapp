@@ -5,7 +5,7 @@ name: Migration drift gate
 #
 # Two jobs, two postures, and the difference matters: `migration-order` is the
 # REQUIRED check, and `migration-drift` REPORTS ONLY. Drift was required once
-# and was demoted for the reason `configure-branch-protection.mjs` records --
+# and was demoted for the reason `scripts/ci/lib/required-checks.mjs` records --
 # it asserts something about main and staging that the PR in front of it
 # neither contains nor can change, which makes it a merge-freeze switch rather
 # than a gate.

@@ -183,10 +183,10 @@ CI runs as domain-specific parallel jobs on every PR to `main`. Each job is an i
 | `web-production-build` | Vercel parity — builds web and landing with devDependencies pruned, the shape a production deploy uses | Yes |
 | `duplicate-detection` | jscpd against a repo-wide duplication threshold                                                     | **No — advisory** |
 
-`web-tests` and `web-responsive-floor` are **path-gated and still required**, which is only a contradiction if you assume a skip blocks. It does not: GitHub reports a job skipped by a *job-level* conditional as *Success*, and `success` / `skipped` / `neutral` all satisfy a required check. `changes` is required for a different and less obvious reason — a required check whose `needs:` parent fails is skipped and *may not block merging*, so a non-required parent would leave both satisfiable without ever running. See the ADR-15 amendment in [`../architecture/README.md`](../architecture/README.md) and the comments in [`scripts/configure-branch-protection.mjs`](../../scripts/configure-branch-protection.mjs).
+`web-tests` and `web-responsive-floor` are **path-gated and still required**, which is only a contradiction if you assume a skip blocks. It does not: GitHub reports a job skipped by a *job-level* conditional as *Success*, and `success` / `skipped` / `neutral` all satisfy a required check. `changes` is required for a different and less obvious reason — a required check whose `needs:` parent fails is skipped and *may not block merging*, so a non-required parent would leave both satisfiable without ever running. See the ADR-15 amendment in [`../architecture/README.md`](../architecture/README.md) and the comments in [`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs).
 
 The **Blocker?** column states the *intended* set — every `Yes` above is an entry in `CI_CHECKS` /
-`DOCS_CHECKS` in [`scripts/configure-branch-protection.mjs`](../../scripts/configure-branch-protection.mjs),
+`DOCS_CHECKS` in [`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs),
 with one exception: `branch-policy` is in neither array — `buildProtectionPayload` appends it for
 `production` only, so it never blocked a PR into `main`.
 Live branch protection is whatever an admin last applied and can lag the script, so no doc claims

@@ -27,7 +27,7 @@ concurrency:
 # REQUIRED checks — a job skipped by a job-level `if:` reports Success, which
 # satisfies one. That is also why `changes` is itself required: a required job
 # skipped because a `needs:` parent FAILED also reports skipped, so a
-# non-required parent would be a hole. See scripts/configure-branch-protection.mjs.
+# non-required parent would be a hole. See scripts/ci/lib/required-checks.mjs.
 #
 # `clean-checkout-typecheck` is the deliberate exception: it depends on nothing
 # and prebuilds nothing, so it alone exercises the bare `npm install` path.
@@ -35,7 +35,7 @@ concurrency:
 
 jobs:
   # Change detection: path-gates the web/pglite jobs (Lever D). Itself required —
-  # see the header above and scripts/configure-branch-protection.mjs.
+  # see the header above and scripts/ci/lib/required-checks.mjs.
   # The filter runs only on pull_request; on push the gated jobs run
   # unconditionally (full validation on protected branches), so a shallow
   # checkout here can never fail the gate.
@@ -460,7 +460,7 @@ jobs:
       # This job IS a required check as of the ADR-15 amendment — it is the only
       # suite covering packages/hooks. The path gate above is compatible with
       # that: GitHub reports a job skipped by a job-level conditional as
-      # "Success". See scripts/configure-branch-protection.mjs for the full
+      # "Success". See scripts/ci/lib/required-checks.mjs for the full
       # reasoning and the caveat about skipped-because-a-parent-failed.
       - name: Run shared hooks package tests
         if: ${{ !cancelled() }}
@@ -665,7 +665,7 @@ jobs:
         run: npm run check:dep-cruiser
 
   # ── Duplicate detection (jscpd) ─────────────────────────────────────────
-  # ADVISORY on purpose — deliberately NOT in configure-branch-protection.mjs.
+  # ADVISORY on purpose — deliberately NOT in scripts/ci/lib/required-checks.mjs.
   #
   # jscpd has no clone-level baseline the way dependency-cruiser does, so the
   # only lever is a repo-wide duplication percentage. `.jscpd.json` pins it at
@@ -760,7 +760,7 @@ jobs:
   # `.dependency-cruiser-known-violations.json` makes for the architecture gate.
   # `check-migration-lock-safety.mjs --strict` is the switch when that lands.
   #
-  # NOT in scripts/configure-branch-protection.mjs, deliberately: an advisory
+  # NOT in scripts/ci/lib/required-checks.mjs, deliberately: an advisory
   # job that is also a required check is just a confusing gate.
   migration-lock-safety:
     runs-on: ubuntu-latest
@@ -1000,7 +1000,7 @@ jobs:
   # Path-gated like the jobs around it. That does NOT conflict with being
   # required: the gate is a JOB-level `if:`, and GitHub reports a job skipped by
   # a conditional as Success. Both `needs:` parents are themselves required
-  # checks, which is the invariant scripts/configure-branch-protection.mjs
+  # checks, which is the invariant scripts/ci/lib/required-checks.mjs
   # spells out for `web-tests` — a required check whose parent is not required
   # is a hole, because a job skipped for a FAILED parent also reports skipped.
   web-responsive-floor:

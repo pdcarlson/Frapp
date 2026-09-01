@@ -73,7 +73,7 @@ is the record. Don't rewrite history because the code moved on — add an amendm
 **When a doc names its own source, read that source whole.** A grep tells you whether your pattern
 matched, not whether the fact is there — and the answer is often in a second declaration a few lines
 away. Concretely: this skill's own PR claimed `docs-spec-sync` might not be a required check,
-because `CI_CHECKS` in `scripts/configure-branch-protection.mjs` does not contain it. The same file
+because `CI_CHECKS` in `scripts/ci/lib/required-checks.mjs` does not contain it. The same file
 declares a **separate `DOCS_CHECKS` array** that does, and merges both into `ALL_REQUIRED_CHECKS`.
 The docs were right and the verification was wrong — one topic, two locations, conclusion drawn from
 the first. That is the same failure shape as the `ENV_REFERENCE.md` story above, which is the point:
@@ -133,7 +133,7 @@ credential names. This skill only adds the mapping from *doc claim* to *which pr
 
 | Doc claim | Settled by |
 |---|---|
-| Required-check / branch-protection tables (`CONTRIBUTING.md`, `spec/environments/README.md`) | GitHub branch protection, and the `CI_CHECKS` array in `scripts/configure-branch-protection.mjs` — that constant is what actually gets applied |
+| Required-check / branch-protection tables (`CONTRIBUTING.md`, `spec/environments/README.md`) | GitHub branch protection, and the `CI_CHECKS` array in `scripts/ci/lib/required-checks.mjs` — that constant is what `scripts/configure-branch-protection.mjs` actually applies |
 | Infisical sync inventory (`SECRETS_MANAGEMENT.md` § Provider syncs) | The Infisical API — the doc's own note says the dashboard wins |
 | Which env vars exist per environment | Infisical, compared against `ENV_REFERENCE.md` |
 | Applied migrations, promotion state | Supabase (`npx supabase migration list --project-ref …`) |
