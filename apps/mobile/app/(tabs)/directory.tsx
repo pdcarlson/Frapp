@@ -66,8 +66,36 @@ export default function DirectoryScreen() {
   // re-runs once React has caught up with the keystrokes.
   const deferredQuery = useDeferredValue(query.trim());
 
+  // Self-reported alumni fields, mirroring the web alumni directory
+  // (`apps/web/components/alumni/alumni-directory.tsx`) — same three filters,
+  // same `useAlumni` params. Filters persist across a tab switch (the fields
+  // are only shown on the Alumni tab, but staying applied means returning to
+  // it doesn't silently drop what was typed). Held as one object, rather than
+  // three parallel `useState`s, so `hasAlumniFilters` and the `useAlumni` call
+  // below can both derive from the exact same value instead of two
+  // hand-written copies of "is any filter set" drifting apart.
+  const [alumniFilterInputs, setAlumniFilterInputs] = useState({
+    gradYear: "",
+    city: "",
+    company: "",
+  });
+  const alumniFilters = useMemo(
+    () => ({
+      graduation_year: alumniFilterInputs.gradYear.trim() || undefined,
+      city: alumniFilterInputs.city.trim() || undefined,
+      company: alumniFilterInputs.company.trim() || undefined,
+    }),
+    [alumniFilterInputs],
+  );
+  const deferredAlumniFilters = useDeferredValue(alumniFilters);
+  const hasAlumniFilters = Boolean(
+    deferredAlumniFilters.graduation_year ||
+      deferredAlumniFilters.city ||
+      deferredAlumniFilters.company,
+  );
+
   const membersQuery = useMembers();
-  const alumniQuery = useAlumni();
+  const alumniQuery = useAlumni(deferredAlumniFilters);
   const searchQuery = useMemberSearch(deferredQuery);
 
   const isSearching = deferredQuery.length > 0;
@@ -89,9 +117,17 @@ export default function DirectoryScreen() {
     () => (membersQuery.isSuccess ? countMembers(membersQuery.data) : null),
     [membersQuery.isSuccess, membersQuery.data],
   );
+  // `null` (no count shown, per the comment above) while filters are active:
+  // the chip's job is reporting the chapter's total alumni, and once a filter
+  // narrows `alumniQuery` that total isn't what it's counting any more — a
+  // stale filtered number would misread as the real total once the officer
+  // switches back to the Actives tab without clearing it.
   const alumniCount = useMemo(
-    () => (alumniQuery.isSuccess ? countMembers(alumniQuery.data) : null),
-    [alumniQuery.isSuccess, alumniQuery.data],
+    () =>
+      alumniQuery.isSuccess && !hasAlumniFilters
+        ? countMembers(alumniQuery.data)
+        : null,
+    [alumniQuery.isSuccess, alumniQuery.data, hasAlumniFilters],
   );
 
   const header = (
@@ -117,6 +153,38 @@ export default function DirectoryScreen() {
           ]}
         />
       )}
+
+      {isSearching || tab !== "alumni" ? null : (
+        <View style={styles.alumniFilters}>
+          <SearchField
+            value={alumniFilterInputs.gradYear}
+            onChangeText={(next) =>
+              setAlumniFilterInputs((f) => ({ ...f, gradYear: next }))
+            }
+            placeholder="Graduation year, e.g. 2018"
+            accessibilityLabel="Filter alumni by graduation year"
+            keyboardType="number-pad"
+          />
+          <SearchField
+            value={alumniFilterInputs.city}
+            onChangeText={(next) =>
+              setAlumniFilterInputs((f) => ({ ...f, city: next }))
+            }
+            placeholder="City"
+            accessibilityLabel="Filter alumni by city"
+            autoCapitalize="words"
+          />
+          <SearchField
+            value={alumniFilterInputs.company}
+            onChangeText={(next) =>
+              setAlumniFilterInputs((f) => ({ ...f, company: next }))
+            }
+            placeholder="Company"
+            accessibilityLabel="Filter alumni by company"
+            autoCapitalize="words"
+          />
+        </View>
+      )}
     </View>
   );
 
@@ -139,6 +207,15 @@ export default function DirectoryScreen() {
           glyph="⌕"
           title="No matches"
           body={`Nobody in this chapter matches “${deferredQuery}”.`}
+        />
+      );
+    }
+    if (tab === "alumni" && hasAlumniFilters) {
+      return (
+        <EmptyState
+          glyph="⌕"
+          title="No alumni match these filters"
+          body="Graduation year, city, and company are self-reported — try loosening a filter."
         />
       );
     }
@@ -243,6 +320,9 @@ function createStyles(tokens: SignetTokens) {
       paddingTop: tokens.spacing.lg,
       gap: tokens.spacing.sm,
       paddingBottom: tokens.spacing.sm,
+    },
+    alumniFilters: {
+      gap: tokens.spacing.sm,
     },
     title: {
       ...typeRole(tokens.typography.role.title),

@@ -78,11 +78,18 @@ export function SearchField({
   onChangeText,
   placeholder,
   accessibilityLabel,
+  autoCapitalize = "none",
+  keyboardType = "default",
 }: {
   value: string;
   onChangeText: (next: string) => void;
   placeholder: string;
   accessibilityLabel: string;
+  /** Free-text fields (city, company) read better with word-casing than the
+   * search-field default of "none". */
+  autoCapitalize?: "none" | "words";
+  /** "number-pad" for a graduation-year filter; the default suits free text. */
+  keyboardType?: "default" | "number-pad";
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -94,8 +101,9 @@ export function SearchField({
       placeholder={placeholder}
       placeholderTextColor={tokens.color.text.muted}
       accessibilityLabel={accessibilityLabel}
-      autoCapitalize="none"
+      autoCapitalize={autoCapitalize}
       autoCorrect={false}
+      keyboardType={keyboardType}
       style={styles.search}
     />
   );

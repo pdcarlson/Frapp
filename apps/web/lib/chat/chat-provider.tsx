@@ -11,11 +11,12 @@
  * instead of only while a chat route is mounted.
  */
 
-import { useEffect, useMemo } from "react";
+import { useContext, useEffect, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useFrappClient } from "@repo/hooks";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useToast } from "@/hooks/use-toast";
+import { AnalyticsContext } from "@/lib/providers/analytics-provider";
 import { browserNetworkState } from "@repo/chat-core/adapters";
 import { getRealtimeClient } from "@/lib/realtime/supabase-realtime";
 import { chatRealtime } from "@repo/chat-core/realtime-manager";
@@ -28,6 +29,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const apiClient = useFrappClient();
   const { userId } = useFrappUser();
   const { toast } = useToast();
+  const track = useContext(AnalyticsContext);
   const supabase = useMemo(() => getRealtimeClient(), []);
 
   // Configure the realtime manager exactly once per mount. Manager is a
@@ -68,6 +70,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       supabase,
       userId,
       toast,
+      track: track ?? undefined,
       outbox: dexieOutboxStore,
     };
     void flushOutbox(ctx);
@@ -77,7 +80,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     return browserNetworkState.subscribe((online) => {
       if (online) void flushOutbox(ctx);
     });
-  }, [queryClient, apiClient, supabase, userId, toast]);
+  }, [queryClient, apiClient, supabase, userId, toast, track]);
 
   return <>{children}</>;
 }
