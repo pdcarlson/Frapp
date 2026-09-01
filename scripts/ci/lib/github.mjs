@@ -3,9 +3,14 @@
 // Four hand-rolled clients sent the same three headers before this:
 // `ci-wake.mjs` (`ghRequest`, the best of them and the one moved here),
 // `configure-branch-protection.mjs` (`callGitHubApi`), `resolve-release-bump.mjs`
-// and `validate-deploy-sha.mjs`. `ci-wake.mjs:274` already carried the comment
-// "same headers as configure-branch-protection.mjs" — an acknowledgement of the
-// drift rather than a fix for it.
+// (`fetchPrLabels`) and `validate-deploy-sha.mjs` (`fetchCheckRuns`).
+// `ci-wake.mjs:274` already carried the comment "same headers as
+// configure-branch-protection.mjs" — an acknowledgement of the drift rather
+// than a fix for it. All four now call `ghRequest` for the request itself,
+// not just its headers; each keeps its own error message and throw-on-failure
+// contract at the call site, since the callers disagree on that (a 404 must
+// throw for `fetchPrLabels`, a fail-safe `{ok:false}` is correct for the
+// watchdogs — see below).
 //
 // It lives in `lib/` and not in `ci-wake.mjs` for a second reason: `lib/alert-issue.mjs`
 // imported it from `../ci-wake.mjs`, so a library depended on a script. Moving
@@ -76,7 +81,14 @@ export async function ghRequest({
       }
     }
     return { ok: response.ok, status: response.status, data };
-  } catch {
-    return { ok: false, status: 0, data: null };
+  } catch (error) {
+    // A network-level rejection (DNS, ECONNRESET, an exhausted retry
+    // rethrowing) has no HTTP response to carry a message, so `error.message`
+    // is the only diagnostic left. Putting it in `data` rather than dropping
+    // it keeps a throwing caller's error text meaningful — `callGitHubApi`
+    // formats `data` straight into its thrown message, and without this a
+    // network outage read as the literal string "null", indistinguishable
+    // from a server that genuinely returned no body.
+    return { ok: false, status: 0, data: error?.message ?? null };
   }
 }

@@ -14,8 +14,10 @@ import {
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 const quiet = { log: () => {} };
 
+// `fetchCheckRuns` now goes through `ghRequest`, which reads `.text()` and
+// JSON-parses it — not `.json()`. Test doubles must be `.text()`-shaped.
 function okJson(body) {
-  return { ok: true, status: 200, json: async () => body };
+  return { ok: true, status: 200, text: async () => JSON.stringify(body) };
 }
 
 /** A `git` double that records argv and fails for the listed subcommands. */
@@ -211,7 +213,20 @@ describe("validateDeploySha", () => {
     const { git } = makeGit();
     const result = await validateDeploySha({
       sha: SHA, repo: "o/r", token: "t", required, git, logger: quiet,
-      fetchImpl: async () => ({ ok: false, status: 500 }),
+      fetchImpl: async () => ({ ok: false, status: 500, text: async () => "" }),
+    });
+    assert.equal(result.ok, false);
+    assert.match(result.reason, /Could not read CI status/);
+  });
+
+  // A malformed 2xx body must not read as "zero check runs" — that would
+  // turn an honest "could not read CI status" into a false, confident
+  // "required check never reported" FAILURE verdict.
+  it("rejects a malformed 2xx checks payload rather than treating it as zero check runs", async () => {
+    const { git } = makeGit();
+    const result = await validateDeploySha({
+      sha: SHA, repo: "o/r", token: "t", required, git, logger: quiet,
+      fetchImpl: async () => okJson({ notCheckRuns: [] }),
     });
     assert.equal(result.ok, false);
     assert.match(result.reason, /Could not read CI status/);
@@ -391,7 +406,7 @@ describe("classifyRequiredChecks — the narrowing must not excuse everything", 
           ? "  api-tests:\n  secret-scan:\n"
           : "  unrelated-job:\n";
       },
-      fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ check_runs: [] }) }),
+      fetchImpl: async () => okJson({ check_runs: [] }),
       logger: { log: () => {} },
     });
     assert.equal(result.ok, false);

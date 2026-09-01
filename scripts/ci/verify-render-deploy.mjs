@@ -14,7 +14,7 @@
 // Exits 0 on success/neutral, 1 on terminal failure or overall timeout.
 
 import { createClock, pollUntilTerminal } from "./lib/polling.mjs";
-import { fetchRenderDeploys } from "./lib/providers.mjs";
+import { findRenderDeployBySha } from "./lib/providers.mjs";
 import { requireEnv } from "./lib/env.mjs";
 
 // ── State semantics ─────────────────────────────────────────────────────────
@@ -66,9 +66,13 @@ export async function verifyRenderDeploy({
     logger,
     fetchOne: async () => {
       try {
-        const page = await fetchRenderDeploys({ apiKey, serviceId, fetchImpl });
-        const entries = Array.isArray(page) ? page : [];
-        return { match: entries.find((entry) => entry?.deploy?.commit?.id === sha) };
+        const { match, pagesSearched, oldestSeenMs, exhausted } = await findRenderDeployBySha({
+          apiKey,
+          serviceId,
+          sha,
+          fetchImpl,
+        });
+        return { match, pagesSearched, oldestSeenMs, exhausted };
       } catch (error) {
         return { error };
       }
@@ -83,11 +87,18 @@ export async function verifyRenderDeploy({
 
       if (!state.match) {
         if (elapsedMs >= noDeployGraceMs) {
+          const { pagesSearched, oldestSeenMs, exhausted } = state;
+          const cutoff = oldestSeenMs != null ? new Date(oldestSeenMs).toISOString() : "the start";
+          const searchNote = exhausted
+            ? `searched all ${pagesSearched} page(s) of Render's deploy history for this service, ` +
+              `back to ${cutoff}`
+            : `searched ${pagesSearched} page(s) back to ${cutoff} — older deploys may still exist ` +
+              `beyond that`;
           return {
             status: "failure",
             message:
               `No Render deploy created for ${sha} on ${label} within ` +
-              `${Math.round(noDeployGraceMs / 1000)}s. ` +
+              `${Math.round(noDeployGraceMs / 1000)}s (${searchNote}). ` +
               `Check that Render autoDeploy is enabled and pointed at the correct branch.`,
           };
         }

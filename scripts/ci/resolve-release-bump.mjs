@@ -31,7 +31,7 @@
 
 import { appendFileSync } from "node:fs";
 import { requireEnv } from "./lib/env.mjs";
-import { githubHeaders } from "./lib/github.mjs";
+import { ghRequest } from "./lib/github.mjs";
 
 const MERGE_SUBJECT = /^Merge pull request #(\d+)\b/;
 const SQUASH_SUBJECT = /\(#(\d+)\)\s*$/;
@@ -105,17 +105,15 @@ export function applyBump(currentVersion, bump) {
  * reading labels is that the answer is trustworthy.
  */
 export async function fetchPrLabels({ repo, prNumber, token, fetchImpl = fetch }) {
-  const response = await fetchImpl(`https://api.github.com/repos/${repo}/pulls/${prNumber}`, {
-    headers: githubHeaders({ token }),
-  });
-  if (!response.ok) {
-    throw new Error(`GitHub API returned HTTP ${response.status} for PR #${prNumber}`);
+  const result = await ghRequest({ token, fetchImpl, path: `/repos/${repo}/pulls/${prNumber}` });
+  if (!result.ok) {
+    const detail = result.data ? `: ${result.data}` : "";
+    throw new Error(`GitHub API returned HTTP ${result.status} for PR #${prNumber}${detail}`);
   }
-  const body = await response.json();
-  if (!Array.isArray(body?.labels)) {
+  if (!Array.isArray(result.data?.labels)) {
     throw new Error(`Unexpected pull request payload for PR #${prNumber}`);
   }
-  return body.labels.map((label) => label?.name).filter(Boolean);
+  return result.data.labels.map((label) => label?.name).filter(Boolean);
 }
 
 /**
