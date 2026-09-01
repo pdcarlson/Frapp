@@ -24,3 +24,26 @@ export function getErrorMessage(error: unknown, fallback: string): string {
   }
   return fallback;
 }
+
+/**
+ * Trigger a browser download of in-memory bytes: object URL → hidden anchor
+ * → click → revoke. Shared so the object URL is always revoked and the
+ * anchor always removed, even if `.click()` throws — a bare inline copy of
+ * this sequence (as `reports-page.tsx`'s CSV export and the events detail
+ * sheet's calendar export each had) leaks both on that path.
+ */
+export function downloadBlob(blob: Blob, filename: string): void {
+  if (typeof window === "undefined") return;
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  anchor.style.display = "none";
+  document.body.append(anchor);
+  try {
+    anchor.click();
+  } finally {
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+  }
+}

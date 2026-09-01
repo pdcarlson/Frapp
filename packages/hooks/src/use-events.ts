@@ -36,20 +36,21 @@ export function useEvent(id: string) {
   });
 }
 
-export function useEventIcs(id: string) {
+// A mutation, not a query: this is a one-shot download triggered by a click,
+// not cacheable data a screen renders. The endpoint's response isn't JSON
+// (`text/calendar`), so `parseAs: "blob"` is required — without it,
+// openapi-fetch's default `response.json()` throws on the ics body.
+export function useDownloadEventIcs() {
   const client = useFrappClient();
-  const chapterId = useActiveChapterId();
-  return useQuery({
-    queryKey: ["events", chapterId, id, "ics"],
-    queryFn: async () => {
+  return useMutation({
+    mutationFn: async (id: string) => {
       const { data, error } = await client.GET("/v1/events/{id}/ics", {
         params: { path: { id } },
+        parseAs: "blob",
       });
       if (error) throw error;
       return data;
     },
-    staleTime: 30_000,
-    enabled: !!id,
   });
 }
 
