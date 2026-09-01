@@ -34,7 +34,9 @@ A per-chapter monthly subscription unlocks the ops integrations and AI:
 
 ## Vocabulary-first
 
-Greek organizations use different words for the same concepts — rush vs recruitment vs intake; pledge vs aspirant vs candidate; class vs line vs cohort. Vocabulary is resolved per chapter and applied everywhere, including chat channel names and slash-command labels.
+Greek organizations use different words for the same concepts — rush vs recruitment vs intake; pledge vs aspirant vs candidate; class vs line vs cohort. Vocabulary is resolved per chapter (`apps/web/lib/vocabulary.ts`'s `vocab(key, chapterConfig)`, falling back to the IFC term) and threaded into member-facing copy wherever a rendered surface names one of these concepts: the member directory's class/cohort filter, Settings → Dues' pledge-tier amount label, and the semester rollover confirmation/toggle copy (#351).
+
+Chat channel names and slash-command labels are not wired to this yet — `vocab()` has no caller in `apps/api` or `apps/mobile` today, and no entry in `packages/chat-integrations`'s `SLASH_COMMANDS` catalog currently names a recruitment/pledge/class concept for it to apply to. Tracked as a follow-up; treat "applied everywhere" above as the design intent this list is working toward, not a claim about today's coverage.
 
 ## Member-visible audit log
 

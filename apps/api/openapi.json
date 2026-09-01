@@ -634,6 +634,53 @@
         ]
       }
     },
+    "/v1/roles/presidency-claim-status": {
+      "get": {
+        "operationId": "RbacController_presidencyClaimStatus_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresidencyClaimStatusDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Whether the caller may claim the chapter's vacant presidency",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      }
+    },
+    "/v1/roles/claim-presidency": {
+      "post": {
+        "operationId": "RbacController_claimPresidency_v1",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Claim the chapter's vacant presidency",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      }
+    },
     "/v1/chapters/{id}/config": {
       "get": {
         "operationId": "ChapterConfigController_getConfig_v1",
@@ -6463,6 +6510,10 @@
             "type": "boolean",
             "description": "Per-chapter opt-out for the pseudonymous analytics pipeline. Mobile reads it off this payload."
           },
+          "needs_president": {
+            "type": "boolean",
+            "description": "Set when the chapter has lost its President outside a voluntary transfer (spec/behavior/rbac.md § Presidency Transfer). Every member reads this, not just `roles:manage` holders — see `PresidencyClaimBanner`."
+          },
           "logo_url": {
             "type": "string",
             "nullable": true,
@@ -6592,6 +6643,10 @@
             "type": "boolean",
             "description": "Per-chapter opt-out for the pseudonymous analytics pipeline. Mobile reads it off this payload."
           },
+          "needs_president": {
+            "type": "boolean",
+            "description": "Set when the chapter has lost its President outside a voluntary transfer (spec/behavior/rbac.md § Presidency Transfer). Every member reads this, not just `roles:manage` holders — see `PresidencyClaimBanner`."
+          },
           "failedContrastChecks": {
             "description": "Signet §8 contrast checks below AA for this save’s generated accent. Empty in the normal case; the save still succeeds when non-empty — this is disclosure, never a rejection.",
             "type": "array",
@@ -6699,6 +6754,29 @@
         },
         "required": [
           "target_member_id"
+        ]
+      },
+      "PresidencyClaimStatusDto": {
+        "type": "object",
+        "properties": {
+          "needs_president": {
+            "type": "boolean",
+            "description": "Whether the chapter currently has no President."
+          },
+          "eligible": {
+            "type": "boolean",
+            "description": "Whether the caller holds the chapter's next-highest-ranked role with a live member, and may call POST /v1/roles/claim-presidency right now."
+          },
+          "next_role_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "Name of the eligible role, or null when no role below President has any member at all (the \"Frapp support intervenes\" case)."
+          }
+        },
+        "required": [
+          "needs_president",
+          "eligible",
+          "next_role_name"
         ]
       },
       "BetaConfigDto": {

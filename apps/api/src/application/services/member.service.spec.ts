@@ -28,7 +28,10 @@ describe('MemberService', () => {
     findValuesByFieldIds: jest.Mock;
   };
   let mockCustomRoleService: { findByIds: jest.Mock };
-  let mockRbacService: { getEffectivePermissions: jest.Mock };
+  let mockRbacService: {
+    getEffectivePermissions: jest.Mock;
+    flagIfPresidentRemoved: jest.Mock;
+  };
   let mockAuditLogService: { record: jest.Mock };
 
   beforeEach(async () => {
@@ -73,6 +76,7 @@ describe('MemberService', () => {
     };
     mockRbacService = {
       getEffectivePermissions: jest.fn().mockResolvedValue([]),
+      flagIfPresidentRemoved: jest.fn().mockResolvedValue(undefined),
     };
     mockAuditLogService = {
       record: jest.fn().mockResolvedValue(undefined),
@@ -799,6 +803,21 @@ describe('MemberService', () => {
       });
     });
 
+    // #349: removing the President is one of the two ways a chapter can be
+    // orphaned (spec/behavior/rbac.md § Presidency Transfer "Edge case").
+    it('checks whether the removed member held the President role', async () => {
+      mockRepo.findById.mockResolvedValue(existingMember);
+      mockRepo.delete.mockResolvedValue(undefined);
+
+      await service.remove('member-1', 'chapter-1', 'actor-1');
+
+      expect(mockRbacService.flagIfPresidentRemoved).toHaveBeenCalledWith(
+        'chapter-1',
+        existingMember.role_ids,
+        'actor-1',
+      );
+    });
+
     it('throws when member is not found', async () => {
       mockRepo.findById.mockResolvedValue(null);
 
@@ -807,6 +826,7 @@ describe('MemberService', () => {
       ).rejects.toThrow(NotFoundException);
       expect(mockRepo.delete).not.toHaveBeenCalled();
       expect(mockAuditLogService.record).not.toHaveBeenCalled();
+      expect(mockRbacService.flagIfPresidentRemoved).not.toHaveBeenCalled();
     });
 
     it('throws when member belongs to a different chapter', async () => {
@@ -820,6 +840,7 @@ describe('MemberService', () => {
       ).rejects.toThrow(ForbiddenException);
       expect(mockRepo.delete).not.toHaveBeenCalled();
       expect(mockAuditLogService.record).not.toHaveBeenCalled();
+      expect(mockRbacService.flagIfPresidentRemoved).not.toHaveBeenCalled();
     });
   });
 
