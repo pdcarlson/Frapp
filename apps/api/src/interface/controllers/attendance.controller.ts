@@ -7,7 +7,12 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { AttendanceService } from '../../application/services/attendance.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -18,7 +23,11 @@ import {
   CurrentChapterId,
   CurrentUser,
 } from '../decorators/current-user.decorator';
-import { CheckInDto, UpdateAttendanceDto } from '../dtos/attendance.dto';
+import {
+  AutoAbsentResultDto,
+  CheckInDto,
+  UpdateAttendanceDto,
+} from '../dtos/attendance.dto';
 import { SystemPermissions } from '../../domain/constants/permissions';
 
 @ApiTags('Attendance')
@@ -105,10 +114,11 @@ export class AttendanceController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.EVENTS_UPDATE)
   @ApiOperation({ summary: 'Trigger auto-absent marking for an event' })
+  @ApiCreatedResponse({ type: AutoAbsentResultDto })
   async markAutoAbsent(
     @Param('eventId') eventId: string,
     @CurrentChapterId() chapterId: string,
-  ) {
+  ): Promise<AutoAbsentResultDto> {
     return this.attendanceService.markAutoAbsent(eventId, chapterId);
   }
 }

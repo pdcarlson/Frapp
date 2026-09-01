@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AdjustGlyph, SearchGlyph } from "@/components/points/points-glyphs";
 import {
   memberFallbackLabel,
@@ -22,9 +22,9 @@ import {
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
-import { useToast } from "@/hooks/use-toast";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
+import { downloadCsv } from "@/lib/utils";
 import { PointsAdjustmentDialog } from "@/components/points/points-adjustment-dialog";
 import {
   SubscriptionNotice,
@@ -61,7 +61,6 @@ type PointTransactionRow = {
 
 export default function PointsPage() {
   const { isOffline } = useNetwork();
-  const { toast } = useToast();
   const [window, setWindow] = useState<"all" | "semester" | "month">("all");
   const [leaderboardSearch, setLeaderboardSearch] = useState("");
   const [transactionSearch, setTransactionSearch] = useState("");
@@ -181,16 +180,33 @@ export default function PointsPage() {
       return true;
     });
   }, [transactions, transactionSearch, amountFilter, categoryFilter]);
+
+  // Changing the window, search, or amount/category filter swaps the visible
+  // population, so drop the selection — otherwise the bulk bar keeps counting
+  // transactions that are no longer shown, and Export selected silently
+  // exports fewer rows than it claims (or an empty file once none of the
+  // selection remains visible).
+  /* eslint-disable react-hooks/set-state-in-effect -- reset selection when the visible transaction set changes */
+  useEffect(() => {
+    setSelectedTransactionIds([]);
+  }, [window, transactionSearch, amountFilter, categoryFilter]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
   const transactionIds = filteredTransactions.map((transaction) => transaction.id);
   const allTransactionsSelected =
     transactionIds.length > 0 &&
     transactionIds.every((transactionId) => selectedTransactionIds.includes(transactionId));
 
-  function handleBulkTransactionAction(actionLabel: string) {
-    toast({
-      title: "Bulk points action queued",
-      description: `${actionLabel} for ${selectedTransactionIds.length} selected transaction${selectedTransactionIds.length > 1 ? "s" : ""} is not available yet.`,
-    });
+  function exportSelectedTransactionsCsv() {
+    const rows = filteredTransactions
+      .filter((transaction) => selectedTransactionIds.includes(transaction.id))
+      .map((transaction) => ({
+        Amount: String(transaction.amount),
+        Category: transaction.category,
+        Description: transaction.description,
+        Time: formatTimestamp(transaction.created_at),
+      }));
+    downloadCsv(rows, "points");
   }
 
   function toggleAllTransactions(checked: boolean) {
@@ -443,22 +459,20 @@ export default function PointsPage() {
                   {selectedTransactionIds.length} transaction
                   {selectedTransactionIds.length > 1 ? "s" : ""} selected
                 </p>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => handleBulkTransactionAction("Export selected")}
-                  >
-                    Export selected
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => handleBulkTransactionAction("Flag for audit")}
-                  >
-                    Flag for audit
-                  </Button>
-                </div>
+                {/*
+                  Flag for audit removed rather than wired (#336): flags are
+                  raised automatically whenever a single adjustment exceeds
+                  ±100 points (see PointsAuditCard below) — there is no
+                  manual override to call, and adding one would be a new
+                  moderation feature rather than a wiring fix.
+                */}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={exportSelectedTransactionsCsv}
+                >
+                  Export selected
+                </Button>
               </div>
             ) : null}
             {filteredTransactions.length === 0 ? (
