@@ -2583,6 +2583,48 @@ export interface components {
             accent_color?: string;
             donation_url?: string;
         };
+        FailedContrastCheckDto: {
+            /** @description The Signet role that failed, e.g. `--signet-accent-text` or `--signet-accent-on-primary`. */
+            role: string;
+            /** @description What it was measured against — a hex background color, or another `--signet-*` role name. */
+            against: string;
+            /** @description Measured contrast ratio. Below 4.5 to appear here. */
+            ratio: number;
+        };
+        UpdateChapterResponseDto: {
+            id: string;
+            name: string;
+            university: string;
+            /**
+             * @description Read by the client subscription gate. Load-bearing — see `chapter-member-view.ts`.
+             * @enum {string}
+             */
+            subscription_status: "incomplete" | "active" | "past_due" | "canceled";
+            /** @description Timestamp the chapter entered `past_due`, or null. Drives the 3-day client grace window; the grace predicate fails open without it. */
+            past_due_since: string | null;
+            accent_color: string | null;
+            logo_path: string | null;
+            donation_url: string | null;
+            created_at: string;
+            updated_at: string;
+            org_archetype?: string;
+            enabled_modules?: {
+                [key: string]: boolean;
+            };
+            vocabulary?: {
+                [key: string]: unknown;
+            };
+            branding?: {
+                [key: string]: unknown;
+            };
+            theme_palette?: {
+                [key: string]: unknown;
+            };
+            /** @description Per-chapter opt-out for the pseudonymous analytics pipeline. Mobile reads it off this payload. */
+            analytics_opt_out?: boolean;
+            /** @description Signet §8 contrast checks below AA for this save’s generated accent. Empty in the normal case; the save still succeeds when non-empty — this is disclosure, never a rejection. */
+            failedContrastChecks: components["schemas"]["FailedContrastCheckDto"][];
+        };
         LogoUploadUrlDto: {
             /** @description Original filename (e.g. logo.png) */
             filename: string;
@@ -3690,7 +3732,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["UpdateChapterResponseDto"];
+                };
             };
         };
     };

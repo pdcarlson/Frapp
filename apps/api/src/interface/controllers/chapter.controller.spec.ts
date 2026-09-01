@@ -166,39 +166,44 @@ describe('ChapterController', () => {
     it('should call chapterService.update with correct parameters', async () => {
       const chapterId = 'chapter-1';
       const dto: UpdateChapterDto = { name: 'Updated Chapter' };
-      const expectedResult = { id: chapterId, ...dto } as any;
+      const expectedChapter = { id: chapterId, ...dto } as any;
 
-      chapterService.update.mockResolvedValue(expectedResult);
+      chapterService.update.mockResolvedValue({
+        chapter: expectedChapter,
+        failedContrastChecks: [],
+      });
 
       const result = await controller.update(chapterId, dto);
 
       expect(chapterService.update).toHaveBeenCalledWith(chapterId, dto);
-      expect(result).toEqual(expectedResult);
+      expect(result).toEqual({ ...expectedChapter, failedContrastChecks: [] });
     });
 
     it('projects the write response onto the member-safe view (#930)', async () => {
       // This route admits `roles:manage` OR `billing:manage`, so a custom role
       // carrying `roles:manage` without `billing:view` would otherwise read the
       // billing identifiers out of the *write* response — the same leak as
-      // `getCurrent`, one verb over. The client discards this body and
-      // refetches, so nothing depends on it being the full row.
+      // `getCurrent`, one verb over.
       const chapterId = 'chapter-1';
       const dto: UpdateChapterDto = { name: 'Updated Chapter' };
       chapterService.update.mockResolvedValue({
-        id: chapterId,
-        name: 'Updated Chapter',
-        university: 'State U',
-        subscription_status: 'active',
-        past_due_since: null,
-        stripe_customer_id: 'cus_SENSITIVE',
-        subscription_id: 'sub_SENSITIVE',
-        last_stripe_webhook_at: '2026-08-02T00:00:00.000Z',
-        legal_accepted_by: 'user-legal-signer',
-        accent_color: null,
-        logo_path: null,
-        donation_url: null,
-        created_at: '2026-01-01T00:00:00.000Z',
-        updated_at: '2026-01-01T00:00:00.000Z',
+        chapter: {
+          id: chapterId,
+          name: 'Updated Chapter',
+          university: 'State U',
+          subscription_status: 'active',
+          past_due_since: null,
+          stripe_customer_id: 'cus_SENSITIVE',
+          subscription_id: 'sub_SENSITIVE',
+          last_stripe_webhook_at: '2026-08-02T00:00:00.000Z',
+          legal_accepted_by: 'user-legal-signer',
+          accent_color: null,
+          logo_path: null,
+          donation_url: null,
+          created_at: '2026-01-01T00:00:00.000Z',
+          updated_at: '2026-01-01T00:00:00.000Z',
+        } as any,
+        failedContrastChecks: [],
       });
 
       const result = await controller.update(chapterId, dto);
@@ -210,6 +215,35 @@ describe('ChapterController', () => {
       expect(JSON.stringify(result)).not.toContain('SENSITIVE');
       // The entitlement mirror still round-trips on a write.
       expect(result.subscription_status).toBe('active');
+    });
+
+    it('surfaces failedContrastChecks from the service alongside the projected chapter (#1183)', async () => {
+      const chapterId = 'chapter-1';
+      const dto: UpdateChapterDto = { accent_color: '#8B0000' };
+      const failedContrastChecks = [
+        { role: '--signet-accent-text', against: '#0E0D0B', ratio: 3.21 },
+      ];
+      chapterService.update.mockResolvedValue({
+        chapter: { id: chapterId, name: 'Updated Chapter' } as any,
+        failedContrastChecks,
+      });
+
+      const result = await controller.update(chapterId, dto);
+
+      expect(result.failedContrastChecks).toEqual(failedContrastChecks);
+    });
+
+    it('returns an empty failedContrastChecks array in the normal case', async () => {
+      const chapterId = 'chapter-1';
+      const dto: UpdateChapterDto = { accent_color: '#7FD1AE' };
+      chapterService.update.mockResolvedValue({
+        chapter: { id: chapterId, name: 'Updated Chapter' } as any,
+        failedContrastChecks: [],
+      });
+
+      const result = await controller.update(chapterId, dto);
+
+      expect(result.failedContrastChecks).toEqual([]);
     });
   });
 
