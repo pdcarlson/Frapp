@@ -7,6 +7,15 @@ import { FrappClientProvider } from "./use-frapp-client";
 
 const SEARCH_ENDPOINT = "/v1/search";
 
+/** A minimal `Response`-shaped stand-in — only `.headers.get` is used by the hook. */
+function mockResponse(headers: Record<string, string> = {}) {
+  return {
+    headers: {
+      get: (name: string) => headers[name.toLowerCase()] ?? null,
+    },
+  };
+}
+
 const createWrapper = (
   queryClient: QueryClient,
   mockClient: unknown,
@@ -40,7 +49,11 @@ describe("useSearch", () => {
   it("returns search payload when the API request succeeds", async () => {
     const payload = { members: [{ id: "m1" }] };
     const mockClient = {
-      GET: vi.fn().mockResolvedValue({ data: payload, error: undefined }),
+      GET: vi.fn().mockResolvedValue({
+        data: payload,
+        error: undefined,
+        response: mockResponse(),
+      }),
     };
 
     const { result } = renderHook(() => useSearch("alice"), {
@@ -52,19 +65,28 @@ describe("useSearch", () => {
     expect(mockClient.GET).toHaveBeenCalledWith(SEARCH_ENDPOINT, {
       params: { query: { q: "alice" } },
     });
-    expect(result.current.data).toEqual(payload);
+    expect(result.current.data).toEqual({
+      payload,
+      timedOut: false,
+      timedOutSources: [],
+    });
   });
 
   it("does not reuse cached results from a different chapter for the same query", async () => {
     const chapterAData = { members: [{ id: "from-a" }] };
     const chapterBData = { members: [{ id: "from-b" }] };
 
-    queryClient.setQueryData(["search", "chapter-a", "shared"], chapterAData);
+    queryClient.setQueryData(["search", "chapter-a", "shared"], {
+      payload: chapterAData,
+      timedOut: false,
+      timedOutSources: [],
+    });
 
     const mockClient = {
       GET: vi.fn().mockResolvedValue({
         data: chapterBData,
         error: undefined,
+        response: mockResponse(),
       }),
     };
 
@@ -74,8 +96,8 @@ describe("useSearch", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(result.current.data).toEqual(chapterBData);
-    expect(result.current.data).not.toEqual(chapterAData);
+    expect(result.current.data?.payload).toEqual(chapterBData);
+    expect(result.current.data?.payload).not.toEqual(chapterAData);
     expect(mockClient.GET).toHaveBeenCalledTimes(1);
   });
 
@@ -110,5 +132,102 @@ describe("useSearch", () => {
 
     expect(mockClient.GET).not.toHaveBeenCalled();
     expect(result.current.fetchStatus).toBe("idle");
+  });
+
+  // #604: spec/behavior/search.md — clients must distinguish "we found
+  // nothing" from "we stopped looking here" via the timeout headers.
+  describe("timeout headers", () => {
+    it("surfaces a full timeout with no timed-out sources listed", async () => {
+      const mockClient = {
+        GET: vi.fn().mockResolvedValue({
+          data: { members: [] },
+          error: undefined,
+          response: mockResponse({ "x-search-timeout": "1" }),
+        }),
+      };
+
+      const { result } = renderHook(() => useSearch("alice"), {
+        wrapper: createWrapper(queryClient, mockClient, "chapter-a"),
+      });
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+      expect(result.current.data).toEqual({
+        payload: { members: [] },
+        timedOut: true,
+        timedOutSources: [],
+      });
+    });
+
+    it("parses timed-out sources when results are otherwise present (per-source budget)", async () => {
+      const payload = { members: [{ id: "m1" }], messages: [] };
+      const mockClient = {
+        GET: vi.fn().mockResolvedValue({
+          data: payload,
+          error: undefined,
+          response: mockResponse({
+            "x-search-timeout": "1",
+            "x-search-timeout-sources": "messages",
+          }),
+        }),
+      };
+
+      const { result } = renderHook(() => useSearch("alice"), {
+        wrapper: createWrapper(queryClient, mockClient, "chapter-a"),
+      });
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+      expect(result.current.data).toEqual({
+        payload,
+        timedOut: true,
+        timedOutSources: ["messages"],
+      });
+    });
+
+    it("parses multiple comma-separated timed-out sources", async () => {
+      const mockClient = {
+        GET: vi.fn().mockResolvedValue({
+          data: {},
+          error: undefined,
+          response: mockResponse({
+            "x-search-timeout": "1",
+            "x-search-timeout-sources": "messages, events",
+          }),
+        }),
+      };
+
+      const { result } = renderHook(() => useSearch("alice"), {
+        wrapper: createWrapper(queryClient, mockClient, "chapter-a"),
+      });
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+      expect(result.current.data?.timedOutSources).toEqual([
+        "messages",
+        "events",
+      ]);
+    });
+
+    it("ignores an unrecognized source name rather than surfacing it", async () => {
+      const mockClient = {
+        GET: vi.fn().mockResolvedValue({
+          data: {},
+          error: undefined,
+          response: mockResponse({
+            "x-search-timeout": "1",
+            "x-search-timeout-sources": "messages,something-new",
+          }),
+        }),
+      };
+
+      const { result } = renderHook(() => useSearch("alice"), {
+        wrapper: createWrapper(queryClient, mockClient, "chapter-a"),
+      });
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+      expect(result.current.data?.timedOutSources).toEqual(["messages"]);
+    });
   });
 });
