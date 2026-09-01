@@ -411,7 +411,9 @@ Configurable alerts via the monitoring provider:
 
 ## 11. Quality Standards
 
-- **Testing:** TDD encouraged. Minimum 80% line coverage for API modules.
+- **Testing:** TDD encouraged. `apps/api` line coverage is measured (`npm run test:cov -w apps/api`,
+  currently ~80%) but not CI-gated — a deliberate decision, not an oversight; see
+  [`QUALITY_GATES.md` § Coverage](../../docs/internal/ci-cd/QUALITY_GATES.md#coverage).
 - **Linting:** ESLint (shared config), Prettier for formatting.
 - **Type safety:** TypeScript strict mode across apps and packages, with one recorded exception:
   `apps/api` sets `"strict": false` and opts into `strictNullChecks` / `noImplicitAny` /
