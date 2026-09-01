@@ -56,6 +56,17 @@ export interface ToastFn {
   }): void;
 }
 
+/**
+ * Platform-neutral error sink, for callers with no toast surface at all
+ * (mobile — see `ChatActionContext.toast`). Unlike `toast`, this is not a
+ * fire-and-forget notification: a caller that supplies it is expected to
+ * hold the failure until the member can see and act on it (#999), so it
+ * carries no `variant` — there is nothing else it would report.
+ */
+export interface ChatErrorFn {
+  (input: { title: string; description?: string }): void;
+}
+
 export type FrappApiClient = ReturnType<typeof createFrappClient>;
 
 export interface ChatActionContext {
@@ -84,6 +95,14 @@ export interface ChatActionContext {
   /** Connectivity probe. Omitted → the browser implementation. */
   net?: NetworkState;
   toast?: ToastFn;
+  /**
+   * Fires alongside `toast` (never instead of it) on a rejected `react` or
+   * `unreact`. Web supplies `toast` and can leave this unset; mobile supplies
+   * none of `toast` and must supply this, or those two failures stay silent
+   * (#999) — its optimistic rollback is still correct either way, only the
+   * explanation is missing.
+   */
+  onError?: ChatErrorFn;
 }
 
 function patchCache(
@@ -464,6 +483,7 @@ export async function react(
       description: message,
       variant: "destructive",
     });
+    ctx.onError?.({ title: "Couldn't react", description: message });
   }
 }
 
@@ -503,6 +523,7 @@ export async function unreact(
       description: message,
       variant: "destructive",
     });
+    ctx.onError?.({ title: "Couldn't remove reaction", description: message });
   }
 }
 

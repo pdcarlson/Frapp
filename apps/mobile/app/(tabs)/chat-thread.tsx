@@ -68,6 +68,8 @@ export default function ChatThreadScreen() {
     draft,
     setDraft,
     sendError,
+    reactionError,
+    clearReactionError,
     typingUsers,
     emitTyping,
     connection,
@@ -260,6 +262,30 @@ export default function ChatThreadScreen() {
         ) : null}
 
         {/*
+          react/unreact have no failed-bubble equivalent to render inline —
+          chat-core's rollback of the optimistic toggle is silent — so this
+          banner is the only report of a rejected reaction (#999). Dismissible
+          because, unlike `sendError`, there is nothing to retry or discard.
+        */}
+        {reactionError ? (
+          <View
+            style={styles.reactionErrorBanner}
+            accessibilityLiveRegion="polite"
+          >
+            <Text style={styles.reactionErrorText}>{reactionError}</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss"
+              hitSlop={8}
+              onPress={clearReactionError}
+              style={({ pressed }) => (pressed ? styles.pressed : null)}
+            >
+              <Text style={styles.reactionErrorDismiss}>Dismiss</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        {/*
           The composer stays enabled offline **on purpose**. `sendMessage`
           enqueues to the outbox and returns before it ever touches the network
           (`chat-client.ts` — "the row is safely queued; the reconnect flush
@@ -353,6 +379,26 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.muted,
       paddingHorizontal: tokens.spacing.lg,
       paddingBottom: tokens.spacing.xs,
+    },
+    reactionErrorBanner: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: tokens.spacing.md,
+      paddingHorizontal: tokens.spacing.lg,
+      paddingVertical: tokens.spacing.sm,
+      backgroundColor: tokens.color.surface.surface1,
+      borderTopWidth: 1,
+      borderTopColor: tokens.color.border.hairline,
+    },
+    reactionErrorText: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.destructive,
+      flex: 1,
+    },
+    reactionErrorDismiss: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
     },
     stateBlock: {
       flex: 1,
