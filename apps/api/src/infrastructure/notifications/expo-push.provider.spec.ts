@@ -20,6 +20,7 @@ import { ExpoPushProvider, redactPushTokens } from './expo-push.provider';
 
 const VALID_A = 'ExponentPushToken[aaaaaaaaaaaaaaaaaaaaaa]';
 const VALID_B = 'ExponentPushToken[bbbbbbbbbbbbbbbbbbbbbb]';
+const VALID_C = 'ExponentPushToken[cccccccccccccccccccccc]';
 
 /** Parse the single `push_delivery` record emitted by a send. */
 function recordFrom(spy: jest.SpyInstance): Record<string, unknown> {
@@ -212,6 +213,37 @@ describe('ExpoPushProvider', () => {
       });
 
       expect(result.invalidTokens).toEqual([]);
+    });
+
+    it('zips a DeviceNotRegistered ticket to its token across a chunk boundary', async () => {
+      // Two chunks: [VALID_A, VALID_B], then [VALID_C]. The ticket-to-token
+      // zip in `recordTickets` must stay local to each chunk's own tickets
+      // array — a regression to a running/global index would misalign VALID_C
+      // against an out-of-bounds slot in the second chunk instead of its own
+      // (correctly zero-indexed) ticket.
+      mockChunkPushNotifications.mockImplementation((messages: unknown[]) => [
+        [messages[0], messages[1]],
+        [messages[2]],
+      ]);
+      mockSendPushNotificationsAsync
+        .mockResolvedValueOnce([
+          { status: 'ok', id: 'r-1' },
+          { status: 'ok', id: 'r-2' },
+        ])
+        .mockResolvedValueOnce([
+          {
+            status: 'error',
+            message: 'not a registered recipient',
+            details: { error: 'DeviceNotRegistered' },
+          },
+        ]);
+
+      const result = await provider.sendToUser([VALID_A, VALID_B, VALID_C], {
+        title: 'Hi',
+        body: 'There',
+      });
+
+      expect(result.invalidTokens).toEqual([VALID_C]);
     });
   });
 

@@ -153,8 +153,10 @@ export class NotificationService {
       // Pruning stays in the application layer — the provider only classifies
       // Expo's response, it never touches `push_tokens` itself. Best-effort
       // and outside the outer catch's concern: a delete failure here must
-      // never read as "push delivery failed" in the log line below.
-      await Promise.allSettled(
+      // never read as "push delivery failed" in the log line below. Each
+      // deletion catches its own rejection, so nothing here can actually
+      // reject — `Promise.all` (not `allSettled`) says that plainly.
+      await Promise.all(
         invalidTokens.map((token) =>
           this.pushTokenRepo.deleteByToken(token).catch((err) => {
             this.logger.warn(`Failed to prune invalid push token`, err);

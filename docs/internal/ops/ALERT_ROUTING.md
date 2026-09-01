@@ -104,7 +104,7 @@ Source: the `push_delivery` structured log records the API emits once per push a
 | Push delivery failure spike | `sum(failures) / sum(attempted)` over a 15-minute window exceeds **20%**, with at least **20** attempts in that window | critical |
 | Push transport degraded | any `errorCodes` key matching `provider:*` within a 15-minute window | non-critical |
 
-The minimum-attempt floor keeps one failed send in a quiet overnight period from paging. Elevated `DeviceNotRegistered` is expected background noise — it means members uninstalled the app, and stale tokens are not pruned yet (tracked separately in [#524](https://github.com/pdcarlson/Frapp/issues/524), formerly FRA-218) — so track its share rather than paging on it. `provider:*` codes are the opposite: they mean the push service itself was unreachable and nothing was delivered.
+The minimum-attempt floor keeps one failed send in a quiet overnight period from paging. Elevated `DeviceNotRegistered` is expected background noise — it means members uninstalled the app. The token behind each such ticket is pruned from `push_tokens` automatically (`spec/behavior/notifications.md` delivery step 7), so a rising `DeviceNotRegistered` share tracks uninstalls, not a growing backlog of dead tokens — still track its share rather than paging on it, since it is expected traffic, not an outage. `provider:*` codes are the opposite: they mean the push service itself was unreachable and nothing was delivered.
 
 ### Security events
 
