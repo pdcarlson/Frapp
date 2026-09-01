@@ -76,6 +76,7 @@ export class ServiceEntryController {
   // Declared before `@Get(':id')`: Nest matches routes in declaration order,
   // so the param route would otherwise swallow `/leaderboard` and try to load
   // an entry with that id.
+  // Enforced by `test/route-declaration-order.e2e-spec.ts` (#990).
   @Get('leaderboard')
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.MEMBERS_VIEW)

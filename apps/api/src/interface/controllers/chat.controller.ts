@@ -76,6 +76,7 @@ export class ChatController {
   // MUST stay above `@Get(':id')`. Nest matches routes in declaration order and
   // a single-segment `:id` would otherwise swallow this path, resolving it as
   // `getChannel('unread')` and answering 404 for a route that exists.
+  // Enforced by `test/route-declaration-order.e2e-spec.ts` (#990).
   @Get('unread')
   @ApiOperation({
     summary: 'Unread and mention counts for every channel the caller can read',
@@ -91,6 +92,7 @@ export class ChatController {
   // MUST stay above `@Get(':id')`, for the same reason as `unread` directly
   // above — `:id` is a single segment and would resolve this as
   // `getChannel('notification-preferences')`.
+  // Enforced by `test/route-declaration-order.e2e-spec.ts` (#990).
   @Get('notification-preferences')
   @ApiOperation({
     summary: "The caller's own per-channel notification levels",
