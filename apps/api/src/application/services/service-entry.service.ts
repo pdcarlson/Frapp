@@ -459,7 +459,9 @@ export class ServiceEntryService {
     try {
       await this.notificationService.notifyUser(entry.user_id, chapterId, {
         title: 'Service Hours Rejected',
-        body: `Your service entry "${entry.description}" has been rejected`,
+        body: reviewComment
+          ? `Your service entry "${entry.description}" has been rejected: ${reviewComment}`
+          : `Your service entry "${entry.description}" has been rejected`,
         priority: 'NORMAL',
         category: 'service',
         data: { target: { screen: 'service' } },
