@@ -276,7 +276,10 @@ cleanly. The `Deploy API` run's `migrate-staging` job log shows what was pending
 before the apply (it always dry-runs first) and what it applied.
 
 - [ ] `migrate-staging` for your merge commit is green
-- [ ] `GET /health` returns `status: ok`
+- [ ] `GET /health` reports `database: connected` (its aggregate `status` also
+      reflects Supabase Storage reachability — an unrelated Storage hiccup can
+      read `degraded` with the database fully healthy, so check the
+      `database` field specifically for a migration verification)
 - [ ] One auth-protected API route succeeds
 - [ ] Stripe staging webhook endpoint (`/v1/webhooks/stripe`) accepts signed event
 - [ ] No migration-related errors in Render logs

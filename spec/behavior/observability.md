@@ -25,7 +25,10 @@ A unique `x-request-id` header is generated for each incoming request (or preser
 
 ## Health Check
 
-`GET /health` returns service status, database connectivity, Supabase connectivity, and uptime. Used by monitoring tools and load balancers. No authentication required.
+Two endpoints, both unauthenticated:
+
+- **`GET /health`** — liveness. Always returns 2xx while the process is up, with `status: "ok" | "degraded"`, database connectivity, Supabase Storage connectivity, and uptime in the body. This is Render's `healthCheckPath` (`render.yaml`); it must never itself flip to a non-2xx status, since that is a dashboard-level decision about restarting/rolling back the instance, not this endpoint's to make.
+- **`GET /health/ready`** — readiness. Runs the same dependency probes but returns **503** when any dependency is degraded. Deploy smoke checks (`deploy-api.yml`, `deploy-production.yml`) poll this path rather than `/health`, so a database or Storage outage actually fails the post-deploy gate instead of reading a `200` with a discarded `"degraded"` body. The 503 goes through the API's global exception filter like every other error response, so the body is the standard `{statusCode, error, message, requestId}` shape (see "Error Tracking" below) rather than the raw `{status, database, storage, uptime}` object — `message` names which dependency is degraded (e.g. `"database: error, storage: connected"`).
 
 ## Error Tracking
 
