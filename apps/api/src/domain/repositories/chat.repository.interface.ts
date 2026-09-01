@@ -67,6 +67,12 @@ export interface IChatChannelRepository {
     data: Partial<ChatChannel>,
   ): Promise<ChatChannel>;
   delete(id: string, chapterId: string): Promise<void>;
+  /** Atomic Group DM leave (#348) — see the Supabase implementation's doc comment. */
+  leaveGroupDm(
+    channelId: string,
+    chapterId: string,
+    userId: string,
+  ): Promise<ChatChannel | null>;
 }
 
 export interface IChatCategoryRepository {

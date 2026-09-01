@@ -546,6 +546,14 @@ export interface ChannelAccessRecord {
    * omit (treated as `false`) for read checks. (Chunk 05 / ADR-07.)
    */
   is_read_only?: boolean | null;
+  /**
+   * Set once a GROUP_DM's membership drops to <= 1 via the leave endpoint
+   * (#348). Only consulted for a write operation, where it denies
+   * unconditionally — unlike `is_read_only`, no permission clears it, since
+   * there is no "unarchive" flow. Safe to omit for read checks: an archived
+   * channel stays directly readable by whoever is still in `member_ids`.
+   */
+  archived_at?: string | null;
 }
 
 /**
@@ -723,6 +731,12 @@ export function canAccessChannel(input: ChannelAccessInput): boolean {
 
   if (!canRead) return false;
   if (operation === "read") return true;
+
+  // An archived channel (#348) is frozen: no further writes from anyone,
+  // regardless of permissions. Checked before the President wildcard below —
+  // unlike the read-only / announcements:post gate, there is no override,
+  // because there is no "unarchive" flow to make an override meaningful.
+  if (channel.archived_at) return false;
 
   const isPresident = permissions.includes("*");
 

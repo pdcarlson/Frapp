@@ -186,6 +186,23 @@ export class ChatController {
     return this.chatService.createGroupDm(chapterId, memberIds, dto.name);
   }
 
+  /**
+   * No extra `@RequirePermissions`: same reasoning as `markRead` below — a
+   * member is leaving a channel they can already read, and the authorization
+   * that matters (Group DM membership) is `assertChannelAccess` in the
+   * service, not a chapter-wide permission.
+   */
+  @Post(':id/leave')
+  @ApiOperation({ summary: 'Leave a Group DM' })
+  async leaveGroupDm(
+    @Param('id') channelId: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    await this.chatService.leaveGroupDm(channelId, chapterId, userId);
+    return { success: true };
+  }
+
   // ── Categories ───────────────────────────────────────────────────────
 
   @Get('categories/list')
