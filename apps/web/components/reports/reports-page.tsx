@@ -7,6 +7,7 @@ import {
   useAttendanceReport,
   useEvents,
   useMembers,
+  useMyPermissions,
   usePointsReport,
   useRosterReport,
   useServiceReport,
@@ -15,6 +16,7 @@ import {
   type ReportTruncation,
 } from "@repo/hooks";
 import { formatLocaleDateTime } from "@repo/formatting";
+import { can } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -53,7 +55,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Can } from "@/components/shared/can";
-import { dashboardFilterSelectClassName } from "@/components/shared/table-controls";
+import { dashboardFormSelectClassName } from "@/components/shared/table-controls";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -85,9 +87,16 @@ type ReportRow = Record<string, unknown>;
 
 type PickerOption = { id: string; label: string };
 
+function asRecords(data: unknown): Record<string, unknown>[] {
+  return asArray<unknown>(data).filter(
+    (entry): entry is Record<string, unknown> =>
+      typeof entry === "object" && entry !== null,
+  );
+}
+
 /** Options for the event picker: name plus start time, so two same-named events stay distinguishable. */
 function buildEventOptions(data: unknown): PickerOption[] {
-  return asArray<Record<string, unknown>>(data)
+  return asRecords(data)
     .map((event) => {
       const id = String(event.id ?? "");
       if (!id) return null;
@@ -97,9 +106,17 @@ function buildEventOptions(data: unknown): PickerOption[] {
     .filter((option): option is PickerOption => option !== null);
 }
 
-/** Options for the member picker: display name plus email, falling back to a short id when both are missing. */
+/**
+ * Options for the member picker: display name plus email, falling back to a
+ * short id when both are missing.
+ *
+ * Uses the full `useMembers()` profile rather than the lighter
+ * `useChapterRoster()` (which is the documented default for a display-only
+ * concern like this): the roster projection carries no `email`, and email is
+ * what the AC asks for to disambiguate same-named members.
+ */
 function buildMemberOptions(data: unknown): PickerOption[] {
-  return asArray<Record<string, unknown>>(data)
+  return asRecords(data)
     .map((member) => {
       const id = String(member.user_id ?? "");
       if (!id) return null;
@@ -114,6 +131,111 @@ function buildMemberOptions(data: unknown): PickerOption[] {
       return { id, label };
     })
     .filter((option): option is PickerOption => option !== null);
+}
+
+type PickerFieldQuery = {
+  isPending: boolean;
+  isError: boolean;
+  refetch: () => void;
+};
+
+type PickerFieldProps = {
+  idPrefix: string;
+  label: string;
+  value: string;
+  onValueChange: (value: string) => void;
+  options: PickerOption[];
+  query: PickerFieldQuery;
+  /** e.g. "Chapter-wide (all events)" */
+  allLabel: string;
+  /** Plural noun used in the empty/error copy, e.g. "events". */
+  noun: string;
+  /** Singular noun used in the manual-entry disclosure, e.g. "event". */
+  singularNoun: string;
+};
+
+/**
+ * A named-entity filter: a picker `<select>` backed by a live list, plus a
+ * collapsed manual-ID fallback.
+ *
+ * The fallback exists because the picker can only offer what its list query
+ * returns, and that query is scoped by `members:view` (and, for events, the
+ * `events` module) — permissions `reports:export` does not imply. A caller
+ * who knows an id the list omits (a departed member, a role-targeted event,
+ * or a custom role without `members:view`) can still reach it directly,
+ * matching what the raw-UUID input this replaces already allowed.
+ */
+function PickerField({
+  idPrefix,
+  label,
+  value,
+  onValueChange,
+  options,
+  query,
+  allLabel,
+  noun,
+  singularNoun,
+}: PickerFieldProps) {
+  const matchesOption = options.some((option) => option.id === value);
+  const selectId = `${idPrefix}-select`;
+
+  return (
+    <div className="grid gap-1">
+      <Label htmlFor={selectId}>{label}</Label>
+      <select
+        id={selectId}
+        // Falls back to the "chapter-wide" option rather than letting the
+        // browser show nothing selected whenever `value` is a manually-entered
+        // id the list doesn't contain — the manual field below is the one
+        // source of truth for that case.
+        value={matchesOption ? value : ""}
+        onChange={(event) => onValueChange(event.target.value)}
+        disabled={query.isPending}
+        className={`${dashboardFormSelectClassName} w-full`}
+      >
+        <option value="">{allLabel}</option>
+        {options.map((option) => (
+          <option key={option.id} value={option.id}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      {query.isError ? (
+        <p className="text-xs text-destructive">
+          Couldn&apos;t load {noun} — enter an id manually below, or leave
+          both blank for a chapter-wide report, or{" "}
+          <button
+            type="button"
+            onClick={() => query.refetch()}
+            className="underline underline-offset-2"
+          >
+            retry
+          </button>
+          .
+        </p>
+      ) : !query.isPending && options.length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          No {noun} yet — every report will be chapter-wide.
+        </p>
+      ) : null}
+      <details className="text-xs text-muted-foreground">
+        <summary className="cursor-pointer select-none">
+          Can&apos;t find the {singularNoun}? Enter its id directly
+        </summary>
+        <Input
+          className="mt-1"
+          value={value}
+          onChange={(event) => onValueChange(event.target.value)}
+          placeholder={`${singularNoun} id`}
+        />
+        {value && !matchesOption ? (
+          <p className="mt-1">
+            Not in the list above — the report will still scope to this id.
+          </p>
+        ) : null}
+      </details>
+    </div>
+  );
 }
 
 function flattenRecord(value: unknown, prefix = ""): Record<string, string> {
@@ -188,8 +310,18 @@ export function ReportsPage() {
   const points = usePointsReport();
   const roster = useRosterReport();
   const service = useServiceReport();
-  const eventsQuery = useEvents();
-  const membersQuery = useMembers();
+  // Mirrors the `<Can permission="reports:export">` gate this page renders
+  // behind (same cached query, so this costs no extra request): without it,
+  // `useEvents`/`useMembers` would fetch every member's full profile —
+  // email, bio, graduation year, city, company — for a visitor who cannot
+  // even see this page, purely as a side effect of pickers they'll never see.
+  const permissionsQuery = useMyPermissions();
+  const canFilterByEventOrMember = can(
+    "reports:export",
+    permissionsQuery.data?.permissions ?? [],
+  );
+  const eventsQuery = useEvents({ enabled: canFilterByEventOrMember });
+  const membersQuery = useMembers({ enabled: canFilterByEventOrMember });
   const eventOptions = useMemo(
     () => buildEventOptions(eventsQuery.data),
     [eventsQuery.data],
@@ -564,43 +696,17 @@ export function ReportsPage() {
 
             {kind === "attendance" ? (
               <div className="grid gap-3 md:grid-cols-3">
-                <div className="grid gap-1">
-                  <Label htmlFor="report-event">Event (optional)</Label>
-                  <select
-                    id="report-event"
-                    value={eventId}
-                    onChange={(event) =>
-                      onFilterChange(setEventId)(event.target.value)
-                    }
-                    disabled={eventsQuery.isPending}
-                    className={`${dashboardFilterSelectClassName} w-full`}
-                  >
-                    <option value="">Chapter-wide (all events)</option>
-                    {eventOptions.map((option) => (
-                      <option key={option.id} value={option.id}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  {eventsQuery.isError ? (
-                    <p className="text-xs text-destructive">
-                      Couldn&apos;t load events — leave blank for a
-                      chapter-wide report, or{" "}
-                      <button
-                        type="button"
-                        onClick={() => eventsQuery.refetch()}
-                        className="underline underline-offset-2"
-                      >
-                        retry
-                      </button>
-                      .
-                    </p>
-                  ) : !eventsQuery.isPending && eventOptions.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">
-                      No events yet — every report will be chapter-wide.
-                    </p>
-                  ) : null}
-                </div>
+                <PickerField
+                  idPrefix="report-event"
+                  label="Event (optional)"
+                  value={eventId}
+                  onValueChange={onFilterChange(setEventId)}
+                  options={eventOptions}
+                  query={eventsQuery}
+                  allLabel="Chapter-wide (all events)"
+                  noun="events"
+                  singularNoun="event"
+                />
                 <div className="grid gap-1">
                   <Label htmlFor="report-start">Start date</Label>
                   <Input
@@ -628,43 +734,17 @@ export function ReportsPage() {
 
             {kind === "points" ? (
               <div className="grid gap-3 md:grid-cols-2">
-                <div className="grid gap-1">
-                  <Label htmlFor="report-member">Member (optional)</Label>
-                  <select
-                    id="report-member"
-                    value={memberId}
-                    onChange={(event) =>
-                      onFilterChange(setMemberId)(event.target.value)
-                    }
-                    disabled={membersQuery.isPending}
-                    className={`${dashboardFilterSelectClassName} w-full`}
-                  >
-                    <option value="">Chapter-wide (all members)</option>
-                    {memberOptions.map((option) => (
-                      <option key={option.id} value={option.id}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  {membersQuery.isError ? (
-                    <p className="text-xs text-destructive">
-                      Couldn&apos;t load members — leave blank for a
-                      chapter-wide report, or{" "}
-                      <button
-                        type="button"
-                        onClick={() => membersQuery.refetch()}
-                        className="underline underline-offset-2"
-                      >
-                        retry
-                      </button>
-                      .
-                    </p>
-                  ) : !membersQuery.isPending && memberOptions.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">
-                      No members yet — every report will be chapter-wide.
-                    </p>
-                  ) : null}
-                </div>
+                <PickerField
+                  idPrefix="report-member"
+                  label="Member (optional)"
+                  value={memberId}
+                  onValueChange={onFilterChange(setMemberId)}
+                  options={memberOptions}
+                  query={membersQuery}
+                  allLabel="Chapter-wide (all members)"
+                  noun="members"
+                  singularNoun="member"
+                />
                 <div className="grid gap-1">
                   <Label htmlFor="report-window">Time window</Label>
                   <Select
@@ -690,45 +770,17 @@ export function ReportsPage() {
 
             {kind === "service" ? (
               <div className="grid gap-3 md:grid-cols-3">
-                <div className="grid gap-1">
-                  <Label htmlFor="service-report-member">
-                    Member (optional)
-                  </Label>
-                  <select
-                    id="service-report-member"
-                    value={memberId}
-                    onChange={(event) =>
-                      onFilterChange(setMemberId)(event.target.value)
-                    }
-                    disabled={membersQuery.isPending}
-                    className={`${dashboardFilterSelectClassName} w-full`}
-                  >
-                    <option value="">Chapter-wide (all members)</option>
-                    {memberOptions.map((option) => (
-                      <option key={option.id} value={option.id}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  {membersQuery.isError ? (
-                    <p className="text-xs text-destructive">
-                      Couldn&apos;t load members — leave blank for a
-                      chapter-wide report, or{" "}
-                      <button
-                        type="button"
-                        onClick={() => membersQuery.refetch()}
-                        className="underline underline-offset-2"
-                      >
-                        retry
-                      </button>
-                      .
-                    </p>
-                  ) : !membersQuery.isPending && memberOptions.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">
-                      No members yet — every report will be chapter-wide.
-                    </p>
-                  ) : null}
-                </div>
+                <PickerField
+                  idPrefix="service-report-member"
+                  label="Member (optional)"
+                  value={memberId}
+                  onValueChange={onFilterChange(setMemberId)}
+                  options={memberOptions}
+                  query={membersQuery}
+                  allLabel="Chapter-wide (all members)"
+                  noun="members"
+                  singularNoun="member"
+                />
                 <div className="grid gap-1">
                   <Label htmlFor="service-report-start">Start date</Label>
                   <Input

@@ -8,11 +8,13 @@ const {
   mockAttendanceReport,
   mockUseEvents,
   mockUseMembers,
+  mockUseMyPermissions,
 } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
   mockAttendanceReport: vi.fn(),
   mockUseEvents: vi.fn(),
   mockUseMembers: vi.fn(),
+  mockUseMyPermissions: vi.fn(),
 }));
 
 // Only the chapter payload is stubbed — `useSubscriptionWriteState` and
@@ -25,6 +27,12 @@ const emptyList = () => ({
   isError: false,
   refetch: vi.fn(),
 });
+// Granted by default so the existing picker tests don't have to think about
+// the `reports:export` gate on `useEvents`/`useMembers` — the tests that do
+// care about it override this per-case.
+const grantedPermissions = () => ({
+  data: { permissions: ["reports:export"] },
+});
 
 vi.mock("@repo/hooks", () => ({
   useCurrentChapter: () => mockCurrentChapter(),
@@ -32,8 +40,9 @@ vi.mock("@repo/hooks", () => ({
   usePointsReport: () => idle(),
   useRosterReport: () => idle(),
   useServiceReport: () => idle(),
-  useEvents: () => mockUseEvents(),
-  useMembers: () => mockUseMembers(),
+  useEvents: (options?: { enabled?: boolean }) => mockUseEvents(options),
+  useMembers: (options?: { enabled?: boolean }) => mockUseMembers(options),
+  useMyPermissions: () => mockUseMyPermissions(),
   isReportExportEnvelope: () => false,
 }));
 
@@ -63,6 +72,7 @@ describe("ReportsPage subscription gating", () => {
     mockAttendanceReport.mockReturnValue(idle());
     mockUseEvents.mockReturnValue(emptyList());
     mockUseMembers.mockReturnValue(emptyList());
+    mockUseMyPermissions.mockReturnValue(grantedPermissions());
   });
 
   it("leaves both export triggers alone on an active chapter", () => {
@@ -190,6 +200,7 @@ describe("ReportsPage preview states", () => {
     chapter.active();
     mockUseEvents.mockReturnValue(emptyList());
     mockUseMembers.mockReturnValue(emptyList());
+    mockUseMyPermissions.mockReturnValue(grantedPermissions());
   });
 
   it("renders an error with a retry when a run fails, not the idle copy", async () => {
@@ -314,6 +325,7 @@ describe("ReportsPage event and member pickers", () => {
     mockAttendanceReport.mockReturnValue(idle());
     mockUseEvents.mockReturnValue(emptyList());
     mockUseMembers.mockReturnValue(emptyList());
+    mockUseMyPermissions.mockReturnValue(grantedPermissions());
   });
 
   it("lists events by name and start time instead of asking for a raw UUID", () => {
@@ -434,5 +446,67 @@ describe("ReportsPage event and member pickers", () => {
     });
     expect(option).toHaveValue("user-1");
     expect(screen.queryByPlaceholderText(/uuid/i)).not.toBeInTheDocument();
+  });
+
+  it("scopes the event/member list fetch to reports:export, not just the page render", () => {
+    // `useEvents`/`useMembers` are eager queries, unlike the four report
+    // mutations — firing them for a visitor who cannot even see this page
+    // (denied by the outer `<Can permission="reports:export">`) would still
+    // download every member's full profile as a side effect.
+    mockUseMyPermissions.mockReturnValue({ data: { permissions: [] } });
+
+    render(<ReportsPage />);
+
+    expect(mockUseEvents).toHaveBeenCalledWith({ enabled: false });
+    expect(mockUseMembers).toHaveBeenCalledWith({ enabled: false });
+  });
+
+  it("enables the event/member list fetch once reports:export is confirmed", () => {
+    render(<ReportsPage />);
+
+    expect(mockUseEvents).toHaveBeenCalledWith({ enabled: true });
+    expect(mockUseMembers).toHaveBeenCalledWith({ enabled: true });
+  });
+
+  it("lets an officer target an event the picker doesn't list, via the manual-id fallback", async () => {
+    const user = userEvent.setup();
+    const mutateAsync = vi.fn().mockResolvedValue({
+      payload: [],
+      truncation: { truncated: false, rowLimit: null, note: null },
+    });
+    mockAttendanceReport.mockReturnValue({ mutateAsync, isPending: false });
+    // Simulates a role-targeted event `EventService.findByChapter` filters
+    // out of the list for this caller, or a chapter with `members:view`
+    // withheld from a `reports:export`-only custom role — either way the
+    // picker's list can be empty or incomplete while a known id still works.
+    mockUseEvents.mockReturnValue(emptyList());
+
+    render(<ReportsPage />);
+    await user.click(screen.getByText(/can't find the event/i));
+    await user.type(
+      screen.getByPlaceholderText(/event id/i),
+      "evt-not-listed",
+    );
+    await user.click(generateButton());
+
+    expect(mutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({ event_id: "evt-not-listed" }),
+      }),
+    );
+  });
+
+  it("tells the officer a manually-entered id isn't in the picker's list, rather than looking ignored", async () => {
+    const user = userEvent.setup();
+    mockUseEvents.mockReturnValue(emptyList());
+
+    render(<ReportsPage />);
+    await user.click(screen.getByText(/can't find the event/i));
+    await user.type(
+      screen.getByPlaceholderText(/event id/i),
+      "evt-not-listed",
+    );
+
+    expect(screen.getByText(/not in the list above/i)).toBeInTheDocument();
   });
 });
