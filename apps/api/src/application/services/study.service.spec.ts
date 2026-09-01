@@ -57,6 +57,7 @@ describe('StudyService', () => {
     paused_at: null,
     total_foreground_minutes: 5,
     points_awarded: false,
+    location_reject_streak: 0,
     created_at: '2026-02-26T10:00:00.000Z',
   };
 
@@ -418,11 +419,16 @@ describe('StudyService', () => {
       jest.useRealTimers();
     });
 
-    it('expires session when location is outside geofence', async () => {
+    // `spec/behavior/study-sessions.md`: an out-of-polygon heartbeat expires
+    // the session immediately as EXPIRED — LOCATION_INVALID is reserved for
+    // the consecutive-poor-accuracy path below, a distinction the mobile UI
+    // already renders differently ("Ended early" vs "Location unconfirmed",
+    // `apps/mobile/components/study/session-row.tsx`).
+    it('expires session as EXPIRED (not LOCATION_INVALID) when location is outside geofence', async () => {
       mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(baseSession);
       mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
-      const invalid = { ...baseSession, status: 'LOCATION_INVALID' as const };
-      mockSessionRepo.update.mockResolvedValue(invalid);
+      const expired = { ...baseSession, status: 'EXPIRED' as const };
+      mockSessionRepo.update.mockResolvedValue(expired);
 
       jest.useFakeTimers();
       jest.setSystemTime(new Date('2026-02-26T10:07:00.000Z'));
@@ -433,10 +439,11 @@ describe('StudyService', () => {
         'sess-1',
         'ch-1',
         expect.objectContaining({
-          status: 'LOCATION_INVALID',
+          status: 'EXPIRED',
+          location_reject_streak: 0,
         }),
       );
-      expect(result.status).toBe('LOCATION_INVALID');
+      expect(result.status).toBe('EXPIRED');
 
       jest.useRealTimers();
     });
@@ -447,6 +454,153 @@ describe('StudyService', () => {
       await expect(service.heartbeat('user-1', 'ch-1', 5, 5)).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    // GPS accuracy validation — `spec/behavior/study-sessions.md`: accuracy
+    // worse than 100m is rejected and the session flagged; two *consecutive*
+    // rejections expire it as LOCATION_INVALID. A poor fix is checked before
+    // the polygon test, since untrustworthy coordinates cannot inform an
+    // inside/outside decision either.
+    describe('GPS accuracy', () => {
+      it('accepts a high-accuracy fix exactly like one with no accuracy field', async () => {
+        const updated = {
+          ...baseSession,
+          last_heartbeat_at: '2026-02-26T10:10:00.000Z',
+          total_foreground_minutes: 10,
+        };
+        mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(
+          baseSession,
+        );
+        mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
+        mockSessionRepo.update.mockResolvedValue(updated);
+
+        jest.useFakeTimers();
+        jest.setSystemTime(new Date('2026-02-26T10:10:00.000Z'));
+
+        const result = await service.heartbeat('user-1', 'ch-1', 5, 5, 12);
+
+        expect(mockSessionRepo.update).toHaveBeenCalledWith(
+          'sess-1',
+          'ch-1',
+          expect.objectContaining({
+            last_heartbeat_at: '2026-02-26T10:10:00.000Z',
+            total_foreground_minutes: 10,
+            location_reject_streak: 0,
+          }),
+        );
+        expect(result).toEqual(updated);
+
+        jest.useRealTimers();
+      });
+
+      it('rejects a single poor-accuracy heartbeat without expiring or accruing minutes', async () => {
+        mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(
+          baseSession,
+        );
+        mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
+        const flagged = { ...baseSession, location_reject_streak: 1 };
+        mockSessionRepo.update.mockResolvedValue(flagged);
+
+        jest.useFakeTimers();
+        jest.setSystemTime(new Date('2026-02-26T10:10:00.000Z'));
+
+        // Coordinates are inside the polygon (5,5) — only accuracy is bad —
+        // to prove the accuracy check, not the location check, drove this.
+        const result = await service.heartbeat('user-1', 'ch-1', 5, 5, 150);
+
+        expect(mockSessionRepo.update).toHaveBeenCalledWith('sess-1', 'ch-1', {
+          location_reject_streak: 1,
+        });
+        expect(result.status).toBe('ACTIVE');
+        expect(result.location_reject_streak).toBe(1);
+
+        jest.useRealTimers();
+      });
+
+      it('expires as LOCATION_INVALID on a second consecutive poor-accuracy heartbeat', async () => {
+        const onceRejected = { ...baseSession, location_reject_streak: 1 };
+        mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(
+          onceRejected,
+        );
+        mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
+        const invalid = {
+          ...onceRejected,
+          status: 'LOCATION_INVALID' as const,
+          location_reject_streak: 2,
+        };
+        mockSessionRepo.update.mockResolvedValue(invalid);
+
+        jest.useFakeTimers();
+        jest.setSystemTime(new Date('2026-02-26T10:15:00.000Z'));
+
+        const result = await service.heartbeat('user-1', 'ch-1', 5, 5, 150);
+
+        expect(mockSessionRepo.update).toHaveBeenCalledWith(
+          'sess-1',
+          'ch-1',
+          expect.objectContaining({
+            status: 'LOCATION_INVALID',
+            location_reject_streak: 2,
+          }),
+        );
+        expect(result.status).toBe('LOCATION_INVALID');
+
+        jest.useRealTimers();
+      });
+
+      it('resets the streak on a good heartbeat following a bad one', async () => {
+        const onceRejected = { ...baseSession, location_reject_streak: 1 };
+        mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(
+          onceRejected,
+        );
+        mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
+        mockSessionRepo.update.mockResolvedValue({
+          ...onceRejected,
+          location_reject_streak: 0,
+        });
+
+        jest.useFakeTimers();
+        jest.setSystemTime(new Date('2026-02-26T10:10:00.000Z'));
+
+        await service.heartbeat('user-1', 'ch-1', 5, 5, 20);
+
+        expect(mockSessionRepo.update).toHaveBeenCalledWith(
+          'sess-1',
+          'ch-1',
+          expect.objectContaining({ location_reject_streak: 0 }),
+        );
+
+        jest.useRealTimers();
+      });
+
+      // Regression: the accuracy check used to run before the staleness
+      // check, so a poor-accuracy fix on an already-stale session (a cold
+      // GPS lock after the app was killed/backgrounded for 10+ minutes with
+      // no /pause) was diverted into the reject-streak path instead of
+      // expiring for staleness — silently extending an already-lapsed
+      // session, or later mislabeling the lapse as LOCATION_INVALID.
+      it('expires for staleness rather than counting a poor-accuracy fix on an already-stale session', async () => {
+        mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(
+          baseSession,
+        );
+        mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
+        const expired = { ...baseSession, status: 'EXPIRED' as const };
+        mockSessionRepo.update.mockResolvedValue(expired);
+
+        jest.useFakeTimers();
+        // 15 min since the 10:05 watermark — past the 10-minute stale window.
+        jest.setSystemTime(new Date('2026-02-26T10:20:00.000Z'));
+
+        const result = await service.heartbeat('user-1', 'ch-1', 5, 5, 150);
+
+        expect(mockSessionRepo.update).toHaveBeenCalledWith('sess-1', 'ch-1', {
+          status: 'EXPIRED',
+          end_time: '2026-02-26T10:20:00.000Z',
+        });
+        expect(result.status).toBe('EXPIRED');
+
+        jest.useRealTimers();
+      });
     });
   });
 
@@ -791,6 +945,7 @@ describe('StudyService', () => {
         expect(mockSessionRepo.update).toHaveBeenCalledWith('sess-1', 'ch-1', {
           paused_at: null,
           last_heartbeat_at: '2026-02-26T10:15:00.000Z',
+          location_reject_streak: 0,
         });
         expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
       });
@@ -859,7 +1014,11 @@ describe('StudyService', () => {
         );
       });
 
-      it('invalidates a resume from outside the geofence', async () => {
+      // Matches the implicit resume in heartbeat(): out-of-polygon expires
+      // immediately as EXPIRED, not LOCATION_INVALID — a client that never
+      // calls /resume reaches this exact scenario through its next
+      // heartbeat, so the two paths must agree.
+      it('expires (not LOCATION_INVALID) a resume from outside the geofence', async () => {
         jest
           .useFakeTimers()
           .setSystemTime(new Date('2026-02-26T10:15:00.000Z'));
@@ -868,12 +1027,20 @@ describe('StudyService', () => {
         mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
         mockSessionRepo.update.mockResolvedValue({
           ...paused,
-          status: 'LOCATION_INVALID',
+          status: 'EXPIRED',
         });
 
         const result = await service.resumeSession('user-1', 'ch-1', 99, 99);
 
-        expect(result.status).toBe('LOCATION_INVALID');
+        expect(mockSessionRepo.update).toHaveBeenCalledWith(
+          'sess-1',
+          'ch-1',
+          expect.objectContaining({
+            status: 'EXPIRED',
+            location_reject_streak: 0,
+          }),
+        );
+        expect(result.status).toBe('EXPIRED');
       });
 
       // Regression: resume used to reset the watermark to `now`, throwing away
@@ -905,6 +1072,7 @@ describe('StudyService', () => {
           paused_at: null,
           // 10:15:00 minus the 30s owed — not 10:15:00 flat.
           last_heartbeat_at: '2026-02-26T10:14:30.000Z',
+          location_reject_streak: 0,
         });
       });
 
@@ -1000,13 +1168,16 @@ describe('StudyService', () => {
         expect(mockSessionRepo.update).toHaveBeenCalledWith('sess-1', 'ch-1', {
           paused_at: null,
           last_heartbeat_at: '2026-02-26T10:15:00.000Z',
+          location_reject_streak: 0,
         });
       });
 
       // The implicit resume is the path taken by a client that never calls
       // /resume, so skipping the polygon check here would let a member resume
       // from anywhere and accrue from the next heartbeat onward.
-      it('rejects an implicit resume from outside the geofence', async () => {
+      // Matches resumeSession's own out-of-polygon case: EXPIRED, not
+      // LOCATION_INVALID, which is reserved for the poor-accuracy streak.
+      it('expires (not LOCATION_INVALID) an implicit resume from outside the geofence', async () => {
         jest
           .useFakeTimers()
           .setSystemTime(new Date('2026-02-26T10:15:00.000Z'));
@@ -1017,16 +1188,19 @@ describe('StudyService', () => {
         mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
         mockSessionRepo.update.mockResolvedValue({
           ...paused,
-          status: 'LOCATION_INVALID',
+          status: 'EXPIRED',
         });
 
         const result = await service.heartbeat('user-1', 'ch-1', 99, 99);
 
-        expect(result.status).toBe('LOCATION_INVALID');
+        expect(result.status).toBe('EXPIRED');
         expect(mockSessionRepo.update).toHaveBeenCalledWith(
           'sess-1',
           'ch-1',
-          expect.objectContaining({ status: 'LOCATION_INVALID' }),
+          expect.objectContaining({
+            status: 'EXPIRED',
+            location_reject_streak: 0,
+          }),
         );
       });
 
@@ -1199,6 +1373,7 @@ describe('StudyService', () => {
         total_foreground_minutes: 12,
         // Not 10:12:30 — the leftover 30s stays owed to the member.
         last_heartbeat_at: '2026-02-26T10:12:00.000Z',
+        location_reject_streak: 0,
       });
     });
 
@@ -1213,6 +1388,7 @@ describe('StudyService', () => {
       expect(mockSessionRepo.update).toHaveBeenCalledWith('sess-1', 'ch-1', {
         total_foreground_minutes: 5,
         last_heartbeat_at: '2026-02-26T10:05:00.000Z',
+        location_reject_streak: 0,
       });
     });
   });

@@ -3210,6 +3210,8 @@ export interface components {
         StudySessionHeartbeatDto: {
             lat: number;
             lng: number;
+            /** @description GPS accuracy in meters for this fix, per the device location API. Optional so older clients that never send it keep working; omitting it skips the accuracy check entirely rather than rejecting the heartbeat. */
+            accuracy_meters?: number;
         };
         ResumeStudySessionDto: {
             lat: number;
