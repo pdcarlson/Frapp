@@ -1,7 +1,12 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  keepPreviousData,
+} from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { resolveDisplayName, type DisplayNameMap } from "./display-names";
 
@@ -161,6 +166,10 @@ export function useAlumni(filters?: {
     },
     staleTime: 60_000,
     enabled: !!chapterId,
+    // Filters change the query key on every keystroke; keeping the previous
+    // page's rows on screen until the new ones land avoids a full-list flash
+    // to the loading skeleton for what's really a live-narrowing search.
+    placeholderData: keepPreviousData,
   });
 }
 
