@@ -207,6 +207,7 @@ vi.mock("expo-notifications", () => ({
   cancelScheduledNotificationAsync: vi.fn().mockResolvedValue(undefined),
   dismissNotificationAsync: vi.fn().mockResolvedValue(undefined),
   setNotificationHandler: vi.fn(),
+  setBadgeCountAsync: vi.fn().mockResolvedValue(true),
 }));
 
 // `react-native-svg` ships untranspiled source, so importing any component that

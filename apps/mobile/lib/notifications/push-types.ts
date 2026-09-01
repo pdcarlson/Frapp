@@ -112,4 +112,6 @@ export interface NotificationsModule {
   cancelScheduledNotificationAsync(identifier: string): Promise<void>;
   dismissNotificationAsync(identifier: string): Promise<void>;
   setNotificationHandler(handler: unknown): void;
+  /** Local, like the badge itself — never requires the EAS `projectId`. */
+  setBadgeCountAsync(count: number): Promise<boolean>;
 }

@@ -3,6 +3,7 @@ import {
   categoryLabelFor,
   selectNotificationGroups,
   selectUnreadIds,
+  selectUnreadNonChatCount,
 } from "./notifications";
 
 const NOW = new Date("2026-08-17T20:00:00.000Z");
@@ -126,5 +127,31 @@ describe("selectUnreadIds", () => {
       selectUnreadIds([row({ read_at: "2026-08-17T19:00:00.000Z" })]),
     ).toEqual([]);
     expect(selectUnreadIds(undefined)).toEqual([]);
+  });
+});
+
+describe("selectUnreadNonChatCount", () => {
+  // ChatService writes a notifications row (target.screen: "chat") for every
+  // DM/group-DM/announcement message, on top of the read-receipt count
+  // useChannelUnreadCounts already reflects for that channel — counting both
+  // would double-count exactly those messages.
+  it("excludes unread rows targeting chat", () => {
+    expect(
+      selectUnreadNonChatCount([
+        row({ id: "a", read_at: null, data: { target: { screen: "event" } } }),
+        row({ id: "b", read_at: null, data: { target: { screen: "chat" } } }),
+        row({ id: "c", read_at: null, data: { target: { screen: "tasks" } } }),
+      ]),
+    ).toBe(2);
+  });
+
+  it("still ignores read rows regardless of target", () => {
+    expect(
+      selectUnreadNonChatCount([
+        row({ read_at: "2026-08-17T19:00:00.000Z" }),
+        row({ read_at: "2026-08-17T19:00:00.000Z", data: { target: { screen: "chat" } } }),
+      ]),
+    ).toBe(0);
+    expect(selectUnreadNonChatCount(undefined)).toBe(0);
   });
 });
