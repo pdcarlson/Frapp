@@ -123,7 +123,11 @@ function ChannelHeaderMark({
  * Every async branch (no-chapter, channels-loading, channels-error,
  * no-channels) renders an explicit state.
  */
-export function ChatShell() {
+export function ChatShell({
+  initialChannelId = null,
+}: {
+  initialChannelId?: string | null;
+} = {}) {
   const activeChapterId = useChapterStore((state) => state.activeChapterId);
   const { userId } = useFrappUser();
   const orgConfig = useOrgConfig();
@@ -168,8 +172,12 @@ export function ChatShell() {
     [channelsQuery.data, levelByChannelId],
   );
 
+  // Initialized once from the `?channel=` query param a caller (e.g. the
+  // member directory's Message action) may navigate here with — see
+  // `activeChannelId` below for what happens before that channel has loaded
+  // into `channels`.
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(
-    null,
+    initialChannelId,
   );
   const activeChannelId = useMemo(() => {
     if (

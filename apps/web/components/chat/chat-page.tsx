@@ -1,7 +1,26 @@
 "use client";
 
+import { Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { ChatProvider } from "@/lib/chat/chat-provider";
 import { ChatShell } from "./chat-shell";
+import { LoadingState } from "@/components/shared/async-states";
+
+/**
+ * Reads `?channel=<id>` so a caller (the member directory's Message action)
+ * can navigate here with a channel pre-selected. `useSearchParams` requires a
+ * Suspense boundary (matches `directory-page.tsx`'s `?tab=` pattern).
+ */
+function ChatPageContent() {
+  const searchParams = useSearchParams();
+  const channelParam = searchParams.get("channel");
+
+  return (
+    <ChatProvider>
+      <ChatShell initialChannelId={channelParam} />
+    </ChatProvider>
+  );
+}
 
 /**
  * Entry component for the `/chat` route. Mounts the chat hot-path provider
@@ -11,8 +30,8 @@ import { ChatShell } from "./chat-shell";
  */
 export function ChatPage() {
   return (
-    <ChatProvider>
-      <ChatShell />
-    </ChatProvider>
+    <Suspense fallback={<LoadingState message="Loading chat..." />}>
+      <ChatPageContent />
+    </Suspense>
   );
 }
