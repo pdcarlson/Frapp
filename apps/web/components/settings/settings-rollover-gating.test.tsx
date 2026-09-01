@@ -285,4 +285,64 @@ describe("the accent form surfaces the server's own §8 disclosure (#1183)", () 
     // away from would be actively misleading — it must not survive the edit.
     expect(screen.queryByText(/under the 4\.5:1 minimum/i)).toBeNull();
   });
+
+  it("clears the warning when the chapter data resyncs out from under it", async () => {
+    // Not a manual edit — a chapter switch, another tab's save, or a
+    // background refetch all resync `accentDraft` from `chapterQuery.data`
+    // via the same effect. That effect must clear the warning too, or it
+    // survives describing a colour this render no longer shows.
+    mockUpdateChapter.mockResolvedValue({
+      id: "chap-1",
+      failedContrastChecks: [
+        { role: "--signet-accent-text", against: "#0E0D0B", ratio: 3.21 },
+      ],
+    });
+    const user = userEvent.setup();
+    const { rerender } = render(<SettingsPage />);
+
+    await saveAccent(user);
+    expect(screen.getByText(/under the 4\.5:1 minimum/i)).toBeInTheDocument();
+
+    mockCurrentChapter.mockReturnValue({
+      data: {
+        name: "Tau Nu",
+        university: "State U",
+        subscription_status: "active",
+        accent_color: "#7FD1AE",
+      },
+      isPending: false,
+      isError: false,
+    });
+    rerender(<SettingsPage />);
+
+    expect(screen.queryByText(/under the 4\.5:1 minimum/i)).toBeNull();
+  });
+
+  it("gives every failing check its own contrast clause, not just the last", async () => {
+    // A join that appends the floor clause once, after the whole list, reads
+    // as though only the final check is the one that failed.
+    mockUpdateChapter.mockResolvedValue({
+      id: "chap-1",
+      failedContrastChecks: [
+        { role: "--signet-accent-text", against: "#0E0D0B", ratio: 3.21 },
+        {
+          role: "--signet-accent-on-primary",
+          against: "--signet-accent-primary",
+          ratio: 2.5,
+        },
+      ],
+    });
+    const user = userEvent.setup();
+    render(<SettingsPage />);
+
+    await saveAccent(user);
+
+    const warning = screen.getByText(
+      /accent text on the app background/i,
+    ).textContent!;
+    expect(warning).toMatch(/reads at 3\.2:1, under the 4\.5:1 minimum\./);
+    expect(warning).toMatch(
+      /reads at 2\.5:1, under the 4\.5:1 minimum\./,
+    );
+  });
 });

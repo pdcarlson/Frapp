@@ -56,3 +56,37 @@ export function buildChapterPalette(
       .map(({ role, against, ratio }) => ({ role, against, ratio })),
   };
 }
+
+/**
+ * Logs the two by-construction problems a build can report — never throws,
+ * since the palette written is still valid either way (#840, §8).
+ *
+ * Shared by every writer that already has a `chapterId` (the config PATCH /
+ * recompute endpoint and the Settings accent save) so a change to the wording
+ * or logging strategy has one place to land — this file's own docstring above
+ * names the three-shapes drift that duplicating it independently caused once
+ * already. Onboarding logs its own `invalidSeed` message instead: it has no
+ * `chapterId` yet at that point, so the message shape genuinely differs.
+ */
+export function logChapterPaletteWarnings(
+  logger: { warn: (message: string) => void },
+  chapterId: string,
+  attemptedAccent: string | undefined,
+  build: ChapterPaletteBuild,
+): void {
+  if (build.invalidSeed) {
+    logger.warn(
+      `Invalid accent seed for chapter ${chapterId}: accent="${attemptedAccent}" — substituted house gold. Expected #RRGGBB.`,
+    );
+  }
+  // The engine guarantees these by construction (accent-engine.md §8), so a
+  // failure means either an unusual hex or the vendored generator changed
+  // behaviour under us — worth a log trace either way (#1183).
+  if (build.failedContrastChecks.length > 0) {
+    logger.warn(
+      `Signet accent contrast below AA for chapter ${chapterId}: ${build.failedContrastChecks
+        .map((c) => `${c.role} on ${c.against} = ${c.ratio.toFixed(2)}:1`)
+        .join(', ')}`,
+    );
+  }
+}

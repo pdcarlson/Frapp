@@ -157,15 +157,25 @@ function describeFailedContrastCheck(check: {
     check.role === "--signet-accent-text" &&
     check.against === "--signet-accent-subtle-bg"
   ) {
-    return `Accent text on its own tinted background reads at ${ratio}:1`;
+    return `Accent text on its own tinted background reads at ${ratio}:1, under the 4.5:1 minimum.`;
   }
-  if (check.role === "--signet-accent-text") {
-    return `Accent text on the app background reads at ${ratio}:1`;
+  // Only claim "app background" when `against` is the literal background hex
+  // this check is actually specified for — never inferred from `role` alone,
+  // so a future engine check on `--signet-accent-text` against some other
+  // surface falls to the raw fallback below instead of being mislabeled.
+  if (
+    check.role === "--signet-accent-text" &&
+    !check.against.startsWith("--signet-")
+  ) {
+    return `Accent text on the app background reads at ${ratio}:1, under the 4.5:1 minimum.`;
   }
-  if (check.role === "--signet-accent-on-primary") {
-    return `Text on the accent's solid fill reads at ${ratio}:1`;
+  if (
+    check.role === "--signet-accent-on-primary" &&
+    check.against === "--signet-accent-primary"
+  ) {
+    return `Text on the accent's solid fill reads at ${ratio}:1, under the 4.5:1 minimum.`;
   }
-  return `${check.role} against ${check.against} reads at ${ratio}:1`;
+  return `${check.role} against ${check.against} reads at ${ratio}:1, under the 4.5:1 minimum.`;
 }
 
 function SettingsPageContent() {
@@ -233,6 +243,10 @@ function SettingsPageContent() {
     if (!parsed.success) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- seed the accent draft from the chapter query
     setAccentDraft(parsed.data.accent_color ?? "");
+    // A resync (chapter switch, another tab's save, a background refetch) can
+    // change the draft out from under a still-displayed warning, which would
+    // otherwise describe a colour this render no longer shows (#1183).
+    setAccentContrastWarning(null);
   }, [chapterQuery.data]);
 
   if (!activeChapterId) {
@@ -993,9 +1007,9 @@ function SettingsPageContent() {
                     <p className="text-xs text-warning">
                       {accentContrastWarning
                         .map(describeFailedContrastCheck)
-                        .join(". ")}
-                      , under the 4.5:1 minimum. Try a lighter or darker shade
-                      of this hue and save again.
+                        .join(" ")}{" "}
+                      Try a lighter or darker shade of this hue and save
+                      again.
                     </p>
                   ) : null}
                 </CardContent>

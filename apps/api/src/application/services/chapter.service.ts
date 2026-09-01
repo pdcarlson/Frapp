@@ -15,6 +15,7 @@ import {
 import { assertSafeStoragePath } from '../../domain/utils/storage-path';
 import {
   buildChapterPalette,
+  logChapterPaletteWarnings,
   type FailedContrastCheck,
 } from './chapter-palette';
 import {
@@ -320,21 +321,7 @@ export class ChapterService {
     // `buildChapterPalette` never throws and always yields at least the Signet
     // map, so this cannot turn a legitimate accent save into a failed request.
     const build = buildChapterPalette({ accent: colors.accent });
-    if (build.invalidSeed) {
-      this.logger.warn(
-        `Invalid accent seed for chapter ${id}: accent="${data.accent_color}" — substituted house gold. Expected #RRGGBB.`,
-      );
-    }
-    // The engine guarantees these by construction (accent-engine.md §8), so a
-    // failure means either an unusual hex or the vendored generator changed
-    // behaviour under us — worth a log trace either way (#1183).
-    if (build.failedContrastChecks.length > 0) {
-      this.logger.warn(
-        `Signet accent contrast below AA for chapter ${id}: ${build.failedContrastChecks
-          .map((c) => `${c.role} on ${c.against} = ${c.ratio.toFixed(2)}:1`)
-          .join(', ')}`,
-      );
-    }
+    logChapterPaletteWarnings(this.logger, id, data.accent_color, build);
 
     const chapter = await this.chapterRepo.update(id, {
       ...data,

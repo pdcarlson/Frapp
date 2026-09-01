@@ -715,9 +715,12 @@ describe('ChapterService', () => {
     const loggerWarnSpy = jest
       .spyOn((service as any).logger, 'warn')
       .mockImplementation(() => undefined);
-    const deriveSpy = jest
-      .spyOn(chapterTheme, 'deriveSignetPalette')
-      .mockReturnValueOnce({
+    // A plain try/finally, not a trailing `mockRestore()` call: an assertion
+    // failure below would otherwise skip the restore and leak the queued
+    // stub into whichever test runs next in file order.
+    const deriveSpy = jest.spyOn(chapterTheme, 'deriveSignetPalette');
+    try {
+      deriveSpy.mockReturnValueOnce({
         palette: { '--signet-accent-text': '#222222' } as any,
         resolvedSeed: '#222222',
         invalidSeed: false,
@@ -731,20 +734,23 @@ describe('ChapterService', () => {
         ],
       });
 
-    const result = await service.update('ch-1', { accent_color: '#222222' });
+      const result = await service.update('ch-1', {
+        accent_color: '#222222',
+      });
 
-    expect(result.failedContrastChecks).toEqual([
-      { role: '--signet-accent-text', against: '#0E0D0B', ratio: 2.1 },
-    ]);
-    expect(loggerWarnSpy).toHaveBeenCalledWith(
-      expect.stringContaining(
-        'Signet accent contrast below AA for chapter ch-1: --signet-accent-text on #0E0D0B = 2.10:1',
-      ),
-    );
-    // The save still succeeds — §8 forbids a runtime substitution here.
-    expect(mockChapterRepo.update).toHaveBeenCalled();
-
-    deriveSpy.mockRestore();
+      expect(result.failedContrastChecks).toEqual([
+        { role: '--signet-accent-text', against: '#0E0D0B', ratio: 2.1 },
+      ]);
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'Signet accent contrast below AA for chapter ch-1: --signet-accent-text on #0E0D0B = 2.10:1',
+        ),
+      );
+      // The save still succeeds — §8 forbids a runtime substitution here.
+      expect(mockChapterRepo.update).toHaveBeenCalled();
+    } finally {
+      deriveSpy.mockRestore();
+    }
   });
 
   it('preserves other branding keys when mirroring the accent', async () => {
