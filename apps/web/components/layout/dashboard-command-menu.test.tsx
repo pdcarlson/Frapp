@@ -1,6 +1,8 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { AnalyticsContext } from "@/lib/providers/analytics-provider";
+import { assertContentFreeProperties, type AnalyticsProperties } from "@repo/validation";
 
 // The menu only needs a router object present; navigation itself isn't exercised.
 vi.mock("next/navigation", () => ({
@@ -17,6 +19,7 @@ useSearch.mockReturnValue({ data: undefined, isFetching: false });
 // "search timeout" suite further down overrides this default.
 vi.mock("@repo/hooks", () => ({
   SEARCH_MIN_QUERY_LENGTH: 2,
+  SEARCH_COMPLETED_EVENT: "search-completed",
   useSearch: () => useSearch(),
   useOrgConfig: () => useOrgConfig(),
   useMyPermissions: () => useMyPermissions(),
@@ -333,5 +336,181 @@ describe("DashboardCommandMenu search timeout", () => {
 
     expect(screen.getByText("Alex Chen")).toBeInTheDocument();
     expect(screen.queryByText(/incomplete/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("DashboardCommandMenu search telemetry", () => {
+  beforeEach(() => {
+    useOrgConfig.mockReset();
+    useMyPermissions.mockReset();
+    withModules([]);
+    withPermissions(["*"]);
+  });
+
+  afterEach(() => {
+    useSearch.mockReturnValue({ data: undefined, isFetching: false });
+  });
+
+  function renderWithTrack(
+    track: (name: string, properties?: AnalyticsProperties) => void,
+  ) {
+    return render(
+      <AnalyticsContext.Provider value={track}>
+        <DashboardCommandMenu open onOpenChange={() => {}} />
+      </AnalyticsContext.Provider>,
+    );
+  }
+
+  async function typeQuery(text: string) {
+    const input = screen.getByPlaceholderText(
+      "Search members, events, backwork, or jump to a route...",
+    );
+    await userEvent.type(input, text);
+    await waitFor(
+      () =>
+        expect(screen.queryByText("No matching commands.")).not.toBeInTheDocument(),
+      { timeout: 1000 },
+    );
+  }
+
+  it("emits search-completed with per-domain counts and zero_result: false on a hit", async () => {
+    const track = vi.fn();
+    useSearch.mockReturnValue({
+      data: {
+        payload: { members: [{ user_id: "u1", display_name: "Alex Chen" }] },
+        timedOut: false,
+        timedOutSources: [],
+      },
+      isFetching: false,
+      dataUpdatedAt: 1000,
+    });
+    renderWithTrack(track);
+
+    await typeQuery("alex");
+    await waitFor(() => expect(track).toHaveBeenCalled());
+
+    expect(track).toHaveBeenCalledWith(
+      "search-completed",
+      expect.objectContaining({
+        surface: "command-menu",
+        members_count: 1,
+        backwork_count: 0,
+        events_count: 0,
+        messages_count: 0,
+        total_count: 1,
+        zero_result: false,
+        timed_out: false,
+      }),
+    );
+  });
+
+  it("emits zero_result: true when every domain comes back empty", async () => {
+    const track = vi.fn();
+    useSearch.mockReturnValue({
+      data: { payload: {}, timedOut: false, timedOutSources: [] },
+      isFetching: false,
+      dataUpdatedAt: 2000,
+    });
+    renderWithTrack(track);
+
+    await typeQuery("nomatch");
+    await waitFor(() => expect(track).toHaveBeenCalled());
+
+    expect(track).toHaveBeenCalledWith(
+      "search-completed",
+      expect.objectContaining({ total_count: 0, zero_result: true }),
+    );
+  });
+
+  it("does not emit while the search is still fetching", async () => {
+    const track = vi.fn();
+    useSearch.mockReturnValue({
+      data: undefined,
+      isFetching: true,
+      dataUpdatedAt: 0,
+    });
+    renderWithTrack(track);
+
+    await userEvent.type(
+      screen.getByPlaceholderText(
+        "Search members, events, backwork, or jump to a route...",
+      ),
+      "alex",
+    );
+
+    expect(track).not.toHaveBeenCalled();
+  });
+
+  it("does not emit for a query below the minimum length", async () => {
+    const track = vi.fn();
+    useSearch.mockReturnValue({ data: undefined, isFetching: false });
+    renderWithTrack(track);
+
+    await userEvent.type(
+      screen.getByPlaceholderText(
+        "Search members, events, backwork, or jump to a route...",
+      ),
+      "a",
+    );
+
+    expect(track).not.toHaveBeenCalled();
+  });
+
+  it("emits exactly once per settled query, not once per render", async () => {
+    const track = vi.fn();
+    useSearch.mockReturnValue({
+      data: { payload: {}, timedOut: false, timedOutSources: [] },
+      isFetching: false,
+      dataUpdatedAt: 3000,
+    });
+    const { rerender } = renderWithTrack(track);
+
+    await typeQuery("nomatch");
+    await waitFor(() => expect(track).toHaveBeenCalledTimes(1));
+
+    // An unrelated re-render (same dataUpdatedAt) must not re-fire the event.
+    rerender(
+      <AnalyticsContext.Provider value={track}>
+        <DashboardCommandMenu open onOpenChange={() => {}} />
+      </AnalyticsContext.Provider>,
+    );
+
+    expect(track).toHaveBeenCalledTimes(1);
+  });
+
+  it("never carries the raw query text or another forbidden/non-scalar property", async () => {
+    const events: Array<{ name: string; properties?: AnalyticsProperties }> = [];
+    const track = (name: string, properties?: AnalyticsProperties) => {
+      events.push({ name, properties });
+    };
+    useSearch.mockReturnValue({
+      data: {
+        payload: {
+          members: [{ user_id: "u1", display_name: "Alex Chen" }],
+          messages: [{ id: "m1", content: "hello there", channel_id: "c1" }],
+        },
+        timedOut: false,
+        timedOutSources: [],
+      },
+      isFetching: false,
+      dataUpdatedAt: 4000,
+    });
+    renderWithTrack(track);
+
+    await typeQuery("alex");
+    await waitFor(() => expect(events.length).toBeGreaterThan(0));
+
+    for (const event of events) {
+      expect(() =>
+        assertContentFreeProperties({
+          name: event.name,
+          distinctId: "test",
+          properties: event.properties ?? {},
+        }),
+      ).not.toThrow();
+      // Belt and suspenders: the raw query string itself must never appear
+      // as a property value.
+      expect(Object.values(event.properties ?? {})).not.toContain("alex");
+    }
   });
 });
