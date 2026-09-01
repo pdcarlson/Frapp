@@ -1029,6 +1029,28 @@ describe('TaskService', () => {
           expect.objectContaining({ status: TaskStatus.COMPLETED }),
         );
       });
+
+      it('returns the completed task even when the creator-membership lookup itself throws', async () => {
+        mockTaskRepo.findById.mockResolvedValue({
+          ...baseTask,
+          status: TaskStatus.IN_PROGRESS,
+        });
+        mockTaskRepo.update.mockResolvedValue(completed);
+        mockMemberRepo.findByUserAndChapter.mockRejectedValueOnce(
+          new Error('connection pool exhausted'),
+        );
+
+        const result = await service.updateStatus(
+          'task-1',
+          'ch-1',
+          'user-1',
+          false,
+          TaskStatus.COMPLETED,
+        );
+
+        expect(result.status).toBe(TaskStatus.COMPLETED);
+        expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+      });
     });
   });
 });

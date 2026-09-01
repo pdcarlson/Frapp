@@ -293,10 +293,21 @@ export class TaskService {
   ): Promise<void> {
     if (task.created_by === actorUserId) return;
 
-    const creatorMembership = await this.memberRepo.findByUserAndChapter(
-      task.created_by,
-      chapterId,
-    );
+    let creatorMembership: Awaited<
+      ReturnType<typeof this.memberRepo.findByUserAndChapter>
+    >;
+    try {
+      creatorMembership = await this.memberRepo.findByUserAndChapter(
+        task.created_by,
+        chapterId,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `findByUserAndChapter failed while checking task ${task.id} creator membership`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      return;
+    }
     if (!creatorMembership) return;
 
     await this.safeNotifyUser(
