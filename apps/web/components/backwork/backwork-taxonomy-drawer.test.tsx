@@ -101,6 +101,36 @@ describe("BackworkTaxonomyDrawer", () => {
     expect(mockUpdateDepartment).not.toHaveBeenCalled();
   });
 
+  it("re-opening rename shows the current name, not a stale draft from an earlier abandoned edit", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<BackworkTaxonomyDrawer />);
+    await user.click(
+      screen.getByRole("button", { name: /manage taxonomy/i }),
+    );
+
+    // Open the edit, type something, then cancel without saving — `draft`
+    // now holds abandoned text that must not resurface later.
+    await user.click(screen.getByRole("button", { name: /rename chemistry/i }));
+    await user.clear(screen.getByDisplayValue("Chemistry"));
+    await user.type(screen.getByRole("textbox"), "abandoned edit");
+    await user.click(screen.getByRole("button", { name: /^cancel$/i }));
+    expect(mockUpdateDepartment).not.toHaveBeenCalled();
+
+    // Another admin renames it server-side; the list refetches with the new name.
+    departmentsData.value = [
+      { id: "dept-1", code: "CHEM", name: "Chem & Biochem" },
+      { id: "dept-2", code: "MATH", name: "Mathematics" },
+    ];
+    rerender(<BackworkTaxonomyDrawer />);
+
+    // Re-opening edit must show the current server name, not "abandoned edit".
+    await user.click(
+      screen.getByRole("button", { name: /rename chem & biochem/i }),
+    );
+    expect(screen.getByDisplayValue("Chem & Biochem")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("abandoned edit")).not.toBeInTheDocument();
+  });
+
   it("deletes a professor after confirming", async () => {
     const user = await openDrawer();
 
@@ -117,6 +147,35 @@ describe("BackworkTaxonomyDrawer", () => {
     await waitFor(() => {
       expect(mockDeleteProfessor).toHaveBeenCalledWith("prof-1");
     });
+  });
+
+  it("does not disable the delete control merely because the confirmation dialog is open", async () => {
+    const user = await openDrawer();
+
+    const deleteButton = screen.getByRole("button", {
+      name: /delete dr\. rivera/i,
+    });
+    await user.click(deleteButton);
+    await screen.findByRole("dialog");
+
+    // No mutation has been requested yet — the row's own button must not
+    // read as "in progress" for a decision the user hasn't made.
+    expect(mockDeleteProfessor).not.toHaveBeenCalled();
+    expect(deleteButton).not.toBeDisabled();
+  });
+
+  it("cancelling the confirmation dialog never calls delete", async () => {
+    const user = await openDrawer();
+
+    await user.click(
+      screen.getByRole("button", { name: /delete dr\. rivera/i }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await user.click(
+      within(dialog).getByRole("button", { name: /^cancel$/i }),
+    );
+
+    expect(mockDeleteProfessor).not.toHaveBeenCalled();
   });
 
   it("surfaces the server's block-while-referenced error via toast rather than silently failing", async () => {

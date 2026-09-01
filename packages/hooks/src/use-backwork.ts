@@ -140,6 +140,36 @@ export function useDeleteBackworkResource() {
   });
 }
 
+/**
+ * Merges an updated row into a cached `["backwork", "departments" | "professors"]`
+ * list in place, keyed by `id`.
+ *
+ * Renaming only invalidates that list, and `invalidateQueries` doesn't await
+ * the refetch it schedules — so `mutateAsync` resolves as soon as the PATCH's
+ * HTTP response lands, before the list has actually re-fetched. A caller that
+ * flips its own "editing" state off as soon as the mutation resolves (as the
+ * taxonomy drawer does) would otherwise render the *stale* cached name for the
+ * length of that refetch round trip, visibly reverting the rename before it
+ * reappears. Patching the cache directly with the server's own response
+ * closes that window; the `invalidateQueries` call stays as the eventual-
+ * consistency fallback.
+ */
+function patchNamedRow(
+  queryClient: ReturnType<typeof useQueryClient>,
+  key: unknown[],
+  updated: unknown,
+): void {
+  if (!updated || typeof updated !== "object" || !("id" in updated)) return;
+  queryClient.setQueryData(key, (current: unknown) => {
+    if (!Array.isArray(current)) return current;
+    return current.map((row) =>
+      row && typeof row === "object" && "id" in row && row.id === (updated as { id: unknown }).id
+        ? { ...row, ...updated }
+        : row,
+    );
+  });
+}
+
 export function useUpdateDepartment() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
@@ -158,7 +188,8 @@ export function useUpdateDepartment() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (updated) => {
+      patchNamedRow(queryClient, ["backwork", "departments"], updated);
       queryClient.invalidateQueries({
         queryKey: ["backwork", "departments"],
       });
@@ -230,7 +261,8 @@ export function useUpdateProfessor() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (updated) => {
+      patchNamedRow(queryClient, ["backwork", "professors"], updated);
       queryClient.invalidateQueries({
         queryKey: ["backwork", "professors"],
       });

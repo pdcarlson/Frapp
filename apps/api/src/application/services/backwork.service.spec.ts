@@ -571,6 +571,7 @@ describe('BackworkService', () => {
 
   describe('deleteDepartment', () => {
     it('deletes a department with no referencing resources', async () => {
+      mockDepartmentRepo.findById.mockResolvedValue(baseDepartment);
       mockResourceRepo.countByDepartment.mockResolvedValue(0);
       mockDepartmentRepo.delete.mockResolvedValue();
 
@@ -584,6 +585,7 @@ describe('BackworkService', () => {
     });
 
     it('blocks deletion while resources still reference the department', async () => {
+      mockDepartmentRepo.findById.mockResolvedValue(baseDepartment);
       mockResourceRepo.countByDepartment.mockResolvedValue(3);
 
       await expect(service.deleteDepartment('dept-1', 'ch-1')).rejects.toThrow(
@@ -591,10 +593,26 @@ describe('BackworkService', () => {
       );
       expect(mockDepartmentRepo.delete).not.toHaveBeenCalled();
     });
+
+    // Regression: a chapter-scoped `.eq('id', id).eq('chapter_id', chapterId)`
+    // delete of a nonexistent or cross-chapter id matches zero rows, and
+    // PostgREST does not treat that as an error — so without this existence
+    // check the request would have silently "succeeded" with a 200 instead
+    // of the 404 every other mutation in this file returns for the same case.
+    it('404s rather than silently no-opping on a nonexistent or cross-chapter id', async () => {
+      mockDepartmentRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.deleteDepartment('dept-other-chapter', 'ch-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockResourceRepo.countByDepartment).not.toHaveBeenCalled();
+      expect(mockDepartmentRepo.delete).not.toHaveBeenCalled();
+    });
   });
 
   describe('deleteProfessor', () => {
     it('deletes a professor with no referencing resources', async () => {
+      mockProfessorRepo.findById.mockResolvedValue(baseProfessor);
       mockResourceRepo.countByProfessor.mockResolvedValue(0);
       mockProfessorRepo.delete.mockResolvedValue();
 
@@ -604,11 +622,22 @@ describe('BackworkService', () => {
     });
 
     it('blocks deletion while resources still reference the professor', async () => {
+      mockProfessorRepo.findById.mockResolvedValue(baseProfessor);
       mockResourceRepo.countByProfessor.mockResolvedValue(1);
 
       await expect(service.deleteProfessor('prof-1', 'ch-1')).rejects.toThrow(
         BadRequestException,
       );
+      expect(mockProfessorRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('404s rather than silently no-opping on a nonexistent or cross-chapter id', async () => {
+      mockProfessorRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.deleteProfessor('prof-other-chapter', 'ch-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockResourceRepo.countByProfessor).not.toHaveBeenCalled();
       expect(mockProfessorRepo.delete).not.toHaveBeenCalled();
     });
   });

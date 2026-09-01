@@ -5,6 +5,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -137,7 +138,7 @@ export class MergeBackworkTaxonomyDto {
   @ApiProperty({
     description: 'Id of the row to merge into; the source is deleted',
   })
-  @IsString()
+  @IsUUID()
   target_id: string;
 }
 

@@ -175,9 +175,11 @@ describe('SupabaseBackworkResourceRepository — tenant scope', () => {
     ).toHaveLength(1);
   });
 
-  it('countByDepartment does not count another chapter resource under the same id shape', async () => {
-    // DEPT_B is a real id in chapter B; querying it from chapter A must read 0,
-    // not the chapter-B resource, even though nothing here shares an id.
+  it('countByDepartment is scoped to the caller chapter', async () => {
+    // `expectTenantScoped` fails this test outright if the query is missing
+    // its `.eq('chapter_id', ...)` predicate, regardless of which ids are
+    // passed in — so this is a structural guarantee, not merely "these two
+    // particular ids don't collide."
     const count = await harness.expectTenantScoped(CHAPTER_A, () =>
       repo.countByDepartment(CHAPTER_A, DEPT_A),
     );

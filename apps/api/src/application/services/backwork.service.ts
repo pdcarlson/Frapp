@@ -258,6 +258,10 @@ export class BackworkService {
    * below is the guided path to clear that first.
    */
   async deleteDepartment(id: string, chapterId: string): Promise<void> {
+    const existing = await this.departmentRepo.findById(id, chapterId);
+    if (!existing) {
+      throw new NotFoundException('Department not found');
+    }
     const referenced = await this.resourceRepo.countByDepartment(chapterId, id);
     if (referenced > 0) {
       throw new BadRequestException(
@@ -268,6 +272,10 @@ export class BackworkService {
   }
 
   async deleteProfessor(id: string, chapterId: string): Promise<void> {
+    const existing = await this.professorRepo.findById(id, chapterId);
+    if (!existing) {
+      throw new NotFoundException('Professor not found');
+    }
     const referenced = await this.resourceRepo.countByProfessor(chapterId, id);
     if (referenced > 0) {
       throw new BadRequestException(

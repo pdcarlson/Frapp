@@ -112,11 +112,12 @@ export function BackworkTaxonomyDrawer() {
     }
   }
 
-  async function handleDelete(
-    entity: Entity,
-    id: string,
-    label: string,
-  ): Promise<void> {
+  /**
+   * Split from the actual delete so a row's "in progress" spinner starts only
+   * once there's real async work happening — not for however long the person
+   * takes to decide on the confirmation dialog.
+   */
+  async function confirmDelete(label: string): Promise<boolean> {
     const result = await confirm({
       title: `Delete "${label}"?`,
       description:
@@ -124,7 +125,14 @@ export function BackworkTaxonomyDrawer() {
       confirmLabel: "Delete",
       tone: "destructive",
     });
-    if (!result) return;
+    return !!result;
+  }
+
+  async function executeDelete(
+    entity: Entity,
+    id: string,
+    label: string,
+  ): Promise<void> {
     try {
       if (entity === "department") {
         await deleteDepartment.mutateAsync(id);
@@ -218,7 +226,8 @@ export function BackworkTaxonomyDrawer() {
               }))}
               onRename={handleRename}
               onMerge={openMerge}
-              onDelete={handleDelete}
+              onConfirmDelete={confirmDelete}
+              onDelete={executeDelete}
             />
             <TaxonomySection
               title="Professors"
@@ -226,7 +235,8 @@ export function BackworkTaxonomyDrawer() {
               rows={professors.map((p) => ({ id: p.id, name: p.name }))}
               onRename={handleRename}
               onMerge={openMerge}
-              onDelete={handleDelete}
+              onConfirmDelete={confirmDelete}
+              onDelete={executeDelete}
             />
           </div>
         </SheetContent>
@@ -289,6 +299,7 @@ function TaxonomySection({
   rows,
   onRename,
   onMerge,
+  onConfirmDelete,
   onDelete,
 }: {
   title: string;
@@ -296,6 +307,7 @@ function TaxonomySection({
   rows: { id: string; name: string }[];
   onRename: (entity: Entity, id: string, name: string) => Promise<void>;
   onMerge: (entity: Entity, id: string, label: string) => void;
+  onConfirmDelete: (label: string) => Promise<boolean>;
   onDelete: (entity: Entity, id: string, label: string) => Promise<void>;
 }) {
   return (
@@ -312,6 +324,7 @@ function TaxonomySection({
               row={row}
               onRename={onRename}
               onMerge={onMerge}
+              onConfirmDelete={onConfirmDelete}
               onDelete={onDelete}
             />
           ))}
@@ -326,12 +339,14 @@ function TaxonomyRow({
   row,
   onRename,
   onMerge,
+  onConfirmDelete,
   onDelete,
 }: {
   entity: Entity;
   row: { id: string; name: string };
   onRename: (entity: Entity, id: string, name: string) => Promise<void>;
   onMerge: (entity: Entity, id: string, label: string) => void;
+  onConfirmDelete: (label: string) => Promise<boolean>;
   onDelete: (entity: Entity, id: string, label: string) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
@@ -413,7 +428,15 @@ function TaxonomyRow({
           size="icon"
           variant="ghost"
           className="h-8 w-8"
-          onClick={() => setEditing(true)}
+          onClick={() => {
+            // Resync rather than trusting whatever `draft` held from a
+            // previous, possibly-abandoned edit — `row.name` may have moved
+            // on since (another admin's rename, a merge) while this row sat
+            // closed, and stale draft text re-appearing here would silently
+            // overwrite that change on save.
+            setDraft(row.name);
+            setEditing(true);
+          }}
           aria-label={`Rename ${row.name}`}
         >
           <Pencil className="h-4 w-4" />
@@ -432,6 +455,11 @@ function TaxonomyRow({
           variant="ghost"
           className="h-8 w-8"
           onClick={async () => {
+            // The spinner covers only the actual delete request — not
+            // whatever time the person spends deciding on the confirmation
+            // dialog `onConfirmDelete` awaits first.
+            const confirmed = await onConfirmDelete(row.name);
+            if (!confirmed) return;
             setDeleting(true);
             try {
               await onDelete(entity, row.id, row.name);
