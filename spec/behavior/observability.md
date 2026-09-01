@@ -42,6 +42,8 @@ Integrate with Sentry (or equivalent). All unhandled exceptions and 5xx response
 
 Enforced in one place — `packages/validation/src/sentry-scrubbing.ts` — on these rules, and the rules cover **both classes of event Sentry emits** for **every app that reports**. The SDK routes the two classes to two different hooks, so `createSentryScrubber` returns two entry points and each app's options module wires both: `scrubSentryEvent` as `beforeSend` for error events, and `scrubSentryTransaction` as `beforeSendTransaction` for transaction (tracing) events. Setting only one leaves the other class shipping unscrubbed, which is the gap [#896](https://github.com/pdcarlson/Frapp/issues/896) closed.
 
+Both hooks also carry `sdkProcessingMetadata` field-by-field through `scrubSdkProcessingMetadata`, keeping only `dynamicSamplingContext` (swept) and `spanCountBeforeProcessing` — the two fields the SDK reads back *after* the hook returns, to build the envelope's `trace` header and to compute how many spans were dropped. The rest of that bag (`normalizedRequest`, a full request object) is dropped. This was symmetric only on the transaction path until [#966](https://github.com/pdcarlson/Frapp/issues/966); every error event shipped with no `trace` envelope header until then.
+
 The scrubber is shared rather than per-app because a browser bundle holds strictly *more* PII than the server process does — member emails, chapter names, chat message bodies, document titles — so a second copy of these rules for the client would be a second copy to keep correct, and the failure mode is silent ([#865](https://github.com/pdcarlson/Frapp/issues/865)). Three bindings consume it:
 
 | App | Options module | Pseudonyms | Runtimes initialized |
