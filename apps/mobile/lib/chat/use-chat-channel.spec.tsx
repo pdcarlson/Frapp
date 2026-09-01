@@ -734,3 +734,106 @@ describe("retry / discard", () => {
     expect(mocks.retryOutboxRow).not.toHaveBeenCalled();
   });
 });
+
+describe("react()/unreact() failure surfacing (#999)", () => {
+  // `reactAction`/`unreactAction` are mocked, so chat-core's own `onError` call
+  // is not exercised here (that lives in chat-client.test.ts) — this proves the
+  // hook wires a working `onError` into the ctx it hands chat-core, and that
+  // invoking it lands in `reactionError`, which is the half only this hook owns.
+  function captureOnError(mock: { mock: { calls: unknown[][] } }) {
+    return () => {
+      const ctxArg = mock.mock.calls.at(-1)?.[0] as
+        | { onError?: (input: { title: string; description?: string }) => void }
+        | undefined;
+      return ctxArg?.onError;
+    };
+  }
+
+  it("starts null and reports a rejected react through onError", async () => {
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+    expect(result.current.reactionError).toBeNull();
+
+    await act(async () => {
+      await result.current.react("msg-1", "👍");
+    });
+
+    const onError = captureOnError(mocks.reactAction)();
+    expect(onError).toBeTypeOf("function");
+    act(() => onError!({ title: "Couldn't react", description: "Channel is read-only" }));
+
+    expect(result.current.reactionError).toBe("Channel is read-only");
+  });
+
+  it("falls back to the title when onError carries no description", async () => {
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+
+    await act(async () => {
+      await result.current.unreact("msg-1", "👍");
+    });
+
+    const onError = captureOnError(mocks.unreactAction)();
+    act(() => onError!({ title: "Couldn't remove reaction" }));
+
+    expect(result.current.reactionError).toBe("Couldn't remove reaction");
+  });
+
+  it("clears via clearReactionError", async () => {
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+
+    await act(async () => {
+      await result.current.react("msg-1", "👍");
+    });
+    const onError = captureOnError(mocks.reactAction)();
+    act(() => onError!({ title: "Couldn't react", description: "nope" }));
+    expect(result.current.reactionError).toBe("nope");
+
+    act(() => result.current.clearReactionError());
+
+    expect(result.current.reactionError).toBeNull();
+  });
+
+  it("clears the previous error the moment a new reaction is dispatched", async () => {
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+
+    await act(async () => {
+      await result.current.react("msg-1", "👍");
+    });
+    const firstOnError = captureOnError(mocks.reactAction)();
+    act(() => firstOnError!({ title: "Couldn't react", description: "first" }));
+    expect(result.current.reactionError).toBe("first");
+
+    await act(async () => {
+      await result.current.react("msg-2", "🎉");
+    });
+
+    expect(result.current.reactionError).toBeNull();
+  });
+
+  it("clears on a channel switch, so it never leaks onto the next thread", async () => {
+    const queryClient = newQueryClient();
+    const client = createClient();
+    const { result, rerender } = renderHook(
+      ({ channelId }: { channelId: string }) => useChatChannel(channelId),
+      {
+        initialProps: { channelId: CHANNEL },
+        wrapper: createWrapper(client, queryClient),
+      },
+    );
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+
+    await act(async () => {
+      await result.current.react("msg-1", "👍");
+    });
+    const onError = captureOnError(mocks.reactAction)();
+    act(() => onError!({ title: "Couldn't react", description: "nope" }));
+    expect(result.current.reactionError).toBe("nope");
+
+    rerender({ channelId: "channel-2" });
+
+    expect(result.current.reactionError).toBeNull();
+  });
+});
