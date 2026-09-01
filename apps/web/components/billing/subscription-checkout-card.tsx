@@ -22,6 +22,7 @@ import { Can } from "@/components/shared/can";
 import { useToast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 import { useChapterSubscription } from "@/lib/hooks/use-subscription-write-state";
+import { subscriptionStatusKind } from "@/components/billing/invoice-status";
 
 /**
  * Stripe confirms the subscription over a webhook, not on the redirect, so the
@@ -268,8 +269,20 @@ export function SubscriptionCheckoutCard() {
     );
   }
 
+  // `past_due` and `canceled` are a working subscription that regressed —
+  // §5's danger. `incomplete` never started, so it takes the warning (amber)
+  // tone rather than reading as a lapse. `status` is narrowed to those three
+  // values by this point (`null` and `active` both return above), so
+  // `subscriptionStatusKind` only ever answers `warning` or `destructive`
+  // here. Reuses that mapper (`invoice-status.ts`) rather than a second
+  // status→tone mapping.
+  const cardToneClassName =
+    subscriptionStatusKind(status) === "destructive"
+      ? "border-destructive/45 bg-destructive/10"
+      : "border-warning/45 bg-warning/10";
+
   return (
-    <Card className="border-accent-border">
+    <Card className={cardToneClassName}>
       <CardHeader>
         <CardTitle className="text-lg">
           {status === "past_due"
