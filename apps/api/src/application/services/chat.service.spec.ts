@@ -42,6 +42,7 @@ import { ActivationService } from './activation.service';
 import { RbacService } from './rbac.service';
 import { ChannelAccessService } from './channel-access.service';
 import { ChatNotificationPreferenceRepository } from '../../modules/chat-push-worker/chat-notification-preference.repository';
+import { ChannelCacheService } from '../../modules/chat-push-worker/channel-cache.service';
 
 describe('ChatService', () => {
   let service: ChatService;
@@ -65,6 +66,11 @@ describe('ChatService', () => {
   let mockChatNotificationPrefs: {
     findChannelPreferencesForUser: jest.Mock;
     upsertChannelLevel: jest.Mock;
+  };
+  let mockChannelCache: {
+    get: jest.Mock;
+    set: jest.Mock;
+    invalidate: jest.Mock;
   };
   let mockRbac: {
     getEffectivePermissions: jest.Mock;
@@ -208,6 +214,12 @@ describe('ChatService', () => {
       upsertChannelLevel: jest.fn(),
     };
 
+    mockChannelCache = {
+      get: jest.fn(),
+      set: jest.fn(),
+      invalidate: jest.fn(),
+    };
+
     mockRbac = {
       getEffectivePermissions: jest.fn(),
       // Active (non-alumni) member by default; alumni posting is covered in
@@ -267,6 +279,7 @@ describe('ChatService', () => {
           provide: ChatNotificationPreferenceRepository,
           useValue: mockChatNotificationPrefs,
         },
+        { provide: ChannelCacheService, useValue: mockChannelCache },
       ],
     }).compile();
 
@@ -515,6 +528,30 @@ describe('ChatService', () => {
       expect(mockChannelRepo.update).toHaveBeenCalledWith('chan-1', 'ch-1', {
         category_id: null,
       });
+    });
+
+    // #988: the push worker's channel cache carries `required_permissions` as
+    // an authorization input. A write that changes it must evict the cached
+    // entry rather than let up to 30s of pushes decide from the old value.
+    it('evicts the push worker channel cache on a successful update', async () => {
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockChannelRepo.update.mockResolvedValue(baseChannel);
+
+      await service.updateChannel('chan-1', 'ch-1', {
+        required_permissions: ['roles:manage'],
+      });
+
+      expect(mockChannelCache.invalidate).toHaveBeenCalledWith('chan-1');
+    });
+
+    it('does not evict the cache when the update is rejected', async () => {
+      mockChannelRepo.findById.mockResolvedValue(roleGated);
+
+      await expect(
+        service.updateChannel('chan-1', 'ch-1', { required_permissions: [] }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(mockChannelCache.invalidate).not.toHaveBeenCalled();
     });
   });
 
@@ -831,6 +868,27 @@ describe('ChatService', () => {
       await expect(service.deleteChannel('ch-chan-x', 'ch-1')).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    // #988: a deleted channel's row must not outlive it in the push worker's
+    // cache, the same as an updated one.
+    it('evicts the push worker channel cache on delete', async () => {
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockChannelRepo.delete.mockResolvedValue();
+
+      await service.deleteChannel('ch-chan-1', 'ch-1');
+
+      expect(mockChannelCache.invalidate).toHaveBeenCalledWith('ch-chan-1');
+    });
+
+    it('does not evict the cache when the channel is not found', async () => {
+      mockChannelRepo.findById.mockResolvedValue(null);
+
+      await expect(service.deleteChannel('ch-chan-x', 'ch-1')).rejects.toThrow(
+        NotFoundException,
+      );
+
+      expect(mockChannelCache.invalidate).not.toHaveBeenCalled();
     });
   });
 
