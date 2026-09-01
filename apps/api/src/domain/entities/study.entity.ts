@@ -42,5 +42,12 @@ export interface StudySession {
   paused_at: string | null;
   total_foreground_minutes: number;
   points_awarded: boolean;
+  /**
+   * Consecutive heartbeats rejected for GPS accuracy > 100m. Reset to 0 on
+   * any accepted heartbeat; reaching 2 expires the session as
+   * `LOCATION_INVALID`. Distinct from an out-of-polygon miss, which expires
+   * the session immediately as `EXPIRED`.
+   */
+  location_reject_streak: number;
   created_at: string;
 }

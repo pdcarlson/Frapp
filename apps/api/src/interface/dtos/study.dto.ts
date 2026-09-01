@@ -148,6 +148,15 @@ export class StudySessionHeartbeatDto {
   @ApiProperty()
   @IsNumber()
   lng: number;
+
+  @ApiPropertyOptional({
+    description:
+      'GPS accuracy in meters for this fix, per the device location API. Optional so older clients that never send it keep working; omitting it skips the accuracy check entirely rather than rejecting the heartbeat.',
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  accuracy_meters?: number;
 }
 
 /**
