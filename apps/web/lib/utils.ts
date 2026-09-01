@@ -25,6 +25,37 @@ export function getErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+/** Escape one CSV cell per RFC 4180 (quote when it contains a comma, quote, or newline). */
+export function quoteCsvCell(value: string): string {
+  if (/[",\n\r]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+/**
+ * Serialize flat row objects to a CSV string: UTF-8 BOM + CRLF line endings so
+ * Excel renders umlauts/emoji correctly and downstream spreadsheet behavior
+ * stays predictable without extra client libs. Column order is the union of
+ * every row's own keys, in first-seen order, so rows with different shapes
+ * still produce one header. Shared by the reports CSV export and the
+ * dashboard bulk-export actions (Billing, Points) rather than each hand-rolling
+ * the same escaping and BOM/CRLF handling.
+ */
+export function rowsToCsv(rows: Record<string, string>[]): string {
+  if (rows.length === 0) return "";
+  const headerSet = new Set<string>();
+  for (const row of rows) {
+    for (const key of Object.keys(row)) headerSet.add(key);
+  }
+  const headers = Array.from(headerSet);
+  const lines = [headers.map(quoteCsvCell).join(",")];
+  for (const row of rows) {
+    lines.push(headers.map((header) => quoteCsvCell(row[header] ?? "")).join(","));
+  }
+  return `\uFEFF${lines.join("\r\n")}`;
+}
+
 /**
  * Trigger a browser download of in-memory bytes: object URL → hidden anchor
  * → click → revoke. Shared so the object URL is always revoked and the
@@ -46,4 +77,15 @@ export function downloadBlob(blob: Blob, filename: string): void {
     anchor.remove();
     URL.revokeObjectURL(objectUrl);
   }
+}
+
+/**
+ * Serialize rows to CSV and download them as `frapp-<filenamePrefix>-<date>.csv`.
+ * Shared so the MIME type and filename convention live in one place — the
+ * reports export and the dashboard bulk-export actions (Billing, Points) used
+ * to each hand-roll this same three-line sequence.
+ */
+export function downloadCsv(rows: Record<string, string>[], filenamePrefix: string): void {
+  const blob = new Blob([rowsToCsv(rows)], { type: "text/csv;charset=utf-8" });
+  downloadBlob(blob, `frapp-${filenamePrefix}-${new Date().toISOString().slice(0, 10)}.csv`);
 }

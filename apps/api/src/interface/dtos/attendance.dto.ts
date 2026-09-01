@@ -73,3 +73,11 @@ export class UpdateAttendanceDto {
   @IsString()
   excuse_reason?: string;
 }
+
+export class AutoAbsentResultDto {
+  @ApiProperty({
+    description:
+      'Number of members newly recorded ABSENT. 0 when the event is not mandatory and targets no roles, or when everyone required already has an attendance record.',
+  })
+  marked: number;
+}
