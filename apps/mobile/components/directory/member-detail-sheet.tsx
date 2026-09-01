@@ -1,17 +1,22 @@
 import { forwardRef, useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
-import { useMember, useRoles } from "@repo/hooks";
+import { useCustomRoles, useMember, useMyPermissions, useRoles } from "@repo/hooks";
+import { can } from "@repo/validation";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
-import { ListRow, ListSection } from "@/components/list-section";
+import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { ErrorState, SkeletonLines } from "@/components/state-block";
 import {
   SheetGrabber,
   SheetHeader,
   useSheetBackgroundStyle,
 } from "@/components/sheet-scaffold";
-import { resolveRoleNames, selectMemberDetail } from "@/lib/directory/member-detail";
+import {
+  resolveCustomRoleNames,
+  resolveRoleNames,
+  selectMemberDetail,
+} from "@/lib/directory/member-detail";
 
 /**
  * s13 member profile detail — a sheet, not a route, per the issue's own scope
@@ -28,7 +33,19 @@ import { resolveRoleNames, selectMemberDetail } from "@/lib/directory/member-det
  *
  * **No DM entry.** The issue that filed this scopes DM entry to #316
  * explicitly ("Distinct from #316 — this gap is mobile profile *viewing*").
+ *
+ * ## Fixed snap points, not `enableDynamicSizing`
+ *
+ * A bio can run to 500 characters (`packages/validation`'s `bio` schema),
+ * custom fields are chapter-configurable and unbounded in count, and role
+ * names can stack up — the same "grows without bound" shape `ask-sheet.tsx`
+ * documents for why it does not use dynamic sizing. `BottomSheetScrollView`
+ * is a **direct child** of the modal for the reason `new-task-sheet.tsx`
+ * spells out at its second modal: nested inside a `BottomSheetView`, the view
+ * and the scrollable write competing heights to the same animated value.
  */
+const SNAP_POINTS = ["65%"];
+
 export interface MemberDetailSheetProps {
   /** `null` while no row is selected; the sheet stays mounted regardless. */
   userId: string | null;
@@ -48,14 +65,43 @@ export const MemberDetailSheet = forwardRef<
   const memberQuery = useMember(userId ?? "");
   const rolesQuery = useRoles();
 
+  // Custom roles (`chapter_custom_roles` — chapter-specific titles like
+  // "Rush Chair", distinct from the seven seeded system roles `useRoles`
+  // returns) need `chapter-config:view` to list, same gate `preferences.tsx`
+  // already applies for its Chapter · Admin section. A viewer who lacks it
+  // simply doesn't get custom-role names resolved, rather than firing a
+  // request that comes back 403.
+  const permissionsQuery = useMyPermissions();
+  const permissions = useMemo(() => {
+    const raw = (permissionsQuery.data as { permissions?: unknown } | undefined)
+      ?.permissions;
+    return Array.isArray(raw) ? (raw as string[]) : [];
+  }, [permissionsQuery.data]);
+  const canViewCustomRoles = can("chapter-config:view", permissions);
+  const customRolesQuery = useCustomRoles({ enabled: canViewCustomRoles });
+
   const detail = useMemo(
     () => selectMemberDetail(memberQuery.data),
     [memberQuery.data],
   );
   const roleNames = useMemo(
     () => resolveRoleNames(rolesQuery.data, detail?.roleIds ?? []),
-    [rolesQuery.data, detail],
+    [rolesQuery.data, detail?.roleIds],
   );
+  const customRoleNames = useMemo(
+    () =>
+      resolveCustomRoleNames(
+        canViewCustomRoles ? customRolesQuery.data : undefined,
+        detail?.customRoleIds ?? [],
+      ),
+    [canViewCustomRoles, customRolesQuery.data, detail?.customRoleIds],
+  );
+  const allRoleNames = [...roleNames, ...customRoleNames];
+  // Distinct from "no role" (`[]` once both reads have settled): while either
+  // read is still in flight, an empty list would otherwise flash a wrong
+  // "—" that then flips to the real value a moment later.
+  const rolesStillLoading =
+    rolesQuery.isPending || (canViewCustomRoles && customRolesQuery.isPending);
 
   function dismiss() {
     if (typeof ref === "function" || !ref?.current) return;
@@ -65,20 +111,38 @@ export const MemberDetailSheet = forwardRef<
   return (
     <BottomSheetModal
       ref={ref}
-      enableDynamicSizing
+      enableDynamicSizing={false}
+      snapPoints={SNAP_POINTS}
       backgroundStyle={backgroundStyle}
       handleComponent={SheetGrabber}
       onDismiss={onDismiss}
     >
-      <BottomSheetView style={styles.body}>
+      <BottomSheetScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.body}
+      >
         <SheetHeader title="Member" onCancel={dismiss} cancelLabel="Done" />
 
         {memberQuery.isPending ? <SkeletonLines lines={4} showTile /> : null}
 
-        {memberQuery.isError ? (
+        {/* A cached member still renders through a background-refetch
+            failure (TanStack keeps `data` on an errored refetch) — the error
+            only takes over when there is nothing else to show, so a stale
+            card is never buried under a contradictory "couldn't load"
+            banner. */}
+        {memberQuery.isError && !detail ? (
           <ErrorState
             title="Couldn't load this member"
             body="Their profile couldn't reach the server."
+            onRetry={() => void memberQuery.refetch()}
+            isRetrying={memberQuery.isFetching}
+          />
+        ) : null}
+
+        {!detail && memberQuery.isSuccess ? (
+          <ErrorState
+            title="Couldn't read this member"
+            body="Their profile came back in a shape this app doesn't recognize."
             onRetry={() => void memberQuery.refetch()}
             isRetrying={memberQuery.isFetching}
           />
@@ -100,10 +164,31 @@ export const MemberDetailSheet = forwardRef<
               <ListRow label="Email" value={detail.email ?? "Not set"} />
               <ListRow
                 label="Role"
-                value={roleNames.length > 0 ? roleNames.join(", ") : "—"}
+                value={
+                  rolesStillLoading
+                    ? "Loading…"
+                    : allRoleNames.length > 0
+                      ? allRoleNames.join(", ")
+                      : "—"
+                }
               />
               <ListRow label="Joined" value={detail.joinedLabel ?? "—"} />
             </ListSection>
+
+            {detail.customFields.length > 0 ? (
+              <>
+                <SectionHeader>Custom fields</SectionHeader>
+                <ListSection>
+                  {detail.customFields.map((field) => (
+                    <ListRow
+                      key={field.fieldId}
+                      label={field.label}
+                      value={field.value}
+                    />
+                  ))}
+                </ListSection>
+              </>
+            ) : null}
 
             {detail.bio ? (
               <View style={styles.bioCard}>
@@ -112,7 +197,7 @@ export const MemberDetailSheet = forwardRef<
             ) : null}
           </>
         ) : null}
-      </BottomSheetView>
+      </BottomSheetScrollView>
     </BottomSheetModal>
   );
 });
@@ -120,6 +205,9 @@ export const MemberDetailSheet = forwardRef<
 function createStyles(tokens: SignetTokens) {
   const avatarSize = 64;
   return StyleSheet.create({
+    scroll: {
+      flex: 1,
+    },
     body: {
       paddingHorizontal: tokens.spacing.lg,
       paddingBottom: tokens.spacing.xl,

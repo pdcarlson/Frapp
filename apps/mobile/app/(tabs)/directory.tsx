@@ -195,8 +195,17 @@ export function MemberRow({
 
   return (
     <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`View ${row.displayName}'s profile`}
+      // A `Pressable` collapses its children into one accessibility node, so
+      // the meta line (role/company/city/grad-year) a sighted user still
+      // sees below the name would otherwise go unannounced entirely — the
+      // label has to carry it explicitly rather than relying on the nested
+      // `Text` nodes.
+      accessibilityRole={onPress ? "button" : undefined}
+      accessibilityLabel={
+        onPress
+          ? `View ${row.displayName}'s profile${row.meta ? `, ${row.meta}` : ""}`
+          : undefined
+      }
       onPress={onPress}
       style={styles.row}
     >
