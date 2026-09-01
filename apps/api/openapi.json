@@ -2333,6 +2333,45 @@
         ]
       }
     },
+    "/v1/channels/{id}/messages/avatars": {
+      "post": {
+        "operationId": "ChatController_resolveAuthorAvatars_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveAuthorAvatarsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Signed download URLs for a set of messages' author avatars",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/channels/messages/{messageId}": {
       "patch": {
         "operationId": "ChatController_editMessage_v1",
@@ -7759,6 +7798,22 @@
         "required": [
           "client_message_id",
           "content"
+        ]
+      },
+      "ResolveAuthorAvatarsDto": {
+        "type": "object",
+        "properties": {
+          "message_ids": {
+            "description": "IDs of already-fetched messages in this channel to resolve avatar paths for. The server derives the avatar path set itself (`chat_messages.author_avatar_path` for rows matching both this channel and this id list) rather than trusting a caller-supplied storage path — the `chat-archive` bucket has no storage RLS, and an avatar path is otherwise indistinguishable from another message's attachment path.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "message_ids"
         ]
       },
       "EditMessageDto": {

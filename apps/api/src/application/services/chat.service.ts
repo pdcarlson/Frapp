@@ -43,6 +43,7 @@ import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 import type { IStorageProvider } from '../../domain/adapters/storage.interface';
+import { CHAT_ARCHIVE_BUCKET } from '../../domain/constants/storage';
 import type {
   ChatChannel,
   ChatChannelCategory,
@@ -82,6 +83,9 @@ const MAX_ATTACHMENTS_PER_MESSAGE = 10;
  * durable handle on private chapter data.
  */
 const ATTACHMENT_URL_TTL_SECONDS = 3600;
+
+/** Signed-download-URL lifetime for an imported author's avatar, in seconds. */
+const AUTHOR_AVATAR_URL_TTL_SECONDS = 3600;
 
 // A ROLE_GATED channel that gates on nothing is denied by `canAccessChannel`
 // (FRA-321), so reject the shape at the write points rather than letting a
@@ -1504,36 +1508,151 @@ export class ChatService {
     }
 
     const rows = await this.attachmentRepo.findByMessage(messageId, chapterId);
+    if (rows.length === 0) return [];
 
-    // `allSettled`, not `all`: one object the signer cannot resolve — a stale
-    // path, an object removed out of band — would otherwise reject the whole
-    // response and take every intact attachment on the message down with it.
-    // The dead row is dropped and logged; the reader still gets the files that
-    // are actually there.
-    const signed = await Promise.allSettled(
-      rows.map(async (row) => ({
-        ...row,
-        download_url: await this.storageProvider.getSignedDownloadUrl(
-          row.bucket,
-          row.storage_path,
-          ATTACHMENT_URL_TTL_SECONDS,
-          row.filename,
-        ),
-      })),
+    // Batched per bucket (#1231) rather than one `getSignedDownloadUrl` call
+    // per row — `MAX_ATTACHMENTS_PER_MESSAGE` caps this at 10, so it was never
+    // urgent, but a signed URL is still one provider round trip whether it
+    // signs one path or ten. Every attachment on a message shares a bucket in
+    // every case observed today; grouping defensively costs nothing and stays
+    // correct if that ever changes.
+    //
+    // `forceDownload: true` on every call: `spec/behavior/chat/README.md`'s
+    // "trust boundary" section is explicit that a signed upload URL cannot
+    // pin a content type, so a member can store HTML declared as `image/png`
+    // — forcing `Content-Disposition: attachment` (not the declared MIME
+    // type) is what keeps that from rendering as HTML if a reader opens a
+    // non-previewable attachment's URL directly (`target="_blank"`).
+    // Dropping this is a security regression, not a UX one; see
+    // `IStorageProvider.getSignedDownloadUrls`'s doc comment. The saved
+    // filename can no longer be forced *per path* (the batch API takes one
+    // `download` option for the whole call), so web additionally sets an
+    // `<a download>` attribute for the display name (`message-attachments.
+    // tsx`) — best-effort UX on top of the still-enforced disposition.
+    const rowsByBucket = new Map<string, typeof rows>();
+    for (const row of rows) {
+      const group = rowsByBucket.get(row.bucket);
+      if (group) group.push(row);
+      else rowsByBucket.set(row.bucket, [row]);
+    }
+
+    const urlByBucket = new Map<string, Record<string, string>>();
+    await Promise.all(
+      Array.from(rowsByBucket.entries()).map(async ([bucket, bucketRows]) => {
+        try {
+          urlByBucket.set(
+            bucket,
+            await this.storageProvider.getSignedDownloadUrls(
+              bucket,
+              bucketRows.map((row) => row.storage_path),
+              ATTACHMENT_URL_TTL_SECONDS,
+              true,
+            ),
+          );
+        } catch (error) {
+          // A whole-bucket failure must not take every attachment on the
+          // message down with it, the same guarantee `allSettled` gave a
+          // single dead row before this was batched.
+          this.logger.warn(
+            'Could not sign a batch of chat attachments; omitting them',
+            {
+              messageId,
+              channelId,
+              bucket,
+              error: error instanceof Error ? error.message : String(error),
+            },
+          );
+        }
+      }),
     );
 
-    return signed.flatMap((outcome, index) => {
-      if (outcome.status === 'fulfilled') return [outcome.value];
-      this.logger.warn('Could not sign a chat attachment; omitting it', {
-        messageId,
-        channelId,
-        storagePath: rows[index]?.storage_path,
-        error:
-          outcome.reason instanceof Error
-            ? outcome.reason.message
-            : String(outcome.reason),
-      });
+    return rows.flatMap((row) => {
+      const bucketUrls = urlByBucket.get(row.bucket);
+      const downloadUrl = bucketUrls?.[row.storage_path];
+      if (downloadUrl) return [{ ...row, download_url: downloadUrl }];
+      // Only warn per-row for a path missing from an otherwise-successful
+      // bucket. A whole-bucket failure already logged once above with the
+      // real error — re-warning here for every row in it would just repeat
+      // "omitting it" with no reason, N times, for one cause.
+      if (bucketUrls) {
+        this.logger.warn('Could not sign a chat attachment; omitting it', {
+          messageId,
+          channelId,
+          storagePath: row.storage_path,
+        });
+      }
       return [];
     });
+  }
+
+  /**
+   * Signs `chat-archive` avatar paths for imported authors, batched into as
+   * few provider calls as `getSignedDownloadUrls` allows (#1231).
+   * `ChatMessage.author_avatar_path` is stored but never served today —
+   * `resolveAuthorLabel` on the client falls back to initials for every
+   * archived message.
+   *
+   * Channel-scoped, like `listMessageAttachments` — and deliberately never a
+   * function of a caller-supplied path at all. `author_avatar_path` and an
+   * attachment's `storage_path` are written under the exact same
+   * `chapters/{chapterId}/chat-archive/imports/{importId}/media/...` layout
+   * (`archiveMediaObjectPath` — there is no `authors/`-vs-`attachments/`
+   * split in the path shape), and this bucket carries no storage RLS (its
+   * migration's own header: reads are API-issued signed URLs, which never
+   * consult RLS). A raw path handed back by the caller would be
+   * structurally indistinguishable from another message's attachment path,
+   * so trusting one here would let a caller who knows — or guesses — an
+   * attachment path get a signed URL for it under the guise of "avatar",
+   * bypassing `assertChannelAccess` entirely.
+   *
+   * Instead the path set is derived server-side from `messageIds` via
+   * `findAuthorAvatarPaths`, which scopes the lookup by `channelId` in the
+   * same query — a message id from another channel contributes nothing,
+   * the same pattern `findByMessage` uses to scope attachments by chapter.
+   * `assertChannelAccess` above that is what makes `channelId` itself
+   * trustworthy.
+   *
+   * Does NOT force a download (`getSignedDownloadUrls`' 4th argument stays
+   * default `false`), unlike `listMessageAttachments`. An avatar only ever
+   * renders behind an `<img src>` (never a clickable link a reader could
+   * navigate to directly), and `<img>` never executes a response as HTML or
+   * script regardless of `Content-Disposition` — so the mislabeled-MIME
+   * mitigation that mandates it for attachments does not apply here, and
+   * forcing it would just break inline rendering.
+   */
+  async resolveAuthorAvatars(
+    channelId: string,
+    chapterId: string,
+    userId: string,
+    messageIds: string[],
+  ): Promise<Record<string, string>> {
+    await this.assertChannelAccess(channelId, chapterId, userId);
+
+    const paths = await this.messageRepo.findAuthorAvatarPaths(
+      channelId,
+      messageIds,
+    );
+    if (paths.length === 0) return {};
+
+    try {
+      return await this.storageProvider.getSignedDownloadUrls(
+        CHAT_ARCHIVE_BUCKET,
+        paths,
+        AUTHOR_AVATAR_URL_TTL_SECONDS,
+      );
+    } catch (error) {
+      // A whole-batch failure must not 500 the request — every message just
+      // degrades to its initials fallback, same as an avatar that was never
+      // requested.
+      this.logger.warn(
+        'Could not sign a batch of author avatars; omitting them',
+        {
+          channelId,
+          chapterId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
+      return {};
+    }
   }
 }

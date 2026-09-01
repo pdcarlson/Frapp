@@ -135,6 +135,35 @@ export class SupabaseStorageService implements IStorageProvider {
     return data.signedUrl;
   }
 
+  async getSignedDownloadUrls(
+    bucket: string,
+    paths: string[],
+    expiresIn = 3600,
+    forceDownload = false,
+  ): Promise<Record<string, string>> {
+    paths.forEach(assertSafeObjectPath);
+    const result: Record<string, string> = {};
+    // `createSignedUrls` natively accepts a batch; chunk defensively so a
+    // pathological caller cannot produce an oversized request, mirroring
+    // `deleteFiles`.
+    for (let i = 0; i < paths.length; i += 100) {
+      const chunk = paths.slice(i, i + 100);
+      const { data, error } = await this.supabase.storage
+        .from(bucket)
+        .createSignedUrls(
+          chunk,
+          expiresIn,
+          forceDownload ? { download: true } : undefined,
+        );
+      if (error) throw error;
+      for (const entry of data) {
+        if (entry.error || !entry.signedUrl || !entry.path) continue;
+        result[entry.path] = entry.signedUrl;
+      }
+    }
+    return result;
+  }
+
   async uploadFile(
     bucket: string,
     path: string,

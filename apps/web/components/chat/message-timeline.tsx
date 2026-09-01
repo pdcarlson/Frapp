@@ -10,7 +10,7 @@ import {
 import { useTapRevealedMessage } from "@/hooks/use-tap-revealed-message";
 import { MessageItem } from "./message-item";
 import type { ChatMessage } from "@repo/chat-core/types";
-import { authorGroupingKey } from "@repo/hooks";
+import { authorGroupingKey, useAuthorAvatars } from "@repo/hooks";
 
 const GROUPING_GAP_MS = 5 * 60 * 1000;
 
@@ -65,6 +65,8 @@ export interface MessageTimelineHandle {
 }
 
 export interface MessageTimelineProps {
+  /** Undefined while no channel is selected — avatar resolution just no-ops. */
+  channelId: string | undefined;
   messages: ChatMessage[];
   viewerId: string | null;
   /** Resolves `users.id` → display name; `null` when unresolvable. */
@@ -103,6 +105,7 @@ export const MessageTimeline = forwardRef<
   MessageTimelineProps
 >(function MessageTimeline(
   {
+    channelId,
     messages,
     viewerId,
     nameFor,
@@ -119,6 +122,11 @@ export const MessageTimeline = forwardRef<
   ref,
 ) {
   const virtuoso = useRef<VirtuosoHandle | null>(null);
+
+  // One batched request for every distinct imported-author avatar visible in
+  // this window, rather than one per message (#1231). A miss (no avatar, out
+  // of chapter, or unsigned) just means that row keeps its initials fallback.
+  const avatars = useAuthorAvatars(channelId, messages);
 
   // Which row's action cluster a tap revealed — one id for the whole list, so
   // tapping a second row dismisses the first's, matching the reference
@@ -218,6 +226,11 @@ export const MessageTimeline = forwardRef<
           <MessageItem
             nameFor={nameFor}
             message={entry.message}
+            avatarUrl={
+              entry.message.author_avatar_path
+                ? avatars.data?.[entry.message.author_avatar_path]
+                : undefined
+            }
             viewerId={viewerId}
             showHeader={entry.showHeader}
             onReact={onReact}
