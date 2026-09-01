@@ -329,6 +329,36 @@ describe('Cross-tenant isolation (e2e)', () => {
     });
   });
 
+  describe('chapter config: URL id vs active chapter (#866)', () => {
+    // `chapters/:id/config` never reads `:id` for data — it's the
+    // guard-resolved `chapterId` that's queried either way, so this is a
+    // contract check (the URL must not claim a chapter it doesn't act on),
+    // not a data-leak check like the rest of this file.
+    it('rejects a URL chapter id that disagrees with the active chapter', async () => {
+      app = await boot({ active_chapter_id: CHAPTER_B });
+
+      const res = await asBob(
+        request(app.getHttpServer()).get(`${V1}/chapters/${CHAPTER_A}/config`),
+      );
+
+      expect(res.status).toBe(403);
+      expectDeniedBody(
+        res.body,
+        'The chapter id in the URL disagrees with your active chapter context.',
+      );
+    });
+
+    it('allows a URL chapter id that matches the active chapter (positive control)', async () => {
+      app = await boot({ active_chapter_id: CHAPTER_B });
+
+      const res = await asBob(
+        request(app.getHttpServer()).get(`${V1}/chapters/${CHAPTER_B}/config`),
+      );
+
+      expect(res.status).toBe(200);
+    });
+  });
+
   describe('client-supplied chapter id outside ChapterGuard', () => {
     // `/notifications/preferences` carries no ChapterGuard — it takes the chapter
     // straight off the query string, so `assertChapterMembership` in
