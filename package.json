@@ -36,6 +36,7 @@
     "check:chapter-directory-seed": "node scripts/check-chapter-directory-seed.mjs",
     "load:chapter-directory": "node scripts/load-chapter-directory.mjs",
     "configure:branch-protection": "node scripts/configure-branch-protection.mjs",
+    "configure:branch-protection:verify": "node scripts/configure-branch-protection.mjs --verify",
     "test:ci-scripts": "node --test scripts/ci/__tests__/*.test.mjs",
     "prepare": "node -e \"try{const fs=require('fs');if(fs.existsSync('scripts/setup-git-hooks.mjs'))require('child_process').execFileSync(process.execPath,['scripts/setup-git-hooks.mjs'],{stdio:'inherit'})}catch{}\""
   },
