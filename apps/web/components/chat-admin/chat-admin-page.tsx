@@ -526,7 +526,14 @@ function ChatAdminBody() {
   }
 
   const catalogUnavailable = catalogQuery.isError;
-  const catalogLoading = catalogQuery.isLoading;
+  // `isLoading` alone misses the paused case: offline with no cached catalog
+  // yet is `isPending && fetchStatus === "paused"`, which is neither loading
+  // nor erroring — without this it would silently render an empty checkbox
+  // grid with no explanation, the same failure mode §4 of async-states.tsx
+  // exists to prevent for the page-level gates above.
+  const catalogLoading =
+    catalogQuery.isLoading ||
+    (catalogQuery.isPending && catalogQuery.fetchStatus === "paused");
 
   return (
     <div className="space-y-6">
