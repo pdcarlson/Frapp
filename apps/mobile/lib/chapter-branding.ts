@@ -21,6 +21,20 @@ export type ChapterBranding = {
    * for a runtime check to catch.
    */
   accentFallbackApplied: boolean;
+  /**
+   * The solid-fill accent — `--signet-accent-primary` (step 9), for a surface
+   * that paints its own background rather than sitting on a neutral one (the
+   * chat self bubble is the first consumer). Falls back to Signet's house
+   * gold for a chapter whose palette predates the Signet map, same as
+   * {@link accent}.
+   */
+  accentPrimary: string;
+  /**
+   * Text/icon color on {@link accentPrimary} — `--signet-accent-on-primary`,
+   * contrast-corrected for exactly that pairing (accent-engine.md §8). Falls
+   * back to `gold.onHouse` alongside {@link accentPrimary}.
+   */
+  accentOnPrimary: string;
   /** Signed URL from `GET /v1/chapters/current`, or null when no logo is set. */
   logoUrl: string | null;
   /** Falls back to text branding when there is no logo (spec/behavior/branding.md). */
@@ -78,6 +92,12 @@ function readString(
  * were independent all along, since this path re-validates `accent_color` and
  * never read that engine's token map. It retires when every chapter has been
  * through one save or recompute (§6).
+ *
+ * `accentPrimary`/`accentOnPrimary` are gated on the same `generatedAccent`
+ * presence check as `accent` rather than read independently: both come from
+ * the same engine run (`SignetPalette` guarantees all of its tokens together),
+ * so a palette that has `--signet-accent-text` has the primary pair too, and
+ * one that does not needs the same house-gold fallback `accent` falls back to.
  */
 export function useChapterBranding(): ChapterBranding {
   const { data } = useCurrentChapter();
@@ -85,18 +105,26 @@ export function useChapterBranding(): ChapterBranding {
 
   const surface = tokens.color.surface.card;
   const brandAccent = tokens.color.gold.house;
+  const brandOnAccent = tokens.color.gold.onHouse;
   const chapter = data as Record<string, unknown> | undefined;
   const accentColor = readString(chapter, "accent_color");
   const palette = chapter?.["theme_palette"] as
     | Record<string, unknown>
     | undefined;
   const generatedAccent = readString(palette, "--signet-accent-text");
+  const generatedAccentPrimary = readString(palette, "--signet-accent-primary");
+  const generatedAccentOnPrimary = readString(
+    palette,
+    "--signet-accent-on-primary",
+  );
 
   return useMemo(() => {
     if (generatedAccent) {
       return {
         accent: generatedAccent,
         accentFallbackApplied: false,
+        accentPrimary: generatedAccentPrimary ?? brandAccent,
+        accentOnPrimary: generatedAccentOnPrimary ?? brandOnAccent,
         logoUrl: readString(chapter, "logo_url"),
         chapterName: readString(chapter, "name"),
       };
@@ -110,8 +138,19 @@ export function useChapterBranding(): ChapterBranding {
     return {
       accent: resolved.resolvedAccent,
       accentFallbackApplied: resolved.fallbackApplied,
+      accentPrimary: brandAccent,
+      accentOnPrimary: brandOnAccent,
       logoUrl: readString(chapter, "logo_url"),
       chapterName: readString(chapter, "name"),
     };
-  }, [accentColor, brandAccent, chapter, generatedAccent, surface]);
+  }, [
+    accentColor,
+    brandAccent,
+    brandOnAccent,
+    chapter,
+    generatedAccent,
+    generatedAccentPrimary,
+    generatedAccentOnPrimary,
+    surface,
+  ]);
 }

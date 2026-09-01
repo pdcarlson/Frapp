@@ -22,6 +22,7 @@ const CRIMSON = "#8B0000";
 /** An accent light enough to clear AA on the dark card surface. */
 const DARK_LEGIBLE_ACCENT = "#7FD1AE";
 const BRAND = signetDarkTokens.color.gold.house;
+const BRAND_ON = signetDarkTokens.color.gold.onHouse;
 
 type ChapterPayload = Record<string, unknown> | null;
 
@@ -272,5 +273,59 @@ describe("the accent role this hook reads", () => {
       expect(result.current.accent).toBe("#FF907F");
     });
     expect(result.current.accent).not.toBe("#8B0000");
+  });
+});
+
+// #1007: the chat self bubble is a solid fill, so it needs the step-9/on-primary
+// pair `signet.ts` gates for exactly that pairing — never `accent` (step 11),
+// which §8 does not hold to the fill contrast floor (see the suite above).
+describe("useChapterBranding solid-fill pair (accentPrimary/accentOnPrimary)", () => {
+  const GENERATED_ACCENT_TEXT = "#FF907F";
+  const GENERATED_ACCENT_PRIMARY = "#8B0000";
+  const GENERATED_ACCENT_ON_PRIMARY = "#FFFFFF";
+
+  it("reads the generated primary/on-primary pair on the engine path", async () => {
+    const { result } = renderBranding(
+      {
+        "chapter-1": {
+          id: "chapter-1",
+          accent_color: CRIMSON,
+          theme_palette: {
+            "--signet-accent-text": GENERATED_ACCENT_TEXT,
+            "--signet-accent-primary": GENERATED_ACCENT_PRIMARY,
+            "--signet-accent-on-primary": GENERATED_ACCENT_ON_PRIMARY,
+          },
+        },
+      },
+      "chapter-1",
+    );
+
+    await waitFor(() =>
+      expect(result.current.accentPrimary).toBe(GENERATED_ACCENT_PRIMARY),
+    );
+    expect(result.current.accentOnPrimary).toBe(GENERATED_ACCENT_ON_PRIMARY);
+  });
+
+  it("falls back to house gold on the legacy path (no Signet map)", async () => {
+    const { result } = renderBranding(
+      {
+        "chapter-1": {
+          id: "chapter-1",
+          accent_color: DARK_LEGIBLE_ACCENT,
+          theme_palette: { "--side-bg": "#171512" },
+        },
+      },
+      "chapter-1",
+    );
+
+    await waitFor(() => expect(result.current.accentPrimary).toBe(BRAND));
+    expect(result.current.accentOnPrimary).toBe(BRAND_ON);
+  });
+
+  it("falls back to house gold with no chapter resolved", async () => {
+    const { result } = renderBranding({}, null);
+
+    await waitFor(() => expect(result.current.accentPrimary).toBe(BRAND));
+    expect(result.current.accentOnPrimary).toBe(BRAND_ON);
   });
 });

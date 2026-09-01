@@ -27,6 +27,21 @@ vi.mock("@repo/hooks", async () => {
   };
 });
 
+// `useChapterBranding` reaches for `useCurrentChapter` (`@repo/hooks`), which
+// needs `FrappClientProvider` — a client this file's tests, focused on the
+// attachment-mount gate, have no reason to provide. `chapter-branding.spec.tsx`
+// owns the branding/accent behavior itself.
+vi.mock("@/lib/chapter-branding", () => ({
+  useChapterBranding: () => ({
+    accent: "#C49A3A",
+    accentFallbackApplied: false,
+    accentPrimary: "#C49A3A",
+    accentOnPrimary: "#2B2009",
+    logoUrl: null,
+    chapterName: null,
+  }),
+}));
+
 import {
   formatMessageTime,
   groupReactions,

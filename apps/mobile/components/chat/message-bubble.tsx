@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { emojiFromActionType } from "@repo/chat-core/types";
 import { SignetTokens } from "@repo/theme/signet";
+import { useChapterBranding } from "@/lib/chapter-branding";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 import {
   authorInitialsFallback,
@@ -103,6 +104,13 @@ export function MessageBubble({
 }: MessageBubbleProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  // The chapter accent, not Signet's house gold — components.md:210 makes the
+  // self bubble the one surface that carries tenant identity in the timeline.
+  // `--signet-accent-primary`/`--signet-accent-on-primary` are the
+  // contrast-checked solid-fill pair (accent-engine.md §8); a chapter whose
+  // palette predates the Signet map falls back to house gold, same as it did
+  // before this pair existed (#1007).
+  const { accentPrimary, accentOnPrimary } = useChapterBranding();
 
   const isMine = !!viewerId && message.sender_id === viewerId;
   // Resolved once and used for both the meta line and the avatar initials — two
@@ -143,7 +151,13 @@ export function MessageBubble({
   ) : (
     <>
       {message.content.length > 0 ? (
-        <Text style={isMine ? styles.bodyMine : styles.bodyTheirs}>
+        <Text
+          style={
+            isMine
+              ? [styles.bodyMine, { color: accentOnPrimary }]
+              : styles.bodyTheirs
+          }
+        >
           {message.content}
         </Text>
       ) : null}
@@ -154,7 +168,11 @@ export function MessageBubble({
   if (isMine) {
     return (
       <View style={styles.rowMine}>
-        <View style={styles.bubbleMine}>{body}</View>
+        <View
+          style={[styles.bubbleMine, { backgroundColor: accentPrimary }]}
+        >
+          {body}
+        </View>
 
         <View style={styles.metaMine}>
           {message._status === "pending" ? (
@@ -345,11 +363,9 @@ function createStyles(tokens: SignetTokens) {
     bubbleMine: {
       paddingVertical: tokens.spacing.md - 1,
       paddingHorizontal: tokens.spacing.md + 2,
-      // Signet's house gold, not the chapter accent: the accent engine has not
-      // delivered an `on-primary` pair to mobile yet, and `gold.onHouse` is the
-      // one on-fill text colour that is specified today. Retinting per chapter
-      // without a contrast-checked foreground is how unreadable bubbles ship.
-      backgroundColor: tokens.color.gold.house,
+      // No backgroundColor here — the chapter accent (or its house-gold
+      // fallback) is applied inline from useChapterBranding() at the render
+      // site, since it varies per chapter rather than per theme (#1007).
       borderTopLeftRadius: tokens.radius.bubble,
       borderTopRightRadius: tokens.radius.bubble,
       borderBottomLeftRadius: tokens.radius.bubble,
@@ -360,8 +376,8 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.foreground,
     },
     bodyMine: {
+      // No color here — see bubbleMine; applied inline alongside the fill.
       ...typeRole(tokens.typography.role.body),
-      color: tokens.color.gold.onHouse,
     },
     deleted: {
       ...typeRole(tokens.typography.role.body),
