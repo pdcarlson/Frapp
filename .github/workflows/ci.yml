@@ -738,6 +738,13 @@ jobs:
         if: github.event_name == 'pull_request'
         run: npm run check:migration-safety -- --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
 
+      # Deliberately bare (no --base/--head) on push: the promotion-docs half
+      # of this check is a PR-time review gate, not a merge-time one — by the
+      # time a commit reaches `main` via merge, the PR run above (line 738)
+      # already enforced it. This mirrors docs-spec-sync's own "(PR only)"
+      # steps in docs.yml for the same category of gate. Filename/version
+      # validation (validateMigrationFiles) still runs unconditionally either
+      # way, so a malformed migration filename is still caught on push (#980).
       - name: Check migration safety (push)
         if: github.event_name == 'push'
         run: npm run check:migration-safety
