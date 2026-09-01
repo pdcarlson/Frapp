@@ -189,6 +189,38 @@ order by occurred_at;
 
 Recording is best-effort and never fails the action that triggered it: the call sites are a checkout, an invite, and a message send, and telemetry that can break a payment is worse than missing telemetry. A lost event costs one data point; the durable row is written first, so a provider outage does not cost the record.
 
+## Outbox Telemetry
+
+Web chat queues offline sends in Dexie (`apps/web/lib/chat/offline-queue.ts`) and flushes them on reconnect, distinguishing terminal 4xx rejections from transient network/5xx failures (`packages/chat-core/src/chat-client.ts`). Six client-side events cover the full lifecycle of one queued row, defined once in `packages/chat-core/src/outbox-analytics.ts` so a typo can't split one event into two names:
+
+| Event name | Recorded when | Extra properties |
+| --- | --- | --- |
+| `outbox-queued` | A message is written to the outbox — first attempt or a retry | `channel_id`, `attempts` |
+| `outbox-confirmed` | The server accepts the message and it leaves the outbox | `channel_id`, `attempts`, `elapsed_ms` |
+| `outbox-failed-4xx` | A terminal rejection (bad request, forbidden, read-only channel) | `channel_id`, `attempts`, `elapsed_ms`, `status` |
+| `outbox-failed-network` | A network error or 5xx — the row stays queued for the next reconnect flush | `channel_id`, `attempts`, `elapsed_ms` |
+| `outbox-retried` | A member taps Retry on a failed row | `channel_id`, `attempts` |
+| `outbox-discarded` | A member discards a failed row instead of retrying | `channel_id`, `attempts` |
+
+`elapsed_ms` is measured from the row's current `queuedAt` (reset on every enqueue, including a retry's re-enqueue) to the point of confirmation or failure — so it reads as "how long did *this* attempt take," not cumulative time since the message was first composed.
+
+`attempts` is the number of *prior* failed attempts before this event — `0` for a first-time send. It cannot be read back from `ctx.outbox.enqueue()`'s return value (every enqueue is a fresh row write, including a retry's, so the store's own `attempts` field always comes back `0`); a retry or reconnect-flush resend instead passes the outbox row's real count in explicitly, so `outbox-queued`/`outbox-confirmed`/`outbox-failed-*` report the true attempt number on a resend, not always `0`.
+
+Unlike the activation funnel above, these events carry **no durable Frapp-owned table** — they are unconditional, unpaced client events routed through the same pseudonymous pipeline as every other client analytics call (`AnalyticsContext` → `POST /v1/analytics/events` → `hmac_sha256(salt, user_id)` distinct id, per [`data-retention.md`](data-retention.md#analytics-events-pseudonymous)), the general path this section's own "client-only analytics is not sufficient" warning is about — acceptable here because nothing downstream (billing, a gate, a promise to a member) depends on outbox telemetry landing.
+
+### PII exclusion
+
+No event property is ever the message body or anything content-derived. This is enforced generically, not per call site: `ctx.track` is the same `AnalyticsContext.track` every client event uses, and the API rejects forbidden keys (`content`, `body`, `message`, …) and non-scalar values via `assertContentFreeProperties` (`packages/validation/src/analytics.ts`) before anything reaches the provider. `chat-client.test.ts`'s outbox-analytics suite runs every emitted event through that same assertion as a local regression guard.
+
+### Computing p50 time-to-confirm and failure rate
+
+Because these events have no dedicated table, the query lives in the provider (PostHog), not in Postgres — unlike the funnel's SQL above. The intended shape:
+
+- **p50 time-to-confirm**: a PostHog Trends insight on `outbox-confirmed`, chart type "Median" (p50) of the `elapsed_ms` property, optionally broken down by `channel_id`.
+- **Failure/discard rate after reconnect**: a ratio of `count(outbox-failed-4xx) + count(outbox-failed-network)` to `count(outbox-queued)` over the same window, or a Funnel insight from `outbox-queued` → `outbox-confirmed` to read conversion directly.
+
+If either report needs to stay queryable without a PostHog provider configured — as the activation funnel deliberately is — that is a bigger change (a dedicated outbox-metrics table, mirroring `chapter_activation_milestones`), not an extension of this instrumentation.
+
 ## Alerting
 
 Configurable alerts (via the monitoring provider) for:
