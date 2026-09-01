@@ -8,7 +8,12 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiTags,
+  ApiOperation,
+  ApiOkResponse,
+} from '@nestjs/swagger';
 import { RbacService } from '../../application/services/rbac.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -23,6 +28,7 @@ import {
   CreateRoleDto,
   UpdateRoleDto,
   TransferPresidencyDto,
+  PresidencyClaimStatusDto,
 } from '../dtos/rbac.dto';
 import { SystemPermissions } from '../../domain/constants/permissions';
 
@@ -89,6 +95,32 @@ export class RbacController {
       member.id,
       dto.target_member_id,
     );
+    return { success: true };
+  }
+
+  // No RequirePermissions beyond the controller-level `members:view`: the
+  // eligible claimant is by definition not the (now-vacant) President and is
+  // often not a `roles:manage` holder either, so this must be readable by
+  // every chapter member — the service enforces actual eligibility.
+  @Get('presidency-claim-status')
+  @ApiOperation({
+    summary: "Whether the caller may claim the chapter's vacant presidency",
+  })
+  @ApiOkResponse({ type: PresidencyClaimStatusDto })
+  async presidencyClaimStatus(
+    @CurrentChapterId() chapterId: string,
+    @CurrentMember() member: { id: string },
+  ) {
+    return this.rbacService.getPresidencyClaimStatus(chapterId, member.id);
+  }
+
+  @Post('claim-presidency')
+  @ApiOperation({ summary: "Claim the chapter's vacant presidency" })
+  async claimPresidency(
+    @CurrentChapterId() chapterId: string,
+    @CurrentMember() member: { id: string },
+  ) {
+    await this.rbacService.claimPresidency(chapterId, member.id);
     return { success: true };
   }
 }

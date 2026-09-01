@@ -45,4 +45,16 @@ export interface IMemberRepository {
     targetMemberId: string,
     presidentRoleId: string,
   ): Promise<boolean>;
+  /**
+   * Atomically claim the vacant President (wildcard) role via the
+   * `claim_presidency` RPC (single DB transaction). Resolves to `true` on
+   * success, or `false` when the chapter no longer needs a new President (race
+   * lost — another eligible member already claimed it, or the flag was
+   * otherwise cleared) so the caller can surface a 409.
+   */
+  claimPresidencyAtomic(
+    chapterId: string,
+    claimingMemberId: string,
+    presidentRoleId: string,
+  ): Promise<boolean>;
 }

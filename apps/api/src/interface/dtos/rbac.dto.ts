@@ -68,3 +68,25 @@ export class TransferPresidencyDto {
   @IsUUID()
   target_member_id: string;
 }
+
+/** Response shape of `GET /v1/roles/presidency-claim-status` (#349). */
+export class PresidencyClaimStatusDto {
+  @ApiProperty({
+    description: 'Whether the chapter currently has no President.',
+  })
+  needs_president: boolean;
+
+  @ApiProperty({
+    description:
+      'Whether the caller holds the chapter\'s next-highest-ranked role with a live member, and may call POST /v1/roles/claim-presidency right now.',
+  })
+  eligible: boolean;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      "Name of the eligible role, or null when no role below President has any member at all (the \"Frapp support intervenes\" case).",
+  })
+  next_role_name: string | null;
+}

@@ -36,6 +36,7 @@ function fullChapterRow(): Chapter {
     legal_policy_version: '2026-01-01',
     legal_accepted_by: 'user-legal-signer',
     analytics_opt_out: false,
+    needs_president: false,
   };
 }
 

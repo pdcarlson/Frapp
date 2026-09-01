@@ -110,6 +110,28 @@ describe('SupabaseMemberRepository — tenant scope', () => {
     expect(harness.rpcCalls[0].args).toMatchObject({ p_chapter_id: CHAPTER_B });
   });
 
+  it('claimPresidencyAtomic passes the chapter to the RPC', async () => {
+    harness = createTenantHarness({
+      tables: {
+        members: [
+          inA({ id: MEMBER_A, user_id: USER_SHARED, role_ids: [] }),
+          inB({ id: MEMBER_B, user_id: USER_SHARED, role_ids: [] }),
+        ],
+      },
+      rpc: { claim_presidency: { data: true } },
+    });
+    repo = new SupabaseMemberRepository(harness.client);
+
+    // Same tenancy contract as transferPresidencyAtomic: `p_chapter_id` is the
+    // only scoping visible outside the RPC's own SQL.
+    const ok = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.claimPresidencyAtomic(CHAPTER_B, MEMBER_B, 'role'),
+    );
+
+    expect(ok).toBe(true);
+    expect(harness.rpcCalls[0].args).toMatchObject({ p_chapter_id: CHAPTER_B });
+  });
+
   describe('deliberately unscoped surfaces', () => {
     it('findByUser spans chapters, because multi-chapter membership is the feature', async () => {
       const memberships = await repo.findByUser(USER_SHARED);

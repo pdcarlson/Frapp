@@ -308,6 +308,15 @@ export class MemberService {
       throw new ForbiddenException('Member not in current chapter');
     }
     await this.memberRepo.delete(memberId);
+    // Removing the current President is one of the two ways a chapter can be
+    // orphaned (spec/behavior/rbac.md § Presidency Transfer "Edge case") — the
+    // other is account deletion, flagged from AccountDeletionService. No-ops
+    // when this member did not hold the President role.
+    await this.rbacService.flagIfPresidentRemoved(
+      chapterId,
+      member.role_ids,
+      actorUserId,
+    );
     await this.auditLogService.record({
       chapterId,
       actorUserId,

@@ -157,4 +157,21 @@ export class SupabaseMemberRepository implements IMemberRepository {
     // `error` above, not as a short row set.
     return (data ?? []).length === 2;
   }
+
+  async claimPresidencyAtomic(
+    chapterId: string,
+    claimingMemberId: string,
+    presidentRoleId: string,
+  ): Promise<boolean> {
+    const { data, error } = await this.supabase.rpc('claim_presidency', {
+      p_chapter_id: chapterId,
+      p_claiming_member_id: claimingMemberId,
+      p_president_role_id: presidentRoleId,
+    });
+    if (error) throw error;
+    // `false` => the chapter's needs_president flag was already clear (race
+    // lost to another claimant, or the chapter no longer needs one). The
+    // claiming-member-vanished case raises in SQL and surfaces via `error`.
+    return data === true;
+  }
 }

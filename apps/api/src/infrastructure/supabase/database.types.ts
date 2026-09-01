@@ -255,6 +255,19 @@ export interface Database {
         Returns: Member[];
       };
       /**
+       * `20260901180000` — `returns boolean`. `true` on a successful claim,
+       * `false` when the chapter's `needs_president` flag was already clear
+       * (race lost to another claimant).
+       */
+      claim_presidency: {
+        Args: {
+          p_chapter_id: string;
+          p_claiming_member_id: string;
+          p_president_role_id: string;
+        };
+        Returns: boolean;
+      };
+      /**
        * `20260829000000` — `returns semester_archives`. Archives the period and
        * swaps New Member → Member across the chapter in one transaction. Returns
        * the single created archive row (a composite, not `setof`), so this is the

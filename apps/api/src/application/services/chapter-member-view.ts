@@ -60,6 +60,12 @@ export const CHAPTER_MEMBER_VIEW_FIELDS = [
   'branding',
   'theme_palette',
   'analytics_opt_out',
+  // #349: every member must be able to see the orphan-president claim
+  // prompt, since the eligible claimant is by definition NOT the president
+  // (and often not a `roles:manage` holder either) — see
+  // `PresidencyClaimBanner` in `roles-page.tsx`, which renders outside the
+  // `roles:manage` gate for exactly this reason.
+  'needs_president',
 ] as const satisfies readonly (keyof Chapter)[];
 
 export type ChapterMemberViewField =

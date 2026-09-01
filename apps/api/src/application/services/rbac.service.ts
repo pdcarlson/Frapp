@@ -10,6 +10,8 @@ import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.inter
 import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
+import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
+import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
 import { Role } from '../../domain/entities/role.entity';
 import { Member } from '../../domain/entities/member.entity';
 import {
@@ -19,13 +21,27 @@ import {
 } from '../../domain/constants/permissions';
 import { flattenPermissionSets } from '../../domain/utils/permissions';
 import { CustomRoleService } from './custom-role.service';
+import { ChapterAuditLogService } from './chapter-audit-log.service';
+
+/** The chapter's next-highest-ranked role that has at least one live holder,
+ * once the (now-vacant) President role is excluded — the pool a presidency
+ * claim may be made from. `null` when no other role has any members at all
+ * (spec/behavior/rbac.md: "If no suitable member exists, Frapp support
+ * intervenes"). */
+interface EligibleClaimants {
+  role: Role;
+  memberIds: Set<string>;
+}
 
 @Injectable()
 export class RbacService {
   constructor(
     @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
+    @Inject(CHAPTER_REPOSITORY)
+    private readonly chapterRepo: IChapterRepository,
     private readonly customRoleService: CustomRoleService,
+    private readonly chapterAuditLogService: ChapterAuditLogService,
   ) {}
 
   async findByChapter(chapterId: string): Promise<Role[]> {
@@ -158,9 +174,7 @@ export class RbacService {
     }
 
     const roles = await this.roleRepo.findByChapter(chapterId);
-    const presidentRole = roles.find(
-      (r) => r.is_system && r.permissions.includes(SystemPermissions.WILDCARD),
-    );
+    const presidentRole = this.findPresidentRole(roles);
 
     if (!presidentRole) {
       throw new NotFoundException('President role not found');
@@ -194,6 +208,182 @@ export class RbacService {
         'Only the current President can transfer presidency',
       );
     }
+  }
+
+  /** Resolve the chapter's seeded President role by identity (wildcard-carrying
+   * system role) rather than `system_key`, matching {@link transferPresidency}:
+   * the legacy `system_key` backfill gap (spec/behavior/rbac.md — a chapter
+   * that renamed a system role before the backfill has no key on it) means
+   * `system_key` alone cannot be trusted to find every chapter's President. */
+  private findPresidentRole(roles: Role[]): Role | undefined {
+    return roles.find((r) => r.is_system && r.permissions.includes(WILDCARD));
+  }
+
+  /**
+   * Walk the chapter's roles by ascending `display_order` (i.e. descending
+   * rank), skipping the vacant President role, and return the first role that
+   * still has at least one live member holding it. That role's holders are
+   * the pool "the next member with the highest-ranked admin role" in
+   * spec/behavior/rbac.md resolves to — not a hardcoded `SystemRoleKeys` list,
+   * since `display_order` is chapter-editable and a chapter may add, rename or
+   * reorder roles freely.
+   */
+  private async resolveEligibleClaimants(
+    chapterId: string,
+    roles: Role[],
+    presidentRole: Role,
+  ): Promise<EligibleClaimants | null> {
+    const candidateRoles = [...roles]
+      .filter((r) => r.id !== presidentRole.id)
+      .sort((a, b) => a.display_order - b.display_order);
+    if (!candidateRoles.length) return null;
+
+    const members = await this.memberRepo.findByChapter(chapterId);
+    for (const role of candidateRoles) {
+      const memberIds = new Set(
+        members.filter((m) => m.role_ids.includes(role.id)).map((m) => m.id),
+      );
+      if (memberIds.size > 0) return { role, memberIds };
+    }
+    return null;
+  }
+
+  /**
+   * Set after the member holding the wildcard-carrying President role is
+   * removed from the chapter (`MemberService.remove`) or their account is
+   * anonymized (`AccountDeletionService`) — the two orphaning causes
+   * spec/behavior/rbac.md's Presidency Transfer "Edge case" names. A no-op
+   * when the removed member did not hold the President role, or the chapter
+   * has none (a chapter mid-onboarding, or one whose seeded roles were
+   * otherwise never created).
+   *
+   * `actorUserId` is null when the caller is the system itself (account
+   * deletion has no acting member), matching {@link ChapterAuditLogService}'s
+   * contract.
+   */
+  async flagIfPresidentRemoved(
+    chapterId: string,
+    removedMemberRoleIds: string[],
+    actorUserId: string | null,
+  ): Promise<void> {
+    if (!removedMemberRoleIds.length) return;
+
+    const roles = await this.roleRepo.findByChapter(chapterId);
+    const presidentRole = this.findPresidentRole(roles);
+    if (!presidentRole || !removedMemberRoleIds.includes(presidentRole.id)) {
+      return;
+    }
+
+    await this.chapterRepo.update(chapterId, { needs_president: true });
+    await this.chapterAuditLogService.record({
+      chapterId,
+      actorUserId,
+      action: 'president_orphaned',
+      targetType: 'chapter',
+      targetId: chapterId,
+      diff: {},
+    });
+  }
+
+  /**
+   * Whether `memberId` may claim the chapter's vacant presidency right now,
+   * for the Roles page's claim banner (rendered to every member, since the
+   * eligible claimant is by definition not the outgoing President and is
+   * often not a `roles:manage` holder either).
+   */
+  async getPresidencyClaimStatus(
+    chapterId: string,
+    memberId: string,
+  ): Promise<{
+    needs_president: boolean;
+    eligible: boolean;
+    next_role_name: string | null;
+  }> {
+    const chapter = await this.chapterRepo.findById(chapterId);
+    if (!chapter) throw new NotFoundException('Chapter not found');
+    if (!chapter.needs_president) {
+      return { needs_president: false, eligible: false, next_role_name: null };
+    }
+
+    const roles = await this.roleRepo.findByChapter(chapterId);
+    const presidentRole = this.findPresidentRole(roles);
+    if (!presidentRole) {
+      return { needs_president: true, eligible: false, next_role_name: null };
+    }
+
+    const eligible = await this.resolveEligibleClaimants(
+      chapterId,
+      roles,
+      presidentRole,
+    );
+    return {
+      needs_president: true,
+      eligible: eligible?.memberIds.has(memberId) ?? false,
+      next_role_name: eligible?.role.name ?? null,
+    };
+  }
+
+  /**
+   * Claim the chapter's vacant presidency. Only reachable when
+   * `chapters.needs_president` is set and `claimingMemberId` holds the
+   * chapter's next-highest-ranked role with a live member — see
+   * {@link resolveEligibleClaimants}. The actual role grant is atomic
+   * (`claim_presidency` RPC via {@link IMemberRepository.claimPresidencyAtomic}),
+   * so two eligible members racing to claim resolve to exactly one winner.
+   */
+  async claimPresidency(
+    chapterId: string,
+    claimingMemberId: string,
+  ): Promise<void> {
+    const chapter = await this.chapterRepo.findById(chapterId);
+    if (!chapter) throw new NotFoundException('Chapter not found');
+    if (!chapter.needs_president) {
+      throw new BadRequestException(
+        'This chapter does not need a new President',
+      );
+    }
+
+    const claimingMember = await this.memberRepo.findById(claimingMemberId);
+    if (!claimingMember || claimingMember.chapter_id !== chapterId) {
+      throw new NotFoundException('Member not found');
+    }
+
+    const roles = await this.roleRepo.findByChapter(chapterId);
+    const presidentRole = this.findPresidentRole(roles);
+    if (!presidentRole) {
+      throw new NotFoundException('President role not found');
+    }
+
+    const eligible = await this.resolveEligibleClaimants(
+      chapterId,
+      roles,
+      presidentRole,
+    );
+    if (!eligible || !eligible.memberIds.has(claimingMemberId)) {
+      throw new ForbiddenException(
+        "Only a member holding the chapter's next-highest-ranked role can claim the presidency",
+      );
+    }
+
+    const claimed = await this.memberRepo.claimPresidencyAtomic(
+      chapterId,
+      claimingMemberId,
+      presidentRole.id,
+    );
+    if (!claimed) {
+      throw new ConflictException(
+        'This chapter no longer needs a new President — someone else already claimed it',
+      );
+    }
+
+    await this.chapterAuditLogService.record({
+      chapterId,
+      actorUserId: claimingMember.user_id,
+      action: 'presidency_claimed',
+      targetType: 'chapter',
+      targetId: chapterId,
+      diff: { claimed_by_member_id: claimingMemberId },
+    });
   }
 
   getPermissionsCatalog() {

@@ -4,10 +4,13 @@ import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { Loader2, Trash2 } from "lucide-react";
 import {
+  useClaimPresidency,
   useCreateRole,
+  useCurrentChapter,
   useDeleteRole,
   useMembers,
   usePermissionsCatalog,
+  usePresidencyClaimStatus,
   useRoles,
   useTransferPresidency,
   useUpdateRole,
@@ -99,6 +102,95 @@ type MemberSummary = {
  * where the picker starts, never what an untouched role stores.
  */
 const DEFAULT_ROLE_SWATCH = signetDarkTokens.color.gold.seed;
+
+/**
+ * "This chapter needs a new President" recovery prompt
+ * (spec/behavior/rbac.md § Presidency Transfer "Edge case").
+ *
+ * Rendered ABOVE the `roles:manage` gate in {@link RolesAndPermissionsPage},
+ * not inside it: the eligible claimant is by definition not the (now-vacant)
+ * President, and the default role pack only grants `roles:manage` to
+ * President — so a member who needs to see this is exactly the member the
+ * gate would otherwise hide it from.
+ */
+function PresidencyClaimBanner() {
+  const { toast } = useToast();
+  const { confirm, confirmDialog } = useConfirmDialog();
+  const chapterQuery = useCurrentChapter();
+  const needsPresident = chapterQuery.data?.needs_president ?? false;
+  const statusQuery = usePresidencyClaimStatus({ enabled: needsPresident });
+  const claimPresidency = useClaimPresidency();
+
+  if (!needsPresident) return null;
+
+  async function handleClaim() {
+    const confirmed = await confirm({
+      title: "Claim the presidency?",
+      description:
+        "You will immediately hold every permission the President role carries. Only a future presidency transfer can move it again.",
+      confirmLabel: "Claim presidency",
+    });
+    if (!confirmed) return;
+    try {
+      await claimPresidency.mutateAsync();
+      toast({
+        title: "Presidency claimed",
+        description: "You are now the President of this chapter.",
+      });
+    } catch (error) {
+      toast({
+        title: "Couldn't claim presidency",
+        description: getErrorMessage(
+          error,
+          "You may not be eligible, or someone else already claimed it.",
+        ),
+        variant: "destructive",
+      });
+    }
+  }
+
+  const eligible = statusQuery.data?.eligible ?? false;
+  const nextRoleName = statusQuery.data?.next_role_name ?? null;
+
+  let description: string;
+  if (statusQuery.isLoading) {
+    description = "Checking who can claim it...";
+  } else if (eligible) {
+    description = nextRoleName
+      ? `As the highest-ranked remaining officer (${nextRoleName}), you can claim the presidency now.`
+      : "You can claim the presidency now.";
+  } else if (nextRoleName) {
+    description = `Only a member holding the ${nextRoleName} role can claim it right now.`;
+  } else {
+    description =
+      "No eligible officer role was found. Contact Frapp support to resolve this.";
+  }
+
+  return (
+    <>
+      {confirmDialog}
+      <Card className="border-destructive/40">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <RolesGlyph className="h-4 w-4 text-muted-foreground" />
+            This chapter needs a new President
+          </CardTitle>
+          <CardDescription>{description}</CardDescription>
+        </CardHeader>
+        {eligible ? (
+          <CardFooter className="flex justify-end">
+            <Button onClick={() => void handleClaim()} disabled={claimPresidency.isPending}>
+              {claimPresidency.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : null}
+              Claim presidency
+            </Button>
+          </CardFooter>
+        ) : null}
+      </Card>
+    </>
+  );
+}
 
 export function RolesAndPermissionsPage() {
   const { toast } = useToast();
@@ -703,36 +795,43 @@ export function RolesAndPermissionsPage() {
   }
 
   return (
-    <Can
-      permission="roles:manage"
-      offlineFallback={(retry) => (
-        <PermissionsOfflineSurface
-          description="Reconnect to check whether you can manage roles."
-          onRetry={retry}
-        />
-      )}
-      deniedFallback={
-        <Card>
-          <CardHeader>
-            <CardTitle>Roles &amp; Permissions</CardTitle>
-            <CardDescription>
-              Managing roles requires the <code>roles:manage</code> permission.
-              Ask your chapter president to grant access.
-            </CardDescription>
-          </CardHeader>
-        </Card>
-      }
-    >
+    <div className="space-y-6">
       {/*
-        Above the state branch, not inside it. `ConfirmDialogHost` settles a
-        pending promise on unmount, so a screen whose states sit over its own
-        dialog cancels a confirmation the moment a background refetch fails —
-        the shape §10 names from the other side and the Chapter Ops slice hit
-        with this same primitive. It stays inside the gate: a member who loses
-        the permission mid-flight should lose the confirmation with it.
+        Deliberately outside `<Can permission="roles:manage">` below — see
+        `PresidencyClaimBanner`'s own doc comment for why.
       */}
-      {confirmDialog}
-      {body}
-    </Can>
+      <PresidencyClaimBanner />
+      <Can
+        permission="roles:manage"
+        offlineFallback={(retry) => (
+          <PermissionsOfflineSurface
+            description="Reconnect to check whether you can manage roles."
+            onRetry={retry}
+          />
+        )}
+        deniedFallback={
+          <Card>
+            <CardHeader>
+              <CardTitle>Roles &amp; Permissions</CardTitle>
+              <CardDescription>
+                Managing roles requires the <code>roles:manage</code>{" "}
+                permission. Ask your chapter president to grant access.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        }
+      >
+        {/*
+          Above the state branch, not inside it. `ConfirmDialogHost` settles a
+          pending promise on unmount, so a screen whose states sit over its own
+          dialog cancels a confirmation the moment a background refetch fails —
+          the shape §10 names from the other side and the Chapter Ops slice hit
+          with this same primitive. It stays inside the gate: a member who loses
+          the permission mid-flight should lose the confirmation with it.
+        */}
+        {confirmDialog}
+        {body}
+      </Can>
+    </div>
   );
 }
