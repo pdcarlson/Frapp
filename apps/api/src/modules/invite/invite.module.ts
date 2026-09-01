@@ -8,9 +8,16 @@ import { ChapterModule } from '../chapter/chapter.module';
 import { AuthModule } from '../auth/auth.module';
 import { NotificationModule } from '../notification/notification.module';
 import { ActivationModule } from '../activation/activation.module';
+import { EmailModule } from '../email/email.module';
 
 @Module({
-  imports: [ChapterModule, AuthModule, NotificationModule, ActivationModule],
+  imports: [
+    ChapterModule,
+    AuthModule,
+    NotificationModule,
+    ActivationModule,
+    EmailModule,
+  ],
   controllers: [InviteController],
   providers: [
     InviteService,

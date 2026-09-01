@@ -5,6 +5,7 @@ import { AuthService } from '../../application/services/auth.service';
 import {
   CreateInviteDto,
   BatchCreateInvitesDto,
+  BulkEmailInviteDto,
   RedeemInviteDto,
 } from '../dtos/invite.dto';
 
@@ -16,6 +17,7 @@ describe('InviteController', () => {
     const mockInviteService = {
       create: jest.fn(),
       createBatch: jest.fn(),
+      createWithEmails: jest.fn(),
       redeem: jest.fn(),
       findByChapter: jest.fn(),
       revoke: jest.fn(),
@@ -94,6 +96,35 @@ describe('InviteController', () => {
         userId,
         dto.role,
         dto.count,
+      );
+      expect(result).toEqual(expectedResult);
+    });
+  });
+
+  describe('createWithEmails', () => {
+    it('should call inviteService.createWithEmails with correct arguments', async () => {
+      const chapterId = 'chapter-1';
+      const userId = 'user-1';
+      const dto: BulkEmailInviteDto = {
+        role: 'Member',
+        emails: ['a@example.com', 'b@example.com'],
+      };
+      const expectedResult = {
+        invites: [{ token: 'invite-token-1' }, { token: 'invite-token-2' }],
+        failed: [],
+      };
+
+      jest
+        .spyOn(inviteService, 'createWithEmails')
+        .mockResolvedValue(expectedResult as any);
+
+      const result = await controller.createWithEmails(chapterId, userId, dto);
+
+      expect(inviteService.createWithEmails).toHaveBeenCalledWith(
+        chapterId,
+        userId,
+        dto.role,
+        dto.emails,
       );
       expect(result).toEqual(expectedResult);
     });
