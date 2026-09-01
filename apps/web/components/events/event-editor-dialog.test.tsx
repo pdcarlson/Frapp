@@ -67,6 +67,22 @@ describe("EventEditorDialog role targeting", () => {
     chapter.active();
   });
 
+  it("labels the notes field as meeting minutes, not internal notes", () => {
+    render(
+      <EventEditorDialog
+        open
+        mode="create"
+        event={null}
+        usingPreviewData={false}
+        onOpenChange={() => {}}
+        onSaved={async () => {}}
+      />,
+    );
+
+    expect(screen.getByLabelText("Meeting minutes")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Internal notes")).not.toBeInTheDocument();
+  });
+
   it("sends required_role_ids in the create payload when roles are selected", async () => {
     render(
       <EventEditorDialog
