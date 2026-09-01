@@ -17,7 +17,7 @@ Other modules (Chat, Events, Study, Billing) call these methods without knowing 
 4. Save notification to `notifications` table (in-app history).
 5. Fetch the user's `push_tokens`.
 6. Send push notification via Expo Push Service with the appropriate priority.
-7. If delivery fails (invalid token, Expo error), remove the invalid token from `push_tokens`.
+7. If Expo reports a token as permanently undeliverable (`DeviceNotRegistered`), remove it from `push_tokens`. This is classified from the *ticket* Expo returns at send time (`ExpoPushProvider.recordTickets`), not from polling delivery *receipts* — receipt polling is a separate, unimplemented enhancement. Every other Expo error (rate limit, oversized message, bad app credentials, transport failure) is transient or describes something other than this specific token, and does not prune it — pruning on those would unregister a device that is still valid.
 
 **URGENT outranks the category preference** (#1041). A member cannot mute a chapter emergency — or the president's subscription-status alert — by switching its category off, and the exemption covers the in-app row as well as the push: suppressing the row would leave no trace of the broadcast anywhere, which is the same failure in a slower form. Step 2 is the only gate URGENT skips; it is otherwise delivered exactly like any other payload. Note the ordering is an implementation detail of *when the preference is read*, not of what is checked — `notifyUser` skips the lookup entirely for URGENT rather than reading it and discarding the result, so an emergency broadcast costs no preference query per recipient.
 
