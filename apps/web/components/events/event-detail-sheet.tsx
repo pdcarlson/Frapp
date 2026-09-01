@@ -1,14 +1,19 @@
 "use client";
 
 import { useMemo } from "react";
-import { AlertTriangle, Loader2, Trash2 } from "lucide-react";
+import { AlertTriangle, CalendarPlus, Loader2, Trash2 } from "lucide-react";
 import {
   PointsGlyph,
   RolesGlyph,
   ScheduleGlyph,
   StudyZonesGlyph,
 } from "@/components/events/chapter-ops-glyphs";
-import { useDeleteEvent, useEvent, useRoles } from "@repo/hooks";
+import {
+  useDeleteEvent,
+  useDownloadEventIcs,
+  useEvent,
+  useRoles,
+} from "@repo/hooks";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -51,6 +56,7 @@ export function EventDetailSheet({
   const eventId = typeof event?.id === "string" ? event.id : "";
   const eventQuery = useEvent(!usingPreviewData ? eventId : "");
   const deleteEventMutation = useDeleteEvent();
+  const downloadIcsMutation = useDownloadEventIcs();
   // `DELETE /v1/events/:id` and the `PATCH /v1/events/:id` behind "Edit event"
   // are both paid-ops. Edit is gated here rather than only inside the editor
   // dialog because this button *is* the trigger for that flow (§5 rule 1) —
@@ -178,6 +184,35 @@ export function EventDetailSheet({
     }
   }
 
+  // Preview mode has no live event to fetch an .ics for — `canMutate` already
+  // guards the button, but the guard is repeated here so this can never fire
+  // from a stray keyboard/programmatic click.
+  async function handleAddToCalendar() {
+    if (!eventId || usingPreviewData) return;
+
+    try {
+      const icsBlob = await downloadIcsMutation.mutateAsync(eventId);
+      const objectUrl = URL.createObjectURL(icsBlob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = `${eventId}.ics`;
+      anchor.style.display = "none";
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      toast({
+        title: "Could not export calendar file",
+        description: getErrorMessage(
+          error,
+          "Something went wrong. Please retry.",
+        ),
+        variant: "destructive",
+      });
+    }
+  }
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl">
@@ -228,6 +263,18 @@ export function EventDetailSheet({
               <Trash2 className="h-4 w-4" />
             )}
             Delete event
+          </Button>
+          <Button
+            variant="secondary"
+            disabled={!canMutate || downloadIcsMutation.isPending}
+            onClick={handleAddToCalendar}
+          >
+            {downloadIcsMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <CalendarPlus className="h-4 w-4" />
+            )}
+            Add to calendar
           </Button>
         </div>
 
