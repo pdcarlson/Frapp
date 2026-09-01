@@ -130,18 +130,21 @@ export class PollService {
     const metadata = message.metadata as PollMetadata;
     const options = metadata.options ?? [];
 
-    // `validateIndexedPollVote` below only knows about `expires_at` — a manual
-    // close (`closed_at`) is this service's own concept, checked first so a
-    // creator-closed poll rejects votes the same way an expired one does.
-    if (this.isPollExpired(metadata)) {
-      throw new BadRequestException('Poll has expired');
-    }
-
     // Same rules the chat-card vote path now applies (#871). The messages below
     // are unchanged so this service's existing tests keep passing untouched —
     // that they do is the proof the extraction preserved behaviour.
+    //
+    // `validateIndexedPollVote` only knows about one deadline field
+    // (`expiresAt`), but this service has two independent "closed" signals —
+    // `expires_at` and the manual `closed_at` (#379). Rather than running a
+    // second, separate expiry check before this one (redundant, and it would
+    // make the switch's `'closed'` case below permanently unreachable), feed
+    // it whichever deadline is earlier: `closed_at`, once set, is always a
+    // timestamp already in the past (`close()` stamps it with the current
+    // time), so passing it in place of `expires_at` makes `isPollClosed`
+    // report closed immediately, with the same single check either way.
     const rejection = validateIndexedPollVote({
-      expiresAt: metadata.expires_at,
+      expiresAt: metadata.closed_at ?? metadata.expires_at,
       optionCount: options.length,
       optionIndexes,
       choiceMode: metadata.choice_mode,
@@ -280,10 +283,13 @@ export class PollService {
 
   /**
    * Manual early close (`spec/behavior/polls.md`: "Once expired (or manually
-   * closed by the creator), the poll is locked"). Creator-only, mirroring
-   * `editMessage`'s ownership check — closing is authorship control over a
-   * poll's own lifecycle, not participation, so it is authorized as a `post`
-   * like creation itself rather than as a `vote`.
+   * closed by the creator), the poll is locked"). Creator-only, enforced by
+   * the `sender_id` check below — channel access is authorized as a `vote`
+   * (like `vote`/`removeVote`, exempt from the Alumni post restriction) even
+   * though `close` isn't a vote, because gating it as a `post` would strand
+   * an open-ended (no `expires_at`) poll forever the moment its creator loses
+   * post rights in the channel (e.g. transitions to Alumni): `isPollExpired`
+   * never trips without a deadline, and nothing else may close it.
    */
   async close(
     messageId: string,
@@ -299,11 +305,20 @@ export class PollService {
       message.channel_id,
       chapterId,
       userId,
-      'post',
+      'vote',
     );
 
     if (message.type !== 'POLL') {
       throw new BadRequestException('Message is not a poll');
+    }
+
+    // Mirrors `editMessage`'s guard (chat.service.ts) — deletion is soft, so
+    // the row is still reachable by id, and a close must not resurrect a
+    // deleted poll's question/options into `metadata` (deleteMessage wipes
+    // `metadata` to `{}`; this method would otherwise spread the pre-delete
+    // copy it just read back in below).
+    if (message.is_deleted) {
+      throw new BadRequestException('Cannot close a deleted poll');
     }
 
     if (message.sender_id !== userId) {
@@ -311,6 +326,9 @@ export class PollService {
     }
 
     const metadata = message.metadata as PollMetadata;
+    if (metadata.closed_at) {
+      throw new BadRequestException('Poll is already closed');
+    }
     if (this.isPollExpired(metadata)) {
       throw new BadRequestException('Poll has expired');
     }

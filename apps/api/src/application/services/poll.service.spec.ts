@@ -474,7 +474,7 @@ describe('PollService', () => {
       expect(mockMessageRepo.update).not.toHaveBeenCalled();
     });
 
-    it('rejects closing an already-closed poll', async () => {
+    it('rejects closing an already-closed poll, distinctly from an already-expired one', async () => {
       mockMessageRepo.findById.mockResolvedValue({
         ...basePollMessage,
         metadata: {
@@ -482,6 +482,24 @@ describe('PollService', () => {
           closed_at: '2026-01-01T00:00:00.000Z',
           closed_by: 'user-1',
         },
+      });
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+
+      await expect(service.close('msg-1', 'user-1', 'ch-1')).rejects.toThrow(
+        'Poll is already closed',
+      );
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects closing a deleted poll, never resurrecting its metadata', async () => {
+      // Mirrors editMessage's guard: deletion is soft (metadata wiped to {})
+      // but the row stays reachable by id, so without this check close()
+      // would spread the pre-delete metadata it just read straight back in.
+      mockMessageRepo.findById.mockResolvedValue({
+        ...basePollMessage,
+        is_deleted: true,
+        content: '[message deleted]',
+        metadata: {},
       });
       mockChannelRepo.findById.mockResolvedValue(baseChannel);
 
@@ -919,6 +937,21 @@ describe('PollService', () => {
         'msg-1',
         'user-2',
       );
+    });
+
+    it('still lets an alumni member close their own open-ended poll', async () => {
+      // close() is gated as a `vote`, not a `post`, precisely so this never
+      // regresses: an open-ended (no expires_at) poll whose creator later
+      // becomes Alumni must stay closeable by them, not get stuck open
+      // forever the moment they lose post rights in the channel.
+      const ownPoll = { ...basePollMessage, sender_id: 'user-2' };
+      mockMessageRepo.findById.mockResolvedValue(ownPoll);
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockMessageRepo.update.mockResolvedValue(ownPoll);
+
+      await service.close('msg-1', 'user-2', 'ch-1');
+
+      expect(mockMessageRepo.update).toHaveBeenCalled();
     });
   });
 });
