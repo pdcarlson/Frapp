@@ -175,3 +175,21 @@ export function selectUnreadIds(data: unknown): string[] {
     .map((row) => str(row, "id"))
     .filter((id): id is string => !!id);
 }
+
+/**
+ * Count of unread rows whose target is **not** chat.
+ *
+ * `ChatService` writes a `notifications` row (`target.screen: "chat"`) for
+ * every DM, group-DM, and announcement message, on top of the read-receipt
+ * count `useChannelUnreadCounts` already returns for that same channel — see
+ * `chat.service.ts`'s `sendMessageNotification`. Summing `selectUnreadIds`'s
+ * total with the channel-unread total would therefore double-count exactly
+ * those messages. The app-icon badge (`use-badge-sync.ts`) needs this
+ * exclusion; "Mark all read" does not — it must still clear chat-sourced rows
+ * — so this is a separate selector rather than a change to `selectUnreadIds`.
+ */
+export function selectUnreadNonChatCount(data: unknown): number {
+  return records(data).filter(
+    (row) => str(row, "read_at") === null && targetScreen(row.data) !== "chat",
+  ).length;
+}

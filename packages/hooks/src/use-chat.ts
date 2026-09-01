@@ -35,7 +35,7 @@ export interface ChannelUnreadCount {
  * This is the one chat operation whose response body is actually generated in
  * `@repo/api-sdk` (every other one infers as `never`), so it needs no cast.
  */
-export function useChannelUnreadCounts() {
+export function useChannelUnreadCounts(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["channels", "unread"],
@@ -47,6 +47,7 @@ export function useChannelUnreadCounts() {
     // Deliberately shorter than the 60s on `useChannels`: a badge that lags a
     // read is the most visible staleness in the app.
     staleTime: 15_000,
+    enabled: options?.enabled ?? true,
   });
 }
 

@@ -72,6 +72,19 @@ describe("useChannelUnreadCounts", () => {
 
     expect(result.current.data).toEqual([]);
   });
+
+  it("stays idle and never calls the API when disabled", async () => {
+    const mockGet = vi.fn().mockResolvedValue({ data: [], error: null });
+    const mockClient = { GET: mockGet };
+
+    const { result } = renderHook(
+      () => useChannelUnreadCounts({ enabled: false }),
+      { wrapper: createWrapper(queryClient, mockClient) },
+    );
+
+    expect(result.current.fetchStatus).toBe("idle");
+    expect(mockGet).not.toHaveBeenCalled();
+  });
 });
 
 describe("useMarkChannelRead", () => {
