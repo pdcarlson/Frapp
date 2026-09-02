@@ -136,5 +136,5 @@ export function useMyPermissions(options?: { enabled?: boolean }) {
  */
 export function usePermissionList(): readonly string[] {
   const { data } = useMyPermissions();
-  return data?.permissions ?? [];
+  return Array.isArray(data?.permissions) ? data.permissions : [];
 }

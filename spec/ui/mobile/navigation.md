@@ -45,7 +45,7 @@ Two rows above are not drawn in Canvas and exist for reachability:
 - **Service hours** — `service-hours.tsx` is a live route hosting the s20 sheet, and without a row it would be unreachable.
 - **Chapter** — the only entry to `(auth)/chapter-picker.tsx`. The picker is deliberately *not* forced on members whose token lacks an `active_chapter_id` claim (`apps/mobile/lib/auth-gate.ts` explains why that would be an outage while #805 is open), so it needs a door.
 
-**Implementation status.** Every row above is routed, the admin section included — its gate landed with C4 of #937. The gate is `useMyPermissions()` plus `can` / `canAny` from `@repo/validation`, never a bare `permissions.includes(…)`: an owner's grant is the wildcard `*`, so a membership test would hide these rows from exactly the people they exist for.
+**Implementation status.** Every row above is routed, the admin section included — its gate landed with C4 of #937. The gate is `usePermissionList()` (a thin wrapper over `useMyPermissions()`) plus `can` / `canAny` from `@repo/validation`, never a bare `permissions.includes(…)`: an owner's grant is the wildcard `*`, so a membership test would hide these rows from exactly the people they exist for.
 
 Two things about that section are worth knowing before reading a device:
 
