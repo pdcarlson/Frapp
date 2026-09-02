@@ -66,6 +66,7 @@ type PollRow = {
     options?: string[];
     choice_mode?: "single" | "multi";
     expires_at?: string | null;
+    closed_at?: string | null;
   };
   created_at: string;
   isExpired: boolean;
@@ -167,11 +168,20 @@ function Poll({
           </CardTitle>
           <CardDescription>
             {channelName} · Created {formatDate(poll.created_at)}
-            {poll.metadata.expires_at
-              ? ` · ${poll.isExpired ? "Closed" : "Closes"} ${formatDate(
-                  poll.metadata.expires_at,
-                )}`
-              : ""}
+            {/*
+              A manually closed poll (#379) shows its own `closed_at`, not
+              `expires_at` — a poll closed early can have a still-future (or
+              absent) `expires_at`, and showing that date next to "Closed"
+              would tell a member the poll closed on a day that hasn't
+              happened yet.
+            */}
+            {poll.metadata.closed_at
+              ? ` · Closed ${formatDate(poll.metadata.closed_at)}`
+              : poll.metadata.expires_at
+                ? ` · ${poll.isExpired ? "Closed" : "Closes"} ${formatDate(
+                    poll.metadata.expires_at,
+                  )}`
+                : ""}
           </CardDescription>
         </div>
         <div className="flex items-center gap-2">
