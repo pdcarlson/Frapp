@@ -540,6 +540,41 @@ describe('PollService', () => {
     });
   });
 
+  describe('announceExpiry', () => {
+    it('posts a system_audit message into the poll channel', async () => {
+      mockMessageRepo.findById.mockResolvedValue(basePollMessage);
+      mockMessageRepo.create.mockResolvedValue(basePollMessage);
+
+      await service.announceExpiry('msg-1', 'chan-1', 'Pizza or tacos?');
+
+      expect(mockMessageRepo.create).toHaveBeenCalledWith({
+        channel_id: 'chan-1',
+        sender_id: '00000000-0000-0000-0000-000000000000',
+        content: 'Poll "Pizza or tacos?" has closed.',
+        kind: 'system_audit',
+      });
+    });
+
+    // Sweep's candidate list is a point-in-time snapshot; the creator can
+    // manually close() the same poll before this call runs. Without a
+    // fresh re-check, that would post a spurious auto notice alongside
+    // the manual close.
+    it('skips posting when the poll was manually closed since the sweep snapshot', async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...basePollMessage,
+        metadata: {
+          ...basePollMessage.metadata,
+          closed_at: '2026-01-01T00:00:00.000Z',
+          closed_by: 'user-1',
+        },
+      });
+
+      await service.announceExpiry('msg-1', 'chan-1', 'Pizza or tacos?');
+
+      expect(mockMessageRepo.create).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getPoll', () => {
     it('should return poll with results and user votes', async () => {
       mockMessageRepo.findById.mockResolvedValue(basePollMessage);

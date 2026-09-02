@@ -909,6 +909,22 @@ After any rollback event:
 * **⚠️ Note**: Additive DDL only — no existing table's data is touched, so nothing that predates the migration can be lost. But **redeploy the API at the pre-FRA-24 revision first**, or disable the sweeps. `ScheduledJobsService` claims a row before *every* unit of work, and `ScheduledJobsRepository` treats an unexpected insert error as "not claimed", so with the table gone **all three claim-based sweeps silently stop doing anything** (report retention takes no claim and is unaffected) — reminders send nothing, and attendance auto-absent stops marking. They fail safe (no crash, no double-send) but they also fail *quietly*: the only signal is a `dispatch claim failed` line per item. Auto-absent is not exempt — it claims under `entity_type = 'EVENT'` so it runs once per event instead of once per replica per hour.
 * **Data caveat**: the rows are delivery bookkeeping — which reminder has already gone out for which invoice/task. Dropping the table erases that memory, so **re-applying the migration and re-enabling the sweeps re-sends every reminder still inside the 7-day `OVERDUE_LOOKBACK_DAYS` window** (and any invoice/task due the next day). Members see duplicates for anything in that window; older items stay silent because the lookback bound excludes them. If that matters, snapshot the table before dropping and restore it alongside the re-apply.
 
+## Rollback poll-expiry dispatch support
+
+* **Migration**: `20260902010000_poll_expiry_dispatch.sql`
+* **Action**: the migration widens two `CHECK` constraints on the existing `scheduled_notification_dispatches` table and adds one partial index on `chat_messages`. Reverting narrows the constraints back and drops the index:
+  ```sql
+  DELETE FROM scheduled_notification_dispatches WHERE entity_type = 'POLL' OR threshold = 'EXPIRED'; -- see data caveat
+  ALTER TABLE scheduled_notification_dispatches DROP CONSTRAINT scheduled_notification_dispatches_entity_type_check;
+  ALTER TABLE scheduled_notification_dispatches ADD CONSTRAINT scheduled_notification_dispatches_entity_type_check CHECK (entity_type IN ('INVOICE', 'TASK', 'EVENT'));
+  ALTER TABLE scheduled_notification_dispatches DROP CONSTRAINT scheduled_notification_dispatches_threshold_check;
+  ALTER TABLE scheduled_notification_dispatches ADD CONSTRAINT scheduled_notification_dispatches_threshold_check CHECK (threshold IN ('DUE_SOON', 'OVERDUE', 'AUTO_ABSENT'));
+  DROP INDEX IF EXISTS idx_chat_messages_poll_expires_at;
+  ```
+  The narrowed `CHECK`s will reject the rollback outright while any `entity_type = 'POLL'` or `threshold = 'EXPIRED'` row still exists, hence the `DELETE` first.
+* **Note**: Additive DDL only — no existing constraint value, table, or row is removed by the forward migration, so nothing that predates it can be lost. **Redeploy the API at the pre-#404 revision first**, or disable `ScheduledJobsService.handlePollExpirySweep` — with the narrowed `CHECK` back in place, `claimDispatch('POLL', …, 'EXPIRED', …)` fails the insert (constraint violation, not `23505`) and `ScheduledJobsRepository` treats that as "not claimed," so the poll-expiry sweep fails safe (no crash, no double-post) but silently stops announcing expired polls — the only signal is a `dispatch claim failed` line per poll.
+* **Data caveat**: same shape as the base `scheduled_notification_dispatches` rollback above — the deleted rows are delivery bookkeeping for which expired polls have already been announced. Re-applying the migration and re-enabling the sweep re-announces every poll still inside the 24-hour `POLL_EXPIRY_LOOKBACK_HOURS` window; polls that expired earlier stay silent. Snapshot the `entity_type = 'POLL'` rows before deleting if that matters.
+
 ## Rollback custom-role member assignment
 
 * **Migration**: `20260804230000_member_custom_role_ids.sql`
