@@ -81,3 +81,6 @@ lychee-*/
 # Regenerate rather than commit: DOCUMENTATION_CONVENTIONS.md hard rule 1 has no
 # home for generated marketing binaries.
 screenshots/
+
+# Locally installed dev tooling (scripts/install-lychee.sh). Regenerate, do not commit.
+.tools/
