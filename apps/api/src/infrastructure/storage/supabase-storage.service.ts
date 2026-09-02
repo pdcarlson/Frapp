@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase/supabase.provider';
 import type {
@@ -17,9 +17,18 @@ import type { FrappSupabaseClient } from '../supabase/database.types';
  * chokepoint every storage operation passes through, and the paths it receives
  * come from database columns that were themselves populated from client input.
  * See `assertSafeStoragePath` for why a raw `..` check is not sufficient.
+ *
+ * `assertSafeStoragePath` is domain-layer code and throws a plain `Error`;
+ * this is the boundary that translates it into the `BadRequestException`
+ * every caller of this class has always seen on an unsafe path.
  */
-const assertSafeObjectPath = (path: string): void =>
-  assertSafeStoragePath(path);
+const assertSafeObjectPath = (path: string): void => {
+  try {
+    assertSafeStoragePath(path);
+  } catch (error) {
+    throw new BadRequestException((error as Error).message);
+  }
+};
 
 /**
  * Same guard for folder prefixes, which — unlike object paths — may legitimately

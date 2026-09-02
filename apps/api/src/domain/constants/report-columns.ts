@@ -1,4 +1,4 @@
-import type { ReportPdfColumn } from '../../domain/adapters/pdf.interface';
+import type { ReportPdfColumn } from '../adapters/pdf.interface';
 
 /**
  * Column descriptors shared by the CSV writer and the PDF renderer, so the two

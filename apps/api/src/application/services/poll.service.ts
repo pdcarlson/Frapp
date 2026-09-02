@@ -14,11 +14,7 @@ import type { IPollVoteRepository } from '../../domain/repositories/poll-vote.re
 import type { ChatMessage } from '../../domain/entities/chat.entity';
 import type { PollMetadata } from '../../domain/entities/poll-vote.entity';
 import { ChannelAccessService } from './channel-access.service';
-import {
-  LIST_QUERY_LIMIT_DEFAULT,
-  LIST_QUERY_LIMIT_MAX,
-  LIST_QUERY_LIMIT_MIN,
-} from '../../domain/constants/list-query-limits';
+import { clampListLimit } from '../../domain/constants/list-query-limits';
 
 const MIN_OPTIONS = 2;
 const MAX_OPTIONS = 10;
@@ -357,10 +353,7 @@ export class PollService {
       userId?: string;
     } = {},
   ): Promise<PollWithResults[]> {
-    const limit = Math.max(
-      LIST_QUERY_LIMIT_MIN,
-      Math.min(options.limit ?? LIST_QUERY_LIMIT_DEFAULT, LIST_QUERY_LIMIT_MAX),
-    );
+    const limit = clampListLimit(options.limit);
 
     const messages = await this.messageRepo.findPollsByChapter(chapterId, {
       channelId: options.channelId,

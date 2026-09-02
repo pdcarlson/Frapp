@@ -377,10 +377,18 @@ export class ChapterService {
     // satisfies it and still climbs out, and the stored value is later read back
     // to embed the logo in exported PDFs. Percent-encoded dot segments count —
     // see assertSafeStoragePath for why.
-    assertSafeStoragePath(
-      storagePath,
-      'storage_path must not contain relative path segments',
-    );
+    //
+    // `assertSafeStoragePath` is domain-layer code and throws a plain `Error`;
+    // this catch is what turns that into the `BadRequestException` (400) API
+    // consumers have always seen on an unsafe path.
+    try {
+      assertSafeStoragePath(
+        storagePath,
+        'storage_path must not contain relative path segments',
+      );
+    } catch (error) {
+      throw new BadRequestException((error as Error).message);
+    }
     return this.chapterRepo.update(chapterId, { logo_path: storagePath });
   }
 
