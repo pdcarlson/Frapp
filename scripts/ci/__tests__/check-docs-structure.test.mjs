@@ -14,10 +14,12 @@ import {
   getArg,
   inTree,
   isExempt,
+  labelViolations,
 } from "../../check-docs-structure.mjs";
 import {
   BANNED,
   DIRECTORIES,
+  EXEMPT_EXTENSIONS,
   LEGACY_NAMES,
   NAMING_PATTERN,
   ROOT_FILES,
@@ -163,6 +165,16 @@ test("checkTree ignores non-doc paths and counts what it checked", () => {
   assert.deepEqual(r.missing, []);
 });
 
+test("an empty corpus makes EVERY directory look retired — main() guards on this", () => {
+  // `git ls-files` is cwd-relative, so running the gate from a subdirectory
+  // returns nothing and the manifest looks entirely stale. checkTree cannot tell
+  // the difference, so main() checks `checked === 0` and reports where the
+  // command was run rather than emitting a false "manifest is stale".
+  const r = checkTree(["apps/api/src/main.ts"], OPTS);
+  assert.equal(r.checked, 0);
+  assert.equal(r.missing.length, OPTS.directories.length);
+});
+
 test("getArg reads the workflow's flag form", () => {
   assert.equal(getArg(["node", "s.mjs", "--base", "abc", "--head", "def"], "--base"), "abc");
   assert.equal(getArg(["node", "s.mjs"], "--base"), undefined);
@@ -196,4 +208,80 @@ test("every legacy entry sits in a declared directory", () => {
   for (const p of LEGACY_NAMES) {
     assert.equal(dirs.has(p.slice(0, p.lastIndexOf("/"))), true, p);
   }
+});
+
+// ── Regressions found in review ─────────────────────────────────────────────
+
+test("a non-Markdown file is told about the FILE TYPE, not the case convention", () => {
+  // The two rules shared one message, so `board-export.png` was told its
+  // filename "must be kebab-case `.md`" — a convention the name already
+  // satisfies, and obeying it literally means renaming a PNG to Markdown.
+  const v = classifyPath("spec/ui/design-system/reference/board-export.png", OPTS);
+  assert.equal(v.length, 1);
+  assert.match(v[0], /only Markdown belongs/);
+  assert.match(v[0], /EXEMPT_EXTENSIONS/);
+  assert.doesNotMatch(v[0], /kebab-case/);
+});
+
+test("a badly named .md file still gets the naming rule", () => {
+  assert.match(classifyPath("docs/guides/BAD_NAME.md", OPTS)[0], /filename must be/);
+});
+
+test("a directory whose content is all in subdirectories is not 'empty'", () => {
+  // Counting only DIRECT children broke the repo's own rule that a topic with
+  // 2+ files becomes `<topic>/README.md`: fold the last direct file away and the
+  // parent reds, with the only remedy being to undeclare a live directory.
+  const dirs = [
+    { dir: "spec/behavior", purpose: "b", index: false },
+    { dir: "spec/behavior/chat", purpose: "c", index: true },
+  ];
+  const { missing } = checkDirectories(["spec/behavior/chat/README.md"], dirs);
+  assert.deepEqual(missing, []);
+});
+
+test("a genuinely empty declared directory still fails, and says what to do", () => {
+  const { missing } = checkDirectories(["docs/guides/README.md"], [
+    { dir: "docs/guides", purpose: "g", index: true },
+    { dir: "docs/gone", purpose: "x", index: false },
+  ]);
+  assert.equal(missing.length, 1);
+  assert.match(missing[0], /drop the entry/);
+});
+
+test("checkTree forwards every field main() reads", () => {
+  // Only checked/violations/missing were asserted, so renaming `missingIndex` or
+  // `stale` in the return object passed the suite and crashed the binary.
+  const r = checkTree(["docs/guides/tasks.md"], {
+    ...OPTS,
+    directories: [{ dir: "docs/guides", purpose: "g", index: true }],
+    legacyNames: ["docs/guides/GONE.md"],
+  });
+  assert.deepEqual(Object.keys(r).sort(), [
+    "checked",
+    "missing",
+    "missingIndex",
+    "stale",
+    "violations",
+  ]);
+  assert.deepEqual(r.stale, ["docs/guides/GONE.md"]);
+  assert.equal(r.missingIndex.length, 1);
+});
+
+test("labelViolations tags only what this change introduced", () => {
+  const vs = ["docs/a.md — bad", "docs/b.md — bad"];
+  const out = labelViolations(vs, new Set(["docs/a.md"]));
+  assert.match(out[0], /\[introduced by this change\]$/);
+  assert.doesNotMatch(out[1], /introduced/);
+  // No range passed: nothing is tagged, nothing is lost.
+  assert.deepEqual(labelViolations(vs), vs);
+});
+
+test("every BANNED pattern is a directory prefix ending in /", () => {
+  // bannedToRegExp anchors only at the start, so a pattern without the trailing
+  // slash has no right boundary: `docs/**` would ban the whole tree.
+  for (const b of BANNED) assert.equal(b.pattern.endsWith("/"), true, b.pattern);
+});
+
+test("EXEMPT_EXTENSIONS entries are real suffixes", () => {
+  for (const e of EXEMPT_EXTENSIONS) assert.equal(e.startsWith("."), true, e);
 });

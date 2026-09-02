@@ -17,7 +17,7 @@
 
 import { readFileSync } from "node:fs";
 
-import { DIRECTORIES, ROOT_FILES } from "./ci/lib/docs-structure.mjs";
+import { DIRECTORIES } from "./ci/lib/docs-structure.mjs";
 
 const SCRIPT_SRC = "scripts/ci/lib/required-checks.mjs";
 const CI_YML = ".github/workflows/ci.yml";
@@ -27,8 +27,9 @@ const CI_YML = ".github/workflows/ci.yml";
 // already polices for the required checks, and the same drift risk.
 export const PLACEMENT_DOC = "docs/internal/DOCUMENTATION_CONVENTIONS.md";
 
-// Homes in that table that are deliberately not directories under docs/ or spec/.
-export const NON_DIRECTORY_HOMES = ["GitHub Issues", ".buildpad/", "REFACTOR-PLAN.md", "REFACTOR-PROGRESS.md"];
+// Homes in that table that are deliberately not directories under docs/ or spec/
+// (GitHub Issues, `.buildpad/`, the root scratch files) need no list: they are
+// not `docs/`- or `spec/`-prefixed, so normalizeHome returns null for them.
 
 // The docs that restate the roster. Each is checked against the same source.
 export const DOC_TABLES = [
@@ -222,21 +223,25 @@ export function parsePlacementHomes(docText) {
 /**
  * Both directions between the prose map and the manifest.
  *
- * Coverage, not equality: a row for `spec/ui/` legitimately speaks for
- * `spec/ui/mobile/` too, and forcing one row per directory would bloat the table
- * without telling a reader anything. What must not happen is a declared
- * directory no row reaches — that is how `docs/hooks/` and `docs/performance/`
- * existed for months with no documented reason to.
+ * EXACT match per directory, not prefix coverage. Coverage was the first design
+ * and it quietly disarmed the check: a `spec/ui/` row spoke for
+ * `spec/ui/landing`, `spec/ui/mobile` and `spec/ui/web-dashboard`, none of which
+ * had a row, and the `docs/internal/` row added alongside it made all seven
+ * `docs/internal/*` rows non-load-bearing — deleting the `ci-cd` row left the
+ * gate green. A map that passes while five of its directories are undocumented
+ * is worse than no map, because it reads as verified.
+ *
+ * So every declared directory owes a row naming it, and every row must name a
+ * declared directory. The table is then a complete index of where documentation
+ * lives, which is the job of a placement map.
  */
-export function comparePlacementMap({ text, directories = DIRECTORIES, rootFiles = ROOT_FILES }) {
+export function comparePlacementMap({ text, directories = DIRECTORIES }) {
   const findings = [];
   const homes = parsePlacementHomes(text);
   const declared = new Set(directories.map((d) => d.dir));
-  const rootDirs = new Set(rootFiles.map((f) => f.slice(0, f.indexOf("/"))));
 
   for (const home of homes) {
     if (declared.has(home)) continue;
-    if (rootDirs.has(home)) continue;
     findings.push({
       file: PLACEMENT_DOC,
       id: home,
@@ -245,14 +250,12 @@ export function comparePlacementMap({ text, directories = DIRECTORIES, rootFiles
   }
 
   for (const d of directories) {
-    const covered = [...homes].some((h) => d.dir === h || d.dir.startsWith(h + "/"));
-    if (!covered) {
-      findings.push({
-        file: PLACEMENT_DOC,
-        id: d.dir,
-        detail: `is a declared documentation home that no placement-map row reaches — add a row, or retire the directory`,
-      });
-    }
+    if (homes.has(d.dir)) continue;
+    findings.push({
+      file: PLACEMENT_DOC,
+      id: d.dir,
+      detail: `is a declared documentation home with no placement-map row — add one naming it exactly, or retire the directory`,
+    });
   }
 
   return findings;

@@ -5,8 +5,9 @@
 // `check-doc-paths.mjs` is whole-tree and merge-blocking, but its scope is the
 // documentation corpus itself: docs/, spec/, .claude/skills/, any AGENTS.md, and
 // the two root guides. Everything else — source, tests, workflows, migrations,
-// shell scripts — cites docs constantly and was never checked. At the time this
-// gate was written that was 839 references across 436 files.
+// shell scripts — cites docs constantly and was never checked. That is several
+// hundred references; the gate prints the live count on every run, and
+// docs/internal/ci-cd/DOCS_CI.md carries the dated figure.
 //
 // The consequence is not hypothetical: the PREVIOUS restructure (the spec split
 // tracked in #432) left dead pointers behind that nothing has caught since.
@@ -18,7 +19,8 @@
 // them bare, in comments — the seed file said "defined in <the behavior spec>
 // Section 2" with no backticks at all. So this gate uses a bare-path extractor, and
 // keeps its own allowlist, while reusing that file's allowlist machinery
-// verbatim so the two behave identically where they overlap.
+// verbatim — including the shared `loadAllowlist`, so both gates fail the same
+// way on the same malformed input.
 //
 // Note this gate scans its own source, so the comments here name no dead path.
 //
@@ -31,14 +33,22 @@ import { pathToFileURL } from "node:url";
 import {
   findStaleEntries,
   inScope as inDocCorpus,
+  loadAllowlist,
   matchAllowlist,
-  validateAllowlist,
 } from "./check-doc-paths.mjs";
 
 export const ALLOWLIST_PATH = "scripts/doc-refs-allowlist.json";
 
-// Bare `docs/…​.md` / `spec/…​.md`, anywhere in a line.
-export const REFERENCE_RE = /(?:docs|spec)\/[A-Za-z0-9_./-]*\.md/g;
+// A bare markdown path under the docs or spec root, anywhere in a line.
+//
+// The lookbehind rejects a `docs/` or `spec/` that is only a SEGMENT of a longer
+// path — `apps/web/docs/guides/testing.md` is not a claim about the repo-root
+// corpus, and treating it as one would resolve it against the wrong file. It
+// still admits the two ways a root-relative path gets written by hand, `./docs/`
+// and `/docs/`, because the character before the slash is `.` or whitespace
+// rather than a path segment. No tracked file sits at a nested `docs/` today;
+// this keeps the gate honest if one ever does.
+export const REFERENCE_RE = /(?<![A-Za-z0-9_-]\/)(?:docs|spec)\/[A-Za-z0-9_./-]*\.md/g;
 
 // Files whose doc references are deliberately not live pointers.
 export const EXCLUDED = [
@@ -71,14 +81,23 @@ export function inScope(p) {
   return !isExcluded(p);
 }
 
+// Characters that end a URL in prose, markdown and source. Splitting on a plain
+// space instead — as this first did — excuses a real dead pointer whenever the
+// separator happens to be a tab, a comma or a closing quote.
+const URL_BOUNDARY = /[\s"'`,()<>[\]]/;
+
 /**
  * A reference inside a URL is not a repo path. `.gitleaks-baseline.json` is
  * excluded wholesale, but permalinks turn up in comments too, and resolving a
  * https://github.com/owner/repo/blob/sha/docs/guides/testing.md permalink
  * against the working tree is meaningless.
+ *
+ * Walks back to the nearest URL boundary rather than the nearest space, so the
+ * suppression is as narrow as the thing it is suppressing.
  */
 export function isUrlContext(line, index) {
-  const start = line.lastIndexOf(" ", index) + 1;
+  let start = index;
+  while (start > 0 && !URL_BOUNDARY.test(line[start - 1])) start--;
   return line.slice(start, index).includes("://");
 }
 
@@ -93,13 +112,23 @@ export function extractReferences(text) {
   return found;
 }
 
-function read(file) {
+// A NUL in the first few KB is the classic binary test. It is needed because
+// `readFileSync(file, "utf8")` does NOT throw on non-text bytes — it substitutes
+// U+FFFD — so the earlier `text === null` check caught filesystem errors only
+// and never actually skipped the fonts, images and icons in scope. Harmless in
+// practice, but a font whose bytes decoded into a path-shaped run would have
+// produced a finding nobody could fix.
+function readText(file) {
+  let buf;
   try {
-    return readFileSync(file, "utf8");
+    buf = readFileSync(file);
   } catch {
     return null;
   }
+  if (buf.subarray(0, 8192).includes(0)) return null;
+  return buf.toString("utf8");
 }
+
 
 function main() {
   const tracked = execSync("git ls-files -z", {
@@ -112,24 +141,12 @@ function main() {
 
   const trackedSet = new Set(tracked);
 
-  const rawAllowlist = read(ALLOWLIST_PATH);
-  if (rawAllowlist === null) {
-    console.error(`check-doc-refs: could not read ${ALLOWLIST_PATH}.`);
+  const loaded = loadAllowlist(ALLOWLIST_PATH);
+  if (!loaded.ok) {
+    console.error(loaded.message);
     return 2;
   }
-  let allowlist;
-  try {
-    allowlist = JSON.parse(rawAllowlist);
-  } catch (e) {
-    console.error(`check-doc-refs: ${ALLOWLIST_PATH} is not valid JSON — ${e.message}`);
-    return 2;
-  }
-  const allowlistErrors = validateAllowlist(allowlist);
-  if (allowlistErrors.length) {
-    console.error(`${ALLOWLIST_PATH} is invalid:`);
-    for (const e of allowlistErrors) console.error(`  - ${e}`);
-    return 2;
-  }
+  const allowlist = loaded.allowlist;
 
   const files = tracked.filter(inScope);
   const findings = [];
@@ -138,8 +155,8 @@ function main() {
   const filesWithRefs = new Set();
 
   for (const file of files) {
-    const text = read(file);
-    if (text === null) continue; // unreadable as UTF-8 — a binary asset
+    const text = readText(file);
+    if (text === null) continue; // a binary asset, or unreadable
     for (const { token, line } of extractReferences(text)) {
       referenceCount++;
       filesWithRefs.add(file);

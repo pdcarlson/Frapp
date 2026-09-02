@@ -16,10 +16,17 @@
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-export const WORKFLOW = ".github/workflows/links.yml";
-export const LOCAL_BINARY = ".tools/lychee";
+// Resolved from this file, not the cwd — the same pattern scan-secrets.mjs uses,
+// so the check works from a subdirectory instead of reporting a missing workflow.
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+export const WORKFLOW = join(ROOT, ".github/workflows/links.yml");
+export const WORKFLOW_LABEL = ".github/workflows/links.yml";
+export const LOCAL_BINARY = join(ROOT, ".cache", "lychee", "lychee");
+export const INSTALL_SCRIPT = "./scripts/install-lychee.sh";
 
 /**
  * The `args:` value from the lychee-action step.
@@ -38,10 +45,24 @@ export function splitArgs(argString) {
   return argString.split(/\s+/).filter(Boolean);
 }
 
-export function resolveBinary({ exists = existsSync } = {}) {
-  if (exists(LOCAL_BINARY)) return LOCAL_BINARY;
-  const probe = spawnSync("lychee", ["--version"], { encoding: "utf8" });
-  if (probe.status === 0) return "lychee";
+/**
+ * The cached binary, else one on PATH, else null.
+ *
+ * BOTH candidates are vetted by actually running `--version`. Trusting
+ * `existsSync` for the cached one meant a file that exists but cannot execute —
+ * a mode bit lost in a copy, or an x86_64 binary in a cache directory shared
+ * with an arm64 host — was returned, and `execFileSync` below then threw an
+ * uncaught EACCES/ENOEXEC. The user got a Node stack trace instead of "lychee is
+ * not installed" and the one-line fix. `spawn` is injectable so both branches
+ * are reachable from a test without a real lychee on the machine.
+ */
+export function resolveBinary({ exists = existsSync, spawn = spawnSync } = {}) {
+  const runs = (bin) => {
+    const probe = spawn(bin, ["--version"], { encoding: "utf8" });
+    return !probe.error && probe.status === 0;
+  };
+  if (exists(LOCAL_BINARY) && runs(LOCAL_BINARY)) return LOCAL_BINARY;
+  if (runs("lychee")) return "lychee";
   return null;
 }
 
@@ -50,14 +71,14 @@ function main() {
   try {
     yaml = readFileSync(WORKFLOW, "utf8");
   } catch {
-    console.error(`check-links: could not read ${WORKFLOW}.`);
+    console.error(`check-links: could not read ${WORKFLOW_LABEL}.`);
     return 2;
   }
 
   const argString = parseWorkflowArgs(yaml);
   if (!argString) {
     console.error(
-      `check-links: could not find the lychee \`args:\` line in ${WORKFLOW}. ` +
+      `check-links: could not find the lychee \`args:\` line in ${WORKFLOW_LABEL}. ` +
         `The workflow is the source of truth for these flags — if its shape changed, ` +
         `update parseWorkflowArgs in this file rather than hardcoding a second copy.`,
     );
@@ -68,10 +89,10 @@ function main() {
   if (!binary) {
     console.error("check-links: lychee is not installed.");
     console.error("");
-    console.error("  ./scripts/install-lychee.sh");
+    console.error(`  ${INSTALL_SCRIPT}`);
     console.error("");
     console.error(
-      `Until then, heading anchors are only checked by the \`link-check\` job in ${WORKFLOW}.`,
+      `Until then, heading anchors are only checked by the \`link-check\` job in ${WORKFLOW_LABEL}.`,
     );
     return 2;
   }
@@ -79,10 +100,11 @@ function main() {
   const args = splitArgs(argString);
   const version = execFileSync(binary, ["--version"], { encoding: "utf8" }).trim();
   console.log(`Using ${version} (${binary})`);
-  console.log(`Flags from ${WORKFLOW}: ${argString}`);
+  console.log(`Flags from ${WORKFLOW_LABEL}: ${argString}`);
   console.log("");
 
-  const run = spawnSync(binary, args, { stdio: "inherit" });
+  // lychee resolves `docs` / `spec` against the cwd, so anchor it at the root.
+  const run = spawnSync(binary, args, { stdio: "inherit", cwd: ROOT });
   if (run.error) {
     console.error(`check-links: failed to run ${binary} — ${run.error.message}`);
     return 2;

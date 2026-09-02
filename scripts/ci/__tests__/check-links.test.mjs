@@ -11,6 +11,7 @@ import {
   resolveBinary,
   splitArgs,
   WORKFLOW,
+  WORKFLOW_LABEL,
 } from "../../check-links.mjs";
 
 // The point of this script is that the flags are NOT copied. These tests pin
@@ -55,10 +56,36 @@ test("splitArgs produces argv, dropping incidental whitespace", () => {
 
 test("the locally installed binary wins over PATH", () => {
   // A developer with an older lychee on PATH should still get the pinned one.
-  assert.equal(resolveBinary({ exists: () => true }), LOCAL_BINARY);
+  assert.equal(resolveBinary({ exists: () => true, spawn: () => ({ status: 0 }) }), LOCAL_BINARY);
 });
 
-test("the local binary lives somewhere gitignored", () => {
-  assert.equal(LOCAL_BINARY.startsWith(".tools/"), true);
-  assert.match(readFileSync(".gitignore", "utf8"), /^\.tools\/$/m);
+test("a cached binary that cannot execute falls through instead of throwing", () => {
+  // Trusting existsSync meant a file with a lost mode bit — or an x86_64 binary
+  // in a cache shared with an arm64 host — was returned, and execFileSync then
+  // threw an uncaught EACCES/ENOEXEC instead of the install message.
+  const spawn = (bin) => (bin === LOCAL_BINARY ? { status: 126 } : { status: 0 });
+  assert.equal(resolveBinary({ exists: () => true, spawn }), "lychee");
+});
+
+test("no usable binary anywhere returns null, so main() can print the fix", () => {
+  const enoent = () => ({ error: new Error("spawn ENOENT"), status: null });
+  assert.equal(resolveBinary({ exists: () => false, spawn: enoent }), null);
+  // Present but broken, and nothing on PATH either.
+  assert.equal(resolveBinary({ exists: () => true, spawn: enoent }), null);
+});
+
+test("the local binary uses the repo's tooling-cache convention, and is gitignored", () => {
+  // install-gitleaks.sh and install-oasdiff.sh both cache under .cache/<tool>/;
+  // a second convention would be one more place to look for the same kind of thing.
+  assert.match(LOCAL_BINARY, /[\\/]\.cache[\\/]lychee[\\/]lychee$/);
+  assert.match(readFileSync(".gitignore", "utf8"), /^\.cache\/lychee\/$/m);
+});
+
+test("paths resolve from the repo root, not the cwd", () => {
+  // Every doc gate here is cwd-relative and misreports from a subdirectory.
+  // This one anchors on import.meta.url instead, like scan-secrets.mjs.
+  assert.equal(WORKFLOW.startsWith("/"), true, "WORKFLOW should be absolute");
+  assert.equal(LOCAL_BINARY.startsWith("/"), true, "LOCAL_BINARY should be absolute");
+  // The label shown to a human stays repo-relative.
+  assert.equal(WORKFLOW_LABEL, ".github/workflows/links.yml");
 });

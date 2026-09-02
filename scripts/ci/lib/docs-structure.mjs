@@ -29,17 +29,19 @@
  * must delete its entry in the same commit, and nothing new can be added to the
  * legacy style without a reviewer seeing the list grow.
  *
- * Keep the arrays as top-level `export const NAME = [` declarations with one
- * entry per line — `check-doc-tables.mjs` parses THIS FILE AS SOURCE TEXT, the
- * same contract `required-checks.mjs` carries.
+ * Unlike `required-checks.mjs`, this module is IMPORTED, not parsed as source
+ * text, so it carries no formatting contract — `check-doc-tables.mjs` reads
+ * `DIRECTORIES` and `ROOT_FILES` as values. Said explicitly because the two
+ * files sit side by side and the neighbouring one does have that constraint.
  */
 
 // ── Naming ──────────────────────────────────────────────────────────────────
 // One rule for the whole corpus: kebab-case, or `README.md`. Before this file
 // existed there was no naming rule anywhere in the repo, and the corpus split
-// clean along one seam — all 28 SCREAMING_SNAKE_CASE files are under
+// clean along one seam — every SCREAMING_SNAKE_CASE file is under
 // `docs/internal/`, while `docs/guides/`, `docs/performance/` and every one of
-// `spec/` were already kebab. The 28 are grandfathered in LEGACY_NAMES below.
+// `spec/` were already kebab. They are grandfathered in LEGACY_NAMES below;
+// its length is the count, and the ratchet guarantees it only falls.
 
 export const NAMING_PATTERN = /^(?:README\.md|[a-z0-9]+(?:-[a-z0-9]+)*\.md)$/;
 
@@ -87,6 +89,12 @@ export const ROOT_FILES = [
 ];
 
 // ── Paths that must not come back ───────────────────────────────────────────
+// Every pattern is a DIRECTORY PREFIX and must end in "/". The regex built from
+// it is anchored only at the start, so a pattern without the trailing slash has
+// no right-hand boundary: "docs/**" would match every path under docs/, and an
+// "archive" pattern with no slash would also match any sibling whose name merely
+// begins with "archive". A test pins the invariant rather than trusting the next
+// editor to remember it.
 
 export const BANNED = [
   { pattern: "spec/**/chunks/", reason: "'chunks/' folders are retired; merge canon into the real spec, track delivery in GitHub Issues" },
@@ -102,7 +110,7 @@ export const BANNED = [
 export const EXEMPT_EXTENSIONS = [".dc.html"];
 
 // ── The shrinking legacy list ───────────────────────────────────────────────
-// 28 SCREAMING_SNAKE_CASE files that predate NAMING_RULE. Every one is under
+// The SCREAMING_SNAKE_CASE files that predate NAMING_RULE. Every one is under
 // `docs/internal/`. A stale entry here fails the gate, so this list can only
 // shrink — deleting an entry is part of the rename that retires it.
 

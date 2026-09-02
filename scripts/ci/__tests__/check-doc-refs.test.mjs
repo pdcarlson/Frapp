@@ -126,6 +126,23 @@ test("a directory reference is not a file reference", () => {
   assert.deepEqual(extractReferences("- Behavior spec: `spec/behavior/`"), []);
 });
 
+test("a nested docs/ segment is not a repo-root reference", () => {
+  // `apps/web/docs/guides/testing.md` makes no claim about the root corpus, and
+  // resolving the tail against the root would check the wrong file entirely.
+  assert.deepEqual(extractReferences("see apps/web/docs/guides/testing.md"), []);
+  assert.deepEqual(extractReferences("packages/theme/spec/tokens.md"), []);
+});
+
+test("the two hand-written root-relative forms are still caught", () => {
+  for (const line of ["./docs/guides/testing.md", "/docs/guides/testing.md"]) {
+    assert.deepEqual(
+      extractReferences(line).map((r) => r.token),
+      ["docs/guides/testing.md"],
+      line,
+    );
+  }
+});
+
 // ── URLs ────────────────────────────────────────────────────────────────────
 
 test("a reference inside a URL is not a repo path", () => {
@@ -149,4 +166,22 @@ test("the regex is global, so matchAll does not loop forever or skip", () => {
 
 test("the allowlist path is the one the failure message names", () => {
   assert.equal(ALLOWLIST_PATH, "scripts/doc-refs-allowlist.json");
+});
+
+// ── Regressions found in review ─────────────────────────────────────────────
+
+test("a URL is bounded by any separator, not just a space", () => {
+  // isUrlContext walked back to the nearest SPACE, so a tab, comma or closing
+  // quote between a URL and a real dead pointer suppressed the finding.
+  for (const sep of ["\t", ",", '"', "'", "`", ")", "]"]) {
+    assert.deepEqual(
+      extractReferences(`https://a.b/c${sep}docs/real.md`).map((r) => r.token),
+      ["docs/real.md"],
+      JSON.stringify(sep),
+    );
+  }
+});
+
+test("a genuine permalink is still suppressed", () => {
+  assert.deepEqual(extractReferences("https://github.com/o/r/blob/sha/docs/x.md"), []);
 });

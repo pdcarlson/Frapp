@@ -330,8 +330,11 @@ Two things to preserve if you ever edit that condition:
 - **Key on `github.event.pull_request.user.login`, not `github.actor`.** The actor changes when a
   human re-runs the workflow, which would silently flip the exemption off mid-PR.
 
-`check-docs-structure.mjs` needs no exemption — it only inspects newly *added* paths under `docs/`
-and `spec/`, of which a dependency bump has none, so it passes trivially.
+`check-docs-structure.mjs` needs no exemption, but not for the reason this line used to give. It is
+no longer a step in `docs-spec-sync` at all: since 2026-09 it reads the **whole tree** rather than
+newly added paths, so it moved to its own reporting-only `docs-structure` job
+([`DOCS_CI.md`](DOCS_CI.md)). A dependency bump passes it because the tree is clean, not because the
+diff is — and being non-required, it could not make a Dependabot PR unmergeable even if it failed.
 
 **There used to be a second copy, and keeping two in sync is exactly what failed.** `ci.yml` ran the
 same script as the last step of `lint-and-typecheck`, unguarded, so every Dependabot PR went green on

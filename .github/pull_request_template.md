@@ -32,7 +32,7 @@
 - [ ] If I changed API/domain/workflows, I updated `docs/` and/or `spec/` in the same change set.
 - [ ] If I changed API source, I regenerated `openapi.json` and `packages/api-sdk/src/types.ts`.
 - [ ] If I moved or deleted a file docs cite, `npm run check:doc-paths` and `npm run check:doc-refs` still pass (both are whole-tree, so they can fail on a file this PR never touched; `doc-refs` covers references from source, workflows, migrations and shell).
-- [ ] If I added, moved or renamed anything under `docs/` or `spec/`, `npm run check:docs-structure` still passes (it is merge-blocking and whole-tree; new homes and renames need `scripts/ci/lib/docs-structure.mjs` updated in the same commit).
+- [ ] If I added, moved or renamed anything under `docs/` or `spec/`, `npm run check:docs-structure` still passes (whole-tree; new homes and renames need `scripts/ci/lib/docs-structure.mjs` updated in the same commit).
 - [ ] If I moved a heading other docs deep-link into, `npm run check:links` still passes (`npm run install:lychee` first).
 - [ ] If I changed CI job names or the required-check arrays, `npm run check:doc-tables` still passes (the docs restating those rosters were updated too).
 - [ ] If I changed `supabase/migrations/**`, I also updated rollback docs.

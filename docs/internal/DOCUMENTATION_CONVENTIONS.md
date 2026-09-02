@@ -4,12 +4,18 @@ The **authoritative** guide to where docs/spec changes go. Read this before addi
 The goal: keep `docs/` and `spec/` clean and navigable, and stop the structure from drifting when
 agents satisfy the docs-sync CI gate.
 
-**This map is enforced, not advisory.** The table below is checked against
+**This map is machine-checked.** The table below is checked against
 [`scripts/ci/lib/docs-structure.mjs`](../../scripts/ci/lib/docs-structure.mjs) — the same map as data —
 in both directions by `check-doc-tables.mjs`, so the two cannot drift apart. That manifest is what
 [`scripts/check-docs-structure.mjs`](../../scripts/check-docs-structure.mjs) validates the **whole
 tree** against on every PR. Until 2026-09 it read only the paths a PR *added*, which is how
 `docs/hooks/` and `docs/performance/` came to exist without a row here.
+
+The structure gate reports on its own `docs-structure` job and is **not merge-blocking yet** — it
+moved out of the required `docs-spec-sync` job when it stopped being diff-scoped, and takes the same
+reporting-only rollout `doc-paths` had ([`ci-cd/DOCS_CI.md`](ci-cd/DOCS_CI.md)). So a violation reds
+a check without blocking a merge: treat this map as binding anyway, because the whole point of the
+rollout is to reach the day it blocks.
 
 ## Hard rules
 
@@ -41,11 +47,16 @@ tree** against on every PR. Until 2026-09 it read only the paths a PR *added*, w
 | Kind of change | Canonical home |
 | -------------- | -------------- |
 | Product behavior, rules, flows, invariants | `spec/behavior/<topic>.md` (or `<topic>/README.md` if it has 2+ files) |
+| Chat behavior (a topic with 2+ files) | `spec/behavior/chat/` |
+| Settings behavior (a topic with 2+ files) | `spec/behavior/settings/` |
 | Product features, surfaces, positioning, module catalog | `spec/product/` |
 | Architecture, data model, API patterns, ADRs | `spec/architecture/README.md` — ADRs are append-only (amend or supersede, never rewrite) |
 | Engineering principles | `spec/engineering.md` |
 | Environments, CI/CD model | `spec/environments/README.md` |
-| UI requirements (design system, web, landing, mobile, brand, assets, resilience) | `spec/ui/` |
+| UI requirements (brand, assets, resilience) | `spec/ui/` |
+| Web-dashboard UI requirements | `spec/ui/web-dashboard/` |
+| Mobile UI requirements | `spec/ui/mobile/` |
+| Landing-site UI requirements | `spec/ui/landing/` |
 | How to run locally / test / contribute | `docs/guides/` |
 | Ops runbooks (DB, incidents, branch protection, deploy) | `docs/internal/ops/` |
 | Documentation conventions and internal reference that is not a runbook | `docs/internal/` |

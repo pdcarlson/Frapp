@@ -117,7 +117,7 @@ See [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md). 
 | Doc citations | `npm run check:doc-paths` — backticked repo paths in docs resolve; **required**, whole-tree |
 | Doc rosters  | `npm run check:doc-tables` — hand-copied required-check tables vs `CI_CHECKS`/`ci.yml`; advisory |
 | Doc references | `npm run check:doc-refs` — `docs/`/`spec/` references in SOURCE, workflows, migrations and shell resolve; advisory, whole-tree |
-| Doc structure | `npm run check:docs-structure` — every doc sits in a declared home and matches the naming rule ([`scripts/ci/lib/docs-structure.mjs`](scripts/ci/lib/docs-structure.mjs)); **required**, whole-tree |
+| Doc structure | `npm run check:docs-structure` — every doc sits in a declared home and matches the naming rule ([`scripts/ci/lib/docs-structure.mjs`](scripts/ci/lib/docs-structure.mjs)); advisory, whole-tree |
 | Doc links    | `npm run check:links` — markdown links and heading anchors; needs `npm run install:lychee` first |
 | Migrations   | `npm run check:migration-safety`    |
 | Boundaries   | `npm run check:dep-cruiser` — required gate; existing violations grandfathered in `.dependency-cruiser-known-violations.json`, which exists to shrink |

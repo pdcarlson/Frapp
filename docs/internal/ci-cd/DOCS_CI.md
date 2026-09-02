@@ -3,13 +3,13 @@
 ## What runs
 
 On pull requests to `main`, `.github/workflows/docs.yml` (workflow display name
-**Docs spec sync**) runs **four jobs** covering **six** checks. They are separate on purpose: each
+**Docs spec sync**) runs **five jobs** covering **six** checks. They are separate on purpose: each
 asserts one thing, and each fails with a different fix.
 
 | Check | Script | Asserts | Scope | Job | Required? |
 |---|---|---|---|---|---|
 | Sync | [`check-docs-impact.mjs`](../../../scripts/check-docs-impact.mjs) | A PR touching non-doc files also touches `docs/` or `spec/` | PR diff | `docs-spec-sync` | **Yes** |
-| Structure | [`check-docs-structure.mjs`](../../../scripts/check-docs-structure.mjs) | Every file under `docs/`/`spec/` sits in a declared home and matches the naming rule, per [`scripts/ci/lib/docs-structure.mjs`](../../../scripts/ci/lib/docs-structure.mjs) | Whole tree | `docs-spec-sync` | **Yes** (same job) |
+| Structure | [`check-docs-structure.mjs`](../../../scripts/check-docs-structure.mjs) | Every file under `docs/`/`spec/` sits in a declared home and matches the naming rule, per [`scripts/ci/lib/docs-structure.mjs`](../../../scripts/ci/lib/docs-structure.mjs) | Whole tree | `docs-structure` | Not yet — see rollout below |
 | Citations | [`check-doc-paths.mjs`](../../../scripts/check-doc-paths.mjs) | Backticked repo-path citations resolve to real files | Whole tree | `doc-paths` | **Yes** — in `DOCS_CHECKS` |
 | References | [`check-doc-refs.mjs`](../../../scripts/check-doc-refs.mjs) | Bare `docs/`/`spec/` references in files OUTSIDE the docs corpus (source, workflows, migrations, shell) resolve | Whole tree | `doc-refs` | Not yet — see rollout below |
 | Rosters | [`check-doc-tables.mjs`](../../../scripts/check-doc-tables.mjs) | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml` | Whole tree | `doc-tables` | Not yet — see rollout below |
@@ -131,13 +131,23 @@ was invisible forever, and its `spec/` rule matched only root-level paths — so
 `spec/` subfolder passed. `docs/hooks/` and `docs/performance/` reached `main` that way, absent from
 the placement map this gate points at.
 
-The naming rule is kebab-case `.md`, or `README.md`. The 28 `SCREAMING_SNAKE_CASE` files that predate
+The naming rule is kebab-case `.md`, or `README.md`. The `SCREAMING_SNAKE_CASE` files that predate
 it — all under `docs/internal/` — are grandfathered in `LEGACY_NAMES`, which is a **ratchet**: an
 entry that no longer matches a tracked file fails the gate, so a rename must delete its entry in the
 same commit and the list can only shrink. `.dc.html` design exports are exempt from naming.
 
 `--base`/`--head` are still accepted but no longer scope the check; they only label which violations
-the change introduced. Placement rules live in
+the change introduced.
+
+**Rollout.** It moved out of the required `docs-spec-sync` job when it stopped being diff-scoped, and
+reports on its own `docs-structure` job until the trade is accepted — the same path `doc-paths` took.
+[`required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs) states the rule next to
+`doc-paths`: a whole-tree check inside a required job "can block a PR over a citation in a doc that
+PR never touched". While it was ADD-only that placement was safe; whole-tree, one stale
+`LEGACY_NAMES` entry would red every open PR at once. Promote by adding `"docs-structure"` to
+`DOCS_CHECKS` once it has run green on `main`.
+
+Placement rules live in
 [`DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md), and `doc-tables` checks that
 document's table against the manifest in both directions, so the two cannot drift.
 
@@ -188,7 +198,9 @@ per [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNB
 
 **Citations** is whole-tree but its scope *is* the documentation. Everything else — source, tests,
 workflows, migrations, shell scripts — cites docs constantly and was checked by nothing. At the time
-this gate was added that was 770 references across 428 files.
+this gate was added that was roughly 770 references across 430 files (2026-09-02). It prints the
+live count on every run, and that is the number to trust — an exact figure written here would be
+stale by the next commit, which is the failure this whole page is about.
 
 The gap was not hypothetical. The spec split in [#432](https://github.com/pdcarlson/Frapp/issues/432)
 left dead pointers that nothing caught for months: `apps/api/README.md` named three files that no

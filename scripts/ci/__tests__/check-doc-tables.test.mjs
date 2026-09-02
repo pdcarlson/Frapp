@@ -271,7 +271,6 @@ const DIRS = [
   { dir: "spec/ui", purpose: "ui", index: true },
   { dir: "spec/ui/mobile", purpose: "mobile ui", index: true },
 ];
-const ROOTS = ["docs/README.md", "spec/README.md", "spec/engineering.md"];
 
 test("normalizeHome reduces a home cell to the directory it claims", () => {
   assert.equal(normalizeHome("spec/behavior/<topic>.md"), "spec/behavior");
@@ -308,21 +307,45 @@ test("parsePlacementHomes reads only table rows", () => {
 
 test("a declared directory no row reaches is drift", () => {
   const text = "| Kind | Home |\n| --- | --- |\n| Guides | `docs/guides/` |";
-  const f = comparePlacementMap({ text, directories: DIRS, rootFiles: ROOTS });
+  const f = comparePlacementMap({ text, directories: DIRS });
   const ids = f.map((x) => x.id);
   assert.deepEqual(ids.sort(), ["spec/ui", "spec/ui/mobile"]);
 });
 
-test("a parent row covers its children — coverage, not equality", () => {
-  // Forcing one row per directory would bloat the table without informing anyone.
+test("a parent row does NOT cover its children — this disarmed the check", () => {
+  // The original design let `spec/ui/` speak for `spec/ui/mobile`, so five
+  // declared directories had no row and the gate stayed green; adding a
+  // `docs/internal/` row likewise made all seven `docs/internal/*` rows
+  // non-load-bearing. Deleting a row has to fail, or the map is not checked.
   const text = "| Kind | Home |\n| --- | --- |\n| Guides | `docs/guides/` |\n| UI | `spec/ui/` |";
-  assert.deepEqual(comparePlacementMap({ text, directories: DIRS, rootFiles: ROOTS }), []);
+  const f = comparePlacementMap({ text, directories: DIRS });
+  assert.deepEqual(
+    f.map((x) => x.id),
+    ["spec/ui/mobile"],
+  );
+});
+
+test("every declared directory with its own row passes", () => {
+  const text = [
+    "| Kind | Home |",
+    "| --- | --- |",
+    "| Guides | `docs/guides/` |",
+    "| UI | `spec/ui/` |",
+    "| Mobile UI | `spec/ui/mobile/` |",
+  ].join("\n");
+  assert.deepEqual(comparePlacementMap({ text, directories: DIRS }), []);
 });
 
 test("a row naming an undeclared home is drift in the other direction", () => {
-  const text =
-    "| Kind | Home |\n| --- | --- |\n| Guides | `docs/guides/` |\n| UI | `spec/ui/` |\n| Gone | `docs/retired/` |";
-  const f = comparePlacementMap({ text, directories: DIRS, rootFiles: ROOTS });
+  const text = [
+    "| Kind | Home |",
+    "| --- | --- |",
+    "| Guides | `docs/guides/` |",
+    "| UI | `spec/ui/` |",
+    "| Mobile UI | `spec/ui/mobile/` |",
+    "| Gone | `docs/retired/` |",
+  ].join("\n");
+  const f = comparePlacementMap({ text, directories: DIRS });
   assert.equal(f.length, 1);
   assert.equal(f[0].id, "docs/retired");
   assert.match(f[0].detail, /not declared in DIRECTORIES/);
@@ -337,7 +360,6 @@ test("a sibling prefix does not count as coverage", () => {
       { dir: "spec/ui", purpose: "x", index: false },
       { dir: "spec/ui-legacy", purpose: "x", index: false },
     ],
-    rootFiles: ROOTS,
   });
   assert.equal(f.length, 1);
   assert.equal(f[0].id, "spec/ui-legacy");

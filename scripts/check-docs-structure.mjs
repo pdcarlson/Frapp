@@ -93,8 +93,20 @@ export function classifyPath(p, opts = {}) {
     // Naming is still worth reporting, so fall through rather than returning.
   }
 
-  if (!isExempt(p) && !legacy.has(p) && !NAMING_PATTERN.test(base)) {
-    violations.push(`${p} — filename must be ${NAMING_RULE}`);
+  if (!isExempt(p) && !legacy.has(p)) {
+    if (!base.endsWith(".md")) {
+      // Separated from the naming rule on purpose: telling the author of
+      // `board-export.png` that the filename "must be kebab-case `.md`" names a
+      // convention the name already satisfies, and the only way to obey it is to
+      // rename a PNG to Markdown. The real objection is the file type, and the
+      // knob is EXEMPT_EXTENSIONS.
+      violations.push(
+        `${p} — only Markdown belongs under docs/ and spec/ (plus ${EXEMPT_EXTENSIONS.join(", ")}); ` +
+          `if this file type should live here, add its extension to EXEMPT_EXTENSIONS in scripts/ci/lib/docs-structure.mjs`,
+      );
+    } else if (!NAMING_PATTERN.test(base)) {
+      violations.push(`${p} — filename must be ${NAMING_RULE}`);
+    }
   }
 
   return violations;
@@ -114,13 +126,22 @@ export function findStaleLegacy(trackedPaths, legacyNames = LEGACY_NAMES) {
 // either a typo or a deletion nobody finished.
 export function checkDirectories(trackedPaths, directories = DIRECTORIES) {
   const tracked = new Set(trackedPaths);
-  const byDir = new Set(trackedPaths.map((p) => path.posix.dirname(p)));
+  // Nested content counts. Counting only DIRECT children made a parent whose
+  // files had all been foldered read as empty — reachable by following this
+  // repo's own rule that a topic with 2+ files becomes `<topic>/README.md`, and
+  // the only way to satisfy the resulting error would be to undeclare a
+  // directory that is plainly still in use.
+  const holdsSomething = (dir) =>
+    trackedPaths.some((p) => p.startsWith(dir + "/"));
 
   const missing = [];
   const missingIndex = [];
   for (const d of directories) {
-    if (!byDir.has(d.dir)) {
-      missing.push(`${d.dir}/ — declared in DIRECTORIES but holds no tracked file`);
+    if (!holdsSomething(d.dir)) {
+      missing.push(
+        `${d.dir}/ — declared in DIRECTORIES but holds no tracked file; ` +
+          `if this change removed its last file, drop the entry from scripts/ci/lib/docs-structure.mjs and the placement map`,
+      );
       continue;
     }
     if (d.index && !tracked.has(`${d.dir}/README.md`)) {
@@ -128,6 +149,22 @@ export function checkDirectories(trackedPaths, directories = DIRECTORIES) {
     }
   }
   return { missing, missingIndex };
+}
+
+/**
+ * Tag the violations this change introduced.
+ *
+ * Pure, and exported, because the `--base`/`--head` flags now have no other
+ * purpose — they stopped scoping the check — and the tag is recovered by
+ * re-splitting the violation string on the em dash the messages are built with.
+ * Left inside main() that coupling was untestable: change the separator and
+ * every label silently disappears with the suite green.
+ */
+export function labelViolations(violations, introduced = new Set()) {
+  return violations.map((v) => {
+    const p = v.split(" — ")[0];
+    return introduced.has(p) ? `${v}  [introduced by this change]` : v;
+  });
 }
 
 export function checkTree(trackedPaths, opts = {}) {
@@ -144,10 +181,12 @@ function git(cmd) {
 }
 
 function main(argv = process.argv) {
-  const tracked = git("ls-files")
-    .split("\n")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  // -z, like the sibling gates: with core.quotePath on (the default) a plain
+  // `ls-files` emits a non-ASCII path as `"docs/guides/BAD_NAM\303\211.md"`,
+  // quotes included. inTree() then sees a leading `"`, skips the file, and its
+  // directory reports as empty — a naming violation missed AND a false "manifest
+  // is stale". Not trimming per path matters for the same reason.
+  const tracked = git("ls-files -z").split("\0").filter(Boolean);
 
   // --base/--head stay supported so the workflow keeps one invocation, but they
   // no longer scope the check. They only label which violations this change
@@ -171,15 +210,25 @@ function main(argv = process.argv) {
 
   const { violations, stale, missing, missingIndex, checked } = checkTree(tracked);
 
+  // `git ls-files` is relative to the cwd, so running this from a subdirectory
+  // returns none of the corpus and every declared directory looks retired. That
+  // reads as an actionable "the manifest is stale" when the real problem is
+  // where the command was run — say so instead of sending someone to edit data
+  // that is fine.
+  if (checked === 0) {
+    console.error(
+      "check-docs-structure: no tracked files under docs/ or spec/ — run it from the repo root",
+    );
+    console.error("(`npm run check:docs-structure` does this for you).");
+    return 2;
+  }
+
   if (violations.length || stale.length || missing.length || missingIndex.length) {
     console.error("Docs/spec structure check failed.");
     console.error("");
     if (violations.length) {
       console.error("These paths are not allowed by the structure rules:");
-      for (const v of violations) {
-        const p = v.split(" — ")[0];
-        console.error(`- ${v}${introduced.has(p) ? "  [introduced by this change]" : ""}`);
-      }
+      for (const v of labelViolations(violations, introduced)) console.error(`- ${v}`);
       console.error("");
     }
     if (missing.length) {
