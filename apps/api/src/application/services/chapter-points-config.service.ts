@@ -24,7 +24,7 @@ export const POINTS_CONFIG_SELECT = POINTS_CONFIG_FIELDS.join(', ');
 
 /**
  * Used when a chapter has no `chapter_points_config` row yet. Mirrors the
- * table's column defaults (migration 20260902160001), which are themselves the
+ * table's column defaults (migration 20260902170001), which are themselves the
  * values `PointsService` hardcoded before the limits became configurable — so
  * an unconfigured chapter enforces exactly what it always did, and no backfill
  * was needed.

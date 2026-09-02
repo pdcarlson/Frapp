@@ -346,7 +346,7 @@ After any rollback event:
 
 ## Rollback the `chapter_points_config` table
 
-* **Migration**: `20260902160001_chapter_points_config.sql`
+* **Migration**: `20260902170001_chapter_points_config.sql`
 * **Action**:
   ```sql
   DROP TABLE IF EXISTS chapter_points_config;

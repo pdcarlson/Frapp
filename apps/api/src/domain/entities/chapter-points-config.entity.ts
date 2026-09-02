@@ -1,6 +1,6 @@
 /**
  * A chapter's points anti-fraud limits (Settings → Points), persisted to
- * `chapter_points_config` (`20260902160001_chapter_points_config.sql`).
+ * `chapter_points_config` (`20260902170001_chapter_points_config.sql`).
  *
  * Keyed by `chapter_id` — the primary key is the chapter, so there is exactly
  * one row per chapter and no separate `id` column, mirroring
