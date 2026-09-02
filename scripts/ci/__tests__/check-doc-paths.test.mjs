@@ -14,6 +14,7 @@ import {
   validateAllowlist,
   matchAllowlist,
   findStaleEntries,
+  loadAllowlist,
 } from "../../check-doc-paths.mjs";
 
 // ── Scope ───────────────────────────────────────────────────────────────────
@@ -215,4 +216,43 @@ test("a fully exercised allowlist reports nothing stale", () => {
     findStaleEntries(ALLOWLIST, new Set(["prefixes[0]", "paths[0]", "perFile[0]"])),
     [],
   );
+});
+
+// ── Regressions found in review ─────────────────────────────────────────────
+
+test("an entry pasted into the wrong array is rejected, not crashed on", () => {
+  // The three arrays differ by one key, so this is the easy mistake. Checking
+  // only `reason` let a prefix-shaped entry into `paths` validate clean, and
+  // matchAllowlist then threw an uncaught TypeError out of normalizeCitation —
+  // a stack trace from a required gate, indistinguishable from a real finding.
+  const bad = { prefixes: [], paths: [{ prefix: "spec/legacy/", reason: "r" }], perFile: [] };
+  assert.deepEqual(validateAllowlist(bad), ['paths[0] is missing a non-empty "path"']);
+});
+
+test("each array requires its own shape key", () => {
+  assert.deepEqual(validateAllowlist({ prefixes: [{ reason: "r" }] }), [
+    'prefixes[0] is missing a non-empty "prefix"',
+  ]);
+  assert.deepEqual(validateAllowlist({ perFile: [{ reason: "r", file: "a.md" }] }), [
+    'perFile[0] is missing a non-empty "path"',
+  ]);
+});
+
+test("loadAllowlist: a missing file is not an error, malformed JSON is", () => {
+  // Fail-safe: no allowlist means nothing is excused, so the gate reports more,
+  // never less. Malformed JSON used to throw an uncaught SyntaxError instead.
+  const missing = loadAllowlist("nope.json", { exists: () => false });
+  assert.equal(missing.ok, true);
+  assert.deepEqual(missing.allowlist, { prefixes: [], paths: [], perFile: [] });
+
+  const broken = loadAllowlist("x.json", { exists: () => true, read: () => "{ oops" });
+  assert.equal(broken.ok, false);
+  assert.match(broken.message, /not valid JSON/);
+
+  const invalid = loadAllowlist("x.json", {
+    exists: () => true,
+    read: () => JSON.stringify({ paths: [{ path: "a.md" }] }),
+  });
+  assert.equal(invalid.ok, false);
+  assert.match(invalid.message, /missing a non-empty "reason"/);
 });
