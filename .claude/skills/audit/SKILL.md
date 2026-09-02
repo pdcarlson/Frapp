@@ -276,15 +276,16 @@ For each migration:
 
 Both Vercel projects were unlinked from Git (landing 2026-09-01, web 2026-09-02), so
 `assertVercelProductionBranch` reads an absent `project.link.productionBranch` and treats it as a
-violation — red daily, and red as the `deploy-production.yml` preflight, where it blocks production
-deploys (`--migrations-only` drops only frapp-landing's assertion; frapp-web's stays). Repair is
-tracked in **#1579**; the canonical record of the unlink and everything it broke is **ADR-21** in
+violation — red daily, and red as the `deploy-production.yml` preflight, where it blocked production
+deploys (`--migrations-only` drops only frapp-landing's assertion; frapp-web's stays). **Repaired by
+#1579 on 2026-09-02** — the assertion is now `assertVercelNoGitLink`, and the two Vercel jobs in
+`verify-deployments.yml` were removed. The canonical record of the unlink and everything it broke is **ADR-21** in
 [`spec/architecture/README.md`](../../../spec/architecture/README.md) — read it there, do not
 re-derive it here.
 
 **The Vercel row stays auditable, pointed the other way.** No Production Branch setting exists while
-`link` is null, but *staying unlinked* is itself unversioned dashboard state, and #1579's fix is to
-**invert** the assertion rather than delete it. So audit the invariant that replaced it: **both
+`link` is null, but *staying unlinked* is itself unversioned dashboard state, so #1579 **inverted**
+the assertion rather than deleting it. So audit the invariant that replaced it: **both
 projects are still unlinked** — Vercel `list_projects` reports `link: null` for `frapp-web` and
 `frapp-landing`, and a **present** Git link is now the finding.
 

@@ -29,9 +29,11 @@ commit that is not an ancestor of `main` with green CI.
 - **Last verified: 2026-09-02** (Vercel API: `link: null` on both projects) — the owner
   **disconnected both Vercel projects from Git**: `frapp-landing` on 2026-09-01 and `frapp-web`
   about six and a half hours later on 2026-09-02. Nothing deploys staging web or landing on merge
-  any more (both hosts are frozen at their last Git build), the daily production-guardrails run is
-  red because its Production Branch assertion reads a `link` that is now `null`, and because that
-  same script is the preflight inside `deploy-production.yml` it **blocks production deploys**.
+  any more (both hosts are frozen at their last Git build). The daily production-guardrails run was
+  red for the same reason — its Production Branch assertion read a `link` that is now `null` — and
+  because that same script is the preflight inside `deploy-production.yml`, that **blocked
+  production deploys** until **#1579** inverted the assertion on 2026-09-02 to require the absence
+  of a Git link instead.
   Unchanged as policy: since #1340 production is only ever deployed from a **named commit** by
   `deploy-production.yml` through the Vercel API with `target: production`, so nothing
   auto-promotes — though that workflow's Vercel step passes a `gitSource` the integration used to
