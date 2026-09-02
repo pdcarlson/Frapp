@@ -24,6 +24,7 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 type AttachOptions = {
   private?: boolean;
   onSubscribed?: (channel: RealtimeChannel) => void;
+  onDisconnected?: (status: string) => void;
 };
 
 type AttachArgs = [
@@ -241,6 +242,31 @@ describe("useChapterPresence", () => {
     expect(detach).not.toHaveBeenCalled();
   });
 
+  /**
+   * The other half of keeping `viewerId` out of the channel's deps, and a real
+   * bug on its own.
+   *
+   * On a cold load the id is `null` when the channel joins, so the
+   * `onSubscribed` publish no-ops — and nothing fires afterwards, because the
+   * effect does not re-run and SUBSCRIBED does not repeat. Without an explicit
+   * publish on the transition, a member who opens the app and only *reads*
+   * never appears online to anyone.
+   */
+  test("publishes when the profile resolves after the channel already joined", async () => {
+    const { rerender } = renderHook(
+      ({ viewerId }: { viewerId: string | null }) =>
+        useChapterPresence({ chapterId: CHAPTER, viewerId }),
+      { initialProps: { viewerId: null as string | null } },
+    );
+    await settleAttach();
+    expect(fake.track).not.toHaveBeenCalled();
+
+    rerender({ viewerId: "me" });
+
+    expect(fake.track).toHaveBeenCalledTimes(1);
+    expect(fake.track.mock.calls[0]![0]).toMatchObject({ userId: "me" });
+  });
+
   test("reduces presence state into per-member status on sync", async () => {
     const now = Date.now();
     fake.setState({
@@ -327,6 +353,47 @@ describe("useChapterPresence", () => {
     // Re-attached, but no sync has landed yet — so nothing is claimed.
     expect(result.current.isReady).toBe(false);
     expect(result.current.statusOf("u1")).toBe("offline");
+  });
+
+  /**
+   * The case the attach generation does *not* cover. A socket drop that never
+   * flips `navigator.onLine` — a proxy dying, a server-side close, an errored
+   * re-join loop — leaves `enabled` true and the chapter unchanged, so the last
+   * roster we happened to see would otherwise render as fact for the rest of
+   * the session, naming people Online who left hours ago.
+   */
+  test("a dropped channel stops the roster being current", async () => {
+    fake.setState({ a: [{ userId: "u1", ts: Date.now() }] });
+    const { result } = renderHook(() =>
+      useChapterPresence({ chapterId: CHAPTER, viewerId: "me" }),
+    );
+    await settleAttach();
+    act(() => fake.fire("sync"));
+    expect(result.current.statusOf("u1")).toBe("online");
+
+    const onDisconnected =
+      attachRealtimeChannel.mock.calls[0]![2]?.onDisconnected;
+    act(() => onDisconnected?.("CHANNEL_ERROR"));
+
+    expect(result.current.isReady).toBe(false);
+    expect(result.current.statusOf("u1")).toBe("offline");
+  });
+
+  test("a re-join after a drop makes the roster current again", async () => {
+    fake.setState({ a: [{ userId: "u1", ts: Date.now() }] });
+    const { result } = renderHook(() =>
+      useChapterPresence({ chapterId: CHAPTER, viewerId: "me" }),
+    );
+    await settleAttach();
+    act(() => fake.fire("sync"));
+    const options = attachRealtimeChannel.mock.calls[0]![2];
+
+    act(() => options?.onDisconnected?.("TIMED_OUT"));
+    act(() => options?.onSubscribed?.(fake.channel));
+    act(() => fake.fire("sync"));
+
+    expect(result.current.isReady).toBe(true);
+    expect(result.current.statusOf("u1")).toBe("online");
   });
 
   /**

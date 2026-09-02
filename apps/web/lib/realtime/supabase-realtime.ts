@@ -93,6 +93,17 @@ export function attachRealtimeChannel(
      * presence map for the rest of the session.
      */
     onSubscribed?: (channel: RealtimeChannel) => void;
+    /**
+     * Called when the channel stops delivering — `CHANNEL_ERROR`, `TIMED_OUT`
+     * or `CLOSED`.
+     *
+     * The counterpart to `onSubscribed`, and it exists because the silent
+     * version of this is dangerous: a dropped channel that never re-joins looks
+     * exactly like a quiet one. A subscriber holding derived state read off the
+     * channel needs to know it has stopped being current, rather than keep
+     * rendering the last thing it saw as fact.
+     */
+    onDisconnected?: (status: string) => void;
   } = {},
 ): () => void {
   const client = getRealtimeClient();
@@ -143,8 +154,24 @@ export function attachRealtimeChannel(
         }
         return;
       }
-      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-        console.warn(`realtime: topic "${topic}" join ${status}`);
+      if (
+        status === "CHANNEL_ERROR" ||
+        status === "TIMED_OUT" ||
+        status === "CLOSED"
+      ) {
+        // CLOSED is not warned: it is the ordinary end of a teardown, unlike
+        // the two failures.
+        if (status !== "CLOSED") {
+          console.warn(`realtime: topic "${topic}" join ${status}`);
+        }
+        try {
+          options.onDisconnected?.(status);
+        } catch (error) {
+          console.warn(
+            `realtime: topic "${topic}" onDisconnected failed`,
+            error,
+          );
+        }
       }
     });
   });

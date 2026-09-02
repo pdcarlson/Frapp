@@ -468,3 +468,80 @@ describe("attachRealtimeChannel — onSubscribed", () => {
     expect(() => statusCallback(created[0]!)("SUBSCRIBED")).not.toThrow();
   });
 });
+
+/**
+ * `onDisconnected` is `onSubscribed`'s counterpart. The silent version of this
+ * is the dangerous one: a dropped channel that never re-joins looks exactly
+ * like a quiet one, so a subscriber holding state read off the channel would
+ * keep rendering the last thing it saw as fact.
+ */
+describe("attachRealtimeChannel — onDisconnected", () => {
+  let created: FakeChannel[];
+  let attachRealtimeChannel: typeof import("./supabase-realtime").attachRealtimeChannel;
+  let warn: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+    const fake = makeFakeSupabase();
+    mocks.supabase = fake.supabase;
+    created = fake.created;
+    warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    ({ attachRealtimeChannel } = await import("./supabase-realtime"));
+  });
+
+  function statusCallback(channel: FakeChannel): (status: string) => void {
+    return channel.subscribe.mock.calls[0]![0] as (status: string) => void;
+  }
+
+  test.each(["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"])(
+    "fires on %s",
+    async (status) => {
+      const onDisconnected = vi.fn();
+      attachRealtimeChannel("presence:chapter:x", (c) => c, { onDisconnected });
+      await flush();
+
+      statusCallback(created[0]!)(status);
+
+      expect(onDisconnected).toHaveBeenCalledWith(status);
+    },
+  );
+
+  test("does not fire on SUBSCRIBED", async () => {
+    const onDisconnected = vi.fn();
+    attachRealtimeChannel("presence:chapter:x", (c) => c, { onDisconnected });
+    await flush();
+
+    statusCallback(created[0]!)("SUBSCRIBED");
+
+    expect(onDisconnected).not.toHaveBeenCalled();
+  });
+
+  /**
+   * CLOSED is the ordinary end of a teardown, so it notifies without the noise
+   * — unlike the two genuine failures, which still warn.
+   */
+  test("CLOSED notifies without warning; a failure both notifies and warns", async () => {
+    const onDisconnected = vi.fn();
+    attachRealtimeChannel("presence:chapter:x", (c) => c, { onDisconnected });
+    await flush();
+    const notify = statusCallback(created[0]!);
+
+    notify("CLOSED");
+    expect(warn).not.toHaveBeenCalled();
+
+    notify("CHANNEL_ERROR");
+    expect(warn).toHaveBeenCalled();
+  });
+
+  test("a throwing callback is contained, not propagated", async () => {
+    attachRealtimeChannel("presence:chapter:x", (c) => c, {
+      onDisconnected: () => {
+        throw new Error("boom");
+      },
+    });
+    await flush();
+
+    expect(() => statusCallback(created[0]!)("CHANNEL_ERROR")).not.toThrow();
+  });
+});

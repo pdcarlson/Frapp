@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -113,7 +114,24 @@ export function useChapterPresence({
     }));
   }
 
-  const isCurrent = inputs !== null && roster.attach === attachState.generation;
+  /**
+   * Whether the channel is currently delivering.
+   *
+   * The generation counter covers a teardown we initiated. It does *not* cover
+   * a channel that simply stopped: a socket drop that never flips
+   * `navigator.onLine` (a proxy dying, a server-side close, an errored re-join
+   * loop) leaves `enabled` true and the chapter unchanged, so without this the
+   * last roster we happened to see would render as current for the rest of the
+   * session — naming people Online who left hours ago. A quiet channel and a
+   * dead one are indistinguishable from the inside, which is why the transport
+   * has to say so.
+   */
+  const [connected, setConnected] = useState(false);
+
+  const isCurrent =
+    inputs !== null &&
+    connected &&
+    roster.attach === attachState.generation;
   const presentSince = isCurrent ? roster.byUser : EMPTY;
 
   /**
@@ -136,6 +154,19 @@ export function useChapterPresence({
     viewerIdRef.current = viewerId;
   }, [viewerId]);
 
+  /**
+   * The live attach's publish function, so a late-resolving `viewerId` can be
+   * published without re-minting the channel.
+   *
+   * Keeping `viewerId` out of the channel's deps is only half the job. On a
+   * cold load the id is `null` when the channel joins, so the `onSubscribed`
+   * publish no-ops — and nothing else fires afterwards, because the effect does
+   * not re-run and SUBSCRIBED does not repeat. The member would sit unpublished
+   * until they happened to touch the page, and a member who opens the app and
+   * only reads would never appear online at all.
+   */
+  const publishRef = useRef<(() => void) | null>(null);
+
   // Re-render on a wall-clock tick so a member who stops interacting crosses
   // into Idle on their own. Nothing is broadcast when someone merely stops
   // typing, so without a local tick the row would keep reading Online until
@@ -144,12 +175,21 @@ export function useChapterPresence({
   // Gated on there being someone to age: with an empty roster no dot renders at
   // all, and ticking would re-render the whole directory every 30s forever to
   // change nothing.
-  const [, setTick] = useState(0);
+  //
+  // The clock is held as state rather than read at call time, so the
+  // dependency is real rather than a lint appeasement: `statusOf` closes over
+  // `now`, its identity changes when `now` does, and the returned object is
+  // memoized on it. Reading `Date.now()` inside `statusOf` instead would make
+  // the Idle transition travel only on the return object being freshly
+  // allocated every render — which defeats the `sameRoster` bailout at the
+  // context boundary, and would stop working entirely the moment anyone
+  // memoized the return (the React Compiler would do exactly that).
+  const [now, setNow] = useState(() => Date.now());
   const hasRoster = presentSince.size > 0;
   useEffect(() => {
     if (!hasRoster) return undefined;
     const interval = setInterval(
-      () => setTick((n) => n + 1),
+      () => setNow(Date.now()),
       PRESENCE_HEARTBEAT_MS,
     );
     return () => clearInterval(interval);
@@ -230,9 +270,16 @@ export function useChapterPresence({
         // a drop — without it a member vanishes from the map for the rest of
         // the session. Chat's manager re-tracks on each SUBSCRIBED for the same
         // reason.
-        onSubscribed: () => publish(),
+        onSubscribed: () => {
+          setConnected(true);
+          publish();
+        },
+        // The roster stops being evidence the moment the channel does.
+        onDisconnected: () => setConnected(false),
       },
     );
+
+    publishRef.current = publish;
 
     for (const event of ACTIVITY_EVENTS) {
       window.addEventListener(event, onActivity, { passive: true });
@@ -246,14 +293,32 @@ export function useChapterPresence({
       }
       document.removeEventListener("visibilitychange", onActivity);
       channel = null;
+      publishRef.current = null;
+      setConnected(false);
       detach();
     };
   }, [enabled, chapterId, generation]);
 
+  // Declared after the attach effect so `publishRef` is already set on mount.
+  // On mount this no-ops (the channel has not joined yet, and `onSubscribed`
+  // covers that moment); its job is the *later* transition, when the profile
+  // resolves against a channel that is already live.
+  useEffect(() => {
+    if (viewerId) publishRef.current?.();
+  }, [viewerId]);
+
+  // `now` advances on the interval above, which is what carries a member from
+  // Online into Idle when nothing at all arrives on the wire.
   const statusOf = useCallback(
-    (userId: string) => presenceStatusFor(presentSince.get(userId), Date.now()),
-    [presentSince],
+    (userId: string) => presenceStatusFor(presentSince.get(userId), now),
+    [presentSince, now],
   );
 
-  return { statusOf, isReady: isCurrent };
+  // Memoized so an unchanged roster does not re-render every context consumer.
+  // Safe precisely because `statusOf` above carries the clock — otherwise this
+  // would freeze presence at whatever it was when the roster last changed.
+  return useMemo(
+    () => ({ statusOf, isReady: isCurrent }),
+    [statusOf, isCurrent],
+  );
 }
