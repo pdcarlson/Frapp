@@ -69,6 +69,20 @@ export function MessageAttachments({
             href={attachment.download_url}
             target="_blank"
             rel="noreferrer"
+            // The server still forces `Content-Disposition: attachment` on
+            // every signed URL (`ChatService.listMessageAttachments` passes
+            // `forceDownload: true` — spec/behavior/chat/README.md's "trust
+            // boundary" section is explicit this is a security mitigation,
+            // not a UX one: it's what keeps a member-uploaded object whose
+            // declared MIME lied about its content from rendering as HTML).
+            // That disposition header already carries a filename of its own
+            // (the storage object's basename, not `row.filename`), so this
+            // attribute is a harmless no-op for the actual deployment shape
+            // here: a cross-origin Supabase Storage signed URL, for which
+            // browsers ignore `download`'s suggested-filename value per the
+            // HTML spec — only same-origin / `blob:` / `data:` URLs honour
+            // it. Left in case that ever changes; it costs nothing today.
+            download={attachment.filename}
             className={cn(
               "flex items-center gap-2 rounded-md border border-border bg-surface-1 px-2 py-1.5",
               "text-[12.5px] hover:bg-accent-subtle hover:text-accent-text",

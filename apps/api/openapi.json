@@ -2333,6 +2333,45 @@
         ]
       }
     },
+    "/v1/channels/{id}/messages/avatars": {
+      "post": {
+        "operationId": "ChatController_resolveAuthorAvatars_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveAuthorAvatarsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Signed download URLs for a set of messages' author avatars",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/channels/messages/{messageId}": {
       "patch": {
         "operationId": "ChatController_editMessage_v1",
@@ -5054,6 +5093,35 @@
         ]
       }
     },
+    "/v1/polls/{messageId}/close": {
+      "post": {
+        "operationId": "PollController_close_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Manually close a poll early (creator only)",
+        "tags": [
+          "Polls"
+        ]
+      }
+    },
     "/v1/polls": {
       "get": {
         "description": "Chapter-wide poll list for dashboards (requires polls:view_all; not part of the default Member role). Supports channel filter, active=true|false filter, and limit. Each entry includes aggregate results plus the caller's own selections.",
@@ -7761,6 +7829,22 @@
           "content"
         ]
       },
+      "ResolveAuthorAvatarsDto": {
+        "type": "object",
+        "properties": {
+          "message_ids": {
+            "description": "IDs of already-fetched messages in this channel to resolve avatar paths for. The server derives the avatar path set itself (`chat_messages.author_avatar_path` for rows matching both this channel and this id list) rather than trusting a caller-supplied storage path — the `chat-archive` bucket has no storage RLS, and an avatar path is otherwise indistinguishable from another message's attachment path.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "message_ids"
+        ]
+      },
       "EditMessageDto": {
         "type": "object",
         "properties": {
@@ -7811,6 +7895,10 @@
           "content_type": {
             "type": "string",
             "description": "MIME content type (e.g. image/png)"
+          },
+          "size_bytes": {
+            "type": "number",
+            "description": "File size in bytes, if known. Rejected server-side against the upload size ceiling when present."
           }
         },
         "required": [
@@ -8183,6 +8271,10 @@
           "content_type": {
             "type": "string",
             "description": "MIME content type (e.g. application/pdf)"
+          },
+          "size_bytes": {
+            "type": "number",
+            "description": "File size in bytes, if known. Rejected server-side against the upload size ceiling when present."
           }
         },
         "required": [
@@ -8289,6 +8381,10 @@
           "content_type": {
             "type": "string",
             "description": "MIME content type (e.g. application/pdf)"
+          },
+          "size_bytes": {
+            "type": "number",
+            "description": "File size in bytes, if known. Rejected server-side against the upload size ceiling when present."
           }
         },
         "required": [
@@ -8538,6 +8634,10 @@
           "content_type": {
             "type": "string",
             "description": "MIME content type (e.g. application/pdf)"
+          },
+          "size_bytes": {
+            "type": "number",
+            "description": "File size in bytes, if known. Rejected server-side against the upload size ceiling when present."
           }
         },
         "required": [

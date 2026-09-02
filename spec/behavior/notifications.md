@@ -17,7 +17,7 @@ Other modules (Chat, Events, Study, Billing) call these methods without knowing 
 4. Save notification to `notifications` table (in-app history).
 5. Fetch the user's `push_tokens`.
 6. Send push notification via Expo Push Service with the appropriate priority.
-7. If delivery fails (invalid token, Expo error), remove the invalid token from `push_tokens`.
+7. If Expo reports a token as permanently undeliverable (`DeviceNotRegistered`), remove it from `push_tokens`. This is classified from the *ticket* Expo returns at send time (`ExpoPushProvider.recordTickets`), not from polling delivery *receipts* — receipt polling is a separate, unimplemented enhancement. Every other Expo error (rate limit, oversized message, bad app credentials, transport failure) is transient or describes something other than this specific token, and does not prune it — pruning on those would unregister a device that is still valid.
 
 **URGENT outranks the category preference** (#1041). A member cannot mute a chapter emergency — or the president's subscription-status alert — by switching its category off, and the exemption covers the in-app row as well as the push: suppressing the row would leave no trace of the broadcast anywhere, which is the same failure in a slower form. Step 2 is the only gate URGENT skips; it is otherwise delivered exactly like any other payload. Note the ordering is an implementation detail of *when the preference is read*, not of what is checked — `notifyUser` skips the lookup entirely for URGENT rather than reading it and discarding the result, so an emergency broadcast costs no preference query per recipient.
 
@@ -115,6 +115,10 @@ above is aspirational: only chat is bundled today.
 ## Badge Count
 
 The app icon badge shows the total unread count: unread in-app notifications + unread chat messages across all channels. Badge count is updated on every notification delivery and when the user reads content.
+
+**Mobile syncs the OS badge from the same queries the app already fetches, not from a dedicated count endpoint.** `apps/mobile/lib/notifications/use-badge-sync.ts`'s `useBadgeSyncRuntime` (mounted app-wide from `components/app-runtime.tsx`) sums `GET /v1/notifications`' unread rows (`read_at === null`, the same definition the in-app history and its "Mark all read" use) with `GET /v1/channels/unread`'s per-channel `unread_count`, and calls `Notifications.setBadgeCountAsync`. It resyncs whenever either query's data changes — including on app foreground, since `refetchOnWindowFocus` is already wired to `AppState` (`lib/connection/query-connectivity.ts`) — so no separate resume listener is needed. Badge setting needs no EAS `projectId`; it is a local OS call, not a remote push.
+
+Two adjustments keep the two sources additive rather than double-counted or unbounded: `ChatService` writes a `notifications` row for every DM, group-DM, and announcement message on top of the read-receipt count `GET /v1/channels/unread` already reflects for that channel, so the notification half excludes chat-targeted rows (`selectUnreadNonChatCount`) rather than summing both unfiltered. And like the in-app history it mirrors, the notification half only sees the first page (`GET /v1/notifications`' default 50-row limit), so a member with more than 50 unread in-app notifications sees an undercounted badge until they clear some — the same accepted cap the history screen and its own unread pill already carry.
 
 ## Per-Channel Mute
 
@@ -229,6 +233,7 @@ Chapters that pre-date the `#chapter-audit` channel have no mirror; the bridge l
 | Tasks         | Task assigned to you                                               | NORMAL                      |
 | Tasks         | Task due soon (1 day before)                                       | NORMAL                      |
 | Tasks         | Task overdue                                                       | NORMAL                      |
+| Tasks         | Task marked completed (to creator, needs confirmation)             | NORMAL                      |
 | Tasks         | Task completion confirmed (points awarded)                         | NORMAL                      |
 | Service       | Service hours approved                                             | NORMAL                      |
 | Service       | Service hours rejected                                             | NORMAL                      |

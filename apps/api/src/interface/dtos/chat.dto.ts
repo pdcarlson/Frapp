@@ -300,6 +300,15 @@ export class RequestChatUploadUrlDto {
   @IsString()
   @MaxLength(255)
   content_type: string;
+
+  @ApiPropertyOptional({
+    description:
+      'File size in bytes, if known. Rejected server-side against the upload size ceiling when present.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  size_bytes?: number;
 }
 
 export class ChannelUnreadCountDto {
@@ -349,4 +358,20 @@ export class ChannelNotificationPreferenceDto {
 
   @ApiProperty({ enum: CHAT_NOTIFICATION_LEVELS })
   level: (typeof CHAT_NOTIFICATION_LEVELS)[number];
+}
+
+/** Bounds one request to roughly one page of distinct message authors (#1231). */
+export const MAX_AUTHOR_AVATAR_PATHS_PER_REQUEST = 50;
+
+export class ResolveAuthorAvatarsDto {
+  @ApiProperty({
+    type: [String],
+    format: 'uuid',
+    description:
+      "IDs of already-fetched messages in this channel to resolve avatar paths for. The server derives the avatar path set itself (`chat_messages.author_avatar_path` for rows matching both this channel and this id list) rather than trusting a caller-supplied storage path — the `chat-archive` bucket has no storage RLS, and an avatar path is otherwise indistinguishable from another message's attachment path.",
+  })
+  @IsArray()
+  @ArrayMaxSize(MAX_AUTHOR_AVATAR_PATHS_PER_REQUEST)
+  @IsUUID(undefined, { each: true })
+  message_ids: string[];
 }

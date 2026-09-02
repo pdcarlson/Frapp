@@ -4,6 +4,7 @@ import {
   BadRequestException,
   ConflictException,
 } from '@nestjs/common';
+import { MAX_UPLOAD_BYTES } from '@repo/validation';
 import { BackworkService } from './backwork.service';
 import {
   BACKWORK_RESOURCE_REPOSITORY,
@@ -90,6 +91,7 @@ describe('BackworkService', () => {
     mockStorageProvider = {
       getSignedUploadUrl: jest.fn(),
       getSignedDownloadUrl: jest.fn(),
+      getSignedDownloadUrls: jest.fn().mockResolvedValue({}),
       uploadFile: jest.fn(),
       downloadFile: jest.fn(),
       deleteFile: jest.fn(),
@@ -179,6 +181,32 @@ describe('BackworkService', () => {
         expect.stringContaining('notes.gif'),
         'image/gif',
       );
+    });
+
+    it('accepts a declared size at exactly the upload ceiling', async () => {
+      mockStorageProvider.getSignedUploadUrl.mockResolvedValue(
+        'https://storage.supabase.co/upload/signed',
+      );
+
+      const result = await service.requestUploadUrl({
+        chapterId: 'ch-1',
+        filename: 'midterm1.pdf',
+        contentType: 'application/pdf',
+        sizeBytes: MAX_UPLOAD_BYTES,
+      });
+
+      expect(result.signedUrl).toBeDefined();
+    });
+
+    it('throws BadRequestException for a declared size one byte over the upload ceiling', async () => {
+      await expect(
+        service.requestUploadUrl({
+          chapterId: 'ch-1',
+          filename: 'midterm1.pdf',
+          contentType: 'application/pdf',
+          sizeBytes: MAX_UPLOAD_BYTES + 1,
+        }),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 

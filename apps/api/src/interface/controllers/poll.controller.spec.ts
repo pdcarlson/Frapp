@@ -17,6 +17,7 @@ describe('PollController', () => {
       createPoll: jest.fn(),
       vote: jest.fn(),
       removeVote: jest.fn(),
+      close: jest.fn(),
       getPoll: jest.fn(),
       listPolls: jest.fn(),
     } as any;
@@ -131,6 +132,34 @@ describe('PollController', () => {
         chapterId,
       );
       expect(result).toEqual({ success: true });
+    });
+  });
+
+  describe('close', () => {
+    it('should close a poll', async () => {
+      const messageId = 'msg-123';
+      const chapterId = 'chapter-123';
+      const userId = 'user-123';
+      const expectedMessage = { id: messageId } as any;
+
+      pollService.close.mockResolvedValue(expectedMessage);
+
+      const result = await controller.close(messageId, chapterId, userId);
+
+      expect(pollService.close).toHaveBeenCalledWith(
+        messageId,
+        userId,
+        chapterId,
+      );
+      expect(result).toEqual(expectedMessage);
+    });
+
+    it('requires POLLS_CREATE, matching createPoll', () => {
+      const handlerPermissions = Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        controller.close,
+      );
+      expect(handlerPermissions).toEqual([SystemPermissions.POLLS_CREATE]);
     });
   });
 

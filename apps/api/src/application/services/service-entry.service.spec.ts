@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
+import { MAX_UPLOAD_BYTES } from '@repo/validation';
 import { ServiceEntryService } from './service-entry.service';
 import { SERVICE_ENTRY_REPOSITORY } from '../../domain/repositories/service-entry.repository.interface';
 import type { IServiceEntryRepository } from '../../domain/repositories/service-entry.repository.interface';
@@ -70,6 +71,7 @@ describe('ServiceEntryService', () => {
       getSignedDownloadUrl: jest
         .fn()
         .mockResolvedValue('https://signed-download'),
+      getSignedDownloadUrls: jest.fn().mockResolvedValue({}),
       uploadFile: jest.fn().mockResolvedValue(undefined),
       downloadFile: jest.fn().mockResolvedValue(null),
       deleteFile: jest.fn().mockResolvedValue(undefined),
@@ -540,6 +542,29 @@ describe('ServiceEntryService', () => {
           contentType: 'application/zip',
         }),
       ).rejects.toThrow('Content type "application/zip" is not allowed');
+      expect(mockStorageProvider.getSignedUploadUrl).not.toHaveBeenCalled();
+    });
+
+    it('should accept a declared size at exactly the upload ceiling', async () => {
+      const result = await service.requestProofUploadUrl({
+        chapterId: 'ch-1',
+        filename: 'receipt.pdf',
+        contentType: 'application/pdf',
+        sizeBytes: MAX_UPLOAD_BYTES,
+      });
+
+      expect(result.signedUrl).toBe('https://signed-upload');
+    });
+
+    it('should reject a declared size one byte over the upload ceiling', async () => {
+      await expect(
+        service.requestProofUploadUrl({
+          chapterId: 'ch-1',
+          filename: 'receipt.pdf',
+          contentType: 'application/pdf',
+          sizeBytes: MAX_UPLOAD_BYTES + 1,
+        }),
+      ).rejects.toThrow(BadRequestException);
       expect(mockStorageProvider.getSignedUploadUrl).not.toHaveBeenCalled();
     });
   });

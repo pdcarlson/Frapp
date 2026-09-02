@@ -86,7 +86,7 @@ Push delivery success/failure rate is derived from a structured log record emitt
 | `category` | Notification category (`chat`, `events`, `announcements`, …); `default` when the caller sets none. |
 | `attempted` | Push tokens the send was asked to reach. |
 | `accepted` | Messages the push service accepted (`status: 'ok'` ticket). |
-| `invalidTokens` | Tokens rejected as malformed before any send. |
+| `invalidTokens` | Tokens rejected as malformed before any send — a **count**, distinct from the `DeviceNotRegistered` token *values* `ExpoPushProvider.sendToUser` returns internally for pruning (`spec/behavior/notifications.md` delivery step 7). The two never overlap: a malformed token is never sent to Expo, so Expo can never report it `DeviceNotRegistered`. |
 | `ticketErrors` | Messages the push service rejected (`status: 'error'` ticket). |
 | `providerErrors` | Messages in a chunk whose transport call threw — no per-message outcome was returned. |
 | `failures` | `invalidTokens + ticketErrors + providerErrors`. |

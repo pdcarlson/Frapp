@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useFrappClient } from "./use-frapp-client";
 
@@ -34,7 +35,7 @@ export interface ChannelUnreadCount {
  * This is the one chat operation whose response body is actually generated in
  * `@repo/api-sdk` (every other one infers as `never`), so it needs no cast.
  */
-export function useChannelUnreadCounts() {
+export function useChannelUnreadCounts(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["channels", "unread"],
@@ -46,6 +47,7 @@ export function useChannelUnreadCounts() {
     // Deliberately shorter than the 60s on `useChannels`: a badge that lags a
     // read is the most visible staleness in the app.
     staleTime: 15_000,
+    enabled: options?.enabled ?? true,
   });
 }
 
@@ -592,6 +594,87 @@ export function useMessageAttachments(
       );
       if (error) throw error;
       return (data ?? []) as MessageAttachment[];
+    },
+  });
+}
+
+/**
+ * Server caps one `avatars` request at this many message ids
+ * (`MAX_AUTHOR_AVATAR_PATHS_PER_REQUEST` in `chat.dto.ts`) — kept in sync by
+ * hand since the two packages don't share a constants module.
+ */
+const AVATAR_REQUEST_CHUNK_SIZE = 50;
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+}
+
+/**
+ * Signed URLs for imported-author avatars (#1231), batched across every
+ * distinct `author_avatar_path` among the given messages — one representative
+ * message id per distinct path, so a channel with many messages from few
+ * authors costs one small request rather than one per message.
+ *
+ * The server derives the avatar path set itself from `channelId` plus these
+ * message ids rather than trusting a caller-supplied storage path (the
+ * `chat-archive` bucket has no storage RLS, and an avatar path is otherwise
+ * indistinguishable from another message's attachment path) — see
+ * `ChatService.resolveAuthorAvatars`. `ChatMessage.author_avatar_path` itself
+ * never leaves the client in this call; it's only the lookup key used against
+ * the result below.
+ *
+ * Requests are chunked at the server's per-call cap so a channel with more
+ * distinct imported authors than that doesn't 400 the whole batch — chunks
+ * merge into one `path → signedUrl` map. A path missing from the result (no
+ * avatar, or a signing failure) has nothing to render, so callers should fall
+ * back to initials rather than treat a miss as loading.
+ *
+ * Chunks are isolated from each other: one chunk's request failing does not
+ * throw the other chunks' already-fetched avatars away. A channel with 120
+ * distinct imported authors sends 3 chunked requests — a transient failure on
+ * the third should degrade those 20 authors to initials, not all 120.
+ */
+export function useAuthorAvatars(
+  channelId: string | undefined,
+  messages: { id: string; author_avatar_path?: string | null }[],
+) {
+  const client = useFrappClient();
+  const messageIdsByDistinctPath = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const message of messages) {
+      if (message.author_avatar_path && !seen.has(message.author_avatar_path)) {
+        seen.set(message.author_avatar_path, message.id);
+      }
+    }
+    return [...seen.values()].sort();
+  }, [messages]);
+
+  return useQuery({
+    queryKey: ["channels", channelId, "avatars", messageIdsByDistinctPath],
+    enabled: !!channelId && messageIdsByDistinctPath.length > 0,
+    // Comfortably inside the API's signed-URL TTL, so a URL handed to the DOM
+    // is still live when it renders.
+    staleTime: 10 * 60_000,
+    queryFn: async () => {
+      const chunks = chunk(messageIdsByDistinctPath, AVATAR_REQUEST_CHUNK_SIZE);
+      const settled = await Promise.allSettled(
+        chunks.map((ids) =>
+          client.POST("/v1/channels/{id}/messages/avatars", {
+            params: { path: { id: channelId! } },
+            body: { message_ids: ids },
+          }),
+        ),
+      );
+      const result: Record<string, string> = {};
+      for (const outcome of settled) {
+        if (outcome.status !== "fulfilled" || outcome.value.error) continue;
+        Object.assign(result, outcome.value.data ?? {});
+      }
+      return result;
     },
   });
 }

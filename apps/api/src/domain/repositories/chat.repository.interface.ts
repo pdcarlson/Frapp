@@ -100,7 +100,8 @@ export interface IChatMessageRepository {
    * Optional `channelId` scopes to a single channel. `limit` caps result size
    * (undefined, non-finite, or non-positive values use the shared list default;
    * finite positive values are clamped to the shared list min/max in the repo).
-   * When `active` is set, expiration is enforced in SQL (via `metadata.expires_at`)
+   * When `active` is set, closure is enforced in SQL (via `metadata.expires_at`
+   * and `metadata.closed_at` — a poll is inactive once either fires, #379)
    * so `limit` applies after that filter, not before.
    */
   findPollsByChapter(
@@ -117,6 +118,26 @@ export interface IChatMessageRepository {
     senderId: string | null,
     clientMessageId: string,
   ): Promise<ChatMessage | null>;
+  /**
+   * Distinct, non-null `author_avatar_path` values among the given message
+   * ids — scoped to `channelId` in the same statement as the lookup, so a
+   * message id from another channel contributes nothing rather than relying
+   * on the caller having checked first (#1231).
+   *
+   * This is the ONLY legitimate source of an avatar path for
+   * `ChatService.resolveAuthorAvatars`: avatars and message attachments are
+   * both written under the same undifferentiated `chat-archive` object
+   * layout (`archiveMediaObjectPath` — no `authors/`-vs-`attachments/`
+   * distinction exists in the path shape), so a caller-supplied raw path
+   * cannot be trusted to actually be an avatar rather than some other
+   * message's attachment. Deriving the path set from messages the caller
+   * was already proven to have channel access to is what keeps this from
+   * being a way to read arbitrary chat-archive objects.
+   */
+  findAuthorAvatarPaths(
+    channelId: string,
+    messageIds: string[],
+  ): Promise<string[]>;
   /**
    * Insert a row. Throws {@link ChatMessageDuplicateError} on a
    * `(channel_id, sender_id, client_message_id)` unique violation so the

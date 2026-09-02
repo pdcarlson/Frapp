@@ -259,3 +259,15 @@ export function configureForegroundPresentation(): void {
     }),
   });
 }
+
+/**
+ * Sets the app icon badge. Like `ensureAndroidChannel`, this needs only the
+ * module, never the EAS `projectId` — the badge is a device-local OS call, not
+ * a remote push, so it works in a plain dev build with no project provisioned.
+ * A no-op wherever the module can't load (web, Expo Go).
+ */
+export async function setBadgeCount(count: number): Promise<void> {
+  const mod = localOnlyModule();
+  if (!mod) return;
+  await mod.setBadgeCountAsync(Math.max(0, count));
+}
