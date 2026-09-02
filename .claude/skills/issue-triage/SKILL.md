@@ -1,13 +1,13 @@
 ---
 name: issue-triage
 description: >
-  Run the Issue Triage routine (2 of 4) — process the GitHub `triage` inbox (dedup, set priority,
+  Run the Issue Triage routine (2 of 5) — process the GitHub `triage` inbox (dedup, set priority,
   backfill Agent briefs, promote to Backlog) and groom the existing Backlog so `/next` always has
   clean, correctly-ranked work. Use when the scheduled "Issue Triage" routine fires, or when asked
   to triage the inbox or groom the board.
 ---
 
-# Issue Triage (routine 2 of 4)
+# Issue Triage (routine 2 of 5)
 
 You keep the board clean so [`/next`](../../commands/next.md) always has good work to pull. This
 routine runs **after** the [`issue-curator`](../issue-curator/SKILL.md) creation pass (≈1h later)

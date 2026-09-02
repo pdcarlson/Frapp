@@ -38,7 +38,7 @@ Canonical docs (link, don't restate values):
 
 | | **Signet (current)** | **Legacy Frapp (frozen)** |
 | --- | --- | --- |
-| Surfaces | `apps/mobile`; the `apps/web` dashboard shell + base tokens since the #920 shell slice (screens true up per-family in later slices) | `apps/landing` until its Signet pass; `apps/web` screens whose #920 family slice has not landed still carry legacy classes on the Signet base |
+| Surfaces | `apps/mobile`; all of `apps/web` — the #920 reskin (shell, base tokens, primitives, every screen family) is complete | `apps/landing` until its Signet pass |
 | Direction | Dark-first, warm, consumer (Notion dark / Cash App) | Light-first bone / bronze / ink |
 | Typeface | **Figtree**. Geist is rejected. Web ships it vendored at `packages/theme/fonts/FigtreeVF.woff2` (`next/font/local`, `--font-figtree`). | Geist Sans in `@repo/theme` — now landing-only |
 | House accent | Gold/amber `#EFB63B` / seed `#F2B72E` — never brown-bronze, never royal blue | Bronze `primary`, royal blue leftovers in old specs |
@@ -48,9 +48,9 @@ Canonical docs (link, don't restate values):
 **The two systems MUST NOT mix on one surface.** Do not import Signet tokens onto the frozen
 landing surface, and do not copy bone/bronze/Geist/`#2563EB` onto a Signet screen. The frozen
 landing README means: do not implement visual changes from that doc, and do not file
-spec-vs-implementation drift against it. Not-yet-resliced `apps/web` screens are a documented
-migration window, not a license to mix — they render on the Signet base tokens and are trued up
-by their own #920 family slice.
+spec-vs-implementation drift against it. The `apps/web` migration window is **closed**: a legacy
+class or a live `dark:` variant on a dashboard screen is a defect now, not a pending slice
+([`ui-development`](../ui-development/SKILL.md)).
 
 New Signet work MUST NOT copy visual patterns from frozen surfaces. Assets still shipping the
 legacy "F" mark / bone lockup are expected until the Signet asset pass — do not restyle them
