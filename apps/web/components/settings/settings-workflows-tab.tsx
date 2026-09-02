@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { parseGuardedInt } from "@/lib/utils";
 import type { OrgWorkflow } from "@repo/hooks";
 
 type WorkflowDraft = {
@@ -73,13 +74,8 @@ export function SettingsWorkflowsTab({
   }
 
   function setThreshold(key: string, raw: string) {
-    // Guard-parse: only commit a finite, nonnegative integer. Anything else
-    // (empty, negative, decimal, NaN) preserves the previous value. The empty
-    // check is explicit because `Number("")` is `0`, not `NaN`.
-    const trimmed = raw.trim();
-    if (trimmed === "") return;
-    const parsed = Number(trimmed);
-    if (!Number.isInteger(parsed) || parsed < 0) return;
+    const parsed = parseGuardedInt(raw, 0);
+    if (parsed === undefined) return;
     setDraft((prev) =>
       prev.map((wf) => (wf.key === key ? { ...wf, threshold: parsed } : wf)),
     );

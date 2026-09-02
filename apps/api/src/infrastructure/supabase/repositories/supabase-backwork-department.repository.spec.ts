@@ -70,4 +70,22 @@ describe('SupabaseBackworkDepartmentRepository — tenant scope', () => {
       harness.rows('backwork_departments').find((d) => d.id === DEPT_A)?.name,
     ).toBe('Chemistry');
   });
+
+  it('findById resolves to null for an id belonging to another chapter', async () => {
+    const found = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findById(DEPT_A, CHAPTER_B),
+    );
+
+    expect(found).toBeNull();
+  });
+
+  it('delete refuses an id belonging to another chapter', async () => {
+    await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.delete(DEPT_A, CHAPTER_B),
+    );
+
+    expect(
+      harness.rows('backwork_departments').some((d) => d.id === DEPT_A),
+    ).toBe(true);
+  });
 });

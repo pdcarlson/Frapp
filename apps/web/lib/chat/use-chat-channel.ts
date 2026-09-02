@@ -31,7 +31,9 @@ import {
 import { chatRealtime, type ConnectionStatus } from "@repo/chat-core/realtime-manager";
 import {
   actOnCard,
+  deleteMessage as deleteMessageAction,
   discardOutboxRow,
+  editMessage as editMessageAction,
   flushOutbox,
   hydrateOutboxIntoCache,
   react as reactAction,
@@ -61,6 +63,10 @@ export interface UseChatChannelResult {
   ) => Promise<void>;
   react: (messageId: string, emoji: string) => Promise<void>;
   unreact: (messageId: string, emoji: string) => Promise<void>;
+  /** Own message only — enforced server-side. Rejects on failure; callers keep editing on error. */
+  edit: (messageId: string, content: string) => Promise<void>;
+  /** Own message, or any message with `channels:manage` (server-enforced). */
+  delete: (messageId: string) => Promise<void>;
   draft: string;
   setDraft: (body: string) => void;
   typingUsers: string[];
@@ -261,6 +267,22 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [channelId, ctx],
   );
 
+  const editCb = useCallback(
+    async (messageId: string, content: string) => {
+      if (!channelId) return;
+      await editMessageAction(ctx, { channelId, messageId, content });
+    },
+    [channelId, ctx],
+  );
+
+  const deleteCb = useCallback(
+    async (messageId: string) => {
+      if (!channelId) return;
+      await deleteMessageAction(ctx, { channelId, messageId });
+    },
+    [channelId, ctx],
+  );
+
   const emitTyping = useCallback(() => {
     if (!channelId || !userId) return;
     chatRealtime.emitTyping(channelId, userId);
@@ -332,6 +354,8 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     send,
     react: reactCb,
     unreact: unreactCb,
+    edit: editCb,
+    delete: deleteCb,
     draft,
     setDraft,
     typingUsers,
