@@ -122,6 +122,71 @@ describe("ThreadPanel tap-to-reveal shares one id across its rows (#1193)", () =
 });
 
 /**
+ * #396: the panel is a persistent `<aside>`, not a dialog, so nothing moves
+ * focus into it or wires Escape for free the way Radix does for the slash
+ * palette. `chat-shell.tsx` owns returning focus to whatever opened the
+ * thread (the row's Reply control, most often); this covers what the panel
+ * itself is responsible for.
+ */
+describe("ThreadPanel keyboard behavior (#396)", () => {
+  function renderPanel(onClose = vi.fn()) {
+    const parent = message({ id: "parent-1", client_message_id: "parent-1" });
+    return {
+      onClose,
+      ...render(
+        <ThreadPanel
+          channelId={parent.channel_id}
+          parent={parent}
+          allMessages={[parent]}
+          viewerId={VIEWER}
+          nameFor={nameFor}
+          onClose={onClose}
+          onReact={vi.fn()}
+          onUnreact={vi.fn()}
+        />,
+      ),
+    };
+  }
+
+  it("moves focus to the close button when a thread opens", () => {
+    renderPanel();
+    expect(screen.getByRole("button", { name: /close thread/i })).toHaveFocus();
+  });
+
+  it("closes on Escape from anywhere in the panel", async () => {
+    const user = userEvent.setup();
+    const { onClose } = renderPanel();
+
+    // The mount effect above already focused the close button — Escape from
+    // there is the case a keyboard user hits most often.
+    await user.keyboard("{Escape}");
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not close when Escape's default was already prevented by a nested layer", () => {
+    // A row's emoji-reaction popover (`ReactionQuickPick`, a Radix `Popover`)
+    // dismisses itself on Escape via a document-level listener that calls
+    // `preventDefault()` but not `stopPropagation()` — the same keydown still
+    // bubbles here afterward. Simulating `defaultPrevented` directly, rather
+    // than mounting a real popover, isolates the one thing this panel is
+    // responsible for: not double-handling an Escape someone else already
+    // claimed.
+    const { onClose } = renderPanel();
+    const closeButton = screen.getByRole("button", { name: /close thread/i });
+    const event = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    event.preventDefault();
+    closeButton.dispatchEvent(event);
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+/**
  * Thread replies are real messages too — edit/delete are wired through the
  * panel exactly like `MessageTimeline` wires them for the centre pane, so a
  * moderator (or the author) doesn't lose the affordance just because a

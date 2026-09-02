@@ -57,6 +57,16 @@ const DialogContent = React.forwardRef<
         className
       )}
       {...props}
+      // After `{...props}`, not before: every consumer here renders the
+      // default modal variant (focus trap, outside-pointer block), and
+      // `spec/ui/design-system/README.md` §6 requires it of all of them —
+      // so this is authoritative, not a default a future prop spread could
+      // silently defeat. Radix's `Content` never sets `aria-modal` itself
+      // (verified against @radix-ui/react-dialog@1.1.23); only `role="dialog"`
+      // comes for free. Without it, some screen readers still let a user
+      // swipe/arrow past the dialog into content it is blocking input to,
+      // which is precisely what the modal behavior is for.
+      aria-modal="true"
     >
       {children}
       <DialogPrimitive.Close
