@@ -8,25 +8,36 @@ import { join } from 'node:path';
  * bespoke `chapter:<channel_id>` topic — a leftover from the `chat-send` Edge
  * Function that ADR-11 retired. It was dead on both halves independently:
  * clients join `chat:channel:<id>` (ADR-10, `realtime-manager.ts`) and read
- * messages through Postgres Changes, and no client has ever registered a
- * `new_message` handler. See the ADR-11 amendment (2026-09-02, #472).
+ * messages through Postgres Changes, and no `new_message` handler exists
+ * anywhere outside `apps/api`. See the ADR-11 amendment (2026-09-02, #472).
  *
- * Two separate rules are pinned here, and they come from different ADRs —
- * cite the right one when this test fails:
+ * **Read this before citing an ADR at anyone.** No ADR forbids a message
+ * broadcast. ADR-02 chose Broadcast *for* typing and presence; it does not
+ * say messages may not also use it. ADR-10 rules out a bespoke topic *for
+ * presence* and fixes the chat topic at `chat:channel:<id>`, because the push
+ * worker reads Presence on that same topic — that part is load-bearing here.
+ * So what this file pins is the **current architecture**, not a prohibition:
+ * message delivery is the Postgres Changes subscription on `chat_messages`
+ * (`spec/ui/resilience.md` §3.2), and the API emits no Broadcast at all.
+ * Adding a real fast-path is a new design decision (#1613), needing a client
+ * handler, de-duplication against the Postgres Changes echo of the same row,
+ * and ADR-10's topic coupling respected. Failing this test means "you are
+ * making that decision — go make it deliberately," not "you broke a rule."
  *
- * - **ADR-02** ("Why Supabase Realtime Broadcast for presence/typing") scopes
- *   Broadcast to presence and typing. Message delivery is Postgres Changes
- *   (`spec/ui/resilience.md` §3.2). The one legitimate broadcast producer in
- *   the repo is the *client*, `packages/chat-core/src/realtime-manager.ts`,
- *   which emits `typing` — not the API.
- * - **ADR-10** ("no custom broadcast topic") fixes the topic string at
- *   `chat:channel:<id>`, because the push worker reads Presence on that same
- *   topic. A `chapter:<id>` realtime topic is the shape it rules out.
+ * Broadcast is **not** reserved for typing repo-wide, and nothing here should
+ * be read as saying so. Two other producers are legitimate and must not be
+ * disturbed: `packages/chat-core/src/realtime-manager.ts` emits `typing` from
+ * the client, and the **database** emits contentless change pings via
+ * `realtime.send(…, 'change', …)` on `notif:<id>` / `events:<id>` /
+ * `attendance:<id>` (`20260816140000_realtime_carrier_repair.sql`), consumed
+ * by `apps/web/lib/realtime/use-realtime-table.ts`. That carrier was chosen
+ * deliberately in #867 after a two-day silent-delivery bug; do not delete it
+ * on the strength of a test that only ever looked at `apps/api/src`.
  *
  * Subscribing is untouched and must stay allowed: `chat-push-worker` and
  * `chat-bridge-worker` open `postgres_changes` subscriptions and Presence,
  * which is exactly how the sanctioned design works. Only *emitting* a
- * broadcast is banned.
+ * broadcast from the API is what this catches.
  *
  * Scope note, so the next reader does not overestimate this: it is a source
  * grep over `apps/api/src`, not a structural check. It catches the literal
@@ -36,8 +47,17 @@ import { join } from 'node:path';
  * past. If a genuine sub-second broadcast path is ever wanted, that is #1613,
  * and it needs a client handler plus de-duplication against the Postgres
  * Changes echo, not a quiet re-add.
+ *
+ * Both checks require *emit context* rather than matching a bare string,
+ * because a bare string produces false failures on unrelated code: this
+ * codebase already writes `` `user:${id}` ``-style cache and throttle keys
+ * (`custom-throttler.guard.ts`), so a future per-chapter throttle bucket
+ * would otherwise fail a test about Realtime topics. Comments are stripped
+ * first for the same reason — otherwise the doc block you are reading, which
+ * has to spell the banned shapes out to explain them, would break the test
+ * it documents.
  */
-describe('API Realtime carrier (ADR-02, ADR-10)', () => {
+describe('API Realtime carrier', () => {
   const API_SRC = join(__dirname, '..', '..');
 
   /** Every non-spec `.ts` under apps/api/src, so a moved emit is still caught. */
@@ -59,6 +79,25 @@ describe('API Realtime carrier (ADR-02, ADR-10)', () => {
 
   const files = sourceFiles(API_SRC);
 
+  /**
+   * Drop block comments and whole-line `//` comments. Deliberately does not
+   * touch trailing `//` — that would need real tokenizing to avoid mangling a
+   * `https://` inside a string literal, and prose long enough to spell out a
+   * banned shape lives in block or full-line comments anyway.
+   */
+  function stripComments(text: string): string {
+    return text
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split('\n')
+      .filter((line) => !/^\s*(\/\/|\*)/.test(line))
+      .join('\n');
+  }
+
+  const sources = files.map((f) => ({
+    rel: f.slice(API_SRC.length + 1),
+    code: stripComments(readFileSync(f, 'utf8')),
+  }));
+
   it('is reading the real tree, not an empty one', () => {
     // Anchors the two greps below: a rename, a move, or a bad path would
     // otherwise make every `not.toMatch` pass vacuously.
@@ -70,19 +109,26 @@ describe('API Realtime carrier (ADR-02, ADR-10)', () => {
     );
   });
 
-  it('emits no Realtime broadcast (ADR-02 — Broadcast is presence/typing)', () => {
-    const hits = files.filter((f) =>
-      /type:\s*(['"]broadcast['"]|REALTIME_LISTEN_TYPES\.BROADCAST)/.test(
-        readFileSync(f, 'utf8'),
-      ),
+  it('emits no Realtime broadcast — delivery is Postgres Changes (#1613)', () => {
+    // `.send(` is what makes this an emit. Subscribing stays allowed, so a
+    // listener's `type: 'broadcast'` payload annotation must not fail here.
+    const hits = sources.filter(
+      ({ code }) =>
+        /type:\s*(['"]broadcast['"]|REALTIME_LISTEN_TYPES\.BROADCAST)/.test(
+          code,
+        ) && /\.send\s*\(/.test(code),
     );
-    expect(hits.map((f) => f.slice(API_SRC.length + 1))).toEqual([]);
+    expect(hits.map(({ rel }) => rel)).toEqual([]);
   });
 
-  it('mints no bespoke chapter:<id> realtime topic (ADR-10)', () => {
-    const hits = files.filter((f) =>
-      /(`chapter:\$\{|['"]chapter:['"]\s*\+)/.test(readFileSync(f, 'utf8')),
+  it('mints no bespoke chapter:<id> realtime topic (ADR-10 topic coupling)', () => {
+    // Scoped to files that actually open a Realtime channel, so a
+    // `chapter:<id>` cache or throttle key elsewhere is not a violation.
+    const hits = sources.filter(
+      ({ code }) =>
+        /(`chapter:\$\{|['"]chapter:['"]\s*\+)/.test(code) &&
+        /\.channel\s*\(/.test(code),
     );
-    expect(hits.map((f) => f.slice(API_SRC.length + 1))).toEqual([]);
+    expect(hits.map(({ rel }) => rel)).toEqual([]);
   });
 });
