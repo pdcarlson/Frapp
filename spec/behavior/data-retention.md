@@ -5,7 +5,7 @@
 - When a chapter's subscription is canceled, all data is preserved **indefinitely** in read-only mode.
 - Members can still log in and view all existing data (chat history, Backwork, points, events, etc.) but cannot create new content, invite members, or perform any write operations.
 - If the chapter re-activates (resumes payment), full access is restored immediately with no data loss.
-- "Indefinitely" is bounded by exactly one thing, and only after a warning: the *Inactive Chapter Cleanup* reservation below, which requires **cancellation _and_ two years of no logins** together. Cancellation alone never expires — a canceled chapter whose members still sign in is preserved with no end date. See [§ Inactive Chapter Cleanup](#inactive-chapter-cleanup).
+- "Indefinitely" is qualified by the reservation in [§ Inactive Chapter Cleanup](#inactive-chapter-cleanup), which has never been exercised and is not implemented. Read that section before answering any question about how long a canceled chapter's data is kept; it is not the only path by which chapter data is removed (see [§ Individual Account Deletion](#individual-account-deletion) and [`vault.md`](vault.md) § key lifecycle).
 
 ## Individual Account Deletion
 
@@ -27,115 +27,138 @@
 - This is documented in the Terms of Service.
 - Before deletion, an email notification is sent to the last known admin email with a 30-day warning.
 
-The two conditions are **conjunctive**: cancellation alone is never sufficient, and a chapter whose
-members still sign in is never eligible however long its subscription has lapsed. This is what bounds
-the "indefinitely" in [§ Chapter Cancellation](#chapter-cancellation), and it is the only thing that does.
+**Nothing implements this, and nothing should until the questions below are answered.** No eligibility
+query, no warning mail, no visibility surface, no dry-run and no deletion path exist in the codebase.
+(That is a statement about the code, not about hosted data: a deletion performed by hand against a
+hosted project would leave no trace here.)
 
-### Status: reserved, not implemented — and it must not be built yet
+Two things in the wording above are load-bearing and **neither is settled**:
 
-**Nothing here runs today.** There is no eligibility query, no warning mail, no admin visibility, no
-dry-run, and no deletion path; the reservation is a stated right the product has never exercised. That
-is the correct state, because **three of the four nouns in the policy above have no referent in the
-schema**:
+- **Whether the two conditions are conjunctive or alternative is genuinely ambiguous.** "inactive
+  (canceled subscription, no logins)" is a comma-separated gloss with no *and* and no *or*, and the
+  reading decides who is eligible. This section does not resolve it — tracked in #1561.
+- **The shipped Terms of Service do not currently carry this reservation.**
+  `apps/landing/app/terms/page.tsx` contains no inactivity clause, no 2-year window and no 30-day
+  warning; its only retention sentence defers to "retention terms". So the second bullet above
+  describes an intent, not the deployed contract, and the terms page would need to say this before any
+  deletion could rely on it — tracked in #1562.
 
-| The policy says | What exists |
-| --- | --- |
-| "no logins" for 2 years | **No login clock anywhere.** No `last_login` / `last_seen` / `last_active` column in any migration, and `auth.users.last_sign_in_at` is read by nothing — the only `auth.admin` call in the API is `deleteUser` (`infrastructure/supabase/supabase-auth-admin.service.ts`) |
-| "canceled subscription" for 2 years | **No cancellation clock.** `chapters.subscription_status` is a bare enum (`supabase/migrations/00000000000000_initial_schema.sql`); the only status timestamp on the table is `past_due_since` |
-| "an email … to the last known admin email" | **No transactional email path.** `IEmailProvider` (`domain/adapters/email.interface.ts`) declares exactly one method, `sendInviteEmail` |
-| "delete data" | `chapters` is the cascade root — `members`, `roles` and every chapter-scoped table are `on delete cascade` from it |
+### Why it cannot be implemented as written
 
-A job written against today's schema could not measure either half of its own eligibility rule. It would
-have to *infer* inactivity, and an inference that is wrong deletes a chapter's entire history with no
-undo. **Do not implement any part of the destructive path until the prerequisites below have landed and
-the open decision has been made.**
+The rule needs a clock for each of its two conditions. **Neither clock exists, and the obvious
+substitute for the missing one does not work.**
 
-### Eligibility — the source of truth for each term
+- **No login clock.** No `last_login` / `last_seen` / `last_active` column exists in any migration, and
+  `auth.users.last_sign_in_at` is read nowhere in the API — the only `auth.admin` call is `deleteUser`
+  (`apps/api/src/infrastructure/supabase/supabase-auth-admin.service.ts`). It is also not a drop-in
+  substitute even if it were read: GoTrue stamps it at sign-in, not at token refresh, so a
+  continuously-active session leaves it stale and makes a live chapter look abandoned.
+- **No cancellation clock.** `chapters.subscription_status` is a `text` column with a `CHECK`
+  constraint and no accompanying timestamp
+  (`supabase/migrations/00000000000000_initial_schema.sql`). `past_due_since`
+  (`supabase/migrations/20260602120000_chapter_past_due_since.sql`) is the precedent for adding one,
+  including its `now()` backfill so that shipping the column cannot make any existing chapter
+  immediately eligible. Any new status timestamp must also respect the out-of-order-webhook guard that
+  `chapters.last_stripe_webhook_at`
+  (`supabase/migrations/20260604121000_chapter_last_stripe_webhook_at.sql`) exists to enforce, or a
+  retried Stripe event can stamp a date the billing layer itself rejected as stale.
+- **Chapter activity cannot stand in for the login clock.** A canceled chapter is already hard-locked
+  read-only — `subscriptionWriteState` returns `canceled` with no self-serve recovery, and it outranks
+  even the free-tier carve-out (`packages/validation/src/subscription.ts`). So *no* member can write
+  `chat_messages`, `point_transactions`, `events`, `attendance` or uploads once cancellation lands, and
+  "no chapter-scoped writes" is true of every canceled chapter **by construction**. Content timestamps
+  therefore cannot distinguish an abandoned chapter from one being read every week.
 
-Eligibility is evaluated per chapter and every clause must hold:
+That last point is the crux rather than a detail: **reading is the only thing a canceled chapter's
+members can still do, so a login record is the only signal that could ever separate a dormant chapter
+from a living one — and it is not recorded in a usable form.** Until it is, any eligibility rule is
+inferring abandonment from the absence of activity the product already forbids.
 
-1. **`subscription_status = 'canceled'`**, continuously, for ≥ 2 years — measured from a
-   `chapters.canceled_at` timestamp that does not exist yet. `past_due_since`
-   (`supabase/migrations/20260602120000_chapter_past_due_since.sql`) is the precedent to copy exactly,
-   including its `now()` backfill: a legacy row that was canceled before the column shipped starts its
-   clock at the migration, so shipping the column can never make a chapter *immediately* eligible.
-   A re-activation clears it, which is what makes the two-year window continuous rather than cumulative.
-2. **No login by any member** for ≥ 2 years. `auth.users.last_sign_in_at` is the only real login record,
-   and it is **not sufficient on its own** — GoTrue stamps it at sign-in, not at token refresh, so a
-   continuously-active session can leave it stale and make a live chapter look abandoned. Chapter-level
-   activity must be the operative signal, with `last_sign_in_at` as corroboration only.
-3. **No chapter-scoped write** for ≥ 2 years — the cross-check that makes clause 2 safe. Content
-   timestamps (`chat_messages`, `point_transactions`, `events`, `attendance`, uploads) are records the
-   application itself writes, so they cannot go stale the way a session field can.
-4. **A deliverable admin address exists** (see the warning flow). A chapter with no reachable admin is
-   **not** eligible; it is escalated for manual review instead. Silence that nobody could have broken is
-   not consent.
+One further wrinkle for whoever writes the rule: `mapStripeStatus` folds `incomplete_expired` into
+`canceled` ([`billing.md`](billing.md)), so a chapter that abandoned checkout and a former paying
+customer of five years are indistinguishable by status alone.
 
-Eligibility is a **read-only query** and must be independently runnable — see *Dry-run* below.
+### What deletion would have to reach
 
-### The warning and reactivation flow
+Two facts bound any strategy, and both are easy to miss:
 
-- **Recipient.** The current President, resolved via `roles.system_key = 'PRESIDENT'`
-  (`supabase/migrations/20260806220000_role_system_key.sql` — rename-proof, unlike `roles.name`), then
-  each remaining admin, then the chapter's last active member. Every candidate whose `users.deleted_at`
-  is set is skipped: account deletion replaces the email with an undeliverable sentinel
-  (`application/services/account-deletion.service.ts`), so a tombstoned recipient would make the send
-  *succeed* while reaching nobody. This is checked at eligibility time, not discovered at send time.
-- **The 30 days start on delivery, not on send.** A bounce or a provider failure means the warning did
-  not happen; the chapter stays ineligible and is escalated for manual review. A warning nobody received
-  cannot start a countdown that ends in deletion.
-- **Reactivation is a plain login.** Any member signing in, or any resumption of payment, cancels the
-  countdown and resets both clocks. No support ticket, no form, no acknowledgement of the email is
-  required — the escape hatch has to be the thing the member would already do.
-- **The warning states what will happen, when, and how to stop it**, and it is sent once per eligibility
-  window rather than repeatedly.
+- **The cascade is not universal.** `chapters` is the cascade root for most chapter-scoped tables, but
+  not all of them: `chapter_directory_requests.chapter_id` is `on delete set null` *by deliberate
+  design* (`supabase/migrations/20260524120000_chapter_directory_requests.sql` — "keep the backfill
+  candidate even if the chapter is later deleted"), and the surviving row carries the chapter's
+  identity plus `requested_by`.
+- **Storage is outside the cascade entirely.** Every bucket keys on `chapters/{chapterId}/…`
+  (`apps/api/src/domain/constants/storage.ts`), and nothing reaches those objects from a row delete.
+  [§ Individual Account Deletion](#individual-account-deletion) also records the ordering this implies:
+  storage must be purged **before** the database scrub, because the scrub deletes the rows that locate
+  the objects.
 
-### What deletion does — the open decision
+**Whether cleanup is a hard delete or an anonymized archive is undecided — tracked in #1561**, and
+nothing destructive ships until it is answered. One caution for that decision, because the analogy is
+tempting and wrong: [§ Individual Account Deletion](#individual-account-deletion) records its in-place
+scrub as **the only mechanism available** — several history tables cascade-delete on user removal and
+others require a non-null user reference, so a row delete would be rejected outright — not as a
+tradeoff anyone weighed. `chapters` has no such blocker, so that precedent does not transfer.
 
-**This is the one question in this section that is not settled, and it is deliberately left open for
-owner sign-off rather than defaulted.** Two viable strategies:
+### Warning, reactivation, and authority — open questions
 
-| Strategy | What it costs |
-| --- | --- |
-| **Hard delete** — remove the `chapters` row and let the cascade take the graph | Honours the strongest reading of erasure. Irreversible, and one wrong eligibility verdict destroys a chapter's entire history with nothing to restore from |
-| **Anonymized archive** — scrub PII in place, keep aggregate/structural rows, mirroring [§ Individual Account Deletion](#individual-account-deletion) | Removes the personal data the retention promise is actually about while leaving a recoverable shell. Keeps storage cost and a residual dataset the ToS implies would be gone |
+These are the design questions the flow raises, recorded so they are answered deliberately rather than
+settled by whoever implements first. **None of them is settled spec.**
 
-**Recommendation: anonymized archive, with hard delete available as an explicit operator action.** The
-reason is asymmetry, not preference — the failure modes are not comparable. Account deletion already
-solved this exact problem the same way, for the same reason its own section records: an in-place scrub
-was chosen over row removal because the cascade was destructive in ways the promise did not require. The
-argument transfers directly. But which one Frapp actually promises is a **product and legal call, not an
-engineering one**, and it must be made before any implementation issue is worked.
+- **Recipient resolution.** The natural lookup is the current President via `roles.system_key =
+  'PRESIDENT'` (`supabase/migrations/20260806220000_role_system_key.sql`), which is rename-proof —
+  but only *forward*. That migration's backfill deliberately skips any chapter that had already renamed
+  the role, which is disproportionately the dormant population this section targets, so the lookup
+  returns nothing for exactly the chapters in scope.
+- **Tombstoned recipients.** Account deletion replaces a user's email with an undeliverable sentinel
+  and sets `users.deleted_at` (`apps/api/src/application/services/account-deletion.service.ts`), so a
+  tombstoned recipient makes a send *succeed* while reaching nobody. Any recipient rule has to exclude
+  them up front rather than discover it at send time.
+- **What a bounce means.** If the 30 days run from delivery rather than send, a chapter whose admin
+  mailbox has lapsed can never be cleaned up automatically — and that is the modal case in this
+  population. If they run from send, the warning is a formality. Both readings have real cost; this is
+  a product and legal call of the same weight as the strategy decision.
+- **What counts as reactivation.** A member signing in can reset a *login* clock, but it cannot clear a
+  cancellation timestamp that the Stripe webhook owns — a sign-in is not a billing event. Whether
+  reading a canceled chapter should stop a deletion countdown, and how that is recorded without letting
+  billing state and retention state diverge, needs deciding before either clock is built.
+- **Who is allowed to run any of this.** There is no platform-administrator anywhere in the API: every
+  route sits behind `SupabaseAuthGuard` + `ChapterGuard` + `PermissionsGuard` and is chapter-scoped.
+  A cross-chapter sweep and an operator-triggered deletion have **no home in the current authorization
+  model**, and "operator" elsewhere in this file means a human with service-role access, not a role the
+  app can check. Mounting this on the standard guard chain would hand a chapter President a
+  cross-tenant destructive capability. Naming the authority is a prerequisite, not an implementation
+  detail.
 
-Whichever is chosen: deletion is executed **per chapter**, is audit-logged, and is never a bulk
-operation that can run away.
+### Before anything destructive ships
 
-### Dry-run and admin visibility, before anything destructive
-
-- The eligibility query ships and runs in **report-only mode first**, producing the list of chapters it
-  *would* warn, for at least one full warning cycle before any mail is sent or any row is touched.
-- Every stage (eligible / warned / deleted) is visible to an operator, with the evidence that put each
-  chapter there.
-- The destructive step is **never** the default path of a scheduled job on first release. The precedent
-  for the sweep's shape is `application/services/report-retention.service.ts` and
-  `modules/scheduled-jobs/` (note its `@Cron`-fires-on-every-instance caveat), but that service reaps
-  *derived artifacts that are regenerable by construction* — the premise its whole design rests on. No
-  part of that safety argument transfers here, and the machinery must not be reused as if it did.
+- The eligibility query runs in **report-only mode first**, producing the list of chapters it *would*
+  warn, for at least one full warning cycle before any mail is sent or any row is touched.
+- Deletion is executed **per chapter** and audit-logged, never as a bulk operation that can run away.
+- The destructive step is **never** the default path of a scheduled job on first release.
+  `apps/api/src/application/services/report-retention.service.ts` and
+  `apps/api/src/modules/scheduled-jobs/` are the right *shape* for the sweep (including the
+  `@Cron`-fires-on-every-instance caveat), but that service reaps **derived artifacts that are
+  regenerable by construction** — the premise its entire safety argument rests on. None of that
+  argument transfers here, and the machinery must not be reused as though it did.
 
 ### Prerequisites
 
-None of these is optional, and each is independently useful:
+Each of these must exist before the destructive path can be built, and the first three are
+independently useful:
 
-| # | Prerequisite | Tracked |
-| --- | --- | --- |
-| 1 | `chapters.canceled_at`, set and cleared by the billing webhook on the cancel/reactivate transitions, modelled on `past_due_since` | #1559 |
-| 2 | A chapter-level activity timestamp that does not depend on `auth.users.last_sign_in_at` | with the eventual implementation |
-| 3 | A general transactional-email capability on `IEmailProvider` (it can send exactly one kind of mail today) | #1560 |
-| 4 | The retention-strategy decision above | #1561 |
-| 5 | The dry-run/report-only mode, exercised for a full cycle before any send | with the eventual implementation |
-
-Prerequisites 1 and 3 are independently useful and are not gated on the decision; 2 and 5 only become
-meaningful once it is made.
+1. A cancellation timestamp on `chapters`, set and cleared by the billing webhook and respecting the
+   existing webhook-ordering guard (#1559).
+2. A general transactional-email capability. A working Resend transport is already wired and
+   config-selected (`apps/api/src/modules/email/email.module.ts`); what is missing is a general send
+   method on `IEmailProvider` — which declares only `sendInviteEmail`
+   (`apps/api/src/domain/adapters/email.interface.ts`) — and a delivery result rich enough to
+   distinguish accepted from bounced (#1560).
+3. A login or chapter-activity signal that survives the read-only lock, per *Why it cannot be
+   implemented as written* above.
+4. The retention-strategy decision, the conjunctive-vs-alternative reading, and the authority question
+   (#1561).
+5. A report-only mode, exercised for a full cycle before any send.
 
 ## Analytics Events (Pseudonymous)
 
