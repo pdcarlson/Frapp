@@ -48,6 +48,16 @@ function runDocsSyncCheck(baseSha, headSha) {
   );
 }
 
+function runDocsStructureCheck(baseSha, headSha) {
+  // Whole-tree, so it can fail on a file this branch never touched — the same
+  // property the required doc-paths gate has. Passing the range only labels
+  // which violations this branch introduced.
+  runCommand(
+    `node scripts/check-docs-structure.mjs --base "${baseSha}" --head "${headSha}"`,
+    "Run docs/spec structure check",
+  );
+}
+
 function runSecretScan(baseSha, headSha) {
   // gitleaks over the branch's commit range (ADR-13 push-protection mitigation).
   // --soft-missing keeps an offline dev unblocked; the CI secret-scan job is the hard gate.
@@ -67,6 +77,7 @@ function runLocalGate() {
   const baseSha = resolveDocsSyncBase(baseRef);
   const headSha = execSync("git rev-parse HEAD", { encoding: "utf8" }).trim();
   runDocsSyncCheck(baseSha, headSha);
+  runDocsStructureCheck(baseSha, headSha);
   runSecretScan(baseSha, headSha);
 
   const gateChecks = [
