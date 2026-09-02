@@ -572,12 +572,15 @@ export class ChatService {
    *   existing row with `deduplicated: true` instead of inserting again
    *   (partial unique index `idx_chat_messages_dedupe`).
    * - Emits no Realtime broadcast. Delivery is the Postgres Changes
-   *   subscription on `chat_messages` (`spec/ui/resilience.md` § Message
-   *   delivery), which clients hold on `chat:channel:<id>`. A `new_message`
-   *   broadcast used to be emitted here on a bespoke `chapter:<id>` topic,
-   *   left over from the `chat-send` Edge Function ADR-11 retired; nothing
-   *   ever subscribed to it and ADR-10 rules out a custom broadcast topic,
-   *   so it was removed in #472 rather than instrumented.
+   *   subscription on `chat_messages` (`spec/ui/resilience.md` §3.2), which
+   *   clients hold on `chat:channel:<id>`. A `new_message` broadcast used to
+   *   be emitted here on a bespoke `chapter:<id>` topic, left over from the
+   *   `chat-send` Edge Function ADR-11 retired; no client ever subscribed to
+   *   it, so it was removed in #472 rather than instrumented. See the ADR-11
+   *   amendment (2026-09-02, #472); ADR-02 is the rule that Broadcast in chat
+   *   carries presence and typing rather than messages, and ADR-10 is the one
+   *   that fixes the topic at `chat:channel:<id>`. Pinned by
+   *   `chat-realtime-carrier.spec.ts`.
    */
   async sendMessage(
     input: SendMessageInput,

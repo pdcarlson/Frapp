@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   Logger,
@@ -3135,37 +3133,5 @@ describe('ChatService', () => {
         expect.objectContaining({ mentions: [] }),
       );
     });
-  });
-});
-
-/**
- * Regression net for ADR-10 (#472).
- *
- * `sendMessage` used to emit a `new_message` Realtime **broadcast** on a
- * bespoke `chapter:<channel_id>` topic — a leftover from the `chat-send` Edge
- * Function that ADR-11 retired. Nothing ever consumed it: clients join
- * `chat:channel:<id>` (`realtime-manager.ts`) and read messages through
- * Postgres Changes, which `spec/ui/resilience.md` names as the primary
- * channel. The emit was dead on both halves — wrong topic AND no handler —
- * so its swallowed failures could never indicate user-visible degradation.
- *
- * ADR-10 ("no custom broadcast topic") is the rule this pins: broadcast in
- * chat carries `typing` only, and that producer lives in chat-core on the
- * client, not here. A future change that re-adds a server-side broadcast
- * needs to change this test, and to read ADR-10 before doing so.
- */
-describe('ChatService realtime carrier (ADR-10)', () => {
-  const source = readFileSync(join(__dirname, 'chat.service.ts'), 'utf8');
-
-  it('registers no Realtime broadcast', () => {
-    expect(source).not.toMatch(/type:\s*['"]broadcast['"]/);
-  });
-
-  it('mints no bespoke chapter:<id> realtime topic', () => {
-    expect(source).not.toMatch(/`chapter:\$\{/);
-  });
-
-  it('does not inject the Supabase client (nothing here needs it)', () => {
-    expect(source).not.toMatch(/\bSUPABASE_CLIENT\b/);
   });
 });
