@@ -24,6 +24,7 @@ import {
   resolveWindowSince,
   type PointsWindow,
 } from '../../domain/utils/points-window';
+import { resolveSemesterArchiveRangeOrThrow } from './resolve-semester-archive-range';
 
 // Re-exported so existing importers (points.controller, etc.) keep their path;
 // the canonical definition now lives in domain/utils/points-window.
@@ -118,17 +119,50 @@ export class PointsService {
     return after ? { after } : undefined;
   }
 
+  /**
+   * Filter to one archived period's exact `[since, until]` range — distinct
+   * from {@link filterByWindow}'s `all | semester | month` enum, which always
+   * measures relative to *now* or the *latest* archive. Selecting an archive
+   * by id overrides `window` entirely: an explicit historical period is more
+   * specific than the enum, never a refinement of it.
+   */
+  private filterByArchiveRange(
+    transactions: PointTransaction[],
+    range: { since: Date; until: Date },
+  ): PointTransaction[] {
+    return transactions.filter((txn) => {
+      const createdAt = new Date(txn.created_at);
+      return (
+        !Number.isNaN(createdAt.getTime()) &&
+        createdAt > range.since &&
+        createdAt <= range.until
+      );
+    });
+  }
+
   async getUserSummary(
     chapterId: string,
     userId: string,
     window: PointsWindow = 'all',
+    semesterArchiveId?: string,
   ): Promise<{ balance: number; transactions: PointTransaction[] }> {
     const txns = await this.pointTxnRepo.findByUser(chapterId, userId);
-    const semesterRange =
-      window === 'semester'
-        ? await this.getSemesterRange(chapterId)
-        : undefined;
-    const filtered = this.filterByWindow(txns, window, semesterRange);
+
+    let filtered: PointTransaction[];
+    if (semesterArchiveId) {
+      const range = await resolveSemesterArchiveRangeOrThrow(
+        this.semesterArchiveRepo,
+        semesterArchiveId,
+        chapterId,
+      );
+      filtered = this.filterByArchiveRange(txns, range);
+    } else {
+      const semesterRange =
+        window === 'semester'
+          ? await this.getSemesterRange(chapterId)
+          : undefined;
+      filtered = this.filterByWindow(txns, window, semesterRange);
+    }
     const balance = filtered.reduce((sum, txn) => sum + txn.amount, 0);
 
     return { balance, transactions: filtered };
@@ -173,6 +207,7 @@ export class PointsService {
   async getLeaderboard(
     chapterId: string,
     window: PointsWindow = 'all',
+    semesterArchiveId?: string,
   ): Promise<
     {
       user_id: string;
@@ -180,11 +215,22 @@ export class PointsService {
     }[]
   > {
     const txns = await this.pointTxnRepo.findByChapter(chapterId);
-    const semesterRange =
-      window === 'semester'
-        ? await this.getSemesterRange(chapterId)
-        : undefined;
-    const filtered = this.filterByWindow(txns, window, semesterRange);
+
+    let filtered: PointTransaction[];
+    if (semesterArchiveId) {
+      const range = await resolveSemesterArchiveRangeOrThrow(
+        this.semesterArchiveRepo,
+        semesterArchiveId,
+        chapterId,
+      );
+      filtered = this.filterByArchiveRange(txns, range);
+    } else {
+      const semesterRange =
+        window === 'semester'
+          ? await this.getSemesterRange(chapterId)
+          : undefined;
+      filtered = this.filterByWindow(txns, window, semesterRange);
+    }
 
     const totals = new Map<string, number>();
     for (const txn of filtered) {
