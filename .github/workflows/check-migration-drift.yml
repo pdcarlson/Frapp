@@ -21,7 +21,9 @@ name: Check migration drift
 on:
   schedule:
     # 07:00 UTC daily (~03:00 ET). Drift is a slow failure; daily is enough to
-    # catch it long before the next promotion, and keeps the alert quiet.
+    # catch it long before the next promotion, and keeps the alert quiet. One of
+    # four scheduled workflows staggered to avoid overlap; full schedule:
+    # docs/internal/ci-cd/AGENT_INFRA.md § Scheduled conformance.
     - cron: "0 7 * * *"
   workflow_dispatch:
     inputs:
