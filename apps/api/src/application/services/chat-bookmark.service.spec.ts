@@ -228,6 +228,33 @@ describe('ChatBookmarkService', () => {
       expect(row.message.kind).toBe('text');
     });
 
+    it('redacts author identity, not just the body', async () => {
+      // Who wrote a message in a channel you cannot read is as much a
+      // disclosure as what they wrote — and `mentions` names members besides
+      // the author.
+      mockRepo.findByUserAndChapter.mockResolvedValue([
+        {
+          ...bookmark,
+          message: message({
+            sender_id: 'someone-else',
+            author_name: 'Imported Person',
+            author_avatar_path: 'chat-archive/avatars/x.png',
+            mentions: ['a-third-member'],
+            metadata: { secret: true },
+          }),
+        },
+      ]);
+      mockChannelAccess.filterAccessibleChannelIds.mockResolvedValue(new Set());
+
+      const [row] = await service.listBookmarks(CHAPTER, USER);
+
+      expect(row.message.sender_id).toBeNull();
+      expect(row.message.author_name).toBeNull();
+      expect(row.message.author_avatar_path).toBeNull();
+      expect(row.message.mentions).toEqual([]);
+      expect(row.message.metadata).toEqual({});
+    });
+
     it('treats an archived Group DM as still readable', async () => {
       // #348: archiving freezes posting, not reading — a remaining member can
       // still open the channel. `filterAccessibleChannelIds` excludes archived

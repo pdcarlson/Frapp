@@ -85,7 +85,12 @@ export class SupabaseChatMessageBookmarkRepository implements IChatMessageBookma
       .select()
       .single();
     if (error) throw error;
-    return data;
+    // Stripped here too, so "every exit from this repository" is literally
+    // true. `create`'s row is the caller's own, so this is not a breach — but
+    // `BookmarkRefDto` declares the field absent, and a response that quietly
+    // carries a column its declared shape omits is how the list endpoint's leak
+    // happened in the first place.
+    return stripBookmarkRow<ChatMessageBookmark>(data);
   }
 
   /**
@@ -141,13 +146,16 @@ export class SupabaseChatMessageBookmarkRepository implements IChatMessageBookma
     // the raw row shape, not to the entity, so `stripBookmarkRow` still has to
     // do the narrowing.
     const rows = (data ?? []) as unknown as Array<Record<string, unknown>>;
-    return rows.map(stripBookmarkRow);
+    return rows.map((row) =>
+      stripBookmarkRow<ChatMessageBookmarkWithMessage>(row),
+    );
   }
 }
 
 /**
  * Drops `user_id` on every exit from this repository, mirroring
- * `stripAttachmentRow` in the attachment repository.
+ * `stripAttachmentRow` in the attachment repository — which applies it on
+ * EVERY exit, not only the read, for exactly the reason repeated here.
  *
  * **This is a disclosure boundary, not tidiness.** `ChatBookmarkService`
  * returns these rows straight into the API response, and NestJS does not
@@ -162,12 +170,10 @@ export class SupabaseChatMessageBookmarkRepository implements IChatMessageBookma
  * read off this endpoint, because the day one is added for another viewer the
  * DTO will still say it is not there.
  */
-function stripBookmarkRow(
-  row: Record<string, unknown>,
-): ChatMessageBookmarkWithMessage {
+function stripBookmarkRow<T>(row: Record<string, unknown>): T {
   // `delete` on a copy rather than a discarded destructuring binding, matching
   // `stripAttachmentRow` — an unused `_userId` binding is a lint error here.
   const rest = { ...row };
   delete (rest as { user_id?: unknown }).user_id;
-  return rest as unknown as ChatMessageBookmarkWithMessage;
+  return rest as unknown as T;
 }

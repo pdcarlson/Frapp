@@ -224,6 +224,19 @@ describe('SupabaseChatMessageBookmarkRepository — tenant scope', () => {
     ).toHaveLength(1);
   });
 
+  it('create does not return user_id either', async () => {
+    // `BookmarkRefDto` declares the field absent on the POST response too, and
+    // nothing serializes to a DTO in this app — so the strip has to be on every
+    // exit, not only the list read.
+    const created = await repo.create(
+      USER_A,
+      '0a000000-0000-4000-8000-000000000191',
+      CHAPTER_A,
+    );
+
+    expect(created).not.toHaveProperty('user_id');
+  });
+
   it('create stamps the chapter it is given', async () => {
     const created = await repo.create(
       USER_A,
