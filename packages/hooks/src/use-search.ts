@@ -58,7 +58,9 @@ export function useSearch(query: string, channelId?: string) {
       return {
         payload: data,
         timedOut: response.headers.get("x-search-timeout") === "1",
-        timedOutSources: (response.headers.get("x-search-timeout-sources") ?? "")
+        timedOutSources: (
+          response.headers.get("x-search-timeout-sources") ?? ""
+        )
           .split(",")
           .map((s) => s.trim())
           .filter(isSearchSource),

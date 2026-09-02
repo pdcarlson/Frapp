@@ -123,6 +123,18 @@ Chat is not a module — it is the spine of the app, and every other capability 
 - Search returns message snippets with highlighted matches, grouped by channel.
 - Search respects permissions: only messages from channels the user can see are returned.
 
+Both scopes are served by `GET /v1/search`; the single-channel form passes an optional
+`channelId` ([`../search.md`](../search.md#single-channel-scope)). On web the surface is
+`ChatSearchPopover` in the channel header, alongside the pins popover, defaulting to the
+active channel with an "All channels" toggle. Picking a hit scrolls the timeline to it, or
+switches channel first and jumps once the message has loaded — the same
+`/chat?channel=&message=` machinery a deep link uses, so an out-of-window target waits for
+more history rather than being silently spent.
+
+**Highlighted snippets are not implemented yet** — for this surface or any other. `ts_headline`
+is specced for all four search sources and built for none; see #1356. Result rows show the
+message body truncated, not a match-centred snippet.
+
 ## Announcements
 
 - The `#announcements` channel is special: only members with `announcements:post` permission can send messages. All members can read.

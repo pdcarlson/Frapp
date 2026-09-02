@@ -39,6 +39,7 @@ import {
 import { Composer } from "./composer";
 import { ThreadPanel } from "./thread-panel";
 import { PinsPopover } from "./pins-popover";
+import { ChatSearchPopover, type ChatSearchHit } from "./chat-search-popover";
 import { NotificationLevelPopover } from "./notification-level-popover";
 import { ReconnectPill } from "./reconnect-pill";
 import type { SlashCommand } from "@repo/chat-integrations";
@@ -195,6 +196,16 @@ export function ChatShell({
   // changes (a second message-only link into an already-active, already-
   // loaded channel touches nothing else the effect depends on).
   const [pendingMessageId, setPendingMessageId] = useState(initialMessageId);
+  // Which channel `pendingMessageId` belongs to. Seeded from the URL, but
+  // tracked separately from `initialChannelId` because the URL is no longer
+  // the only source of a jump target: an in-shell search hit can target a
+  // channel the URL never named. The jump effect used to guard directly on
+  // `initialChannelId`, which meant that arriving at `/chat?channel=A` and then
+  // picking a search hit in channel B left the target permanently unconsumed —
+  // the guard compared the new active channel against the stale URL one and
+  // returned every time. `null` means "no channel was named; jump in whatever
+  // channel ends up active", which is the message-only link case.
+  const [pendingChannelId, setPendingChannelId] = useState(initialChannelId);
   // `initialChannelId`/`initialMessageId` are only read by `useState`'s
   // initializer on first mount. A second deep link (another notification, a
   // second command-palette hit) navigated to while `/chat` is already
@@ -220,6 +231,7 @@ export function ChatShell({
     setSelectedChannelId(initialChannelId);
     setChannelTargetDismissed(false);
     setPendingMessageId(initialMessageId);
+    setPendingChannelId(initialChannelId);
   }, [initialChannelId, initialMessageId]);
 
   // `useChannels()` can serve a read up to its `staleTime` old. A channel
@@ -277,6 +289,26 @@ export function ChatShell({
     );
   }, [activeChannel, userId, memberNames]);
 
+  // Same resolution as `activeChannelName`, for any channel — a search hit in
+  // another channel has to be labelled with the name a member would recognise,
+  // and a DM's stored `dm-<uuidA>-<uuidB>` is not it.
+  const channelNameFor = useCallback(
+    (channelId: string) => {
+      const found = channels.find((ch) => ch.id === channelId);
+      if (!found) return null;
+      return directChannelDisplayName(
+        {
+          name: found.name,
+          type: found.type,
+          member_ids: found.member_ids ?? [],
+        },
+        userId,
+        memberNames,
+      );
+    },
+    [channels, userId, memberNames],
+  );
+
   const announcementsChannelId = useMemo(
     () => channels.find((ch) => ch.name === "announcements")?.id ?? null,
     [channels],
@@ -299,7 +331,10 @@ export function ChatShell({
   // `<Can>`, done inline here since this is a per-row boolean, not a whole
   // surface to hide.
   const { data: permissionsPayload } = useMyPermissions();
-  const canManageChannel = can("channels:manage", permissionsPayload?.permissions);
+  const canManageChannel = can(
+    "channels:manage",
+    permissionsPayload?.permissions,
+  );
 
   const { confirm, confirmDialog } = useConfirmDialog();
   const deleteMessage = channel.delete;
@@ -419,6 +454,26 @@ export function ChatShell({
     timeline.current?.scrollToMessage(messageId);
   }, []);
 
+  // A search hit in the active channel is just a scroll. A hit in another
+  // channel is the same "select the channel, then jump once the message is
+  // actually loaded" problem a `?message=` deep link solves, so it reuses that
+  // machinery (`pendingMessageId` + the jump effect below) rather than racing
+  // the channel switch with its own scroll — which would fire against the
+  // outgoing channel's timeline and silently do nothing.
+  const jumpToSearchHit = useCallback(
+    (hit: ChatSearchHit) => {
+      if (hit.channelId === activeChannelId) {
+        jumpToMessage(hit.message.id);
+        return;
+      }
+      setSelectedChannelId(hit.channelId);
+      setChannelTargetDismissed(false);
+      setPendingMessageId(hit.message.id);
+      setPendingChannelId(hit.channelId);
+    },
+    [activeChannelId, jumpToMessage],
+  );
+
   // A caller-supplied `?message=` jumps to that message once it's actually
   // present in the loaded window. `pendingMessageId` (declared above,
   // resynced whenever a new target arrives) is only cleared on success — a
@@ -431,7 +486,7 @@ export function ChatShell({
     // with one channel would be nonsense to look up in another. No channel
     // was named (message-only link): proceed against whatever channel ended
     // up active.
-    if (initialChannelId !== null && activeChannelId !== initialChannelId) {
+    if (pendingChannelId !== null && activeChannelId !== pendingChannelId) {
       return;
     }
     if (channel.isLoading) return;
@@ -442,7 +497,7 @@ export function ChatShell({
   }, [
     pendingMessageId,
     activeChannelId,
-    initialChannelId,
+    pendingChannelId,
     channel.isLoading,
     channel.messages,
     jumpToMessage,
@@ -583,6 +638,12 @@ export function ChatShell({
                     level,
                   });
                 }}
+              />
+              <ChatSearchPopover
+                activeChannelId={activeChannelId}
+                channelNameFor={channelNameFor}
+                nameFor={nameFor}
+                onJump={jumpToSearchHit}
               />
               <PinsPopover
                 messages={channel.messages}

@@ -32,7 +32,11 @@ const MESSAGES = [
 // so the component renders from a controlled `channels`/message state
 // instead of hitting the network.
 vi.mock("@repo/hooks", () => ({
-  useChannels: () => ({ data: CHANNELS, isFetching: false, refetch: mockRefetch }),
+  useChannels: () => ({
+    data: CHANNELS,
+    isFetching: false,
+    refetch: mockRefetch,
+  }),
   useCategories: () => ({ data: [], isPending: false }),
   useMemberDisplayNames: () => ({ byId: new Map(), nameFor: () => null }),
   useChannelNotificationPreferences: () => ({ data: [] }),
@@ -45,10 +49,25 @@ vi.mock("@repo/hooks", () => ({
   }),
   useMarkChannelRead: () => ({ mutate: vi.fn() }),
   useChannelUnreadCounts: () => ({ data: [], isError: false }),
-  useOrgConfig: () => ({ data: { isModuleEnabled: () => true }, isError: false, refetch: vi.fn() }),
+  useOrgConfig: () => ({
+    data: { isModuleEnabled: () => true },
+    isError: false,
+    refetch: vi.fn(),
+  }),
   useChapterRoster: () => ({ data: [] }),
   useMyPermissions: () => mockUseMyPermissions(),
   directChannelDisplayName: () => "",
+  // The channel header now carries `ChatSearchPopover`, which reads these.
+  // Idle by default: these cases are about the shell, and a search that never
+  // runs keeps the popover out of their way.
+  SEARCH_MIN_QUERY_LENGTH: 3,
+  useSearch: () => ({
+    data: undefined,
+    isFetching: false,
+    isError: false,
+    refetch: vi.fn(),
+  }),
+  resolveAuthorLabel: () => "",
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
@@ -99,7 +118,9 @@ vi.mock("./pins-popover", () => ({
   PinsPopover: () => <div data-testid="pins-popover" />,
 }));
 vi.mock("./notification-level-popover", () => ({
-  NotificationLevelPopover: () => <div data-testid="notification-level-popover" />,
+  NotificationLevelPopover: () => (
+    <div data-testid="notification-level-popover" />
+  ),
 }));
 vi.mock("./reconnect-pill", () => ({
   ReconnectPill: () => null,
@@ -113,7 +134,9 @@ vi.mock("./message-timeline", async () => {
       canManageChannel?: boolean;
     }
   >(function MessageTimeline({ onDelete, canManageChannel }, ref) {
-    React.useImperativeHandle(ref, () => ({ scrollToMessage: mockScrollToMessage }));
+    React.useImperativeHandle(ref, () => ({
+      scrollToMessage: mockScrollToMessage,
+    }));
     return (
       <div data-testid="message-timeline">
         <span data-testid="can-manage-channel">{String(canManageChannel)}</span>
@@ -126,7 +149,9 @@ vi.mock("./message-timeline", async () => {
 
 import { ChatShell } from "./chat-shell";
 
-function chatChannelResult(overrides: Partial<{ isLoading: boolean; messages: typeof MESSAGES }> = {}) {
+function chatChannelResult(
+  overrides: Partial<{ isLoading: boolean; messages: typeof MESSAGES }> = {},
+) {
   return {
     messages: overrides.messages ?? MESSAGES,
     isLoading: overrides.isLoading ?? false,
@@ -163,7 +188,9 @@ describe("ChatShell deep-link targets", () => {
     render(<ChatShell initialChannelId="does-not-exist" />);
 
     expect(screen.getByText("Channel not found")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Browse channels" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Browse channels" }),
+    ).toBeTruthy();
     // The fallback grid (channel rail, composer) must not render underneath.
     expect(screen.queryByTestId("channel-list")).toBeNull();
   });
@@ -198,23 +225,44 @@ describe("ChatShell deep-link targets", () => {
   });
 
   it("scrolls to a supplied message once it is present in the loaded window", () => {
-    render(<ChatShell initialChannelId="chan-general" initialMessageId="msg-2" />);
+    render(
+      <ChatShell initialChannelId="chan-general" initialMessageId="msg-2" />,
+    );
     expect(mockScrollToMessage).toHaveBeenCalledWith("msg-2");
   });
 
   it("does not scroll — and does not spend the pending target — for a message outside the loaded window", () => {
-    mockUseChatChannel.mockReturnValue(chatChannelResult({ messages: MESSAGES }));
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({ messages: MESSAGES }),
+    );
     const { rerender } = render(
-      <ChatShell initialChannelId="chan-general" initialMessageId="msg-not-loaded-yet" />,
+      <ChatShell
+        initialChannelId="chan-general"
+        initialMessageId="msg-not-loaded-yet"
+      />,
     );
     expect(mockScrollToMessage).not.toHaveBeenCalled();
 
     // More history "arrives" — the target is now in range, and should still
     // fire because the pending target was never cleared on the earlier miss.
     mockUseChatChannel.mockReturnValue(
-      chatChannelResult({ messages: [...MESSAGES, { id: "msg-not-loaded-yet", content: "old", created_at: "2025-01-01T00:00:00Z" }] }),
+      chatChannelResult({
+        messages: [
+          ...MESSAGES,
+          {
+            id: "msg-not-loaded-yet",
+            content: "old",
+            created_at: "2025-01-01T00:00:00Z",
+          },
+        ],
+      }),
     );
-    rerender(<ChatShell initialChannelId="chan-general" initialMessageId="msg-not-loaded-yet" />);
+    rerender(
+      <ChatShell
+        initialChannelId="chan-general"
+        initialMessageId="msg-not-loaded-yet"
+      />,
+    );
     expect(mockScrollToMessage).toHaveBeenCalledWith("msg-not-loaded-yet");
   });
 
@@ -229,7 +277,9 @@ describe("ChatShell deep-link targets", () => {
     // `useChatChannel` return value is unchanged) — only the message target
     // itself changes, as it would for a second command-palette/notification
     // click into a channel the member never left.
-    rerender(<ChatShell initialChannelId="chan-general" initialMessageId="msg-2" />);
+    rerender(
+      <ChatShell initialChannelId="chan-general" initialMessageId="msg-2" />,
+    );
     expect(mockScrollToMessage).toHaveBeenCalledWith("msg-2");
   });
 });
@@ -274,7 +324,9 @@ describe("ChatShell delete-message wiring", () => {
     render(<ChatShell initialChannelId="chan-general" />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("can-manage-channel")).toHaveTextContent("true");
+      expect(screen.getByTestId("can-manage-channel")).toHaveTextContent(
+        "true",
+      );
     });
   });
 
@@ -282,7 +334,9 @@ describe("ChatShell delete-message wiring", () => {
     render(<ChatShell initialChannelId="chan-general" />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("can-manage-channel")).toHaveTextContent("false");
+      expect(screen.getByTestId("can-manage-channel")).toHaveTextContent(
+        "false",
+      );
     });
   });
 

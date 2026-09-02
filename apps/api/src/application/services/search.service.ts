@@ -195,7 +195,13 @@ export class SearchService {
     if (q.length < MIN_QUERY_LENGTH) {
       return emptyResult();
     }
-    return this.collect(chapterId, userId, q, (_source, work) => work, channelId);
+    return this.collect(
+      chapterId,
+      userId,
+      q,
+      (_source, work) => work,
+      channelId,
+    );
   }
 
   /**

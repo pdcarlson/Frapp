@@ -250,6 +250,147 @@ describe('SearchService', () => {
       expect(searchedChannelIds).not.toContain('gated-no');
     });
 
+    describe('single-channel scope (#469)', () => {
+      // `spec/behavior/chat/README.md`: "full-text search within a single
+      // channel or across all channels the user can access."
+      let searchedChannelIds: string[] = [];
+      let tablesQueried: string[] = [];
+
+      const mockChannels = () => {
+        searchedChannelIds = [];
+        tablesQueried = [];
+        (mockSupabase.from as jest.Mock).mockImplementation((table: string) => {
+          tablesQueried.push(table);
+          if (table === 'chat_channels') {
+            return makeChain({
+              data: [
+                {
+                  id: 'pub',
+                  type: 'PUBLIC',
+                  member_ids: null,
+                  required_permissions: null,
+                },
+                {
+                  id: 'pub-2',
+                  type: 'PUBLIC',
+                  member_ids: null,
+                  required_permissions: null,
+                },
+                {
+                  id: 'priv-out',
+                  type: 'PRIVATE',
+                  member_ids: ['user-2'],
+                  required_permissions: null,
+                },
+              ],
+              error: null,
+            });
+          }
+          if (table === 'members') {
+            return makeChain({ data: [{ id: 'member-1' }], error: null });
+          }
+          if (table === 'chat_messages') {
+            const chain: Record<string, unknown> = {};
+            Object.assign(chain, {
+              select: jest.fn().mockReturnValue(chain),
+              in: jest
+                .fn()
+                .mockImplementation((_col: string, ids: string[]) => {
+                  searchedChannelIds = ids;
+                  return chain;
+                }),
+              textSearch: jest.fn().mockReturnValue(chain),
+              eq: jest.fn().mockReturnValue(chain),
+              limit: jest.fn().mockReturnValue(chain),
+              order: jest.fn().mockReturnValue(chain),
+              then: (resolve: (v: unknown) => void) =>
+                Promise.resolve({
+                  data: [{ id: 'm-1', channel_id: 'pub' }],
+                  error: null,
+                }).then(resolve),
+              catch: () => Promise.reject().catch(() => {}),
+            });
+            return chain;
+          }
+          return makeChain({ data: [], error: null });
+        });
+        mockRbacService.getEffectivePermissions.mockResolvedValue([]);
+      };
+
+      it('narrows the message scan to the one requested channel', async () => {
+        mockChannels();
+
+        await service.search('ch-1', 'user-1', 'hello', 'pub-2');
+
+        // The whole point: the narrowing reaches SQL. Filtering client-side
+        // would be wrong, because SEARCH_LIMIT is applied by the database
+        // across every accessible channel before any client sees a row.
+        expect(searchedChannelIds).toEqual(['pub-2']);
+      });
+
+      it('returns nothing for a channel the caller cannot read, without a 403', async () => {
+        mockChannels();
+
+        const result = await service.search(
+          'ch-1',
+          'user-1',
+          'hello',
+          'priv-out',
+        );
+
+        // Never queried: the id intersects the accessible set to nothing, so
+        // the scan is skipped entirely rather than run against every channel.
+        expect(tablesQueried).not.toContain('chat_messages');
+        expect(result.messages).toEqual([]);
+      });
+
+      it('returns nothing for a channel id that does not exist', async () => {
+        mockChannels();
+
+        const result = await service.search('ch-1', 'user-1', 'hello', 'nope');
+
+        // Same empty answer as an inaccessible channel, deliberately: telling
+        // the two apart would make search a channel-existence oracle.
+        expect(tablesQueried).not.toContain('chat_messages');
+        expect(result.messages).toEqual([]);
+      });
+
+      it('runs only the message source, leaving the other three empty', async () => {
+        mockChannels();
+
+        const result = await service.search('ch-1', 'user-1', 'hello', 'pub');
+
+        expect(result.messages).toHaveLength(1);
+        expect(result.backwork).toEqual([]);
+        expect(result.events).toEqual([]);
+        expect(result.members).toEqual([]);
+        // A channel-scoped query is definitionally a chat search; firing the
+        // other three would be work no such caller renders, once per
+        // debounced keystroke on an @ThrottleExpensiveRead() route.
+        expect(tablesQueried).not.toContain('backwork_resources');
+        expect(tablesQueried).not.toContain('events');
+      });
+
+      it('still fans out to all four sources when no channel is named', async () => {
+        mockChannels();
+
+        await service.search('ch-1', 'user-1', 'hello');
+
+        expect(tablesQueried).toContain('backwork_resources');
+        expect(tablesQueried).toContain('events');
+        expect(searchedChannelIds).toEqual(['pub', 'pub-2']);
+      });
+
+      it('still refuses a sub-minimum query, channel or not', async () => {
+        mockChannels();
+
+        const result = await service.search('ch-1', 'user-1', 'hi', 'pub');
+
+        expect(tablesQueried).toEqual([]);
+        expect(result.messages).toEqual([]);
+      });
+    });
+
     it('should not query messages at all for a non-member', async () => {
       const fromCalls: string[] = [];
       (mockSupabase.from as jest.Mock).mockImplementation((table: string) => {
