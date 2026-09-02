@@ -1,7 +1,7 @@
 ---
 name: pr-followups
 description: >
-  Run the PR Follow-ups routine (3 of 4) — harvest human-action and deferred items out of recent
+  Run the PR Follow-ups routine (3 of 5) — harvest human-action and deferred items out of recent
   pull requests (Flagged-for-review sections, agent-stated TODOs, unresolved review threads),
   research how each one gets done against the repo's configs and runbooks, file them as tracked
   GitHub issues, refresh the "PR Follow-ups — Human Action List" tracking issue, and audit
@@ -10,7 +10,7 @@ description: >
   items.
 ---
 
-# PR Follow-ups harvester (routine 3 of 4)
+# PR Follow-ups harvester (routine 3 of 5)
 
 Agent-driven PRs routinely end with things **no PR can finish**: "Flagged for review" lists,
 deferred decisions, credential rotations, dashboard clicks, verification the sandbox couldn't run.
