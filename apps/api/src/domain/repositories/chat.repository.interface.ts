@@ -7,7 +7,7 @@ import {
   MessageReaction,
   ChannelReadReceipt,
   ChannelUnreadCount,
-  ChatMessageBookmark,
+  ChatMessageBookmarkRef,
   ChatMessageBookmarkWithMessage,
 } from '../entities/chat.entity';
 
@@ -238,7 +238,7 @@ export interface IChatMessageBookmarkRepository {
     userId: string,
     messageId: string,
     chapterId: string,
-  ): Promise<ChatMessageBookmark>;
+  ): Promise<ChatMessageBookmarkRef>;
   /**
    * Removes the caller's own bookmark. A no-op when there wasn't one.
    *

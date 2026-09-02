@@ -3,7 +3,7 @@ import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type { IChatMessageBookmarkRepository } from '../../../domain/repositories/chat.repository.interface';
 import type {
-  ChatMessageBookmark,
+  ChatMessageBookmarkRef,
   ChatMessageBookmarkWithMessage,
 } from '../../../domain/entities/chat.entity';
 /**
@@ -62,7 +62,7 @@ export class SupabaseChatMessageBookmarkRepository implements IChatMessageBookma
     userId: string,
     messageId: string,
     chapterId: string,
-  ): Promise<ChatMessageBookmark> {
+  ): Promise<ChatMessageBookmarkRef> {
     const payload: TablesInsert<'chat_message_bookmarks'> = {
       user_id: userId,
       message_id: messageId,
@@ -82,7 +82,7 @@ export class SupabaseChatMessageBookmarkRepository implements IChatMessageBookma
     // `BookmarkRefDto` declares the field absent, and a response that quietly
     // carries a column its declared shape omits is how the list endpoint's leak
     // happened in the first place.
-    return stripBookmarkRow<ChatMessageBookmark>(data);
+    return stripBookmarkRow<ChatMessageBookmarkRef>(data);
   }
 
   /**

@@ -192,7 +192,7 @@ export function BookmarksPopover({
                         );
                       }}
                       className={cn(
-                        "block w-full px-3 py-3 text-left text-[12.5px] transition-colors",
+                        "block w-full py-3 pl-3 pr-11 text-left text-[12.5px] transition-colors",
                         "hover:bg-accent-subtle hover:text-accent-text",
                         FOCUS_RING,
                       )}
@@ -200,27 +200,31 @@ export function BookmarksPopover({
                       {body}
                     </button>
                   ) : (
-                    <div className="block w-full px-3 py-3 text-left text-[12.5px]">
+                    <div className="block w-full py-3 pl-3 pr-11 text-left text-[12.5px]">
                       {body}
                     </div>
                   )}
                   {onRemove ? (
-                    <button
-                      type="button"
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      // The shared primitive, not a hand-rolled button:
+                      // `thread-panel.tsx` uses exactly this for the same
+                      // dismiss-an-item job, and a bespoke 22px target here
+                      // sat under the design system's touch floor — on the one
+                      // control that exists so a member can clear a bookmark
+                      // they have no other way to reach.
+                      //
                       // Absolutely positioned rather than a flex sibling so the
-                      // row's own hit area stays the full width for the jump —
-                      // shrinking it would make the common action harder to hit
-                      // to accommodate the rare one.
-                      className={cn(
-                        "absolute right-1.5 top-1.5 rounded-sm p-1 text-muted-foreground",
-                        "hover:bg-accent-subtle hover:text-accent-text",
-                        FOCUS_RING,
-                      )}
+                      // row's own hit area stays full-width for the jump:
+                      // shrinking the common action to fit the rare one is the
+                      // wrong trade.
+                      className="absolute right-1 top-1"
                       aria-label="Remove bookmark"
                       onClick={() => onRemove(bookmark.message_id)}
                     >
-                      <X className="h-3.5 w-3.5" aria-hidden="true" />
-                    </button>
+                      <X className="h-4 w-4" aria-hidden="true" />
+                    </Button>
                   ) : null}
                 </li>
               );

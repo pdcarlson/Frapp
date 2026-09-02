@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { CHAT_MESSAGE_BOOKMARK_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
 import type { IChatMessageBookmarkRepository } from '../../domain/repositories/chat.repository.interface';
 import type {
-  ChatMessageBookmark,
+  ChatMessageBookmarkRef,
   ChatMessageBookmarkWithMessage,
 } from '../../domain/entities/chat.entity';
 import { ChannelAccessService } from './channel-access.service';
@@ -18,13 +18,21 @@ import { ChannelAccessService } from './channel-access.service';
  * Here the redacted message is constructed from scratch, so a new column is
  * withheld by default and has to be added deliberately.
  *
- * The four fields that survive are the four that cannot carry a
- * post-revocation signal, because none of them changes after the member saved
- * the row: the message's `id` and `channel_id` (which they already knew — they
- * chose to save from that channel), and `created_at`. Everything mutable —
- * content, author identity, mentions, payload, pin and edit state — is
- * replaced, because each of those is something a member could otherwise keep
- * watching in a channel they can no longer read.
+ * **Three** fields survive — the three that cannot carry a post-revocation
+ * signal, because none of them changes after the member saved the row: the
+ * message's `id` and `channel_id` (which they already knew — they chose to save
+ * from that channel), and `created_at`. Everything else the endpoint serves —
+ * content and author identity — is replaced, because each is something a member
+ * could otherwise keep watching in a channel they can no longer read.
+ *
+ * (An earlier revision said "four" and then listed three. The count is now the
+ * length of the list below, which is the only way it stays right.)
+ *
+ * The redacted object is the same nine-field shape as an available one. It used
+ * to be wider, because the redaction was written while the endpoint still served
+ * all 19 message columns — leaving redacted and available rows structurally
+ * different on one endpoint, which is the same "carries fields its declared
+ * shape omits" problem the projection narrowing fixed, inverted.
  */
 export const BOOKMARK_REDACTED_CONTENT =
   '[unavailable — you no longer have access to this channel]';
@@ -44,15 +52,6 @@ function redactBookmarkedMessage(
       author_avatar_path: null,
       author_external_id: null,
       content: BOOKMARK_REDACTED_CONTENT,
-      type: 'TEXT',
-      kind: 'text',
-      payload: null,
-      metadata: {},
-      mentions: [],
-      reply_to_id: null,
-      is_pinned: false,
-      pinned_at: null,
-      edited_at: null,
       is_deleted: false,
     },
   };
@@ -116,7 +115,7 @@ export class ChatBookmarkService {
     messageId: string,
     chapterId: string,
     userId: string,
-  ): Promise<ChatMessageBookmark> {
+  ): Promise<ChatMessageBookmarkRef> {
     await this.channelAccess.assertMessageAccess(messageId, chapterId, userId);
     return this.bookmarkRepo.create(userId, messageId, chapterId);
   }

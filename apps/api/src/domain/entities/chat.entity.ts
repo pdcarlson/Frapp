@@ -246,7 +246,8 @@ export interface ChannelReadReceipt {
 }
 
 /**
- * A member's private bookmark on one message (#462).
+ * A member's private bookmark on one message (#462), as the row exists in the
+ * database.
  *
  * The row is the whole of the fact: there is no state on the message, because
  * a bookmark is a property of the (viewer, message) pair rather than of the
@@ -269,8 +270,42 @@ export interface ChatMessageBookmark {
 }
 
 /**
+ * What actually leaves the repository: the row **without** `user_id`.
+ *
+ * A separate type rather than reusing {@link ChatMessageBookmark}, because
+ * `stripBookmarkRow` removes the field on every exit and a return type that
+ * still promised it would be a lie the compiler enforced — callers would
+ * autocomplete `user_id` and read `undefined`. Matches `BookmarkRefDto`.
+ */
+export type ChatMessageBookmarkRef = Omit<ChatMessageBookmark, 'user_id'>;
+
+/**
+ * The message as the bookmarks endpoint serves it — a nine-field projection,
+ * not a whole {@link ChatMessage}.
+ *
+ * Narrow deliberately, and the narrowing is a disclosure control rather than a
+ * size optimization: `ChatService.deleteMessage` blanks `content` and
+ * `metadata` but not `payload`, so serving the full row meant a bookmarked poll
+ * or event card that had since been deleted shipped its payload on an endpoint
+ * whose declared type says the message reads `[message deleted]`. The
+ * repository's `BOOKMARK_MESSAGE_COLUMNS` and `BookmarkedMessageDto` are the
+ * other two copies of this list; all three must stay in step.
+ */
+export interface BookmarkedMessage {
+  id: string;
+  channel_id: string;
+  sender_id: string | null;
+  author_name?: string | null;
+  author_avatar_path?: string | null;
+  author_external_id?: string | null;
+  content: string;
+  is_deleted: boolean;
+  created_at: string;
+}
+
+/**
  * A bookmark joined to the message it points at, which is what the Bookmarks
- * view actually renders.
+ * view renders.
  *
  * `message` is deliberately non-optional and NOT filtered on `is_deleted`: the
  * spec requires a bookmark whose message was deleted to surface the
@@ -279,8 +314,8 @@ export interface ChatMessageBookmark {
  * the placeholder is the message's own content, and the only way to break that
  * guarantee is to filter deleted rows out of this query.
  */
-export interface ChatMessageBookmarkWithMessage extends ChatMessageBookmark {
-  message: ChatMessage;
+export interface ChatMessageBookmarkWithMessage extends ChatMessageBookmarkRef {
+  message: BookmarkedMessage;
   /**
    * Whether the caller can still read the channel this message lives in.
    *
@@ -296,4 +331,106 @@ export interface ChatMessageBookmarkWithMessage extends ChatMessageBookmark {
    * is the kind of coupling that breaks the first time the copy is reworded.
    */
   message_available: boolean;
+}
+
+/**
+ * A file attached to a chat message.
+ *
+ * A row, not a substring of the message body. The composer used to append
+ * `📎 <name> (<storagePath>)` into `content`, which meant the object had no link
+ * back to the message: it could not be rendered, listed, or cleaned up, and a
+ * member could edit the sigil out and orphan the file. `ON DELETE CASCADE` from
+ * `message_id` is the half that makes deletion tractable.
+ *
+ * `channel_id` is denormalised alongside `message_id` so the row's chapter is one
+ * hop away (`chat_channels.chapter_id`), matching `chat_messages` itself —
+ * `chat_messages` has no `chapter_id` either. It is always derived from the
+ * message server-side, never taken from a client payload.
+ */
+export interface ChatMessageAttachment {
+  id: string;
+  message_id: string;
+  channel_id: string;
+  bucket: string;
+  storage_path: string;
+  filename: string;
+  /** Null on rows recovered by the legacy backfill, where only a path was known. */
+  content_type: string | null;
+  /** Null for the same reason — a size is not recoverable from prose. */
+  byte_size: number | null;
+  width: number | null;
+  height: number | null;
+  /**
+   * Source-system URL, reserved and **never populated by the Discord importer**.
+   *
+   * The idea was a retry handle for a partial media fetch. The importer does not
+   * fetch: the admin's browser uploads the export's media directly, and
+   * `discord_import_files` maps each export-relative path to the object it
+   * became — so "retry" is "re-upload and re-run", which that table already
+   * expresses. Storing a Discord CDN link instead would be a private-bucket
+   * bypass with an expiry baked in.
+   *
+   * It is also stripped by the attachment repository on the way out — see
+   * `stripAttachmentRow` there — so it cannot reach a client whatever a future
+   * writer puts in it. Declared here because the column exists on the row;
+   * treat it as write-only.
+   */
+  external_url: string | null;
+  created_at: string;
+}
+
+/**
+ * An attachment as the API hands it to a client: the row plus a short-lived
+ * signed download URL.
+ *
+ * The URL is minted per request rather than stored. Every bucket in this repo is
+ * private, so there is no durable URL to persist — and persisting one would bake
+ * in its expiry.
+ */
+export interface ChatMessageAttachmentWithUrl extends ChatMessageAttachment {
+  download_url: string;
+}
+
+/**
+ * Unread and mention tallies for one channel, for one viewer.
+ *
+ * Computed on demand by `get_channel_unread_counts` rather than stored: the
+ * inputs are `channel_read_receipts.last_read_at` and the messages themselves,
+ * so a materialised counter would be a cache to invalidate on every send, edit,
+ * delete and read.
+ */
+export interface ChannelUnreadCount {
+  channel_id: string;
+  unread_count: number;
+  mention_count: number;
+}
+
+/**
+ * Per-user reaction / vote / RSVP / card-action row (Chunk 02).
+ * Unique on (message_id, user_id, action_type); enforced by
+ * `idx_chat_message_actions_dedupe`.
+ */
+export interface ChatMessageAction {
+  id: string;
+  message_id: string;
+  user_id: string;
+  action_type: string;
+  payload: Record<string, any>;
+  created_at: string;
+}
+
+export interface MessageReaction {
+  id: string;
+  message_id: string;
+  user_id: string;
+  emoji: string;
+  created_at: string;
+}
+
+export interface ChannelReadReceipt {
+  id: string;
+  channel_id: string;
+  user_id: string;
+  last_read_at: string;
+  updated_at: string;
 }

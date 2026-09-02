@@ -150,10 +150,19 @@ the only place such a row can be cleared, since the message-row chip is
 reachable only from a channel the member can open.
 
 The redaction is built as an **allowlist**: the redacted message is constructed
-from the four fields that cannot carry a post-revocation signal (the message's
-`id`, `channel_id` and `created_at`, all fixed at save time), and everything
-else is replaced. A denylist would serve any newly added column to a member who
-had lost access, with nothing failing. Two things follow, and both are load-bearing:
+from the three fields that cannot carry a post-revocation signal — the
+message's `id`, `channel_id` and `created_at`, all fixed at save time — and
+everything else the endpoint serves is replaced. A denylist would serve any
+newly added column to a member who had lost access, with nothing failing.
+
+The endpoint's message projection is **nine fields**, not the whole row, and
+that is a disclosure control rather than a size optimization: `deleteMessage`
+blanks `content` and `metadata` but not `payload`, so serving the full row meant
+a bookmarked poll or event card that had since been deleted shipped its payload
+on an endpoint whose declared type says the message reads `[message deleted]`.
+Three places spell that list — `BOOKMARK_MESSAGE_COLUMNS`,
+`BookmarkedMessageDto`, and the `BookmarkedMessage` entity — and they must stay
+in step. Two things follow, and both are load-bearing:
 
 - **Un-bookmarking does not authorize the message.** It cannot: the row exists
   precisely because access was lost, so authorizing would make a member's own

@@ -8,8 +8,8 @@ import { ChannelAccessService } from './channel-access.service';
 import { CHAT_MESSAGE_BOOKMARK_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
 import type { IChatMessageBookmarkRepository } from '../../domain/repositories/chat.repository.interface';
 import type {
-  ChatMessage,
-  ChatMessageBookmark,
+  BookmarkedMessage,
+  ChatMessageBookmarkRef,
   ChatMessageBookmarkWithMessage,
 } from '../../domain/entities/chat.entity';
 
@@ -17,25 +17,25 @@ const CHAPTER = 'chap-1';
 const USER = 'user-1';
 const MESSAGE = 'msg-1';
 
-const message = (overrides: Partial<ChatMessage> = {}): ChatMessage => ({
+const message = (
+  overrides: Partial<BookmarkedMessage> = {},
+): BookmarkedMessage => ({
+  // Exactly the nine fields the endpoint serves. A wider fixture would let a
+  // test assert redaction of a field production never sends.
   id: MESSAGE,
   channel_id: 'ch-1',
   sender_id: 'user-2',
+  author_name: null,
+  author_avatar_path: null,
+  author_external_id: null,
   content: 'keep this',
-  type: 'TEXT',
-  reply_to_id: null,
-  metadata: {},
-  is_pinned: false,
-  pinned_at: null,
-  edited_at: null,
   is_deleted: false,
   created_at: '2026-01-01T00:00:00.000Z',
   ...overrides,
 });
 
-const bookmark: ChatMessageBookmark = {
+const bookmark: ChatMessageBookmarkRef = {
   id: 'bm-1',
-  user_id: USER,
   message_id: MESSAGE,
   chapter_id: CHAPTER,
   created_at: '2026-01-02T00:00:00.000Z',
@@ -201,58 +201,31 @@ describe('ChatBookmarkService', () => {
       expect(rows[0].message.content).toBe(BOOKMARK_REDACTED_CONTENT);
     });
 
-    it('redacts post-revocation activity, not just the body', async () => {
-      // Blanking `content` while leaving `is_pinned` / `edited_at` / `kind`
-      // intact would leave a live activity side-channel: the member could still
-      // watch a message they cannot read get pinned or edited.
+    it('never serves the fields that would leak post-revocation activity', async () => {
+      // Stronger than redacting them: pin state, edits, payload, mentions and
+      // metadata are not in the endpoint's projection at all, so there is no
+      // value to get wrong. This asserts the redacted row is exactly the
+      // nine-field shape rather than a wider object with blanks in it — a
+      // redacted row that differed structurally from an available one would be
+      // the same "carries fields its declared shape omits" problem inverted.
       mockRepo.findByUserAndChapter.mockResolvedValue([
-        {
-          ...bookmark,
-          message: message({
-            is_pinned: true,
-            pinned_at: '2026-02-01T00:00:00.000Z',
-            edited_at: '2026-02-02T00:00:00.000Z',
-            kind: 'poll',
-            payload: { options: ['a', 'b'] },
-          }),
-        },
+        { ...bookmark, message_available: true, message: message() },
       ]);
       mockChannelAccess.filterAccessibleChannelIds.mockResolvedValue(new Set());
 
       const [row] = await service.listBookmarks(CHAPTER, USER);
 
-      expect(row.message.is_pinned).toBe(false);
-      expect(row.message.pinned_at).toBeNull();
-      expect(row.message.edited_at).toBeNull();
-      expect(row.message.payload).toBeNull();
-      expect(row.message.kind).toBe('text');
-    });
-
-    it('redacts author identity, not just the body', async () => {
-      // Who wrote a message in a channel you cannot read is as much a
-      // disclosure as what they wrote — and `mentions` names members besides
-      // the author.
-      mockRepo.findByUserAndChapter.mockResolvedValue([
-        {
-          ...bookmark,
-          message: message({
-            sender_id: 'someone-else',
-            author_name: 'Imported Person',
-            author_avatar_path: 'chat-archive/avatars/x.png',
-            mentions: ['a-third-member'],
-            metadata: { secret: true },
-          }),
-        },
+      expect(Object.keys(row.message).sort()).toEqual([
+        'author_avatar_path',
+        'author_external_id',
+        'author_name',
+        'channel_id',
+        'content',
+        'created_at',
+        'id',
+        'is_deleted',
+        'sender_id',
       ]);
-      mockChannelAccess.filterAccessibleChannelIds.mockResolvedValue(new Set());
-
-      const [row] = await service.listBookmarks(CHAPTER, USER);
-
-      expect(row.message.sender_id).toBeNull();
-      expect(row.message.author_name).toBeNull();
-      expect(row.message.author_avatar_path).toBeNull();
-      expect(row.message.mentions).toEqual([]);
-      expect(row.message.metadata).toEqual({});
     });
 
     it('treats an archived Group DM as still readable', async () => {
