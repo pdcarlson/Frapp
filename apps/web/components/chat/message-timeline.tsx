@@ -84,6 +84,9 @@ export interface MessageTimelineProps {
     actionType: string,
     payload: Record<string, unknown>,
   ) => void;
+  onEdit?: (messageId: string, content: string) => Promise<void>;
+  onDelete?: (messageId: string) => void;
+  canManageChannel?: boolean;
 }
 
 /**
@@ -118,6 +121,9 @@ export const MessageTimeline = forwardRef<
     onRetry,
     onDiscard,
     onAct,
+    onEdit,
+    onDelete,
+    canManageChannel,
   },
   ref,
 ) {
@@ -239,6 +245,9 @@ export const MessageTimeline = forwardRef<
             onRetry={onRetry}
             onDiscard={onDiscard}
             onAct={onAct}
+            onEdit={onEdit}
+            onDelete={onDelete}
+            canManageChannel={canManageChannel}
             isTapRevealed={tapRevealed.isRevealed(entry.message)}
             onToggleTapReveal={() => tapRevealed.toggle(entry.message)}
           />
