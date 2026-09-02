@@ -24,6 +24,7 @@
     "check:migration-lock-safety": "node scripts/check-migration-lock-safety.mjs",
     "check:docs-structure": "node scripts/check-docs-structure.mjs",
     "check:doc-paths": "node scripts/check-doc-paths.mjs",
+    "check:doc-refs": "node scripts/check-doc-refs.mjs",
     "check:doc-tables": "node scripts/check-doc-tables.mjs",
     "check:env-slugs": "node scripts/check-env-slugs.mjs",
     "check:pglite-migrations": "node scripts/check-pglite-migrations.mjs",

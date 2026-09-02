@@ -92,6 +92,29 @@ jobs:
       - name: Enforce doc path citations
         run: node scripts/check-doc-paths.mjs
 
+  # Doc references OUTSIDE the docs corpus — a SEPARATE job, same reasoning.
+  #
+  # doc-paths is whole-tree but scoped to the documentation itself, so the ~770
+  # references to docs/ and spec/ that live in source, tests, workflows,
+  # migrations and shell scripts were never checked. The previous restructure
+  # (epic #432) left dead pointers in `apps/api/README.md` and `supabase/seed.sql`
+  # that nothing caught for months.
+  #
+  # A failure should say *references*, not *citations*: doc-paths is about how a
+  # doc cites a path, this is about how CODE cites a doc, and the fix differs.
+  #
+  # Non-required to start, promoted the usual way once it has run green on the
+  # target branch — the same rollout doc-paths and doc-tables each had.
+  doc-refs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # No Dependabot exemption needed: the check reads the tree, not the diff.
+      - name: Enforce doc references outside the docs corpus
+        run: node scripts/check-doc-refs.mjs
+
   # Roster drift — also a SEPARATE job, for the same two reasons as doc-paths.
   #
   # It compares the required-check rosters and per-job test-suite lists that
