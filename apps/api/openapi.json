@@ -1906,6 +1906,116 @@
         ]
       }
     },
+    "/v1/channels/notification-preferences/kinds": {
+      "get": {
+        "operationId": "ChatController_getKindNotificationPreferences_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KindNotificationPreferenceDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's own per-message-kind notification overrides; level is null where none is set. For the level actually applied to a channel, read GET /v1/channels/notification-preferences.",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/notification-preferences/kinds/{kind}": {
+      "put": {
+        "operationId": "ChatController_setKindNotificationLevel_v1",
+        "parameters": [
+          {
+            "name": "kind",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetKindNotificationLevelDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KindNotificationPreferenceDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set the caller's notification level for one message kind",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "delete": {
+        "operationId": "ChatController_clearKindNotificationLevel_v1",
+        "parameters": [
+          {
+            "name": "kind",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClearedKindNotificationPreferenceDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Clear the caller's override for one message kind, returning it to the default",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/channels/{id}": {
       "get": {
         "operationId": "ChatController_getChannel_v1",
@@ -7943,6 +8053,93 @@
         },
         "required": [
           "channel_id",
+          "level"
+        ]
+      },
+      "KindNotificationPreferenceDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text",
+              "event",
+              "task",
+              "poll",
+              "dues",
+              "points",
+              "hours",
+              "system_audit",
+              "announcement"
+            ],
+            "description": "A `chat_messages.kind`. `imported` and `loading` are absent by design — the first is refused by the push worker before any preference is read, and the second is an internal optimistic placeholder rather than a category of message a member receives."
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "all",
+              "mentions",
+              "off"
+            ],
+            "nullable": true,
+            "description": "The member's chapter-wide override for this kind, or null when they have set none. Null is not a level: what a kind falls back to depends on the channel a message lands in (an `announcement` resolves `all` in a channel named `announcements` and `mentions` elsewhere), so there is no single default to report here. For the effective level of a real message, read GET /v1/channels/notification-preferences."
+          }
+        },
+        "required": [
+          "kind",
+          "level"
+        ]
+      },
+      "SetKindNotificationLevelDto": {
+        "type": "object",
+        "properties": {
+          "level": {
+            "type": "string",
+            "enum": [
+              "all",
+              "mentions",
+              "off"
+            ],
+            "description": "all = every message of this kind; mentions = only when you are mentioned; off = muted, though @mentions still notify — the one exception is the system_audit kind, whose off a mention does not lift. A channel-scoped preference outranks this one for messages in that channel."
+          }
+        },
+        "required": [
+          "level"
+        ]
+      },
+      "ClearedKindNotificationPreferenceDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text",
+              "event",
+              "task",
+              "poll",
+              "dues",
+              "points",
+              "hours",
+              "system_audit",
+              "imported",
+              "loading",
+              "announcement"
+            ],
+            "description": "The kind whose override was cleared. Wider than the settable set on purpose — see the DELETE route."
+          },
+          "level": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "all",
+              "mentions",
+              "off"
+            ],
+            "description": "Always null: the override is gone, and what the kind now falls back to depends on the channel."
+          }
+        },
+        "required": [
+          "kind",
           "level"
         ]
       },
