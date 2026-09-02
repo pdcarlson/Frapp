@@ -3675,6 +3675,8 @@ export interface components {
              * @enum {string}
              */
             window?: "all" | "semester" | "month";
+            /** @description Select one specific archived semester by id (from GET /v1/semesters), overriding `window` entirely. 404s if the id does not belong to this chapter. */
+            semester_archive_id?: string;
         };
         ServiceReportDto: {
             /** @description Filter by user ID (omit for chapter-wide) */
@@ -5953,6 +5955,8 @@ export interface operations {
         parameters: {
             query?: {
                 window?: "all" | "semester" | "month";
+                /** @description Select one specific archived semester by id (from GET /v1/semesters), overriding `window` entirely. 404s if the id does not belong to this chapter. */
+                semester_archive_id?: string;
             };
             header?: never;
             path?: never;
@@ -5972,6 +5976,8 @@ export interface operations {
         parameters: {
             query?: {
                 window?: "all" | "semester" | "month";
+                /** @description Select one specific archived semester by id (from GET /v1/semesters), overriding `window` entirely. 404s if the id does not belong to this chapter. */
+                semester_archive_id?: string;
             };
             header?: never;
             path?: never;
@@ -6018,6 +6024,8 @@ export interface operations {
         parameters: {
             query?: {
                 window?: "all" | "semester" | "month";
+                /** @description Select one specific archived semester by id (from GET /v1/semesters), overriding `window` entirely. 404s if the id does not belong to this chapter. */
+                semester_archive_id?: string;
             };
             header?: never;
             path: {

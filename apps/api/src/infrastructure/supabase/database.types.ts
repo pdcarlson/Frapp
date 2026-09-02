@@ -184,16 +184,18 @@ export interface Database {
         }[];
       };
       /**
-       * `20250226120000`, re-signed by `20260604140000`: the old
-       * `p_window text` overload is dropped, so this is the only signature.
-       * `p_since` is an exclusive lower bound on `created_at`; null is
-       * all-time.
+       * `20250226120000`, re-signed by `20260604140000` and again by
+       * `20260902010001`: each parameter-list change drops the prior
+       * signature, so this is the only one. `p_since` is an exclusive lower
+       * bound and `p_until` an inclusive upper bound on `created_at`; either
+       * null is unbounded on that side.
        */
       get_points_report: {
         Args: {
           p_chapter_id: string;
           p_user_id?: string | null;
           p_since?: string | null;
+          p_until?: string | null;
         };
         Returns: {
           member_name: string;

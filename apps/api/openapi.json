@@ -3217,6 +3217,16 @@
                 "month"
               ]
             }
+          },
+          {
+            "name": "semester_archive_id",
+            "required": false,
+            "in": "query",
+            "description": "Select one specific archived semester by id (from GET /v1/semesters), overriding `window` entirely. 404s if the id does not belong to this chapter.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -3251,6 +3261,16 @@
                 "semester",
                 "month"
               ]
+            }
+          },
+          {
+            "name": "semester_archive_id",
+            "required": false,
+            "in": "query",
+            "description": "Select one specific archived semester by id (from GET /v1/semesters), overriding `window` entirely. 404s if the id does not belong to this chapter.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
             }
           }
         ],
@@ -3379,6 +3399,16 @@
                 "semester",
                 "month"
               ]
+            }
+          },
+          {
+            "name": "semester_archive_id",
+            "required": false,
+            "in": "query",
+            "description": "Select one specific archived semester by id (from GET /v1/semesters), overriding `window` entirely. 404s if the id does not belong to this chapter.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
             }
           }
         ],
@@ -9300,6 +9330,10 @@
               "semester",
               "month"
             ]
+          },
+          "semester_archive_id": {
+            "type": "string",
+            "description": "Select one specific archived semester by id (from GET /v1/semesters), overriding `window` entirely. 404s if the id does not belong to this chapter."
           }
         }
       },
