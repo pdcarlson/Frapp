@@ -50,6 +50,7 @@ Related canon lives in:
 
 ## Audit Rules
 
-- **Audit-write on save:** every settings PATCH (in any tab) writes a row to `chapter_audit_log`. Each audit row is created `member_visible = true` and is mirrored to the `#chapter-audit` channel via the audit bridge.
+- **Audit-write on save:** every settings PATCH (in any tab) that **changes something** writes a row to `chapter_audit_log`. Each audit row is created `member_visible = true` and is mirrored to the `#chapter-audit` channel via the audit bridge. A save that changes nothing writes **no** row — both writers (`PATCH /chapters/:id/config` and the core-profile `PATCH /chapters/current`) return early on an empty diff, because forms re-send every stored value and an unconditional write would post an empty, information-free card to every member. Do not read this rule as "one row per request": it is one row per *effective change*.
+- **Audit writes are not transactional with the mutation they describe** (#1599). The row is inserted after the change commits, so an insert failure surfaces as a `500` on a change that persisted, and an identical retry writes nothing because the diff is now empty. Do not build a compliance check on the assumption that every mutation has a row.
 - The Audit tab presents a paginated, filterable table of `chapter_audit_log` rows (filter by actor, action type, date range), with per-row expansion of the change `diff`.
 - **`member_visible` is togglable per row, president-only.** Toggling `member_visible` **off retracts** the corresponding `#chapter-audit` message for non-president members; toggling it back **on re-posts** it.

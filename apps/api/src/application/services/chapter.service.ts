@@ -57,13 +57,35 @@ import type {
  * route are what an officer can actually change from Settings. `accent_color`
  * belongs here even though it reads as branding — the accent editor posts to
  * this route, not to the config PATCH, so it is unaudited without this entry.
+ *
+ * An allowlist rather than `Object.keys(data)` on purpose. Audit rows are
+ * member-visible, and `data` is typed `Partial<Chapter>`, so iterating whatever
+ * the caller passed would mirror any future field — `subscription_status`, say —
+ * into `#chapter-audit` the moment some other caller appears. The lockstep it
+ * needs instead is enforced at compile time by the exhaustiveness assertion in
+ * `chapter.controller.ts`, which is the layer that can see both this list and
+ * the DTO.
  */
-const AUDITED_PROFILE_FIELDS = [
+export const AUDITED_PROFILE_FIELDS = [
   'name',
   'university',
   'donation_url',
   'accent_color',
 ] as const satisfies readonly (keyof Chapter)[];
+
+/**
+ * Hex equality, case-folded.
+ *
+ * `#8B0000` and `#8b0000` are the same colour and derive a byte-identical
+ * palette, but they are different strings. Chapters seeded from the directory
+ * store uppercase, while `<input type="color">` always reports lowercase — so a
+ * strict compare made *re-picking the same swatch* look like an edit and posted
+ * a "chapter profile updated" card to the whole chapter for a no-op.
+ */
+function isSameAccent(a: string | null, b: string | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.toLowerCase() === b.toLowerCase();
+}
 
 const BRANDING_BUCKET = 'branding';
 const CHANNEL_SEEDING_ERROR_MESSAGE =
@@ -360,7 +382,31 @@ export class ChapterService {
       theme_palette: build.palette,
     });
 
-    await this.recordProfileAudit(id, actorUserId, existing, data);
+    // The branding mirror is a second, independent change this same request
+    // makes, and it does not always move with the column: a chapter carrying
+    // the #795 divergence has `branding.colors.accent` different from
+    // `accent_color`, so re-saving the stored column value still repaints every
+    // branded surface. Recorded explicitly so that save is not invisible.
+    const previousBrandingAccent = branding.colors?.accent ?? null;
+    const brandingAccentChanged = !isSameAccent(
+      previousBrandingAccent,
+      colors.accent,
+    );
+
+    await this.recordProfileAudit(
+      id,
+      actorUserId,
+      existing,
+      data,
+      brandingAccentChanged
+        ? {
+            'branding.colors.accent': {
+              from: previousBrandingAccent,
+              to: colors.accent,
+            },
+          }
+        : undefined,
+    );
 
     return { chapter, failedContrastChecks: build.failedContrastChecks };
   }
@@ -376,8 +422,19 @@ export class ChapterService {
    *
    * Written *after* the update lands, so a save that fails leaves no audit row
    * claiming it happened. The inverse — the row failing after a successful
-   * update — surfaces as a 500 rather than being swallowed, matching every
-   * other writer's convention that a mutation is never silently unaudited.
+   * update — surfaces as a 500 rather than being swallowed, matching the other
+   * writers' convention that an audit failure is never quietly dropped.
+   *
+   * That ordering has a known residue, recorded rather than glossed (#1599):
+   * the update is already committed when the insert fails, so the officer sees
+   * a 500 for a save that persisted, and retrying the identical form now
+   * produces an empty diff and writes nothing. The change stays unaudited.
+   * Closing it needs the row and the update in one transaction, which is not
+   * reachable through PostgREST from here. `chapter-config.service.ts` has the
+   * same hole — it early-returns before its insert when nothing changed
+   * (`chapter-config.service.ts:400-407`) — so no writer in this codebase
+   * actually guarantees "never silently unaudited", and the specs should not
+   * be read as promising it.
    *
    * `ChatBridgeWorkerService` mirrors member-visible rows into `#chapter-audit`
    * off a Realtime subscription, so there is no chat call to make here.
@@ -387,29 +444,48 @@ export class ChapterService {
     actorUserId: string,
     existing: Chapter | null,
     data: Partial<Chapter>,
+    /**
+     * Changes the caller detected that are not plain column comparisons — today
+     * only `branding.colors.accent`, which the accent path rewrites from the
+     * same request. Without it a save that repairs a legacy
+     * `accent_color` ≠ `branding.colors.accent` divergence (#795) repaints every
+     * branded surface in the chapter while the column itself is unchanged, and
+     * would produce no audit row at all.
+     */
+    extra?: Record<string, { from: unknown; to: unknown }>,
   ): Promise<void> {
     // No stored row to diff against means no honest `from` value. The update
     // itself will have thrown for a genuinely missing chapter, so this is
     // defensive rather than a reachable state.
     if (!existing) return;
 
-    const diff: Record<string, { from: unknown; to: unknown }> = {};
+    const diff: Record<string, { from: unknown; to: unknown }> = {
+      ...(extra ?? {}),
+    };
 
     for (const field of AUDITED_PROFILE_FIELDS) {
       const next = data[field];
       if (next === undefined) continue;
       const previous = existing[field];
-      if (next === previous) continue;
+      if (
+        field === 'accent_color'
+          ? isSameAccent(previous ?? null, next ?? null)
+          : next === previous
+      ) {
+        continue;
+      }
       diff[field] = { from: previous, to: next };
     }
 
-    // Deliberately not written when nothing changed, which is where this
-    // diverges from `chapter-config.service.ts` — that writer emits its row
-    // unconditionally. The Settings form re-sends every stored value on save
-    // (see the accent_color note above), so copying that here would mirror a
-    // "chapter profile updated" message into the member-visible
-    // `#chapter-audit` channel every time an officer opened Settings and hit
-    // Save without editing anything.
+    // Not written when nothing changed — the same rule `chapter-config.service.ts`
+    // already applies at its own no-op early return (lines 400-407), not a
+    // divergence from it. It matters more here because the Settings form
+    // re-sends every stored value on save (see the accent_color note above), so
+    // without this an officer who opened Settings and pressed Save without
+    // editing would mirror a "chapter profile updated" message into the
+    // member-visible `#chapter-audit` channel. `ChatBridgeWorkerService.summarize`
+    // renders an empty diff as a bare action name, so such a row would carry no
+    // information at all.
     if (Object.keys(diff).length === 0) return;
 
     await this.auditLog.record({

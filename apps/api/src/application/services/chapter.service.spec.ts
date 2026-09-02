@@ -820,13 +820,16 @@ describe('ChapterService', () => {
   // while archetype/vocabulary/branding go through the config PATCH, which has
   // always audited. These pin the other door.
   describe('chapter profile audit (#486)', () => {
-    const stored: Partial<Chapter> = {
+    // A consistent chapter: the column and the authoritative
+    // `branding.colors.accent` agree, which is the post-#795 steady state.
+    const stored = {
       id: 'ch-1',
       name: 'Alpha',
       university: 'State U',
       donation_url: null,
       accent_color: '#8B0000',
-    };
+      branding: { colors: { accent: '#8B0000' } },
+    } as unknown as Chapter;
 
     it('writes one member-visible audit row carrying only the changed fields', async () => {
       mockChapterRepo.findById.mockResolvedValue(stored);
@@ -858,11 +861,67 @@ describe('ChapterService', () => {
 
       await service.update('ch-1', { accent_color: '#0C5C3D' }, 'user-9');
 
+      // Both the column and the authoritative branding mirror move, and the row
+      // records both — they are two stores and a reader of the audit trail
+      // should not have to know they are kept in sync.
       expect(mockAuditLog.record).toHaveBeenCalledWith(
         expect.objectContaining({
-          diff: { accent_color: { from: '#8B0000', to: '#0C5C3D' } },
+          diff: {
+            accent_color: { from: '#8B0000', to: '#0C5C3D' },
+            'branding.colors.accent': { from: '#8B0000', to: '#0C5C3D' },
+          },
         }),
       );
+    });
+
+    it('treats a hex-case-only accent re-pick as no change', async () => {
+      mockChapterRepo.findById.mockResolvedValue(stored);
+      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+
+      // Chapters seeded from the directory store uppercase; `<input type="color">`
+      // always reports lowercase. A strict compare made re-picking the same
+      // swatch look like an edit and posted a card to the whole chapter.
+      await service.update('ch-1', { accent_color: '#8b0000' }, 'user-9');
+
+      expect(mockAuditLog.record).not.toHaveBeenCalled();
+    });
+
+    it('audits a branding-mirror repair even when the column value is unchanged', async () => {
+      // The #795 divergence: the column and the authoritative branding accent
+      // disagree. Settings seeds its draft from the column, so pressing Save
+      // without editing re-sends the stored column value and repaints every
+      // branded surface in the chapter. The column did not change, so without
+      // the branding entry this chapter-wide change would be unaudited.
+      mockChapterRepo.findById.mockResolvedValue({
+        ...stored,
+        branding: { colors: { accent: '#003087' } },
+      });
+      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+
+      await service.update('ch-1', { accent_color: '#8B0000' }, 'user-9');
+
+      expect(mockAuditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          diff: {
+            'branding.colors.accent': { from: '#003087', to: '#8B0000' },
+          },
+        }),
+      );
+    });
+
+    it('audits after the update on the accent path too, not just the plain path', async () => {
+      mockChapterRepo.findById.mockResolvedValue(stored);
+      mockChapterRepo.update.mockRejectedValue(new Error('update failed'));
+
+      await expect(
+        service.update('ch-1', { accent_color: '#0C5C3D' }, 'user-9'),
+      ).rejects.toThrow('update failed');
+
+      // Pins the ordering on the second, independent `recordProfileAudit` call
+      // site. Without this, moving that call above the write would leave the
+      // suite green while a failed accent save announced a colour change to
+      // `#chapter-audit` that never persisted.
+      expect(mockAuditLog.record).not.toHaveBeenCalled();
     });
 
     it('writes no row when the form re-sends unchanged values', async () => {

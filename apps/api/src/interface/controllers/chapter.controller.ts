@@ -15,7 +15,10 @@ import {
   ApiOperation,
   ApiOkResponse,
 } from '@nestjs/swagger';
-import { ChapterService } from '../../application/services/chapter.service';
+import {
+  ChapterService,
+  AUDITED_PROFILE_FIELDS,
+} from '../../application/services/chapter.service';
 import { ChapterOnboardingService } from '../../application/services/chapter-onboarding.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -44,6 +47,25 @@ import {
 } from '../dtos/chapter-response.dto';
 import { toChapterMemberView } from '../../application/services/chapter-member-view';
 import { SystemPermissions } from '../../domain/constants/permissions';
+
+/**
+ * Compile-time guard that every field `PATCH /chapters/current` can write is
+ * also a field it audits (#486).
+ *
+ * The allowlist lives in the application layer, which cannot import a DTO, so
+ * the lockstep is asserted here — the one layer that sees both. Add a property
+ * to `UpdateChapterDto` without adding it to `AUDITED_PROFILE_FIELDS` and this
+ * stops compiling, instead of the field being silently written with no audit
+ * row, which is exactly the gap #486 exists to close.
+ */
+type UnauditedProfileField = Exclude<
+  keyof UpdateChapterDto,
+  (typeof AUDITED_PROFILE_FIELDS)[number]
+>;
+const _everyWritableProfileFieldIsAudited: UnauditedProfileField extends never
+  ? true
+  : never = true;
+void _everyWritableProfileFieldIsAudited;
 
 @ApiTags('Chapters')
 @ApiBearerAuth()

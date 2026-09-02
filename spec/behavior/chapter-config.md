@@ -40,14 +40,19 @@ The customizable sub-resources surfaced through chapter config (full schema in [
 
 Settings → Organization → "Chapter profile" does **not** go through the config PATCH above. The four core `chapters` columns — `name`, `university`, `donation_url`, `accent_color` — are written by `PATCH /v1/chapters/current`, guarded by `roles:manage` **or** `billing:manage`.
 
-`accent_color` sits here rather than under `branding` despite reading as branding: the accent editor posts to this route, and the write mirrors the value into `branding.colors.accent` (authoritative per [`spec/behavior/branding.md`](branding.md)) and recomputes `theme_palette` in the same statement, so the two stores cannot diverge.
+`accent_color` sits here rather than under `branding` despite reading as branding: the accent editor posts to this route, and a save carrying a hex mirrors the value into `branding.colors.accent` (authoritative per [`spec/behavior/branding.md`](branding.md)) and recomputes `theme_palette` in the same write.
 
-**Audit.** A save writes one `chapter_audit_log` row with action `chapter_profile_updated`, `target_type` `chapter`, `member_visible: true`, and a `diff` of `{ field: { from, to } }` — the same shape the config PATCH uses, so `#chapter-audit` renders both identically. This closes the Chunk 06 gap where the brief's "saving any Org field writes one audit row" held for config-backed fields only (#486).
+That mirror covers the hex case only. An explicit `accent_color: null` takes the branch that does neither, nulling the column while `branding.colors.accent` and `theme_palette` keep the old value — the #795 divergence, still reachable through the API and tracked in #1601. The web form never sends it.
 
-Two properties of this writer differ from the config PATCH, deliberately:
+**Audit.** A save that changes something writes one `chapter_audit_log` row with action `chapter_profile_updated`, `target_type` `chapter`, `member_visible: true`, and a `diff` of `{ field: { from, to } }` — the same shape the config PATCH uses, so `#chapter-audit` renders both identically. This closes the Chunk 06 gap where the brief's "saving any Org field writes one audit row" held for config-backed fields only (#486). The cross-cutting audit rules are canon in [`settings/README.md`](settings/README.md#audit-rules); this section only records what is specific to this route.
 
-- **Only changed fields appear in the `diff`**, and **a save that changes nothing writes no row at all.** The Settings form re-sends every stored value on save, so an unconditional write — which is what the config PATCH does — would mirror a "chapter profile updated" message into the member-visible `#chapter-audit` channel every time an officer opened Settings and pressed Save without editing anything.
-- The row is written **after** the update lands, so a failed save leaves no audit row claiming it happened. A failure of the audit write itself surfaces as a `500` rather than being swallowed: a chapter mutation is never silently unaudited.
+Three details specific to this writer:
+
+- **The `diff` carries only changed fields, and a save that changes nothing writes no row.** This is the same rule the config PATCH already applies at its own no-op early return, not a divergence from it. It matters more here because the Settings form re-sends every stored value on save, so without it an officer who opened Settings and pressed Save without editing would mirror a message into the member-visible `#chapter-audit` channel — and one carrying no information, since the bridge renders an empty diff as a bare action name.
+- **An accent save records `branding.colors.accent` alongside the column** when the mirror moves. The two can disagree on a chapter carrying the #795 divergence, where re-saving the stored column value still repaints every branded surface; recording only the column would leave that change invisible. Hex comparison is case-insensitive, so re-picking the same swatch (browsers report `<input type="color">` values lowercase, seeds store uppercase) is not an edit.
+- **The row is written after the update lands**, so a failed save leaves no audit row claiming it happened, and a failed audit write surfaces as a `500` rather than being swallowed.
+
+**Known residue (#1599):** because the update and the audit insert are separate statements, an audit failure leaves a committed change the officer was told had failed, and an identical retry then produces an empty diff and writes nothing. The config PATCH has the same hole for the same reason. Neither writer guarantees "every mutation is audited"; closing it needs both statements in one transaction.
 
 ## POST /chapters/:id/theme-palette
 
