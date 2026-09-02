@@ -648,6 +648,12 @@ export function ChatShell({
               activeChannel.type === "DM" || activeChannel.type === "GROUP_DM"
             }
             isReadOnly={!!activeChannel.is_read_only}
+            // Undefined (not yet through the server's capability
+            // projection) is left to `Composer`'s own default, which
+            // resolves to `!isReadOnly` rather than an unconditional
+            // `true` — the safe fallback for a read-only channel whose
+            // `can_post` hasn't arrived yet.
+            canPost={activeChannel.can_post}
             draft={channel.draft}
             onChangeDraft={channel.setDraft}
             onSend={(body, attachments) => channel.send(body, { attachments })}
