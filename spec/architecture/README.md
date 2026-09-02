@@ -717,6 +717,8 @@ The chosen path is Path D + Path C from #401. Path A (per-session Supabase branc
 
 - **Amendment (2026-08-20) — `web-tests` no longer covers a deleted unused UI workspace.** A later consolidation deleted the unused shared UI workspace under `packages/` (zero importers; dashboard primitives live in `apps/web/components/ui/`; landing uses inline Tailwind). `web-tests` still uniquely covers `packages/hooks` and `packages/chat-core` plus `apps/web`. The 2026-08-19 required-check rationale is unchanged for those remaining suites. The 2026-08-19 text naming the deleted workspace is historical.
 
+- **Amendment (2026-09-02) — the apply named above is a human step, and the bare command is no longer the narrow delta it describes.** Read "**Applying this needs a manual `npm run configure:branch-protection` run**" in the 2026-08-19 amendment as a record of what that rollout needed, not as a vetted command to run today. `npm run configure:branch-protection` with no flags prints `Mode: LIVE` and **PUTs the whole protection payload**, built from the roster arrays exactly as they stand at the moment it runs — not the small delta the 2026-08-19 text describes. Those arrays have changed since: `web-production-build` was added and `migration-drift` was swapped for `migration-order` in [`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs), so an apply today writes today's roster, whatever it has become. **Applying is a human step, run with an admin PAT, by policy.** From an agent session, run **`npm run configure:branch-protection:verify`** — it reads live protection back and diffs it, writes nothing, and exits non-zero on any difference — **and nothing else**. And note that `npm run configure:branch-protection --dry-run` is *not* a dry run: without the `--` separator npm swallows the flag, the script sees no argv, and it applies. `npm run configure:branch-protection -- --dry-run` is the form that does not write.
+
 ### ADR-16: Project management — retire the in-repo backlog, adopt Linear as canonical (2026-06-01)
 
 **Decision:** Adopt **Linear** as Frapp's canonical project-management system and **retire the in-repo markdown backlog** (`docs/backlog/`) and its "GitHub issues mirror the backlog; repo wins" doctrine. Linear becomes the source of truth for planning and work status; **GitHub issues remain the executable layer**, linked two-way to Linear via Linear's GitHub integration (PRs/branches link by issue ID; `Closes`/`Fixes`/`Resolves ABC-123` auto-transitions the Linear issue on merge; comments/status/assignee sync both ways). All three actors reach it: **Claude Code and Cursor via Linear's hosted MCP server** (`https://mcp.linear.app/mcp`, OAuth 2.1), **GitHub via the native integration**, and **automations via Linear's GraphQL API** (`https://api.linear.app/graphql`). This **reverses** the decision recorded in `docs/backlog/_meta/conventions.md` ("no GitHub Projects board; the backlog is the single source of truth"). The integration design, state/label mapping, ownership boundary, and provisioning runbook lived in `docs/internal/ci-cd/LINEAR_PM.md` (deleted 2026-08-08 with the Linear retirement — see amendment 5; successor: [`GITHUB_PM.md`](../../docs/internal/ci-cd/GITHUB_PM.md), history in git).
@@ -1310,10 +1312,22 @@ state rather than as history:
   and #443. (Run on its own it would exit 0 as a skip.) Tracked as **#1579** with the guardrail
   above.
 - **`scripts/ci/deploy-vercel-production.mjs` is presumed broken**, because its `gitSource` argument
-  requires the integration. Presumed rather than measured — production has not been deployed since
-  the unlink.
+  requires the integration. Presumed rather than measured, and structurally so rather than by
+  accident of scheduling: the `assertVercelProductionBranch` preflight in the bullet above fails
+  first, so `deploy-production.yml` never reaches this step — the `gitSource` path **cannot be
+  exercised at all until #1579 lands**. That is also the sequencing constraint on the replacement:
+  **#1579 has to land before #1578's production path can be tested at all.**
 - **Nothing deploys staging web or landing on merge any more.** Both staging hosts are frozen at
   the freeze points named above, and stay there until stage 7 (**#1578**) exists.
+
+**A superseded auto-filed diagnosis: #1564.** The daily guardrails run auto-filed **#1564**
+("Production deploy guardrails have drifted") on 2026-09-02; it is open and P1. Its body reads the
+red run as Vercel falling back to "the repository default branch (main)", so that "every merge to
+main would become a production deployment", and tells the reader to fix it by setting a Production
+Branch in the dashboard. That was correct while the project was linked. It is **impossible** now —
+with `link: null` Vercel is not watching the repository at all — and its remedy would mean
+re-linking Git, reversing this ADR. **Do not act on #1564 as written**; the repair is **#1579**, the
+inversion described below.
 
 Against those four: the **Vercel half** of the fail-open risk ADR-19 and ADR-20 mitigated is now
 removed at the source rather than asserted after the fact. While the projects stay unlinked there is

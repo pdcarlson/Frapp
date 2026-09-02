@@ -31,9 +31,12 @@ The sole repo-write exception is the docs-only self-maintenance PR defined in
 Everything runs through the **GitHub MCP** — the only sanctioned tracker path, and `gh`/REST is
 not a fallback for anything below. **REST is never a substitute for the MCP on tracker work, read or
 write.** (Direct `api.github.com` *is* reachable from a sandbox — reachability is route-dependent,
-not session-dependent — but that carve-out is exactly and only for provider settings the MCP exposes
-no tool for: branch protection, environments, rulesets, repo visibility, `vulnerability-alerts`.
-Never issues, PRs or comments.) Load schemas first, e.g.
+not session-dependent — but the carve-out is narrow and is not tracker work: provider *settings* the
+MCP exposes no tool for — branch protection, environments, rulesets, repo visibility,
+`vulnerability-alerts` — plus the one raw-`body` verification read that
+[`GITHUB_PM.md` → Reading a body you intend to rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity)
+licenses on its own terms. Neither makes REST a tracker path — never list, search, file, label,
+close or comment over it — and neither lifts the stop rule.) Load schemas first, e.g.
 `ToolSearch("select:mcp__github__list_issues,mcp__github__issue_read,mcp__github__issue_write,
 mcp__github__add_issue_comment,mcp__github__search_issues,mcp__github__list_pull_requests,
 mcp__github__pull_request_read")`. Verify access up front (an `issue_read` on a known issue

@@ -93,12 +93,15 @@ summary before running anything from this family.
 | Branch protection   | `npm run configure:branch-protection` (prefers `GITHUB_PAT`) — **that bare form is a LIVE apply and a human step**; from an agent session run only `npm run configure:branch-protection:verify`. See **Branch protection script** below and `CONTRIBUTING.md`. |
 | AI code review      | **Local pre-push gate**, not CI — `.claude/hooks/pre-push-review-gate.sh` blocks pushing a HEAD until that HEAD has been reviewed (keyed on a `.cache/diff-review/<SHA>` marker, not on attempt count) — `/diff-review` (always agent-invocable; writes the marker) or `/code-review` (richer, but model-invocable only when the turn's prompt carries `/code-review` whitespace-delimited on both sides, which backticks and trailing punctuation defeat; does not write the marker) (ADR-14 2026-06-04 amendment; the `claude-review.yml` CI workflow was removed). See `AI_CODE_REVIEW_RUNBOOK.md` |
 | Dependency updates  | `.github/dependabot.yml` — one root `npm` entry (the workspaces share the root lockfile), **weekly** on Monday 09:00 UTC. Minor+patch collapse into a single grouped PR; majors stay individual. The React/React Native/Expo families are ignored — they move only via a planned SDK upgrade. **Not** a required check (it opens PRs, it doesn't gate them). See "Dependency updates (Dependabot)" below. |
-| Vercel              | Auto-deploys from `main` only (PR previews disabled via repo config). Production deployments are created by `deploy-production.yml` through the API, not by a push. **Auto-deploy from `main` ended 2026-09-02**: both projects are unlinked from Git, so no push deploys anything and staging web and landing are frozen at their last Git builds — landing `2bf143b` (2026-09-01T20:19Z), web `0372c6d` (2026-09-02T02:41:42Z). See the note directly below. |
+| Vercel              | Auto-deploys from `main` only (PR previews disabled via repo config). Production deployments are created by `deploy-production.yml` through the API, not by a push. **Auto-deploy from `main` ended per project — `frapp-landing` 2026-09-01, `frapp-web` 2026-09-02**: both projects are unlinked from Git, so no push deploys anything and staging web and landing are frozen at their last Git builds — landing `2bf143b` (2026-09-01T20:19Z), web `0372c6d` (2026-09-02T02:41:42Z). See the note directly below. |
 
-> **Vercel Git integration retired 2026-09-02 — canonical record is ADR-21.** The owner
-> disconnected **both** Vercel projects from Git (`list_projects` reports `link: null` for
-> `frapp-web` and `frapp-landing`, read 2026-09-02), and the red guardrail, the failing verify
-> steps and the frozen staging hosts flagged in the rows above are all that one change. Note the
+> **Vercel Git integration retired — `frapp-landing` 2026-09-01, `frapp-web` 2026-09-02; canonical
+> record is ADR-21.** The owner disconnected **both** Vercel projects from Git, deliberately and
+> **not as one event**: `frapp-landing` on 2026-09-01 and `frapp-web` roughly six and a half hours
+> later on 2026-09-02 (`list_projects` reports `link: null` for both, read 2026-09-02). The red
+> guardrail, the failing verify steps and the frozen staging hosts flagged in the rows above all
+> follow from those two unlinks — which is why the two projects' freeze points and their verify
+> jobs' first red runs carry different dates. Note the
 > failure is the **verify** step only: `scripts/ci/ensure-vercel-staging-alias.mjs` runs after it
 > as a plain sequential step with no `if:` guard, so a failed verify ends the job and the alias
 > step is *skipped* — that script has never failed and emits nothing to grep for. The full

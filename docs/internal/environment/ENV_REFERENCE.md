@@ -26,7 +26,7 @@ Change SUPABASE_URL → both references update instantly.
 | UI name     | **Slug**      | When it's used                                                       | Maps to                                                                                  |
 | ----------- | ------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | Development | **`dev`**     | Running the app on your machine against local Docker Supabase        | `npm run dev:stack` (API + web + landing); per-app: see [`LOCAL_DEV.md`](./LOCAL_DEV.md) |
-| Staging     | **`staging`** | Deployed to staging infra when code merges to `main` branch          | Vercel Preview, Render staging, Supabase staging project                                 |
+| Staging     | **`staging`** | Deployed to Render staging when code merges to `main` branch. The **Vercel half ended 2026-09-02** — `frapp-landing` unlinked from Git 2026-09-01, `frapp-web` 2026-09-02, so no merge deploys web or landing (ADR-21 in [`spec/architecture/README.md`](../../../spec/architecture/README.md)) | Vercel Preview, Render staging, Supabase staging project                                 |
 | Production  | **`prod`**    | Deployed to production infra when a commit is dispatched through `deploy-production.yml` | Vercel Production, Render production, Supabase production project                        |
 
 > **Always use the slug, never the UI name.** Two of the three differ: the environment shown as

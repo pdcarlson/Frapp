@@ -116,9 +116,12 @@ This prints the exact configuration that will be applied without making any chan
 > never the bare command, never `--dry-run` without the `--`. Applying stays a human step with an
 > admin PAT (see **Prerequisites**).
 
-Since #1383 a dry run also **reads live protection back and prints the difference**, so the output
-answers "what would this actually change?" rather than only "what would this write?". A run that
-changes nothing says so explicitly:
+A dry run also **reads live protection back and prints the difference**, so the output answers
+"what would this actually change?" rather than only "what would this write?". That read-back is a
+**shipped capability of the script**, not something [#1383](https://github.com/pdcarlson/Frapp/issues/1383)
+delivered: that stage-5 issue asked for the read-back, is still open, and its body still describes
+the script as PUT-only — so cite the capability rather than the issue. A run that changes nothing
+says so explicitly:
 
 ```
   No changes — live protection already matches this roster.
@@ -225,7 +228,7 @@ approval, not the merge.
 
 **Not required on branches (informational):** `pglite-migrations` is advisory, as is `duplicate-detection` — jscpd has no clone-level baseline, so its only lever is a repo-wide percentage, which is too coarse to block a merge on ([`QUALITY_GATES.md`](../ci-cd/QUALITY_GATES.md)). Both are intentionally omitted from [`scripts/ci/lib/required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs).
 
-> **`web-visual-regression` is gone — don't re-add it to any roster.** It ran Playwright **snapshots** and was advisory, because baselines pinned to CI's Chromium build drift with it. Until #1152 the 375px floor gate ran inside it and inherited that posture by sharing a directory, so a breached floor was a red mark a PR could merge past; #1152 split the floor into its own **required** `web-responsive-floor` job, and the snapshot job has since been deleted outright along with its spec and baselines ([`QUALITY_GATES.md`](../ci-cd/QUALITY_GATES.md)). If a stale live branch-protection config still lists it, a `npm run configure:branch-protection` run clears it — the script's arrays are the intent.
+> **`web-visual-regression` is gone — don't re-add it to any roster.** It ran Playwright **snapshots** and was advisory, because baselines pinned to CI's Chromium build drift with it. Until #1152 the 375px floor gate ran inside it and inherited that posture by sharing a directory, so a breached floor was a red mark a PR could merge past; #1152 split the floor into its own **required** `web-responsive-floor` job, and the snapshot job has since been deleted outright along with its spec and baselines ([`QUALITY_GATES.md`](../ci-cd/QUALITY_GATES.md)). If a stale live branch-protection config still lists it, a `npm run configure:branch-protection` run clears it — the script's arrays are the intent. **That run is a live `PUT` and a human step with an admin PAT; from an agent session run `npm run configure:branch-protection:verify` and nothing else** (see **Prerequisites**).
 
 > **Script vs live drift — check before you assume.** The arrays in the script are the *intended* state; the live config is whatever the last manual run applied, and the two drift apart silently because only a human re-run closes the gap. It has happened before: `main` sat at 12 contexts against 17 intended until a run on **2026-08-21** closed the gap. Verified **2026-08-27**: `main` carried all **19** intended contexts with nothing extra — script and live agreed, `web-responsive-floor` and `migration-drift` included. #1374 then raised the intent to **21** by adding `web-production-build`, and the migration-correctness pass swapped `migration-drift` out for `migration-order` — still **21**, but two entries different. This paragraph used to say no run had happened since, so live still lacked both new checks; a read on **2026-09-01** found the opposite — all 21 roster contexts present, `migration-drift` absent — so an apply evidently happened in between. **Do not trust either dated observation as current state.** That is the whole point of this section: the count here is a snapshot, the arrays are the intent, and only a re-run makes intent live. Read it rather than infer it — `npm run configure:branch-protection:verify` exits non-zero on any difference (a later read, **2026-09-02**, still found all 21 and exit 0; see the `--verify` section above), or use the `gh api` call below from a laptop or Actions.
 >

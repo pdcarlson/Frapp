@@ -31,9 +31,12 @@ veto, where a human is genuinely about to be asked something.
 file, do not defer the writes. No claim means no work. The MCP is the only sanctioned tracker
 path — **if it is unavailable, stop and report**; never fall back to `gh`/REST. **REST is never a
 substitute for the MCP on tracker work, read or write.** (Direct `api.github.com` is reachable —
-reachability is route-dependent, not session-dependent — but that carve-out is exactly and only for
-provider settings the MCP exposes no tool for: branch protection, environments, rulesets, repo
-visibility, `vulnerability-alerts`. Never issues, PRs or comments.) Load schemas first, e.g.
+reachability is route-dependent, not session-dependent — but the carve-out is narrow and is not
+tracker work: provider *settings* the MCP exposes no tool for — branch protection, environments,
+rulesets, repo visibility, `vulnerability-alerts` — plus the one raw-`body` verification read that
+[`GITHUB_PM.md` → Reading a body you intend to rewrite](../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity)
+licenses on its own terms. Neither makes REST a tracker path — never list, search, file, label,
+close or comment over it — and neither lifts the stop rule.) Load schemas first, e.g.
 `ToolSearch("select:mcp__github__list_issues,mcp__github__issue_read,mcp__github__issue_write,
 mcp__github__add_issue_comment,mcp__github__search_issues,mcp__github__search_pull_requests")`.
 
