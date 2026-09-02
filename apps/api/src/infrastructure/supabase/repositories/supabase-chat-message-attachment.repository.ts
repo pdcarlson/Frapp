@@ -83,6 +83,67 @@ export class SupabaseChatMessageAttachmentRepository implements IChatMessageAtta
     if (error) throw error;
     return (data ?? []).map(stripAttachmentRow);
   }
+
+  async findSharedObjects(
+    candidates: readonly { bucket: string; storage_path: string }[],
+    excludingMessageId: string,
+  ): Promise<{ bucket: string; storage_path: string }[]> {
+    if (candidates.length === 0) return [];
+
+    // One exact-match probe per candidate, not a single `.in(paths)`. Both
+    // reasons are failures that would have deleted a live object, which is the
+    // one direction this read must never fail in:
+    //
+    // 1. **`.in()` does not escape `"`.** postgrest-js wraps a value containing
+    //    `,`, `(` or `)` in double quotes but leaves an embedded `"` as-is, so
+    //    `a",b.png` serializes to `in.("a",b.png")` and PostgREST reads it as
+    //    two *different* values. The real path is never queried, the object
+    //    looks unreferenced, and it is deleted. Paths are attacker-influenced:
+    //    `requestChatUploadUrl` interpolates `path.basename(filename)`, and
+    //    neither the channel-prefix check nor `assertSafeStoragePath` rejects
+    //    quotes, commas or parens. `.eq()` sends the value whole, so there is
+    //    no list syntax to break.
+    // 2. **A list read is capped by PostgREST `max_rows` (1000).** An over-cap
+    //    read returns a plain 200 with a truncated body, so a widely reused
+    //    imported object could have every one of its rows dropped from the
+    //    answer and be read as unreferenced. `.limit(1)` per path cannot be
+    //    truncated into a wrong answer.
+    //
+    // The cost is real and accepted, not waved away: there is no index on
+    // `(bucket, storage_path)` — the unique index leads with `message_id` — so
+    // each probe is a scan, and this trades one scan for up to
+    // `MAX_ATTACHMENTS_PER_MESSAGE` (10) of them. Message deletion is rare and
+    // a wrong answer here destroys a live file, so correctness wins; add the
+    // index if delete latency ever shows up.
+    const seen = new Set<string>();
+    const shared: { bucket: string; storage_path: string }[] = [];
+
+    for (const candidate of candidates) {
+      const key = `${candidate.bucket} ${candidate.storage_path}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      // `chat_messages!inner(is_deleted)` + `is_deleted = false` is what keeps
+      // the guard from becoming a leak of its own. Soft delete leaves the
+      // attachment rows in place, so filtering on `message_id` alone would let
+      // an *already deleted* message hold an object alive forever: delete both
+      // messages sharing one and each is spared by the other's surviving row,
+      // and nothing ever purges it.
+      const { data, error } = await this.supabase
+        .from('chat_message_attachments')
+        .select('id, chat_messages!inner(is_deleted)')
+        .eq('bucket', candidate.bucket)
+        .eq('storage_path', candidate.storage_path)
+        .eq('chat_messages.is_deleted', false)
+        .neq('message_id', excludingMessageId)
+        .limit(1);
+      if (error) throw error;
+
+      if ((data ?? []).length > 0) shared.push(candidate);
+    }
+
+    return shared;
+  }
 }
 
 /**
