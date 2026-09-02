@@ -8,11 +8,15 @@ import { SupabaseSemesterArchiveRepository } from '../../infrastructure/supabase
 import { NotificationModule } from '../notification/notification.module';
 import { ChatModule } from '../chat/chat.module';
 import { AuthModule } from '../auth/auth.module';
+import { ChapterConfigModule } from '../chapter-config/chapter-config.module';
 
 @Module({
   // ChatModule → ChatService (posts the /points card); AuthModule → USER_REPOSITORY
-  // (resolves actor/recipient display names embedded in the card payload).
-  imports: [NotificationModule, ChatModule, AuthModule],
+  // (resolves actor/recipient display names embedded in the card payload);
+  // ChapterConfigModule → ChapterPointsConfigService (the chapter-configurable
+  // anti-fraud limits `adjustPoints` enforces), the same way ServiceEntryModule
+  // reaches ChapterServiceConfigService for its minutes-per-point rate.
+  imports: [NotificationModule, ChatModule, AuthModule, ChapterConfigModule],
   controllers: [PointsController],
   providers: [
     PointsService,

@@ -54,6 +54,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ChapterConfigService } from './chapter-config.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { ActivationService } from './activation.service';
+import { ChapterPointsConfigService } from './chapter-points-config.service';
 
 const CHAPTER_ID = 'ch-1';
 
@@ -70,6 +71,7 @@ function makeSupabase(
   duesRow: Record<string, unknown> | null = null,
   enabledModules: Record<string, boolean> = {},
   serviceRow: Record<string, unknown> | null = null,
+  pointsRow: Record<string, unknown> | null = null,
 ) {
   const chapterRow = {
     id: CHAPTER_ID,
@@ -85,6 +87,7 @@ function makeSupabase(
   const workflowUpsert = jest.fn().mockReturnValue({ error: null });
   const duesUpsert = jest.fn().mockReturnValue({ error: null });
   const serviceUpsert = jest.fn().mockReturnValue({ error: null });
+  const pointsUpsert = jest.fn().mockReturnValue({ error: null });
   const auditInsert = jest.fn().mockResolvedValue({ error: null });
   const chapterUpdate = jest.fn();
 
@@ -143,6 +146,19 @@ function makeSupabase(
       );
       return builder;
     }
+    if (table === 'chapter_points_config') {
+      const builder: Record<string, jest.Mock> = {};
+      builder.select = jest.fn().mockReturnValue(builder);
+      builder.eq = jest.fn().mockReturnValue({
+        maybeSingle: jest
+          .fn()
+          .mockResolvedValue({ data: pointsRow, error: null }),
+      });
+      builder.upsert = jest.fn((rows: unknown, opts: unknown) =>
+        pointsUpsert(rows, opts),
+      );
+      return builder;
+    }
     if (table === 'chapter_audit_log') {
       return { insert: auditInsert };
     }
@@ -154,6 +170,7 @@ function makeSupabase(
     workflowUpsert,
     duesUpsert,
     serviceUpsert,
+    pointsUpsert,
     auditInsert,
     chapterUpdate,
   };
@@ -176,6 +193,11 @@ async function buildService(supabase: { from: jest.Mock }) {
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       ChapterConfigService,
+      // The real service, not a double: it only needs SUPABASE_CLIENT, which
+      // the stub above already provides, and wiring it for real means these
+      // specs exercise the per-field clamp the config endpoint now shares with
+      // enforcement rather than asserting against a mock that cannot drift.
+      ChapterPointsConfigService,
       { provide: SUPABASE_CLIENT, useValue: supabase },
       { provide: ActivationService, useValue: mockActivation },
     ],
@@ -572,6 +594,106 @@ describe('ChapterConfigService — service hours', () => {
       });
 
       expect(supabase.serviceUpsert).not.toHaveBeenCalled();
+      expect(supabase.auditInsert).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('ChapterConfigService — points anti-fraud limits (#394)', () => {
+  const DEFAULTS = {
+    adjustment_rate_limit_per_hour: 50,
+    anomaly_threshold: 100,
+  };
+
+  describe('getConfig', () => {
+    it('falls back to the defaults when the chapter has no row', async () => {
+      // An absent row is the unconfigured state, not an error: it must report
+      // the same limits PointsService enforced before they became
+      // configurable, which is what makes this migration backfill-free.
+      const supabase = makeSupabase([], null, {}, null, null);
+      const service = await buildService(supabase);
+
+      const config = await service.getConfig(CHAPTER_ID);
+
+      expect(config.points).toEqual(DEFAULTS);
+    });
+
+    it('returns the chapter override when a row exists', async () => {
+      const supabase = makeSupabase([], null, {}, null, {
+        adjustment_rate_limit_per_hour: 10,
+        anomaly_threshold: 250,
+      });
+      const service = await buildService(supabase);
+
+      const config = await service.getConfig(CHAPTER_ID);
+
+      expect(config.points).toEqual({
+        adjustment_rate_limit_per_hour: 10,
+        anomaly_threshold: 250,
+      });
+    });
+  });
+
+  describe('patchConfig', () => {
+    it('upserts both limits and audits the change', async () => {
+      const supabase = makeSupabase([], null, {}, null, null);
+      const service = await buildService(supabase);
+
+      await service.patchConfig(CHAPTER_ID, 'user-1', {
+        points: { adjustment_rate_limit_per_hour: 10, anomaly_threshold: 250 },
+      });
+
+      expect(supabase.pointsUpsert).toHaveBeenCalledTimes(1);
+      expect(supabase.pointsUpsert).toHaveBeenCalledWith(
+        {
+          chapter_id: CHAPTER_ID,
+          adjustment_rate_limit_per_hour: 10,
+          anomaly_threshold: 250,
+        },
+        { onConflict: 'chapter_id' },
+      );
+      const auditRow = supabase.auditInsert.mock.calls[0][0];
+      expect(auditRow.diff.points).toEqual({
+        from: DEFAULTS,
+        to: { adjustment_rate_limit_per_hour: 10, anomaly_threshold: 250 },
+      });
+    });
+
+    // A partial PATCH must not silently reset the limit it did not mention —
+    // the merge is what makes each dial independently settable.
+    it('merges a partial patch onto the untouched limit', async () => {
+      const supabase = makeSupabase([], null, {}, null, {
+        adjustment_rate_limit_per_hour: 10,
+        anomaly_threshold: 250,
+      });
+      const service = await buildService(supabase);
+
+      await service.patchConfig(CHAPTER_ID, 'user-1', {
+        points: { anomaly_threshold: 500 },
+      });
+
+      expect(supabase.pointsUpsert).toHaveBeenCalledWith(
+        {
+          chapter_id: CHAPTER_ID,
+          adjustment_rate_limit_per_hour: 10,
+          anomaly_threshold: 500,
+        },
+        { onConflict: 'chapter_id' },
+      );
+    });
+
+    it('is a no-op when both limits already match', async () => {
+      const supabase = makeSupabase([], null, {}, null, {
+        adjustment_rate_limit_per_hour: 10,
+        anomaly_threshold: 250,
+      });
+      const service = await buildService(supabase);
+
+      await service.patchConfig(CHAPTER_ID, 'user-1', {
+        points: { adjustment_rate_limit_per_hour: 10, anomaly_threshold: 250 },
+      });
+
+      expect(supabase.pointsUpsert).not.toHaveBeenCalled();
       expect(supabase.auditInsert).not.toHaveBeenCalled();
     });
   });

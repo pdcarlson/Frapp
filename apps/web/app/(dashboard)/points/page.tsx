@@ -501,10 +501,11 @@ export default function PointsPage() {
                 </p>
                 {/*
                   Flag for audit removed rather than wired (#336): flags are
-                  raised automatically whenever a single adjustment exceeds
-                  ±100 points (see PointsAuditCard below) — there is no
-                  manual override to call, and adding one would be a new
-                  moderation feature rather than a wiring fix.
+                  raised automatically whenever a single adjustment *reaches*
+                  the chapter's configured anomaly threshold (#394 — default
+                  ±100, see PointsAuditCard below) — there is no manual
+                  override to call, and adding one would be a new moderation
+                  feature rather than a wiring fix.
                 */}
                 <Button
                   size="sm"

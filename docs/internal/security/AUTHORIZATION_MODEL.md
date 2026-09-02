@@ -130,7 +130,7 @@ The residual items in §5 are contract/robustness concerns, not data leaks.
 
 ## 4. RLS truth table
 
-**Every one of the 43 tables has `enable row level security`.** 41 of them carry **zero policies**,
+**Every one of the 44 tables has `enable row level security`.** 42 of them carry **zero policies**,
 which under Postgres means *default deny* — no `anon` or `authenticated` client can read or write
 them at all. The API reaches them with the **service-role key, which bypasses RLS**.
 
@@ -149,7 +149,7 @@ a client that genuinely reads the table directly.
 
 | Enforcing layer | Tables | Count |
 | --- | --- | --- |
-| **API only** (RLS on, no policy → default-deny; service-role bypasses) | `backwork_departments`, `backwork_professors`, `backwork_resources`, `channel_read_receipts`, `chapter_activation_milestones`, `chapter_custom_fields`, `chapter_custom_roles`, `chapter_directory`, `chapter_directory_requests`, `chapter_document_folders`, `chapter_documents`, `chapter_dues_config`, `chapter_service_config`, `chapter_workflows`, `chapters`, `chat_channel_categories`, `chat_channels`, `event_attendance`†, `events`†, `financial_invoices`, `financial_transactions`, `invites`, `member_custom_field_values`\*, `members`\*, `message_reactions`, `notification_preferences`, `notifications`†, `point_transactions`, `poll_votes`, `push_tokens`, `roles`, `scheduled_notification_dispatches`, `semester_archives`, `service_entries`, `stripe_webhook_events`, `study_geofences`, `study_sessions`, `tasks`, `user_settings`, `users`\* | 40 |
+| **API only** (RLS on, no policy → default-deny; service-role bypasses) | `backwork_departments`, `backwork_professors`, `backwork_resources`, `channel_read_receipts`, `chapter_activation_milestones`, `chapter_custom_fields`, `chapter_custom_roles`, `chapter_directory`, `chapter_directory_requests`, `chapter_document_folders`, `chapter_documents`, `chapter_dues_config`, `chapter_points_config`, `chapter_service_config`, `chapter_workflows`, `chapters`, `chat_channel_categories`, `chat_channels`, `event_attendance`†, `events`†, `financial_invoices`, `financial_transactions`, `invites`, `member_custom_field_values`\*, `members`\*, `message_reactions`, `notification_preferences`, `notifications`†, `point_transactions`, `poll_votes`, `push_tokens`, `roles`, `scheduled_notification_dispatches`, `semester_archives`, `service_entries`, `stripe_webhook_events`, `study_geofences`, `study_sessions`, `tasks`, `user_settings`, `users`\* | 41 |
 | **RLS enforces** (read directly by a user-JWT client) | `chat_message_actions`, `chat_messages` | 2 |
 | **RLS enforces** (policy present, defense-in-depth) | `chat_notification_preferences` | 1 |
 
