@@ -183,7 +183,7 @@ export interface Database {
       };
       /**
        * `20250226120000`, re-signed by `20260604140000` and again by
-       * `20260901220000`: each parameter-list change drops the prior
+       * `20260902010001`: each parameter-list change drops the prior
        * signature, so this is the only one. `p_since` is an exclusive lower
        * bound and `p_until` an inclusive upper bound on `created_at`; either
        * null is unbounded on that side.
