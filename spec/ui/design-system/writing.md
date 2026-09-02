@@ -329,6 +329,7 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Empty timeline | `Nothing in this channel yet` | `Be the first to post — everyone in the channel sees it right away.` |
 | Error | `Couldn't load channels` / `Couldn't load messages` | `Confirm your chapter access and retry.` |
 | Read-only channel | — | `This channel is read-only. Posting requires the announcements:post permission.` |
+| Alumni-restricted channel | — | `Alumni can read this channel but not post. Alumni may post in #alumni and direct messages.` |
 | No chapter selected | `No chapter selected` | `Pick an active chapter to load its channels and messages.` |
 | Offline (composer) | — | `You're offline — messages send when you reconnect.` |
 
