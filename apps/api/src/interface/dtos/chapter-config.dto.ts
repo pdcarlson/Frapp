@@ -175,6 +175,39 @@ export class ServiceConfigDto {
   minutes_per_point?: number;
 }
 
+/**
+ * Points anti-fraud limits (#394 — `spec/behavior/points.md` § Anti-Fraud).
+ *
+ * Both floors are `@Min(1)` rather than `@Min(0)`, matching the column CHECKs,
+ * and each for its own reason: a rate limit of 0 refuses every adjustment
+ * forever (the ledger is append-only, so there is no corrective write back out
+ * of that state), and a threshold of 0 flags every row, which makes the Audit
+ * tab's flagged filter return the whole ledger and carry no signal.
+ */
+export class PointsConfigDto {
+  @ApiPropertyOptional({
+    description:
+      'Maximum manual point adjustments one admin may create per rolling hour (default 50). Must be at least 1 — a limit of 0 would refuse every adjustment with no way back through the API.',
+    minimum: 1,
+    example: 50,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  adjustment_rate_limit_per_hour?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Absolute point amount at or above which an adjustment is flagged for review (default 100). Must be at least 1 — a threshold of 0 would flag every transaction.',
+    minimum: 1,
+    example: 100,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  anomaly_threshold?: number;
+}
+
 export class PatchChapterConfigDto {
   @ApiPropertyOptional()
   @IsOptional()
@@ -220,6 +253,12 @@ export class PatchChapterConfigDto {
   @ValidateNested()
   @Type(() => ServiceConfigDto)
   service?: ServiceConfigDto;
+
+  @ApiPropertyOptional({ type: () => PointsConfigDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PointsConfigDto)
+  points?: PointsConfigDto;
 
   @ApiPropertyOptional({ type: () => WorkflowConfigDto, isArray: true })
   @IsOptional()
