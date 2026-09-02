@@ -1,5 +1,6 @@
 import {
   IsArray,
+  Max,
   IsBoolean,
   IsEnum,
   IsInt,
@@ -11,6 +12,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { POINTS_ADJUSTMENT_MAX } from '@repo/validation';
 import { Type } from 'class-transformer';
 import type { DuesCadence } from '../../domain/entities/chapter-dues-config.entity';
 
@@ -175,6 +177,59 @@ export class ServiceConfigDto {
   minutes_per_point?: number;
 }
 
+/**
+ * Ceiling on the configurable hourly adjustment rate. Not a database
+ * constraint — the column only enforces `>= 1` — but an API bound, and it is
+ * load-bearing for two reasons. Without an upper bound, `enableImplicitConversion`
+ * lets a value like `3000000000` clear `@IsInt()` and then fail the upsert with
+ * a raw Postgres `22003 integer out of range`, which `patchConfig` rethrows as
+ * a non-HttpException 500 *after* the `chapters` update has already committed
+ * and *before* the audit insert runs — a partially-applied config change with
+ * no audit row, defeating the "audit trail is a hard requirement" invariant.
+ * And short of overflow, an unbounded value simply switches the control off
+ * while satisfying every validation layer.
+ */
+const ADJUSTMENT_RATE_LIMIT_MAX = 1000;
+
+/**
+ * Points anti-fraud limits (#394 — `spec/behavior/points.md` § Anti-Fraud).
+ *
+ * Both floors are `@Min(1)` rather than `@Min(0)`, matching the column CHECKs,
+ * and each for its own reason: a rate limit of 0 refuses every adjustment
+ * forever (the ledger is append-only, so there is no corrective write back out
+ * of that state), and a threshold of 0 flags every row, which makes the Audit
+ * tab's flagged filter return the whole ledger and carry no signal.
+ *
+ * The threshold's ceiling is the ledger's own per-row bound: an adjustment can
+ * never exceed ±`POINTS_ADJUSTMENT_MAX`, so a threshold above that could not
+ * fire and would be an obscure way to spell "never flag".
+ */
+export class PointsConfigDto {
+  @ApiPropertyOptional({
+    description: `Maximum manual point adjustments one admin may create per rolling hour (default 50). Must be between 1 and ${ADJUSTMENT_RATE_LIMIT_MAX} — a limit of 0 would refuse every adjustment with no way back through the API.`,
+    minimum: 1,
+    maximum: ADJUSTMENT_RATE_LIMIT_MAX,
+    example: 50,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(ADJUSTMENT_RATE_LIMIT_MAX)
+  adjustment_rate_limit_per_hour?: number;
+
+  @ApiPropertyOptional({
+    description: `Absolute point amount at or above which an adjustment is flagged for review (default 100). Must be between 1 and ${POINTS_ADJUSTMENT_MAX} — a threshold of 0 would flag every transaction, and one above the ledger's own ±${POINTS_ADJUSTMENT_MAX} ceiling could never fire.`,
+    minimum: 1,
+    maximum: POINTS_ADJUSTMENT_MAX,
+    example: 100,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(POINTS_ADJUSTMENT_MAX)
+  anomaly_threshold?: number;
+}
+
 export class PatchChapterConfigDto {
   @ApiPropertyOptional()
   @IsOptional()
@@ -220,6 +275,12 @@ export class PatchChapterConfigDto {
   @ValidateNested()
   @Type(() => ServiceConfigDto)
   service?: ServiceConfigDto;
+
+  @ApiPropertyOptional({ type: () => PointsConfigDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PointsConfigDto)
+  points?: PointsConfigDto;
 
   @ApiPropertyOptional({ type: () => WorkflowConfigDto, isArray: true })
   @IsOptional()

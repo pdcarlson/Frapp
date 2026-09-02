@@ -325,7 +325,10 @@ Configured in `app.module.ts`:
 | Read | 100 req | 60s |
 | Write | 30 req | 60s |
 
-Additionally, `PointsService` enforces 50 point-adjustments per hour per admin.
+Additionally, `PointsService` enforces a per-admin cap on point adjustments per hour. It is
+**chapter-configurable** (`chapter_points_config.adjustment_rate_limit_per_hour`, #394) — 50 is the
+default an unconfigured chapter gets, not a system constant. Read it through
+`ChapterPointsConfigService`; never hardcode 50 in a guard, an assertion, or user-facing copy.
 
 ---
 

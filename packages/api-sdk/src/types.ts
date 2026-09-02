@@ -2951,6 +2951,18 @@ export interface components {
              */
             minutes_per_point?: number;
         };
+        PointsConfigDto: {
+            /**
+             * @description Maximum manual point adjustments one admin may create per rolling hour (default 50). Must be between 1 and 1000 — a limit of 0 would refuse every adjustment with no way back through the API.
+             * @example 50
+             */
+            adjustment_rate_limit_per_hour?: number;
+            /**
+             * @description Absolute point amount at or above which an adjustment is flagged for review (default 100). Must be between 1 and 100000 — a threshold of 0 would flag every transaction, and one above the ledger's own ±100000 ceiling could never fire.
+             * @example 100
+             */
+            anomaly_threshold?: number;
+        };
         WorkflowConfigDto: {
             /** @description Workflow key from the chapter catalog */
             key?: string;
@@ -2970,6 +2982,7 @@ export interface components {
             beta_config?: components["schemas"]["BetaConfigDto"];
             dues?: components["schemas"]["DuesConfigDto"];
             service?: components["schemas"]["ServiceConfigDto"];
+            points?: components["schemas"]["PointsConfigDto"];
             workflows?: components["schemas"]["WorkflowConfigDto"][];
             /** @description When true, disables pseudonymous product analytics for this chapter (data-retention.md #analytics-events-pseudonymous). */
             analytics_opt_out?: boolean;
