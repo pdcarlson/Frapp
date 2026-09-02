@@ -11,7 +11,7 @@ asserts one thing, and each fails with a different fix.
 | Sync | [`check-docs-impact.mjs`](../../../scripts/check-docs-impact.mjs) | A PR touching non-doc files also touches `docs/` or `spec/` | PR diff | `docs-spec-sync` | **Yes** |
 | Structure | [`check-docs-structure.mjs`](../../../scripts/check-docs-structure.mjs) | Every file under `docs/`/`spec/` sits in a declared home and matches the naming rule, per [`scripts/ci/lib/docs-structure.mjs`](../../../scripts/ci/lib/docs-structure.mjs) | Whole tree | `docs-structure` | Not yet — see rollout below |
 | Citations | [`check-doc-paths.mjs`](../../../scripts/check-doc-paths.mjs) | Backticked repo-path citations resolve to real files | Whole tree | `doc-paths` | **Yes** — in `DOCS_CHECKS` |
-| References | [`check-doc-refs.mjs`](../../../scripts/check-doc-refs.mjs) | Bare `docs/`/`spec/` references in files OUTSIDE the docs corpus (source, workflows, migrations, shell) resolve | Whole tree | `doc-refs` | Not yet — see rollout below |
+| References | [`check-doc-refs.mjs`](../../../scripts/check-doc-refs.mjs) | In files OUTSIDE the docs corpus (source, workflows, migrations, shell): bare `docs/`/`spec/` paths resolve, and bare markdown filenames still name a tracked file | Whole tree | `doc-refs` | Not yet — see rollout below |
 | Rosters | [`check-doc-tables.mjs`](../../../scripts/check-doc-tables.mjs) | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml` | Whole tree | `doc-tables` | Not yet — see rollout below |
 | Env slugs | [`check-env-slugs.mjs`](../../../scripts/check-env-slugs.mjs) | Every Infisical environment named anywhere is one that exists | Whole tree | `doc-tables` (same job) | Not yet — inherits `doc-tables` |
 
@@ -198,9 +198,10 @@ per [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNB
 
 **Citations** is whole-tree but its scope *is* the documentation. Everything else — source, tests,
 workflows, migrations, shell scripts — cites docs constantly and was checked by nothing. At the time
-this gate was added that was roughly 770 references across 430 files (2026-09-02). It prints the
-live count on every run, and that is the number to trust — an exact figure written here would be
-stale by the next commit, which is the failure this whole page is about.
+this gate was added that was roughly 770 path references and 470 filename references across 530
+files (2026-09-02). It prints the live counts on every run, and those are the numbers to trust — an
+exact figure written here would be stale by the next commit, which is the failure this whole page is
+about.
 
 The gap was not hypothetical. The spec split in [#432](https://github.com/pdcarlson/Frapp/issues/432)
 left dead pointers that nothing caught for months: `apps/api/README.md` named three files that no
@@ -211,14 +212,44 @@ is how prose cites a path; source cites bare, in comments. So this is a separate
 that reuses the other's allowlist machinery, including the property that an entry excusing nothing
 fails the run.
 
+**Two passes, because a doc breaks in two different ways.** A doc that *moves* changes its path; a
+doc that is *renamed* changes its filename. The path pass needs the `docs/` or `spec/` prefix to know
+a token is a claim about the corpus — which is exactly what a bare filename lacks, and source cites
+docs by filename alone all the time, in comments, workflow strings, shell and migration headers. So a
+second pass extracts bare markdown filenames and asks only whether any tracked file still carries
+that name. That is deliberately weaker than the path pass: a filename names no directory, so it
+cannot say *which* file it meant, and a move keeps resolving. It catches renames, which nothing else
+could see.
+
+The second pass was added for the docs restructure ([#1597](https://github.com/pdcarlson/Frapp/issues/1597)),
+whose kebab-case renames change dozens of filenames cited this way. Stage 2 made the *layout*
+machine-enforced so the restructure's move would be self-checking; for renames it was not, and this
+closes that.
+
 - **Scope:** every tracked file *outside* the Citations scope.
 - **Excluded, each for a reason:** `.buildpad/` (a synced export, never hand-edited);
   `.gitleaks-baseline.json` (entries pin a path *and* a SHA, so they describe the tree as it was);
-  `scripts/doc-paths-allowlist.json` (its job is naming paths that do not resolve); and any
-  `__tests__/` directory (assertion fixtures are synthetic — a gate's own test must be free to name an
-  invented path under `spec/` and assert that it is rejected).
+  **both** allowlists — `scripts/doc-paths-allowlist.json` and this gate's own
+  `scripts/doc-refs-allowlist.json` (their job is naming references that do not resolve, so scanning
+  them would make every excuse its own violation); and any `__tests__/` directory (assertion fixtures
+  are synthetic — a gate's own test must be free to name an invented path under `spec/` and assert
+  that it is rejected).
+- **Fenced code blocks are blanked in the filename pass**, the way `check-doc-paths.mjs` strips them:
+  17 tracked markdown files sit outside the Citations scope and so are scanned here — command files,
+  the PR template, package READMEs — and a shell transcript naming a filename is a worked example,
+  not a claim. Blanked rather than removed, because this gate reports a *line*. An unterminated fence
+  strips nothing rather than swallowing the rest of the file.
 - **Allowlist:** [`scripts/doc-refs-allowlist.json`](../../../scripts/doc-refs-allowlist.json), same
   shape as the citation allowlist. Prefer `perFile`.
+- **The one false positive the filename pass has**, worth recognising before you go looking for a
+  file that was never there: a **design-token step written in backticks** is shaped exactly like a
+  filename. `packages/theme` defines `spacing`, `radius` and `fontSize` groups each with an `md`
+  step, so a comment reading ``\`spacing.md\` is 12`` extracts as a markdown filename. The same step
+  reached through its object — the group name preceded by a dot — does *not*, because the dot
+  disqualifies it, so this only bites the backticked house style. (Spell that full form out here and
+  the **Citations** gate flags it, which is the same ambiguity arriving from the other side.) The
+  excuse is an allowlist entry, and unlike the path pass the entry is
+  consulted **before** resolution, so adding a real file with that basename cannot silently retire it.
 - **Run locally:** `npm run check:doc-refs`.
 
 **Rollout.** Reports on every PR, not merge-blocking yet — the same path `doc-paths` and

@@ -79,9 +79,9 @@ rollout is to reach the day it blocks.
 **kebab-case `.md`, or `README.md`.** Enforced whole-tree by
 [`scripts/check-docs-structure.mjs`](../../scripts/check-docs-structure.mjs).
 
-There was no naming rule before 2026-09, and the corpus split along one seam: all 28
-`SCREAMING_SNAKE_CASE` files live under `docs/internal/`, while `docs/guides/`, `docs/performance/`
-and every part of `spec/` were already kebab. Those 28 are grandfathered in the manifest's
+There was no naming rule before 2026-09, and the corpus split along one seam: every
+`SCREAMING_SNAKE_CASE` file lives under `docs/internal/`, while `docs/guides/`, `docs/performance/`
+and every part of `spec/` were already kebab. Those remaining are grandfathered in the manifest's
 `LEGACY_NAMES`, which is a **ratchet, not an amnesty**: an entry that no longer matches a tracked
 file fails the gate, so a rename must delete its entry in the same commit and the list can only
 shrink. Nothing new may be added to it.
