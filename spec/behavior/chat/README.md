@@ -86,6 +86,10 @@ Chat is not a module — it is the spine of the app, and every other capability 
 - A sender can delete their own messages. Users with `channels:manage` permission can delete any message in channels they manage. The permission is resolved **in the message's own chapter, after channel access is confirmed** — holding `channels:manage` in the caller's active chapter grants nothing over a message in another one.
 - Edit, delete, pin and unpin all authorize through the same channel-access lookup as reads: a message whose channel does not resolve within the caller's active chapter returns 404, and sender ownership alone is never sufficient (a member removed from a chapter must not keep editing their history there).
 - Deleted messages are soft-deleted: content is replaced with "[message deleted]", `is_deleted = true`. Attachments for deleted messages are removed from Storage.
+  - The purge runs **after** the row is flagged, and is best-effort: flagging the message stops the API minting *new* download URLs (`GET /v1/channels/:id/messages/:messageId/attachments` 404s a deleted message). A signed URL issued **before** the delete stays valid for the rest of its hour-long TTL regardless — deletion of the bytes is what ends that, and the purge is best-effort, so a Storage failure leaves the object readable to anyone already holding a URL. Failures are logged per bucket and never roll back the delete or fail the request.
+  - **An object still referenced by an undeleted message is kept.** `chat_message_attachments` is unique on `(message_id, bucket, storage_path)` — per message, not per object — so two messages may point at one object: the Discord importer maps every reference to a deduplicated export file onto the same object, and the send-time check validates only the channel prefix, so a client can claim a path another message already uses. Only rows of **undeleted** messages count, or two deleted messages would spare each other's object forever.
+  - The check covers other chat *attachments* only. `chat_messages.author_avatar_path` and `discord_import_files.storage_path` can resolve to the same imported object and are not consulted.
+  - The attachment **rows** are not deleted. They disappear only with the message itself via `ON DELETE CASCADE`; keeping them is what lets the reference check above stay correct, and the read path already refuses them for a deleted message.
 
 **Pinned messages (chapter-elevated):**
 
@@ -218,6 +222,29 @@ Presence is ephemeral per ADR-02: it lives on the Realtime socket and is never p
 - Full-text search within a single channel or across all channels the user can access.
 - Search returns message snippets with highlighted matches, grouped by channel.
 - Search respects permissions: only messages from channels the user can see are returned.
+
+Both scopes are served by `GET /v1/search`; the single-channel form passes an optional
+`channelId` ([`../search.md`](../search.md#single-channel-scope)). On web the surface is
+`ChatSearchPopover` in the channel header, alongside the pins popover, defaulting to the
+active channel with an "All channels" toggle. Picking a hit selects its channel if it is not
+already open and then jumps, reusing the same in-shell pending-target machinery a
+`/chat?channel=&message=` deep link resolves through. **It does not change the URL** — a
+search jump is not shareable, back-button-recoverable, or reload-surviving; only a real deep
+link is.
+
+**Three parts of the bullets above are aspirational, and the shipped surface says so rather
+than pretending otherwise:**
+
+- **Highlighted snippets do not exist**, for this surface or any other. `ts_headline` is
+  specced for all four search sources and built for none; see #1356. Rows show the message
+  body truncated, not a match-centred snippet.
+- **Results are not grouped by channel.** They are one list ordered newest-first, with a
+  per-row channel label when a hit is outside the channel in view.
+- **A jump can only reach the loaded window.** Web loads one page of channel history and has
+  no older-history backfill, so a hit older than that window cannot be scrolled to. The
+  timeline reports reachability instead of silently doing nothing, and the shell states the
+  limit in the channel header; the target stays pending, so a message that arrives later still
+  gets its jump. Reaching genuinely old hits needs real backfill — see #1571.
 
 ## Announcements
 

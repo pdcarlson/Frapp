@@ -60,8 +60,16 @@ function dayLabel(iso: string): string {
  * message.
  */
 export interface MessageTimelineHandle {
-  /** No-ops for a message that is not in the loaded window. */
-  scrollToMessage: (messageId: string) => void;
+  /**
+   * Scrolls to a message, returning whether it was actually reachable.
+   *
+   * It still no-ops for a message outside the loaded window — but it now says
+   * so, because callers cannot otherwise tell "scrolled" from "did nothing".
+   * Pins could ignore that (a pin you can see is by definition loaded); search
+   * cannot, since its whole purpose is reaching messages beyond the window, and
+   * a silent `void` made every such hit an inert row.
+   */
+  scrollToMessage: (messageId: string) => boolean;
 }
 
 export interface MessageTimelineProps {
@@ -166,7 +174,8 @@ export const MessageTimeline = forwardRef<
         new Date(message.created_at).getTime() -
           new Date(prev.created_at).getTime() <
           GROUPING_GAP_MS;
-      const startsDay = !prev || dayKey(prev.created_at) !== dayKey(message.created_at);
+      const startsDay =
+        !prev || dayKey(prev.created_at) !== dayKey(message.created_at);
       return {
         message,
         // A new day always restarts the chrome: a grouped follow-on under a
@@ -184,15 +193,24 @@ export const MessageTimeline = forwardRef<
         const index = decorated.findIndex(
           (entry) => entry.message.id === messageId,
         );
-        // A pin older than the loaded window has no index to scroll to. Doing
-        // nothing is the honest outcome; backfilling to reach it is its own
-        // piece of work.
-        if (index < 0) return;
-        virtuoso.current?.scrollToIndex({
+        // A message older than the loaded window has no index to scroll to.
+        // Not scrolling is still the honest outcome — backfilling to reach it
+        // is its own piece of work (#1571) — but the caller is now told, so it
+        // can say so rather than leaving a row that appears to do nothing.
+        if (index < 0) return false;
+        // Reports what actually happened, not what was attempted: with no
+        // attached virtualizer (the error branch renders before `<Virtuoso>`)
+        // the optional chain quietly does nothing, and returning `true` there
+        // would tell the shell a scroll happened and let it clear the pending
+        // target — the same silent failure this boolean exists to end, just one
+        // level up.
+        if (!virtuoso.current) return false;
+        virtuoso.current.scrollToIndex({
           index,
           align: "center",
           behavior: "smooth",
         });
+        return true;
       },
     }),
     [decorated],
@@ -238,30 +256,30 @@ export const MessageTimeline = forwardRef<
                 {dayLabel(entry.message.created_at)}
               </p>
             ) : null}
-          <MessageItem
-            nameFor={nameFor}
-            message={entry.message}
-            avatarUrl={
-              entry.message.author_avatar_path
-                ? avatars.data?.[entry.message.author_avatar_path]
-                : undefined
-            }
-            viewerId={viewerId}
-            showHeader={entry.showHeader}
-            onReact={onReact}
-            onUnreact={onUnreact}
-            onOpenThread={onOpenThread}
-            onRetry={onRetry}
-            onDiscard={onDiscard}
-            onAct={onAct}
-            onEdit={onEdit}
-            onDelete={onDelete}
-            isBookmarked={bookmarkedMessageIds?.has(entry.message.id)}
-            onToggleBookmark={onToggleBookmark}
-            canManageChannel={canManageChannel}
-            isTapRevealed={tapRevealed.isRevealed(entry.message)}
-            onToggleTapReveal={() => tapRevealed.toggle(entry.message)}
-          />
+            <MessageItem
+              nameFor={nameFor}
+              message={entry.message}
+              avatarUrl={
+                entry.message.author_avatar_path
+                  ? avatars.data?.[entry.message.author_avatar_path]
+                  : undefined
+              }
+              viewerId={viewerId}
+              showHeader={entry.showHeader}
+              onReact={onReact}
+              onUnreact={onUnreact}
+              onOpenThread={onOpenThread}
+              onRetry={onRetry}
+              onDiscard={onDiscard}
+              onAct={onAct}
+              onEdit={onEdit}
+              onDelete={onDelete}
+              isBookmarked={bookmarkedMessageIds?.has(entry.message.id)}
+              onToggleBookmark={onToggleBookmark}
+              canManageChannel={canManageChannel}
+              isTapRevealed={tapRevealed.isRevealed(entry.message)}
+              onToggleTapReveal={() => tapRevealed.toggle(entry.message)}
+            />
           </>
         )}
         computeItemKey={(_, entry) =>

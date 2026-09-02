@@ -25,6 +25,7 @@ import {
   useUnbookmarkMessage,
 } from "@repo/hooks";
 import { can } from "@repo/validation";
+import { Button } from "@/components/ui/button";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { asArray, cn } from "@/lib/utils";
@@ -45,6 +46,7 @@ import {
 import { Composer } from "./composer";
 import { ThreadPanel } from "./thread-panel";
 import { PinsPopover } from "./pins-popover";
+import { ChatSearchPopover, type ChatSearchHit } from "./chat-search-popover";
 import { BookmarksPopover, type BookmarkEntry } from "./bookmarks-popover";
 import { NotificationLevelPopover } from "./notification-level-popover";
 import { ReconnectPill } from "./reconnect-pill";
@@ -204,15 +206,38 @@ export function ChatShell({
   const [pendingMessageId, setPendingMessageId] = useState(initialMessageId);
   // Which channel the pending jump's message actually lives in.
   //
-  // Was read straight off `initialChannelId` (the URL param) until #462. That
-  // conflated "the channel this deep link named" with "the channel this jump
-  // targets", which were the same thing while the only jumps were deep links
-  // and the in-channel pins panel. The Bookmarks panel is chapter-wide, so its
-  // rows routinely target a *different* channel than the one the URL named —
-  // and against the old guard such a jump was silently dropped, because
-  // `activeChannelId` never equals a stale `initialChannelId` again.
-  const [pendingJumpChannelId, setPendingJumpChannelId] =
-    useState<string | null>(initialChannelId);
+  // Was read straight off `initialChannelId` (the URL param), which conflated
+  // "the channel this deep link named" with "the channel this jump targets".
+  // Those were the same thing only while deep links and the in-channel pins
+  // panel were the only jumps. Both the chapter-wide Bookmarks panel (#462) and
+  // chat search (#469) routinely target a *different* channel than the URL
+  // named, and against the old guard such a jump was silently dropped, because
+  // `activeChannelId` never equals a stale `initialChannelId` again. `null`
+  // means "no channel was named; jump in whatever channel ends up active",
+  // which is the message-only link case.
+  const [pendingJumpChannelId, setPendingJumpChannelId] = useState<
+    string | null
+  >(initialChannelId);
+  // Set when a jump target resolved to a channel but was not in its loaded
+  // window. This is the difference between a control that quietly does nothing
+  // and one that says why it could not — the whole reason `scrollToMessage`
+  // now reports reachability.
+  //
+  // Scoped to the channel it was raised in, not a bare message id. An
+  // unscoped notice followed the member around: switching channels from the
+  // rail left it standing in a channel the message was never in, and a
+  // `?message=` link with no channel (so no `pendingJumpChannelId` to gate on)
+  // re-raised it in every channel visited until it was dismissed.
+  const [unreachableTarget, setUnreachableTarget] = useState<{
+    messageId: string;
+    channelId: string | null;
+  } | null>(null);
+  // Bumped on every jump request so re-picking the SAME target re-runs the
+  // effect. Without it, asking again for something already resolved as
+  // unreachable changed no dependency, so the effect never re-ran: the notice
+  // cleared and nothing else happened — an inert row again, on the natural
+  // "did that work?" second click.
+  const [jumpAttempt, setJumpAttempt] = useState(0);
   // `initialChannelId`/`initialMessageId` are only read by `useState`'s
   // initializer on first mount. A second deep link (another notification, a
   // second command-palette hit) navigated to while `/chat` is already
@@ -239,6 +264,8 @@ export function ChatShell({
     setChannelTargetDismissed(false);
     setPendingMessageId(initialMessageId);
     setPendingJumpChannelId(initialChannelId);
+    setUnreachableTarget(null);
+    setJumpAttempt((n) => n + 1);
   }, [initialChannelId, initialMessageId]);
 
   // `useChannels()` can serve a read up to its `staleTime` old. A channel
@@ -296,6 +323,32 @@ export function ChatShell({
     );
   }, [activeChannel, userId, memberNames]);
 
+  // Same resolution as `activeChannelName`, for any channel — a search hit in
+  // another channel has to be labelled with the name a member would recognise,
+  // and a DM's stored `dm-<uuidA>-<uuidB>` is not it.
+  //
+  // Built once as a Map rather than a `channels.find` per lookup: this is called
+  // per rendered search hit per render, and the shell already keeps
+  // `levelByChannelId` in exactly this shape a few lines up.
+  const channelTitles = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const ch of channels) {
+      map.set(
+        ch.id,
+        directChannelDisplayName(
+          { name: ch.name, type: ch.type, member_ids: ch.member_ids ?? [] },
+          userId,
+          memberNames,
+        ),
+      );
+    }
+    return map;
+  }, [channels, userId, memberNames]);
+  const channelNameFor = useCallback(
+    (channelId: string) => channelTitles.get(channelId) ?? null,
+    [channelTitles],
+  );
+
   const announcementsChannelId = useMemo(
     () => channels.find((ch) => ch.name === "announcements")?.id ?? null,
     [channels],
@@ -318,7 +371,10 @@ export function ChatShell({
   // `<Can>`, done inline here since this is a per-row boolean, not a whole
   // surface to hide.
   const { data: permissionsPayload } = useMyPermissions();
-  const canManageChannel = can("channels:manage", permissionsPayload?.permissions);
+  const canManageChannel = can(
+    "channels:manage",
+    permissionsPayload?.permissions,
+  );
 
   // Bookmarks (#462). One chapter-wide query backs both the panel and every
   // row's toggle state, so the two can never disagree about what is saved.
@@ -469,6 +525,25 @@ export function ChatShell({
     [orgConfig],
   );
 
+  const [threadParentId, setThreadParentId] = useState<string | null>(null);
+  // What had focus when a thread was opened (the row's Reply control, most
+  // often) — restored by `closeThread` below, per the keyboard-navigation
+  // acceptance criterion in #396.
+  const threadTriggerRef = useRef<HTMLElement | null>(null);
+  // A channel switch while a thread is open unmounts `ThreadPanel` the same
+  // way `closeThread` does, but the trigger that opened it belongs to the
+  // channel being left — refocusing it would be meaningless at best and
+  // would yank focus back to a message the member just navigated away from
+  // at worst. Only the bookkeeping is shared.
+  const dismissThreadForChannelSwitch = useCallback(() => {
+    setThreadParentId(null);
+    threadTriggerRef.current = null;
+  }, []);
+  // Channel-scoped: the notice belongs to the channel the jump was attempted
+  // in, so it never follows the member into a channel the message was never in.
+  const showUnreachableNotice =
+    unreachableTarget !== null &&
+    unreachableTarget.channelId === activeChannelId;
   // Pins are a navigation affordance, not a list: the popover's rows were
   // rendered as buttons but `onJump` was never wired, so every one of them was
   // inert. The timeline exposes the scroll, the shell owns the wiring.
@@ -477,34 +552,72 @@ export function ChatShell({
     timeline.current?.scrollToMessage(messageId);
   }, []);
 
-  /**
-   * Jump to a bookmarked message, which may live in another channel (#462) —
-   * the Bookmarks panel is chapter-wide, unlike the in-channel pins panel.
-   *
-   * Routed through the same `pendingMessageId` machinery as a deep link rather
-   * than calling `jumpToMessage` directly: switching channel unmounts and
-   * refetches the timeline, so an immediate scroll would target a list that
-   * does not have the message yet. Leaving it pending gives it the same free
-   * retry as history loads that a deep link gets, and a message older than the
-   * backfill window stays pending instead of being spent on an id the timeline
-   * could not find.
-   */
-  const jumpToBookmark = useCallback(
+  // Every jump — a search hit, a bookmark, a `?message=` deep link — takes the
+  // same route: `pendingMessageId` + the jump effect below. Including a target
+  // in the channel already open.
+  //
+  // The same-channel case used to scroll directly, on the reasoning that no
+  // channel switch had to be waited for. That was wrong in the way that matters
+  // most here: `scrollToMessage` cannot reach a message outside the loaded
+  // window, so for any target older than the backfill it did nothing at all,
+  // said nothing, and left nothing pending to retry. Search exists to reach old
+  // messages, so that was the common case, not the edge — an inert row of
+  // exactly the kind `components.md` §5 bans. One path for every case means the
+  // unreachable-target handling below covers them all.
+  const jumpToChannelMessage = useCallback(
     (channelId: string, messageId: string) => {
-      setSelectedChannelId(channelId);
-      setChannelTargetDismissed(false);
-      setPendingJumpChannelId(channelId);
+      if (channelId !== activeChannelId) {
+        setSelectedChannelId(channelId);
+        setChannelTargetDismissed(false);
+        // Search and bookmarks both read live rows while `useChannels()` serves
+        // up to its `staleTime`, so a target can legitimately name a channel
+        // the cached list has never seen (a DM opened moments ago). Without
+        // this the id fails `channels.some(...)`, `activeChannelId` quietly
+        // falls back to #general, and the member lands somewhere they did not
+        // ask for with the jump stranded. The deep-link path already forces
+        // this refetch for the same reason.
+        void refetchChannels();
+        // A jump out of the channel a thread belongs to must close it, the same
+        // cleanup picking a channel from the rail does. Left open, the panel
+        // merely fails to resolve against the new channel — and pops back up
+        // unbidden on any later jump that returns to its channel.
+        dismissThreadForChannelSwitch();
+      }
+      setUnreachableTarget(null);
       setPendingMessageId(messageId);
+      setPendingJumpChannelId(channelId);
+      setJumpAttempt((n) => n + 1);
     },
-    [],
+    [activeChannelId, refetchChannels, dismissThreadForChannelSwitch],
   );
 
-  // A caller-supplied `?message=` jumps to that message once it's actually
-  // present in the loaded window. `pendingMessageId` (declared above,
-  // resynced whenever a new target arrives) is only cleared on success — a
-  // message outside the channel's initial backfill window stays pending and
-  // gets a free retry as more history loads, rather than being silently
-  // spent on an id `scrollToMessage` couldn't find.
+  /** Search hit (#469) — the popover carries the channel on every row. */
+  const jumpToSearchHit = useCallback(
+    (hit: ChatSearchHit) => jumpToChannelMessage(hit.channelId, hit.message.id),
+    [jumpToChannelMessage],
+  );
+
+  /**
+   * Bookmark (#462). The Bookmarks panel is chapter-wide, unlike the in-channel
+   * pins panel, so its rows routinely target another channel — the same shape
+   * as a search hit, and now the same code path.
+   */
+  const jumpToBookmark = jumpToChannelMessage;
+
+  // A pending target jumps once that message is present in the loaded window.
+  //
+  // A miss keeps the target pending — a message that arrives later still gets
+  // its jump, which is the behaviour deep links have always had — but it no
+  // longer keeps *quiet* about it. `scrollToMessage` now reports reachability,
+  // so a miss sets the notice rendered in the header below and a later hit
+  // clears it. Silence was survivable for pins (a pin you can see is loaded by
+  // definition) and is not for search or bookmarks, whose whole job is reaching
+  // messages beyond the loaded window: every such row looked inert.
+  //
+  // Note what this does NOT claim: nothing backfills older history today
+  // (`useChatChannel` fetches one window and exposes no pagination), so a
+  // genuinely old target is only reachable if a newer message happens to bring
+  // it into range. Actually reaching it needs real backfill (#1571).
   useEffect(() => {
     if (!pendingMessageId) return;
     // A named channel target must resolve to it first — a message id paired
@@ -518,30 +631,35 @@ export function ChatShell({
       return;
     }
     if (channel.isLoading) return;
-    if (!channel.messages.some((m) => m.id === pendingMessageId)) return;
-    jumpToMessage(pendingMessageId);
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- consuming a one-shot deep-link target once it's been acted on, not syncing render state
-    setPendingMessageId(null);
+    const jumped = timeline.current?.scrollToMessage(pendingMessageId) ?? false;
+    if (jumped) {
+      setPendingMessageId(null);
+      setPendingJumpChannelId(null);
+      setUnreachableTarget(null);
+    } else {
+      setUnreachableTarget({
+        messageId: pendingMessageId,
+        channelId: activeChannelId,
+      });
+    }
   }, [
     pendingMessageId,
     activeChannelId,
     pendingJumpChannelId,
     channel.isLoading,
     channel.messages,
-    jumpToMessage,
+    jumpAttempt,
   ]);
 
-  const [threadParentId, setThreadParentId] = useState<string | null>(null);
   const threadParent = useMemo(() => {
     if (!threadParentId) return null;
     return channel.messages.find((m) => m.id === threadParentId) ?? null;
   }, [channel.messages, threadParentId]);
-  // What had focus when a thread was opened (the row's Reply control, most
-  // often) — restored when the panel closes, per the keyboard-navigation
-  // acceptance criterion in #396. The thread panel is a persistent aside, not
-  // a dialog, so nothing else returns focus here for free the way Radix does
-  // for the slash palette.
-  const threadTriggerRef = useRef<HTMLElement | null>(null);
+  // Captures the trigger (the row's Reply control, most often) on the way in,
+  // so `closeThread` can hand focus back. The thread panel is a persistent
+  // aside, not a dialog, so nothing returns focus here for free the way Radix
+  // does for the slash palette — hence the manual bookkeeping, per the
+  // keyboard-navigation acceptance criterion in #396.
   const openThread = useCallback((message: ChatMessage) => {
     threadTriggerRef.current =
       document.activeElement instanceof HTMLElement
@@ -564,15 +682,6 @@ export function ChatShell({
     }
     threadTriggerRef.current = null;
   }, []);
-  // A channel switch while a thread is open unmounts `ThreadPanel` the same
-  // way `closeThread` does, but the trigger that opened it belongs to the
-  // channel being left — refocusing it would be meaningless at best and
-  // would yank focus back to a message the member just navigated away from
-  // at worst. Only the bookkeeping is shared.
-  const dismissThreadForChannelSwitch = useCallback(() => {
-    setThreadParentId(null);
-    threadTriggerRef.current = null;
-  }, []);
 
   // A screen-reader announcement for a genuinely new incoming message,
   // decoupled from `#chat-timeline`'s DOM — see the comment on that `role="log"`
@@ -591,14 +700,22 @@ export function ChatShell({
     if (!activeChannelId || !latest) return;
     const latestKey = latest.client_message_id ?? latest.id;
     if (lastAnnouncedRef.current.channelId !== activeChannelId) {
-      lastAnnouncedRef.current = { channelId: activeChannelId, messageId: latestKey };
+      lastAnnouncedRef.current = {
+        channelId: activeChannelId,
+        messageId: latestKey,
+      };
       return;
     }
     if (lastAnnouncedRef.current.messageId === latestKey) return;
-    lastAnnouncedRef.current = { channelId: activeChannelId, messageId: latestKey };
+    lastAnnouncedRef.current = {
+      channelId: activeChannelId,
+      messageId: latestKey,
+    };
     if (latest.is_deleted) return;
     const author =
-      latest.sender_id === userId ? "You" : (nameFor(latest.sender_id ?? "") ?? "Someone");
+      latest.sender_id === userId
+        ? "You"
+        : (nameFor(latest.sender_id ?? "") ?? "Someone");
     // eslint-disable-next-line react-hooks/set-state-in-effect -- announcing a real-time arrival by comparing against the previous render's last-seen id, not syncing render state
     setLiveAnnouncement(`New message from ${author}`);
   }, [channel.messages, activeChannelId, userId, nameFor]);
@@ -660,7 +777,12 @@ export function ChatShell({
         comment. This is the only thing that announces a genuinely new
         message; it never mounts inside the virtualized timeline.
       */}
-      <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+      >
         {liveAnnouncement}
       </div>
       {/*
@@ -688,6 +810,10 @@ export function ChatShell({
             onPick={(ch) => {
               setSelectedChannelId(ch.id);
               dismissThreadForChannelSwitch();
+              // Deliberately leaves any pending jump target alone — it is
+              // gated on its own channel and will resolve if the member
+              // returns. Only the notice is channel-scoped for display.
+              setUnreachableTarget(null);
             }}
           />
         </div>
@@ -751,6 +877,12 @@ export function ChatShell({
                   });
                 }}
               />
+              <ChatSearchPopover
+                activeChannelId={activeChannelId}
+                channelNameFor={channelNameFor}
+                nameFor={nameFor}
+                onJump={jumpToSearchHit}
+              />
               <PinsPopover
                 messages={channel.messages}
                 nameFor={nameFor}
@@ -777,6 +909,41 @@ export function ChatShell({
                 onRemove={(messageId) => unbookmarkMessage.mutate(messageId)}
               />
             </div>
+          </div>
+          {/*
+            The container is ALWAYS mounted and carries the live region; only
+            its contents swap. A live region inserted into the DOM at the same
+            instant it gains content is not announced by most screen readers —
+            which would have left AT users with exactly the silent no-op this
+            notice exists to replace, just relocated. The search popover's own
+            `sr-only` region is mounted the same way.
+          */}
+          <div aria-live="polite" role="status">
+            {showUnreachableNotice ? (
+              // Dismissible because it reports a past action, not a standing
+              // condition of the channel.
+              <div className="mt-2 flex items-start justify-between gap-2">
+                <p className="text-[12.5px] text-muted-foreground">
+                  That message is older than the history loaded here, so the
+                  timeline can’t jump to it yet.
+                </p>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    // Abandons the target, not just the notice. Clearing only
+                    // the message would leave it pending, so the effect would
+                    // re-raise this the moment any new message arrived — a
+                    // dismiss that visibly un-dismisses itself.
+                    setUnreachableTarget(null);
+                    setPendingMessageId(null);
+                    setPendingJumpChannelId(null);
+                  }}
+                >
+                  Dismiss
+                </Button>
+              </div>
+            ) : null}
           </div>
           {channel.typingUsers.length > 0 ? (
             <p className="mt-1 text-[12.5px] text-muted-foreground">

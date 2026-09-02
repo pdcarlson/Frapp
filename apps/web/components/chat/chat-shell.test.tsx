@@ -8,6 +8,7 @@ const {
   mockUseChatChannel,
   mockComposerMount,
   mockUseMyPermissions,
+  searchHit,
 } = vi.hoisted(() => ({
   mockScrollToMessage: vi.fn(),
   mockRefetch: vi.fn(),
@@ -15,6 +16,10 @@ const {
   mockComposerMount: vi.fn(),
   mockUseMyPermissions: vi.fn(() => ({
     data: { permissions: [] as string[] },
+  })),
+  searchHit: vi.fn(() => ({
+    message: { id: "msg-2" },
+    channelId: "chan-general",
   })),
 }));
 
@@ -51,7 +56,11 @@ const mockBookmarkIsError = vi.fn(() => false);
 // so the component renders from a controlled `channels`/message state
 // instead of hitting the network.
 vi.mock("@repo/hooks", () => ({
-  useChannels: () => ({ data: CHANNELS, isFetching: false, refetch: mockRefetch }),
+  useChannels: () => ({
+    data: CHANNELS,
+    isFetching: false,
+    refetch: mockRefetch,
+  }),
   useCategories: () => ({ data: [], isPending: false }),
   useMemberDisplayNames: () => ({ byId: new Map(), nameFor: () => null }),
   useChannelNotificationPreferences: () => ({ data: [] }),
@@ -64,17 +73,34 @@ vi.mock("@repo/hooks", () => ({
   }),
   useMarkChannelRead: () => ({ mutate: vi.fn() }),
   useChannelUnreadCounts: () => ({ data: [], isError: false }),
-  useOrgConfig: () => ({ data: { isModuleEnabled: () => true }, isError: false, refetch: vi.fn() }),
+  useOrgConfig: () => ({
+    data: { isModuleEnabled: () => true },
+    isError: false,
+    refetch: vi.fn(),
+  }),
   useChapterRoster: () => ({ data: [] }),
   useMyPermissions: () => mockUseMyPermissions(),
   directChannelDisplayName: () => "",
+  // The channel header now carries `ChatSearchPopover`, which reads these.
+  // Idle by default: these cases are about the shell, and a search that never
+  // runs keeps the popover out of their way.
+  SEARCH_MIN_QUERY_LENGTH: 3,
+  useSearch: () => ({
+    data: undefined,
+    isFetching: false,
+    isError: false,
+    refetch: vi.fn(),
+  }),
+  resolveAuthorLabel: () => "",
   // Bookmarks (#462). The shell renders the panel unconditionally, so these
   // have to exist here even though this file's assertions are about deep links,
   // the composer remount and delete wiring. `mockBookmarks` lets the bookmark
   // cases below drive the list without touching the other suites' setup.
   useBookmarks: () => mockBookmarks(),
   useBookmarkedMessageIds: () =>
-    new Set(mockBookmarks().data.map((b: { message_id: string }) => b.message_id)),
+    new Set(
+      mockBookmarks().data.map((b: { message_id: string }) => b.message_id),
+    ),
   useBookmarkMessage: () => ({
     mutate: mockBookmarkMutate,
     reset: mockBookmarkReset,
@@ -104,7 +130,18 @@ vi.mock("@/lib/chat/use-chat-channel", () => ({
 // doesn't provide) are stubbed — this test is about ChatShell's own
 // deep-link wiring, not their internals.
 vi.mock("./channel-list", () => ({
-  ChannelList: () => <div data-testid="channel-list" />,
+  ChannelList: ({ onPick }: { onPick?: (ch: { id: string }) => void }) => (
+    <div data-testid="channel-list">
+      {/* Enough of the rail to drive a channel switch, which is a distinct
+          path from a deep link or a search jump and clears different state. */}
+      <button
+        data-testid="pick-random"
+        onClick={() => onPick?.({ id: "chan-random" })}
+      >
+        random
+      </button>
+    </div>
+  ),
 }));
 // Mounts (not renders) are the signal #1014's fix depends on: the real
 // `<Composer>` bakes its placeholder into a Tiptap extension at editor
@@ -134,6 +171,20 @@ vi.mock("./thread-panel", () => ({
 vi.mock("./pins-popover", () => ({
   PinsPopover: () => <div data-testid="pins-popover" />,
 }));
+// Stubbed down to a single button that fires `onJump` with whatever hit the
+// test set, so these cases exercise the *shell's* jump wiring rather than the
+// popover's own search behaviour (which chat-search-popover.test.tsx owns).
+vi.mock("./chat-search-popover", () => ({
+  ChatSearchPopover: ({
+    onJump,
+  }: {
+    onJump: (hit: { message: { id: string }; channelId: string }) => void;
+  }) => (
+    <button data-testid="search-jump" onClick={() => onJump(searchHit())}>
+      search
+    </button>
+  ),
+}));
 // Exposes `onJump` as a button so the cross-channel jump (#462) can be driven
 // without opening a real Radix popover. The panel's own rendering is covered in
 // `bookmarks-popover.test.tsx`; what belongs here is the shell wiring.
@@ -153,7 +204,9 @@ vi.mock("./bookmarks-popover", () => ({
   ),
 }));
 vi.mock("./notification-level-popover", () => ({
-  NotificationLevelPopover: () => <div data-testid="notification-level-popover" />,
+  NotificationLevelPopover: () => (
+    <div data-testid="notification-level-popover" />
+  ),
 }));
 vi.mock("./reconnect-pill", () => ({
   ReconnectPill: () => null,
@@ -161,13 +214,25 @@ vi.mock("./reconnect-pill", () => ({
 vi.mock("./message-timeline", async () => {
   const React = await import("react");
   const MessageTimeline = React.forwardRef<
-    { scrollToMessage: (id: string) => void },
+    { scrollToMessage: (id: string) => boolean },
     {
+      messages?: Array<{ id: string }>;
       onDelete?: (messageId: string) => void;
       canManageChannel?: boolean;
     }
-  >(function MessageTimeline({ onDelete, canManageChannel }, ref) {
-    React.useImperativeHandle(ref, () => ({ scrollToMessage: mockScrollToMessage }));
+  >(function MessageTimeline({ messages, onDelete, canManageChannel }, ref) {
+    // Models the REAL contract: the timeline can only scroll to a message it
+    // has, and reports which happened. A mock that always returned `undefined`
+    // asserted a timeline that silently succeeds at everything — the fixture
+    // modelling the assumption rather than the server, which is how the
+    // unreachable-target case stayed invisible in the first place.
+    React.useImperativeHandle(ref, () => ({
+      scrollToMessage: (id: string) => {
+        const found = (messages ?? []).some((m) => m.id === id);
+        if (found) mockScrollToMessage(id);
+        return found;
+      },
+    }));
     return (
       <div data-testid="message-timeline">
         <span data-testid="can-manage-channel">{String(canManageChannel)}</span>
@@ -180,7 +245,9 @@ vi.mock("./message-timeline", async () => {
 
 import { ChatShell } from "./chat-shell";
 
-function chatChannelResult(overrides: Partial<{ isLoading: boolean; messages: typeof MESSAGES }> = {}) {
+function chatChannelResult(
+  overrides: Partial<{ isLoading: boolean; messages: typeof MESSAGES }> = {},
+) {
   return {
     messages: overrides.messages ?? MESSAGES,
     isLoading: overrides.isLoading ?? false,
@@ -220,7 +287,9 @@ describe("ChatShell deep-link targets", () => {
     render(<ChatShell initialChannelId="does-not-exist" />);
 
     expect(screen.getByText("Channel not found")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Browse channels" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Browse channels" }),
+    ).toBeTruthy();
     // The fallback grid (channel rail, composer) must not render underneath.
     expect(screen.queryByTestId("channel-list")).toBeNull();
   });
@@ -254,24 +323,252 @@ describe("ChatShell deep-link targets", () => {
     expect(screen.getByTestId("channel-list")).toBeTruthy();
   });
 
+  it("scrolls straight to a search hit in the channel already open", () => {
+    searchHit.mockReturnValue({
+      message: { id: "msg-2" },
+      channelId: "chan-general",
+    });
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("search-jump"));
+
+    expect(mockScrollToMessage).toHaveBeenCalledWith("msg-2");
+  });
+
+  it("consumes a search hit in another channel even when the URL named a different one", async () => {
+    // Two regressions in one case.
+    //
+    // 1. The jump effect used to guard on `initialChannelId` — the URL param —
+    //    so arriving at `?channel=A` and then picking a hit in channel B
+    //    compared B against the stale A on every pass and returned, leaving
+    //    the target permanently unconsumed.
+    // 2. The target message exists ONLY in the destination channel. That is
+    //    what makes this fail against the racing implementation the production
+    //    comment warns about: scrolling before the switch runs against the
+    //    outgoing channel, which does not contain `only-in-random`, so the
+    //    scroll no-ops. With one shared message fixture for every channel, a
+    //    direct scroll would have satisfied the assertion and the test would
+    //    have passed on the bug it claims to pin.
+    mockUseChatChannel.mockImplementation((channelId: string | null) =>
+      chatChannelResult({
+        messages:
+          channelId === "chan-random"
+            ? [
+                {
+                  id: "only-in-random",
+                  content: "hi",
+                  created_at: "2026-01-01T00:02:00Z",
+                },
+              ]
+            : MESSAGES,
+      }),
+    );
+    searchHit.mockReturnValue({
+      message: { id: "only-in-random" },
+      channelId: "chan-random",
+    });
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(mockScrollToMessage).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("search-jump"));
+
+    await waitFor(() => {
+      expect(mockScrollToMessage).toHaveBeenCalledWith("only-in-random");
+    });
+    // And the shell actually switched — the jump is not a scroll in the old
+    // channel that happens to share a message id.
+    expect(screen.getByTestId("composer")).toHaveTextContent("chan-random");
+  });
+
+  it("refetches the channel list for a cross-channel search hit, so a just-created DM is not a false miss", () => {
+    searchHit.mockReturnValue({
+      message: { id: "msg-1" },
+      channelId: "chan-random",
+    });
+    render(<ChatShell />);
+    mockRefetch.mockClear();
+
+    fireEvent.click(screen.getByTestId("search-jump"));
+
+    // Search reads channels live while `useChannels()` serves a cached list.
+    // Without this the id fails `channels.some(...)`, the shell silently falls
+    // back to #general, and the jump strands.
+    expect(mockRefetch).toHaveBeenCalled();
+  });
+
+  it("says so when a jump target is not in the loaded window, instead of doing nothing", async () => {
+    searchHit.mockReturnValue({
+      message: { id: "way-older-than-the-window" },
+      channelId: "chan-general",
+    });
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("search-jump"));
+
+    // The defect this replaces: the popover closed, nothing scrolled, and
+    // nothing was said — a control that appears broken rather than a limit
+    // that is stated. Search exists to reach messages beyond the loaded
+    // window, so this is the common path, not an edge case.
+    expect(
+      await screen.findByText(/older than the history loaded here/i),
+    ).toBeTruthy();
+    expect(mockScrollToMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not carry the unreachable notice into a channel the message was never in", async () => {
+    searchHit.mockReturnValue({
+      message: { id: "never-loaded" },
+      channelId: "chan-general",
+    });
+    render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("search-jump"));
+    expect(
+      await screen.findByText(/older than the history loaded here/i),
+    ).toBeTruthy();
+
+    // Switching channels from the rail must not leave #general's notice
+    // standing in #random's header, claiming something about a message that
+    // was never in #random.
+    fireEvent.click(screen.getByTestId("pick-random"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("composer")).toHaveTextContent("chan-random");
+    });
+    expect(
+      screen.queryByText(/older than the history loaded here/i),
+    ).toBeNull();
+  });
+
+  it("retries when the same unreachable hit is picked again", async () => {
+    searchHit.mockReturnValue({
+      message: { id: "never-loaded" },
+      channelId: "chan-general",
+    });
+    render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("search-jump"));
+    expect(
+      await screen.findByText(/older than the history loaded here/i),
+    ).toBeTruthy();
+
+    // The natural "did that work?" second click. Without a nonce in the effect
+    // deps the target id is unchanged, so nothing re-runs: the notice clears
+    // and no jump is attempted — an inert row again, which is the whole defect
+    // this surface was fixed to stop producing.
+    fireEvent.click(screen.getByTestId("search-jump"));
+
+    expect(
+      await screen.findByText(/older than the history loaded here/i),
+    ).toBeTruthy();
+  });
+
+  it("keeps the unreachable notice dismissed when new messages arrive", async () => {
+    searchHit.mockReturnValue({
+      message: { id: "never-loaded" },
+      channelId: "chan-general",
+    });
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("search-jump"));
+    expect(
+      await screen.findByText(/older than the history loaded here/i),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(
+      screen.queryByText(/older than the history loaded here/i),
+    ).toBeNull();
+
+    // A new message lands. Dismiss abandons the target, so this must not
+    // re-raise the notice — otherwise the button visibly un-dismisses itself.
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({
+        messages: [
+          ...MESSAGES,
+          { id: "msg-new", content: "new", created_at: "2026-01-03T00:00:00Z" },
+        ],
+      }),
+    );
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    expect(
+      screen.queryByText(/older than the history loaded here/i),
+    ).toBeNull();
+  });
+
+  it("clears the unreachable notice once the message actually arrives", async () => {
+    searchHit.mockReturnValue({
+      message: { id: "msg-late" },
+      channelId: "chan-general",
+    });
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("search-jump"));
+    expect(
+      await screen.findByText(/older than the history loaded here/i),
+    ).toBeTruthy();
+
+    // The target stays pending, so a message that arrives later still gets its
+    // jump — the deep-link behaviour #328 shipped, kept rather than traded away
+    // for the notice.
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({
+        messages: [
+          ...MESSAGES,
+          {
+            id: "msg-late",
+            content: "late",
+            created_at: "2026-01-02T00:00:00Z",
+          },
+        ],
+      }),
+    );
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    await waitFor(() => {
+      expect(mockScrollToMessage).toHaveBeenCalledWith("msg-late");
+    });
+    expect(
+      screen.queryByText(/older than the history loaded here/i),
+    ).toBeNull();
+  });
+
   it("scrolls to a supplied message once it is present in the loaded window", () => {
-    render(<ChatShell initialChannelId="chan-general" initialMessageId="msg-2" />);
+    render(
+      <ChatShell initialChannelId="chan-general" initialMessageId="msg-2" />,
+    );
     expect(mockScrollToMessage).toHaveBeenCalledWith("msg-2");
   });
 
   it("does not scroll — and does not spend the pending target — for a message outside the loaded window", () => {
-    mockUseChatChannel.mockReturnValue(chatChannelResult({ messages: MESSAGES }));
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({ messages: MESSAGES }),
+    );
     const { rerender } = render(
-      <ChatShell initialChannelId="chan-general" initialMessageId="msg-not-loaded-yet" />,
+      <ChatShell
+        initialChannelId="chan-general"
+        initialMessageId="msg-not-loaded-yet"
+      />,
     );
     expect(mockScrollToMessage).not.toHaveBeenCalled();
 
     // More history "arrives" — the target is now in range, and should still
     // fire because the pending target was never cleared on the earlier miss.
     mockUseChatChannel.mockReturnValue(
-      chatChannelResult({ messages: [...MESSAGES, { id: "msg-not-loaded-yet", content: "old", created_at: "2025-01-01T00:00:00Z" }] }),
+      chatChannelResult({
+        messages: [
+          ...MESSAGES,
+          {
+            id: "msg-not-loaded-yet",
+            content: "old",
+            created_at: "2025-01-01T00:00:00Z",
+          },
+        ],
+      }),
     );
-    rerender(<ChatShell initialChannelId="chan-general" initialMessageId="msg-not-loaded-yet" />);
+    rerender(
+      <ChatShell
+        initialChannelId="chan-general"
+        initialMessageId="msg-not-loaded-yet"
+      />,
+    );
     expect(mockScrollToMessage).toHaveBeenCalledWith("msg-not-loaded-yet");
   });
 
@@ -286,7 +583,9 @@ describe("ChatShell deep-link targets", () => {
     // `useChatChannel` return value is unchanged) — only the message target
     // itself changes, as it would for a second command-palette/notification
     // click into a channel the member never left.
-    rerender(<ChatShell initialChannelId="chan-general" initialMessageId="msg-2" />);
+    rerender(
+      <ChatShell initialChannelId="chan-general" initialMessageId="msg-2" />,
+    );
     expect(mockScrollToMessage).toHaveBeenCalledWith("msg-2");
   });
 });
@@ -357,7 +656,11 @@ describe("ChatShell accessibility landmarks (#396)", () => {
       chatChannelResult({
         messages: [
           ...MESSAGES,
-          { id: "msg-3", content: "just landed", created_at: "2026-01-01T00:02:00Z" },
+          {
+            id: "msg-3",
+            content: "just landed",
+            created_at: "2026-01-01T00:02:00Z",
+          },
         ],
       }),
     );
@@ -382,7 +685,9 @@ describe("ChatShell delete-message wiring", () => {
     render(<ChatShell initialChannelId="chan-general" />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("can-manage-channel")).toHaveTextContent("true");
+      expect(screen.getByTestId("can-manage-channel")).toHaveTextContent(
+        "true",
+      );
     });
   });
 
@@ -390,7 +695,9 @@ describe("ChatShell delete-message wiring", () => {
     render(<ChatShell initialChannelId="chan-general" />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("can-manage-channel")).toHaveTextContent("false");
+      expect(screen.getByTestId("can-manage-channel")).toHaveTextContent(
+        "false",
+      );
     });
   });
 
@@ -509,9 +816,7 @@ describe("ChatShell bookmark write failure (#462)", () => {
 
     render(<ChatShell initialChannelId="chan-general" />);
 
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "Bookmark not updated",
-    );
+    expect(screen.getByRole("alert")).toHaveTextContent("Bookmark not updated");
   });
 
   it("clears the alert on a channel switch", async () => {

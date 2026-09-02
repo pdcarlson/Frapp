@@ -25,6 +25,7 @@ import { isNavItemVisible } from "@/components/layout/protected-nav-item";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { asArray } from "@/lib/utils";
 import { chatDeepLink } from "@/lib/chat/chat-links";
+import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
 import { AnalyticsContext } from "@/lib/providers/analytics-provider";
 
 type DashboardCommandMenuProps = {
@@ -79,7 +80,11 @@ function buildSearchGroups(payload: unknown): SearchGroup[] {
       : {};
   const groups: SearchGroup[] = [];
 
-  type MemberRow = { user_id?: string; display_name?: string | null; email?: string | null };
+  type MemberRow = {
+    user_id?: string;
+    display_name?: string | null;
+    email?: string | null;
+  };
   const members = asArray<MemberRow>(bag.members);
   if (members.length) {
     groups.push({
@@ -93,7 +98,12 @@ function buildSearchGroups(payload: unknown): SearchGroup[] {
     });
   }
 
-  type EventRow = { id?: string; name?: string; location?: string | null; start_time?: string };
+  type EventRow = {
+    id?: string;
+    name?: string;
+    location?: string | null;
+    start_time?: string;
+  };
   const events = asArray<EventRow>(bag.events);
   if (events.length) {
     groups.push({
@@ -104,7 +114,7 @@ function buildSearchGroups(payload: unknown): SearchGroup[] {
         hint:
           row.start_time && !Number.isNaN(new Date(row.start_time).getTime())
             ? new Date(row.start_time).toLocaleString()
-            : row.location ?? undefined,
+            : (row.location ?? undefined),
         href: "/events",
       })),
     });
@@ -190,15 +200,6 @@ function describeTimeoutNotice(sources: SearchSource[]): string {
         : `${labels.slice(0, -1).join(", ")}, and ${labels[labels.length - 1]}`;
   const verb = labels.length > 1 ? "were" : "was";
   return `${list} search ${verb} incomplete — results may be missing.`;
-}
-
-function useDebouncedValue<T>(value: T, delay: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const id = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(id);
-  }, [value, delay]);
-  return debounced;
 }
 
 export function DashboardCommandMenu({
@@ -325,7 +326,10 @@ export function DashboardCommandMenu({
         A query that reaches neither case (no nav match, no search groups)
         still gets its timeout copy from CommandEmpty, unchanged below.
       */}
-      {hasMinQuery && !searchResults.isFetching && groups.length > 0 && timedOutSources.length > 0 ? (
+      {hasMinQuery &&
+      !searchResults.isFetching &&
+      groups.length > 0 &&
+      timedOutSources.length > 0 ? (
         <div className="border-b border-border px-3 py-2 text-[12.5px] text-muted-foreground">
           {describeTimeoutNotice(timedOutSources)}
         </div>

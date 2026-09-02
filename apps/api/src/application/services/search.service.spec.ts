@@ -34,6 +34,25 @@ describe('SearchService', () => {
     return chain;
   };
 
+  /**
+   * `makeChain` with the `.eq()` calls recorded, so a test can assert which
+   * filters actually reached the query builder rather than only inspecting the
+   * rows that came back. A pushed-down filter is invisible in the result when
+   * the mock returns fixed data, so without this the push-down could silently
+   * disappear.
+   */
+  const makeRecordingChain = (
+    sink: Array<[string, unknown]>,
+    resolveValue: { data: unknown[]; error: unknown },
+  ) => {
+    const chain = makeChain(resolveValue);
+    chain.eq = jest.fn().mockImplementation((col: string, val: unknown) => {
+      sink.push([col, val]);
+      return chain;
+    });
+    return chain;
+  };
+
   beforeEach(async () => {
     mockSupabase = {
       from: jest
@@ -248,6 +267,223 @@ describe('SearchService', () => {
       expect(searchedChannelIds).toEqual(['pub', 'priv-in', 'gated-yes']);
       expect(searchedChannelIds).not.toContain('priv-out');
       expect(searchedChannelIds).not.toContain('gated-no');
+    });
+
+    describe('single-channel scope (#469)', () => {
+      // `chat_channels.id` is a uuid column and the candidate filter is pushed
+      // down to it, so these ids have to be real uuids — a fixture using
+      // 'pub-2' would silently exercise the non-uuid fallback path instead of
+      // the push-down these cases exist to pin.
+      const PUB = '11111111-1111-4111-8111-111111111111';
+      const PUB2 = '22222222-2222-4222-8222-222222222222';
+      const PRIV_OUT = '33333333-3333-4333-8333-333333333333';
+      const UNKNOWN_ID = '44444444-4444-4444-8444-444444444444';
+      // `spec/behavior/chat/README.md`: "full-text search within a single
+      // channel or across all channels the user can access."
+      //
+      // These drive `searchWithinBudget`, NOT `search()`. `search()` has no
+      // caller outside this file — the HTTP route calls `searchWithinBudget` —
+      // so testing through it would have left the route's own `channelId`
+      // forwarding unexercised, and a refactor that dropped the argument there
+      // would have degraded every channel-scoped search to chapter-wide with a
+      // fully green suite.
+      let searchedChannelIds: string[] = [];
+      let tablesQueried: string[] = [];
+      // Every `.eq(col, val)` applied to the chat_channels candidate query, so
+      // the push-down can be asserted rather than assumed.
+      let channelSelectFilters: Array<[string, unknown]> = [];
+
+      const mockChannels = () => {
+        searchedChannelIds = [];
+        tablesQueried = [];
+        channelSelectFilters = [];
+        (mockSupabase.from as jest.Mock).mockImplementation((table: string) => {
+          tablesQueried.push(table);
+          if (table === 'chat_channels') {
+            return makeRecordingChain(channelSelectFilters, {
+              data: [
+                {
+                  id: PUB,
+                  type: 'PUBLIC',
+                  member_ids: null,
+                  required_permissions: null,
+                },
+                {
+                  id: PUB2,
+                  type: 'PUBLIC',
+                  member_ids: null,
+                  required_permissions: null,
+                },
+                {
+                  id: PRIV_OUT,
+                  type: 'PRIVATE',
+                  member_ids: ['user-2'],
+                  required_permissions: null,
+                },
+              ],
+              error: null,
+            });
+          }
+          if (table === 'members') {
+            return makeChain({ data: [{ id: 'member-1' }], error: null });
+          }
+          if (table === 'chat_messages') {
+            const chain: Record<string, unknown> = {};
+            Object.assign(chain, {
+              select: jest.fn().mockReturnValue(chain),
+              in: jest
+                .fn()
+                .mockImplementation((_col: string, ids: string[]) => {
+                  searchedChannelIds = ids;
+                  return chain;
+                }),
+              textSearch: jest.fn().mockReturnValue(chain),
+              eq: jest.fn().mockReturnValue(chain),
+              limit: jest.fn().mockReturnValue(chain),
+              order: jest.fn().mockReturnValue(chain),
+              then: (resolve: (v: unknown) => void) =>
+                Promise.resolve({
+                  data: [{ id: 'm-1', channel_id: PUB }],
+                  error: null,
+                }).then(resolve),
+              catch: () => Promise.reject().catch(() => {}),
+            });
+            return chain;
+          }
+          return makeChain({ data: [], error: null });
+        });
+        mockRbacService.getEffectivePermissions.mockResolvedValue([]);
+      };
+
+      it('narrows the message scan to the one requested channel', async () => {
+        mockChannels();
+
+        await service.searchWithinBudget('ch-1', 'user-1', 'hello', PUB2);
+
+        // The whole point: the narrowing reaches SQL. Filtering client-side
+        // would be wrong, because SEARCH_LIMIT is applied by the database
+        // across every accessible channel before any client sees a row.
+        expect(searchedChannelIds).toEqual([PUB2]);
+      });
+
+      it('returns nothing for a channel the caller cannot read, without a 403', async () => {
+        mockChannels();
+
+        const { results: result } = await service.searchWithinBudget(
+          'ch-1',
+          'user-1',
+          'hello',
+          PRIV_OUT,
+        );
+
+        // Never queried: the id intersects the accessible set to nothing, so
+        // the scan is skipped entirely rather than run against every channel.
+        expect(tablesQueried).not.toContain('chat_messages');
+        expect(result.messages).toEqual([]);
+      });
+
+      it('returns nothing for a channel id that does not exist', async () => {
+        mockChannels();
+
+        const { results: result } = await service.searchWithinBudget(
+          'ch-1',
+          'user-1',
+          'hello',
+          UNKNOWN_ID,
+        );
+
+        // Same empty answer as an inaccessible channel, deliberately: telling
+        // the two apart would make search a channel-existence oracle.
+        expect(tablesQueried).not.toContain('chat_messages');
+        expect(result.messages).toEqual([]);
+      });
+
+      it('runs only the message source, leaving the other three empty', async () => {
+        mockChannels();
+
+        const { results: result } = await service.searchWithinBudget(
+          'ch-1',
+          'user-1',
+          'hello',
+          PUB,
+        );
+
+        expect(result.messages).toHaveLength(1);
+        expect(result.backwork).toEqual([]);
+        expect(result.events).toEqual([]);
+        expect(result.members).toEqual([]);
+        // A channel-scoped query is definitionally a chat search; firing the
+        // other three would be work no such caller renders, once per
+        // debounced keystroke on an @ThrottleExpensiveRead() route.
+        expect(tablesQueried).not.toContain('backwork_resources');
+        expect(tablesQueried).not.toContain('events');
+      });
+
+      it('still fans out to all four sources when no channel is named', async () => {
+        mockChannels();
+
+        await service.searchWithinBudget('ch-1', 'user-1', 'hello');
+
+        expect(tablesQueried).toContain('backwork_resources');
+        expect(tablesQueried).toContain('events');
+        expect(searchedChannelIds).toEqual([PUB, PUB2]);
+      });
+
+      it('narrows the candidate channel query itself, not just the result', async () => {
+        mockChannels();
+
+        await service.searchWithinBudget('ch-1', 'user-1', 'hello', PUB2);
+
+        // Without the push-down, validating one known channel still selects
+        // every channel row in the chapter — on an archive-imported chapter
+        // that is a chapter-wide scan per debounced keystroke, inside a 500ms
+        // per-source budget.
+        expect(channelSelectFilters).toContainEqual(['id', PUB2]);
+        // And still chapter-scoped: the narrowing must not replace that.
+        expect(channelSelectFilters).toContainEqual(['chapter_id', 'ch-1']);
+      });
+
+      it('does not push a non-uuid channelId down to a uuid column', async () => {
+        mockChannels();
+
+        const { results } = await service.searchWithinBudget(
+          'ch-1',
+          'user-1',
+          'hello',
+          'general',
+        );
+
+        // `chat_channels.id` is a uuid column: PostgREST answers a malformed
+        // comparison with 22P02, which `throwIfError` turns into a 500. So
+        // `?channelId=general` must skip the push-down and fall through to the
+        // intersection — "no matches", which is what the contract promises —
+        // rather than erroring. The filter is an optimisation and must never
+        // decide whether the request succeeds.
+        expect(channelSelectFilters.map(([col]) => col)).not.toContain('id');
+        expect(results.messages).toEqual([]);
+      });
+
+      it('does not narrow the candidate query for a chapter-wide search', async () => {
+        mockChannels();
+
+        await service.searchWithinBudget('ch-1', 'user-1', 'hello');
+
+        expect(channelSelectFilters.map(([col]) => col)).not.toContain('id');
+      });
+
+      it('still refuses a sub-minimum query, channel or not', async () => {
+        mockChannels();
+
+        const { results: result } = await service.searchWithinBudget(
+          'ch-1',
+          'user-1',
+          'hi',
+          PUB,
+        );
+
+        expect(tablesQueried).toEqual([]);
+        expect(result.messages).toEqual([]);
+      });
     });
 
     it('should not query messages at all for a non-member', async () => {

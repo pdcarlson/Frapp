@@ -76,7 +76,15 @@ describe("useSearch", () => {
     const chapterAData = { members: [{ id: "from-a" }] };
     const chapterBData = { members: [{ id: "from-b" }] };
 
-    queryClient.setQueryData(["search", "chapter-a", "shared"], {
+    // Seeded under the key a chapter-BLIND implementation would build, not the
+    // one the correct implementation builds. That is the whole trick, and it is
+    // easy to get backwards: seeding the correct key proves nothing, because a
+    // key missing `chapterId` simply would not collide with it and the test
+    // passes either way. Seeding the broken shape means that if `chapterId` is
+    // ever dropped, the hook collides with this entry and serves chapter A's
+    // results to a member of chapter B — and this test fails, which is the
+    // regression it exists to catch.
+    queryClient.setQueryData(["search", "shared", null], {
       payload: chapterAData,
       timedOut: false,
       timedOutSources: [],
@@ -99,6 +107,87 @@ describe("useSearch", () => {
     expect(result.current.data?.payload).toEqual(chapterBData);
     expect(result.current.data?.payload).not.toEqual(chapterAData);
     expect(mockClient.GET).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends channelId as a request param for a single-channel search", async () => {
+    const mockClient = {
+      GET: vi.fn().mockResolvedValue({
+        data: { messages: [] },
+        error: undefined,
+        response: mockResponse(),
+      }),
+    };
+
+    const { result } = renderHook(() => useSearch("dues", "chan-1"), {
+      wrapper: createWrapper(queryClient, mockClient, "chapter-a"),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    // It has to reach the request. The per-source cap is applied by the
+    // database across every accessible channel, so a client-side narrowing of
+    // the response would return nothing whenever a channel's matches rank
+    // below that cut — and could not tell that apart from no matches at all.
+    expect(mockClient.GET).toHaveBeenCalledWith("/v1/search", {
+      params: { query: { q: "dues", channelId: "chan-1" } },
+    });
+  });
+
+  it("omits channelId entirely for a chapter-wide search", async () => {
+    const mockClient = {
+      GET: vi.fn().mockResolvedValue({
+        data: { messages: [] },
+        error: undefined,
+        response: mockResponse(),
+      }),
+    };
+
+    const { result } = renderHook(() => useSearch("dues"), {
+      wrapper: createWrapper(queryClient, mockClient, "chapter-a"),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    // Not `channelId: undefined` — the param must be absent, so the server
+    // takes the chapter-wide branch rather than narrowing to nothing.
+    expect(mockClient.GET).toHaveBeenCalledWith("/v1/search", {
+      params: { query: { q: "dues" } },
+    });
+  });
+
+  it("does not reuse one scope's cached results for the other", async () => {
+    const channelData = { messages: [{ id: "from-channel" }] };
+    const chapterData = { messages: [{ id: "from-chapter" }] };
+
+    // Seeded under the key a scope-BLIND implementation would build (no
+    // `channelId` element), for the same reason as the chapter case above: a
+    // seed carrying the element under test can never collide with a key that
+    // has dropped it. With this seed, dropping `channelId` makes the
+    // chapter-wide render collide with the single-channel entry — which is
+    // exactly the bug that would make the scope tabs look like the
+    // client-side filter this feature must never be.
+    queryClient.setQueryData(["search", "chapter-a", "dues"], {
+      payload: channelData,
+      timedOut: false,
+      timedOutSources: [],
+    });
+
+    const mockClient = {
+      GET: vi.fn().mockResolvedValue({
+        data: chapterData,
+        error: undefined,
+        response: mockResponse(),
+      }),
+    };
+
+    const { result } = renderHook(() => useSearch("dues"), {
+      wrapper: createWrapper(queryClient, mockClient, "chapter-a"),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data?.payload).toEqual(chapterData);
+    expect(result.current.data?.payload).not.toEqual(channelData);
   });
 
   it("is disabled when the active chapter is not set", () => {
