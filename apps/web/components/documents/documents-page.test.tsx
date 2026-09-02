@@ -17,7 +17,12 @@ const {
   mockDocumentRefetch,
   mockRequestUpload,
   mockConfirmUpload,
+  mockCreateFolder,
+  mockUpdateFolder,
+  mockDeleteFolder,
   documentsQuery,
+  documentsArgs,
+  foldersQuery,
   mockOffline,
 } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
@@ -26,6 +31,9 @@ const {
   mockDocumentRefetch: vi.fn(),
   mockRequestUpload: vi.fn(),
   mockConfirmUpload: vi.fn(),
+  mockCreateFolder: vi.fn().mockResolvedValue({}),
+  mockUpdateFolder: vi.fn().mockResolvedValue({}),
+  mockDeleteFolder: vi.fn().mockResolvedValue({}),
   mockOffline: { value: false },
   documentsQuery: {
     data: [] as unknown[],
@@ -33,6 +41,10 @@ const {
     isError: false,
     refetch: () => undefined as unknown,
   },
+  // What the page last asked `useDocuments` for — the search wiring is only
+  // observable through this, since the mock never reaches the network.
+  documentsArgs: { value: undefined as { search?: string } | undefined },
+  foldersQuery: { data: [] as unknown[] },
 }));
 
 // Only the chapter payload is stubbed — `useSubscriptionWriteState` and
@@ -52,11 +64,18 @@ const BYLAWS = {
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useCurrentChapter: () => mockCurrentChapter(),
-  useDocuments: () => documentsQuery,
+  useDocuments: (options?: { search?: string }) => {
+    documentsArgs.value = options;
+    return documentsQuery;
+  },
+  useDocumentFolders: () => foldersQuery,
   useDocument: () => ({ refetch: mockDocumentRefetch }),
   useRequestDocumentUploadUrl: () => ({ mutateAsync: mockRequestUpload }),
   useConfirmDocumentUpload: () => ({ mutateAsync: mockConfirmUpload }),
   useDeleteDocument: () => ({ mutateAsync: mockDeleteDoc }),
+  useCreateDocumentFolder: () => ({ mutateAsync: mockCreateFolder }),
+  useUpdateDocumentFolder: () => ({ mutateAsync: mockUpdateFolder }),
+  useDeleteDocumentFolder: () => ({ mutateAsync: mockDeleteFolder }),
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
@@ -81,6 +100,13 @@ function resolvedDocumentsQuery() {
   documentsQuery.isPending = false;
   documentsQuery.isError = false;
   documentsQuery.refetch = mockRefetch;
+  documentsArgs.value = undefined;
+  // The rail reads the folder *endpoint* now, not the documents — so a folder
+  // only exists here if the server says so, which is the point of #791.
+  foldersQuery.data = [
+    { id: "f-1", name: "Governance", sort_order: 0 },
+    { id: "f-2", name: "Rush", sort_order: 1 },
+  ];
 }
 
 const uploadTrigger = () =>

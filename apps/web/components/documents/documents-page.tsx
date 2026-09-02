@@ -1,14 +1,28 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Download, Loader2, Trash2, Upload } from "lucide-react";
+import { useDeferredValue, useMemo, useState } from "react";
+import {
+  ChevronDown,
+  ChevronUp,
+  Download,
+  FolderPlus,
+  Loader2,
+  Pencil,
+  Search,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import {
   useConfirmDocumentUpload,
+  useCreateDocumentFolder,
   useDeleteDocument,
+  useDeleteDocumentFolder,
   selectDownloadUrl,
   useDocument,
+  useDocumentFolders,
   useDocuments,
   useRequestDocumentUploadUrl,
+  useUpdateDocumentFolder,
 } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import {
@@ -70,6 +84,12 @@ type ChapterDocument = {
   byte_size: number | null;
   document_type: string | null;
   effective_date: string | null;
+};
+
+type ChapterDocumentFolder = {
+  id: string;
+  name: string;
+  sort_order: number | null;
 };
 
 // The signed-URL flow blocks SVG + executables. Kind `document` in
@@ -162,26 +182,63 @@ export function DocumentsPage() {
   const gate = useSubscriptionGate();
   const { isOffline } = useNetwork();
   const { confirm, confirmDialog } = useConfirmDialog();
-  const documentsQuery = useDocuments();
+  const [search, setSearch] = useState("");
+  /*
+    Deferred rather than fed raw, for the reason mobile's s12 screen documents:
+    `search` is part of `useDocuments`' query key, so a keystroke-per-request
+    would mint a cache entry per character and blank the list to a skeleton on
+    each one. The trim happens before the defer so " " and "" are the same key.
+
+    `%` and `_` need no escaping here — `spec/behavior/chapter-docs.md` § Search
+    pins that the server matches them literally.
+  */
+  const deferredSearch = useDeferredValue(search.trim());
+  const documentsQuery = useDocuments({
+    search: deferredSearch || undefined,
+  });
+  const foldersQuery = useDocumentFolders();
   const requestUpload = useRequestDocumentUploadUrl();
   const confirmUpload = useConfirmDocumentUpload();
   const deleteDoc = useDeleteDocument();
+  const createFolder = useCreateDocumentFolder();
+  const updateFolder = useUpdateDocumentFolder();
+  const deleteFolder = useDeleteDocumentFolder();
 
   const documents = useMemo(
     () => asArray<ChapterDocument>(documentsQuery.data),
     [documentsQuery.data],
   );
 
+  /*
+    From `GET /v1/documents/folders`, not derived over `documents` (#791).
+    Deriving could only ever see folders some document is currently filed
+    under, so a freshly created folder — and one whose last document was
+    deleted — was invisible, and the officer-set `sort_order` was ignored
+    entirely in favour of an alphabetical sort.
+
+    Sorted client-side as well even though the endpoint already returns display
+    order: this list is re-rendered optimistically against a reorder that is
+    still in flight, and `sort_order` is the field being changed.
+  */
   const folders = useMemo(() => {
-    const set = new Set<string>();
-    for (const doc of documents) {
-      if (doc.folder) set.add(doc.folder);
-    }
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [documents]);
+    return asArray<ChapterDocumentFolder>(foldersQuery.data)
+      .filter((folder) => !!folder?.id && !!folder?.name)
+      .sort(
+        (a, b) =>
+          (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
+          a.name.localeCompare(b.name),
+      );
+  }, [foldersQuery.data]);
 
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
 
+  /*
+    Folder filtering stays client-side while search goes to the server. The
+    two compose: the server narrows to title matches across the whole chapter,
+    and the tab then narrows that to one folder. Keeping the tab local means
+    switching folders is instant rather than a refetch per tab, which is the
+    behaviour this page already had and its tests already pin.
+  */
   const visible = useMemo(() => {
     const filtered =
       activeFolder === null
@@ -225,6 +282,151 @@ export function DocumentsPage() {
   const [deletingIds, setDeletingIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+
+  /*
+    One dialog serves create and rename — they differ only in whether an `id`
+    is carried and in the copy. Gated like the upload dialog: every folder
+    write route carries `chapter_docs:manage` and no `@FreeTier`, so they sit
+    behind the same subscription gate the rest of this page's writes do.
+  */
+  const folderDialog = useGatedDialog(gate);
+  const [folderDraft, setFolderDraft] = useState<{
+    id: string | null;
+    name: string;
+  }>({ id: null, name: "" });
+  const [folderBusy, setFolderBusy] = useState(false);
+
+  function openFolderDialog(folder: ChapterDocumentFolder | null) {
+    setFolderDraft({ id: folder?.id ?? null, name: folder?.name ?? "" });
+    folderDialog.setOpen(true);
+  }
+
+  async function handleSaveFolder(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = folderDraft.name.trim();
+    if (!name) {
+      toast({
+        title: "Name the folder first",
+        description: "A folder name cannot be empty.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const renaming = folderDraft.id !== null;
+    const previousName = renaming
+      ? (folders.find((folder) => folder.id === folderDraft.id)?.name ?? null)
+      : null;
+    setFolderBusy(true);
+    try {
+      if (renaming) {
+        await updateFolder.mutateAsync({ id: folderDraft.id!, name });
+      } else {
+        await createFolder.mutateAsync({ name });
+      }
+      toast({
+        title: renaming ? "Folder renamed" : "Folder created",
+        description: renaming
+          ? `Documents in this folder now read "${name}".`
+          : `"${name}" is ready to file documents into.`,
+      });
+      // A rename re-files documents server-side, so a tab still pointing at the
+      // old name would filter to nothing. Follow the folder rather than reset.
+      if (renaming && activeFolder === previousName) setActiveFolder(name);
+      folderDialog.setOpen(false);
+      setFolderDraft({ id: null, name: "" });
+    } catch (error) {
+      // The API answers a duplicate name with 409 and a readable body
+      // (`A folder named "X" already exists`), which `getErrorMessage` surfaces
+      // verbatim — the fallback is for the network-failure case only.
+      toast({
+        title: renaming ? "Couldn't rename folder" : "Couldn't create folder",
+        description: getErrorMessage(
+          error,
+          "Requires chapter_docs:manage. Retry or confirm your permissions.",
+        ),
+        variant: "destructive",
+      });
+    } finally {
+      setFolderBusy(false);
+    }
+  }
+
+  async function handleDeleteFolder(folder: ChapterDocumentFolder) {
+    const confirmed = await confirm({
+      title: `Delete ${folder.name}?`,
+      description:
+        "The folder is removed. Documents filed in it are kept and move to the root level.",
+      confirmLabel: "Delete folder",
+      tone: "destructive",
+    });
+    if (!confirmed) return;
+    setFolderBusy(true);
+    try {
+      await deleteFolder.mutateAsync(folder.id);
+      toast({
+        title: "Folder deleted",
+        description: `Documents from ${folder.name} are now under "No folder".`,
+      });
+      // The server moved the documents; a tab pointing at the deleted name
+      // would filter to nothing, so fall back to the unfiltered view.
+      if (activeFolder === folder.name) setActiveFolder(null);
+    } catch (error) {
+      toast({
+        title: "Couldn't delete folder",
+        description: getErrorMessage(
+          error,
+          "Requires chapter_docs:manage. Retry or confirm your permissions.",
+        ),
+        variant: "destructive",
+      });
+    } finally {
+      setFolderBusy(false);
+    }
+  }
+
+  /*
+    Reorder by rewriting `sort_order` to the target array index rather than
+    swapping the two neighbours' existing values.
+
+    Swapping looks cheaper but is not safe here: nothing constrains `sort_order`
+    to be distinct, and folders registered implicitly by an upload all land on
+    whatever `nextSortOrder` returned at the time. Two folders sharing a value
+    make a swap a no-op, so the row would never move. Writing indices converges
+    the list to 0..n-1 on first use and is idempotent afterwards — and the
+    `sort_order === index` guard keeps the common case at exactly two PATCHes.
+  */
+  async function handleMoveFolder(index: number, direction: -1 | 1) {
+    const target = index + direction;
+    if (target < 0 || target >= folders.length) return;
+    const moved = folders[index];
+    if (!moved) return;
+    const reordered = [...folders];
+    reordered.splice(index, 1);
+    reordered.splice(target, 0, moved);
+
+    const changed = reordered
+      .map((folder, position) => ({ folder, position }))
+      .filter(({ folder, position }) => folder.sort_order !== position);
+    if (changed.length === 0) return;
+
+    setFolderBusy(true);
+    try {
+      for (const { folder, position } of changed) {
+        await updateFolder.mutateAsync({ id: folder.id, sort_order: position });
+      }
+    } catch (error) {
+      toast({
+        title: "Couldn't reorder folders",
+        description: getErrorMessage(
+          error,
+          "Requires chapter_docs:manage. Retry or confirm your permissions.",
+        ),
+        variant: "destructive",
+      });
+    } finally {
+      setFolderBusy(false);
+    }
+  }
 
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -576,17 +778,32 @@ export function DocumentsPage() {
       <div className="grid gap-4 md:grid-cols-[240px_1fr]">
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm">Folders</CardTitle>
-            <CardDescription>
-              Flat, one-level deep. Admins can create a folder by typing its
-              name during upload.
-            </CardDescription>
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <CardTitle className="text-sm">Folders</CardTitle>
+                <CardDescription>
+                  Flat, one-level deep. Naming a new folder during upload still
+                  registers it.
+                </CardDescription>
+              </div>
+              <Can permission="chapter_docs:manage">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="New folder"
+                  onClick={() => openFolderDialog(null)}
+                  {...gate.controlProps(folderBusy)}
+                >
+                  <FolderPlus className="h-4 w-4" />
+                </Button>
+              </Can>
+            </div>
           </CardHeader>
           {/*
-            Ungated on purpose: these are client-side filters over the already
-            loaded list, not folder writes — the API's folder create/rename/
-            delete routes have no control on this page, and the one way to make
-            a folder here is the gated upload dialog's Folder field.
+            The two filter rows stay ungated — they are client-side filters over
+            the loaded list, not writes. The per-folder management controls
+            beside each named row are gated, because those *are* the folder
+            write routes (`chapter_docs:manage`, no `@FreeTier`).
           */}
           <CardContent className="space-y-1 p-2">
             <button
@@ -608,19 +825,74 @@ export function DocumentsPage() {
               />{" "}
               No folder
             </button>
-            {folders.map((folder) => (
-              <button
-                key={folder}
-                type="button"
-                onClick={() => setActiveFolder(folder)}
-                className={folderRowClassName(activeFolder === folder)}
-              >
-                <FolderGlyph
-                  className="h-4 w-4"
-                  active={activeFolder === folder}
-                />{" "}
-                {folder}
-              </button>
+            {folders.map((folder, index) => (
+              <div key={folder.id} className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setActiveFolder(folder.name)}
+                  className={`${folderRowClassName(
+                    activeFolder === folder.name,
+                  )} min-w-0 flex-1`}
+                >
+                  <FolderGlyph
+                    className="h-4 w-4 shrink-0"
+                    active={activeFolder === folder.name}
+                  />
+                  <span className="truncate">{folder.name}</span>
+                </button>
+                <Can permission="chapter_docs:manage">
+                  {/*
+                    Reorder, rename and delete sit beside the row rather than
+                    behind a menu: three controls do not earn a popover, and a
+                    menu would put the whole group behind one gated trigger,
+                    losing the per-control disabled explanation §5 rule 4 wants.
+                  */}
+                  <div className="flex shrink-0 items-center">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      aria-label={`Move ${folder.name} up`}
+                      onClick={() => void handleMoveFolder(index, -1)}
+                      {...gate.controlProps(folderBusy || index === 0)}
+                    >
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      aria-label={`Move ${folder.name} down`}
+                      onClick={() => void handleMoveFolder(index, 1)}
+                      {...gate.controlProps(
+                        folderBusy || index === folders.length - 1,
+                      )}
+                    >
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      aria-label={`Rename ${folder.name}`}
+                      onClick={() => openFolderDialog(folder)}
+                      {...gate.controlProps(folderBusy)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      aria-label={`Delete folder ${folder.name}`}
+                      onClick={() => void handleDeleteFolder(folder)}
+                      {...gate.controlProps(folderBusy)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </Can>
+              </div>
             ))}
           </CardContent>
         </Card>
@@ -643,9 +915,33 @@ export function DocumentsPage() {
             */}
             {listState === "ready" ? (
               <CardDescription>
-                {visible.length} document{visible.length === 1 ? "" : "s"}.
+                {visible.length} document{visible.length === 1 ? "" : "s"}
+                {deferredSearch ? ` matching "${deferredSearch}"` : ""}.
               </CardDescription>
             ) : null}
+            {/*
+              `type="search"`, not `type="text"`: it gets the browser's own
+              clear affordance and the correct role, so no hand-rolled X button
+              is owed. The visible <Label> is `sr-only` rather than absent — a
+              placeholder is not an accessible name.
+            */}
+            <div className="relative pt-2">
+              <Label htmlFor="doc-search" className="sr-only">
+                Search documents
+              </Label>
+              <Search
+                aria-hidden="true"
+                className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 translate-y-[calc(-50%+0.25rem)] text-muted-foreground"
+              />
+              <Input
+                id="doc-search"
+                type="search"
+                className="pl-8"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search by title"
+              />
+            </div>
           </CardHeader>
           <CardContent>
             {/*
@@ -673,11 +969,28 @@ export function DocumentsPage() {
                 onRetry={() => void documentsQuery.refetch()}
               />
             ) : listState === "empty" ? (
-              <NestedEmpty
-                sole
-                title="No documents here yet"
-                description="Upload chapter files like bylaws, agendas, and meeting minutes so everyone can find them."
-              />
+              /*
+                A search that matched nothing is not an empty library, and
+                offering "upload some files" to a member who mistyped a title
+                answers a question they did not ask.
+              */
+              deferredSearch ? (
+                <NestedEmpty
+                  sole
+                  title="No documents match that search"
+                  description={
+                    activeFolder === null
+                      ? `Nothing in the chapter library has "${deferredSearch}" in its title.`
+                      : `No match in this folder. Try "All files" to search the whole library.`
+                  }
+                />
+              ) : (
+                <NestedEmpty
+                  sole
+                  title="No documents here yet"
+                  description="Upload chapter files like bylaws, agendas, and meeting minutes so everyone can find them."
+                />
+              )
             ) : (
               /*
                 `divide-border/70` dilutes `--border` to 1.169:1 on a card
@@ -751,6 +1064,63 @@ export function DocumentsPage() {
         `await confirm(...)` hanging forever. That is the two-change
         interaction the Chapter Ops slice shipped and its guard caught.
       */}
+      {/*
+        Controlled with no `DialogTrigger` — it is opened from any of the
+        per-folder rename buttons or the header's New folder button, so there is
+        no single trigger element to wrap.
+      */}
+      <Dialog {...folderDialog.dialogProps}>
+        <DialogContent className="sm:max-w-md" {...folderDialog.contentProps}>
+          <DialogHeader>
+            <DialogTitle>
+              {folderDraft.id ? "Rename folder" : "New folder"}
+            </DialogTitle>
+            <DialogDescription>
+              {folderDraft.id
+                ? "Documents record their folder by name, so renaming re-files every document in it."
+                : "Folders are flat and one level deep. Create it now, then file documents into it on upload."}
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            id="doc-folder-form"
+            onSubmit={handleSaveFolder}
+            className="space-y-4"
+          >
+            <div className="grid gap-1">
+              <Label htmlFor="doc-folder-name">Folder name</Label>
+              <Input
+                id="doc-folder-name"
+                value={folderDraft.name}
+                onChange={(event) =>
+                  setFolderDraft((prev) => ({
+                    ...prev,
+                    name: event.target.value,
+                  }))
+                }
+                placeholder="Governance"
+              />
+            </div>
+          </form>
+          <DialogFooter>
+            <Button
+              variant="secondary"
+              onClick={() => folderDialog.setOpen(false)}
+              disabled={folderBusy}
+            >
+              Cancel
+            </Button>
+            <Button
+              form="doc-folder-form"
+              type="submit"
+              {...gate.controlProps(folderBusy || !folderDraft.name.trim())}
+            >
+              {folderBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {folderDraft.id ? "Rename folder" : "Create folder"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {confirmDialog}
     </div>
   );
