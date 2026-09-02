@@ -1099,8 +1099,8 @@ After any rollback event:
 * **Action**: Run `ALTER TABLE chapters DROP COLUMN IF EXISTS analytics_opt_out;`
 * **Note**: Additive boolean with a default; dropping it loses only each chapter's opt-out preference. The server reads it defensively and treats a missing/false value as "analytics enabled".
 
-## Rollback default invite role (20260902073000)
-* **Migration**: `20260902073000_chapter_default_invite_role.sql`
+## Rollback default invite role (20260902170002)
+* **Migration**: `20260902170002_chapter_default_invite_role.sql`
 * **Action**: Run
   ```sql
   DROP INDEX IF EXISTS idx_chapters_default_invite_role_id;
