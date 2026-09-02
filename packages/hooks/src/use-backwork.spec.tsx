@@ -13,6 +13,8 @@ import {
   useConfirmBackworkUpload,
   useDeleteBackworkResource,
   useUpdateDepartment,
+  useUpdateProfessor,
+  useMergeDepartments,
 } from "./use-backwork";
 import { FrappClientProvider } from "./use-frapp-client";
 
@@ -381,6 +383,97 @@ const CHAPTER_ID = "chapter-abc";
 
       const req = { id: "dep1", body: { name: "Computer Science" } };
       await expect(result.current.mutateAsync(req)).rejects.toThrowError(mockError);
+    });
+
+    // Regression: a naive `invalidateQueries`-only `onSuccess` schedules a
+    // refetch without awaiting it, so a caller reading the cache right after
+    // `mutateAsync` resolves would still see the pre-rename row and briefly
+    // render a "reverted" name until the refetch lands. Patching the cache
+    // with the server's own response closes that window.
+    it("patches the cached departments list with the renamed row synchronously, before any refetch", async () => {
+      queryClient.setQueryData(BACKWORK_DEPARTMENTS_KEY, [
+        { id: "dep1", code: "CS", name: "Computer Science" },
+        { id: "dep2", code: "MATH", name: "Mathematics" },
+      ]);
+      const mockPatch = vi
+        .fn()
+        .mockResolvedValue({ data: { id: "dep1", name: "Comp Sci" }, error: null });
+      const mockClient = { PATCH: mockPatch };
+
+      const { result } = renderHook(() => useUpdateDepartment(), {
+        wrapper: createWrapper(mockClient),
+      });
+
+      await result.current.mutateAsync({ id: "dep1", body: { name: "Comp Sci" } });
+
+      // No `waitFor` / refetch involved — this must already be true the
+      // instant `mutateAsync` resolves.
+      expect(queryClient.getQueryData(BACKWORK_DEPARTMENTS_KEY)).toEqual([
+        { id: "dep1", code: "CS", name: "Comp Sci" },
+        { id: "dep2", code: "MATH", name: "Mathematics" },
+      ]);
+    });
+  });
+
+  describe("useUpdateProfessor", () => {
+    it("updates a professor and patches the cached list synchronously", async () => {
+      const BACKWORK_PROFESSORS_KEY = ["backwork", "professors"];
+      queryClient.setQueryData(BACKWORK_PROFESSORS_KEY, [
+        { id: "prof1", name: "Dr. Smith" },
+      ]);
+      const mockPatch = vi
+        .fn()
+        .mockResolvedValue({ data: { id: "prof1", name: "Dr. Smith Jr." }, error: null });
+      const mockClient = { PATCH: mockPatch };
+
+      const { result } = renderHook(() => useUpdateProfessor(), {
+        wrapper: createWrapper(mockClient),
+      });
+
+      await result.current.mutateAsync({
+        id: "prof1",
+        body: { name: "Dr. Smith Jr." },
+      });
+
+      expect(mockPatch).toHaveBeenCalledWith("/v1/backwork/professors/{id}", {
+        params: { path: { id: "prof1" } },
+        body: { name: "Dr. Smith Jr." },
+      });
+      expect(queryClient.getQueryData(BACKWORK_PROFESSORS_KEY)).toEqual([
+        { id: "prof1", name: "Dr. Smith Jr." },
+      ]);
+    });
+  });
+
+  describe("useMergeDepartments", () => {
+    it("posts to the merge endpoint with the target id and invalidates the whole backwork prefix", async () => {
+      const mockPost = vi
+        .fn()
+        .mockResolvedValue({ data: { reassigned: 3 }, error: null });
+      const mockClient = { POST: mockPost };
+      const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+      const { result } = renderHook(() => useMergeDepartments(), {
+        wrapper: createWrapper(mockClient),
+      });
+
+      await expect(
+        result.current.mutateAsync({ id: "dep1", targetId: "dep2" }),
+      ).resolves.toEqual({ reassigned: 3 });
+
+      expect(mockPost).toHaveBeenCalledWith(
+        "/v1/backwork/departments/{id}/merge",
+        {
+          params: { path: { id: "dep1" } },
+          body: { target_id: "dep2" },
+        },
+      );
+      // Reassignment moves resources between the source and target, so both
+      // the resources list and the departments list need invalidating — the
+      // broad prefix, not a narrower key, is deliberate here.
+      expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+        queryKey: BACKWORK_KEY,
+      });
     });
   });
 });
