@@ -3,7 +3,8 @@
 ## Chapter Cancellation
 
 - When a chapter's subscription is canceled, all data is preserved **indefinitely** in read-only mode.
-- Members can still log in and view all existing data (chat history, Backwork, points, events, etc.) but cannot create new content, invite members, or perform any write operations.
+- Members can still log in and view all existing data (chat history, Backwork, points, events, etc.) but cannot create new content, mint invites, or perform write operations on any `ChapterGuard`-protected route.
+  - **Known divergence (#1546):** a handful of routes carry no `ChapterGuard` and so are not covered by this lock — most notably `POST /v1/invites/redeem`, which can still add a member to a canceled chapter using a token minted before the lapse (tokens live 24h, so the window is bounded). Whether to close that gap is the open question in #1546; this bullet states the intent, not a guarantee the code currently enforces everywhere.
 - If the chapter re-activates (resumes payment), full access is restored immediately with no data loss.
 - "Indefinitely" is qualified by the reservation in [§ Inactive Chapter Cleanup](#inactive-chapter-cleanup), which is **not implemented**. Read that section before answering any question about how long a canceled chapter's data is kept; it is not the only path by which chapter data is removed (see [§ Individual Account Deletion](#individual-account-deletion) and [`vault.md` § Subscription cancellation and key lifecycle](vault.md#subscription-cancellation-and-key-lifecycle)).
 
