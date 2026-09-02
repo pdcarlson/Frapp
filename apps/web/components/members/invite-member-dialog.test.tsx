@@ -252,6 +252,12 @@ describe("InviteMemberDialog default role", () => {
    * needs only `members:invite` — so a delegated recruitment officer can get a
    * 403 here. Degrading to Member (not to whatever sorts first) keeps that
    * failure boring.
+   *
+   * The component reaches this through `data` being absent rather than by
+   * reading `isError`, so mechanically this is the same path as the
+   * unresolved-config case above. It is kept as a separate case because the
+   * *guarantee* is what matters — a config read the inviter is not allowed to
+   * make must not silently change which role gets issued.
    */
   it("degrades to Member when the config query fails", async () => {
     mockRoles.mockReturnValue({ data: ROLES, isError: false });

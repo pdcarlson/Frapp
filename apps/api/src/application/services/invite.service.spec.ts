@@ -1105,6 +1105,14 @@ describe('InviteService', () => {
       const invite = await service.create('ch-1', 'user-1');
 
       expect(invite.role).toBe('New Member');
+      // Both reads must be scoped to the invite's chapter. Without these the
+      // mock ignores its arguments, so passing the wrong id — an invite id,
+      // `createdBy`, a cached chapter — would resolve *another* chapter's
+      // default onto new invites with the suite still green. Verified by
+      // mutation: swapping `chapterId` for a literal here leaves 39/39
+      // passing without them.
+      expect(mockChapterRepo.findById).toHaveBeenCalledWith('ch-1');
+      expect(mockRoleRepo.findByChapter).toHaveBeenCalledWith('ch-1');
     });
 
     it('lets an explicit role win over the chapter default', async () => {
