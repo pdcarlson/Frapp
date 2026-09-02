@@ -109,7 +109,7 @@ export class CreateEventDto {
 
   @ApiPropertyOptional({
     description:
-      'When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates.',
+      'When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. Rejected with a 400 when `required_role_ids` is non-empty — the card is broadcast to every reader of the channel, so a role-targeted event cannot have one.',
   })
   @IsOptional()
   @IsUUID()
