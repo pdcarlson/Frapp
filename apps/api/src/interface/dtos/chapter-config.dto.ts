@@ -6,8 +6,10 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  IsUUID,
   Matches,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
@@ -235,4 +237,26 @@ export class PatchChapterConfigDto {
   @IsOptional()
   @IsBoolean()
   analytics_opt_out?: boolean;
+
+  /**
+   * #422. `null` is an accepted value — it clears the default rather than
+   * meaning "unset", so this uses `@ValidateIf` instead of `@IsOptional()`,
+   * which would strip null out of validation *and* out of the branch in
+   * `patchConfig` that distinguishes "clear it" from "leave it alone".
+   *
+   * Format-validated as a UUID here; that the role exists and belongs to this
+   * chapter is checked in the service, which is the only layer that knows the
+   * caller's chapter.
+   */
+  @ApiPropertyOptional({
+    type: 'string',
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Role id new invites default to when the caller does not name one. Null clears the default, and invites fall back to the seeded Member role. Must belong to this chapter (400 otherwise).',
+  })
+  @ValidateIf((_object, value) => value !== null)
+  @IsOptional()
+  @IsUUID()
+  default_invite_role_id?: string | null;
 }

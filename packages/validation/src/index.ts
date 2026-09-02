@@ -440,6 +440,11 @@ export const PatchChapterConfigSchema = z.object({
   workflows: z.array(ChapterWorkflowConfigSchema).optional(),
   // Per-chapter analytics opt-out (data-retention.md #analytics-events-pseudonymous).
   analytics_opt_out: z.boolean().optional(),
+  // #422: role new invites default to. `.nullable()` before `.optional()` is
+  // load-bearing — null is a real value here (clear the default) and must
+  // survive the parse, while absent means "don't touch it". The API rejects a
+  // uuid that is not one of this chapter's roles with a 400.
+  default_invite_role_id: z.string().uuid().nullable().optional(),
 });
 
 // ── Module enablement predicate (issue #264) ─────────────────────────────────

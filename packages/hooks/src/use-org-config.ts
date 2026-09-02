@@ -43,6 +43,13 @@ export interface OrgConfig {
   dues?: OrgDues;
   /** When true, this chapter has opted out of pseudonymous product analytics. */
   analytics_opt_out?: boolean;
+  /**
+   * Role new invites default to (#422). `null` means no default is configured
+   * and the API falls back to the seeded Member role. Typed explicitly rather
+   * than left to the index signature below, which would surface it as
+   * `unknown` at every call site.
+   */
+  default_invite_role_id?: string | null;
   [key: string]: unknown;
 }
 

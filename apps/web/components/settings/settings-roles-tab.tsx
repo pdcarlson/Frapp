@@ -37,6 +37,7 @@ import {
   useCreateCustomRole,
   useUpdateCustomRole,
   useDeleteCustomRole,
+  useRoles,
 } from "@repo/hooks";
 
 type PermissionCatalogEntry = { key: string; permission: string };
@@ -48,6 +49,12 @@ type Props = {
   canManage: boolean;
   /** The system permission catalog (capability rows + custom-role multi-select). */
   catalog: PermissionCatalogEntry[];
+  /** Persisted `chapters.default_invite_role_id` (#422); null = no default set. */
+  defaultInviteRoleId: string | null;
+  /** Persist the default invite role through the config PATCH mutation. */
+  onSaveDefaultInviteRole: (roleId: string | null) => Promise<void> | void;
+  /** Whether a config PATCH is in flight. */
+  isSavingConfig?: boolean;
 };
 
 // The sub-tabs used to carry `data-[state=active]:bg-background` — a
@@ -68,14 +75,28 @@ type Props = {
  * - **Live roles**: the existing RBAC manager (system-role permissions,
  *   create/delete, presidency transfer), folded in from the former `/roles` page.
  */
-export function SettingsRolesTab({ archetypeKey, canManage, catalog }: Props) {
+export function SettingsRolesTab({
+  archetypeKey,
+  canManage,
+  catalog,
+  defaultInviteRoleId,
+  onSaveDefaultInviteRole,
+  isSavingConfig,
+}: Props) {
   const pack = useMemo(
     () => getRolePack(getArchetype(archetypeKey).rolePack),
     [archetypeKey],
   );
 
   return (
-    <Tabs defaultValue="pack" className="space-y-4">
+    <div className="space-y-4">
+      <DefaultInviteRoleCard
+        canManage={canManage}
+        defaultInviteRoleId={defaultInviteRoleId}
+        onSave={onSaveDefaultInviteRole}
+        isSaving={isSavingConfig}
+      />
+      <Tabs defaultValue="pack" className="space-y-4">
       <TabsList className="flex w-full flex-wrap justify-start gap-4">
         <TabsTrigger value="pack">
           Pack
@@ -103,10 +124,112 @@ export function SettingsRolesTab({ archetypeKey, canManage, catalog }: Props) {
         <CustomView canManage={canManage} catalog={catalog} />
       </TabsContent>
 
-      <TabsContent value="live" className="mt-0">
-        <RolesAndPermissionsPage />
-      </TabsContent>
-    </Tabs>
+        <TabsContent value="live" className="mt-0">
+          <RolesAndPermissionsPage />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+/**
+ * Settings → Roles → Default invite role (#422).
+ *
+ * Sits above the sub-tabs rather than inside one: it is a chapter-level
+ * setting about roles, not a view of the role pack, the matrix, or the custom
+ * catalog.
+ *
+ * The select carries an explicit "No default" option because clearing is a
+ * real operation — it writes `null` and returns invites to the seeded Member
+ * fallback — and an empty `<option value="">` is the only way to express that
+ * in a native select without a second control.
+ *
+ * Saves on change rather than behind a Save button, matching the Privacy
+ * tab's switch: it is one scalar, the write is audit-logged, and there is no
+ * draft state worth protecting.
+ */
+function DefaultInviteRoleCard({
+  canManage,
+  defaultInviteRoleId,
+  onSave,
+  isSaving,
+}: {
+  canManage: boolean;
+  defaultInviteRoleId: string | null;
+  onSave: (roleId: string | null) => Promise<void> | void;
+  isSaving?: boolean;
+}) {
+  const rolesQuery = useRoles();
+
+  const roleOptions = useMemo(() => {
+    const rows = rolesQuery.data as unknown;
+    if (!Array.isArray(rows)) return [] as Array<{ id: string; name: string }>;
+    return rows
+      .flatMap((row: unknown) => {
+        if (!row || typeof row !== "object") return [];
+        const candidate = row as Record<string, unknown>;
+        if (
+          typeof candidate.id !== "string" ||
+          typeof candidate.name !== "string"
+        ) {
+          return [];
+        }
+        return [{ id: candidate.id, name: candidate.name }];
+      })
+      .sort((first, second) => first.name.localeCompare(second.name));
+  }, [rolesQuery.data]);
+
+  // A configured role that is no longer in the catalog would render as "No
+  // default" and silently rewrite the setting on the next save. The API's
+  // `on delete set null` makes this rare, but a role renamed away between the
+  // two queries is enough — say so rather than paper over it.
+  const isDangling =
+    defaultInviteRoleId !== null &&
+    roleOptions.length > 0 &&
+    !roleOptions.some((role) => role.id === defaultInviteRoleId);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Default invite role</CardTitle>
+        <CardDescription>
+          The role new invites use when the sender doesn&apos;t pick one.
+          Senders can still override it per invite. Changes here are written to
+          the chapter audit log.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <Label htmlFor="default-invite-role">Role</Label>
+        <select
+          id="default-invite-role"
+          className="flex h-9 w-full max-w-sm rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          value={defaultInviteRoleId ?? ""}
+          disabled={!canManage || isSaving || rolesQuery.isPending}
+          onChange={(event) => {
+            const next = event.target.value;
+            void onSave(next === "" ? null : next);
+          }}
+        >
+          <option value="">No default (falls back to Member)</option>
+          {roleOptions.map((role) => (
+            <option key={role.id} value={role.id}>
+              {role.name}
+            </option>
+          ))}
+        </select>
+        {isDangling ? (
+          <p className="text-[12.5px] text-warning">
+            The configured default role no longer exists. Pick another, or
+            leave it — new invites fall back to the Member role.
+          </p>
+        ) : null}
+        {rolesQuery.isError ? (
+          <p className="text-[12.5px] text-destructive">
+            Roles could not load, so the default cannot be changed right now.
+          </p>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 

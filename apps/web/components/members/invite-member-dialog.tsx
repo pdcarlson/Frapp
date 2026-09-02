@@ -7,6 +7,7 @@ import {
   useBatchCreateInvites,
   useCreateInvite,
   useInvites,
+  useOrgConfig,
   useRevokeInvite,
   useRoles,
 } from "@repo/hooks";
@@ -87,9 +88,13 @@ type InviteMemberDialogProps = {
 export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   const [open, setOpen] = useState(false);
   const [roleName, setRoleName] = useState("Member");
+  // #422: whether the admin has picked a role in this dialog session. Until
+  // they do, the picker follows the chapter's configured default.
+  const [hasPickedRole, setHasPickedRole] = useState(false);
   const [inviteCount, setInviteCount] = useState(1);
   const [generatedInvites, setGeneratedInvites] = useState<InviteRow[]>([]);
   const rolesQuery = useRoles();
+  const orgConfigQuery = useOrgConfig();
   const invitesQuery = useInvites();
   const createInviteMutation = useCreateInvite();
   const createBatchInvitesMutation = useBatchCreateInvites();
@@ -138,12 +143,49 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
     return normalizeInvites(invitesQuery.data);
   }, [invitesQuery.data]);
 
+  // #422: the chapter's configured default invite role, resolved id → name
+  // against the live catalog. `undefined` while the config query is in flight
+  // or when no default is set.
+  const defaultRoleName = useMemo(() => {
+    const configuredId = orgConfigQuery.data?.default_invite_role_id;
+    if (!configuredId) return undefined;
+    return roleOptions.find((role: RoleRow) => role.id === configuredId)?.name;
+  }, [orgConfigQuery.data?.default_invite_role_id, roleOptions]);
+
+  /**
+   * Keep the picker on the chapter's configured default until the admin picks
+   * something themselves.
+   *
+   * The old form only corrected `roleName` when it named a role that did not
+   * exist, which cannot work here: the roles query and the config query
+   * resolve independently, so whenever roles land first the picker settles on
+   * a valid-but-arbitrary role and the default — arriving milliseconds later —
+   * is never applied. Tracking the explicit choice separately makes the
+   * condition "has the admin chosen?" rather than "is the current value
+   * broken?", which is the question actually being asked.
+   */
   useEffect(() => {
-    if (!roleOptions.some((role: RoleRow) => role.name === roleName)) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- keep the picker on a role that still exists after the catalog loads
-      setRoleName(roleOptions[0]?.name ?? "Member");
+    if (hasPickedRole) {
+      // Still correct a chosen role that has since disappeared from the
+      // catalog, which is what the previous form got right.
+      if (
+        roleOptions.length > 0 &&
+        !roleOptions.some((role: RoleRow) => role.name === roleName)
+      ) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- keep the picker on a role that still exists after the catalog loads
+        setRoleName(defaultRoleName ?? roleOptions[0]?.name ?? "Member");
+      }
+      return;
     }
-  }, [roleName, roleOptions]);
+    // Member stays the last resort, so an unconfigured chapter behaves
+    // exactly as it did before this field existed.
+    const preferred = defaultRoleName ?? roleOptions[0]?.name ?? "Member";
+    // No disable directive needed here: the rule reports once per effect, and
+    // the branch above already carries it.
+    if (preferred !== roleName) {
+      setRoleName(preferred);
+    }
+  }, [defaultRoleName, hasPickedRole, roleName, roleOptions]);
 
   const isSubmitting =
     createInviteMutation.isPending || createBatchInvitesMutation.isPending;
@@ -228,7 +270,15 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        // Reopening starts a fresh invite, so the chapter default applies
+        // again rather than the role picked during a previous session.
+        if (!next) setHasPickedRole(false);
+        setOpen(next);
+      }}
+    >
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
@@ -256,7 +306,10 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
             <span className="text-muted-foreground">Role</span>
             <select
               value={roleName}
-              onChange={(event) => setRoleName(event.target.value)}
+              onChange={(event) => {
+                setHasPickedRole(true);
+                setRoleName(event.target.value);
+              }}
               className={dashboardFilterSelectClassName}
             >
               {roleOptions.map((role) => (

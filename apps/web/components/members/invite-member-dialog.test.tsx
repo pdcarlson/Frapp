@@ -3,8 +3,10 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { beyondGrace, chapterSubscription } from "@/tests/chapter-subscription";
 
-const { mockCurrentChapter } = vi.hoisted(() => ({
+const { mockCurrentChapter, mockOrgConfig, mockRoles } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
+  mockOrgConfig: vi.fn(),
+  mockRoles: vi.fn(),
 }));
 
 const INVITE = {
@@ -16,7 +18,8 @@ const INVITE = {
 };
 
 vi.mock("@repo/hooks", () => ({
-  useRoles: () => ({ data: [{ id: "r1", name: "Member" }], isError: false }),
+  useRoles: () => mockRoles(),
+  useOrgConfig: () => mockOrgConfig(),
   useInvites: () => ({ data: [INVITE], isError: false }),
   useCreateInvite: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useBatchCreateInvites: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -55,8 +58,20 @@ const revoke = () => screen.getByRole("button", { name: /revoke/i });
  * the case #841's acceptance criteria call out by name: free-tier writes keep
  * working during the `past_due` grace window, and only invites are blocked.
  */
+/** Default hook state every test starts from; individual tests override. */
+function primeHooks() {
+  mockRoles.mockReturnValue({
+    data: [{ id: "r1", name: "Member" }],
+    isError: false,
+  });
+  mockOrgConfig.mockReturnValue({ data: {}, isError: false });
+}
+
 describe("InviteMemberDialog subscription gating", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    primeHooks();
+  });
 
   it("keeps invites available on an incomplete chapter", async () => {
     // The distinguishing case. A `paid` control is blocked here; these routes
@@ -127,5 +142,103 @@ describe("InviteMemberDialog subscription gating", () => {
     await openDialog();
 
     expect(generate()).toBeEnabled();
+  });
+});
+
+/**
+ * #422. The picker used to seed `"Member"` and then snap to
+ * `roleOptions[0]` — the *alphabetically first* role — whenever Member was
+ * absent from the catalog. That made the effective default arbitrary, which is
+ * what this issue reported.
+ */
+describe("InviteMemberDialog default role", () => {
+  const ROLES = [
+    { id: "role-alumni", name: "Alumni" },
+    { id: "role-member", name: "Member" },
+    { id: "role-pledge", name: "New Member" },
+  ];
+
+  const rolePicker = () => screen.getByRole("combobox") as HTMLSelectElement;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    primeHooks();
+    chapter.active();
+  });
+
+  it("pre-selects the chapter's configured default invite role", async () => {
+    mockRoles.mockReturnValue({ data: ROLES, isError: false });
+    mockOrgConfig.mockReturnValue({
+      data: { default_invite_role_id: "role-pledge" },
+      isError: false,
+    });
+    await openDialog();
+
+    expect(rolePicker().value).toBe("New Member");
+  });
+
+  /*
+   * The regression that motivated tracking the choice separately. The roles
+   * query and the config query resolve independently; when roles land first
+   * the picker settles on a valid-but-arbitrary role, and a correction keyed
+   * on "is the current value broken?" never fires because it is not broken —
+   * it is merely wrong. Simulated here by the config arriving as a second
+   * render with roles already present.
+   */
+  it("adopts the default when the config query resolves after the roles query", async () => {
+    mockRoles.mockReturnValue({ data: ROLES, isError: false });
+    mockOrgConfig.mockReturnValue({ data: undefined, isError: false });
+    await openDialog();
+    // Alphabetically first, and not what the chapter configured.
+    expect(rolePicker().value).toBe("Alumni");
+
+    mockOrgConfig.mockReturnValue({
+      data: { default_invite_role_id: "role-pledge" },
+      isError: false,
+    });
+    // Any state change re-renders the dialog, which re-reads the (now
+    // resolved) config hook — the same sequence a settled query produces,
+    // without needing a real query client.
+    await userEvent.type(screen.getByRole("spinbutton"), "2");
+
+    expect(rolePicker().value).toBe("New Member");
+  });
+
+  it("keeps an explicit pick over the configured default", async () => {
+    mockRoles.mockReturnValue({ data: ROLES, isError: false });
+    mockOrgConfig.mockReturnValue({
+      data: { default_invite_role_id: "role-pledge" },
+      isError: false,
+    });
+    await openDialog();
+    await userEvent.selectOptions(rolePicker(), "Alumni");
+
+    expect(rolePicker().value).toBe("Alumni");
+  });
+
+  it("falls back to the alphabetical first role when no default is configured", async () => {
+    mockRoles.mockReturnValue({ data: ROLES, isError: false });
+    mockOrgConfig.mockReturnValue({ data: {}, isError: false });
+    await openDialog();
+
+    expect(rolePicker().value).toBe("Alumni");
+  });
+
+  /*
+   * `on delete set null` clears a deleted role's id server-side, but a client
+   * holding a stale config read can still name one the catalog no longer has.
+   * Falling through to the existing behaviour beats rendering a select whose
+   * value matches no option, which React logs and browsers resolve by
+   * silently selecting the first entry anyway.
+   */
+  it("ignores a configured default that no longer exists", async () => {
+    mockRoles.mockReturnValue({ data: ROLES, isError: false });
+    mockOrgConfig.mockReturnValue({
+      data: { default_invite_role_id: "role-deleted" },
+      isError: false,
+    });
+    await openDialog();
+
+    expect(rolePicker().value).toBe("Alumni");
   });
 });

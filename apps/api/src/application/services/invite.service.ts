@@ -105,13 +105,70 @@ export class InviteService {
     };
   }
 
+  /**
+   * #422: resolve the role name an invite is issued with.
+   *
+   * Order: the caller's explicit role → the chapter's configured
+   * `default_invite_role_id` → the seeded Member system role. Naming a role
+   * always wins, so this changes nothing for callers that already pass one.
+   *
+   * Blank and whitespace-only are treated as "not named" rather than passed
+   * through. `@IsString()` accepts `""`, and an empty role name matches no
+   * row at redeem time, so letting it through would silently demote the
+   * invite to the Member fallback — the exact failure this default exists to
+   * remove, arrived at by a different route.
+   *
+   * The stored value stays the role NAME, not the id: `invites.role` is
+   * matched by name at redeem (`unique (chapter_id, name)` on `roles`), and
+   * this issue is about choosing the default, not re-keying that contract.
+   */
+  private async resolveInviteRole(
+    chapterId: string,
+    requested?: string,
+  ): Promise<string> {
+    const explicit = requested?.trim();
+    if (explicit) return explicit;
+
+    const roles = await this.roleRepo.findByChapter(chapterId);
+
+    const { data: chapter, error } = await this.supabase
+      .from('chapters')
+      .select('default_invite_role_id')
+      .eq('id', chapterId)
+      .maybeSingle();
+    if (error) throw error;
+
+    const defaultRoleId = chapter?.default_invite_role_id ?? null;
+    if (defaultRoleId) {
+      const configured = roles.find((r) => r.id === defaultRoleId);
+      // A configured id that no longer resolves should not be possible —
+      // `on delete set null` clears it — but a stale read races a concurrent
+      // role delete, and falling through to Member beats issuing an invite
+      // whose role name is `undefined`.
+      if (configured) return configured.name;
+      this.logger.warn(
+        `Chapter ${chapterId} has default_invite_role_id ${defaultRoleId} that resolves to no role; falling back to the Member role.`,
+      );
+    }
+
+    const member = roles.find((r) => r.system_key === SystemRoleKeys.MEMBER);
+    if (member) return member.name;
+
+    throw new BadRequestException({
+      code: 'invite.role_unresolved',
+      message:
+        'No role was named, this chapter has no default invite role configured, and it has no seeded Member role to fall back to.',
+    });
+  }
+
   async create(
     chapterId: string,
     createdBy: string,
-    role: string,
+    requestedRole?: string,
   ): Promise<Invite> {
     // Free tier: inviting members is not billing-gated (Chunk 03). The chat +
     // members wedge is available to every chapter regardless of subscription.
+    const role = await this.resolveInviteRole(chapterId, requestedRole);
     const data = this.prepareInviteData(chapterId, createdBy, role);
     const invite = await this.inviteRepo.create(data);
     // Funnel step 2 (#267). Recorded after the write so an invite that failed
@@ -125,9 +182,10 @@ export class InviteService {
   async createBatch(
     chapterId: string,
     createdBy: string,
-    role: string,
+    requestedRole: string | undefined,
     count: number,
   ): Promise<Invite[]> {
+    const role = await this.resolveInviteRole(chapterId, requestedRole);
     const inviteData: Partial<Invite>[] = Array.from({ length: count }, () =>
       this.prepareInviteData(chapterId, createdBy, role),
     );
@@ -152,9 +210,10 @@ export class InviteService {
   async createWithEmails(
     chapterId: string,
     createdBy: string,
-    role: string,
+    requestedRole: string | undefined,
     emails: string[],
   ): Promise<BulkEmailInviteResult> {
+    const role = await this.resolveInviteRole(chapterId, requestedRole);
     const uniqueEmails = dedupeEmails(emails);
 
     const inviteData = uniqueEmails.map(() =>

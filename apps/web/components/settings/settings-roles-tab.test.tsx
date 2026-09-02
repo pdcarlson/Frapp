@@ -5,13 +5,16 @@ import type { ChapterCustomRole } from "@repo/validation";
 
 // Mock the data hooks so the tab renders without a query client / network.
 const mockUseCustomRoles = vi.fn();
+const mockUseRoles = vi.fn();
 const mockCreate = vi.fn();
 const mockUpdate = vi.fn();
 const mockDelete = vi.fn();
+const mockSaveDefaultRole = vi.fn();
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useCustomRoles: () => mockUseCustomRoles(),
+  useRoles: () => mockUseRoles(),
   useCreateCustomRole: () => ({ mutateAsync: mockCreate, isPending: false }),
   useUpdateCustomRole: () => ({ mutateAsync: mockUpdate, isPending: false }),
   useDeleteCustomRole: () => ({ mutateAsync: mockDelete, isPending: false }),
@@ -56,11 +59,22 @@ describe("SettingsRolesTab", () => {
       isPending: false,
       isError: false,
     });
+    mockUseRoles.mockReturnValue({
+      data: [
+        { id: "role-member", name: "Member" },
+        { id: "role-pledge", name: "New Member" },
+      ],
+      isPending: false,
+      isError: false,
+    });
   });
 
   it("renders the role pack (read-only) from the active archetype", () => {
     render(
-      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG} />,
+      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG}
+        defaultInviteRoleId={null}
+        onSaveDefaultInviteRole={mockSaveDefaultRole}
+      />,
     );
     // Pack sub-tab is the default; ifc_standard includes President.
     expect(screen.getByText("President")).toBeInTheDocument();
@@ -74,7 +88,10 @@ describe("SettingsRolesTab", () => {
       isError: false,
     });
     render(
-      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG} />,
+      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG}
+        defaultInviteRoleId={null}
+        onSaveDefaultInviteRole={mockSaveDefaultRole}
+      />,
     );
     await user.click(screen.getByRole("tab", { name: /matrix/i }));
     // A pack column and the custom-role column are both present as headers.
@@ -101,7 +118,10 @@ describe("SettingsRolesTab", () => {
       isError: false,
     });
     render(
-      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG} />,
+      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG}
+        defaultInviteRoleId={null}
+        onSaveDefaultInviteRole={mockSaveDefaultRole}
+      />,
     );
     await user.click(screen.getByRole("tab", { name: /custom/i }));
     expect(
@@ -116,7 +136,10 @@ describe("SettingsRolesTab", () => {
     const user = userEvent.setup();
     mockCreate.mockResolvedValue({});
     render(
-      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG} />,
+      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG}
+        defaultInviteRoleId={null}
+        onSaveDefaultInviteRole={mockSaveDefaultRole}
+      />,
     );
     await user.click(screen.getByRole("tab", { name: /custom/i }));
     await user.type(screen.getByLabelText("Key"), "social_chair");
@@ -139,6 +162,8 @@ describe("SettingsRolesTab", () => {
         archetypeKey="ifc"
         canManage={false}
         catalog={CATALOG}
+        defaultInviteRoleId={null}
+        onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
     );
     await user.click(screen.getByRole("tab", { name: /custom/i }));
@@ -160,7 +185,10 @@ describe("SettingsRolesTab", () => {
       isError: false,
     });
     render(
-      <SettingsRolesTab archetypeKey="ifc" canManage catalog={catalogWithWildcard} />,
+      <SettingsRolesTab archetypeKey="ifc" canManage catalog={catalogWithWildcard}
+        defaultInviteRoleId={null}
+        onSaveDefaultInviteRole={mockSaveDefaultRole}
+      />,
     );
     await user.click(screen.getByRole("tab", { name: /custom/i }));
 
@@ -187,7 +215,10 @@ describe("SettingsRolesTab", () => {
       isError: false,
     });
     render(
-      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG} />,
+      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG}
+        defaultInviteRoleId={null}
+        onSaveDefaultInviteRole={mockSaveDefaultRole}
+      />,
     );
     await user.click(screen.getByRole("tab", { name: /custom/i }));
     await user.click(
@@ -217,7 +248,10 @@ describe("the capability matrix's marks, at the call site", () => {
       isPending: false,
       isError: false,
     });
-    render(<SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG} />);
+    render(<SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG}
+        defaultInviteRoleId={null}
+        onSaveDefaultInviteRole={mockSaveDefaultRole}
+      />);
     await user.click(screen.getByRole("tab", { name: /matrix/i }));
 
     const marks = [
@@ -247,5 +281,91 @@ describe("the capability matrix's marks, at the call site", () => {
     }
     expect(marks[0]!.className).toContain("text-success");
     expect(marks[1]!.className).toContain("text-muted-foreground");
+  });
+
+  // ── Default invite role (#422) ───────────────────────────────────────────
+
+  describe("default invite role", () => {
+    it("selects the configured role and offers an explicit no-default option", () => {
+      render(
+        <SettingsRolesTab
+          archetypeKey="ifc"
+          canManage
+          catalog={CATALOG}
+          defaultInviteRoleId="role-pledge"
+          onSaveDefaultInviteRole={mockSaveDefaultRole}
+        />,
+      );
+      const select = screen.getByLabelText("Role") as HTMLSelectElement;
+      expect(select.value).toBe("role-pledge");
+      expect(
+        screen.getByRole("option", { name: /no default/i }),
+      ).toBeInTheDocument();
+    });
+
+    it("saves the picked role id", async () => {
+      const user = userEvent.setup();
+      render(
+        <SettingsRolesTab
+          archetypeKey="ifc"
+          canManage
+          catalog={CATALOG}
+          defaultInviteRoleId={null}
+          onSaveDefaultInviteRole={mockSaveDefaultRole}
+        />,
+      );
+      await user.selectOptions(screen.getByLabelText("Role"), "role-member");
+      expect(mockSaveDefaultRole).toHaveBeenCalledWith("role-member");
+    });
+
+    /*
+     * Clearing writes `null`, not `""`. The select's no-default option carries
+     * an empty string value because that is the only thing a native <option>
+     * can hold, so the component has to translate it — and `""` reaching the
+     * API would fail uuid validation with a 400 rather than clearing the
+     * setting.
+     */
+    it("saves null when the default is cleared", async () => {
+      const user = userEvent.setup();
+      render(
+        <SettingsRolesTab
+          archetypeKey="ifc"
+          canManage
+          catalog={CATALOG}
+          defaultInviteRoleId="role-member"
+          onSaveDefaultInviteRole={mockSaveDefaultRole}
+        />,
+      );
+      await user.selectOptions(screen.getByLabelText("Role"), "");
+      expect(mockSaveDefaultRole).toHaveBeenCalledWith(null);
+    });
+
+    it("disables the picker for a caller who cannot manage config", () => {
+      render(
+        <SettingsRolesTab
+          archetypeKey="ifc"
+          canManage={false}
+          catalog={CATALOG}
+          defaultInviteRoleId={null}
+          onSaveDefaultInviteRole={mockSaveDefaultRole}
+        />,
+      );
+      expect(screen.getByLabelText("Role")).toBeDisabled();
+    });
+
+    it("flags a configured role that is no longer in the catalog", () => {
+      render(
+        <SettingsRolesTab
+          archetypeKey="ifc"
+          canManage
+          catalog={CATALOG}
+          defaultInviteRoleId="role-deleted"
+          onSaveDefaultInviteRole={mockSaveDefaultRole}
+        />,
+      );
+      expect(
+        screen.getByText(/configured default role no longer exists/i),
+      ).toBeInTheDocument();
+    });
   });
 });

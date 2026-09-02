@@ -51,4 +51,11 @@ export interface Chapter {
   // (spec/behavior/rbac.md § Presidency Transfer). `not null default false` in
   // the database — optional here for the same reason as the columns above.
   needs_president?: boolean;
+  // #422: role new invites default to when the caller does not name one
+  // (20260902073000). `null` means no default is configured, in which case
+  // InviteService falls back to the seeded Member system role. Nullable in the
+  // database with `on delete set null`, so deleting the role clears the
+  // default rather than leaving it dangling — optional here for the same
+  // projection reason as the columns above.
+  default_invite_role_id?: string | null;
 }

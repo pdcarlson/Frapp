@@ -58,6 +58,8 @@ describe('InviteService', () => {
   let mockChatService: jest.Mocked<Pick<ChatService, 'getOrCreateDm'>>;
   let mockSupabase: { from: jest.Mock };
   let messageInsert: jest.Mock;
+  /** Backs `chapters.default_invite_role_id` for the mock above (#422). */
+  let chapterDefaultRoleId: string | null;
 
   beforeEach(async () => {
     mockInviteRepo = {
@@ -116,9 +118,27 @@ describe('InviteService', () => {
         .mockResolvedValue({ id: 'dm-1', type: 'DM', member_ids: [] }),
     };
     messageInsert = jest.fn().mockResolvedValue({ error: null });
+    // #422: `resolveInviteRole` reads `chapters.default_invite_role_id`
+    // whenever the caller does not name a role. Defaults to "no default
+    // configured", which is the pre-#422 world every other test in this file
+    // assumes.
+    chapterDefaultRoleId = null;
     mockSupabase = {
       from: jest.fn((table: string) => {
         if (table === 'chat_messages') return { insert: messageInsert };
+        if (table === 'chapters') {
+          return {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: () =>
+                  Promise.resolve({
+                    data: { default_invite_role_id: chapterDefaultRoleId },
+                    error: null,
+                  }),
+              }),
+            }),
+          };
+        }
         return {};
       }),
     };
@@ -1032,6 +1052,127 @@ describe('InviteService', () => {
 
       await expect(service.revoke('inv-1', 'ch-1')).rejects.toThrow(
         NotFoundException,
+      );
+    });
+  });
+
+  /**
+   * #422. `role` is optional on the three create routes; when it is absent the
+   * service resolves the chapter's configured default, then the seeded Member
+   * role.
+   */
+  describe('default invite role (#422)', () => {
+    function role(over: Partial<Role> = {}): Role {
+      return {
+        id: 'role-member',
+        chapter_id: 'ch-1',
+        name: 'Member',
+        system_key: SystemRoleKeys.MEMBER,
+        permissions: [],
+        is_system: true,
+        display_order: 3,
+        color: null,
+        created_at: '2024-01-01',
+        ...over,
+      };
+    }
+
+    const pledgeRole = role({
+      id: 'role-pledge',
+      name: 'New Member',
+      system_key: undefined,
+    });
+
+    beforeEach(() => {
+      mockRoleRepo.findByChapter.mockResolvedValue([role(), pledgeRole]);
+      mockInviteRepo.create.mockImplementation((data) =>
+        Promise.resolve(data as Invite),
+      );
+      mockInviteRepo.createMany.mockImplementation((rows) =>
+        Promise.resolve(rows as Invite[]),
+      );
+    });
+
+    it('uses the chapter default when the caller names no role', async () => {
+      chapterDefaultRoleId = 'role-pledge';
+
+      const invite = await service.create('ch-1', 'user-1');
+
+      expect(invite.role).toBe('New Member');
+    });
+
+    it('lets an explicit role win over the chapter default', async () => {
+      chapterDefaultRoleId = 'role-pledge';
+
+      const invite = await service.create('ch-1', 'user-1', 'Member');
+
+      expect(invite.role).toBe('Member');
+      // The explicit path short-circuits before any lookup, so naming a role
+      // costs neither the roles read nor the chapters read.
+      expect(mockRoleRepo.findByChapter).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the seeded Member role when no default is configured', async () => {
+      chapterDefaultRoleId = null;
+
+      const invite = await service.create('ch-1', 'user-1');
+
+      expect(invite.role).toBe('Member');
+    });
+
+    /*
+     * `@IsString()` accepts `""`, and an empty role name matches no row at
+     * redeem time — so passing it through would silently demote the invite to
+     * the Member fallback, which is the arbitrary-default failure this issue
+     * exists to remove, reached by another route.
+     */
+    it('treats a blank role as "not named" rather than passing it through', async () => {
+      chapterDefaultRoleId = 'role-pledge';
+
+      const invite = await service.create('ch-1', 'user-1', '   ');
+
+      expect(invite.role).toBe('New Member');
+    });
+
+    /*
+     * `on delete set null` should make this unreachable, but a stale read can
+     * race a concurrent role delete. Falling back beats issuing an invite
+     * whose role is `undefined`.
+     */
+    it('falls back to Member when the configured default no longer resolves', async () => {
+      chapterDefaultRoleId = 'role-deleted';
+
+      const invite = await service.create('ch-1', 'user-1');
+
+      expect(invite.role).toBe('Member');
+    });
+
+    it('rejects with 400 when nothing resolves', async () => {
+      chapterDefaultRoleId = null;
+      mockRoleRepo.findByChapter.mockResolvedValue([pledgeRole]);
+
+      await expect(service.create('ch-1', 'user-1')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('applies the default to batch and bulk-email creation too', async () => {
+      chapterDefaultRoleId = 'role-pledge';
+
+      const batch = await service.createBatch('ch-1', 'user-1', undefined, 2);
+      expect(batch.map((invite) => invite.role)).toEqual([
+        'New Member',
+        'New Member',
+      ]);
+
+      mockEmailProvider.sendInviteEmail.mockResolvedValue(true);
+      const bulk = await service.createWithEmails('ch-1', 'user-1', undefined, [
+        'a@example.com',
+      ]);
+      expect(bulk.invites[0].role).toBe('New Member');
+      // The emailed copy names the resolved role, not an empty string.
+      expect(mockEmailProvider.sendInviteEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ role: 'New Member' }),
       );
     });
   });
