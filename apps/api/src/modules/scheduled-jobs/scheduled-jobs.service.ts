@@ -8,6 +8,7 @@ import {
 } from '../../application/services/attendance.service';
 import { NotificationService } from '../../application/services/notification.service';
 import { ChapterWorkflowsService } from '../../application/services/chapter-workflows.service';
+import { PollService } from '../../application/services/poll.service';
 import {
   ReportRetentionService,
   type ReportSweepResult,
@@ -18,6 +19,7 @@ import {
   type DispatchThreshold,
   type SweepInvoiceRow,
   type SweepTaskRow,
+  type SweepPollRow,
 } from './scheduled-jobs.repository';
 
 /**
@@ -26,6 +28,14 @@ import {
  * events it skipped, without re-walking history every hour.
  */
 const AUTO_ABSENT_LOOKBACK_HOURS = 24;
+
+/**
+ * How far back the poll-expiry sweep reaches. Comfortably longer than the
+ * sweep interval (`EVERY_5_MINUTES`) for the same reason as
+ * `AUTO_ABSENT_LOOKBACK_HOURS` — a restart or missed tick still announces the
+ * polls it skipped instead of leaving them silently unannounced forever.
+ */
+const POLL_EXPIRY_LOOKBACK_HOURS = 24;
 
 /**
  * Reminder lead time. `spec/behavior/tasks.md` fixes this at 1 day for tasks;
@@ -96,6 +106,7 @@ export class ScheduledJobsService {
     private readonly notificationService: NotificationService,
     private readonly workflows: ChapterWorkflowsService,
     private readonly reportRetention: ReportRetentionService,
+    private readonly pollService: PollService,
     @Inject(MEMBER_REPOSITORY)
     private readonly memberRepo: IMemberRepository,
   ) {}
@@ -103,6 +114,11 @@ export class ScheduledJobsService {
   @Cron(CronExpression.EVERY_HOUR)
   async handleAutoAbsentSweep(): Promise<void> {
     await this.sweepAutoAbsent(new Date());
+  }
+
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async handlePollExpirySweep(): Promise<void> {
+    await this.sweepExpiredPolls(new Date());
   }
 
   @Cron(CronExpression.EVERY_DAY_AT_9AM)
@@ -235,6 +251,78 @@ export class ScheduledJobsService {
       );
     }
     return { events: processed };
+  }
+
+  /**
+   * Announce, in-channel, every poll whose deadline passed since the last
+   * sweep and that wasn't manually closed (`spec/behavior/polls.md`).
+   *
+   * Unlike the reminder sweeps this has exactly one "recipient" — the
+   * channel itself, via a `system_audit` post — so it claims and notifies
+   * directly rather than through `claimAndNotify`, which is shaped for
+   * fanning a delivery out across multiple users.
+   */
+  async sweepExpiredPolls(now: Date): Promise<{ announced: number }> {
+    const expiredAfter = new Date(
+      now.getTime() - POLL_EXPIRY_LOOKBACK_HOURS * 60 * 60 * 1000,
+    );
+
+    const polls = await this.repository.findExpiredPollsPendingNotice(
+      expiredAfter,
+      now,
+    );
+
+    let announced = 0;
+    for (const poll of polls) {
+      try {
+        if (await this.notifyPollExpired(poll)) announced += 1;
+      } catch (error) {
+        this.logger.error(
+          `poll-expiry sweep: poll ${poll.id} failed`,
+          error as Error,
+        );
+      }
+    }
+
+    if (announced > 0) {
+      this.logger.log(`poll-expiry sweep: announced ${announced} polls`);
+    }
+    return { announced };
+  }
+
+  private async notifyPollExpired(poll: SweepPollRow): Promise<boolean> {
+    // `expires_at` is a fixed instant per poll, so its date key is a stable
+    // claim key across ticks — unlike `due_date`, which the invoice/task
+    // sweeps read straight off the row, this is derived, but the same
+    // stability requirement applies: every tick that sees this poll before
+    // it's claimed must compute the same key.
+    const dueDate = toDateKey(new Date(poll.expires_at));
+    const claimed = await this.repository.claimDispatch(
+      poll.chapter_id,
+      'POLL',
+      poll.id,
+      'EXPIRED',
+      dueDate,
+    );
+    if (!claimed) return false;
+
+    try {
+      await this.pollService.announceExpiry(poll.channel_id, poll.question);
+      return true;
+    } catch (error) {
+      this.logger.error(
+        `poll-expiry sweep: announcement for poll ${poll.id} failed`,
+        error as Error,
+      );
+      await this.repository.releaseDispatch(
+        poll.chapter_id,
+        'POLL',
+        poll.id,
+        'EXPIRED',
+        dueDate,
+      );
+      return false;
+    }
   }
 
   /**

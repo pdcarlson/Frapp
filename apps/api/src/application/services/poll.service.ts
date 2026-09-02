@@ -12,6 +12,7 @@ import type { IChatMessageRepository } from '../../domain/repositories/chat.repo
 import { POLL_VOTE_REPOSITORY } from '../../domain/repositories/poll-vote.repository.interface';
 import type { IPollVoteRepository } from '../../domain/repositories/poll-vote.repository.interface';
 import type { ChatMessage } from '../../domain/entities/chat.entity';
+import { SYSTEM_SENDER_ID } from '../../domain/constants/chat';
 import type { PollMetadata } from '../../domain/entities/poll-vote.entity';
 import { ChannelAccessService } from './channel-access.service';
 import {
@@ -339,6 +340,25 @@ export class PollService {
         closed_at: new Date().toISOString(),
         closed_by: userId,
       } satisfies PollMetadata,
+    });
+  }
+
+  /**
+   * Post a `system_audit` notice into the poll's channel announcing that it
+   * expired (#404). Uses `messageRepo.create` directly rather than
+   * `ChatService.sendMessage` — the same reason `notifyInviterOfAcceptance`
+   * and `postWelcomeMessage` bypass it: that path would reject
+   * `SYSTEM_SENDER_ID` as a poster. `push-rules.ts` already suppresses push
+   * for `system_audit`, so this is visible in the channel without paging
+   * anyone — the sweep's caller (`ScheduledJobsService`) is what decides
+   * whether this fires at all, once per poll (dispatch claim).
+   */
+  async announceExpiry(channelId: string, question: string): Promise<void> {
+    await this.messageRepo.create({
+      channel_id: channelId,
+      sender_id: SYSTEM_SENDER_ID,
+      content: `Poll "${question}" has closed.`,
+      kind: 'system_audit',
     });
   }
 

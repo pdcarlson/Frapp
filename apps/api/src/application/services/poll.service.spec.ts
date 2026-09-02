@@ -540,6 +540,21 @@ describe('PollService', () => {
     });
   });
 
+  describe('announceExpiry', () => {
+    it('posts a system_audit message into the poll channel', async () => {
+      mockMessageRepo.create.mockResolvedValue(basePollMessage);
+
+      await service.announceExpiry('chan-1', 'Pizza or tacos?');
+
+      expect(mockMessageRepo.create).toHaveBeenCalledWith({
+        channel_id: 'chan-1',
+        sender_id: '00000000-0000-0000-0000-000000000000',
+        content: 'Poll "Pizza or tacos?" has closed.',
+        kind: 'system_audit',
+      });
+    });
+  });
+
   describe('getPoll', () => {
     it('should return poll with results and user votes', async () => {
       mockMessageRepo.findById.mockResolvedValue(basePollMessage);
