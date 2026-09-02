@@ -226,8 +226,14 @@ The **Accent server contrast disclosure** row is a third, independent question f
 |---|---|---|
 | Loading | — | `Loading chapter documents...` |
 | Empty | `No documents here yet` | `Upload chapter files like bylaws, agendas, and meeting minutes so everyone can find them.` |
+| Empty (search, all files) | `No documents match that search` | `Nothing in the chapter library has "{query}" in its title.` |
+| Empty (search, inside a folder) | `No documents match that search` | `No match in this folder. Try "All files" to search the whole library.` |
 | Error | `Couldn't load documents` | `Confirm your chapter access and retry.` |
 | Offline | `Documents unavailable offline` | `Reconnect to browse the chapter library and download files.` |
+
+A search that matched nothing is a distinct state from an empty library: the
+default empty copy invites an upload, which is the wrong instruction for a
+member who simply mistyped a title.
 
 ### Notifications (dashboard)
 
