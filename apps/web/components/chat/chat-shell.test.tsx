@@ -345,6 +345,39 @@ describe("ChatShell deep-link targets", () => {
     expect(mockScrollToMessage).not.toHaveBeenCalled();
   });
 
+  it("keeps the unreachable notice dismissed when new messages arrive", async () => {
+    searchHit.mockReturnValue({
+      message: { id: "never-loaded" },
+      channelId: "chan-general",
+    });
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("search-jump"));
+    expect(
+      await screen.findByText(/older than the history loaded here/i),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(
+      screen.queryByText(/older than the history loaded here/i),
+    ).toBeNull();
+
+    // A new message lands. Dismiss abandons the target, so this must not
+    // re-raise the notice — otherwise the button visibly un-dismisses itself.
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({
+        messages: [
+          ...MESSAGES,
+          { id: "msg-new", content: "new", created_at: "2026-01-03T00:00:00Z" },
+        ],
+      }),
+    );
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    expect(
+      screen.queryByText(/older than the history loaded here/i),
+    ).toBeNull();
+  });
+
   it("clears the unreachable notice once the message actually arrives", async () => {
     searchHit.mockReturnValue({
       message: { id: "msg-late" },

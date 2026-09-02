@@ -710,7 +710,15 @@ export function ChatShell({
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => setUnreachableMessageId(null)}
+                onClick={() => {
+                  // Abandons the target, not just the notice. Clearing only the
+                  // message would leave it pending, so the effect would re-raise
+                  // this the moment any new message arrived in the channel — a
+                  // dismiss that visibly un-dismisses itself.
+                  setUnreachableMessageId(null);
+                  setPendingMessageId(null);
+                  setPendingChannelId(null);
+                }}
               >
                 Dismiss
               </Button>
