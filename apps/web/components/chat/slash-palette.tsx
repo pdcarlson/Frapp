@@ -16,10 +16,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { ErrorState, LoadingState } from "@/components/shared/async-states";
-import {
-  filterSlashCommands,
-  type SlashCommand,
-} from "@repo/chat-integrations";
+import { filterSlashCommands, type SlashCommand } from "@repo/chat-integrations";
 
 export interface SlashPaletteProps {
   open: boolean;
@@ -66,8 +63,7 @@ export function SlashPalette({
   const query = initialQuery;
 
   const commands = useMemo(
-    () =>
-      status === "ready" ? filterSlashCommands(query, isModuleEnabled) : [],
+    () => (status === "ready" ? filterSlashCommands(query, isModuleEnabled) : []),
     [query, isModuleEnabled, status],
   );
 
@@ -110,9 +106,7 @@ export function SlashPalette({
                     <span className="font-mono text-[12.5px] text-muted-foreground">
                       /{command.name}
                     </span>
-                    <span className="ml-2 text-base">
-                      {command.description}
-                    </span>
+                    <span className="ml-2 text-base">{command.description}</span>
                     {command.usage ? (
                       <span className="ml-auto text-[12.5px] text-muted-foreground">
                         {command.usage}

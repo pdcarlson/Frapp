@@ -41,24 +41,15 @@ export function ReconnectPill({ status }: { status: ConnectionStatus }) {
     >
       {status === "offline" ? (
         <>
-          <OfflineGlyph className="h-3.5 w-3.5 shrink-0" /> Offline — messages
-          will send when you reconnect
+          <OfflineGlyph className="h-3.5 w-3.5 shrink-0" /> Offline — messages will send when you reconnect
         </>
       ) : status === "polling" ? (
         <>
-          <RefreshCw
-            className="h-3.5 w-3.5 shrink-0 animate-spin"
-            aria-hidden="true"
-          />{" "}
-          Real-time updates paused. Polling for new messages.
+          <RefreshCw className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden="true" /> Real-time updates paused. Polling for new messages.
         </>
       ) : (
         <>
-          <Loader2
-            className="h-3.5 w-3.5 shrink-0 animate-spin"
-            aria-hidden="true"
-          />{" "}
-          Reconnecting…
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden="true" /> Reconnecting…
         </>
       )}
     </div>

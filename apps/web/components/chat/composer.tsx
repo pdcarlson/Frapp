@@ -259,8 +259,7 @@ export function Composer({
       onTyping();
       const parsed = parseSlashInput(text);
       const opensPalette =
-        parsed.isSlash &&
-        (parsed.command == null || parsed.command.length <= 24);
+        parsed.isSlash && (parsed.command == null || parsed.command.length <= 24);
       if (opensPalette) {
         setPalette((prev) =>
           prev.open && prev.query === (parsed.command ?? "")
@@ -271,7 +270,9 @@ export function Composer({
         // Composer text is no longer a slash invocation (user backspaced the
         // leading `/`, or typed a too-long token). Close the palette so it
         // doesn't trap the user behind a stale list.
-        setPalette((prev) => (prev.open ? { open: false, query: "" } : prev));
+        setPalette((prev) =>
+          prev.open ? { open: false, query: "" } : prev,
+        );
       }
     },
     immediatelyRender: false,
@@ -507,7 +508,8 @@ export function Composer({
     );
   }
 
-  const attachPending = requestUploadUrl.isPending || uploadSignedUrl.isPending;
+  const attachPending =
+    requestUploadUrl.isPending || uploadSignedUrl.isPending;
 
   return (
     <div className="border-t border-border p-3" onKeyDown={handleHostKey}>
@@ -642,17 +644,15 @@ export function Composer({
       <SlashPalette
         open={palette.open}
         initialQuery={palette.query}
-        onQueryChange={(query) => setPalette((prev) => ({ ...prev, query }))}
+        onQueryChange={(query) =>
+          setPalette((prev) => ({ ...prev, query }))
+        }
         isModuleEnabled={isModuleEnabled}
         status={slashCommandsStatus}
         onRetry={onRetrySlashCommands}
         onSelect={onPaletteSelect}
         onOpenChange={(open) =>
-          setPalette((prev) => ({
-            ...prev,
-            open,
-            query: open ? prev.query : "",
-          }))
+          setPalette((prev) => ({ ...prev, open, query: open ? prev.query : "" }))
         }
       />
     </div>

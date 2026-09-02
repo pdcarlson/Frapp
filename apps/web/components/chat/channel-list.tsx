@@ -95,8 +95,7 @@ export function unreadAnnouncement(
   { unreadCount, mentionCount }: ChannelUnread,
   isDirect = false,
 ): string {
-  const plural = (n: number, word: string) =>
-    `${n} ${word}${n === 1 ? "" : "s"}`;
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
   if (mentionCount > 0) {
     return `${plural(mentionCount, "mention")}, ${unreadCount} unread`;
   }
@@ -287,16 +286,11 @@ export function ChannelList({
                             : "text-muted-foreground hover:bg-card hover:text-foreground",
                       )}
                     >
-                      <ChannelMark
-                        channel={channel}
-                        title={titleFor(channel)}
-                      />
+                      <ChannelMark channel={channel} title={titleFor(channel)} />
                       <span className="truncate">{titleFor(channel)}</span>
                       <span className="ml-auto flex shrink-0 items-center gap-1.5">
                         {channel.muted ? (
-                          <span className="text-[12.5px] text-muted-foreground">
-                            muted
-                          </span>
+                          <span className="text-[12.5px] text-muted-foreground">muted</span>
                         ) : null}
                         {channel.is_read_only && !channel.muted && !isUnread ? (
                           <Badge variant="outline" className="h-6 px-2">
@@ -307,15 +301,9 @@ export function ChannelList({
                           <Badge
                             variant={hasMention ? "mention" : "secondary"}
                             className="h-6 justify-center px-2"
-                            aria-label={unreadAnnouncement(
-                              counts,
-                              isDm(channel),
-                            )}
+                            aria-label={unreadAnnouncement(counts, isDm(channel))}
                           >
-                            {badgeLabel(
-                              counts.unreadCount,
-                              counts.mentionCount,
-                            )}
+                            {badgeLabel(counts.unreadCount, counts.mentionCount)}
                           </Badge>
                         ) : null}
                       </span>
@@ -343,7 +331,8 @@ function ChannelMark({
   channel: ChatChannel;
   title: string;
 }) {
-  if (isSystem(channel)) return <AuditGlyph className="h-4 w-4 shrink-0" />;
+  if (isSystem(channel))
+    return <AuditGlyph className="h-4 w-4 shrink-0" />;
   if (isDm(channel))
     return (
       // 24px, with the primitive's own caption-role initials — no size

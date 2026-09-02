@@ -14,7 +14,11 @@ import {
  * declarative (`<EmojiPicker onPick={...} />`) and the keyboard / accessible
  * affordances come from the library.
  */
-export function EmojiPicker({ onPick }: { onPick: (emoji: string) => void }) {
+export function EmojiPicker({
+  onPick,
+}: {
+  onPick: (emoji: string) => void;
+}) {
   return (
     <Frimousse.Root
       className="flex h-72 w-72 flex-col rounded-md border border-border bg-popover text-popover-foreground"
@@ -55,10 +59,7 @@ export function EmojiPicker({ onPick }: { onPick: (emoji: string) => void }) {
   );
 }
 
-function CategoryHeader({
-  category,
-  ...rest
-}: EmojiPickerListCategoryHeaderProps) {
+function CategoryHeader({ category, ...rest }: EmojiPickerListCategoryHeaderProps) {
   return (
     <div
       {...rest}

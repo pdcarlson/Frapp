@@ -58,7 +58,10 @@ describe("ReconnectPill", () => {
   it("announces politely for screen readers in every degraded state", () => {
     for (const status of ["polling", "reconnecting", "offline"] as const) {
       const { unmount } = render(<ReconnectPill status={status} />);
-      expect(screen.getByRole("status")).toHaveAttribute("aria-live", "polite");
+      expect(screen.getByRole("status")).toHaveAttribute(
+        "aria-live",
+        "polite",
+      );
       unmount();
     }
   });

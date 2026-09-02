@@ -58,7 +58,9 @@ function placeholderTextFrom(extensions: unknown[]) {
 
 describe("composerPlaceholder", () => {
   it("takes the channel sigil for a real channel", () => {
-    expect(composerPlaceholder("announcements")).toBe("Message #announcements");
+    expect(composerPlaceholder("announcements")).toBe(
+      "Message #announcements",
+    );
   });
 
   it("drops the sigil for a DM — the name is a person's, not a channel's", () => {
@@ -97,13 +99,11 @@ describe("Composer mention wiring", () => {
   it("registers the @-mention extension with a suggestion.items callback", () => {
     capturedExtensions.length = 0;
     render(<Composer {...baseProps()} />);
-    const mention = capturedExtensions
-      .at(-1)!
-      .find(
-        (extension) =>
-          (extension as { name?: string } | null)?.name === "mention",
-      ) as
-      { options: { suggestion: { char: string; items: unknown } } } | undefined;
+    const mention = capturedExtensions.at(-1)!.find(
+      (extension) => (extension as { name?: string } | null)?.name === "mention",
+    ) as
+      | { options: { suggestion: { char: string; items: unknown } } }
+      | undefined;
     expect(mention).toBeDefined();
     expect(mention!.options.suggestion.char).toBe("@");
     expect(typeof mention!.options.suggestion.items).toBe("function");

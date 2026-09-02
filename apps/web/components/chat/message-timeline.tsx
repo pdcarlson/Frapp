@@ -165,8 +165,7 @@ export const MessageTimeline = forwardRef<
         new Date(message.created_at).getTime() -
           new Date(prev.created_at).getTime() <
           GROUPING_GAP_MS;
-      const startsDay =
-        !prev || dayKey(prev.created_at) !== dayKey(message.created_at);
+      const startsDay = !prev || dayKey(prev.created_at) !== dayKey(message.created_at);
       return {
         message,
         // A new day always restarts the chrome: a grouped follow-on under a
@@ -240,28 +239,28 @@ export const MessageTimeline = forwardRef<
                 {dayLabel(entry.message.created_at)}
               </p>
             ) : null}
-            <MessageItem
-              nameFor={nameFor}
-              message={entry.message}
-              avatarUrl={
-                entry.message.author_avatar_path
-                  ? avatars.data?.[entry.message.author_avatar_path]
-                  : undefined
-              }
-              viewerId={viewerId}
-              showHeader={entry.showHeader}
-              onReact={onReact}
-              onUnreact={onUnreact}
-              onOpenThread={onOpenThread}
-              onRetry={onRetry}
-              onDiscard={onDiscard}
-              onAct={onAct}
-              onEdit={onEdit}
-              onDelete={onDelete}
-              canManageChannel={canManageChannel}
-              isTapRevealed={tapRevealed.isRevealed(entry.message)}
-              onToggleTapReveal={() => tapRevealed.toggle(entry.message)}
-            />
+          <MessageItem
+            nameFor={nameFor}
+            message={entry.message}
+            avatarUrl={
+              entry.message.author_avatar_path
+                ? avatars.data?.[entry.message.author_avatar_path]
+                : undefined
+            }
+            viewerId={viewerId}
+            showHeader={entry.showHeader}
+            onReact={onReact}
+            onUnreact={onUnreact}
+            onOpenThread={onOpenThread}
+            onRetry={onRetry}
+            onDiscard={onDiscard}
+            onAct={onAct}
+            onEdit={onEdit}
+            onDelete={onDelete}
+            canManageChannel={canManageChannel}
+            isTapRevealed={tapRevealed.isRevealed(entry.message)}
+            onToggleTapReveal={() => tapRevealed.toggle(entry.message)}
+          />
           </>
         )}
         computeItemKey={(_, entry) =>
