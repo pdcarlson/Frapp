@@ -917,6 +917,56 @@ describe('MemberService', () => {
         expect(mockAuditLogService.record).not.toHaveBeenCalled();
         expect(mockRbacService.flagIfPresidentRemoved).not.toHaveBeenCalled();
       });
+
+      // avatar_url is a global column on `users`, not scoped to any one
+      // chapter, and survives a chapter removal — found by diff-review:
+      // purging the folder without also clearing a reference into it left a
+      // still-active-elsewhere member with a permanently broken avatar.
+      it("clears avatar_url when it points into the purged chapter's folder", async () => {
+        mockRepo.findById.mockResolvedValue(existingMember);
+        mockRepo.delete.mockResolvedValue(undefined);
+        mockStorageProvider.listFiles.mockResolvedValue([
+          'chapters/chapter-1/profiles/user-1/photo.jpg',
+        ]);
+        mockUserRepo.findById.mockResolvedValue({
+          id: 'user-1',
+          avatar_url: 'chapters/chapter-1/profiles/user-1/photo.jpg',
+        });
+
+        await service.remove('member-1', 'chapter-1', 'actor-1');
+
+        expect(mockUserRepo.update).toHaveBeenCalledWith('user-1', {
+          avatar_url: null,
+        });
+      });
+
+      it('leaves avatar_url alone when it points into a different chapter', async () => {
+        mockRepo.findById.mockResolvedValue(existingMember);
+        mockRepo.delete.mockResolvedValue(undefined);
+        mockStorageProvider.listFiles.mockResolvedValue([]);
+        mockUserRepo.findById.mockResolvedValue({
+          id: 'user-1',
+          avatar_url: 'chapters/chapter-other/profiles/user-1/photo.jpg',
+        });
+
+        await service.remove('member-1', 'chapter-1', 'actor-1');
+
+        expect(mockUserRepo.update).not.toHaveBeenCalled();
+      });
+
+      it('leaves avatar_url alone when the user has none set', async () => {
+        mockRepo.findById.mockResolvedValue(existingMember);
+        mockRepo.delete.mockResolvedValue(undefined);
+        mockStorageProvider.listFiles.mockResolvedValue([]);
+        mockUserRepo.findById.mockResolvedValue({
+          id: 'user-1',
+          avatar_url: null,
+        });
+
+        await service.remove('member-1', 'chapter-1', 'actor-1');
+
+        expect(mockUserRepo.update).not.toHaveBeenCalled();
+      });
     });
   });
 

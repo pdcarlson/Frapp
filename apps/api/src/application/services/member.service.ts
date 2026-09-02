@@ -315,22 +315,45 @@ export class MemberService {
     if (member.chapter_id !== chapterId) {
       throw new ForbiddenException('Member not in current chapter');
     }
-    // #711: purge this chapter's profile-photo folder before the row goes —
-    // the prefix is derived from chapter_id + user_id (not the membership row
-    // itself), but leaving it until after the delete would mean a purge
-    // failure on retry has no membership left to re-derive it from safely.
+    // #711: purge this chapter's profile-photo folder before the row goes.
     // No independent sweep reaps orphaned profile photos (unlike generated
     // report exports, which the 24h retention sweep covers regardless), so a
     // storage failure here throws and blocks the removal — retryable, same
     // as the account-deletion avatar purge — rather than silently orphaning
     // the objects. A missing bucket/prefix is "nothing to purge", not a
     // failure (`IStorageProvider.listFiles`'s own contract).
+    //
+    // Deliberately ordered before the row delete rather than after, even
+    // though the folder prefix itself only needs chapter_id + user_id (both
+    // already in hand) and not the row: purging first means the common
+    // failure mode — storage errors — never leaves photos behind, at the
+    // cost of a narrower one — `memberRepo.delete` failing *after* a
+    // successful purge leaves a still-active member with no photo for this
+    // chapter until they re-upload. That is judged the better trade: the
+    // reverse order (delete row, then purge) would reopen this issue's own
+    // bug on every purge failure, permanently, since a member already
+    // removed cannot be removed again to retry it.
+    const photoFolder = profileFolderPrefix(chapterId, member.user_id);
     const photoPaths = await this.storageProvider.listFiles(
       PROFILES_BUCKET,
-      profileFolderPrefix(chapterId, member.user_id),
+      photoFolder,
     );
     if (photoPaths.length > 0) {
       await this.storageProvider.deleteFiles(PROFILES_BUCKET, photoPaths);
+    }
+    // `avatar_url` is a global column on `users`, not scoped to this
+    // chapter — it can point into whatever chapter's folder the photo last
+    // uploaded in, including this one, and survives a chapter removal since
+    // the user row itself does not. Left alone, a member removed from this
+    // chapter but still active in another would render a broken avatar
+    // everywhere their profile appears, pointing at an object this purge
+    // just deleted. Mirrors `AccountDeletionService.avatarUrlFolder`'s same
+    // check, narrowed to "does it point into the folder just purged" since
+    // remove() (unlike account deletion) doesn't already know every chapter
+    // the user is in.
+    const user = await this.userRepo.findById(member.user_id);
+    if (user?.avatar_url?.includes(`${photoFolder}/`)) {
+      await this.userRepo.update(member.user_id, { avatar_url: null });
     }
     await this.memberRepo.delete(memberId);
     // Written before the orphan-presidency check below, not after: that check
