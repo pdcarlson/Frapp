@@ -57,6 +57,10 @@ import type {
   ChannelType,
   ChannelUnreadCount,
 } from '../../domain/entities/chat.entity';
+import {
+  SETTABLE_NOTIFICATION_KINDS,
+  isSettableNotificationKind,
+} from '../../domain/entities/chat.entity';
 import { NotificationService } from './notification.service';
 import { ChannelAccessService } from './channel-access.service';
 import { ActivationService } from './activation.service';
@@ -1265,6 +1269,82 @@ export class ChatService {
       channel_id: channel.id,
       level: stored.get(channel.id) ?? defaultLevelFor(channel.name, 'text'),
     }));
+  }
+
+  /**
+   * The caller's own per-kind notification levels (#500).
+   *
+   * Every settable kind is returned, with its stored level or the default the
+   * worker would apply — same contract as the per-channel endpoint above, and
+   * for the same reason: a UI that has to guess a default client-side is a UI
+   * that can disagree with the worker about whether you are muted.
+   *
+   * The default is read through `defaultLevelFor` with an empty channel name.
+   * A kind preference is chapter-wide, so there is no channel whose name could
+   * feed the `announcements` / `chapter-audit` name arms of that function —
+   * passing `''` selects the kind-driven arms only, which is exactly the
+   * question this endpoint answers. `imported` is excluded from the list, so
+   * its absolute `off` is never presented as something a member could change.
+   *
+   * No channel-access check is needed or possible here: a kind is not a
+   * channel, so the row reveals nothing about which channels exist.
+   */
+  async getKindNotificationPreferences(chapterId: string, userId: string) {
+    const rows = await this.chatNotificationPrefs.findKindPreferencesForUser(
+      userId,
+      chapterId,
+    );
+
+    const stored = new Map<string, ChatNotificationLevel>();
+    for (const row of rows) {
+      if (row.scope_kind !== null) stored.set(row.scope_kind, row.level);
+    }
+
+    return SETTABLE_NOTIFICATION_KINDS.map((kind) => ({
+      kind,
+      level: stored.get(kind) ?? defaultLevelFor('', kind),
+    }));
+  }
+
+  /**
+   * Set the caller's notification level for one message kind (#500).
+   *
+   * The kind is validated against {@link SETTABLE_NOTIFICATION_KINDS} rather
+   * than trusted from the path. Two distinct reasons, both real:
+   *
+   * - `chat_messages.kind` carries **no CHECK constraint** (it is
+   *   `text not null default 'text'`), so the database would happily store a
+   *   preference for a misspelled or invented kind. That row would then sit
+   *   there matching no message forever — a setting the member believes is
+   *   active and which does nothing.
+   * - `imported` must be refused specifically, not merely left unlisted. The
+   *   push worker exits on that kind before any preference is read, so
+   *   accepting the write would persist a row that can never be consulted.
+   *
+   * Keyed on `userId` from the authenticated request, never from the body —
+   * same rule as the channel setter: accepting a caller-supplied user id would
+   * let any member silence another member's notifications.
+   */
+  async setKindNotificationLevel(
+    chapterId: string,
+    userId: string,
+    kind: string,
+    level: ChatNotificationLevel,
+  ) {
+    if (!isSettableNotificationKind(kind)) {
+      throw new BadRequestException(
+        `Unsupported notification kind '${kind}'. Settable kinds: ` +
+          SETTABLE_NOTIFICATION_KINDS.join(', '),
+      );
+    }
+
+    const row = await this.chatNotificationPrefs.upsertKindLevel(
+      userId,
+      chapterId,
+      kind,
+      level,
+    );
+    return { kind, level: row.level };
   }
 
   /**

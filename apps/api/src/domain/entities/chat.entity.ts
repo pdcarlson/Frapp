@@ -22,6 +22,50 @@ export const CHAT_MESSAGE_KINDS = [
 ] as const;
 export type ChatMessageKind = (typeof CHAT_MESSAGE_KINDS)[number];
 
+/**
+ * The one kind a member may NOT set a notification preference for (#500).
+ *
+ * `spec/behavior/notifications.md` — "`imported` is the one kind with no
+ * opt-in." `ChatPushWorkerService.handleMessage` returns on an imported row
+ * before it loads the chapter roster, and `decidePush` refuses the kind ahead
+ * of every other rule including the mention override, so a stored preference
+ * for it could never be consulted. Exposing that toggle would ship a control
+ * that silently does nothing — the dead-control failure the same spec rejects
+ * for the `announcements` category.
+ */
+export const NON_SETTABLE_NOTIFICATION_KIND = 'imported' satisfies ChatMessageKind;
+
+/**
+ * Kinds a member may set a per-kind notification level for.
+ *
+ * Derived from {@link CHAT_MESSAGE_KINDS} rather than hand-listed, so a kind
+ * added to the hot path becomes settable by default instead of silently
+ * missing from the settings surface. `system_audit` is the load-bearing
+ * member: the spec names `(scope='kind', scope_kind='system_audit',
+ * level='all')` as the documented opt-in to audit-bridge pushes.
+ */
+export const SETTABLE_NOTIFICATION_KINDS = CHAT_MESSAGE_KINDS.filter(
+  (kind) => kind !== NON_SETTABLE_NOTIFICATION_KIND,
+) as readonly Exclude<
+  ChatMessageKind,
+  typeof NON_SETTABLE_NOTIFICATION_KIND
+>[];
+
+export type SettableNotificationKind =
+  (typeof SETTABLE_NOTIFICATION_KINDS)[number];
+
+/**
+ * Type predicate, not a bare boolean helper, so a caller that validates a
+ * path parameter also *narrows* it — the response DTO is typed on the union,
+ * and without the narrowing the only way to satisfy it would be a cast, which
+ * would keep compiling if this list and the DTO ever diverged.
+ */
+export function isSettableNotificationKind(
+  kind: string,
+): kind is SettableNotificationKind {
+  return (SETTABLE_NOTIFICATION_KINDS as readonly string[]).includes(kind);
+}
+
 export interface ChatChannelCategory {
   id: string;
   chapter_id: string;

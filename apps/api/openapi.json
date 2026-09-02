@@ -1906,6 +1906,82 @@
         ]
       }
     },
+    "/v1/channels/notification-preferences/kinds": {
+      "get": {
+        "operationId": "ChatController_getKindNotificationPreferences_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KindNotificationPreferenceDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's own per-message-kind notification levels",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/notification-preferences/kinds/{kind}": {
+      "put": {
+        "operationId": "ChatController_setKindNotificationLevel_v1",
+        "parameters": [
+          {
+            "name": "kind",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetKindNotificationLevelDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KindNotificationPreferenceDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set the caller's notification level for one message kind",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/channels/{id}": {
       "get": {
         "operationId": "ChatController_getChannel_v1",
@@ -7850,6 +7926,56 @@
         },
         "required": [
           "channel_id",
+          "level"
+        ]
+      },
+      "KindNotificationPreferenceDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text",
+              "event",
+              "task",
+              "poll",
+              "dues",
+              "points",
+              "hours",
+              "system_audit",
+              "loading",
+              "announcement"
+            ],
+            "description": "A `chat_messages.kind`. `imported` is absent by design — the push worker refuses that kind before any preference is read, so it is not settable."
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "all",
+              "mentions",
+              "off"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "level"
+        ]
+      },
+      "SetKindNotificationLevelDto": {
+        "type": "object",
+        "properties": {
+          "level": {
+            "type": "string",
+            "enum": [
+              "all",
+              "mentions",
+              "off"
+            ],
+            "description": "all = every message of this kind; mentions = only when you are mentioned; off = muted. A channel-scoped preference outranks this one for messages in that channel."
+          }
+        },
+        "required": [
           "level"
         ]
       },

@@ -47,6 +47,8 @@ import {
   ChannelUnreadCountDto,
   SetChannelNotificationLevelDto,
   ChannelNotificationPreferenceDto,
+  SetKindNotificationLevelDto,
+  KindNotificationPreferenceDto,
   ResolveAuthorAvatarsDto,
 } from '../dtos/chat.dto';
 import type { ChannelType } from '../../domain/entities/chat.entity';
@@ -106,6 +108,41 @@ export class ChatController {
     return this.chatService.getChannelNotificationPreferences(
       chapterId,
       userId,
+    );
+  }
+
+  // Two segments, so `@Get(':id')` (a single segment) cannot swallow this the
+  // way it would swallow a bare literal. Kept beside the channel-scoped read
+  // above because they answer the same question for the two scope arms, and a
+  // reader looking for one should find the other.
+  @Get('notification-preferences/kinds')
+  @ApiOperation({
+    summary: "The caller's own per-message-kind notification levels",
+  })
+  @ApiOkResponse({ type: KindNotificationPreferenceDto, isArray: true })
+  async getKindNotificationPreferences(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<KindNotificationPreferenceDto[]> {
+    return this.chatService.getKindNotificationPreferences(chapterId, userId);
+  }
+
+  @Put('notification-preferences/kinds/:kind')
+  @ApiOperation({
+    summary: "Set the caller's notification level for one message kind",
+  })
+  @ApiOkResponse({ type: KindNotificationPreferenceDto })
+  async setKindNotificationLevel(
+    @Param('kind') kind: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: SetKindNotificationLevelDto,
+  ): Promise<KindNotificationPreferenceDto> {
+    return this.chatService.setKindNotificationLevel(
+      chapterId,
+      userId,
+      kind,
+      dto.level,
     );
   }
 

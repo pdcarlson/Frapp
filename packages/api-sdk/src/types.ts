@@ -829,6 +829,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/notification-preferences/kinds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's own per-message-kind notification levels */
+        get: operations["ChatController_getKindNotificationPreferences_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/notification-preferences/kinds/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set the caller's notification level for one message kind */
+        put: operations["ChatController_setKindNotificationLevel_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/channels/{id}": {
         parameters: {
             query?: never;
@@ -3130,6 +3164,22 @@ export interface components {
             /** @enum {string} */
             level: "all" | "mentions" | "off";
         };
+        KindNotificationPreferenceDto: {
+            /**
+             * @description A `chat_messages.kind`. `imported` is absent by design — the push worker refuses that kind before any preference is read, so it is not settable.
+             * @enum {string}
+             */
+            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "system_audit" | "loading" | "announcement";
+            /** @enum {string} */
+            level: "all" | "mentions" | "off";
+        };
+        SetKindNotificationLevelDto: {
+            /**
+             * @description all = every message of this kind; mentions = only when you are mentioned; off = muted. A channel-scoped preference outranks this one for messages in that channel.
+             * @enum {string}
+             */
+            level: "all" | "mentions" | "off";
+        };
         CreateChannelDto: {
             name: string;
             description?: string;
@@ -5068,6 +5118,50 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChannelNotificationPreferenceDto"][];
+                };
+            };
+        };
+    };
+    ChatController_getKindNotificationPreferences_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KindNotificationPreferenceDto"][];
+                };
+            };
+        };
+    };
+    ChatController_setKindNotificationLevel_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetKindNotificationLevelDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KindNotificationPreferenceDto"];
                 };
             };
         };

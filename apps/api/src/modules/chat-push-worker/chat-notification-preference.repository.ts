@@ -81,6 +81,78 @@ export class ChatNotificationPreferenceRepository {
   }
 
   /**
+   * Kind-scoped rows only, for the caller's own per-kind settings UI.
+   *
+   * Throws rather than degrading to `[]`, for the same reason as
+   * {@link findChannelPreferencesForUser}: here the array *is* the answer, and
+   * an empty one on a database error would render every kind at its default,
+   * indistinguishable from the user having set nothing.
+   */
+  async findKindPreferencesForUser(
+    userId: string,
+    chapterId: string,
+  ): Promise<ChatNotificationPreferenceRow[]> {
+    const { data, error } = await this.supabase
+      .from('chat_notification_preferences')
+      .select('user_id, chapter_id, scope, scope_id, scope_kind, level')
+      .eq('user_id', userId)
+      .eq('chapter_id', chapterId)
+      .eq('scope', 'kind');
+
+    if (error) throw error;
+    return data ?? [];
+  }
+
+  /**
+   * Set the caller's level for one message kind.
+   *
+   * `onConflict` names the columns of `idx_chat_notif_prefs_kind_unique`
+   * (20260902170000) — the kind arm's counterpart to the channel arm's
+   * `idx_chat_notif_prefs_channel_unique`. It deliberately does NOT target the
+   * channel index: that one is on `scope_id`, which is NULL on every kind row,
+   * so `ON CONFLICT` would match nothing and each call would INSERT a duplicate
+   * instead of updating. Nor can it target the original expression index — see
+   * that migration's header for why PostgREST cannot name a `coalesce(...)`
+   * index.
+   *
+   * `updated_at` is left to the table's trigger, one writer for that column.
+   */
+  async upsertKindLevel(
+    userId: string,
+    chapterId: string,
+    kind: string,
+    level: ChatNotificationLevel,
+  ): Promise<ChatNotificationPreferenceRow> {
+    const row: TablesInsert<'chat_notification_preferences'> = {
+      user_id: userId,
+      chapter_id: chapterId,
+      scope: 'kind',
+      // Explicitly null, not omitted — mirror of the channel upsert: the
+      // table's `chat_notif_prefs_scope_id_when_channel` CHECK requires
+      // scope_id to be null on a kind row, and an upsert that updates an
+      // existing row must clear it rather than leave whatever was there.
+      scope_id: null,
+      scope_kind: kind,
+      level,
+    };
+
+    const { data, error } = await this.supabase
+      .from('chat_notification_preferences')
+      .upsert(row, { onConflict: 'user_id,chapter_id,scope,scope_kind' })
+      .select('user_id, chapter_id, scope, scope_id, scope_kind, level')
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) {
+      throw new Error(
+        'chat-prefs: upsert returned no row for ' +
+          `user ${userId}, kind ${kind}`,
+      );
+    }
+    return data;
+  }
+
+  /**
    * Set the caller's level for one channel.
    *
    * `onConflict` names the columns of `idx_chat_notif_prefs_channel_unique`

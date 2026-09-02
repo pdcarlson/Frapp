@@ -16,7 +16,11 @@ import {
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { CHAT_MESSAGE_CONTENT_MAX_LENGTH } from '@repo/validation';
-import { CHAT_MESSAGE_KINDS } from '../../domain/entities/chat.entity';
+import {
+  CHAT_MESSAGE_KINDS,
+  SETTABLE_NOTIFICATION_KINDS,
+} from '../../domain/entities/chat.entity';
+import type { SettableNotificationKind } from '../../domain/entities/chat.entity';
 
 const CHANNEL_TYPES = ['PUBLIC', 'PRIVATE', 'ROLE_GATED'] as const;
 
@@ -355,6 +359,28 @@ export class SetChannelNotificationLevelDto {
 export class ChannelNotificationPreferenceDto {
   @ApiProperty({ format: 'uuid' })
   channel_id: string;
+
+  @ApiProperty({ enum: CHAT_NOTIFICATION_LEVELS })
+  level: (typeof CHAT_NOTIFICATION_LEVELS)[number];
+}
+
+export class SetKindNotificationLevelDto {
+  @ApiProperty({
+    enum: CHAT_NOTIFICATION_LEVELS,
+    description:
+      'all = every message of this kind; mentions = only when you are mentioned; off = muted. A channel-scoped preference outranks this one for messages in that channel.',
+  })
+  @IsIn(CHAT_NOTIFICATION_LEVELS)
+  level: (typeof CHAT_NOTIFICATION_LEVELS)[number];
+}
+
+export class KindNotificationPreferenceDto {
+  @ApiProperty({
+    enum: SETTABLE_NOTIFICATION_KINDS,
+    description:
+      "A `chat_messages.kind`. `imported` is absent by design — the push worker refuses that kind before any preference is read, so it is not settable.",
+  })
+  kind: SettableNotificationKind;
 
   @ApiProperty({ enum: CHAT_NOTIFICATION_LEVELS })
   level: (typeof CHAT_NOTIFICATION_LEVELS)[number];
