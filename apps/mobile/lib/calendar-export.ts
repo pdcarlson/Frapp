@@ -1,6 +1,7 @@
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { Platform } from "react-native";
+import { toRRuleLine } from "@repo/validation";
 import { InvalidArgumentException } from "./errors";
 
 type CalendarExportInput = {
@@ -10,6 +11,13 @@ type CalendarExportInput = {
   startAtIso: string;
   endAtIso: string;
   deepLinkUrl: string;
+  /**
+   * The event's `recurrence_rule`, when it is a series *parent*. Callers pass
+   * `null` for a one-off and for a materialized child occurrence — a child is
+   * its own event and must not re-describe the whole series. Unrecognized
+   * values degrade to a single VEVENT rather than throwing, matching the API.
+   */
+  recurrenceRule?: string | null;
 };
 
 export function escapeIcsText(value: string): string {
@@ -35,6 +43,8 @@ export function buildIcsContent(input: CalendarExportInput): string {
   const endAt = toIcsTimestamp(input.endAtIso);
   const uid = `${startAt}-${escapeIcsText(input.title)}@frapp.live`;
 
+  const rrule = toRRuleLine(input.recurrenceRule);
+
   return [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
@@ -48,6 +58,7 @@ export function buildIcsContent(input: CalendarExportInput): string {
     `SUMMARY:${escapeIcsText(input.title)}`,
     `DESCRIPTION:${escapeIcsText(`${input.description}\n${input.deepLinkUrl}`)}`,
     `LOCATION:${escapeIcsText(input.location)}`,
+    ...(rrule ? [rrule] : []),
     "END:VEVENT",
     "END:VCALENDAR",
   ].join("\r\n");
