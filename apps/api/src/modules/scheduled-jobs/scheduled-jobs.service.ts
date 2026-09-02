@@ -55,11 +55,15 @@ const POLL_EXPIRY_LOOKBACK_HOURS = 24;
  * Read that as the trade it is. A missed tick makes the reminder *later* but
  * still early — the copy reports the real remaining time, not this constant,
  * which is why `startsInPhrase` exists. But there are only six ticks per
- * event, and a worker gap or read outage spanning the full 30 minutes drops
- * the reminder permanently: no claim is written, so nothing retries and the
- * sweep reports `{sent: 0}`, indistinguishable from having no upcoming events.
- * Lengthening this window is what buys more resilience, and it costs reminder
- * precision; the two move together.
+ * event, and anything costing all six drops the reminder permanently: no
+ * claim is written, so nothing retries. Lengthening this window buys
+ * resilience and costs reminder precision; the two move together.
+ *
+ * The two ways to lose all six are not equally visible. A failing candidate
+ * query logs `event-reminder sweep: event lookup failed` per tick from
+ * `fetchAllPages` — that is the alertable signal. A worker that never ran
+ * logs nothing, and neither does a healthy tick with no upcoming events, so
+ * `{sent: 0}` on its own distinguishes nothing.
  */
 const EVENT_REMINDER_LEAD_MINUTES = 30;
 
