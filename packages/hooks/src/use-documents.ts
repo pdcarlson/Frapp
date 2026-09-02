@@ -51,6 +51,84 @@ export function useDocumentFolders() {
   });
 }
 
+/**
+ * Invalidate everything a folder write can have changed.
+ *
+ * Scoped to `["documents", chapterId]`, not the bare `["documents"]` the
+ * document mutations below still use: folder writes are chapter-scoped and
+ * blowing away every chapter's cache on a rename is the leak #784 is about.
+ *
+ * It has to cover the *document* lists too, not just the folder list. A rename
+ * re-files documents server-side (`chapter-document.service.ts` renames the
+ * documents before the folder row) and a delete moves them to root, so the
+ * rows carry a `folder` value that is stale the moment either settles. Both
+ * live under this prefix, so one call is enough.
+ */
+function useInvalidateDocumentFolders() {
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return () => {
+    void queryClient.invalidateQueries({
+      queryKey: ["documents", chapterId],
+    });
+  };
+}
+
+export function useCreateDocumentFolder() {
+  const client = useFrappClient();
+  const invalidate = useInvalidateDocumentFolders();
+  return useMutation({
+    mutationFn: async (body: { name: string; sort_order?: number }) => {
+      const { data, error } = await client.POST("/v1/documents/folders", {
+        body,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: invalidate,
+  });
+}
+
+/** Rename and reorder are one route — `PATCH` takes `name`, `sort_order`, or both. */
+export function useUpdateDocumentFolder() {
+  const client = useFrappClient();
+  const invalidate = useInvalidateDocumentFolders();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      ...body
+    }: {
+      id: string;
+      name?: string;
+      sort_order?: number;
+    }) => {
+      const { data, error } = await client.PATCH("/v1/documents/folders/{id}", {
+        params: { path: { id } },
+        body,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteDocumentFolder() {
+  const client = useFrappClient();
+  const invalidate = useInvalidateDocumentFolders();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { data, error } = await client.DELETE(
+        "/v1/documents/folders/{id}",
+        { params: { path: { id } } },
+      );
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: invalidate,
+  });
+}
+
 export function useDocument(id: string) {
   const client = useFrappClient();
   return useQuery({
