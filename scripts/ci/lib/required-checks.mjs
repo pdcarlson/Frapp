@@ -266,12 +266,11 @@ export const DRIFT_CHECKS = [
   // read the SQL without running it. Until this job existed, the first real
   // execution of an incremental production apply was the production apply.
   //
-  // Required rather than advisory for the same reason `migration-drift` is: a
-  // migration that cannot apply is not a style opinion, and the failure it
-  // prevents is one that is discovered mid-deploy with a half-migrated
-  // database. Unlike `migration-drift` it CANNOT block a PR over unrelated
-  // state — it does real work only when the PR touches
-  // `supabase/migrations/**`, and passes in seconds otherwise.
+  // Required, not advisory: a migration that cannot apply is not a style
+  // opinion, and the failure it prevents is one that is discovered mid-deploy
+  // with a half-migrated database. Unlike `migration-drift` — demoted above —
+  // it CANNOT block a PR over unrelated state: it does real work only when the
+  // PR touches `supabase/migrations/**`, and passes in seconds otherwise.
   //
   // ROLLOUT: same caveat as secret-scan — required only once the
   // migration-replay job exists on the target branch and has run green,
