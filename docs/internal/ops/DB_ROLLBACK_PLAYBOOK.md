@@ -344,6 +344,43 @@ After any rollback event:
   public` is not a partial fix, it is the original bug spelled explicitly — the guard
   rejects it for that reason.
 
+## Rollback the `chapter_points_config` table
+
+* **Migration**: `20260902170001_chapter_points_config.sql`
+* **Action**:
+  ```sql
+  DROP TABLE IF EXISTS chapter_points_config;
+  ```
+  The `updated_at` trigger is defined *on* the table, so it goes with it — no
+  separate `DROP TRIGGER`. `update_updated_at()` is shared and must stay.
+* **Order**: **redeploy the API first**, to a build from before the migration.
+  The two read paths do not degrade the same way, and only one of them is safe:
+  * `PointsService.adjustPoints` reads through `ChapterPointsConfigService.getConfig`,
+    which **fails open** — it logs a warning and applies the documented defaults
+    (50 adjustments/hour, flag at ±100), exactly the constants the service
+    hardcoded before [#394](https://github.com/pdcarlson/Frapp/issues/394). Points
+    adjustment keeps working through the drop.
+  * `GET /chapters/:id/config` reads through `getConfigOrThrow`, which **fails
+    closed** by design (it is also the baseline a config PATCH merges onto, so it
+    must not invent a prior state). A dropped table is a read error, so that
+    endpoint returns **500** — and it backs the whole web Settings page, not just
+    points.
+
+  So dropping under a running *post*-migration API leaves the ledger working and
+  Settings broken. A build from before the migration never reads the table at all
+  and is unaffected either way.
+* **One caveat, and it is a security one, not a data one**: the fallback is to the
+  *looser* defaults. A chapter that had tightened its limits (say 5 adjustments an
+  hour) silently returns to 50/hr and a ±100 flag threshold the moment the table
+  goes. Rolling this back **relaxes an anti-fraud control**, so if the rollback is
+  itself a response to abuse, restrict `points:adjust` or watch
+  `#chapter-audit` until the table is back.
+* **Data caveat**: the configured limits themselves are lost. There is no source
+  to re-derive them from, but they are recoverable by hand — every change was
+  written to `chapter_audit_log` under `action = 'chapter_config_updated'` with a
+  `points` key in its `diff`, so the last known value per chapter can be read back
+  out of the audit trail.
+
 ## Rollback the `chapter_documents` metadata columns
 
 * **Migration**: `20260831220000_chapter_documents_metadata.sql`
