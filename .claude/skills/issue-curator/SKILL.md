@@ -27,9 +27,9 @@ Use the **GitHub MCP** — the same path `/next` uses. Load schemas first, e.g.
 `ToolSearch("select:mcp__github__list_issues,mcp__github__issue_read,mcp__github__issue_write,
 mcp__github__add_issue_comment,mcp__github__search_issues,mcp__github__sub_issue_write")`. Verify
 access at the start of the run (an `issue_read` on a known issue resolves). **If the GitHub MCP is
-unavailable, stop and report — no fallback**, no REST calls (shell access to `api.github.com` is
-session-dependent — never rely on it), no scratch files. The label roster and shared routine config live in
-[`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md).
+unavailable, stop and report — no fallback**, no REST calls (REST is not a tracker write path;
+reachability is route-dependent, not session-dependent, but that changes nothing for writes), no
+scratch files. The label roster and shared routine config live in [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md).
 
 ## Ownership boundary (read first — hard invariant)
 

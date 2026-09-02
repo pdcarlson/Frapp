@@ -1040,6 +1040,16 @@ in the flow ever named a commit. Three consequences, all measured rather than ar
   gone") and its 2026-08-28 correction both stand as written. This ADR does not revise
   them; it records that the pause was **kept deliberately** and is now the only human gate.
 
+- **Amendment (2026-09-02) — the Vercel half of this ADR is superseded by ADR-21.** The owner
+  disconnected both Vercel projects from Git on 2026-09-02, so the "Vercel Production Branch =
+  `production`" row above and the consequence that "neither Vercel project's Production Branch may
+  be `main`" no longer describe anything that exists: with no Git link there is no Production
+  Branch setting and no auto-deploy-from-push path at all, and Vercel's `list_projects` reports
+  `link: null` for both `frapp-web` and `frapp-landing`. Of the two load-bearing, dashboard-only,
+  fail-open settings, **one remains** — Render auto-deploy must stay off. The Vercel half of that
+  risk is gone structurally, not mitigated. Both statements stand as the record of what was true
+  on 2026-08-28; ADR-21 records what replaces them, and the four breakages the unlink left live.
+
 **Trigger to revisit:** collaborators are added (a merge-time review may then be worth its
 cost again), or a provider gains a writable API for the settings the guardrails can only
 assert.
@@ -1161,9 +1171,131 @@ the ones a later reader would otherwise re-litigate.
   facts are the class of thing a write-only script structurally could not report, which is the
   point of the read-back rather than a claim about this particular repository's settings.
 
+- **Amendment (2026-09-02) — the Vercel half of decision 3 is superseded by ADR-21, and the
+  `api.github.com` 403 is a property of the route, not of the session.**
+
+  **(a) Staging no longer builds from Git at all.** Decision 3 above records a deliberate
+  build-shape difference: production built under `npm ci --omit=dev`, staging verified through
+  Vercel preview deployments. The owner disconnected both Vercel projects from Git on 2026-09-02
+  (ADR-21), so the staging half of that trade-off no longer exists — nothing deploys staging web or
+  landing on merge, and both hosts are frozen at their last Git build (landing `2bf143b`
+  2026-09-01T20:19Z, web `ad0f8c9` 2026-09-02T02:22Z). The `ignoreCommand: "exit 1"` row in the
+  table above is moot with it: `vercel.json`'s git settings have no integration left to govern.
+  `web-production-build` is unaffected — it runs in CI and never went through Vercel. #1381 also
+  gained a **seventh** stage on 2026-09-02 — **#1578**, ADR-21's CI-driven Vercel deploys, filed
+  that day as a native sub-issue of #1381 — so the "six sequenced stages" in the decision above,
+  decision row 4, and the completion condition in the trigger below all now read as seven. The
+  guardrail breakages the unlink left behind are **#1579**.
+
+  **(b) Reachability of `api.github.com` is route-dependent, not session-dependent.** The
+  consequence above states that branch protection "cannot be verified by an agent" because
+  `api.github.com` "returns 403 to authenticated and unauthenticated requests alike"; amendment
+  (2026-09-01, #1383)(b) narrowed that to a read that *sometimes* works, on #680's
+  *session-dependent* framing. The session was never the variable. Measured on 2026-09-02 from one
+  sandbox host, with one `GITHUB_PAT`, inside the same minute:
+
+  - `curl`, which honours `HTTPS_PROXY`, gets **403** `{"message":"GitHub access is not enabled
+    for this session"}` on **every** repo-scoped path, regardless of the `Authorization` header —
+    the agent proxy's GitHub-credential layer answers, GitHub is never reached;
+  - `curl` through that same proxy to `/user` gets **200**; the proxy allows non-repo paths;
+  - `curl --noproxy '*' .../repos/pdcarlson/Frapp/branches/main/protection` gets **200**;
+  - node's built-in `fetch` does not read `HTTPS_PROXY` (documented in the sandbox's agent-proxy
+    README at /root/.ccr/README.md), so it goes direct and gets **200 from GitHub itself** — the
+    response carries `server: github.com` and `x-github-request-id`.
+
+  Direct egress is subject only to the environment's network allowlist, which includes
+  `api.github.com`. So **reads are available to an agent as a ground-truth channel**:
+  `npm run configure:branch-protection:verify` exits 0 from this sandbox, and step 4 of a rollout
+  is evidenceable by an agent rather than only by a human's run output. Never respond to the 403 by
+  regenerating the PAT with broader scopes — scope is not what it is about — and never set
+  `NODE_USE_ENV_PROXY=1` for these scripts, which would push node onto the 403 route. What does
+  **not** change: applying branch protection stays a human step with an admin PAT **by policy**,
+  not because it is unreachable; and the GitHub MCP stays the sanctioned write path for issues, PRs
+  and comments. REST is a read channel for settings the MCP exposes no tool for — not a write
+  fallback, not an MCP replacement. This satisfies the read half of the trigger below; the write
+  half is a policy choice and stands.
+
+  The 2026-09-01 caution holds unchanged: a read reports what an admin last applied, so re-read
+  rather than cite. Re-read on 2026-09-02, `main` still carried 21 required contexts with
+  `strict: true`, `enforce_admins: true`, `required_linear_history: true`,
+  `required_pull_request_reviews: null`, and `allow_fork_syncing` live `false` against the roster's
+  `true` (**#1580**) — a dated observation, not a standing claim.
+
 **Trigger to revisit:** the six-stage program completes or is abandoned; production backups exist
 (retiring the decision-2 risk); or a provider gains a readable API for branch protection from an
 agent session, which would retire the write-only rollout step.
+
+---
+
+### ADR-21: Retire the Vercel Git integration — deploys move into CI (2026-09-02)
+
+**Decision:** Disconnect both Vercel projects — `frapp-web` and `frapp-landing` — from Git. The
+owner did this deliberately on 2026-09-02. Vercel no longer observes the repository at all: no push
+produces a preview, no branch is a Production Branch, and no Vercel dashboard setting decides what
+ships from a push. Deploying moves into GitHub Actions.
+
+**Context.** The Git integration did two jobs, and both had become liabilities. It built a preview
+for every push to `main` — the staging verification path ADR-20 decision 3 recorded; both
+`vercel.json` files pin `git.deploymentEnabled` to `{"main": true, "**": false}`, so feature-branch
+and PR pushes never produced a deployment — and it held the settings that decided what a push to
+`main` did: the Production Branch, and auto-deploy from push.
+The Production Branch exists only in the Vercel dashboard: this repository could assert it
+(`assertVercelProductionBranch` in `scripts/ci/production-guardrails.mjs`, daily and again as a
+preflight before every deploy) but could never enforce it. It is the Vercel half of the pair ADR-19
+recorded as "load-bearing, dashboard-only, and **fail open**"; the other half is Render auto-deploy,
+which this ADR does not touch. Auto-deploy from push is the second liability the unlink removes — no
+guardrail ever asserted it, and it was partly repo-governed through `git.deploymentEnabled` in both
+`vercel.json` files. Removing the integration removes both.
+
+Evidence for the state as of 2026-09-02: Vercel's `list_projects` reports `link: null` for **both**
+projects. The last Git-triggered deployments were landing `2bf143b` at 2026-09-01T20:19Z and web
+`ad0f8c9` at 2026-09-02T02:22Z. Nothing was failing beforehand — production-guardrails run #4
+passed, and every push to `main` produced previews only. This is a decision taken, not a breakage
+worked around.
+
+**What it retires.** The Production Branch guardrail (`assertVercelProductionBranch` in
+`scripts/ci/production-guardrails.mjs`) now asserts a setting that no longer exists. The
+auto-deploy-from-push path is gone outright. The `git` settings and the `ignoreCommand: "exit 1"`
+pin in both `vercel.json` files — ADR-20's always-build row — have no integration left to govern,
+which makes **#1376 obsolete**. And `scripts/ci/deploy-vercel-production.mjs` passes a `gitSource`
+to Vercel's create-deployment API, an argument that only means anything while the integration
+exists.
+
+**What replaces it.** CI-driven deploys: `vercel build` in a GitHub Actions job, then
+`vercel deploy --prebuilt --prod` — or the `files` upload form of the create-deployment API —
+shipping the artifact that job produced. That model is **designed, not built**: no workflow does it
+today, and nothing in the repository deploys Vercel without the integration. It is tracked as
+**#1578**, filed 2026-09-02 as CI/CD stage 7 — a native sub-issue of the #1381 epic.
+
+**Consequences.** Four breakages are live as of 2026-09-02, recorded here as current known-broken
+state rather than as history:
+
+- **The daily 07:15 UTC production-guardrails run is red.** `assertVercelProductionBranch` reads
+  `project.link.productionBranch` and treats an absent value as a violation; with `link: null` it is
+  always absent. The same assertion runs as a preflight inside `deploy-production.yml`, so it
+  **blocks every production deploy**. Tracked as **#1579**.
+- **`verify-deployments.yml`'s Vercel jobs and `scripts/ci/ensure-vercel-staging-alias.mjs` fail on
+  every push to `main`**, since 2026-09-01T20:46Z. They look for a deployment the integration used
+  to create. Tracked as **#1579** with the guardrail above.
+- **`scripts/ci/deploy-vercel-production.mjs` is presumed broken**, because its `gitSource` argument
+  requires the integration. Presumed rather than measured — production has not been deployed since
+  the unlink.
+- **Nothing deploys staging web or landing on merge any more.** Both staging hosts are frozen at the
+  last Git build named above, and stay there until stage 7 exists.
+
+Against those four: the **Vercel half** of the fail-open risk ADR-19 and ADR-20 mitigated is now
+**structurally gone rather than asserted**. There is no Production Branch left to point at `main`
+and no push path to deploy from, so there is nothing left for a guardrail to catch late *there*.
+The Render half is untouched — `assertRenderService` still runs in the same daily job and the same
+`deploy-production.yml` preflight, and is why `production-guardrails.mjs` still exists. That
+Vercel-side removal is the durable gain, and it is why the breakages are worth carrying rather than
+undoing by re-linking. Repairing them is CI work, tracked separately in **#1579** (the guardrails)
+and **#1578** (the replacement deploys); this ADR records the state and changes no workflow and no
+script.
+
+**Trigger to revisit:** CI-driven deploys prove unworkable and re-linking Git is considered. That
+supersedes this ADR rather than amending it — and re-linking restores both Vercel settings, the
+Production Branch and auto-deploy from push, along with the integration.
 
 ---
 

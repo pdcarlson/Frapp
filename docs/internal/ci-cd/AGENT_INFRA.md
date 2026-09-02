@@ -19,9 +19,9 @@ Provider/research credentials and cloud-sandbox runtime vars that may appear in 
 
 ## GitHub PAT usage policy
 
-The agent **may** use `GITHUB_PAT` for: creating/closing agent-owned PRs, labels, issues, branch protection script, GitHub environments/protection rules, reading PR/CI/branch state.
+The agent **may** use `GITHUB_PAT` for: creating/closing agent-owned PRs, labels, issues, the branch protection script in `--dry-run`/`--verify` mode, reading GitHub environments/protection rules, reading PR/CI/branch state. *Applying* branch protection or environment protection rules is a human step with an admin PAT — by policy, not for lack of capability; the canonical statement is in [`../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
 
-The agent **must not** use it to: merge without explicit approval, delete branches without approval, broaden repo settings beyond branch protection/environments, create/modify GitHub Secrets, force-push, or create releases/tags outside the automated release workflow.
+The agent **must not** use it to: merge without explicit approval, delete branches without approval, broaden repo settings — branch protection and environment protection rules included, since applying those is a human step (see above) — create/modify GitHub Secrets, force-push, or create releases/tags outside the automated release workflow.
 
 Node scripts (e.g. `configure-branch-protection.mjs`) read `GITHUB_PAT` directly — that script also accepts it from `.env.local` or `.env` at the repo root, with an exported variable still winning over both (details: [`../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md)). For `gh`/git, export it as `GH_TOKEN` first — `gh` only auto-reads `GH_TOKEN`/`GITHUB_TOKEN`, not `GITHUB_PAT`. The value must be a PAT with the required repository permissions; do not assume the GitHub Actions runtime token has branch-administration scope.
 
@@ -39,9 +39,34 @@ There is **no GitHub Projects board** in this workflow. Work status lives in **G
 [#680](https://github.com/pdcarlson/Frapp/issues/680)). Board states are label conventions
 (`triage` / priority `P1`–`P4` / `in-progress` / `in-review`); PRs close linked issues natively
 with `Fixes #N` on merge. In cloud sandboxes the GitHub MCP is the only *sanctioned* tracker path — the PAT/`gh` recipes
-above are for Actions and laptops; sandbox shell access to `api.github.com` is session-dependent
-(observed both proxy-blocked and working, 2026-08-08), so tracker workflows must not depend on
-it. Design + policy: [`GITHUB_PM.md`](GITHUB_PM.md).
+above are for Actions and laptops. Design + policy: [`GITHUB_PM.md`](GITHUB_PM.md).
+
+**The `api.github.com` route rule (measured 2026-09-02).** Reachability of `api.github.com` from a
+cloud sandbox is **route-dependent, not session-dependent**. This file used to say
+"session-dependent (observed both proxy-blocked and working, 2026-08-08)"; that framing was wrong.
+Measured on one host, with one `GITHUB_PAT`, inside one minute:
+
+- A request that honours `HTTPS_PROXY` (measured with `curl`; `gh` reads the same proxy env and is
+  expected to behave identically, not separately measured) reaches the agent proxy's
+  GitHub-credential layer, which answers **403** `{"message":"GitHub access is not enabled for this
+  session"}` on **every repo-scoped path**, whatever `Authorization` header is attached. `GET /user`
+  through that same proxy returns **200** — the proxy allows non-repo paths.
+- The same call sent direct — `curl --noproxy '*'`, or node's built-in `fetch`, which does **not**
+  read `HTTPS_PROXY` (documented in `/root/.ccr/README.md`) — returns **200 from GitHub itself**,
+  carrying `server: github.com` and `x-github-request-id`.
+
+So the 403 is produced by the **proxy route**, not by GitHub and not by the session's identity.
+Direct egress is bounded only by the environment network allowlist, which carries `api.github.com`.
+Two rules follow: never regenerate the PAT with broader scopes to chase one of these 403s — the
+token was never what failed — and never set `NODE_USE_ENV_PROXY=1` for these scripts, which would
+push node onto the 403 route.
+
+What this does **not** change: the GitHub MCP stays the sanctioned **write** path for issues, PRs
+and comments, and tracker workflows still go through it. Direct REST is a **read** channel for
+ground truth the MCP exposes no tool for — branch protection, environments, rulesets, repo security
+toggles — not a write fallback and not an MCP replacement. `npm run
+configure:branch-protection:verify` exits 0 from this sandbox over that route; *applying* branch
+protection remains a human step with an admin PAT **by policy**, not because it is unreachable.
 
 
 ## CI/CD summary
@@ -51,9 +76,9 @@ it. Design + policy: [`GITHUB_PM.md`](GITHUB_PM.md).
 | CI                  | `.github/workflows/ci.yml` — parallel jobs (`lint-and-typecheck` includes `nest build` for `apps/api` + landing, `@repo/validation`, `@repo/color`, `@repo/formatting`, `@repo/chapter-theme`, and `@repo/api-sdk` unit tests; `api-tests` runs `apps/api` Jest unit + E2E suites (`test` then `test:e2e`); `web-tests` runs `apps/web` Vitest plus the `packages/hooks`, `packages/chat-core`, and `packages/chat-integrations` suites; `api-docker-build` runs `apps/api/Dockerfile`; `web-production-build` builds `apps/web` and `apps/landing` on a `npm ci --omit=dev` tree, the Vercel production install shape) |
 | API deploy (staging) | `.github/workflows/deploy-api.yml` — after CI (`workflow_run`) on `main`. Staging only since #1340. |
 | Production deploy   | `.github/workflows/deploy-production.yml` — `workflow_dispatch` ONLY, takes a `sha`. Validates the commit is an ancestor of `main` with green CI (`scripts/ci/validate-deploy-sha.mjs`) — the required-check roster intersected with the jobs that commit's own workflows define, so a check it predates reads *not applicable* instead of making an older commit undeployable (see the **Deploying an OLDER commit** callout in `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`) — preflights the provider guardrails, replays the migration against production's live applied state, applies, deploys that commit to Render by `commitId` and to Vercel with `target: production`, then calls `release.yml`. One job under `environment: production`, so one approval click. A `scope: migrations-only` input applies the migrations and stops — no Render deploy, no Vercel build, no tag — which is what the deleted `Migrate production` workflow used to do, minus that workflow's habit of skipping every gate in this sentence. |
-| Production guardrails | `.github/workflows/production-guardrails.yml` — **scheduled** (daily 07:15 UTC) + `workflow_dispatch`, and re-run as a preflight inside the production deploy. Asserts Render `frapp-api-prod` has auto-deploy **off** and tracks `main`, and that neither Vercel project's Production Branch is `main`. Both settings are dashboard-only and fail OPEN, so they can only be asserted, never enforced. Logic in `scripts/ci/production-guardrails.mjs`. **Not** a required check. |
+| Production guardrails | `.github/workflows/production-guardrails.yml` — **scheduled** (daily 07:15 UTC) + `workflow_dispatch`, and re-run as a preflight inside the production deploy. Asserts Render `frapp-api-prod` has auto-deploy **off** and tracks `main`, and that neither Vercel project's Production Branch is `main`. Both settings are dashboard-only and fail OPEN, so they can only be asserted, never enforced. **The Vercel assertion is moot and red as of 2026-09-02** — both projects were unlinked from Git, so there is no Production Branch setting left to assert; the daily run is failing on it and so is the production-deploy preflight. The Render assertion is unaffected. See the Vercel note under this table. Logic in `scripts/ci/production-guardrails.mjs`. **Not** a required check. |
 | Deploy outcome      | `.github/workflows/deploy-api.yml` → terminal `deploy-outcome` job — the only job in that workflow with a write scope (job-scoped `issues: write`; the workflow-level grant stays `contents: read`). Writes a step summary + annotation saying whether the run **deployed** or **declined to deploy**, and upserts one `routine-state` alert issue on failure, closing it on the next successful deploy. Logic in `scripts/ci/deploy-alert.mjs` (tests: `scripts/ci/__tests__/deploy-alert.test.mjs`). **Not** a required check. See "Deploy visibility" below. |
-| Deploy verification | `.github/workflows/verify-deployments.yml` — post-push Render + Vercel state polling, **staging only**. Production verifies itself inline inside `deploy-production.yml`, polling the deploy/deployment IDs it created, with stricter semantics: a `CANCELED` Vercel deployment is a failure there, never neutral. |
+| Deploy verification | `.github/workflows/verify-deployments.yml` — post-push Render + Vercel state polling, **staging only**. Its **Vercel jobs have failed on every push to `main` since 2026-09-01T20:46Z** — see the Vercel note under this table; the Render half still polls. Production verifies itself inline inside `deploy-production.yml`, polling the deploy/deployment IDs it created, with stricter semantics: a `CANCELED` Vercel deployment is a failure there, never neutral. |
 | Migration drift     | `.github/workflows/check-migration-drift.yml` — **scheduled** (daily 07:00 UTC) + `workflow_dispatch`. Compares each deployed database's `schema_migrations` against `supabase/migrations/` and upserts one `routine-state` alert issue, closing it when every environment is back in sync. Job-scoped `issues: write`; workflow-level grant stays `contents: read`. Logic in `scripts/ci/check-migration-drift.mjs` (tests: `scripts/ci/__tests__/check-migration-drift.test.mjs`). **Not** a required check. See "Schema drift detection" below. |
 | Staging conformance | `.github/workflows/staging-conformance.yml` — **scheduled** (daily 07:00 UTC) + `workflow_dispatch`. Asserts live `frapp-staging` state rather than a push: project `ACTIVE_HEALTHY`, `custom_access_token_hook` enabled *and* pointed at the right function, every Infisical secret sync succeeded, and an end-to-end sign-in whose JWT carries `active_chapter_id`. **Migration parity is deliberately NOT checked here** — `check-migration-drift.yml` above owns it end to end; see "Scheduled conformance" below. Upserts its own `routine-state` alert issue on drift and closes it on recovery. Logic in `scripts/ci/staging-conformance.mjs` (tests: `scripts/ci/__tests__/staging-conformance.test.mjs`). **Not** a required check — it verifies an environment, not a diff. |
 | Release tags        | `.github/workflows/release.yml` — `workflow_call` from `deploy-production.yml` (plus `workflow_dispatch` for retry). Tags the deployed commit AFTER Render and Vercel report healthy, so a `v*` tag names something live. Bump is the highest `release:*` label across every PR merged since the last tag (`scripts/ci/resolve-release-bump.mjs`), overridable by a dispatch input. |
@@ -65,7 +90,38 @@ it. Design + policy: [`GITHUB_PM.md`](GITHUB_PM.md).
 | Branch protection   | `npm run configure:branch-protection` (prefers `GITHUB_PAT`); see `CONTRIBUTING.md`                                                                   |
 | AI code review      | **Local pre-push gate**, not CI — `.claude/hooks/pre-push-review-gate.sh` blocks pushing a HEAD until that HEAD has been reviewed (keyed on a `.cache/diff-review/<SHA>` marker, not on attempt count) — `/diff-review` (always agent-invocable; writes the marker) or `/code-review` (richer, but model-invocable only when the turn's prompt carries `/code-review` whitespace-delimited on both sides, which backticks and trailing punctuation defeat; does not write the marker) (ADR-14 2026-06-04 amendment; the `claude-review.yml` CI workflow was removed). See `AI_CODE_REVIEW_RUNBOOK.md` |
 | Dependency updates  | `.github/dependabot.yml` — one root `npm` entry (the workspaces share the root lockfile), **weekly** on Monday 09:00 UTC. Minor+patch collapse into a single grouped PR; majors stay individual. The React/React Native/Expo families are ignored — they move only via a planned SDK upgrade. **Not** a required check (it opens PRs, it doesn't gate them). See "Dependency updates (Dependabot)" below. |
-| Vercel              | Auto-deploys from `main` only (PR previews disabled via repo config). Production deployments are created by `deploy-production.yml` through the API, not by a push. |
+| Vercel              | Auto-deploys from `main` only (PR previews disabled via repo config). Production deployments are created by `deploy-production.yml` through the API, not by a push. **Auto-deploy from `main` ended 2026-09-02**: both projects are unlinked from Git, so no push deploys anything and staging web/landing are frozen at their last Git build. See the note directly below. |
+
+> **Vercel Git integration retired 2026-09-02 — four things this table describes are broken right
+> now.** The owner disconnected **both** Vercel projects from Git; `list_projects`
+> reports `link: null` for `frapp-web` and `frapp-landing` alike (read 2026-09-02). This was a
+> deliberate owner decision, recorded as **ADR-21** in
+> [`spec/architecture/README.md`](../../../spec/architecture/README.md). What it breaks, live right
+> now:
+>
+> 1. `assertVercelProductionBranch` in `scripts/ci/production-guardrails.mjs` reads
+>    `project.link.productionBranch`; an absent value is treated as a violation. The daily 07:15 UTC
+>    guardrails run is therefore **red**, and because the same script is the preflight inside
+>    `deploy-production.yml`, **production deploys are blocked** while it stays that way
+>    ([#1579](https://github.com/pdcarlson/Frapp/issues/1579)).
+> 2. `verify-deployments.yml`'s Vercel jobs and `scripts/ci/ensure-vercel-staging-alias.mjs` fail on
+>    every push to `main` since 2026-09-01T20:46Z
+>    ([#1579](https://github.com/pdcarlson/Frapp/issues/1579)).
+> 3. `scripts/ci/deploy-vercel-production.mjs` passes `gitSource` to Vercel's create-deployment API,
+>    which needs the Git integration — presumed broken, not observed failing.
+> 4. **Nothing deploys staging web or landing on merge any more.** Those hosts are frozen at their
+>    last Git build: landing `2bf143b` (2026-09-01T20:19Z), web `ad0f8c9` (2026-09-02T02:22Z).
+>
+> The "neither project's Production Branch is `main`" guardrail, and the "two dashboard-only,
+> fail-open settings" framing it sits inside, are **moot rather than mitigated**: with no Git link
+> there is no Production Branch setting and no deploy-from-push path at all, so the fail-open risk
+> that assertion existed for is structurally gone. The Render half of that framing (auto-deploy off,
+> tracking `main`) is untouched and still asserted. The replacement model — `vercel build` plus
+> `vercel deploy --prebuilt --prod` driven from GitHub Actions — is **designed and not built**;
+> nothing in this repo runs it today, so do not read this note as describing a working path. It is
+> CI/CD stage 7, tracked as [#1578](https://github.com/pdcarlson/Frapp/issues/1578) under the
+> [#1381](https://github.com/pdcarlson/Frapp/issues/1381) epic. Repairing
+> the four breakages is CI work outside this PR; this note records current state, not a fix.
 
 **PR review policy:** `main` — no required human approval (review is the local pre-push gate). There is no second branch. The human gate on what reaches users is the `production` **environment**'s Required reviewers, which pauses `deploy-production.yml`.
 
@@ -118,7 +174,7 @@ Project ID is documented in [`SECRETS_MANAGEMENT.md`](../environment/SECRETS_MAN
 >
 > What that rules out: runner queueing (siblings in the same run got runners in seconds), `needs:` (the parent job had already finished), the `db-migrate-production` concurrency lock (nothing else held it), `environment:` as a mechanism (staging is environment-scoped and does not wait), and a `wait_timer` (a fixed timer cannot produce 3m13s, 15m19s and 29m52s). Variable multi-minute delays on exactly the production-scoped jobs is a person clicking **Approve**.
 >
-> **Not verified directly, and worth saying plainly:** the environment's protection rules themselves were not read. `GET /repos/{owner}/{repo}/environments/production` is not reachable from an agent sandbox — the proxy answers `403` — so the conclusion above rests on timing evidence, which is strong but indirect. Anyone with repo settings access settles it in one look at **Settings → Environments → production**, and that look is worth taking before acting on this.
+> **Verified directly 2026-09-02; the timing evidence above is now corroboration, not the basis.** This paragraph used to read "the environment's protection rules themselves were not read. `GET /repos/{owner}/{repo}/environments/production` is not reachable from an agent sandbox — the proxy answers `403`." The 403 was the proxy route, not the endpoint — see **The `api.github.com` route rule** under Work status. Read direct with node `fetch`, `GET /repos/pdcarlson/Frapp/environments/production` returns **200** and reports `protection_rules: ["required_reviewers"]`, and `GET /repos/pdcarlson/Frapp/environments` returns 200 listing nine environments (`Preview`, `Preview – frapp-docs`, `Preview – frapp-landing`, `Preview – frapp-web`, `production`, `Production – frapp-docs`, `Production – frapp-landing`, `Production – frapp-web`, `staging`). So a required-reviewer rule on `production` is a fact read off the API, and the created→started delays above are consistent with it rather than the only evidence for it. That read establishes the rule is **present**, not *who* the reviewers are — that still takes one look at **Settings → Environments → production**.
 >
 > **Consequence, and what #1340 did with it.** Production migrations used to be gated by a human twice: once at the promotion PR, and again after merge, on an approval click nobody was paged for. The second gate is the one that parked a one-migration apply for 29m52s on 2026-08-28.
 >
@@ -469,9 +525,20 @@ a PR that never touched it.
 ### Alerts and security updates are a repo Settings toggle
 
 Dependabot **alerts** and **security updates** live in repo Settings → Advanced Security, not in this
-file, and an agent session cannot read or flip them: `GET /repos/pdcarlson/Frapp/vulnerability-alerts`
-returns `403` through the agent proxy, and the GitHub MCP exposes no repo-security-settings tool.
-Confirming those toggles is tracked as a `[human]` issue (#921).
+file. **The read half is answered as of 2026-09-02: alerts are DISABLED on this repo.**
+`GET /repos/pdcarlson/Frapp/vulnerability-alerts` returns **404 `"disabled"`** when called direct
+(node `fetch`) — not the `403` this paragraph used to record, which was the agent proxy's
+GitHub-credential layer answering rather than GitHub, and therefore said nothing about the toggle
+either way (see **The `api.github.com` route rule** under Work status). A session can now read this
+setting; it still cannot flip it — the GitHub MCP exposes no repo-security-settings tool and the
+REST route above is a read channel. So #921 stays open as `[human]`, now scoped to the write half:
+turning alerts (and security updates) on in repo Settings. The alerts toggle is the half that was
+read directly; the security-updates toggle follows from it (alerts are a prerequisite) but was not
+itself read. Read that alongside § *The ignore list is a runtime constraint, not a preference*
+above: security PRs for the React/RN/Expo set are suppressed there deliberately, and with the
+repo-level toggle off no alert is being raised for anything else either — so `npm run
+check:npm-audit` in CI is the only vulnerability signal this repo actually has today, and unlike a
+Dependabot alert it is a **blocking** CI gate (see the `check:npm-audit` rows above).
 
 ## Claude Code project settings
 
@@ -674,9 +741,13 @@ normal state of a healthy PR — check the checks UI, not the comment history, f
 net — it is the one layer that misses nothing — but it prompts the owner on every call, so on the
 cloud surface it is not usable unattended and is deliberately not armed (below). The coverage it
 would have added is a known, accepted gap, not an oversight.
-Sandbox shell access to `api.github.com` is session-dependent (the org-connect 403 was observed
-2026-08-08; a 200 was observed the same day in another session), so background polling of GitHub
-cannot be relied on — treat GitHub as reachable only through MCP tools, only while awake.
+Reachability of `api.github.com` from a sandbox is **route-dependent, not session-dependent**: the
+2026-08-08 pair (an org-connect 403, and a 200 the same day in another session) is the proxy route
+against the direct one, not two moods of one session — the measured rule is under Work status
+above. That changes what is *readable*, not what is *polled*. An awake agent can read GitHub
+directly for ground truth, but nothing in this sandbox runs while the session is asleep, so
+background polling of GitHub still cannot be relied on and the coverage gap argument is unchanged.
+Treat GitHub as reachable only while awake — through MCP tools for writes, direct REST for reads.
 
 **Do not call `send_later` on the cloud surface, and do not try to fix it from the
 repo.** Directly observed (2026-08-08): it **still prompted the owner** through every allow-list
@@ -876,17 +947,31 @@ this compares against a design, not against something that ran.) What makes it s
   writes to `main`**, and that is a property of the code, checkable by grepping for `updateToken`,
   rather than a property of live settings. Fork heads are skipped explicitly, and the token is
   scoped to this repository, so it could not push to a fork either way.
-- Branch protection is a second layer, deliberately **not** the argument, because none of it is
-  verifiable from a session. `scripts/configure-branch-protection.mjs` declares `enforce_admins:
-  true` and `restrictions: null`, but: (a) as of #1383 that script reads live protection back and diffs it (`npm run
-  configure:branch-protection:verify` exits non-zero on any difference), but the arrays are still
-  only *intent* until someone runs it, and whether an agent session can perform that read is
-  session-dependent — so this stays not-verifiable-from-a-session as an argument, and `docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md` records live `main` having
-  drifted from it as recently as 2026-08-19; (b) `restrictions: null` means the push-restriction
+- Branch protection is a second layer, deliberately **not** the argument — and as of 2026-09-02 the
+  reason is narrower than it was. `scripts/configure-branch-protection.mjs` declares `enforce_admins:
+  true` and `restrictions: null`, and: (a) as of #1383 that script reads live protection back and diffs it (`npm run
+  configure:branch-protection:verify` exits non-zero on any difference). **That read is available to
+  a session**, contrary to what this bullet used to say: it called the read "session-dependent" and
+  therefore treated the whole layer as not-verifiable-from-a-session, which the route rule under
+  Work status corrects — `GET /repos/pdcarlson/Frapp/branches/main/protection` returns 200 direct
+  (21 required contexts, `strict: true`, `enforce_admins: true`, `required_linear_history: true`,
+  `required_pull_request_reviews: null`, measured 2026-09-02) and the verify script exits 0 from
+  this sandbox, printing "No changes — live protection already matches this roster." So live `main`
+  matches every field that diff compares as of 2026-09-02 — the drift
+  `docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md` records (12 contexts against 17 intended)
+  was closed by a run on 2026-08-21. Exit 0 is not "live matches the roster in full", though: the
+  roster declares `allow_fork_syncing: true` and live `main` is `false`, and `LOCK_DEPENDENT_FLAGS`
+  excludes that key from the diff because GitHub honours fork-syncing only on a locked branch and
+  `lock_branch` is `false` — so the flag is inert either way
+  ([#1580](https://github.com/pdcarlson/Frapp/issues/1580)). What survives is
+  that a read is a **dated snapshot**, not a standing guarantee: nothing stops `main` drifting again
+  between applies, so re-run the verify rather than trusting this date; (b) `restrictions: null` means the push-restriction
   allowlist is **disabled**, which is not the same as "nothing can bypass"; and (c) `bypass_actors`
-  live in repository **rulesets**, a layer nothing in this repo configures or inspects — a ruleset
-  naming this App would defeat the claim and nothing here rules that out. Treat "the App cannot
-  reach `main`" as resting on the bullet above, which is a property of the code.
+  live in repository **rulesets**, a layer nothing in this repo configures — `GET
+  /repos/pdcarlson/Frapp/rulesets` returns 200 and reports **one** ruleset (2026-09-02), whose
+  contents nobody has read, so a ruleset naming this App would still defeat the claim and nothing
+  here rules that out. Treat "the App cannot reach `main`" as resting on the bullet above, which is
+  a property of the code.
 
 The residual risk is the private key. One protection is GitHub not passing repository secrets to
 fork-triggered `pull_request` runs; the other, weaker one is that adding a workflow that simply

@@ -269,10 +269,18 @@ For each migration:
 |----------|------|--------------|
 | CI | `.github/workflows/ci.yml` | All required CI jobs passing, correct branch triggers |
 | Deploy (staging) | `.github/workflows/deploy-api.yml` | Secret handling, migration gating, health checks |
-| Deploy (production) | `.github/workflows/deploy-production.yml` | SHA validation (ancestor of `main` + CI green), the replay/apply fence, provider guardrail preflight, deploy-by-commit, strict CANCELED handling |
-| Production guardrails | `.github/workflows/production-guardrails.yml` | Render auto-deploy off, Vercel Production Branch not `main` — both dashboard-only and fail open |
+| Deploy (production) | `.github/workflows/deploy-production.yml` | SHA validation (ancestor of `main` + CI green), the replay/apply fence, provider guardrail preflight (currently red — see next row), deploy-by-commit, strict CANCELED handling |
+| Production guardrails | `.github/workflows/production-guardrails.yml` | Render auto-deploy off and tracking `main` — dashboard-only and fails open; the Vercel half is moot and red as of 2026-09-02, see below |
 | Release | `.github/workflows/release.yml` | Version bump logic, tag creation, `workflow_call` input plumbing |
 | Docs | `.github/workflows/docs.yml` (`docs-spec-sync` job) | Spec sync enforcement |
+
+Both Vercel projects were unlinked from Git on 2026-09-02 (ADR-21 in
+[`spec/architecture/README.md`](../../../spec/architecture/README.md)), so `assertVercelProductionBranch`
+reads an absent `project.link.productionBranch` and treats it as a violation. There is no Production
+Branch setting left to audit, and the failure is not confined to the daily run: the same script is the
+preflight in `deploy-production.yml`, with no `if:` guard, and `--migrations-only` drops only
+frapp-landing's assertion — frapp-web's Vercel check stays — so it blocks production deploys too
+(tracked in #1579; do not re-derive it).
 
 ### Secret exposure in workflows
 

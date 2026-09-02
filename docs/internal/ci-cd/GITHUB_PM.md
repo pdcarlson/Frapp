@@ -62,9 +62,9 @@ GitHub Issues (canonical: planning, status, Triage intake)
 
 | Actor | Reaches GitHub Issues via | Notes |
 | --- | --- | --- |
-| **Claude Code** (web, interactive) | **GitHub MCP** (`mcp__github__issue_write` / `issue_read` / `list_issues` / `search_issues` / `add_issue_comment` / `sub_issue_write`) | The only sanctioned path. Shell access to `api.github.com` is session-dependent — observed proxy-blocked (403 "GitHub access is not enabled for this session") and working, both on 2026-08-08 — so never rely on `gh`/REST from a sandbox. No fallback tracker. |
+| **Claude Code** (web, interactive) | **GitHub MCP** (`mcp__github__issue_write` / `issue_read` / `list_issues` / `search_issues` / `add_issue_comment` / `sub_issue_write`) | The only sanctioned path for tracker **writes** — issue writes go through the MCP so they are auditable and lossless. Shell access to `api.github.com` is **route-dependent, not session-dependent** (corrected 2026-09-02; the 2026-08-08 observation of both a 403 and a success is explained by route, not by session): the proxied route 403s on every repo-scoped path, the direct one returns 200 from GitHub. That direct route is a ground-truth **read** channel only — not a tracker write path and not an MCP fallback — and the measurements behind it live in [Reading a body you intend to rewrite](#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity). `gh` is not installed. No fallback tracker. |
 | **Claude Code Routines** (scheduled) | The **same GitHub MCP** — routine sessions run in the same web environment | If the MCP is unavailable at fire time, the routine stops and reports (Docs Upkeep and Hygiene Scan excepted — they write a PR, not issues, and push the branch and report its name when the MCP is down). See [`ROUTINES.md`](ROUTINES.md). |
-| **CI / scripts** | `GITHUB_TOKEN` / `GITHUB_PAT` inside GitHub Actions only | The PAT works in Actions and on laptops, **not** in cloud sandboxes. PAT policy: [`AGENT_INFRA.md`](AGENT_INFRA.md). |
+| **CI / scripts** | `GITHUB_TOKEN` / `GITHUB_PAT` — tracker writes inside GitHub Actions only | The PAT works in Actions and on laptops. Corrected 2026-09-02: it is not dead in a cloud sandbox either — it fails only on the proxied route (403 on repo-scoped paths) and works on the direct one, where `npm run configure:branch-protection:verify` (a read-only mode) exits 0. That is a read channel, not a licence to write the tracker outside the MCP; and *applying* branch protection — the script's default, no-flag mode — stays a human step with an admin PAT by policy, not for lack of capability. PAT policy: [`AGENT_INFRA.md`](AGENT_INFRA.md). |
 
 ---
 
@@ -109,8 +109,10 @@ explicit prioritization" rule. Remove `triage` and add exactly one `P1`–`P4` i
   deployment are intentional states, not findings. Revisit when production becomes a goal; see #814
   for the decision record. **Caveat (2026-08-30):** this bullet's premise — that production does not
   yet exist — no longer holds. `frapp-prod` is live and `deploy-production.yml` deploys to it
-  (`spec/architecture/README.md` ADR-20). The label's scope is the owner's to redefine, so nothing
-  here changes on an agent's initiative; but do not read this bullet as evidence that a
+  (`spec/architecture/README.md` ADR-20) — though as of 2026-09-02 its provider-guardrail preflight
+  fails on the retired Vercel Git integration, so production deploys are currently blocked. The
+  label's scope is the owner's to redefine, so nothing here changes on an agent's initiative; but
+  do not read this bullet as evidence that a
   production-shaped risk is theoretical. Tracked in #1381.
 - Legacy labels from the pre-Linear era (`bug`, `Improvement`, `release:*`) persist on old issues;
   `release:*` still drives version bumps ([`AGENT_INFRA.md`](AGENT_INFRA.md)). Don't extend the
@@ -307,7 +309,8 @@ reading PR #1136's own description back, which returned `fp=<area>/<slug> file=<
 `fp=/ file=` while `WebFetch` of the rendered page showed the placeholders intact. Two practical
 consequences: a PR body you compose with tags or placeholders in it **is stored correctly** and only
 *reads* back mangled, so don't "fix" it on the strength of an MCP read; and when quoting an issue's
-text back to a human, quote from `WebFetch`, not from the MCP.
+text back to a human, quote from the direct REST read of the raw `body` (below), or from
+`WebFetch` of the rendered page — not from the MCP.
 
 ### The operative rule
 
@@ -319,10 +322,12 @@ text back to a human, quote from `WebFetch`, not from the MCP.
   run, or a full replacement you wrote from scratch. The hazard is *round-tripping* a body through
   a lossy read, not writing one.
 - **Escape hatch, narrow:** a rewrite sourced from a read is permissible only when you have
-  confirmed via `WebFetch` of the rendered issue page that the body contains **no HTML comment and
-  no tags anywhere (including inside code fences)**, and you un-escape vector 3 (`&#39;`→`'`,
-  `&#34;`→`"`, `&amp;`→`&`, `&gt;`→`>`) before writing back. If you cannot confirm that, leave a
-  comment instead. Deleted content cannot be un-deleted; only escaping is reversible.
+  confirmed via a direct REST read of the raw `body` (below) that the body contains **no HTML
+  comment and no tags anywhere (including inside code fences)**, and you un-escape vector 3
+  (`&#39;`→`'`, `&#34;`→`"`, `&amp;`→`&`, `&gt;`→`>`) before writing back. `WebFetch` cannot
+  satisfy that condition — it cannot see HTML comments, so it can never confirm their absence.
+  If you cannot confirm it, leave a comment instead. Deleted content cannot be un-deleted; only
+  escaping is reversible.
 
 ### The `fp=` marker is a visible line, not an HTML comment
 
@@ -397,11 +402,27 @@ State which vectors and which paths a re-verification covered, so the next one e
 than re-deriving it. A check naming only HTML comments is what let the 2026-08-11 round pass while
 a `tsx` fence was still being eaten.
 
-**`api.github.com` is not an available fallback.** The agent proxy returns `403 "GitHub access is
-not enabled for this session"` to both unauthenticated and `GITHUB_PAT`-authenticated requests
-(measured 2026-08-20), so REST cannot be used as a ground-truth channel and `gh` is not installed.
-`WebFetch` on the rendered page is the only out-of-band read. It cannot see HTML comments except
-where they are quoted inside a code span — don't read a `WebFetch` miss as a dropped marker.
+**`api.github.com` REST is available out of band, and is the better ground-truth read.**
+Corrected 2026-09-02: reachability is **route-dependent, not session-dependent**. Requests that
+honour `HTTPS_PROXY` — `curl` as configured in the sandbox — get `403 "GitHub access is not enabled
+for this session"` on every repo-scoped path, with or without a `GITHUB_PAT` header; that 403 is
+the agent proxy's GitHub-credential layer answering, not GitHub. Node's built-in `fetch` does not
+read `HTTPS_PROXY`, so it goes direct and returns **200 from GitHub itself** (`server: github.com`,
+`x-github-request-id`); `curl --noproxy '*'` behaves the same. Send the `GITHUB_PAT` as a bearer
+token on the direct read — unauthenticated it is anonymous-rate-limited and fails outright on any
+authenticated path — and note that a 403 *without* the "GitHub access is not enabled for this
+session" body is GitHub's own (rate limit or scope), not the proxy's. Do not set
+`NODE_USE_ENV_PROXY=1` for these reads — that puts node back on the 403 route — and do not read the
+403 as a reason to regenerate the PAT with broader scopes.
+
+Prefer REST over `WebFetch` when verifying an issue body: REST returns the raw `body` field, which
+is exactly what "did the HTML comment survive?" needs, whereas `WebFetch` reads the *rendered* page
+and cannot see HTML comments at all except where they are quoted inside a code span. Steps 3 and 4
+of the probe above can be run against REST instead. The rule they rest on is unchanged: don't read
+a `WebFetch` miss as a dropped marker. (The 2026-09-02 measurements covered the repo,
+branch-protection, environments, rulesets and vulnerability-alerts paths; the issues endpoint was
+not among them, so treat its 200 as expected rather than measured.) REST stays a **read** channel —
+issue writes go through the MCP, and `gh` is not installed.
 
 ### The write side is faithful
 

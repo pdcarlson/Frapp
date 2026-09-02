@@ -21,7 +21,7 @@ Before making infrastructure-related changes, gather runtime truth from the avai
 
 Notes needed by the recipes below:
 
-- For `gh`/git, export the PAT as `GH_TOKEN` first: `export GH_TOKEN="$GITHUB_PAT"` (`gh` does not auto-read `GITHUB_PAT`). Node scripts read `GITHUB_PAT` directly.
+- For `gh`/git, export the PAT as `GH_TOKEN` first: `export GH_TOKEN="$GITHUB_PAT"` (`gh` does not auto-read `GITHUB_PAT`). Node scripts read `GITHUB_PAT` directly. `gh` is a laptop/Actions tool here — it is not installed in cloud sandboxes, and it reads `HTTPS_PROXY`, so where it is present it would be expected to take the proxy route described below and 403 on repo-scoped paths (not measured).
 - Older cloud VM images may expose legacy aliases (`GITHUB_PERSONAL_ACCESS_TOKEN`, `GITHUB_FULL_PERSONAL_ACCESS_TOKEN`, `RENDER_APIKEY`). Scripts tolerate GitHub aliases where explicitly noted, but new snippets should use the canonical names.
 - [`docs/internal/environment/ENV_REFERENCE.md`](../../../docs/internal/environment/ENV_REFERENCE.md) is the canonical variable reference.
 
@@ -30,6 +30,80 @@ Notes needed by the recipes below:
 ---
 
 ## GitHub: CI and PR status
+
+**MCP first.** For anything the GitHub MCP exposes a tool for — workflow runs and job logs
+(`actions_list`, `actions_get`, `get_job_logs`), PRs (`list_pull_requests`, `pull_request_read`),
+issues, commits, branches — use the MCP. It is the sanctioned path, and the only sanctioned
+**write** path for issues, PRs and comments. The `gh` recipes below are laptop/Actions recipes;
+direct REST (further down) is a **read** channel for repo settings the MCP has no tool for.
+
+### The `api.github.com` route rule (measured 2026-09-02)
+
+Reachability of `api.github.com` from a cloud sandbox is **route-dependent, not session-dependent**
+— the older "session-dependent, observed both blocked and working" framing was wrong. Measured on
+one host, with one `GITHUB_PAT`, inside one minute:
+
+- Anything that honours `HTTPS_PROXY` reaches the agent proxy's GitHub-credential layer, which
+  answers **403** `{"message":"GitHub access is not enabled for this session"}` on **every
+  repo-scoped path**, whatever `Authorization` header is attached. Plain `curl` is in that class,
+  and `gh` reads `HTTPS_PROXY` too, so expect the same route from a sandbox (`gh` itself was not
+  measured this session). `GET /user` through the same proxy returns **200** — the proxy allows
+  non-repo paths, so a probe that never touches a repo path can look healthy.
+- The same request sent **direct** returns **200 from GitHub itself**, carrying `server: github.com`
+  and `x-github-request-id`. Two ways to send it direct: node's built-in `fetch`, which does **not**
+  read `HTTPS_PROXY` (`/root/.ccr/README.md`), or `curl --noproxy '*'`. Direct egress is bounded
+  only by the environment network allowlist, which carries `api.github.com`.
+
+**That 403 is the route, not the credential.** Never regenerate the PAT with broader scopes to
+chase one — the token was never what failed. And never set `NODE_USE_ENV_PROXY=1` for these
+scripts: it pushes node onto the 403 route. Canonical statement:
+[`AGENT_INFRA.md` → Work status](../../../docs/internal/ci-cd/AGENT_INFRA.md#work-status).
+
+### Repo settings the MCP has no tool for (direct REST read)
+
+Direct REST is the read channel for settings no MCP tool exposes: branch protection, environments
+and their protection rules, rulesets, repo visibility, `vulnerability-alerts`. It is **not** a write
+fallback and not an MCP replacement — issue/PR writes still go through the MCP, and *applying*
+branch protection stays a human step with an admin PAT **by policy**, not because it is unreachable.
+
+A reachability-and-status probe across those endpoints (statuses only — add a `await r.json()` where
+you need a body):
+
+```bash
+node -e '(async () => {
+  const h = { Authorization: `Bearer ${process.env.GITHUB_PAT}`, Accept: "application/vnd.github+json" };
+  for (const p of [
+    "/repos/pdcarlson/Frapp/branches/main/protection",
+    "/repos/pdcarlson/Frapp/environments",
+    "/repos/pdcarlson/Frapp/environments/production",
+    "/repos/pdcarlson/Frapp/rulesets",
+    "/repos/pdcarlson/Frapp/vulnerability-alerts",
+  ]) {
+    const r = await fetch(`https://api.github.com${p}`, { headers: h });
+    // x-github-request-id present => GitHub answered; absent on a 403 => the proxy did
+    console.log(r.status, r.headers.get("x-github-request-id") ? "github" : "proxy", p);
+  }
+})()'
+```
+
+One path at a time, with curl — **keep `--noproxy '*'`**, or you take the 403 route and misread it
+as an auth failure:
+
+```bash
+curl -sS --noproxy '*' -H "Authorization: Bearer $GITHUB_PAT" \
+  -H "Accept: application/vnd.github+json" \
+  "https://api.github.com/repos/pdcarlson/Frapp/environments/production" | python3 -m json.tool
+```
+
+What that route returned on 2026-09-02 (full record in
+[`AGENT_INFRA.md`](../../../docs/internal/ci-cd/AGENT_INFRA.md)): `branches/main/protection` **200**
+with 21 required contexts, `strict: true`, `enforce_admins: true`, `required_linear_history: true`,
+`required_pull_request_reviews: null`; `environments` **200** listing nine; `environments/production`
+**200** with `protection_rules: ["required_reviewers"]` — the required-reviewer gate is now read off
+the API rather than inferred from approval timing; `rulesets` **200** with one; the repo **200** with
+`visibility: public`; `vulnerability-alerts` **404 `"disabled"`** — Dependabot alerts are *off* on
+this repo, a 404 meaning disabled, not a 403 meaning blocked (#921 covers turning them on);
+`branches/production` and its protection both **404**, that branch having been retired by #1340.
 
 ### Check CI status on a branch
 
@@ -53,8 +127,28 @@ gh pr checks <number>
 ### Branch protection state
 
 ```bash
-npm run configure:branch-protection -- --dry-run
+npm run configure:branch-protection:verify           # reads live and diffs; writes nothing, takes no flags
+npm run configure:branch-protection -- --dry-run     # same read, prints the diff; the `--` is mandatory
 ```
+
+Prefer `:verify` from an agent session: it carries its own `--verify` and so cannot be mis-spelled
+into a write. The script's `hasFlag` is exact-match and an unrecognised spelling reads as *absent*,
+which means LIVE — `npm run configure:branch-protection --dry-run` (no `--`) is swallowed by npm, so
+the script sees zero args and applies. `assertKnownArgs` refuses an unknown argument it can see, but
+it cannot see one npm ate.
+
+Both read through node's global `fetch` (`ghRequest` in `scripts/ci/lib/github.mjs`), so they take
+the direct route: **`:verify` exits 0 from a cloud sandbox**, confirmed 2026-09-02. That is a real
+ground-truth check on live `main` rather than a check of declared intent, but only over the fields
+`buildProtectionPayload` manages on `main`: `allow_fork_syncing` is excluded while `lock_branch` is
+false (GitHub honours it only on a locked branch, so comparing it would fail forever) and live `main`
+is in fact `false` against a desired `true`; rulesets and environments are not covered at all. A
+green `:verify` is therefore not proof that live protection matches the roster in every field.
+
+Applying — the bare `npm run configure:branch-protection` — remains a human step with an admin PAT
+by policy; the script reads `GITHUB_PAT` first, with `GITHUB_TOKEN` / `GH_PAT` / `GH_TOKEN`
+tolerated as aliases. Runbook:
+[`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
 
 ### Find recent PRs touching a path
 
@@ -116,6 +210,23 @@ curl -s https://api.frapp.live/health           # Production
 ---
 
 ## Vercel: Build and deployment status
+
+> **Git integration retired 2026-09-02 — read these results with that in mind.** The owner
+> disconnected **both** Vercel projects from Git; `list_projects` reports `link: null` for
+> `frapp-web` and `frapp-landing` alike. Deliberate owner decision, recorded as **ADR-21** in
+> [`spec/architecture/README.md`](../../../spec/architecture/README.md). Live right now: the daily
+> production-guardrails run is red on `assertVercelProductionBranch` (an absent
+> `project.link.productionBranch` reads as a violation), and because that script is also the
+> preflight inside `deploy-production.yml`, **production deploys are blocked**;
+> `verify-deployments.yml`'s Vercel jobs and `scripts/ci/ensure-vercel-staging-alias.mjs` fail on
+> every push to `main` since 2026-09-01T20:46Z; `scripts/ci/deploy-vercel-production.mjs` is
+> presumed broken because its `gitSource` argument needs the integration; and **nothing deploys
+> staging web or landing on merge any more** — those hosts are frozen at their last Git build
+> (landing `2bf143b` 2026-09-01T20:19Z, web `ad0f8c9` 2026-09-02T02:22Z). The replacement model —
+> `vercel build` plus `vercel deploy --prebuilt --prod` from GitHub Actions — is **designed, not
+> built**; nothing runs it today. So a Vercel deployment list whose newest entry is the frozen build
+> named above is expected state until that replacement exists — anything newer, or anything older, is
+> worth reporting.
 
 ### List deployments
 
@@ -237,8 +348,10 @@ done
 
 ### "CI is failing on my PR"
 
-1. `gh pr checks <number>` — identify which job failed
-2. `gh run view <run_id> --log-failed` — read the failure logs
+1. `pull_request_read` or `actions_list` via the MCP — identify which job failed (`gh pr checks
+   <number>` on a laptop; from a sandbox `gh` takes the 403 proxy route)
+2. `get_job_logs` with `failed_only` via the MCP — read the failure logs (`gh run view <run_id>
+   --log-failed` on a laptop)
 3. Check if it's a flaky test, environment issue, or real code problem
 4. If contract check fails: regenerate with `npm run openapi:export -w apps/api && npm run generate -w packages/api-sdk`
 
@@ -246,15 +359,19 @@ done
 
 1. `curl https://api-staging.frapp.live/health`
 2. Check Render deploys for recent failures
-3. Check Vercel deployments for web/landing build status
+3. Check Vercel deployments for web/landing build status — but since 2026-09-02 nothing deploys
+   them on merge (see the Vercel note above), so a build older than that is expected state
 4. Compare Infisical staging secrets against expected keys in [`docs/internal/environment/ENV_REFERENCE.md`](../../../docs/internal/environment/ENV_REFERENCE.md)
 
 ### "Did a migration land in production?"
 
 1. `npx supabase migration list --project-ref <prod_ref>` (requires Supabase access token)
 2. Cross-reference with `supabase/migrations/` on `main` — there is no separate
-   production branch since #1340; production is deployed from a named commit on
-   `main` by `.github/workflows/deploy-production.yml`
+   production branch since #1340 (`GET /repos/pdcarlson/Frapp/branches/production` reads 404);
+   production is deployed from a named commit on `main` by
+   `.github/workflows/deploy-production.yml`. As of 2026-09-02 that workflow's guardrail preflight
+   is failing on the retired Vercel Git integration, so nothing new can land in production until
+   that is repaired — see the Vercel note above
 3. Check [`docs/internal/ops/DB_PROMOTION_RUNBOOK.md`](../../../docs/internal/ops/DB_PROMOTION_RUNBOOK.md) for promotion status
 
 ### "Are secrets in sync?"
