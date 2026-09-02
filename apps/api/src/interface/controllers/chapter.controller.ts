@@ -129,6 +129,7 @@ export class ChapterController {
   @ApiOkResponse({ type: UpdateChapterResponseDto })
   async update(
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
     @Body() dto: UpdateChapterDto,
   ) {
     // Projected for the same reason `getCurrent` is (#930), and not only for
@@ -139,6 +140,7 @@ export class ChapterController {
     const { chapter, failedContrastChecks } = await this.chapterService.update(
       chapterId,
       dto,
+      userId,
     );
     // `failedContrastChecks` is disclosure of the just-computed palette, not a
     // chapter column — it does not belong in `toChapterMemberView`'s allowlist,

@@ -9,6 +9,7 @@ import { deriveSignetPalette } from '@repo/chapter-theme';
 import * as chapterTheme from '@repo/chapter-theme';
 import { ChapterService } from './chapter.service';
 import { toChapterMemberView } from './chapter-member-view';
+import { ChapterAuditLogService } from './chapter-audit-log.service';
 import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
 import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
@@ -58,6 +59,7 @@ describe('ChapterService', () => {
   };
   let mockSupabase: { from: jest.Mock };
   let mockInsert: jest.Mock;
+  let mockAuditLog: { record: jest.Mock };
 
   beforeEach(async () => {
     mockStorageProvider = {
@@ -114,6 +116,8 @@ describe('ChapterService', () => {
       from: jest.fn().mockReturnValue({ insert: mockInsert }),
     };
 
+    mockAuditLog = { record: jest.fn().mockResolvedValue(undefined) };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ChapterService,
@@ -123,6 +127,7 @@ describe('ChapterService', () => {
         { provide: STORAGE_PROVIDER, useValue: mockStorageProvider },
         { provide: SUPABASE_CLIENT, useValue: mockSupabase },
         { provide: USER_REPOSITORY, useValue: mockUserRepo },
+        { provide: ChapterAuditLogService, useValue: mockAuditLog },
       ],
     }).compile();
 
@@ -683,10 +688,14 @@ describe('ChapterService', () => {
     };
     mockChapterRepo.update.mockResolvedValue(updatedChapter);
 
-    const result = await service.update('ch-1', {
-      name: 'Alpha Updated',
-      accent_color: '#1E293B',
-    });
+    const result = await service.update(
+      'ch-1',
+      {
+        name: 'Alpha Updated',
+        accent_color: '#1E293B',
+      },
+      'user-1',
+    );
 
     // The accent is mirrored into `branding.colors.accent` in the same write.
     // `branding.colors` is authoritative (#795) and this is the one path that
@@ -734,9 +743,13 @@ describe('ChapterService', () => {
         ],
       });
 
-      const result = await service.update('ch-1', {
-        accent_color: '#222222',
-      });
+      const result = await service.update(
+        'ch-1',
+        {
+          accent_color: '#222222',
+        },
+        'user-1',
+      );
 
       expect(result.failedContrastChecks).toEqual([
         { role: '--signet-accent-text', against: '#0E0D0B', ratio: 2.1 },
@@ -766,7 +779,7 @@ describe('ChapterService', () => {
     });
     mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
 
-    await service.update('ch-1', { accent_color: '#1E293B' });
+    await service.update('ch-1', { accent_color: '#1E293B' }, 'user-1');
 
     expect(mockChapterRepo.update).toHaveBeenCalledWith(
       'ch-1',
@@ -781,14 +794,115 @@ describe('ChapterService', () => {
   });
 
   it('does not touch branding when the update carries no accent', async () => {
+    mockChapterRepo.findById.mockResolvedValue({ id: 'ch-1', name: 'Alpha' });
     mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
 
-    await service.update('ch-1', { name: 'Renamed' });
+    await service.update('ch-1', { name: 'Renamed' }, 'user-1');
 
     expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
       name: 'Renamed',
     });
-    expect(mockChapterRepo.findById).not.toHaveBeenCalled();
+    // This used to assert `findById` was never called on the no-accent path.
+    // That stopped being true with #486: the audit diff has to compare against
+    // the stored row on every path to tell a real edit from a re-save. The
+    // branding guarantee this test exists for is unchanged and is what is
+    // asserted above — the write still carries no `branding` or `theme_palette`
+    // key.
+    const [, patch] = mockChapterRepo.update.mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+    ];
+    expect(patch).not.toHaveProperty('branding');
+    expect(patch).not.toHaveProperty('theme_palette');
+  });
+
+  // #486 — Chunk 06 routes the four core profile columns through this service
+  // while archetype/vocabulary/branding go through the config PATCH, which has
+  // always audited. These pin the other door.
+  describe('chapter profile audit (#486)', () => {
+    const stored: Partial<Chapter> = {
+      id: 'ch-1',
+      name: 'Alpha',
+      university: 'State U',
+      donation_url: null,
+      accent_color: '#8B0000',
+    };
+
+    it('writes one member-visible audit row carrying only the changed fields', async () => {
+      mockChapterRepo.findById.mockResolvedValue(stored);
+      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+
+      await service.update(
+        'ch-1',
+        { name: 'Alpha Beta', university: 'State U' },
+        'user-9',
+      );
+
+      expect(mockAuditLog.record).toHaveBeenCalledTimes(1);
+      expect(mockAuditLog.record).toHaveBeenCalledWith({
+        chapterId: 'ch-1',
+        actorUserId: 'user-9',
+        action: 'chapter_profile_updated',
+        targetType: 'chapter',
+        targetId: 'ch-1',
+        // `university` was submitted but is unchanged, so it must not appear —
+        // the diff records what changed, not what was posted.
+        diff: { name: { from: 'Alpha', to: 'Alpha Beta' } },
+        memberVisible: true,
+      });
+    });
+
+    it('audits an accent change, which posts to this route rather than the config PATCH', async () => {
+      mockChapterRepo.findById.mockResolvedValue(stored);
+      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+
+      await service.update('ch-1', { accent_color: '#0C5C3D' }, 'user-9');
+
+      expect(mockAuditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          diff: { accent_color: { from: '#8B0000', to: '#0C5C3D' } },
+        }),
+      );
+    });
+
+    it('writes no row when the form re-sends unchanged values', async () => {
+      mockChapterRepo.findById.mockResolvedValue(stored);
+      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+
+      // The Settings form re-sends every stored value on save, so this is the
+      // common case, not an edge one. Writing here would mirror a "chapter
+      // profile updated" message into the member-visible `#chapter-audit`
+      // channel every time an officer opened Settings and hit Save.
+      await service.update(
+        'ch-1',
+        { name: 'Alpha', university: 'State U', accent_color: '#8B0000' },
+        'user-9',
+      );
+
+      expect(mockChapterRepo.update).toHaveBeenCalled();
+      expect(mockAuditLog.record).not.toHaveBeenCalled();
+    });
+
+    it('audits after the update lands, so a failed save leaves no row claiming it happened', async () => {
+      mockChapterRepo.findById.mockResolvedValue(stored);
+      mockChapterRepo.update.mockRejectedValue(new Error('update failed'));
+
+      await expect(
+        service.update('ch-1', { name: 'Alpha Beta' }, 'user-9'),
+      ).rejects.toThrow('update failed');
+
+      expect(mockAuditLog.record).not.toHaveBeenCalled();
+    });
+
+    it('fails the request when the audit write fails, rather than silently not auditing', async () => {
+      mockChapterRepo.findById.mockResolvedValue(stored);
+      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+      mockAuditLog.record.mockRejectedValue(new Error('audit down'));
+
+      await expect(
+        service.update('ch-1', { name: 'Alpha Beta' }, 'user-9'),
+      ).rejects.toThrow('audit down');
+    });
   });
 
   it('recomputes the theme palette on the same write', async () => {
@@ -803,7 +917,7 @@ describe('ChapterService', () => {
     });
     mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
 
-    await service.update('ch-1', { accent_color: '#0C5C3D' });
+    await service.update('ch-1', { accent_color: '#0C5C3D' }, 'user-1');
 
     const [, patch] = mockChapterRepo.update.mock.calls[0] as [
       string,

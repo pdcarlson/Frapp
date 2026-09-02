@@ -22,6 +22,7 @@ import {
   toChapterMemberView,
   type ChapterMemberView,
 } from './chapter-member-view';
+import { ChapterAuditLogService } from './chapter-audit-log.service';
 import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
 import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
@@ -46,6 +47,23 @@ import type {
   FrappSupabaseClient,
   TablesInsert,
 } from '../../infrastructure/supabase/database.types';
+
+/**
+ * The core `chapters` columns `PATCH /v1/chapters/current` can write, and so
+ * the exact set a profile save audits (#486).
+ *
+ * Kept in lockstep with `UpdateChapterDto` rather than with the `chapters`
+ * table: the table has many more columns, but the ones reachable through this
+ * route are what an officer can actually change from Settings. `accent_color`
+ * belongs here even though it reads as branding — the accent editor posts to
+ * this route, not to the config PATCH, so it is unaudited without this entry.
+ */
+const AUDITED_PROFILE_FIELDS = [
+  'name',
+  'university',
+  'donation_url',
+  'accent_color',
+] as const satisfies readonly (keyof Chapter)[];
 
 const BRANDING_BUCKET = 'branding';
 const CHANNEL_SEEDING_ERROR_MESSAGE =
@@ -75,6 +93,7 @@ export class ChapterService {
     private readonly storageProvider: IStorageProvider,
     @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
     @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
+    private readonly auditLog: ChapterAuditLogService,
   ) {}
 
   /**
@@ -252,6 +271,13 @@ export class ChapterService {
   async update(
     id: string,
     data: Partial<Chapter>,
+    /**
+     * The member saving the form. Required rather than optional: this route is
+     * only ever reached by an authenticated officer, and an audit row whose
+     * actor defaulted to `null` would be indistinguishable from a genuine
+     * system write (`ChapterAuditLogService`'s `actorUserId` contract).
+     */
+    actorUserId: string,
   ): Promise<{
     chapter: Chapter;
     /**
@@ -265,11 +291,17 @@ export class ChapterService {
      */
     failedContrastChecks: FailedContrastCheck[];
   }> {
+    // Read once, up front, on every path — not only the accent path, which is
+    // the only one that used to need it. The audit diff (#486) has to compare
+    // against the stored row to tell a real edit from a re-save, and the
+    // accent branch below then reuses this same read rather than issuing a
+    // second one.
+    const existing = await this.chapterRepo.findById(id);
+
     if (!data.accent_color) {
-      return {
-        chapter: await this.chapterRepo.update(id, data),
-        failedContrastChecks: [],
-      };
+      const chapter = await this.chapterRepo.update(id, data);
+      await this.recordProfileAudit(id, actorUserId, existing, data);
+      return { chapter, failedContrastChecks: [] };
     }
 
     // No contrast gate here any more, and its removal is the point rather than
@@ -295,7 +327,6 @@ export class ChapterService {
     // column directly — has to carry the value back the other way. Without
     // this the two stores diverge the moment anyone touches Settings, which is
     // exactly how the original bug presented.
-    const existing = await this.chapterRepo.findById(id);
     const branding = (existing?.branding ?? {}) as {
       colors?: Record<string, string>;
     };
@@ -329,7 +360,67 @@ export class ChapterService {
       theme_palette: build.palette,
     });
 
+    await this.recordProfileAudit(id, actorUserId, existing, data);
+
     return { chapter, failedContrastChecks: build.failedContrastChecks };
+  }
+
+  /**
+   * Audit a Settings → Organization → "Chapter profile" save (#486).
+   *
+   * Chunk 06 routes the four core `chapters` columns through this service
+   * while archetype/vocabulary/branding go through `PATCH /chapters/:id/config`,
+   * which has always written a `chapter_audit_log` row. That left the 06 brief's
+   * "saving any Org field writes one audit row" true of config-backed fields
+   * only. This closes the gap on the other door.
+   *
+   * Written *after* the update lands, so a save that fails leaves no audit row
+   * claiming it happened. The inverse — the row failing after a successful
+   * update — surfaces as a 500 rather than being swallowed, matching every
+   * other writer's convention that a mutation is never silently unaudited.
+   *
+   * `ChatBridgeWorkerService` mirrors member-visible rows into `#chapter-audit`
+   * off a Realtime subscription, so there is no chat call to make here.
+   */
+  private async recordProfileAudit(
+    chapterId: string,
+    actorUserId: string,
+    existing: Chapter | null,
+    data: Partial<Chapter>,
+  ): Promise<void> {
+    // No stored row to diff against means no honest `from` value. The update
+    // itself will have thrown for a genuinely missing chapter, so this is
+    // defensive rather than a reachable state.
+    if (!existing) return;
+
+    const diff: Record<string, { from: unknown; to: unknown }> = {};
+
+    for (const field of AUDITED_PROFILE_FIELDS) {
+      const next = data[field];
+      if (next === undefined) continue;
+      const previous = existing[field];
+      if (next === previous) continue;
+      diff[field] = { from: previous, to: next };
+    }
+
+    // Deliberately not written when nothing changed, which is where this
+    // diverges from `chapter-config.service.ts` — that writer emits its row
+    // unconditionally. The Settings form re-sends every stored value on save
+    // (see the accent_color note above), so copying that here would mirror a
+    // "chapter profile updated" message into the member-visible
+    // `#chapter-audit` channel every time an officer opened Settings and hit
+    // Save without editing anything.
+    if (Object.keys(diff).length === 0) return;
+
+    await this.auditLog.record({
+      chapterId,
+      actorUserId,
+      action: 'chapter_profile_updated',
+      targetType: 'chapter',
+      targetId: chapterId,
+      diff,
+      memberVisible: true,
+    });
   }
 
   async requestLogoUploadUrl(
