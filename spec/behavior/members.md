@@ -35,7 +35,7 @@ The `members` module is always-on (free tier). Every chapter has a searchable me
 ## Invite Flow
 
 - Invites can be shared as a **join link** (a single generated token, or a batch of tokens), or sent to a **list of email addresses** (comma/newline-separated, up to 50 at a time — `POST /v1/invites/email` mints one token per address and emails each a join link; a per-address delivery failure does not fail the whole batch, and its token is still valid to share manually). A **bulk CSV upload** path is specced but not yet built — see #580.
-- Inviting members is free-tier and not billing-gated — see the invite token rules in [`onboarding.md`](onboarding.md).
+- Invite gating follows the subscription rules in [`onboarding.md`](onboarding.md) § Invite Token Rules: minting is free-tier for an `incomplete` chapter, but blocked for `past_due` (even in grace) and `canceled`; redeeming an already-minted token is never gated.
 - **On send:** write a member-visible row to `chapter_audit_log`, which posts an audit message to `#chapter-audit`.
 
 ## Chat Integration
