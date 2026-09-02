@@ -50,6 +50,16 @@ export interface ChatChannel {
   archived_at: string | null;
 }
 
+/**
+ * `ChatChannel` plus the caller-scoped capability a client needs to decide
+ * whether to render a live composer, without re-implementing
+ * `canAccessChannel` or being shipped the caller's raw alumni/permission
+ * state. Computed per request by `ChannelAccessService.withPostCapability`
+ * against the same predicate the write path enforces — never persisted, and
+ * never a column on the row.
+ */
+export type ChatChannelView = ChatChannel & { can_post: boolean };
+
 export interface ChatMessage {
   id: string;
   channel_id: string;
