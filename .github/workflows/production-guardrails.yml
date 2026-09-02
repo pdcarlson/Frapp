@@ -9,11 +9,18 @@ name: Production guardrails
 # anywhere turns red on its own.
 #
 #   * Render `frapp-api-prod` must have auto-deploy OFF and track `main`.
-#   * Vercel's Production Branch must not be `main`, for web and landing.
+#   * Vercel `frapp-web` and `frapp-landing` must NOT be linked to Git.
+#
+# The Vercel assertion was inverted on 2026-09-02 (#1579). It used to read
+# "Production Branch must not be `main`"; ADR-21 then retired the Git
+# integration, so there is no Production Branch left to assert and the old check
+# failed permanently on its own absence. What keeps production safe now is the
+# absence of a link, so a PRESENT link is the violation — staying unlinked is
+# still unversioned dashboard state, so it still needs a watchdog.
 #
 # Neither is expressible in this repository: `render.yaml` is not applied to the
-# already-created service, and Vercel exposes `link.productionBranch` read-only.
-# So they cannot be enforced, only asserted — which is what this does.
+# already-created service, and the Vercel Git connection lives only in the
+# dashboard. So they cannot be enforced, only asserted — which is what this does.
 #
 # `deploy-production.yml` runs the same script as a preflight, so a deploy
 # cannot proceed against drifted settings. This schedule is for the gap between

@@ -1,10 +1,8 @@
 name: Verify deployments
 
 # STAGING observer. After a push to `main`, confirm that the Render API deploy
-# and the Vercel web/landing deployments for the pushed SHA reached a healthy
-# terminal state. Failure surfaces as a red GitHub check. A follow-up step
-# re-points the staging custom domains to the new deployment when Vercel omits
-# that alias (see ensure-vercel-staging-alias.mjs).
+# for the pushed SHA reached a healthy terminal state. Failure surfaces as a red
+# GitHub check.
 #
 # It no longer watches production. Production is not pushed to: since #1340 it
 # is deployed by `deploy-production.yml`, which creates each deploy through the
@@ -13,10 +11,30 @@ name: Verify deployments
 # cannot do that, and after the cutover it could not even identify the right
 # deployment — one SHA now has both a `main` preview and a production build.
 #
+# ── Why there are no Vercel jobs here (2026-09-02, #1579) ───────────────────
+# There were two, `verify-vercel-web` and `verify-vercel-landing`. ADR-21
+# retired the Vercel Git integration, so no push produces a Vercel deployment
+# for any SHA — and a job that polls for one is not detecting a problem, it is
+# guaranteed to fail. They had been red on every push since 2026-09-01 (landing,
+# run #428) and 2026-09-02 (web, run #437), which is noise that trains readers
+# to ignore a red `main`.
+#
+# Removed rather than `if: false`-ed, so the workflow describes what it does.
+# The SCRIPTS both jobs called are deliberately KEPT — nothing else references
+# them today:
+#   scripts/ci/verify-vercel-deploy.mjs
+#   scripts/ci/ensure-vercel-staging-alias.mjs
+# They are not broken; they have nothing to observe. #1578 (CI/CD stage 7)
+# builds the CI-driven `vercel build` + `vercel deploy --prebuilt` path, which
+# creates deployments again — at which point verification is wanted, and
+# `ensure-vercel-staging-alias.mjs` in particular mitigates a REAL Vercel
+# behaviour that returns with it (the staging hostname lagging a READY
+# deployment). Deleting them would mean rewriting both from scratch for #1578.
+# Re-add the jobs there, keyed on the deployment id that workflow created rather
+# than on the pushed SHA.
+#
 # Semantics live in:
 #   scripts/ci/verify-render-deploy.mjs
-#   scripts/ci/verify-vercel-deploy.mjs
-#   scripts/ci/ensure-vercel-staging-alias.mjs (main only — fixes staging DNS)
 # Unit tests: scripts/ci/__tests__/ (run via `npm run test:ci-scripts`).
 
 on:
@@ -51,69 +69,3 @@ jobs:
           SERVICE_LABEL: frapp-api-staging
           GITHUB_SHA: ${{ github.sha }}
         run: node scripts/ci/verify-render-deploy.mjs
-
-  verify-vercel-web:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Verify Vercel web deploy
-        env:
-          VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
-          VERCEL_PROJECT_ID: prj_xkn32taKrJCgYRZoN6pZRfGfPT9T
-          SERVICE_LABEL: frapp-web
-          GITHUB_SHA: ${{ github.sha }}
-        run: node scripts/ci/verify-vercel-deploy.mjs
-
-      # Only reached when the verify step above passed or was neutral — a plain
-      # sequential step, so a failed verify ends the job here. Neutral now means a
-      # CANCELED deployment superseded by a later push; "no deployment for the SHA"
-      # is a FAILURE since nothing skips builds any more. See
-      # ensure-vercel-staging-alias.mjs.
-      - name: Point staging domain at latest main deployment (web)
-        env:
-          VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
-          VERCEL_PROJECT_ID: prj_xkn32taKrJCgYRZoN6pZRfGfPT9T
-          VERCEL_STAGING_ALIAS: app.staging.frapp.live
-          SERVICE_LABEL: frapp-web
-          GITHUB_SHA: ${{ github.sha }}
-        run: node scripts/ci/ensure-vercel-staging-alias.mjs
-
-  verify-vercel-landing:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Verify Vercel landing deploy
-        env:
-          VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
-          VERCEL_PROJECT_ID: prj_aAkER9EZJcxR51vUY0mwNDnCf8vy
-          SERVICE_LABEL: frapp-landing
-          GITHUB_SHA: ${{ github.sha }}
-        run: node scripts/ci/verify-vercel-deploy.mjs
-
-      # Only reached when the verify step above passed or was neutral — a plain
-      # sequential step, so a failed verify ends the job here. Neutral now means a
-      # CANCELED deployment superseded by a later push; "no deployment for the SHA"
-      # is a FAILURE since nothing skips builds any more. See
-      # ensure-vercel-staging-alias.mjs.
-      - name: Point staging domain at latest main deployment (landing)
-        env:
-          VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
-          VERCEL_PROJECT_ID: prj_aAkER9EZJcxR51vUY0mwNDnCf8vy
-          VERCEL_STAGING_ALIAS: staging.frapp.live
-          SERVICE_LABEL: frapp-landing
-          GITHUB_SHA: ${{ github.sha }}
-        run: node scripts/ci/ensure-vercel-staging-alias.mjs
