@@ -17,7 +17,12 @@ const {
   mockDocumentRefetch,
   mockRequestUpload,
   mockConfirmUpload,
+  mockCreateFolder,
+  mockUpdateFolder,
+  mockDeleteFolder,
   documentsQuery,
+  documentsArgs,
+  foldersQuery,
   mockOffline,
 } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
@@ -26,6 +31,9 @@ const {
   mockDocumentRefetch: vi.fn(),
   mockRequestUpload: vi.fn(),
   mockConfirmUpload: vi.fn(),
+  mockCreateFolder: vi.fn().mockResolvedValue({}),
+  mockUpdateFolder: vi.fn().mockResolvedValue({}),
+  mockDeleteFolder: vi.fn().mockResolvedValue({}),
   mockOffline: { value: false },
   documentsQuery: {
     data: [] as unknown[],
@@ -33,6 +41,10 @@ const {
     isError: false,
     refetch: () => undefined as unknown,
   },
+  // What the page last asked `useDocuments` for — the search wiring is only
+  // observable through this, since the mock never reaches the network.
+  documentsArgs: { value: undefined as { search?: string } | undefined },
+  foldersQuery: { data: [] as unknown[], isError: false },
 }));
 
 // Only the chapter payload is stubbed — `useSubscriptionWriteState` and
@@ -52,11 +64,18 @@ const BYLAWS = {
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useCurrentChapter: () => mockCurrentChapter(),
-  useDocuments: () => documentsQuery,
+  useDocuments: (options?: { search?: string }) => {
+    documentsArgs.value = options;
+    return documentsQuery;
+  },
+  useDocumentFolders: () => foldersQuery,
   useDocument: () => ({ refetch: mockDocumentRefetch }),
   useRequestDocumentUploadUrl: () => ({ mutateAsync: mockRequestUpload }),
   useConfirmDocumentUpload: () => ({ mutateAsync: mockConfirmUpload }),
   useDeleteDocument: () => ({ mutateAsync: mockDeleteDoc }),
+  useCreateDocumentFolder: () => ({ mutateAsync: mockCreateFolder }),
+  useUpdateDocumentFolder: () => ({ mutateAsync: mockUpdateFolder }),
+  useDeleteDocumentFolder: () => ({ mutateAsync: mockDeleteFolder }),
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
@@ -81,6 +100,14 @@ function resolvedDocumentsQuery() {
   documentsQuery.isPending = false;
   documentsQuery.isError = false;
   documentsQuery.refetch = mockRefetch;
+  documentsArgs.value = undefined;
+  // The rail reads the folder *endpoint* now, not the documents — so a folder
+  // only exists here if the server says so, which is the point of #791.
+  foldersQuery.data = [
+    { id: "f-1", name: "Governance", sort_order: 0 },
+    { id: "f-2", name: "Rush", sort_order: 1 },
+  ];
+  foldersQuery.isError = false;
 }
 
 const uploadTrigger = () =>
@@ -491,5 +518,453 @@ describe("DocumentsPage delete confirmation", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
     expect(mockDeleteDoc).not.toHaveBeenCalled();
+  });
+});
+
+describe("DocumentsPage title search (#402)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOffline.value = false;
+    resolvedDocumentsQuery();
+    chapter.active();
+  });
+
+  it("sends the query to the server rather than filtering in memory", async () => {
+    // The whole point of #402's residual: #793 shipped `?search=`, and the
+    // page has to actually use it. An in-memory filter would pass a "does it
+    // narrow the list" assertion while never touching the endpoint.
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.type(screen.getByLabelText("Search documents"), "bylaws");
+
+    await waitFor(() =>
+      expect(documentsArgs.value).toEqual({ search: "bylaws" }),
+    );
+  });
+
+  it("trims the query, and sends undefined rather than an empty string", async () => {
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+    const input = screen.getByLabelText("Search documents");
+
+    await user.type(input, "  bylaws  ");
+    await waitFor(() =>
+      expect(documentsArgs.value).toEqual({ search: "bylaws" }),
+    );
+
+    // Whitespace-only must collapse to the unfiltered query, not to a
+    // `search=" "` cache entry that can never match anything.
+    await user.clear(input);
+    await user.type(input, "   ");
+    await waitFor(() =>
+      expect(documentsArgs.value).toEqual({ search: undefined }),
+    );
+  });
+
+  it("does not escape % or _ — the server matches them literally", async () => {
+    // spec/behavior/chapter-docs.md § Search. A client that escaped them would
+    // silently stop matching a document actually titled "Budget_2026".
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.type(screen.getByLabelText("Search documents"), "Budget_2026");
+
+    await waitFor(() =>
+      expect(documentsArgs.value).toEqual({ search: "Budget_2026" }),
+    );
+  });
+
+  it("distinguishes 'no matches' from an empty library", async () => {
+    const user = userEvent.setup();
+    documentsQuery.data = [];
+    render(<DocumentsPage />);
+
+    // No query yet: the library really is empty, so invite an upload.
+    expect(screen.getByText("No documents here yet")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Search documents"), "zzz");
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("No documents match that search"),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByText("No documents here yet")).not.toBeInTheDocument();
+  });
+
+  it("composes with the folder tab", async () => {
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.type(screen.getByLabelText("Search documents"), "bylaws");
+    await waitFor(() =>
+      expect(documentsArgs.value).toEqual({ search: "bylaws" }),
+    );
+
+    // The server narrows by title; the tab then narrows that to one folder.
+    // BYLAWS is filed under Governance, so Rush must show the search-aware
+    // empty state rather than the row.
+    await user.click(screen.getByRole("button", { name: /^Rush$/ }));
+    expect(
+      screen.getByText("No documents match that search"),
+    ).toBeInTheDocument();
+    expect(documentsArgs.value).toEqual({ search: "bylaws" });
+  });
+});
+
+describe("DocumentsPage folder management (#791)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOffline.value = false;
+    resolvedDocumentsQuery();
+    chapter.active();
+  });
+
+  const folderRow = (name: string) =>
+    screen.getByRole("button", { name: new RegExp(`^${name}$`) });
+
+  it("renders folders the endpoint returns, including empty ones", () => {
+    // The regression #791 exists for: deriving the rail over `documents` could
+    // only ever show Governance, because nothing is filed under Rush.
+    render(<DocumentsPage />);
+
+    expect(folderRow("Governance")).toBeInTheDocument();
+    expect(folderRow("Rush")).toBeInTheDocument();
+  });
+
+  it("honors sort_order rather than sorting alphabetically", () => {
+    foldersQuery.data = [
+      { id: "f-2", name: "Rush", sort_order: 0 },
+      { id: "f-1", name: "Governance", sort_order: 1 },
+    ];
+    render(<DocumentsPage />);
+
+    const rendered = screen
+      .getAllByRole("button", { name: /^(Governance|Rush)$/ })
+      .map((node) => node.textContent?.trim());
+    expect(rendered).toEqual(["Rush", "Governance"]);
+  });
+
+  it("creates a folder", async () => {
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.click(screen.getByRole("button", { name: /new folder/i }));
+    await user.type(await screen.findByLabelText(/folder name/i), "Finance");
+    await user.click(screen.getByRole("button", { name: /^create folder$/i }));
+
+    await waitFor(() =>
+      expect(mockCreateFolder).toHaveBeenCalledWith({ name: "Finance" }),
+    );
+  });
+
+  it("prefills the rename dialog and sends only the new name", async () => {
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.click(screen.getByRole("button", { name: /rename governance/i }));
+    const input = await screen.findByLabelText(/folder name/i);
+    expect(input).toHaveValue("Governance");
+
+    await user.clear(input);
+    await user.type(input, "Bylaws & governance");
+    await user.click(screen.getByRole("button", { name: /^rename folder$/i }));
+
+    await waitFor(() =>
+      expect(mockUpdateFolder).toHaveBeenCalledWith({
+        id: "f-1",
+        name: "Bylaws & governance",
+      }),
+    );
+  });
+
+  it("follows the active tab across a rename", async () => {
+    // Documents record their folder by name and the server re-files them, so a
+    // tab left pointing at the old name would filter the list to nothing.
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.click(folderRow("Governance"));
+    await user.click(screen.getByRole("button", { name: /rename governance/i }));
+    const input = await screen.findByLabelText(/folder name/i);
+    await user.clear(input);
+    await user.type(input, "Charter");
+    await user.click(screen.getByRole("button", { name: /^rename folder$/i }));
+
+    await waitFor(() => expect(mockUpdateFolder).toHaveBeenCalled());
+    // The heading tracks the active folder.
+    await waitFor(() =>
+      expect(screen.getByText("Charter")).toBeInTheDocument(),
+    );
+  });
+
+  it("reorders by writing indices, so equal sort_order values still move", async () => {
+    // Swapping the two neighbours' values would be a no-op here — both are 0,
+    // which is what implicit upload-time folder registration can produce.
+    foldersQuery.data = [
+      { id: "f-1", name: "Governance", sort_order: 0 },
+      { id: "f-2", name: "Rush", sort_order: 0 },
+    ];
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.click(screen.getByRole("button", { name: /move rush up/i }));
+
+    await waitFor(() =>
+      expect(mockUpdateFolder).toHaveBeenCalledWith({
+        id: "f-1",
+        sort_order: 1,
+      }),
+    );
+    expect(mockUpdateFolder).not.toHaveBeenCalledWith(
+      expect.objectContaining({ name: expect.anything() }),
+    );
+  });
+
+  it("cannot move the first folder up or the last one down", () => {
+    render(<DocumentsPage />);
+
+    expect(
+      screen.getByRole("button", { name: /move governance up/i }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /move rush down/i }),
+    ).toBeDisabled();
+  });
+
+  it("warns that documents survive a folder delete, and confirms first", async () => {
+    const nativeConfirm = vi.spyOn(window, "confirm");
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.click(
+      screen.getByRole("button", { name: /delete folder governance/i }),
+    );
+
+    const dialog = await screen
+      .findByRole("alertdialog")
+      .catch(() => screen.getByRole("dialog"));
+    expect(nativeConfirm).not.toHaveBeenCalled();
+    // The server moves them to root — saying "cannot be undone" here would be
+    // a false claim about the member's files.
+    expect(within(dialog).getByText(/move to the root level/i)).toBeInTheDocument();
+
+    await user.click(
+      within(dialog).getByRole("button", { name: /delete folder/i }),
+    );
+    await waitFor(() => expect(mockDeleteFolder).toHaveBeenCalledWith("f-1"));
+  });
+
+  it("drops back to All files when the active folder is deleted", async () => {
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.click(folderRow("Governance"));
+    // "Governance" itself is ambiguous — it is the rail row and the card
+    // heading — so assert the heading it replaced is gone instead.
+    expect(screen.queryByText("All documents")).not.toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: /delete folder governance/i }),
+    );
+    const dialog = await screen
+      .findByRole("alertdialog")
+      .catch(() => screen.getByRole("dialog"));
+    await user.click(
+      within(dialog).getByRole("button", { name: /delete folder/i }),
+    );
+
+    await waitFor(() => expect(mockDeleteFolder).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.getByText("All documents")).toBeInTheDocument(),
+    );
+  });
+
+  it("gates every folder write behind the subscription, like upload", () => {
+    // Each folder route carries chapter_docs:manage and no @FreeTier, so they
+    // are paid ops on the same gate the rest of this page's writes use.
+    chapter.pastDue();
+    render(<DocumentsPage />);
+
+    expect(screen.getByRole("button", { name: /new folder/i })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /rename governance/i }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /delete folder governance/i }),
+    ).toBeDisabled();
+  });
+});
+
+describe("DocumentsPage search and folder resilience", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOffline.value = false;
+    resolvedDocumentsQuery();
+    chapter.active();
+  });
+
+  it("keeps a cached library reachable when a search is typed offline", async () => {
+    // Server-side search made every query string its own cache key, so an
+    // offline search lands on a key that was never fetched and `documents`
+    // empties. The plain offline card would then replace a library the member
+    // still has — the exact discard this page's state comment forbids.
+    const user = userEvent.setup();
+    const { rerender } = render(<DocumentsPage />);
+    await user.type(screen.getByLabelText("Search documents"), "bylaws");
+
+    // The connection drops with the query still in the box: the search key was
+    // never fetched, so the list empties even though the unfiltered library is
+    // still cached under its own key.
+    mockOffline.value = true;
+    documentsQuery.data = [];
+    rerender(<DocumentsPage />);
+
+    expect(
+      await screen.findByText("Search needs a connection"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Documents unavailable offline"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("still shows the plain offline state when nothing is being searched", () => {
+    mockOffline.value = true;
+    documentsQuery.data = [];
+    render(<DocumentsPage />);
+
+    expect(
+      screen.getByText("Documents unavailable offline"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Search needs a connection"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("falls back to folders derived from documents when the endpoint fails", () => {
+    // Failing to an empty rail would claim the chapter has no folders while
+    // rows keep printing "· Governance", promising a tab that isn't there.
+    foldersQuery.data = [];
+    foldersQuery.isError = true;
+    render(<DocumentsPage />);
+
+    expect(
+      screen.getByRole("button", { name: /^Governance$/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/couldn't load the folder list/i)).toBeInTheDocument();
+  });
+
+  it("offers no folder management for a derived fallback row", () => {
+    // A derived name has no folder record behind it, so there is nothing to
+    // rename, reorder or delete — offering the controls would 404.
+    foldersQuery.data = [];
+    foldersQuery.isError = true;
+    render(<DocumentsPage />);
+
+    expect(
+      screen.queryByRole("button", { name: /rename governance/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /delete folder governance/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("surfaces the API's 409 message rather than a permissions guess", async () => {
+    // #791's acceptance criterion. The fallback copy talks about permissions,
+    // which would be a misleading thing to show for a duplicate name.
+    mockCreateFolder.mockRejectedValueOnce({
+      message: 'A folder named "Finance" already exists',
+    });
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.click(screen.getByRole("button", { name: /new folder/i }));
+    await user.type(await screen.findByLabelText(/folder name/i), "Finance");
+    await user.click(screen.getByRole("button", { name: /^create folder$/i }));
+
+    await waitFor(() => expect(mockCreateFolder).toHaveBeenCalled());
+    // The dialog stays open on failure so the name can be corrected in place.
+    expect(await screen.findByLabelText(/folder name/i)).toHaveValue("Finance");
+  });
+
+  it("composes search with the No folder tab", async () => {
+    // A distinct branch of the `visible` memo (`!doc.folder`) from the
+    // named-folder one, and the only search test that reaches it.
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.click(screen.getByRole("button", { name: /^No folder$/ }));
+    await user.type(screen.getByLabelText("Search documents"), "bylaws");
+
+    // BYLAWS is filed under Governance, so the uncategorized bucket has no
+    // match and must show the search-aware empty state.
+    await waitFor(() =>
+      expect(
+        screen.getByText("No documents match that search"),
+      ).toBeInTheDocument(),
+    );
+    expect(documentsArgs.value).toEqual({ search: "bylaws" });
+  });
+
+  it("keeps folder controls at the 44px touch floor", () => {
+    // `button.tsx` sizes `icon` at 44 deliberately; these four sit adjacent in
+    // a 240px rail, where an undersized target puts delete next to move-down.
+    render(<DocumentsPage />);
+
+    const move = screen.getByRole("button", { name: /move governance down/i });
+    expect(move.className).toContain("pointer-coarse:h-11");
+    expect(move.className).toContain("pointer-coarse:w-11");
+  });
+});
+
+describe("DocumentsPage derived folder fallback under search", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOffline.value = false;
+    resolvedDocumentsQuery();
+    chapter.active();
+  });
+
+  it("never derives folder tabs from a search result set", async () => {
+    // The fallback derives from `documents`, which IS the search response. If it
+    // ran mid-search, a query matching only Governance files would delete the
+    // Rush tab keystroke by keystroke — the rail describing the result set
+    // instead of the chapter. It drops to the two built-in filters instead, and
+    // the notice says why.
+    foldersQuery.data = [];
+    foldersQuery.isError = true;
+    documentsQuery.data = [
+      BYLAWS,
+      { ...BYLAWS, id: "doc-2", title: "Rush schedule", folder: "Rush" },
+    ];
+    const user = userEvent.setup();
+    const { rerender } = render(<DocumentsPage />);
+
+    // Unfiltered: both folders derive fine.
+    expect(screen.getByRole("button", { name: /^Rush$/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Governance$/ }),
+    ).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Search documents"), "bylaws");
+    // The server answers with Governance matches only.
+    documentsQuery.data = [BYLAWS];
+    rerender(<DocumentsPage />);
+
+    await waitFor(() =>
+      expect(documentsArgs.value).toEqual({ search: "bylaws" }),
+    );
+    // Neither tab survives — crucially including Governance, which the result
+    // set *would* have produced. Deriving a rail from matches is the bug.
+    expect(
+      screen.queryByRole("button", { name: /^Governance$/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^Rush$/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/folder filters are unavailable while searching/i),
+    ).toBeInTheDocument();
   });
 });
