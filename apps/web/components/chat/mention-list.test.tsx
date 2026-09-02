@@ -139,3 +139,70 @@ describe("MentionList", () => {
     );
   });
 });
+
+describe("MentionList — loading (@tiptap/suggestion's intermediate dispatch)", () => {
+  // `@tiptap/suggestion` always fires an `{ items: [], loading: true }`
+  // update before the real one on every keystroke (confirmed against
+  // node_modules/@tiptap/suggestion/dist/index.js — `willFetch` is always
+  // true here since no `minQueryLength`/`initialItems` is configured). The
+  // popup must not flash "No matching members." during that tick.
+  it("keeps showing the previous results during a loading update instead of clearing to empty", () => {
+    const { ref, command, rerender } = renderList(ITEMS);
+    expect(screen.getByText("Jane Doe")).toBeInTheDocument();
+
+    act(() => {
+      rerender(<MentionList ref={ref} items={[]} command={command} loading />);
+    });
+    // Stale-while-revalidate: still the previous list, not the empty state.
+    expect(screen.getByText("Jane Doe")).toBeInTheDocument();
+    expect(screen.queryByText("No matching members.")).not.toBeInTheDocument();
+  });
+
+  it("shows the real empty state once a non-loading update actually has zero matches", () => {
+    const ref = createRef<MentionListHandle>();
+    const command = vi.fn();
+    const { rerender } = render(
+      <MentionList ref={ref} items={ITEMS} command={command} loading />,
+    );
+    act(() => {
+      rerender(<MentionList ref={ref} items={[]} command={command} />);
+    });
+    expect(screen.getByText("No matching members.")).toBeInTheDocument();
+  });
+
+  it("renders the real items immediately when there is no prior result to hold onto", () => {
+    render(
+      <MentionList ref={createRef()} items={[]} command={vi.fn()} loading />,
+    );
+    expect(screen.getByText("No matching members.")).toBeInTheDocument();
+  });
+});
+
+describe("MentionList — selectedIndex clamped synchronously, not only via effect", () => {
+  it("Enter still selects the last remaining row in the same render the list shrinks to it", () => {
+    // Regression case: highlight the 3rd of 3 rows, then re-render with only
+    // 1 row *without* letting the `useEffect` that resets selectedIndex run
+    // first (act() flushes effects, so simulate the race by pressing Enter
+    // synchronously inside the same act() as the narrowing re-render).
+    const command = vi.fn();
+    const ref = createRef<MentionListHandle>();
+    const { rerender } = render(
+      <MentionList ref={ref} items={ITEMS} command={command} />,
+    );
+    press(ref, "ArrowDown");
+    press(ref, "ArrowDown");
+    expect(screen.getAllByRole("option")[2]).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+
+    const narrowed = [ITEMS[2]!];
+    act(() => {
+      rerender(<MentionList ref={ref} items={narrowed} command={command} />);
+      // Same act() batch as the narrowing render — the clamp must already
+      // be in effect for this render, not only after a subsequent one.
+      ref.current!.onKeyDown({ event: { key: "Enter" } as KeyboardEvent } as never);
+    });
+    expect(command).toHaveBeenCalledWith(ITEMS[2]);
+  });
+});

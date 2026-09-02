@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { resolveMentions } from "@repo/validation";
 import { createMentionSuggestion, mentionLabelFor } from "./mention-suggestion";
 import type { MentionSuggestionItem } from "./mention-list";
 
@@ -13,6 +14,42 @@ describe("mentionLabelFor", () => {
 
   it("collapses multiple internal spaces, not just single ones", () => {
     expect(mentionLabelFor("Mary  Jane   Watson")).toBe("MaryJaneWatson");
+  });
+
+  // Regression: the mention tokenizer (packages/validation/src/mentions.ts)
+  // truncates — does not reject — a token at the first character outside
+  // its allowed set. A label that kept "(", ")" or other punctuation would
+  // silently shorten to something that could resolve to a *different*
+  // member than the one actually picked. Stripping to alphanumerics-and-marks
+  // only means every kept character is one the tokenizer always carries
+  // through to the end.
+  it("strips punctuation the mention tokenizer would otherwise truncate on", () => {
+    expect(mentionLabelFor("Sam (VP)")).toBe("SamVP");
+  });
+
+  it("strips commas, slashes, and ampersands", () => {
+    expect(mentionLabelFor("Smith, John")).toBe("SmithJohn");
+    expect(mentionLabelFor("A/B Test")).toBe("ABTest");
+    expect(mentionLabelFor("Rock & Roll")).toBe("RockRoll");
+  });
+
+  it("keeps digits and Unicode letters, which the tokenizer does accept mid-token", () => {
+    expect(mentionLabelFor("Ángela 2nd")).toBe("Ángela2nd");
+  });
+
+  // Proves the fix against the real server-side resolver, not just the
+  // label-computation logic in isolation: a label built for a member whose
+  // name contains punctuation the tokenizer would otherwise truncate on
+  // must still resolve back to that exact member — not a same-named
+  // lookalike whose name the truncated token happens to match exactly.
+  it("resolves to the exact member picked, not a same-named lookalike, when the display name has punctuation", () => {
+    const candidates = [
+      { user_id: "vp-id", display_name: "Sam (VP)" },
+      { user_id: "other-sam-id", display_name: "Sam" },
+    ];
+    const label = mentionLabelFor("Sam (VP)");
+    const resolved = resolveMentions(`Hey @${label}`, candidates);
+    expect(resolved).toEqual(["vp-id"]);
   });
 });
 

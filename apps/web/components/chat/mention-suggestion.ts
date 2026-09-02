@@ -16,21 +16,40 @@ export interface MentionRosterEntry {
 const MAX_SUGGESTIONS = 8;
 
 /**
- * The mention node's serialized text label: `display_name` with internal
- * whitespace removed.
+ * The mention node's serialized text label: `display_name` with every
+ * character that isn't a Unicode letter, digit, or mark removed.
  *
  * Mentions resolve **server-side**, from plain `@token` text parsed out of
  * the message body (`packages/validation/src/mentions.ts` —
  * `resolveMentions`/`extractMentionTokens`), never from a client-supplied id.
- * That parser's token pattern stops at whitespace, so `@Jane Doe` would only
- * ever extract the token `Jane` — which resolves only if "Jane" is a unique
- * first name. Stripping the space instead lines up with the resolver's
- * "name without spaces" tier, so a name picked from this popup always
- * resolves to the exact member selected (mirrored by `Mention`'s default
+ *
+ * Stripping *only* whitespace is not enough, and was a real bug caught in
+ * review: the tokenizer's `MENTION_TOKEN` pattern allows a narrow set of
+ * mid-token punctuation (`'’.-_`) but **truncates the match** at the first
+ * character outside it — it does not reject the token, it silently shortens
+ * it. A display name like "Sam (VP)" would strip to the label `Sam(VP)`;
+ * `@Sam(VP)` tokenizes as just `Sam`, and if another member is exactly named
+ * "Sam", the resolver's tier-2 exact-name match resolves to *that* member
+ * instead — a message that looks like it mentions "Sam (VP)" silently
+ * mentions the wrong person.
+ *
+ * Stripping to alphanumerics-and-marks only avoids this class of bug
+ * entirely: every character kept is one `MENTION_TOKEN` always accepts
+ * through to the end (never truncates on), so the result token-round-trips
+ * intact. It also matches `mentions.ts`'s own `fold()` transform (same
+ * character class, case aside), so it resolves via the resolver's "name
+ * without spaces" tier the way this popup is built to guarantee — the exact
+ * member picked is the exact member that resolves, not a same-named
+ * lookalike or a truncated fragment (mirrored by `Mention`'s default
  * `renderText`, which serializes `@` + this label — see `composer.tsx`).
+ *
+ * This does not, and cannot, prevent the resolver's own accepted ambiguity
+ * case — two members whose names fold to the identical string — which
+ * `spec/behavior/chat/README.md`'s §Mentions already documents as failing
+ * closed (nobody mentioned, not the wrong person).
  */
 export function mentionLabelFor(displayName: string): string {
-  return displayName.replace(/\s+/g, "");
+  return displayName.replace(/[^\p{L}\p{N}\p{M}]/gu, "");
 }
 
 /**
@@ -85,6 +104,13 @@ export function createMentionSuggestion(
 ): Omit<SuggestionOptions<MentionSuggestionItem>, "editor"> {
   return {
     char: "@",
+    // No `command` here — deliberately. `@tiptap/extension-mention`'s
+    // default `command` (insert the node, add a trailing space, mind an
+    // already-adjacent space) is exactly right and this object's `command`
+    // key must stay *absent*, not `undefined`: the extension spreads this
+    // object over its own defaults (`{ ...defaults, ...this }`), and an
+    // absent key leaves the default in place while an explicit `undefined`
+    // would overwrite it — silently turning "pick a mention" into a no-op.
     items: ({ query }) => filterRoster(rosterRef.current, query),
     render: () => {
       let component: ReactRenderer<MentionListHandle> | null = null;
