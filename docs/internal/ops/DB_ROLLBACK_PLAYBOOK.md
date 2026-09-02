@@ -353,16 +353,22 @@ After any rollback event:
   ```
   The `updated_at` trigger is defined *on* the table, so it goes with it — no
   separate `DROP TRIGGER`. `update_updated_at()` is shared and must stay.
-* **Order**: no coordination required, in either direction. This is the cleanest
-  case in this playbook: an absent row already means "use the defaults", so a
-  chapter with no row and a chapter whose table was just dropped are the same
-  state as far as the API is concerned. A build from *before* the migration never
-  reads the table; a build from *after* it reverted degrades per field to the
-  documented defaults (50 adjustments/hour, flag at ±100) — exactly the constants
-  `PointsService` hardcoded before [#394](https://github.com/pdcarlson/Frapp/issues/394).
-  Dropping under a running post-migration API is survivable for the same reason:
-  `ChapterPointsConfigService.getConfig` logs a warning and falls back rather than
-  throwing.
+* **Order**: **redeploy the API first**, to a build from before the migration.
+  The two read paths do not degrade the same way, and only one of them is safe:
+  * `PointsService.adjustPoints` reads through `ChapterPointsConfigService.getConfig`,
+    which **fails open** — it logs a warning and applies the documented defaults
+    (50 adjustments/hour, flag at ±100), exactly the constants the service
+    hardcoded before [#394](https://github.com/pdcarlson/Frapp/issues/394). Points
+    adjustment keeps working through the drop.
+  * `GET /chapters/:id/config` reads through `getConfigOrThrow`, which **fails
+    closed** by design (it is also the baseline a config PATCH merges onto, so it
+    must not invent a prior state). A dropped table is a read error, so that
+    endpoint returns **500** — and it backs the whole web Settings page, not just
+    points.
+
+  So dropping under a running *post*-migration API leaves the ledger working and
+  Settings broken. A build from before the migration never reads the table at all
+  and is unaffected either way.
 * **One caveat, and it is a security one, not a data one**: the fallback is to the
   *looser* defaults. A chapter that had tightened its limits (say 5 adjustments an
   hour) silently returns to 50/hr and a ±100 flag threshold the moment the table
@@ -373,9 +379,7 @@ After any rollback event:
   to re-derive them from, but they are recoverable by hand — every change was
   written to `chapter_audit_log` under `action = 'chapter_config_updated'` with a
   `points` key in its `diff`, so the last known value per chapter can be read back
-  out of the audit trail. Note the API blocks a `getConfigOrThrow` read error but
-  *not* a missing table with the fallback path, so the config endpoint keeps
-  serving defaults rather than erroring after a drop.
+  out of the audit trail.
 
 ## Rollback the `chapter_documents` metadata columns
 
