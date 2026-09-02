@@ -494,13 +494,13 @@ export default function Home() {
           <h2 className="max-w-3xl text-3xl font-bold tracking-tight sm:text-4xl">
             Ready to run your chapter with clarity, speed, and accountability?
           </h2>
-          <p className="mt-4 max-w-2xl text-slate-300">
+          <p className="mt-4 max-w-2xl text-white/70">
             Join the chapters using Frapp to consolidate operations, reduce
             leadership overhead, and improve member engagement.
           </p>
           <Link
             href={signupUrl}
-            className="mt-8 inline-flex h-11 items-center rounded-md bg-white px-6 text-sm font-semibold text-navy transition-colors hover:bg-slate-200"
+            className="mt-8 inline-flex h-11 items-center rounded-md bg-white px-6 text-sm font-semibold text-navy transition-colors hover:bg-white/90"
           >
             Get Started
           </Link>

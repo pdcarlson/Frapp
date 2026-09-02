@@ -16,7 +16,7 @@ import {
 import {
   REPORT_TITLES,
   type ReportKind,
-} from '../../interface/controllers/report-columns';
+} from '../../domain/constants/report-columns';
 import {
   REPORTS_BUCKET,
   reportsFolderPrefix,

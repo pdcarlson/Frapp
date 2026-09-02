@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useRouter } from "expo-router";
 import { StyleSheet, Text } from "react-native";
 import {
   useEvents,
   useInvoices,
   useListChapters,
-  useMyPermissions,
   useNotifications,
+  usePermissionList,
   useStudySessions,
   useViewerUserId,
 } from "@repo/hooks";
@@ -24,6 +24,7 @@ import {
 import { formatHoursLabel, startOfWeek } from "@/lib/study/format";
 import { selectSessionHistory } from "@/lib/study/session";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { useNowTick } from "@/lib/use-now-tick";
 import { StatusChip } from "@/components/status-chip";
 
 /**
@@ -43,8 +44,9 @@ import { StatusChip } from "@/components/status-chip";
  *
  * ## The admin section, and why it may look empty in production
  *
- * The gate is `useMyPermissions()` + `can`, the pattern `host-check-in.tsx`
- * established. That hook is `enabled: !!chapterId`, and no production token
+ * The gate is `usePermissionList()` + `can`, the pattern `host-check-in.tsx`
+ * established. The underlying `useMyPermissions` hook is `enabled:
+ * !!chapterId`, and no production token
  * carries an `active_chapter_id` claim while #805 is open — so in that
  * configuration the permission set is empty and this section renders for
  * nobody, Presidents included. It fails closed, which is the right direction,
@@ -71,16 +73,12 @@ export default function MoreScreen() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
 
-  const { data: permData } = useMyPermissions();
   const chaptersQuery = useListChapters();
   const hasNoChapters =
     chaptersQuery.isSuccess &&
     Array.isArray(chaptersQuery.data) &&
     chaptersQuery.data.length === 0;
-  const permissions = useMemo(() => {
-    const raw = (permData as { permissions?: unknown } | undefined)?.permissions;
-    return Array.isArray(raw) ? (raw as string[]) : [];
-  }, [permData]);
+  const permissions = usePermissionList();
   // `can`/`canAny` from @repo/validation, never a bare `includes` — an owner's
   // grant is the wildcard `*`, so a membership test would hide these rows from
   // exactly the people who need them.
@@ -95,15 +93,11 @@ export default function MoreScreen() {
   // nowhere. `selectEventRows` already returns upcoming-plus-still-checkable-in,
   // soonest first, so the head of that list is the event an officer would host.
   const eventsQuery = useEvents();
-  // `now` is state rather than a value read inside the memo: React Query's
-  // structural sharing keeps `data` referentially stable across a refetch that
-  // returns identical rows, so a captured `new Date()` would keep targeting an
-  // event whose check-in window has since closed.
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 60_000);
-    return () => clearInterval(id);
-  }, []);
+  // `now` ticks rather than being read once inside the memo below: React
+  // Query's structural sharing keeps `data` referentially stable across a
+  // refetch that returns identical rows, so a captured `new Date()` would
+  // keep targeting an event whose check-in window has since closed.
+  const now = useNowTick();
 
   const nextEvent = useMemo(() => {
     if (!canHost) return null;
