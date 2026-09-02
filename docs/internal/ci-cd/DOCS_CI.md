@@ -3,14 +3,15 @@
 ## What runs
 
 On pull requests to `main`, `.github/workflows/docs.yml` (workflow display name
-**Docs spec sync**) runs **three jobs** covering **five** checks. They are separate on purpose: each
+**Docs spec sync**) runs **five jobs** covering **six** checks. They are separate on purpose: each
 asserts one thing, and each fails with a different fix.
 
 | Check | Script | Asserts | Scope | Job | Required? |
 |---|---|---|---|---|---|
 | Sync | [`check-docs-impact.mjs`](../../../scripts/check-docs-impact.mjs) | A PR touching non-doc files also touches `docs/` or `spec/` | PR diff | `docs-spec-sync` | **Yes** |
-| Structure | [`check-docs-structure.mjs`](../../../scripts/check-docs-structure.mjs) | Newly **added** paths sit in allowed locations | Added/renamed paths in the diff | `docs-spec-sync` | **Yes** (same job) |
+| Structure | [`check-docs-structure.mjs`](../../../scripts/check-docs-structure.mjs) | Every file under `docs/`/`spec/` sits in a declared home and matches the naming rule, per [`scripts/ci/lib/docs-structure.mjs`](../../../scripts/ci/lib/docs-structure.mjs) | Whole tree | `docs-structure` | Not yet — see rollout below |
 | Citations | [`check-doc-paths.mjs`](../../../scripts/check-doc-paths.mjs) | Backticked repo-path citations resolve to real files | Whole tree | `doc-paths` | **Yes** — in `DOCS_CHECKS` |
+| References | [`check-doc-refs.mjs`](../../../scripts/check-doc-refs.mjs) | In files OUTSIDE the docs corpus (source, workflows, migrations, shell): bare `docs/`/`spec/` paths resolve, and bare markdown filenames still name a tracked file | Whole tree | `doc-refs` | Not yet — see rollout below |
 | Rosters | [`check-doc-tables.mjs`](../../../scripts/check-doc-tables.mjs) | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml` | Whole tree | `doc-tables` | Not yet — see rollout below |
 | Env slugs | [`check-env-slugs.mjs`](../../../scripts/check-env-slugs.mjs) | Every Infisical environment named anywhere is one that exists | Whole tree | `doc-tables` (same job) | Not yet — inherits `doc-tables` |
 
@@ -118,9 +119,37 @@ file that states the same rule (usually the right move anyway), or label it `no-
 when there genuinely is none. [#810](https://github.com/pdcarlson/Frapp/issues/810) tracks teaching the gate about it;
 [`ROUTINES.md`](ROUTINES.md#maintenance) records the workaround until then.
 
-**Structure** only ever looks at paths a PR *adds* or renames — existing files are never flagged —
-so it stops the sync gate from being satisfied by dropping a stray file. Placement rules live in
-[`DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md).
+**Structure** validates the **whole tree** against
+[`scripts/ci/lib/docs-structure.mjs`](../../../scripts/ci/lib/docs-structure.mjs) — the placement map
+as data. It stops the sync gate from being satisfied by dropping a stray file, and it stops the
+layout drifting generally: a file in an undeclared directory, a stray file at a tree root, a name
+that breaks the convention, a banned prefix returning, a declared directory that holds nothing, or a
+directory that owes a `README.md` and lacks one.
+
+It used to look only at paths a PR *added* or renamed, which meant a file already in the wrong place
+was invisible forever, and its `spec/` rule matched only root-level paths — so a newly invented
+`spec/` subfolder passed. `docs/hooks/` and `docs/performance/` reached `main` that way, absent from
+the placement map this gate points at.
+
+The naming rule is kebab-case `.md`, or `README.md`. The `SCREAMING_SNAKE_CASE` files that predate
+it — all under `docs/internal/` — are grandfathered in `LEGACY_NAMES`, which is a **ratchet**: an
+entry that no longer matches a tracked file fails the gate, so a rename must delete its entry in the
+same commit and the list can only shrink. `.dc.html` design exports are exempt from naming.
+
+`--base`/`--head` are still accepted but no longer scope the check; they only label which violations
+the change introduced.
+
+**Rollout.** It moved out of the required `docs-spec-sync` job when it stopped being diff-scoped, and
+reports on its own `docs-structure` job until the trade is accepted — the same path `doc-paths` took.
+[`required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs) states the rule next to
+`doc-paths`: a whole-tree check inside a required job "can block a PR over a citation in a doc that
+PR never touched". While it was ADD-only that placement was safe; whole-tree, one stale
+`LEGACY_NAMES` entry would red every open PR at once. Promote by adding `"docs-structure"` to
+`DOCS_CHECKS` once it has run green on `main`.
+
+Placement rules live in
+[`DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md), and `doc-tables` checks that
+document's table against the manifest in both directions, so the two cannot drift.
 
 ### Citations (`check-doc-paths.mjs`)
 
@@ -164,6 +193,71 @@ Being in the array is *intent*, not live state — branch protection changes onl
 live `PUT`, and an agent session runs `npm run configure:branch-protection:verify` (which writes
 nothing) and nothing else. Ask for the apply once this lands and `main` is green; read live state
 per [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
+
+### References (`check-doc-refs.mjs`)
+
+**Citations** is whole-tree but its scope *is* the documentation. Everything else — source, tests,
+workflows, migrations, shell scripts — cites docs constantly and was checked by nothing. At the time
+this gate was added that was roughly 770 path references and 470 filename references across 530
+files (2026-09-02). It prints the live counts on every run, and those are the numbers to trust — an
+exact figure written here would be stale by the next commit, which is the failure this whole page is
+about.
+
+The gap was not hypothetical. The spec split in [#432](https://github.com/pdcarlson/Frapp/issues/432)
+left dead pointers that nothing caught for months: `apps/api/README.md` named three files that no
+longer existed, and `supabase/seed.sql` still pointed at the pre-split behavior spec.
+
+Widening **Citations** would not have fixed it. That gate requires an inline code span, because that
+is how prose cites a path; source cites bare, in comments. So this is a separate bare-path extractor
+that reuses the other's allowlist machinery, including the property that an entry excusing nothing
+fails the run.
+
+**Two passes, because a doc breaks in two different ways.** A doc that *moves* changes its path; a
+doc that is *renamed* changes its filename. The path pass needs the `docs/` or `spec/` prefix to know
+a token is a claim about the corpus — which is exactly what a bare filename lacks, and source cites
+docs by filename alone all the time, in comments, workflow strings, shell and migration headers. So a
+second pass extracts bare markdown filenames and asks only whether any tracked file still carries
+that name. That is deliberately weaker than the path pass: a filename names no directory, so it
+cannot say *which* file it meant, and a move keeps resolving. It catches renames, which nothing else
+could see.
+
+The second pass was added for the docs restructure ([#1597](https://github.com/pdcarlson/Frapp/issues/1597)),
+whose kebab-case renames change dozens of filenames cited this way. Stage 2 made the *layout*
+machine-enforced so the restructure's move would be self-checking; for renames it was not, and this
+closes that.
+
+- **Scope:** every tracked file *outside* the Citations scope.
+- **Excluded, each for a reason:** `.buildpad/` (a synced export, never hand-edited);
+  `.gitleaks-baseline.json` (entries pin a path *and* a SHA, so they describe the tree as it was);
+  **both** allowlists — `scripts/doc-paths-allowlist.json` and this gate's own
+  `scripts/doc-refs-allowlist.json` (their job is naming references that do not resolve, so scanning
+  them would make every excuse its own violation); and any `__tests__/` directory (assertion fixtures
+  are synthetic — a gate's own test must be free to name an invented path under `spec/` and assert
+  that it is rejected).
+- **Fenced code blocks are blanked in the filename pass**, the way `check-doc-paths.mjs` strips them:
+  17 tracked markdown files sit outside the Citations scope and so are scanned here — command files,
+  the PR template, package READMEs — and a shell transcript naming a filename is a worked example,
+  not a claim. Blanked rather than removed, because this gate reports a *line*. An unterminated fence
+  strips nothing rather than swallowing the rest of the file.
+- **Allowlist:** [`scripts/doc-refs-allowlist.json`](../../../scripts/doc-refs-allowlist.json), same
+  shape as the citation allowlist. Prefer `perFile`.
+- **The one false positive the filename pass has**, worth recognising before you go looking for a
+  file that was never there: a **design-token step written in backticks** is shaped exactly like a
+  filename. `packages/theme` defines `spacing`, `radius` and `fontSize` groups each with an `md`
+  step, so a comment reading ``\`spacing.md\` is 12`` extracts as a markdown filename. The same step
+  reached through its object — the group name preceded by a dot — does *not*, because the dot
+  disqualifies it, so this only bites the backticked house style. (Spell that full form out here and
+  the **Citations** gate flags it, which is the same ambiguity arriving from the other side.) The
+  excuse is an allowlist entry, and unlike the path pass the entry is
+  consulted **before** resolution, so adding a real file with that basename cannot silently retire it.
+- **Run locally:** `npm run check:doc-refs`.
+
+**Rollout.** Reports on every PR, not merge-blocking yet — the same path `doc-paths` and
+`doc-tables` each took. Promote by adding `"doc-refs"` to `DOCS_CHECKS` in
+[`required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs) once it has run green on `main`,
+then having an admin apply branch protection. As with the other whole-tree gates, that trade means a
+PR can be blocked by a reference in a file it never touched; the alternative is what already
+happened, which is references rotting for months with nothing watching.
 
 ### Rosters (`check-doc-tables.mjs`)
 

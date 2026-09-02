@@ -238,6 +238,7 @@ Customization is the product: every chapter runs differently, so vocabulary, rol
 - **chapter_workflows** — `(id, chapter_id, key, enabled, threshold int, params jsonb)`. Each enabled workflow can configure a numeric threshold.
 - **chapter_dues_config** — `(chapter_id PK, cadence, active_amount_cents, new_member_amount_cents, alumni_amount_cents, installments_allowed, late_fee_cents, grace_days, scholarship_pool_cents)`. One singleton row per chapter. All cents columns are validated as non-negative integers at the boundary (see [`engineering.md`](../engineering.md)).
 - **chapter_service_config** — `(chapter_id PK, minutes_per_point int default 60 check >= 1, created_at, updated_at)`. One singleton row per chapter, holding the service-hours points conversion rate. An **absent row means the default rate**, so no chapter needs provisioning; rows are created lazily on first PATCH. Named to match `study_geofences.minutes_per_point`, the same conversion for study hours.
+- **chapter_points_config** — `(chapter_id PK, adjustment_rate_limit_per_hour int default 50 check >= 1, anomaly_threshold int default 100 check >= 1, created_at, updated_at)`. One singleton row per chapter, holding the two points anti-fraud limits [`points.md`](../behavior/points.md) § Anti-Fraud has always described as chapter-configurable. Same shape and lifecycle as `chapter_service_config`: an **absent row means the defaults** — which are exactly the constants `PointsService` hardcoded before #394 — so no chapter needs provisioning and no backfill was required; rows are created lazily on first PATCH. Both floors are `>= 1` rather than `>= 0`, for two different reasons: a rate limit of `0` would refuse every adjustment with no corrective write available through the append-only ledger, and a threshold of `0` would flag every row.
 - **chapter_audit_log** — `(id, chapter_id, actor_user_id, action, target_type, target_id, scope, diff jsonb, created_at, member_visible boolean)`. Append-only; mirrored into the `#chapter-audit` channel via the audit→chat bridge (ADR-08). Indexed on `(chapter_id, created_at desc)` and `(actor_user_id, created_at desc)`.
 
 Seed materialization deep-clones the shared archetype seeds (`ARCHETYPES`, `MODULE_CATALOG`, `ROLE_PACKS`, `CUSTOM_FIELDS_SEED`, `WORKFLOWS_SEED`, `VOCABULARY_DEFAULTS`) into the chapter's rows so per-chapter edits never mutate the shared reference (see [`engineering.md`](../engineering.md)).
@@ -601,6 +602,8 @@ The chosen path is Path D + Path C from #401. Path A (per-session Supabase branc
 - PGlite adds one npm dep (`@electric-sql/pglite`, WASM, no native code, no Docker). It does not replace integration testing against the hosted Supabase project — it complements unit + integration tiers.
 - Chunks that previously shipped with "Runtime checks BLOCKED — see #235" can drop the disclaimer once the migration completes. #235 closes-as-subsumed; the PGlite job in CI is the migration-validation deliverable.
 
+- **Amendment (2026-09-02, #472) — the moved Realtime broadcast emit is deleted; the move never brought its consumer with it.** The Consequences bullet above ("The Realtime broadcast emit previously in `chat-send` (`channel.send`) moved to `ChatService.broadcastNewMessage`") describes what #416 did and is retained as that record. What it did not say, because nobody checked at the time, is that **the client half never arrived**: the emit published `new_message` to a bespoke `chapter:<channel_id>` topic, while clients join `chat:channel:<id>` (ADR-10) and read messages through `postgres_changes` on `chat_messages`. In the tree as it stands, no `new_message` handler exists in `apps/web`, `apps/mobile` or `packages` — and both clients drive chat through the same `chat-core` realtime manager, so that covers both. So the emit was dead on **both** halves independently: wrong topic *and* no listener. (`git log -S"new_message"` over `apps/web apps/mobile packages` is also empty, but that was run in a sandbox holding a **shallow clone**, so it evidences the recent history it covers, not "never".) It also cost an HTTP round trip per message, and reported nothing when it failed. Both follow from the channel never being subscribed: `RealtimeChannel.send()` takes its REST fallback when `!canPush() && type === 'broadcast'` (`@supabase/realtime-js`), so each call POSTed to the broadcast endpoint, and that branch **catches internally and returns `'ok' | 'error' | 'timed out'` rather than throwing**. The return value was discarded. So the `catch` block was unreachable for a send failure and its `logger.debug` line never ran — which means #472's premise, that failures were "logged at `debug`", was itself wrong: they were logged nowhere. That is a stronger reason to remove the emit than to instrument it. `ChatService.broadcastNewMessage`, `realtimeTopicForChannel` and the now-unused `SUPABASE_CLIENT` injection are removed; `ChatService` no longer depends on the Supabase client at all. **This does not change message delivery**, which was already Postgres Changes and nothing else (`spec/ui/resilience.md` §3.2). The prompt was #472, which asked for the swallowed broadcast failure to be instrumented — a counter on a path that delivers to nobody could never indicate user-visible degradation, so the emit was removed rather than measured. Whether chat should have a *genuine* sub-second broadcast fast-path is a separate, open question (**#1613**). Note that no ADR forbids one: ADR-02 chose Broadcast *for* typing and presence rather than ruling it out for messages, and ADR-10 governs the presence topic. Building one is therefore a new decision, and it needs a client handler, de-duplication against the Postgres Changes echo of the same row, and ADR-10's coupling respected — the topic stays `chat:channel:<id>`, because the push worker reads Presence there. Pinned by `apps/api/src/application/services/chat-realtime-carrier.spec.ts`, which asserts the API emits no Broadcast; that guard describes today's architecture, not a prohibition.
+
 **Trigger to revisit:**
 
 - **Geography shift.** If Frapp's user base meaningfully expands outside US-East — measured by ≥15% of monthly active chapters resolving to a non-US-East region — re-evaluate moving the hot path back to Edge.
@@ -628,6 +631,12 @@ The chosen path is Path D + Path C from #401. Path A (per-session Supabase branc
 **Consequences:** CI gains a PGlite migration + RLS smoke job (no live Postgres needed). The `pglite-migrations` job (`scripts/check-pglite-migrations.mjs`) applies every migration to a fresh in-process Postgres-in-WASM and runs an RLS smoke tier: every `public` table enables RLS (the default-deny invariant, #360), the chat hot-path tables hold their posture (`chat_channels`/`chat_messages` default-deny with no policies; `chat_message_actions` reaction policies scoped to `auth.uid()`), and `chapter_audit_log` stays append-only. It verifies policy *presence and shape* — enforcement as the `authenticated` role (`SET ROLE` + real JWT) stays out of this tier (#423) and lives in the NestJS Jest + hosted-Supabase tiers. Agents verify the data layer in-loop cheaply and deterministically and stop handing off blind on the data layer. Work needing the full hot path is explicit, opt-in, and self-cleaning, so the MCP write-tool security surface stays closed by default. Continuing the Edge→NestJS migration is load-bearing: the more hot-path logic lives in NestJS, the more PGlite alone suffices and the rarer the branch escape hatch is needed. Implementation is tracked in dedicated follow-up issues (PGlite CI job #531 — shipped, subsumes #356/#360; Path-A SessionEnd teardown + scoped allowlist #532; continued Edge→NestJS migration #533).
 
 **Revisit-when:** PGlite proves insufficient for a recurring class of work (forcing the branch escape hatch to become routine), or Supabase branch cost/security posture shifts enough that Path A should become the default rather than an opt-in.
+
+- **Amendment (2026-09-02, #423) — the PGlite tier now verifies enforcement black-box, for four tables.** The Consequences text above says the tier verifies policy *presence and shape* and defers enforcement to the NestJS tier. That was true when written and is now only half true: the harness stands up its own non-owner `rls_probe` role, stubs `auth.uid()`/`auth.role()` to a signed-in client, and reads the tables for real. `chat_message_actions` and `chat_messages` are asserted as exact visibility *sets* (#977, #974); `members` and `financial_invoices` are asserted to return **zero rows**, since neither carries a policy any client role can reach and both must stay default-deny — so a migration that adds a permissive policy to either turns the job red. **The change that made this work at all** is that the harness now creates the **`authenticated` role before applying migrations**. Roughly 18 migrations wrap policy and grant statements in `if exists (select 1 from pg_roles where rolname = 'authenticated')` — the repo's dominant idiom for anything targeting a client role, since the role exists on hosted Supabase but not in a bare Postgres. Without it, every one of those blocks was silently skipped and the harness validated a schema the hosted project does not run: a `create policy … to authenticated using (true)` written that way left the entire job green while handing every signed-in client every row of the table. Creating the role also means the `to authenticated` clause (`v_role_clause`, `20260803150000_chat_message_actions_membership_rls.sql:154-168`) is real here rather than empty, closing a gap `SECURITY_FIXES.md` had recorded as promotion-time-only.
+
+  **A separate correction to the Consequences text, unrelated to enforcement:** it describes the chat posture as "`chat_channels`/`chat_messages` default-deny with no policies". That stopped being true for `chat_messages` on 2026-08-16, when `20260816140000_realtime_carrier_repair.sql` gave it the client-read `chat_messages_select` policy that is now the sole gate on Realtime chat delivery. `chat_channels` is still policy-less. Anyone adding a client read path over `chat_messages` should review that policy rather than assume the table is unreachable.
+
+  **Two limits worth stating, because the Consequences paragraph will otherwise be read as fully superseded.** First, this is *four* tables, not all 50: a permissive policy added to any other RLS-enabled table still changes no assertion here, and the every-table invariant remains a presence check only. Second, there is still no `anon` **role**, so a policy whose `TO` clause names `anon` does not bind the probe — `auth.role()` *is* stubbed to `'anon'` for the unauthenticated scenarios, so predicates that test the role are exercised, but grant-level `to anon` targeting is not. A real GoTrue JWT — any claim beyond `sub`/`role` — also remains out of reach. Roster: [`AUTHORIZATION_MODEL.md`](../../docs/internal/security/AUTHORIZATION_MODEL.md) §RLS enforcement.
 
 ### ADR-13: Repository visibility — public → private on GitHub Pro (2026-05-31)
 
@@ -1345,6 +1354,41 @@ Vercel-side removal is the durable gain, and it is why the breakages are worth c
 undoing by re-linking. Repairing them is CI work, tracked separately in **#1579** (the guardrails)
 and **#1578** (the replacement deploys); this ADR records the state and changes no workflow and no
 script.
+
+**Amendment (2026-09-02) — two of the four breakages are repaired (#1579).** The bullets under
+*Consequences* above stand as the record of what the unlink left broken. Two of them no longer
+describe current state:
+
+- **The guardrail.** `assertVercelProductionBranch` was **inverted**, not deleted, exactly as this
+  ADR and #1579 called for. It is now `assertVercelNoGitLink` in
+  `scripts/ci/production-guardrails.mjs`: a **present** Git link is the violation, and an absent one
+  is the pass. The daily 07:15 run and the `deploy-production.yml` preflight therefore no longer
+  fail on the intended post-ADR-21 state.
+
+  Inverting flipped *absent* from meaning "violation" to meaning "pass", which converts a
+  fail-closed check into a fail-open one unless something else holds the line: an error envelope, an
+  empty body, or a future response shape has no `link` either, and would otherwise read as
+  unlinked-and-green on the only path to production. `looksLikeVercelProject` is that line — a
+  response that is not recognisably a project object is a violation. It is the load-bearing half of
+  the change, and is unit-tested separately from the assertion so the two cannot collapse into one
+  answer.
+
+- **The verify jobs.** `verify-vercel-web` and `verify-vercel-landing` were **removed** from
+  `verify-deployments.yml`. Nothing creates a Vercel deployment for a pushed SHA, so polling for one
+  could not detect a problem — only manufacture a red check, which is how a red `main` stops meaning
+  anything. `verify-vercel-deploy.mjs` and `ensure-vercel-staging-alias.mjs` are **kept**, referenced
+  by no workflow, for **#1578** to re-wire against a deployment CI creates; the alias script
+  mitigates a real Vercel behaviour (the staging hostname lagging a READY deployment) that returns
+  with it. Re-add the jobs keyed on the deployment id that workflow creates, not on the pushed SHA.
+
+The other two bullets are unchanged and still live: `deploy-vercel-production.mjs`'s `gitSource` call
+remains **presumed broken** (#1579 removed the preflight that blocked it, so it is now reachable and
+can finally be measured — but nothing has measured it yet), and **nothing deploys staging web or
+landing on merge**. Both wait on #1578.
+
+This amendment also supersedes the future-tense repair language left in ADR-19's 2026-09-02
+amendment and in the *Consequences* and closing paragraphs above ("#1579's fix is to invert…",
+"Repairing them is CI work, tracked separately in #1579"): that work has landed. #1578 has not.
 
 **Trigger to revisit:** CI-driven deploys prove unworkable and re-linking Git is considered. That
 supersedes this ADR rather than amending it — and re-linking restores both Vercel settings, the

@@ -15,7 +15,7 @@ export type DispatchEntityType = 'INVOICE' | 'TASK' | 'EVENT' | 'POLL';
 
 /** Work thresholds, one dispatch row per (entity, threshold, due date). */
 export type DispatchThreshold =
-  'DUE_SOON' | 'OVERDUE' | 'AUTO_ABSENT' | 'EXPIRED';
+  'DUE_SOON' | 'OVERDUE' | 'AUTO_ABSENT' | 'EXPIRED' | 'EVENT_REMINDER';
 
 export interface ScheduledNotificationDispatch {
   id: string;

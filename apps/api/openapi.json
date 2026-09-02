@@ -470,217 +470,6 @@
         ]
       }
     },
-    "/v1/roles": {
-      "get": {
-        "operationId": "RbacController_list_v1",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "List chapter roles",
-        "tags": [
-          "Roles & Permissions"
-        ]
-      },
-      "post": {
-        "operationId": "RbacController_create_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateRoleDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Create a custom role",
-        "tags": [
-          "Roles & Permissions"
-        ]
-      }
-    },
-    "/v1/roles/permissions-catalog": {
-      "get": {
-        "operationId": "RbacController_catalog_v1",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Get system permissions catalog",
-        "tags": [
-          "Roles & Permissions"
-        ]
-      }
-    },
-    "/v1/roles/{id}": {
-      "patch": {
-        "operationId": "RbacController_update_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateRoleDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Update a role",
-        "tags": [
-          "Roles & Permissions"
-        ]
-      },
-      "delete": {
-        "operationId": "RbacController_delete_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Delete a custom role",
-        "tags": [
-          "Roles & Permissions"
-        ]
-      }
-    },
-    "/v1/roles/transfer-presidency": {
-      "post": {
-        "operationId": "RbacController_transferPresidency_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TransferPresidencyDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Transfer presidency to another member",
-        "tags": [
-          "Roles & Permissions"
-        ]
-      }
-    },
-    "/v1/roles/presidency-claim-status": {
-      "get": {
-        "operationId": "RbacController_presidencyClaimStatus_v1",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PresidencyClaimStatusDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Whether the caller may claim the chapter's vacant presidency",
-        "tags": [
-          "Roles & Permissions"
-        ]
-      }
-    },
-    "/v1/roles/claim-presidency": {
-      "post": {
-        "operationId": "RbacController_claimPresidency_v1",
-        "parameters": [],
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Claim the chapter's vacant presidency",
-        "tags": [
-          "Roles & Permissions"
-        ]
-      }
-    },
     "/v1/chapters/{id}/config": {
       "get": {
         "operationId": "ChapterConfigController_getConfig_v1",
@@ -1126,6 +915,217 @@
         "summary": "List chapter audit log entries",
         "tags": [
           "Chapter Audit Log"
+        ]
+      }
+    },
+    "/v1/roles": {
+      "get": {
+        "operationId": "RbacController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List chapter roles",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      },
+      "post": {
+        "operationId": "RbacController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRoleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a custom role",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      }
+    },
+    "/v1/roles/permissions-catalog": {
+      "get": {
+        "operationId": "RbacController_catalog_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get system permissions catalog",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      }
+    },
+    "/v1/roles/{id}": {
+      "patch": {
+        "operationId": "RbacController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRoleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update a role",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      },
+      "delete": {
+        "operationId": "RbacController_delete_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a custom role",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      }
+    },
+    "/v1/roles/transfer-presidency": {
+      "post": {
+        "operationId": "RbacController_transferPresidency_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferPresidencyDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Transfer presidency to another member",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      }
+    },
+    "/v1/roles/presidency-claim-status": {
+      "get": {
+        "operationId": "RbacController_presidencyClaimStatus_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresidencyClaimStatusDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Whether the caller may claim the chapter's vacant presidency",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      }
+    },
+    "/v1/roles/claim-presidency": {
+      "post": {
+        "operationId": "RbacController_claimPresidency_v1",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Claim the chapter's vacant presidency",
+        "tags": [
+          "Roles & Permissions"
         ]
       }
     },
@@ -1901,6 +1901,116 @@
           }
         ],
         "summary": "The caller's own per-channel notification levels",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/notification-preferences/kinds": {
+      "get": {
+        "operationId": "ChatController_getKindNotificationPreferences_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KindNotificationPreferenceDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's own per-message-kind notification overrides; level is null where none is set. For the level actually applied to a channel, read GET /v1/channels/notification-preferences.",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/notification-preferences/kinds/{kind}": {
+      "put": {
+        "operationId": "ChatController_setKindNotificationLevel_v1",
+        "parameters": [
+          {
+            "name": "kind",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetKindNotificationLevelDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KindNotificationPreferenceDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set the caller's notification level for one message kind",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "delete": {
+        "operationId": "ChatController_clearKindNotificationLevel_v1",
+        "parameters": [
+          {
+            "name": "kind",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClearedKindNotificationPreferenceDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Clear the caller's override for one message kind, returning it to the default",
         "tags": [
           "Chat"
         ]
@@ -2737,6 +2847,99 @@
           }
         ],
         "summary": "Set the caller's notification level for a channel",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/bookmarks": {
+      "get": {
+        "operationId": "ChatBookmarkController_listBookmarks_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BookmarkDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the caller's own bookmarked messages in this chapter",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/bookmarks/messages/{messageId}": {
+      "post": {
+        "operationId": "ChatBookmarkController_bookmarkMessage_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookmarkRefDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Bookmark a message (idempotent)",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "delete": {
+        "operationId": "ChatBookmarkController_unbookmarkMessage_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove the caller’s bookmark (idempotent)",
         "tags": [
           "Chat"
         ]
@@ -6942,87 +7145,6 @@
           "storage_path"
         ]
       },
-      "CreateRoleDto": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "maxLength": 100
-          },
-          "permissions": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "display_order": {
-            "type": "number"
-          },
-          "color": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "name",
-          "permissions"
-        ]
-      },
-      "UpdateRoleDto": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "maxLength": 100
-          },
-          "permissions": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "display_order": {
-            "type": "number"
-          },
-          "color": {
-            "type": "string"
-          }
-        }
-      },
-      "TransferPresidencyDto": {
-        "type": "object",
-        "properties": {
-          "target_member_id": {
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        "required": [
-          "target_member_id"
-        ]
-      },
-      "PresidencyClaimStatusDto": {
-        "type": "object",
-        "properties": {
-          "needs_president": {
-            "type": "boolean",
-            "description": "Whether the chapter currently has no President."
-          },
-          "eligible": {
-            "type": "boolean",
-            "description": "Whether the caller holds the chapter's next-highest-ranked role with a live member, and may call POST /v1/roles/claim-presidency right now."
-          },
-          "next_role_name": {
-            "type": "string",
-            "nullable": true,
-            "description": "Name of the eligible role, or null when no role below President has any member at all (the \"Frapp support intervenes\" case)."
-          }
-        },
-        "required": [
-          "needs_president",
-          "eligible",
-          "next_role_name"
-        ]
-      },
       "BetaConfigDto": {
         "type": "object",
         "properties": {
@@ -7094,6 +7216,25 @@
           }
         }
       },
+      "PointsConfigDto": {
+        "type": "object",
+        "properties": {
+          "adjustment_rate_limit_per_hour": {
+            "type": "number",
+            "description": "Maximum manual point adjustments one admin may create per rolling hour (default 50). Must be between 1 and 1000 — a limit of 0 would refuse every adjustment with no way back through the API.",
+            "minimum": 1,
+            "maximum": 1000,
+            "example": 50
+          },
+          "anomaly_threshold": {
+            "type": "number",
+            "description": "Absolute point amount at or above which an adjustment is flagged for review (default 100). Must be between 1 and 100000 — a threshold of 0 would flag every transaction, and one above the ledger's own ±100000 ceiling could never fire.",
+            "minimum": 1,
+            "maximum": 100000,
+            "example": 100
+          }
+        }
+      },
       "WorkflowConfigDto": {
         "type": "object",
         "properties": {
@@ -7139,6 +7280,9 @@
           },
           "service": {
             "$ref": "#/components/schemas/ServiceConfigDto"
+          },
+          "points": {
+            "$ref": "#/components/schemas/PointsConfigDto"
           },
           "workflows": {
             "type": "array",
@@ -7504,6 +7648,87 @@
           "created_at"
         ]
       },
+      "CreateRoleDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "display_order": {
+            "type": "number"
+          },
+          "color": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "permissions"
+        ]
+      },
+      "UpdateRoleDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "display_order": {
+            "type": "number"
+          },
+          "color": {
+            "type": "string"
+          }
+        }
+      },
+      "TransferPresidencyDto": {
+        "type": "object",
+        "properties": {
+          "target_member_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "target_member_id"
+        ]
+      },
+      "PresidencyClaimStatusDto": {
+        "type": "object",
+        "properties": {
+          "needs_president": {
+            "type": "boolean",
+            "description": "Whether the chapter currently has no President."
+          },
+          "eligible": {
+            "type": "boolean",
+            "description": "Whether the caller holds the chapter's next-highest-ranked role with a live member, and may call POST /v1/roles/claim-presidency right now."
+          },
+          "next_role_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "Name of the eligible role, or null when no role below President has any member at all (the \"Frapp support intervenes\" case)."
+          }
+        },
+        "required": [
+          "needs_president",
+          "eligible",
+          "next_role_name"
+        ]
+      },
       "MemberCustomFieldValueDto": {
         "type": "object",
         "properties": {
@@ -7854,6 +8079,93 @@
           "level"
         ]
       },
+      "KindNotificationPreferenceDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text",
+              "event",
+              "task",
+              "poll",
+              "dues",
+              "points",
+              "hours",
+              "system_audit",
+              "announcement"
+            ],
+            "description": "A `chat_messages.kind`. `imported` and `loading` are absent by design — the first is refused by the push worker before any preference is read, and the second is an internal optimistic placeholder rather than a category of message a member receives."
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "all",
+              "mentions",
+              "off"
+            ],
+            "nullable": true,
+            "description": "The member's chapter-wide override for this kind, or null when they have set none. Null is not a level: what a kind falls back to depends on the channel a message lands in (an `announcement` resolves `all` in a channel named `announcements` and `mentions` elsewhere), so there is no single default to report here. For the effective level of a real message, read GET /v1/channels/notification-preferences."
+          }
+        },
+        "required": [
+          "kind",
+          "level"
+        ]
+      },
+      "SetKindNotificationLevelDto": {
+        "type": "object",
+        "properties": {
+          "level": {
+            "type": "string",
+            "enum": [
+              "all",
+              "mentions",
+              "off"
+            ],
+            "description": "all = every message of this kind; mentions = only when you are mentioned; off = muted, though @mentions still notify — the one exception is the system_audit kind, whose off a mention does not lift. A channel-scoped preference outranks this one for messages in that channel."
+          }
+        },
+        "required": [
+          "level"
+        ]
+      },
+      "ClearedKindNotificationPreferenceDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text",
+              "event",
+              "task",
+              "poll",
+              "dues",
+              "points",
+              "hours",
+              "system_audit",
+              "imported",
+              "loading",
+              "announcement"
+            ],
+            "description": "The kind whose override was cleared. Wider than the settable set on purpose — see the DELETE route."
+          },
+          "level": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "all",
+              "mentions",
+              "off"
+            ],
+            "description": "Always null: the override is gone, and what the kind now falls back to depends on the channel."
+          }
+        },
+        "required": [
+          "kind",
+          "level"
+        ]
+      },
       "CreateChannelDto": {
         "type": "object",
         "properties": {
@@ -8139,6 +8451,110 @@
           "level"
         ]
       },
+      "BookmarkedMessageDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "channel_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sender_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "Null for an imported archive message, which names its author in author_name instead."
+          },
+          "author_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "author_avatar_path": {
+            "type": "string",
+            "nullable": true
+          },
+          "author_external_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "content": {
+            "type": "string",
+            "description": "Reads “[message deleted]” once the message is deleted — the bookmark keeps its row and surfaces that placeholder rather than disappearing."
+          },
+          "is_deleted": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "channel_id",
+          "sender_id",
+          "content",
+          "is_deleted",
+          "created_at"
+        ]
+      },
+      "BookmarkDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "message_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "description": "When the caller saved it — not when the message was sent."
+          },
+          "message": {
+            "$ref": "#/components/schemas/BookmarkedMessageDto"
+          },
+          "message_available": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "message_id",
+          "created_at",
+          "message",
+          "message_available"
+        ]
+      },
+      "BookmarkRefDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "message_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "message_id",
+          "chapter_id",
+          "created_at"
+        ]
+      },
       "GeofenceCoordinateDto": {
         "type": "object",
         "properties": {
@@ -8206,11 +8622,11 @@
           },
           "channel_id": {
             "type": "string",
-            "description": "When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates."
+            "description": "When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. Rejected with a 400 when `required_role_ids` is non-empty, on this key or `client_message_id` alone — the card is broadcast to every reader of the channel, so a create cannot both target roles and post one. (`PATCH` can still add targeting to an event whose card already posted; that card is left as-is.)"
           },
           "client_message_id": {
             "type": "string",
-            "description": "Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`."
+            "description": "Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Rejected with a 400 when `required_role_ids` is non-empty, even without `channel_id` — see that field."
           }
         },
         "required": [

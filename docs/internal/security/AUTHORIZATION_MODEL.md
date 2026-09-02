@@ -71,7 +71,7 @@ composed with **B** or **C** for per-row reads.
 | `custom-fields` | `GET`, `POST`, `PATCH /:id`, `DELETE /:id` | A+C+P `chapter_config:view` | B |
 | `custom-roles` | `GET`, `POST`, `PATCH /:id`, `DELETE /:id` | A+C+P `chapter_config:view` | B — `findByIds(ids, chapterId)` |
 | `audit-log` | `GET` | A+C+P `chapter_config:view` **and** `members:view` (route-level, merged via `PermissionsGuard`'s AND) | A — chapter is the subject; read-only, `chapter_audit_log`'s RLS carries no SELECT policy so only this service-role-backed query can ever return rows |
-| `events` | `GET`, `GET /:id`, `POST`, `PATCH /:id`, `GET /:id/ics`, `DELETE /:id` | A+C+P `members:view`, `events:create/update/delete` | B — `eventRepo.findById(id, chapterId)`. The three read routes (`GET`, `GET /:id`, `GET /:id/ics`) additionally filter out a role-targeted event (`required_role_ids` non-empty) unless the caller's `member.role_ids` intersects it — `event.service.ts`'s `isVisibleToViewer`, keyed on the optional `viewerId` param the controller passes only on reads; `update`/`delete`/series internals omit it and are unfiltered, since those already require `events:update`/`events:delete` (#1463) |
+| `events` | `GET`, `GET /:id`, `POST`, `PATCH /:id`, `GET /:id/ics`, `DELETE /:id` | A+C+P `members:view`, `events:create/update/delete` | B — `eventRepo.findById(id, chapterId)`. The three read routes (`GET`, `GET /:id`, `GET /:id/ics`) additionally filter out a role-targeted event (`required_role_ids` non-empty) unless the caller's `member.role_ids` intersects it — `event.service.ts`'s `isVisibleToViewer`, keyed on the optional `viewerId` param the controller passes only on reads; `update`/`delete`/series internals omit it and are unfiltered, since those already require `events:update`/`events:delete` (#1463). **`findByChapter` has a fourth, non-controller caller:** `ActivityFeedService.eventItems` passes the viewer too, because a feed row carries the event's name and location — its `members:view` gate is the same one `GET /v1/events` carries and is not a substitute for the filter (#1469). Any new caller of `findByChapter` that omits `viewerId` reopens this |
 | `events/:eventId/attendance` | `POST /check-in`, `GET /`, `PATCH /:userId`, `POST /auto-absent` | A+C (+P `events:update` on writes) | B — event fetched as `findById(eventId, chapterId)` first (`attendance.service.ts:43,136,152,176`); `:userId` only ever writes inside that event |
 | `invoices` | `GET`, `GET /overdue`, `GET /:id`, `POST`, `PATCH /:id`, `POST /:id/status`, `POST /:id/payment-intent`, `GET /:id/transactions` | A+C+P `members:view`, `billing:view` / `billing:manage` | B — `invoiceRepo.findById(id, chapterId)` |
 | `members` | `GET`, `GET /search`, `GET /:id`, `PATCH /:id/roles`, `PATCH /me/onboarding`, `DELETE /:id` | A+C+P `members:view`, `roles:manage`, `members:remove` | **C** — `memberRepo.findById(id)` then `member.chapter_id !== chapterId → 403` (`member.service.ts:112,205,218`) |
@@ -130,7 +130,7 @@ The residual items in §5 are contract/robustness concerns, not data leaks.
 
 ## 4. RLS truth table
 
-**Every one of the 43 tables has `enable row level security`.** 41 of them carry **zero policies**,
+**Every one of the 44 tables has `enable row level security`.** 42 of them carry **zero policies**,
 which under Postgres means *default deny* — no `anon` or `authenticated` client can read or write
 them at all. The API reaches them with the **service-role key, which bypasses RLS**.
 
@@ -149,7 +149,7 @@ a client that genuinely reads the table directly.
 
 | Enforcing layer | Tables | Count |
 | --- | --- | --- |
-| **API only** (RLS on, no policy → default-deny; service-role bypasses) | `backwork_departments`, `backwork_professors`, `backwork_resources`, `channel_read_receipts`, `chapter_activation_milestones`, `chapter_custom_fields`, `chapter_custom_roles`, `chapter_directory`, `chapter_directory_requests`, `chapter_document_folders`, `chapter_documents`, `chapter_dues_config`, `chapter_service_config`, `chapter_workflows`, `chapters`, `chat_channel_categories`, `chat_channels`, `event_attendance`†, `events`†, `financial_invoices`, `financial_transactions`, `invites`, `member_custom_field_values`\*, `members`\*, `message_reactions`, `notification_preferences`, `notifications`†, `point_transactions`, `poll_votes`, `push_tokens`, `roles`, `scheduled_notification_dispatches`, `semester_archives`, `service_entries`, `stripe_webhook_events`, `study_geofences`, `study_sessions`, `tasks`, `user_settings`, `users`\* | 40 |
+| **API only** (RLS on, no policy → default-deny; service-role bypasses) | `backwork_departments`, `backwork_professors`, `backwork_resources`, `channel_read_receipts`, `chapter_activation_milestones`, `chapter_custom_fields`, `chapter_custom_roles`, `chapter_directory`, `chapter_directory_requests`, `chapter_document_folders`, `chapter_documents`, `chapter_dues_config`, `chapter_points_config`, `chapter_service_config`, `chapter_workflows`, `chapters`, `chat_channel_categories`, `chat_channels`, `event_attendance`†, `events`†, `financial_invoices`, `financial_transactions`, `invites`, `member_custom_field_values`\*, `members`\*, `message_reactions`, `notification_preferences`, `notifications`†, `point_transactions`, `poll_votes`, `push_tokens`, `roles`, `scheduled_notification_dispatches`, `semester_archives`, `service_entries`, `stripe_webhook_events`, `study_geofences`, `study_sessions`, `tasks`, `user_settings`, `users`\* | 41 |
 | **RLS enforces** (read directly by a user-JWT client) | `chat_message_actions`, `chat_messages` | 2 |
 | **RLS enforces** (policy present, defense-in-depth) | `chat_notification_preferences` | 1 |
 
@@ -202,7 +202,7 @@ to be caught in review.
 | --- | --- | --- |
 | `chat_message_actions` | `_select` | `auth.role() = 'authenticated' AND can_read_chat_message(message_id)` — per-row channel-membership check via a `SECURITY DEFINER` function mirroring `canAccessChannel`. RLS is the only gate here: the web reads it directly (`packages/chat-core/src/realtime-manager.ts`, 2 call sites) |
 | `chat_messages` | `_select` | `auth.role() = 'authenticated' AND can_read_chat_message(id) AND kind <> 'imported'` — the same predicate applied to the message row itself, plus the imported-archive exclusion. Introduced by `20260816140000_realtime_carrier_repair.sql` so the chat `postgres_changes` subscription can receive rows, then **superseded by `20260823123000_chat_imported_kind_semantics.sql`**, which added the third conjunct: Realtime evaluates this policy per subscriber, so it is what stops a bulk archive import fanning a frame per row to every open client. RLS is the only gate, as above |
-| `realtime.messages` | `realtime_messages_scoped_select` | Authorises the three private change-ping topics by prefix (`notif:` / `events:` / `attendance:`), each behind a `SECURITY DEFINER` scope predicate (own user, chapter membership, event's chapter membership). Purely additive: `realtime.messages` had RLS on with **no** policy, which denied every private channel. Chat's typing/presence channels are *public* and bypass this table entirely |
+| `realtime.messages` | `realtime_messages_scoped_select` | Authorises the three private change-ping topics by prefix (`notif:` / `events:` / `attendance:`), each behind a `SECURITY DEFINER` scope predicate (own user, chapter membership, event's chapter membership). Purely additive: `realtime.messages` had RLS on with **no** policy, which denied every private channel. Chat's typing/presence channels, and the Directory's `presence:chapter:<chapterId>` channel, are *public* and bypass this table entirely — the `case` ends in `else false`, so any topic outside the three prefixes is denied on a private channel and must ship a fourth branch here before it can go private. **Public presence is unauthenticated both ways:** anyone with the anon key and the id can read the roster, and because presence identity comes from the tracked payload rather than the caller's JWT, can also forge an entry for another user. Presence is therefore advisory — never an input to an authorization decision |
 | `chat_message_actions` | `_insert`, `_delete` | `user_id in (select id from users where supabase_auth_id = auth.uid())` — own rows only |
 | `chat_notification_preferences` | `_select_own` | Own rows only |
 | `chapter_audit_log` | `_no_update`, `_no_delete` | `using (false)` — append-only, tightens rather than widens |
@@ -364,13 +364,48 @@ The rest of the e2e suite stubs `ChapterGuard`; this spec must not, or it tests 
 
 ### RLS enforcement (`scripts/check-pglite-migrations.mjs`)
 
-The two tables where **RLS is the only gate** are covered black-box, by reading them as an
-unprivileged `rls_probe` role rather than by pattern-matching the policy expression:
+Four tables are covered black-box, by reading them as an unprivileged `rls_probe` role rather than
+by pattern-matching the policy expression. The first two are the ones where **RLS is the only gate**
+(a browser or mobile Supabase client reads them directly, including over Realtime); the last two are
+read only through the service-role client, and are covered because a policy appearing on them at all
+would be the regression:
 
 | Table | Coverage |
 | --- | --- |
 | `chat_message_actions` | membership/tenancy matrix (read path) |
 | `chat_messages` | membership/tenancy matrix (#977) + the imported-archive exclusion (#974) + a post-archive tenancy re-check (#977) |
+| `members` | default-deny: every probe identity reads 0 rows (#423) |
+| `financial_invoices` | default-deny: every probe identity reads 0 rows (#423) |
+
+The last two are the inverse assertion. Neither carries a policy a client role can reach —
+`financial_invoices` has none at all, and `members`' only policy is `to supabase_auth_admin`, a role
+PGlite does not have — so the property under test is that they stay unreadable. Each is guarded
+against passing vacuously: the probe's `SELECT` privilege is asserted, and the fixture rows are
+asserted present as owner, before any zero-row claim is made. The probe read itself is unscoped, so
+a policy leaking some *other* chapter's rows fails too.
+
+Because the probe reads with `SELECT` only, it is structurally blind to a permissive **write**
+policy (`for insert with check (true)` leaves every read assertion green, and Supabase's default
+`grant all … to anon, authenticated` is never revoked at table level). So each of the two also
+carries a catalog assertion that it holds **no client-reachable policy of any command shape**,
+which covers INSERT/UPDATE/DELETE/ALL without a write probe per command.
+
+Two things make the whole tier meaningful rather than decorative, and both were false-PASS bugs
+before they were fixed:
+
+- **The `authenticated` role is created before migrations apply.** ~18 migrations guard their policy
+  and grant statements behind `if exists (select 1 from pg_roles where rolname = 'authenticated')`.
+  Without the role those blocks are skipped silently, so a `create policy … to authenticated using
+  (true)` written in that idiom — the repo's dominant one — left the entire harness green.
+- **`auth.role()` is varied per scenario**, not pinned to `'authenticated'`. Otherwise the
+  "no JWT" reader is merely a signed-in reader with a null `uid`, and a policy spelled
+  `using (auth.role() = 'anon')` reads as default-deny here while being world-readable in
+  production.
+
+**This is four tables, not the whole schema.** A permissive policy added to any of the other
+RLS-enabled tables changes no assertion in the harness; the every-public-table invariant covers
+`relrowsecurity` only, not what the policies do. `chat_notification_preferences` is the known gap —
+it carries a client-reachable `SELECT` policy with no black-box coverage (tracked separately).
 
 `rls_probe` is granted `SELECT` only, so this tier proves the **read** path by execution. The
 own-row `INSERT`/`DELETE` policies on `chat_message_actions` are covered by shape assertions over

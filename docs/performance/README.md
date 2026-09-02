@@ -4,7 +4,7 @@ Ad hoc writeups for investigations and optimizations. They are **not** a second 
 
 | Note                                                             | Topic          |
 | ---------------------------------------------------------------- | -------------- |
-| [`attendance-performance.md`](attendance-performance.md)         | Attendance     |
+| [`attendance.md`](attendance.md)                                 | Attendance     |
 | [`event-creation.md`](event-creation.md)                         | Event creation |
 | [`expo-push-notifications.md`](expo-push-notifications.md)       | Expo push      |
 | [`member-search-optimization.md`](member-search-optimization.md) | Member search  |

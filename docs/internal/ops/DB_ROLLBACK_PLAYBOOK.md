@@ -344,6 +344,43 @@ After any rollback event:
   public` is not a partial fix, it is the original bug spelled explicitly — the guard
   rejects it for that reason.
 
+## Rollback the `chapter_points_config` table
+
+* **Migration**: `20260902170001_chapter_points_config.sql`
+* **Action**:
+  ```sql
+  DROP TABLE IF EXISTS chapter_points_config;
+  ```
+  The `updated_at` trigger is defined *on* the table, so it goes with it — no
+  separate `DROP TRIGGER`. `update_updated_at()` is shared and must stay.
+* **Order**: **redeploy the API first**, to a build from before the migration.
+  The two read paths do not degrade the same way, and only one of them is safe:
+  * `PointsService.adjustPoints` reads through `ChapterPointsConfigService.getConfig`,
+    which **fails open** — it logs a warning and applies the documented defaults
+    (50 adjustments/hour, flag at ±100), exactly the constants the service
+    hardcoded before [#394](https://github.com/pdcarlson/Frapp/issues/394). Points
+    adjustment keeps working through the drop.
+  * `GET /chapters/:id/config` reads through `getConfigOrThrow`, which **fails
+    closed** by design (it is also the baseline a config PATCH merges onto, so it
+    must not invent a prior state). A dropped table is a read error, so that
+    endpoint returns **500** — and it backs the whole web Settings page, not just
+    points.
+
+  So dropping under a running *post*-migration API leaves the ledger working and
+  Settings broken. A build from before the migration never reads the table at all
+  and is unaffected either way.
+* **One caveat, and it is a security one, not a data one**: the fallback is to the
+  *looser* defaults. A chapter that had tightened its limits (say 5 adjustments an
+  hour) silently returns to 50/hr and a ±100 flag threshold the moment the table
+  goes. Rolling this back **relaxes an anti-fraud control**, so if the rollback is
+  itself a response to abuse, restrict `points:adjust` or watch
+  `#chapter-audit` until the table is back.
+* **Data caveat**: the configured limits themselves are lost. There is no source
+  to re-derive them from, but they are recoverable by hand — every change was
+  written to `chapter_audit_log` under `action = 'chapter_config_updated'` with a
+  `points` key in its `diff`, so the last known value per chapter can be read back
+  out of the audit trail.
+
 ## Rollback the `chapter_documents` metadata columns
 
 * **Migration**: `20260831220000_chapter_documents_metadata.sql`
@@ -620,6 +657,44 @@ After any rollback event:
   (stemming surprises, an unexpected match), revert only the service change and
   leave the column and index in place. They cost writes on insert and nothing on
   read, and they will be needed again.
+
+## Rollback the chat per-kind notification upsert target
+
+* **Migration**: `20260902170000_chat_notif_prefs_kind_upsert_target.sql`
+* **Action**:
+  ```sql
+  DROP INDEX IF EXISTS public.idx_chat_notif_prefs_kind_unique;
+  ```
+* **Order**: **redeploy the API first, then the database.** Same shape as the
+  channel entry below. The index exists so
+  `PUT /v1/channels/notification-preferences/kinds/:kind` can name it as an
+  `ON CONFLICT` target; dropping it under a running post-change API makes every
+  per-kind write fail with `42P10 there is no unique or exclusion constraint
+  matching the ON CONFLICT specification`. The pre-change revision has no
+  per-kind write path at all and does not reference it.
+* **Note**: **nothing is lost, and no constraint is loosened.** Additive, and it
+  duplicates for the `kind` arm only an invariant `idx_chat_notif_prefs_unique`
+  (20260527120000) already enforces on both arms. Dropping it leaves the
+  original expression index in place, so a duplicate (user, chapter, kind)
+  preference row still cannot be created. Channel-scoped writes are unaffected —
+  they target `idx_chat_notif_prefs_channel_unique`, a different index.
+* **Locks**: `create index` holds SHARE on `chat_notification_preferences` for
+  its duration; the table holds at most one row per user per scope key they have
+  deliberately configured, so it is small everywhere. Dropping is a catalog
+  operation.
+* **Why a third index**, when one already looks close enough: the channel index
+  is on `scope_id`, which is NULL on every `kind` row, and unique indexes treat
+  NULLs as distinct — so it constrains the kind arm not at all and cannot be an
+  `ON CONFLICT` target for it. `check:pglite-migrations` asserts both plain
+  indexes exist with the right shape, so the *migration set* is gated rather
+  than resting on a one-time manual observation: deleting or weakening either
+  migration file fails CI.
+* **That gate does not watch a live database.** It replays
+  `supabase/migrations/*.sql` into a fresh in-process PGlite, so a `DROP INDEX`
+  executed against staging or production is invisible to it — CI stays green
+  while the endpoint 500s. Performing the rollback above therefore requires
+  reverting the API yourself, in the stated order; nothing will catch it for
+  you.
 
 ## Rollback the chat-mute upsert target
 
@@ -908,6 +983,20 @@ After any rollback event:
   The three indexes are safe to keep — they are pure read optimizations for the sweep queries and nothing depends on their existence. Drop them only if you are fully reverting the migration.
 * **⚠️ Note**: Additive DDL only — no existing table's data is touched, so nothing that predates the migration can be lost. But **redeploy the API at the pre-FRA-24 revision first**, or disable the sweeps. `ScheduledJobsService` claims a row before *every* unit of work, and `ScheduledJobsRepository` treats an unexpected insert error as "not claimed", so with the table gone **all three claim-based sweeps silently stop doing anything** (report retention takes no claim and is unaffected) — reminders send nothing, and attendance auto-absent stops marking. They fail safe (no crash, no double-send) but they also fail *quietly*: the only signal is a `dispatch claim failed` line per item. Auto-absent is not exempt — it claims under `entity_type = 'EVENT'` so it runs once per event instead of once per replica per hour.
 * **Data caveat**: the rows are delivery bookkeeping — which reminder has already gone out for which invoice/task. Dropping the table erases that memory, so **re-applying the migration and re-enabling the sweeps re-sends every reminder still inside the 7-day `OVERDUE_LOOKBACK_DAYS` window** (and any invoice/task due the next day). Members see duplicates for anything in that window; older items stay silent because the lookback bound excludes them. If that matters, snapshot the table before dropping and restore it alongside the re-apply.
+
+## Rollback pre-event reminder dispatch support
+
+* **Migration**: `20260902040000_event_reminder_dispatch_threshold.sql`
+* **Action**: the migration widens one `CHECK` constraint on the existing `scheduled_notification_dispatches` table and adds **no** index and no column. Reverting narrows the constraint back:
+  ```sql
+  DELETE FROM scheduled_notification_dispatches WHERE threshold = 'EVENT_REMINDER'; -- see data caveat
+  ALTER TABLE scheduled_notification_dispatches DROP CONSTRAINT scheduled_notification_dispatches_threshold_check;
+  ALTER TABLE scheduled_notification_dispatches ADD CONSTRAINT scheduled_notification_dispatches_threshold_check CHECK (threshold IN ('DUE_SOON', 'OVERDUE', 'AUTO_ABSENT', 'EXPIRED'));
+  ```
+  The narrowed `CHECK` will reject the `ADD CONSTRAINT` outright while any `threshold = 'EVENT_REMINDER'` row still exists, hence the `DELETE` first. Note the constraint above must be re-added with `'EXPIRED'` still in it — narrowing all the way back to the original three values would break the poll-expiry sweep as well; roll that back separately and in order if you intend to revert both.
+* **No index to drop.** Unlike the poll-expiry rollback above, there is nothing to `DROP INDEX` here. The sweep reads `events.start_time`, which `idx_events_start_time` already covers from `00000000000000_initial_schema.sql` — **do not drop it**; it predates this feature and `EventService.findByChapter`/`findChildren` order on that column.
+* **⚠️ Note**: Additive DDL only — no existing constraint value, table, or row is removed by the forward migration, so nothing that predates it can be lost. **Redeploy the API at the pre-#391 revision first**, or disable `ScheduledJobsService.handleEventReminderSweep` — with the narrowed `CHECK` back in place, `claimDispatch('EVENT', …, 'EVENT_REMINDER', …)` fails the insert (constraint violation, not `23505`) and `ScheduledJobsRepository` treats that as "not claimed", so the reminder sweep fails safe (no crash, no double-send) but silently stops reminding anyone — the only signal is a `dispatch claim failed` line per event. The auto-absent sweep is unaffected: it claims under the same `entity_type = 'EVENT'` but the untouched `'AUTO_ABSENT'` threshold.
+* **Data caveat**: the deleted rows record which events have already had a reminder sent. Unlike the invoice/task sweeps there is **no lookback window here** — the sweep only ever looks 30 minutes *forward* — so re-applying the migration and re-enabling the sweep re-sends a reminder only for events that are still more than zero and at most 30 minutes from starting at that moment. In practice that is at most a handful of events and is self-limiting; there is no risk of a backlog blast. Snapshot the `threshold = 'EVENT_REMINDER'` rows first only if you care about the audit trail.
 
 ## Rollback poll-expiry dispatch support
 
@@ -1361,3 +1450,81 @@ SELECT id, chapter_id, name, check_in_zone, check_in_zone_name
 **Re-applying is safe.** Both `ADD COLUMN` statements are `IF NOT EXISTS`, so the
 migration is idempotent; the CHECK constraint is not, so re-running against a
 table that still carries it needs the `DROP CONSTRAINT` above first.
+
+## Rollback personal message bookmarks (20260902120000)
+
+Additive DDL: one new table plus two indexes, no changes to any existing table
+or column (#462).
+
+```sql
+DROP TABLE IF EXISTS public.chat_message_bookmarks;
+```
+
+**Order matters, and it is wider than the feature.** Two consumers, not one:
+
+1. `ChatBookmarkService` reads and writes this table on every `/v1/bookmarks*`
+   request, and the web chat shell loads the list on every chat page view. With
+   the table gone the Bookmarks panel renders its error state; the timeline
+   keeps working, because bookmark state is a separate query from messages.
+2. **`anonymize_user` deletes from this table** (migration `20260902160000`).
+   plpgsql resolves the relation at execution time, so dropping the table while
+   that function definition is installed makes every `anonymize_user` call raise
+   `42P01` — and `DELETE /v1/users/me` stops working entirely. That is an
+   outage of the account-deletion path, not a degraded panel.
+
+So the order is: **revert `anonymize_user` to its `20260803140000` definition
+first** (see the entry below), deploy a build without #462, and only then drop
+the table. Dropping first takes account deletion down with it.
+
+**Dropping destroys member data that cannot be re-derived.** A bookmark is a
+member's own private note-to-self; nothing else in the schema records it, and
+`chat_messages` carries no trace of who saved what (deliberately — see the
+migration's own comment on why the privacy guarantee lives in the absence of a
+policy). Prefer leaving the table in place if the rollback is only about hiding
+the feature: the surface is client-side, so a build without #462 simply stops
+reading it.
+
+**Snapshot before dropping:**
+
+```sql
+SELECT id, user_id, message_id, chapter_id, created_at
+  FROM public.chat_message_bookmarks ORDER BY created_at DESC;
+```
+
+**Re-applying is safe.** `CREATE TABLE IF NOT EXISTS`, both indexes
+`IF NOT EXISTS`, and `ENABLE ROW LEVEL SECURITY` is idempotent — so the
+migration re-runs cleanly against a database that already has it.
+
+**RLS note for anyone auditing after a restore.** The table enables RLS with
+**zero policies**, which is correct and matches `channel_read_receipts`,
+`message_reactions` and `poll_votes`. It is not a missing-policy defect: the API
+reaches the table only through the service-role client, and the absence of a
+client-reachable policy is what makes "not even a channel admin can see who
+bookmarked what" hold structurally. Do not "fix" it by adding one.
+
+## Rollback anonymize_user bookmark purge (20260902160000)
+
+Function-only change (#462): `create or replace function anonymize_user(...)`
+adding one `delete from chat_message_bookmarks where user_id = p_user_id;`
+alongside the existing per-user purges.
+
+To roll back, re-apply the previous definition from
+`20260803140000_account_deletion_anonymize_user_rpc.sql` — the whole function
+body is in that file, and `create or replace` makes replaying it idempotent:
+
+```sql
+-- Re-run the CREATE OR REPLACE block from
+-- supabase/migrations/20260803140000_account_deletion_anonymize_user_rpc.sql
+```
+
+**Rolling this back is a data-retention regression, not a feature rollback.**
+Without the purge line, a deleted member's bookmark rows survive account
+deletion carrying `(user_id, message_id, chapter_id, created_at)` — which is
+exactly the "who saved what" that `spec/behavior/chat/README.md` promises nobody
+can see. The FK's `on delete cascade` does **not** cover it: `anonymize_user`
+tombstones the `users` row rather than deleting it, so nothing ever cascades.
+Only roll back alongside dropping `chat_message_bookmarks` itself.
+
+**Re-applying is safe** and idempotent; the extra delete is a no-op on a user
+with no bookmarks, and re-running the whole function on an already-tombstoned
+user is the documented retry path.

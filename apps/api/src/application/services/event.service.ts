@@ -18,6 +18,12 @@ import type { NotifyPayload } from './notification.service';
 import { ChatService } from './chat.service';
 import { RbacService } from './rbac.service';
 import { SystemPermissions } from '../../domain/constants/permissions';
+import {
+  RECURRENCE_RULES,
+  isRecurrenceRule,
+  recurrenceChildCount,
+  toRRuleLine,
+} from '@repo/validation';
 
 export interface CreateEventInput {
   chapter_id: string;
@@ -254,6 +260,52 @@ export class EventService {
       throw new BadRequestException('end_time must be after start_time');
     }
 
+    // A role-targeted event must not be broadcast as a chat card. #1463 made
+    // `required_role_ids` gate read access — list, detail, ICS, search and the
+    // event notifications all restrict a targeted event to members holding one
+    // of its roles — but the `kind:"event"` card bypassed all of it: it embeds
+    // name / start / end / location / point_value into a message row that
+    // Realtime fans out to every reader of the channel, so an ineligible
+    // member saw in chat exactly what `GET /v1/events/:id` 404s to hide.
+    // (The activity feed was open the same way and is closed alongside this —
+    // see `ActivityFeedService.eventItems`.)
+    //
+    // Refusing is the only option the current architecture actually supports.
+    // The card is a *snapshot*, not a live window — the renderer reads the
+    // embedded payload and never re-reads the event (its only refetch is the
+    // `events:update`-gated attendance roster, whose holders are exempt from
+    // the role gate anyway; see
+    // `apps/web/components/chat/renderers/event-card.tsx`), so the details are
+    // already in the row before any client-side check could run. Redacting
+    // per viewer would mean the server withholding payload fields per
+    // recipient, which one broadcast row cannot do. And there is no channel to
+    // scope it to instead: channels gate on `required_permissions` (permission
+    // strings), events on `required_role_ids` (RBAC role ids), so "post it
+    // only in a channel gated to these roles" is not expressible.
+    //
+    // This costs no shipped behavior: `/event` cannot set `required_role_ids`
+    // (`dispatchEvent` in `packages/chat-core/src/dispatch.ts` sends no such
+    // key and the parser has no syntax for one), so only a direct
+    // `POST /v1/events` reaches this branch. Thrown before the repo write, so
+    // a refused create leaves no event row behind. An empty array is
+    // untargeted per `spec/behavior/events.md` § `required_role_ids` wire
+    // semantics and is deliberately allowed through.
+    //
+    // Either chat key alone is refused, not just the pair. Neither half posts
+    // a card on its own today (the mismatch is warned about below), but
+    // accepting one piecemeal would make the guard depend on which key a
+    // caller happened to omit.
+    if (
+      (input.required_role_ids?.length ?? 0) > 0 &&
+      (input.channel_id || input.client_message_id)
+    ) {
+      throw new BadRequestException(
+        'A role-targeted event cannot post a chat card: the card would show the ' +
+          'event to everyone in the channel, including members its ' +
+          'required_role_ids exclude. Create it without channel_id/client_message_id.',
+      );
+    }
+
     const parent = await this.eventRepo.create({
       chapter_id: input.chapter_id,
       name: input.name,
@@ -348,16 +400,11 @@ export class EventService {
    * *before* deleting anything.
    */
   private occurrenceCountFor(rule: string): number | null {
-    switch (rule) {
-      case 'WEEKLY':
-        return 12;
-      case 'BIWEEKLY':
-        return 6;
-      case 'MONTHLY':
-        return 6;
-      default:
-        return null;
-    }
+    // Sourced from @repo/validation so the series this materializes and the
+    // RRULE `generateIcs` exports are derived from one number. They were
+    // separate before, and an .ics that promises one occurrence fewer than the
+    // app actually creates is invisible until a member misses the last meeting.
+    return recurrenceChildCount(rule);
   }
 
   /**
@@ -375,7 +422,12 @@ export class EventService {
     skipBefore?: number,
   ): Partial<Event>[] {
     const rule = parent.recurrence_rule;
-    if (!rule) return [];
+    // Narrowing through the shared type guard (rather than a truthiness check
+    // plus a count lookup) is what lets the step switch below be exhaustive:
+    // adding a rule to RECURRENCE_RULES without giving it a date step becomes a
+    // compile error instead of a series of duplicate events at the parent's
+    // own start instant.
+    if (!isRecurrenceRule(rule)) return [];
     const count = this.occurrenceCountFor(rule);
     if (count === null) return [];
 
@@ -397,19 +449,32 @@ export class EventService {
     for (let i = 1; i <= MAX_OCCURRENCE_SCAN && payloads.length < count; i++) {
       const instanceStart = new Date(start);
 
-      if (rule === 'WEEKLY') {
-        instanceStart.setDate(instanceStart.getDate() + i * 7);
-      } else if (rule === 'BIWEEKLY') {
-        instanceStart.setDate(instanceStart.getDate() + i * 14);
-      } else if (rule === 'MONTHLY') {
-        instanceStart.setDate(1);
-        instanceStart.setMonth(start.getMonth() + i);
-        const maxStartDay = new Date(
-          instanceStart.getFullYear(),
-          instanceStart.getMonth() + 1,
-          0,
-        ).getDate();
-        instanceStart.setDate(Math.min(start.getDate(), maxStartDay));
+      switch (rule) {
+        case 'WEEKLY':
+          instanceStart.setDate(instanceStart.getDate() + i * 7);
+          break;
+        case 'BIWEEKLY':
+          instanceStart.setDate(instanceStart.getDate() + i * 14);
+          break;
+        case 'MONTHLY': {
+          instanceStart.setDate(1);
+          instanceStart.setMonth(start.getMonth() + i);
+          const maxStartDay = new Date(
+            instanceStart.getFullYear(),
+            instanceStart.getMonth() + 1,
+            0,
+          ).getDate();
+          instanceStart.setDate(Math.min(start.getDate(), maxStartDay));
+          break;
+        }
+        default: {
+          // Unreachable today. It exists so that a rule added to
+          // RECURRENCE_RULES without a step here fails to compile: the old
+          // if/else chain silently fell through, leaving every occurrence at
+          // the parent's start instant and creating N duplicate events.
+          const unhandled: never = rule;
+          throw new Error(`Unhandled recurrence rule: ${String(unhandled)}`);
+        }
       }
 
       if (skipBefore !== undefined && instanceStart.getTime() <= skipBefore) {
@@ -449,6 +514,11 @@ export class EventService {
    * attendance query (the chat message row is never mutated). Posts as the
    * creator into the channel they ran the command from; channel access is
    * re-checked by `ChatService.sendMessage`.
+   *
+   * Only ever reached for an **untargeted** event: `create` rejects a
+   * role-targeted event that asks for a card before writing the row, because
+   * this payload is broadcast to every reader of the channel and would bypass
+   * the `required_role_ids` read gate #1463 installed.
    */
   private async postEventCard(
     input: CreateEventInput,
@@ -719,7 +789,7 @@ export class EventService {
     // had nothing to rebuild with.
     if (regenerates && nextRule && this.occurrenceCountFor(nextRule) === null) {
       throw new BadRequestException(
-        'recurrence_rule must be one of WEEKLY, BIWEEKLY, MONTHLY',
+        `recurrence_rule must be one of ${RECURRENCE_RULES.join(', ')}`,
       );
     }
 
@@ -1098,6 +1168,17 @@ export class EventService {
     }
     if (event.location) {
       lines.push(`LOCATION:${escapeText(event.location)}`);
+    }
+
+    // Only a series *parent* carries the rule. A materialized child is a real
+    // row with its own id and its own attendance, so it exports as the single
+    // event it is — giving it a RECURRENCE-ID would mean re-using the parent's
+    // UID and presenting to the calendar as an override of a series the member
+    // may never have imported. An unrecognized rule falls through to a plain
+    // VEVENT rather than failing the download, matching occurrenceCountFor.
+    if (event.parent_event_id === null) {
+      const rrule = toRRuleLine(event.recurrence_rule);
+      if (rrule) lines.push(rrule);
     }
 
     lines.push(`UID:${event.id}@frapp.live`, 'END:VEVENT', 'END:VCALENDAR');

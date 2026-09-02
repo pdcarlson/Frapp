@@ -15,7 +15,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { POINTS_ADJUSTMENT_MAX } from '@repo/validation';
+import { POINTS_ADJUSTMENT_MAX, RECURRENCE_RULES } from '@repo/validation';
 import { GeofenceCoordinateDto } from './study.dto';
 
 /**
@@ -73,7 +73,7 @@ export class CreateEventDto {
   // and then silently generated nothing; on a series edit that meant deleting
   // the future occurrences and rebuilding none of them. `null` still clears a
   // series (@IsOptional short-circuits this).
-  @IsIn(['WEEKLY', 'BIWEEKLY', 'MONTHLY'])
+  @IsIn(RECURRENCE_RULES)
   recurrence_rule?: string;
 
   @ApiPropertyOptional({ type: [String] })
@@ -109,7 +109,7 @@ export class CreateEventDto {
 
   @ApiPropertyOptional({
     description:
-      'When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates.',
+      'When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. Rejected with a 400 when `required_role_ids` is non-empty, on this key or `client_message_id` alone — the card is broadcast to every reader of the channel, so a create cannot both target roles and post one. (`PATCH` can still add targeting to an event whose card already posted; that card is left as-is.)',
   })
   @IsOptional()
   @IsUUID()
@@ -117,7 +117,7 @@ export class CreateEventDto {
 
   @ApiPropertyOptional({
     description:
-      'Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`.',
+      'Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Rejected with a 400 when `required_role_ids` is non-empty, even without `channel_id` — see that field.',
   })
   @IsOptional()
   @IsUUID()
@@ -185,7 +185,7 @@ export class UpdateEventDto {
   // and then silently generated nothing; on a series edit that meant deleting
   // the future occurrences and rebuilding none of them. `null` still clears a
   // series (@IsOptional short-circuits this).
-  @IsIn(['WEEKLY', 'BIWEEKLY', 'MONTHLY'])
+  @IsIn(RECURRENCE_RULES)
   recurrence_rule?: string;
 
   @ApiPropertyOptional({ type: [String] })

@@ -143,8 +143,10 @@ npm run generate -w packages/api-sdk
   and the `production` environment's Required reviewers).
 - **Supabase:** Dedicated production project. Fully isolated users, database, storage.
 - **Web App:** `app.frapp.live` (Vercel, production deployment created by the workflow
-  through the API with `target: production`) — currently blocked; see §6 **Web and Landing
-  (Vercel)**, 2026-09-02.
+  through the API with `target: production`) — the guardrail preflight no longer blocks the
+  dispatch (#1579, 2026-09-02), but the workflow's Vercel step still passes a `gitSource` that
+  needs the retired integration, so the production Vercel deploy is expected to fail until #1578.
+  See §6 **Web and Landing (Vercel)**, 2026-09-02.
 - **Landing:** `frapp.live` (Vercel, same).
 - **API:** Render production service (`frapp-api-prod`), deployed by commit id through
   the Render API, pointing at Supabase production + Stripe live keys. Render-side
@@ -262,12 +264,14 @@ If any required check fails, the PR cannot be merged. Branch protection rules en
 
 > **Current state (2026-09-02) — the Vercel half of this section is not running.** Both Vercel
 > projects were deliberately unlinked from Git (landing 2026-09-01, web 2026-09-02), so no push
-> deploys web or landing, and the guardrails preflight inside `deploy-production.yml` currently
-> blocks production deploys of every service; Render **staging** (the `deploy-api.yml` push path)
-> and EAS are unaffected. What follows stays written as intended. **ADR-21** in
-> [`../architecture/README.md`](../architecture/README.md) is the canonical record of the unlink,
-> the freeze points and the live breakages; the repair work is **#1579** (guardrails and verify)
-> and **#1578** (CI-driven Vercel deploys).
+> deploys web or landing. The guardrails preflight inside `deploy-production.yml` briefly blocked
+> production deploys of every service; **#1579 repaired that the same day** by inverting the Vercel
+> assertion to require the *absence* of a Git link, and removed `verify-deployments.yml`'s two
+> Vercel verify jobs, which had nothing left to verify. Render **staging** (the `deploy-api.yml`
+> push path) and EAS were unaffected throughout. What follows stays written as intended. **ADR-21**
+> in [`../architecture/README.md`](../architecture/README.md) is the canonical record of the unlink,
+> the freeze points and the live breakages, with a 2026-09-02 amendment recording what #1579
+> changed; the remaining repair work is **#1578** (CI-driven Vercel deploys).
 
 Staging deploy steps are gated by CI: after CI succeeds on `main`, `deploy-api.yml` runs database migrations and triggers the Render staging deploy, and Vercel produces a Preview deployment from the same push. Nothing about production is push-triggered — `deploy-production.yml` creates the Render deploy and both Vercel production deployments itself, for a commit a human named.
 
@@ -299,8 +303,9 @@ secrets.
 > `vercel.json` files: they are the versioned form of settings that are otherwise dashboard-only, so
 > re-linking Git must not find them missing. **ADR-21** in
 > [`../architecture/README.md`](../architecture/README.md) is the canonical record of the unlink,
-> the per-project freeze points and the live breakages; the repair work is **#1579** (the
-> production-guardrails assertion and the failing `verify-deployments.yml` verify step) and
+> the per-project freeze points and the live breakages. **#1579** landed 2026-09-02 — the
+> production-guardrails assertion now requires the *absence* of a Git link, and the two
+> `verify-deployments.yml` Vercel verify jobs were removed. The remaining repair work is
 > **#1578** (CI/CD stage 7 — `vercel build` plus `vercel deploy --prebuilt --prod` from Actions,
 > designed but not built).
 

@@ -16,6 +16,10 @@ import {
   StudyZonesGlyph,
 } from "@/components/events/chapter-ops-glyphs";
 import { useCreateEvent, useRoles, useUpdateEvent } from "@repo/hooks";
+import {
+  RECURRENCE_RULES,
+  RECURRENCE_RULE_LABELS,
+} from "@repo/validation";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import {
@@ -592,9 +596,11 @@ export function EventEditorDialog({
                 className={dashboardFormSelectClassName}
               >
                 <option value="NONE">One-time</option>
-                <option value="WEEKLY">Weekly</option>
-                <option value="BIWEEKLY">Bi-weekly</option>
-                <option value="MONTHLY">Monthly</option>
+                {RECURRENCE_RULES.map((rule) => (
+                  <option key={rule} value={rule}>
+                    {RECURRENCE_RULE_LABELS[rule]}
+                  </option>
+                ))}
               </select>
             </div>
           </div>

@@ -51,7 +51,8 @@ TIMEOUT="${FRAPP_EGRESS_PROBE_TIMEOUT:-8}"
 # trap that put prod on the allowlist once already. Source of truth is
 # `mcp__Supabase__list_projects`: frapp-staging = hnoyzpidbmizhbqaiity,
 # frapp-prod = unttyvyfezddlyafcydh. Project URLs are not secret material (see
-# docs/internal/ci-cd/SECRET_SCANNING.md); the anon/service keys are, and are not here.
+# docs/internal/ci-cd/AGENT_INFRA.md, "a project URL is not secret material" — SECRET_SCANNING.md
+# states no such rule); the anon/service keys are, and are not here.
 PROBES="
 staging_api|https://api-staging.frapp.live/health|reachable|staging API (Render)
 staging_web|https://app.staging.frapp.live|reachable|staging web dashboard

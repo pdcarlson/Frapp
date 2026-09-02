@@ -169,8 +169,12 @@ export class InviteService {
     createdBy: string,
     requestedRole?: string,
   ): Promise<Invite> {
-    // Free tier: inviting members is not billing-gated (Chunk 03). The chat +
-    // members wedge is available to every chapter regardless of subscription.
+    // No billing check here by design — subscription state is enforced at the
+    // request boundary by ChapterGuard, not in this service. Do not read that
+    // as "invites are ungated": the controller is @FreeTier() (so an
+    // `incomplete` chapter may mint, per the Chunk 03 wedge) but this route is
+    // also @GraceBlocked(), which blocks minting on `past_due` even inside the
+    // 3-day grace window. `canceled` blocks it too.
     const role = await this.resolveInviteRole(chapterId, requestedRole);
     const data = this.prepareInviteData(chapterId, createdBy, role);
     const invite = await this.inviteRepo.create(data);
@@ -202,8 +206,11 @@ export class InviteService {
 
   /**
    * Create one invite token per email address and send each an emailed join
-   * link. Free-tier, same as `create`/`createBatch` — no billing check here;
-   * the not-billing-gated guarantee lives in the controller's decorators.
+   * link. Same gating as `create`/`createBatch` — no billing check here; the
+   * subscription rules live in the controller's decorators, which are
+   * `@FreeTier()` *and* `@GraceBlocked()`. The latter is what blocks minting
+   * on a `past_due` chapter, so these decorators gate this route rather than
+   * exempting it.
    *
    * Email delivery is best-effort per address: a send failure never rolls
    * back the invite token (the token is still valid and can be shared

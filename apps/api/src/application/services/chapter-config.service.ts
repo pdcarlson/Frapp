@@ -29,6 +29,11 @@ import {
   SERVICE_CONFIG_SELECT,
   type ServiceConfig,
 } from './chapter-service-config.service';
+import {
+  ChapterPointsConfigService,
+  POINTS_CONFIG_FIELDS,
+  type PointsConfig,
+} from './chapter-points-config.service';
 import { ActivationService } from './activation.service';
 
 /**
@@ -126,6 +131,7 @@ export class ChapterConfigService {
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
     private readonly activation: ActivationService,
+    private readonly pointsConfig: ChapterPointsConfigService,
   ) {}
 
   async getConfig(chapterId: string) {
@@ -201,6 +207,24 @@ export class ChapterConfigService {
       ...((serviceRow as Partial<ServiceConfig> | null) ?? {}),
     };
 
+    // Points anti-fraud limits are the same singleton shape
+    // (chapter_points_config, PK = chapter_id); an unconfigured chapter falls
+    // back to the table defaults, which are the values PointsService used to
+    // hardcode.
+    //
+    // Routed through ChapterPointsConfigService rather than inlined like dues
+    // and service above, for two reasons the other two don't have. It applies
+    // the same per-field clamp enforcement uses, so what this endpoint reports
+    // is what adjustPoints will actually apply — when those diverged, a stored
+    // 0 rendered "up to 0 adjustments per hour" on a chapter the server was
+    // letting make 50. And it throws rather than silently defaulting on a read
+    // error, which matters because `patchConfig` uses this value as the prior
+    // state it merges a PATCH onto: a swallowed error would let an officer
+    // editing one limit overwrite the other back to the default and write an
+    // audit row recording a `from` the chapter never had.
+    const points: PointsConfig =
+      await this.pointsConfig.getConfigOrThrow(chapterId);
+
     return {
       id: chapterId,
       org_archetype: archetypeKey,
@@ -230,6 +254,7 @@ export class ChapterConfigService {
       workflows,
       dues,
       service,
+      points,
       role_pack: archetype.rolePack,
     };
   }
@@ -465,11 +490,31 @@ export class ChapterConfigService {
       }
     }
 
+    // Points anti-fraud limits are the same singleton merge as dues and
+    // service. Numeric floors are enforced twice — by the DTO's @Min(1) and by
+    // the column CHECK — so this loop only has to decide what changed.
+    let pointsUpsert: TablesInsert<'chapter_points_config'> | null = null;
+    if (dto.points !== undefined) {
+      const current = existing.points;
+      const next: PointsConfig = { ...current };
+      for (const key of POINTS_CONFIG_FIELDS) {
+        const incoming = (dto.points as Partial<PointsConfig>)[key];
+        if (incoming !== undefined) {
+          (next as unknown as Record<string, unknown>)[key] = incoming;
+        }
+      }
+      if (POINTS_CONFIG_FIELDS.some((key) => next[key] !== current[key])) {
+        pointsUpsert = { chapter_id: chapterId, ...next };
+        diff['points'] = { from: current, to: next };
+      }
+    }
+
     if (
       Object.keys(update).length === 0 &&
       workflowUpserts.length === 0 &&
       duesUpsert === null &&
-      serviceUpsert === null
+      serviceUpsert === null &&
+      pointsUpsert === null
     ) {
       return existing;
     }
@@ -519,6 +564,20 @@ export class ChapterConfigService {
           serviceError,
         );
         throw serviceError;
+      }
+    }
+
+    if (pointsUpsert) {
+      const { error: pointsError } = await this.supabase
+        .from('chapter_points_config')
+        .upsert(pointsUpsert, { onConflict: 'chapter_id' });
+
+      if (pointsError) {
+        this.logger.error(
+          'Failed to update chapter points config',
+          pointsError,
+        );
+        throw pointsError;
       }
     }
 

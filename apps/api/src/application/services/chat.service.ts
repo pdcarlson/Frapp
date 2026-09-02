@@ -41,8 +41,6 @@ import {
   MEMBER_REPOSITORY,
   type IMemberRepository,
 } from '../../domain/repositories/member.repository.interface';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 import type { IStorageProvider } from '../../domain/adapters/storage.interface';
 import { CHAT_ARCHIVE_BUCKET } from '../../domain/constants/storage';
@@ -57,12 +55,18 @@ import type {
   ChannelType,
   ChannelUnreadCount,
 } from '../../domain/entities/chat.entity';
+import {
+  CHAT_MESSAGE_KINDS,
+  SETTABLE_NOTIFICATION_KINDS,
+  isChatMessageKind,
+  isSettableNotificationKind,
+} from '../../domain/entities/chat.entity';
 import { NotificationService } from './notification.service';
 import { ChannelAccessService } from './channel-access.service';
 import { ActivationService } from './activation.service';
 import { ChatNotificationPreferenceRepository } from '../../modules/chat-push-worker/chat-notification-preference.repository';
 import type { ChatNotificationLevel } from '../../modules/chat-push-worker/chat-notification-preference.repository';
-import { defaultLevelFor } from '../../modules/chat-push-worker/push-rules';
+import { resolveLevel } from '../../modules/chat-push-worker/push-rules';
 import { ChannelCacheService } from '../../modules/chat-push-worker/channel-cache.service';
 
 const MAX_PINNED_MESSAGES = 50;
@@ -224,14 +228,6 @@ function assertCardPollVoteAllowed(
       );
   }
 }
-/**
- * Realtime topic the web client subscribes to per channel. Matches the
- * topic used by the retired `chat-send` Edge Function so subscribed
- * clients pick up `new_message` broadcasts without any wire change.
- */
-function realtimeTopicForChannel(channelId: string): string {
-  return `chapter:${channelId}`;
-}
 
 export interface CreateCategoryInput {
   chapter_id: string;
@@ -262,8 +258,6 @@ export class ChatService {
     private readonly memberRepo: IMemberRepository,
     @Inject(STORAGE_PROVIDER)
     private readonly storageProvider: IStorageProvider,
-    @Inject(SUPABASE_CLIENT)
-    private readonly supabase: FrappSupabaseClient,
     private readonly notificationService: NotificationService,
     private readonly channelAccess: ChannelAccessService,
     private readonly activation: ActivationService,
@@ -583,10 +577,16 @@ export class ChatService {
    *   `(channel_id, sender_id, client_message_id)` triple returns the
    *   existing row with `deduplicated: true` instead of inserting again
    *   (partial unique index `idx_chat_messages_dedupe`).
-   * - Best-effort Realtime broadcast on the channel topic so subscribed
-   *   clients see new messages without waiting for Postgres Changes; the
-   *   broadcast failure never fails the request because Postgres Changes
-   *   is the source of truth.
+   * - Emits no Realtime broadcast. Delivery is the Postgres Changes
+   *   subscription on `chat_messages` (`spec/ui/resilience.md` §3.2), which
+   *   clients hold on `chat:channel:<id>`. A `new_message` broadcast used to
+   *   be emitted here on a bespoke `chapter:<id>` topic, left over from the
+   *   `chat-send` Edge Function ADR-11 retired; no client ever subscribed to
+   *   it, so it was removed in #472 rather than instrumented. See the ADR-11
+   *   amendment (2026-09-02, #472); ADR-02 is the rule that Broadcast in chat
+   *   carries presence and typing rather than messages, and ADR-10 is the one
+   *   that fixes the topic at `chat:channel:<id>`. Pinned by
+   *   `chat-realtime-carrier.spec.ts`.
    */
   async sendMessage(
     input: SendMessageInput,
@@ -730,8 +730,6 @@ export class ChatService {
       });
     }
 
-    await this.broadcastNewMessage(message);
-
     // Funnel step 4 (#267): the chapter's first *human* message. Server-
     // originated posts are excluded — the onboarding welcome message would
     // otherwise mark every chapter as having chatted the moment it was
@@ -747,31 +745,6 @@ export class ChatService {
     }
 
     return { message, deduplicated };
-  }
-
-  /**
-   * Emit a Realtime broadcast on the channel topic. Mirrors the retired
-   * Edge Function: best-effort — a broadcast failure is logged and
-   * swallowed because Postgres Changes is the authoritative source.
-   */
-  private async broadcastNewMessage(message: ChatMessage): Promise<void> {
-    try {
-      const channel = this.supabase.channel(
-        realtimeTopicForChannel(message.channel_id),
-      );
-      await channel.send({
-        type: 'broadcast',
-        event: 'new_message',
-        payload: message,
-      });
-      await this.supabase.removeChannel(channel);
-    } catch (error) {
-      this.logger.debug('chat broadcast failed (Postgres Changes will catch)', {
-        messageId: message.id,
-        channelId: message.channel_id,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
   }
 
   /**
@@ -901,41 +874,28 @@ export class ChatService {
   }
 
   /**
-   * Authorize a caller for a message by resolving message → channel → chapter,
-   * then delegating to {@link assertChannelAccess}. A message in a channel the
-   * caller cannot see (or in another chapter) is rejected.
+   * Authorize a caller for a message by resolving message → channel → chapter.
+   * A message in a channel the caller cannot see (or in another chapter) is
+   * rejected.
    *
-   * `operation` defaults to `'read'`, which is right for actions that don't
-   * author channel content (delete, pin, react, vote). Pass `'post'` for
-   * anything that writes member-authored content into the channel — otherwise
-   * the post-side gates (read-only channels, the Alumni lifecycle rule) are
-   * bypassed by editing an existing message instead of sending a new one.
+   * Delegates to the shared {@link ChannelAccessService} for the same reason
+   * {@link assertChannelAccess} does: the bookmark surface (#462) authorizes
+   * messages too, and a second copy of this resolution would be free to drift
+   * from the one the chat hot path uses. The body moved there; this stays as a
+   * thin delegate so the call sites below read unchanged.
    */
-  private async assertMessageAccess(
+  private assertMessageAccess(
     messageId: string,
     chapterId: string,
     userId: string,
     operation: 'read' | 'post' = 'read',
   ): Promise<ChatMessage> {
-    const message = await this.messageRepo.findById(messageId);
-    if (!message) throw new NotFoundException('Message not found');
-    try {
-      await this.assertChannelAccess(
-        message.channel_id,
-        chapterId,
-        userId,
-        operation,
-      );
-    } catch (error) {
-      // A message whose channel is in another chapter surfaces as a
-      // channel-level 404 — normalize it so callers cannot distinguish
-      // "message missing" from "message in a chapter you can't see".
-      if (error instanceof NotFoundException) {
-        throw new NotFoundException('Message not found');
-      }
-      throw error;
-    }
-    return message;
+    return this.channelAccess.assertMessageAccess(
+      messageId,
+      chapterId,
+      userId,
+      operation,
+    );
   }
 
   async editMessage(
@@ -1237,11 +1197,19 @@ export class ChatService {
    * client-side.
    */
   async getChannelNotificationPreferences(chapterId: string, userId: string) {
-    const [rows, channels] = await Promise.all([
+    // BOTH arms are loaded, not just the channel one. Kind-scoped rows became
+    // writable in #500, and `resolveLevel` consults them whenever a channel has
+    // no row of its own — so reading only the channel arm would report the
+    // pre-#500 answer. A member who sets the `text` kind to `off` would see
+    // every channel rendered `mentions` here while the worker pushed nothing,
+    // which is exactly the "UI that disagrees with the worker about whether you
+    // are muted" this method's contract exists to prevent.
+    const [channelRows, kindRows, channels] = await Promise.all([
       this.chatNotificationPrefs.findChannelPreferencesForUser(
         userId,
         chapterId,
       ),
+      this.chatNotificationPrefs.findKindPreferencesForUser(userId, chapterId),
       this.channelRepo.findByChapter(chapterId),
     ]);
 
@@ -1252,19 +1220,143 @@ export class ChatService {
     );
     if (accessible.length === 0) return [];
 
-    const stored = new Map<string, ChatNotificationLevel>();
-    for (const row of rows) {
-      if (row.scope_id !== null) stored.set(row.scope_id, row.level);
-    }
+    const preferences = [...channelRows, ...kindRows];
 
+    // Delegated to the worker's own `resolveLevel` rather than reimplementing
+    // channel-pref ▶ kind-pref ▶ default here. The previous local version
+    // silently fell out of step with the worker the moment the kind arm gained
+    // a write path; sharing the function makes that class of drift structural
+    // rather than something a reviewer has to notice.
+    //
     // `'text'` is the ordinary-message kind: this endpoint answers "what does
-    // this channel do by default", not "what would this one message do". The
-    // kind-scoped arms (`system_audit`, `imported`) are decided per message in
-    // `decidePush` and are deliberately not user-settable here.
+    // this channel do for an ordinary message", not "what would this one
+    // message do".
     return accessible.map((channel) => ({
       channel_id: channel.id,
-      level: stored.get(channel.id) ?? defaultLevelFor(channel.name, 'text'),
+      level: resolveLevel(channel.name, channel.id, 'text', preferences),
     }));
+  }
+
+  /**
+   * The caller's own per-kind notification overrides (#500).
+   *
+   * Every settable kind is returned; `level` is the stored override, or
+   * **`null`** where the member has set none.
+   *
+   * `null` rather than a filled-in default, which is the one place this
+   * endpoint deliberately differs from its per-channel sibling. A kind
+   * preference is chapter-wide, but the default it would fall back to is
+   * **not**: `defaultLevelFor` resolves an `announcement` message to `all` in
+   * a channel named `announcements` and `mentions` anywhere else, so there is
+   * no single chapter-wide default for a kind to report. Inventing one would
+   * be worse than useless in two concrete ways — it would state `mentions` for
+   * `announcement` when the seeded `#announcements` channel actually resolves
+   * `all`, and a settings screen that PUT back what it displayed would thereby
+   * *create* an override that silently downgrades that channel, with no way to
+   * undo it short of the DELETE below.
+   *
+   * The effective level for a real message is the per-channel endpoint's
+   * answer, which resolves the full channel-pref ▶ kind-pref ▶ default chain.
+   * This endpoint answers only "what have I overridden".
+   *
+   * No channel-access check is needed or possible here: a kind is not a
+   * channel, so the response reveals nothing about which channels exist.
+   */
+  async getKindNotificationPreferences(chapterId: string, userId: string) {
+    const rows = await this.chatNotificationPrefs.findKindPreferencesForUser(
+      userId,
+      chapterId,
+    );
+
+    const stored = new Map<string, ChatNotificationLevel>();
+    for (const row of rows) {
+      if (row.scope_kind !== null) stored.set(row.scope_kind, row.level);
+    }
+
+    return SETTABLE_NOTIFICATION_KINDS.map((kind) => ({
+      kind,
+      level: stored.get(kind) ?? null,
+    }));
+  }
+
+  /**
+   * Clear the caller's override for one kind, returning it to the default.
+   *
+   * The counterpart to the setter, and not optional surface: because a kind
+   * override outranks every channel's name-derived default, an override a
+   * member cannot remove is a permanent, invisible downgrade of
+   * `#announcements`.
+   *
+   * **Validated against every `CHAT_MESSAGE_KIND`, not the settable subset**,
+   * which is deliberate and is the one place these two routes disagree.
+   * Deleting a row is never harmful, and gating the delete on settability
+   * creates exactly the unremovable state this route exists to prevent:
+   * moving a kind into {@link NON_SETTABLE_NOTIFICATION_KINDS} — as `loading`
+   * just was — would strand any row already written for it, unreachable by
+   * both the setter (400) and the clearer (400), while the worker went on
+   * consulting it. The kind is still checked, so a typo cannot silently
+   * delete nothing.
+   *
+   * Idempotent: clearing an override that is not set is a no-op, not a 404.
+   * The caller's intent ("I want no override for this kind") is satisfied
+   * either way, and reporting 404 would leak nothing useful while making a
+   * retry after a dropped response fail.
+   */
+  async clearKindNotificationLevel(
+    chapterId: string,
+    userId: string,
+    kind: string,
+  ) {
+    if (!isChatMessageKind(kind)) {
+      throw new BadRequestException(
+        `Unknown message kind '${kind}'. Known kinds: ` +
+          CHAT_MESSAGE_KINDS.join(', '),
+      );
+    }
+
+    await this.chatNotificationPrefs.deleteKindLevel(userId, chapterId, kind);
+    return { kind, level: null };
+  }
+
+  /**
+   * Set the caller's notification level for one message kind (#500).
+   *
+   * The kind is validated against {@link SETTABLE_NOTIFICATION_KINDS} rather
+   * than trusted from the path. Two distinct reasons, both real:
+   *
+   * - `chat_messages.kind` carries **no CHECK constraint** (it is
+   *   `text not null default 'text'`), so the database would happily store a
+   *   preference for a misspelled or invented kind. That row would then sit
+   *   there matching no message forever — a setting the member believes is
+   *   active and which does nothing.
+   * - `imported` must be refused specifically, not merely left unlisted. The
+   *   push worker exits on that kind before any preference is read, so
+   *   accepting the write would persist a row that can never be consulted.
+   *
+   * Keyed on `userId` from the authenticated request, never from the body —
+   * same rule as the channel setter: accepting a caller-supplied user id would
+   * let any member silence another member's notifications.
+   */
+  async setKindNotificationLevel(
+    chapterId: string,
+    userId: string,
+    kind: string,
+    level: ChatNotificationLevel,
+  ) {
+    if (!isSettableNotificationKind(kind)) {
+      throw new BadRequestException(
+        `Unsupported notification kind '${kind}'. Settable kinds: ` +
+          SETTABLE_NOTIFICATION_KINDS.join(', '),
+      );
+    }
+
+    const row = await this.chatNotificationPrefs.upsertKindLevel(
+      userId,
+      chapterId,
+      kind,
+      level,
+    );
+    return { kind, level: row.level };
   }
 
   /**

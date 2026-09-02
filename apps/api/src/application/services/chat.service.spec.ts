@@ -30,7 +30,6 @@ import type {
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 import type { IStorageProvider } from '../../domain/adapters/storage.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type {
   ChatChannel,
   ChatMessage,
@@ -67,6 +66,9 @@ describe('ChatService', () => {
   let mockChatNotificationPrefs: {
     findChannelPreferencesForUser: jest.Mock;
     upsertChannelLevel: jest.Mock;
+    findKindPreferencesForUser: jest.Mock;
+    upsertKindLevel: jest.Mock;
+    deleteKindLevel: jest.Mock;
   };
   let mockChannelCache: {
     get: jest.Mock;
@@ -78,20 +80,6 @@ describe('ChatService', () => {
     hasAlumniRole: jest.Mock;
     isAlumni: jest.Mock;
   };
-  /**
-   * The Realtime broadcast goes through `SUPABASE_CLIENT.channel(topic)` →
-   * `channel.send({ ... })` and is best-effort. Wire a fake that records
-   * the topic + payload so `sendMessage` tests can assert the emit.
-   */
-  let mockSupabase: {
-    channel: jest.Mock;
-    removeChannel: jest.Mock;
-  };
-  let broadcasts: Array<{
-    topic: string;
-    payload: { type: string; event: string; payload: unknown };
-  }>;
-
   const baseMember = {
     id: 'mem-1',
     user_id: 'user-1',
@@ -218,6 +206,9 @@ describe('ChatService', () => {
     mockChatNotificationPrefs = {
       findChannelPreferencesForUser: jest.fn().mockResolvedValue([]),
       upsertChannelLevel: jest.fn(),
+      findKindPreferencesForUser: jest.fn().mockResolvedValue([]),
+      upsertKindLevel: jest.fn(),
+      deleteKindLevel: jest.fn(),
     };
 
     mockChannelCache = {
@@ -232,17 +223,6 @@ describe('ChatService', () => {
       // channel-access.service.spec.ts.
       hasAlumniRole: jest.fn().mockResolvedValue(false),
       isAlumni: jest.fn().mockResolvedValue(false),
-    };
-
-    broadcasts = [];
-    mockSupabase = {
-      channel: jest.fn((topic: string) => ({
-        send: jest.fn(async (payload) => {
-          broadcasts.push({ topic, payload });
-          return 'ok';
-        }),
-      })),
-      removeChannel: jest.fn().mockResolvedValue(undefined),
     };
 
     // Defaults: caller is a member of the chapter, channel resolves, no special
@@ -273,7 +253,6 @@ describe('ChatService', () => {
         },
         { provide: STORAGE_PROVIDER, useValue: mockStorageProvider },
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
-        { provide: SUPABASE_CLIENT, useValue: mockSupabase },
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: RbacService, useValue: mockRbac },
         { provide: ActivationService, useValue: mockActivation },
@@ -1726,28 +1705,7 @@ describe('ChatService', () => {
       ).rejects.toBeInstanceOf(ChatMessageDuplicateError);
     });
 
-    it('emits a Realtime broadcast for new messages on the chapter:<channel_id> topic', async () => {
-      mockMessageRepo.create.mockResolvedValue(baseMessage);
-
-      await service.sendMessage({
-        chapter_id: 'ch-1',
-        channel_id: 'ch-chan-1',
-        sender_id: 'user-1',
-        content: 'Hello',
-      });
-
-      expect(broadcasts).toHaveLength(1);
-      expect(broadcasts[0]).toEqual({
-        topic: `chapter:${baseMessage.channel_id}`,
-        payload: {
-          type: 'broadcast',
-          event: 'new_message',
-          payload: baseMessage,
-        },
-      });
-    });
-
-    it('does NOT broadcast (and does NOT insert) when authz denies the send', async () => {
+    it('does NOT insert when authz denies the send', async () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
 
       await expect(
@@ -1759,23 +1717,6 @@ describe('ChatService', () => {
         }),
       ).rejects.toThrow(ForbiddenException);
       expect(mockMessageRepo.create).not.toHaveBeenCalled();
-      expect(broadcasts).toHaveLength(0);
-    });
-
-    it('still returns success when the broadcast throws (Postgres Changes is the source of truth)', async () => {
-      mockMessageRepo.create.mockResolvedValue(baseMessage);
-      mockSupabase.channel.mockImplementationOnce(() => {
-        throw new Error('boom');
-      });
-
-      const result = await service.sendMessage({
-        chapter_id: 'ch-1',
-        channel_id: 'ch-chan-1',
-        sender_id: 'user-1',
-        content: 'Hello',
-      });
-
-      expect(result.message).toEqual(baseMessage);
     });
 
     it('should reject empty content', async () => {
@@ -2445,6 +2386,279 @@ describe('ChatService', () => {
       await expect(
         service.getChannelNotificationPreferences('ch-1', 'user-1'),
       ).resolves.toEqual([]);
+    });
+
+    /**
+     * Regression for the defect #500 introduced: making the kind arm writable
+     * broke an assumption this endpoint had silently relied on. It read only
+     * `scope='channel'` rows, so a kind override — impossible to store before
+     * #500 — left it reporting the pre-#500 answer while the worker applied
+     * the override. The mute UI would show every channel unmuted while nothing
+     * was being delivered, which is the exact disagreement this endpoint
+     * resolves defaults server-side to prevent.
+     */
+    it('honours a kind override for channels with no channel-scoped row', async () => {
+      mockChatNotificationPrefs.findChannelPreferencesForUser.mockResolvedValue(
+        [],
+      );
+      mockChatNotificationPrefs.findKindPreferencesForUser.mockResolvedValue([
+        {
+          user_id: 'user-1',
+          chapter_id: 'ch-1',
+          scope: 'kind',
+          scope_id: null,
+          scope_kind: 'text',
+          level: 'off',
+        },
+      ]);
+      mockChannelRepo.findByChapter.mockResolvedValue([baseChannel]);
+
+      const result = await service.getChannelNotificationPreferences(
+        'ch-1',
+        'user-1',
+      );
+
+      expect(result).toEqual([{ channel_id: baseChannel.id, level: 'off' }]);
+    });
+
+    /** Precedence is channel-pref ▶ kind-pref ▶ default, not the reverse. */
+    it('lets a channel-scoped row outrank a kind override', async () => {
+      mockChatNotificationPrefs.findChannelPreferencesForUser.mockResolvedValue(
+        [
+          {
+            user_id: 'user-1',
+            chapter_id: 'ch-1',
+            scope: 'channel',
+            scope_id: baseChannel.id,
+            scope_kind: null,
+            level: 'all',
+          },
+        ],
+      );
+      mockChatNotificationPrefs.findKindPreferencesForUser.mockResolvedValue([
+        {
+          user_id: 'user-1',
+          chapter_id: 'ch-1',
+          scope: 'kind',
+          scope_id: null,
+          scope_kind: 'text',
+          level: 'off',
+        },
+      ]);
+      mockChannelRepo.findByChapter.mockResolvedValue([baseChannel]);
+
+      const result = await service.getChannelNotificationPreferences(
+        'ch-1',
+        'user-1',
+      );
+
+      expect(result).toEqual([{ channel_id: baseChannel.id, level: 'all' }]);
+    });
+  });
+
+  // ── Per-kind notification level (#500) ───────────────────────────────
+
+  describe('setKindNotificationLevel', () => {
+    it('upserts the level for the caller and the given kind', async () => {
+      mockChatNotificationPrefs.upsertKindLevel.mockResolvedValue({
+        user_id: 'user-1',
+        chapter_id: 'ch-1',
+        scope: 'kind',
+        scope_id: null,
+        scope_kind: 'system_audit',
+        level: 'all',
+      });
+
+      const result = await service.setKindNotificationLevel(
+        'ch-1',
+        'user-1',
+        'system_audit',
+        'all',
+      );
+
+      expect(mockChatNotificationPrefs.upsertKindLevel).toHaveBeenCalledWith(
+        'user-1',
+        'ch-1',
+        'system_audit',
+        'all',
+      );
+      expect(result).toEqual({ kind: 'system_audit', level: 'all' });
+    });
+
+    /**
+     * `imported` is refused specifically, not merely absent from the list.
+     * `ChatPushWorkerService.handleMessage` returns on that kind before it
+     * loads the roster and `decidePush` refuses it ahead of the mention
+     * override, so a stored row could never be consulted — accepting the
+     * write would persist a setting that silently does nothing.
+     */
+    it('refuses `imported`, the one kind with no opt-in', async () => {
+      await expect(
+        service.setKindNotificationLevel('ch-1', 'user-1', 'imported', 'all'),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(mockChatNotificationPrefs.upsertKindLevel).not.toHaveBeenCalled();
+    });
+
+    /**
+     * `chat_messages.kind` carries no CHECK constraint (it is `text not null
+     * default 'text'`), so without this guard the database would happily
+     * store a preference for an invented kind that matches no message ever.
+     */
+    it('refuses a kind that is not a known chat message kind', async () => {
+      await expect(
+        service.setKindNotificationLevel(
+          'ch-1',
+          'user-1',
+          'sytsem_audit',
+          'off',
+        ),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(mockChatNotificationPrefs.upsertKindLevel).not.toHaveBeenCalled();
+    });
+
+    it('keys the row on the authenticated user, never a caller-supplied id', async () => {
+      mockChatNotificationPrefs.upsertKindLevel.mockResolvedValue({
+        user_id: 'user-1',
+        chapter_id: 'ch-1',
+        scope: 'kind',
+        scope_id: null,
+        scope_kind: 'poll',
+        level: 'off',
+      });
+
+      await service.setKindNotificationLevel('ch-1', 'user-1', 'poll', 'off');
+
+      const [userIdArg] =
+        mockChatNotificationPrefs.upsertKindLevel.mock.calls[0];
+      expect(userIdArg).toBe('user-1');
+    });
+  });
+
+  describe('getKindNotificationPreferences', () => {
+    it('returns the stored override for a kind the caller has set', async () => {
+      mockChatNotificationPrefs.findKindPreferencesForUser.mockResolvedValue([
+        {
+          user_id: 'user-1',
+          chapter_id: 'ch-1',
+          scope: 'kind',
+          scope_id: null,
+          scope_kind: 'poll',
+          level: 'off',
+        },
+      ]);
+
+      const result = await service.getKindNotificationPreferences(
+        'ch-1',
+        'user-1',
+      );
+
+      expect(result).toContainEqual({ kind: 'poll', level: 'off' });
+    });
+
+    /**
+     * The endpoint reports overrides, not effective levels. Filling in a
+     * default here would be a fabrication: what a kind falls back to depends
+     * on the channel a message lands in, so there is no chapter-wide default
+     * to state. Reporting `mentions` for `announcement` would also be wrong
+     * for the seeded `#announcements` channel, which resolves `all`.
+     */
+    it('reports null, not a fabricated default, for an unset kind', async () => {
+      mockChatNotificationPrefs.findKindPreferencesForUser.mockResolvedValue(
+        [],
+      );
+
+      const result = await service.getKindNotificationPreferences(
+        'ch-1',
+        'user-1',
+      );
+
+      expect(result).toContainEqual({ kind: 'text', level: null });
+      expect(result).toContainEqual({ kind: 'announcement', level: null });
+      expect(result).toContainEqual({ kind: 'system_audit', level: null });
+      expect(result.every((r) => r.level === null)).toBe(true);
+    });
+
+    /**
+     * Neither may be presented as changeable: `imported` because the worker
+     * refuses it before any preference is read, `loading` because it is an
+     * internal placeholder rather than a category a member receives.
+     */
+    it('never lists `imported` or `loading`', async () => {
+      const result = await service.getKindNotificationPreferences(
+        'ch-1',
+        'user-1',
+      );
+
+      expect(result.some((r) => r.kind === 'imported')).toBe(false);
+      expect(result.some((r) => r.kind === 'loading')).toBe(false);
+      expect(result).not.toHaveLength(0);
+    });
+
+    it('surfaces a repository failure rather than reporting every kind as unset', async () => {
+      mockChatNotificationPrefs.findKindPreferencesForUser.mockRejectedValue(
+        new Error('db down'),
+      );
+
+      await expect(
+        service.getKindNotificationPreferences('ch-1', 'user-1'),
+      ).rejects.toThrow('db down');
+    });
+  });
+
+  describe('clearKindNotificationLevel', () => {
+    it('deletes the override, scoped to the caller and chapter', async () => {
+      mockChatNotificationPrefs.deleteKindLevel.mockResolvedValue(undefined);
+
+      const result = await service.clearKindNotificationLevel(
+        'ch-1',
+        'user-1',
+        'poll',
+      );
+
+      expect(mockChatNotificationPrefs.deleteKindLevel).toHaveBeenCalledWith(
+        'user-1',
+        'ch-1',
+        'poll',
+      );
+      expect(result).toEqual({ kind: 'poll', level: null });
+    });
+
+    it('validates the kind, so a typo cannot silently delete nothing', async () => {
+      await expect(
+        service.clearKindNotificationLevel('ch-1', 'user-1', 'sytsem_audit'),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(mockChatNotificationPrefs.deleteKindLevel).not.toHaveBeenCalled();
+    });
+
+    /**
+     * Deliberately NOT symmetric with the setter, which refuses these. A row
+     * for a kind that has since left the settable set is exactly the state
+     * this route exists to clear: refusing it here would strand the row,
+     * unreachable by both routes, while the worker went on consulting it.
+     */
+    it('clears a kind that is no longer settable, so no row is ever stranded', async () => {
+      mockChatNotificationPrefs.deleteKindLevel.mockResolvedValue(undefined);
+
+      await expect(
+        service.clearKindNotificationLevel('ch-1', 'user-1', 'loading'),
+      ).resolves.toEqual({ kind: 'loading', level: null });
+
+      expect(mockChatNotificationPrefs.deleteKindLevel).toHaveBeenCalledWith(
+        'user-1',
+        'ch-1',
+        'loading',
+      );
+    });
+
+    it('still refuses a string that is not a message kind at all', async () => {
+      await expect(
+        service.clearKindNotificationLevel('ch-1', 'user-1', 'not_a_kind'),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(mockChatNotificationPrefs.deleteKindLevel).not.toHaveBeenCalled();
     });
   });
 

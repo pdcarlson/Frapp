@@ -168,7 +168,7 @@ describe('InviteService', () => {
     service = module.get(InviteService);
   });
 
-  it('should create invite with 24h expiry (no billing gate, free tier)', async () => {
+  it('should create invite with 24h expiry (no billing check in the service; gating is ChapterGuard)', async () => {
     mockInviteRepo.create.mockImplementation((data) =>
       Promise.resolve({
         id: 'inv-1',
