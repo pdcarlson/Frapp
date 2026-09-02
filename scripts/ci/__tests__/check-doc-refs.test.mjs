@@ -6,8 +6,13 @@ import assert from "node:assert/strict";
 // glob (scripts/ci/__tests__/*.test.mjs) runs it — hence the ../../ reach up.
 import {
   ALLOWLIST_PATH,
+  BARE_BASENAME_RE,
+  basenameIndex,
+  blankFencedBlocks,
+  scanFile,
   EXCLUDED,
   EXCLUDED_SEGMENTS,
+  extractBasenameReferences,
   extractReferences,
   inScope,
   isExcluded,
@@ -184,4 +189,223 @@ test("a URL is bounded by any separator, not just a space", () => {
 
 test("a genuine permalink is still suppressed", () => {
   assert.deepEqual(extractReferences("https://github.com/o/r/blob/sha/docs/x.md"), []);
+});
+
+// ── Pass 2: bare filenames (the rename case) ────────────────────────────────
+//
+// Each case here is a way the second pass could pass while asserting nothing.
+// What the pass is for: docs/internal/ci-cd/DOCS_CI.md § References.
+
+test("a bare filename is found — pass 1 cannot see it at all", () => {
+  const line = "// see ENV_REFERENCE.md for the full list";
+  assert.deepEqual(extractReferences(line), [], "pass 1 must stay blind to this");
+  assert.deepEqual(extractBasenameReferences(line), [{ token: "ENV_REFERENCE.md", line: 1 }]);
+});
+
+test("a filename inside a full path is NOT double-counted", () => {
+  // Pass 1 owns the whole path; matching the tail again would report it twice.
+  assert.deepEqual(extractBasenameReferences("docs/internal/environment/ENV_REFERENCE.md"), []);
+  assert.deepEqual(extractBasenameReferences("./docs/x.md"), []);
+  assert.deepEqual(extractBasenameReferences("/spec/y.md"), []);
+});
+
+test("a backslash escape is not a filename starting with a digit", () => {
+  // A quoted-path example embeds octal escapes; `\303\211.md` is one token,
+  // not a reference to `211.md`. Without the backslash in the lookbehind this
+  // gate reported its own source as a dead pointer.
+  assert.deepEqual(extractBasenameReferences('"docs/guides/BAD_NAM\\303\\211.md"'), []);
+});
+
+test("a token must be whole — a filename is not a suffix of an identifier", () => {
+  assert.deepEqual(extractBasenameReferences("some_prefix.md"), [
+    { token: "some_prefix.md", line: 1 },
+  ]);
+  // A dotted property path is not a filename: the segment before it disqualifies it.
+  assert.deepEqual(extractBasenameReferences("tokens.spacing.md"), []);
+});
+
+test("both naming conventions are matched, since the corpus holds both", () => {
+  for (const name of ["ROUTINES.md", "env-reference.md", "README.md", "adr-16.md"]) {
+    assert.deepEqual(
+      extractBasenameReferences(`cite ${name} here`),
+      [{ token: name, line: 1 }],
+      `expected to match ${name}`,
+    );
+  }
+});
+
+test("a bare filename inside a URL is not a repo reference", () => {
+  // Deliberately a QUERY-STRING url. The obvious fixture — a filename after a
+  // path separator — is rejected by the lookbehind before isUrlContext is ever
+  // consulted, so it asserts the regex twice and the guard not at all: the guard
+  // could be deleted with every test still green.
+  assert.deepEqual(extractBasenameReferences("https://example.com/wiki?file=CHANGELOG.md"), []);
+  assert.deepEqual(extractBasenameReferences("https://example.com/x?doc=ROUTINES.md&v=1"), []);
+  // Same token, no URL: found.
+  assert.deepEqual(extractBasenameReferences("file=CHANGELOG.md"), [
+    { token: "CHANGELOG.md", line: 1 },
+  ]);
+});
+
+test("the trailing boundary keeps a longer extension from reading as `.md`", () => {
+  // No .mdx or .mdc lives outside the excluded buildpad export today, so this
+  // anchor looks decorative. It is not: without it, every reference.mdx in a
+  // future Docusaurus or Cursor-rules directory reports as a dead markdown file.
+  for (const name of ["reference.mdx", "guide.mdc", "notes.mdown", "sum.md5"]) {
+    assert.deepEqual(extractBasenameReferences(`see ${name}`), [], `${name} must not match`);
+  }
+});
+
+test("a COMPOUND extension does not match its own markdown-looking head", () => {
+  // `\b` alone passes the four cases above and still fails these: a template or
+  // a backup names a file that EXISTS, so reporting its head as a dead doc
+  // leaves no correct edit -- the reference is already right.
+  for (const name of ["issue.md.hbs", "CHANGELOG.md.tmpl", "README.md-old"]) {
+    assert.deepEqual(extractBasenameReferences(`see ${name}`), [], `${name} must not match`);
+  }
+  // ...while ordinary trailing punctuation must still terminate a real one.
+  for (const s of ["see notes.md here", "(notes.md)", "end notes.md", "notes.md, then"]) {
+    assert.deepEqual(
+      extractBasenameReferences(s).map((r) => r.token),
+      ["notes.md"],
+      s,
+    );
+  }
+});
+
+test("fenced worked examples are not references, and line numbers survive", () => {
+  // 17 tracked markdown files sit outside the docs corpus and are scanned here
+  // -- command files, the PR template, package READMEs. A shell transcript in
+  // one of them naming a filename is an example, not a claim.
+  const text = ["intro GOOD.md", "```bash", "git mv OLD.md new-name.md", "```", "tail LATER.md"].join(
+    "\n",
+  );
+  assert.deepEqual(extractBasenameReferences(text), [
+    { token: "GOOD.md", line: 1 },
+    // 5, not 3: blanking the fence must preserve newlines, because this gate
+    // reports a LINE. check-doc-paths.mjs reports per file, so it may collapse.
+    { token: "LATER.md", line: 5 },
+  ]);
+});
+
+test("an unterminated fence strips nothing, rather than swallowing the file", () => {
+  const text = ["a UNCLOSED.md", "```", "b INSIDE.md"].join("\n");
+  assert.deepEqual(
+    extractBasenameReferences(text).map((r) => r.token),
+    ["UNCLOSED.md", "INSIDE.md"],
+  );
+});
+
+test("blankFencedBlocks keeps the line count identical", () => {
+  const text = ["a", "```", "x", "y", "```", "b"].join("\n");
+  assert.equal(blankFencedBlocks(text).split("\n").length, text.split("\n").length);
+  assert.ok(!blankFencedBlocks(text).includes("x"));
+});
+
+test("line numbers are per-occurrence, like pass 1", () => {
+  const text = ["nothing", "cite A_DOC.md", "nothing", "cite B_DOC.md"].join("\n");
+  assert.deepEqual(extractBasenameReferences(text), [
+    { token: "A_DOC.md", line: 2 },
+    { token: "B_DOC.md", line: 4 },
+  ]);
+});
+
+test("the regex is global, so matchAll does not loop forever or skip", () => {
+  assert.ok(BARE_BASENAME_RE.global);
+  assert.deepEqual(extractBasenameReferences("A.md and B.md"), [
+    { token: "A.md", line: 1 },
+    { token: "B.md", line: 1 },
+  ]);
+});
+
+test("basenameIndex keys on the filename, so a move does not read as a rename", () => {
+  // Deliberately weaker than pass 1: a bare filename names no directory, so it
+  // cannot say which file it meant. The question is only whether the name lives.
+  const idx = basenameIndex(["docs/internal/ops/DEPLOYMENT.md", "spec/README.md", "a/b/c.ts"]);
+  assert.ok(idx.has("DEPLOYMENT.md"));
+  assert.ok(idx.has("README.md"));
+  assert.ok(idx.has("c.ts"));
+  assert.ok(!idx.has("MISSING.md"));
+  // The same doc moved to another declared home still resolves by name...
+  assert.ok(basenameIndex(["docs/DEPLOYMENT.md"]).has("DEPLOYMENT.md"));
+  // ...but renamed, it does not. That is the case this pass exists for.
+  assert.ok(!basenameIndex(["docs/internal/ops/deployment.md"]).has("DEPLOYMENT.md"));
+});
+
+test("a path with no directory part is handled — slice must not eat the name", () => {
+  assert.ok(basenameIndex(["AGENTS.md"]).has("AGENTS.md"));
+});
+
+// ── The wiring, not just the extractors ─────────────────────────────────────
+//
+// Every test above exercises a pure function. None of them notices if the
+// second pass is never CALLED. That is not hypothetical: with the scan inlined
+// in main(), deleting the whole pass-2 loop left all of these green and the
+// gate printing success. scanFile() exists to make the wiring assertable.
+
+const DEPS = {
+  trackedSet: new Set(["docs/guides/testing.md"]),
+  basenames: basenameIndex(["docs/guides/testing.md", "docs/internal/ops/DEPLOYMENT.md"]),
+  allowlist: { prefixes: [], paths: [], perFile: [] },
+};
+
+test("scanFile reports a dead bare filename — the pass-2 loop must be reached", () => {
+  const r = scanFile("apps/api/src/thing.ts", "// see GONE_DOC.md for details", DEPS);
+  assert.deepEqual(r.findings, [
+    { file: "apps/api/src/thing.ts", line: 1, token: "GONE_DOC.md" },
+  ]);
+  assert.equal(r.basenameCount, 1);
+});
+
+test("scanFile resolves a live bare filename by name alone", () => {
+  const r = scanFile("a.ts", "// see DEPLOYMENT.md", DEPS);
+  assert.deepEqual(r.findings, []);
+  assert.equal(r.basenameCount, 1);
+});
+
+test("scanFile still reports a dead PATH — pass 1 is not lost in the refactor", () => {
+  const r = scanFile("a.ts", "see spec/behavior/gone.md", DEPS);
+  assert.equal(r.findings.length, 1);
+  assert.equal(r.findings[0].token, "spec/behavior/gone.md");
+  assert.equal(r.referenceCount, 1);
+  assert.equal(r.basenameCount, 0, "a full path must not also count as a filename");
+});
+
+test("both passes run over the same file, and each counts separately", () => {
+  const r = scanFile("a.ts", "docs/guides/testing.md and DEPLOYMENT.md", DEPS);
+  assert.deepEqual(r.findings, []);
+  assert.equal(r.referenceCount, 1);
+  assert.equal(r.basenameCount, 1);
+});
+
+test("a pass-2 excuse is consulted BEFORE resolution, so a name collision cannot stale it", () => {
+  // The excuse says "this token is not a document reference at all". If
+  // resolution were checked first, the day anyone added a file with that
+  // basename the entry would stop being used -- and an entry that excuses
+  // nothing FAILS the run, so the gate would demand deleting an excuse still
+  // covering live tokens. Here `spacing.md` both resolves AND is excused.
+  const allowlist = {
+    prefixes: [],
+    paths: [],
+    perFile: [{ file: "ui.tsx", path: "spacing.md", reason: "a design token, not a doc" }],
+  };
+  const deps = { ...DEPS, basenames: basenameIndex(["spec/ui/spacing.md"]), allowlist };
+  const r = scanFile("ui.tsx", "// `spacing.md` is 12", deps);
+  assert.deepEqual(r.findings, []);
+  assert.deepEqual([...r.used], ["perFile[0]"], "the entry must register as used");
+});
+
+test("a pass-2 excuse is scoped to its file, like pass 1", () => {
+  const allowlist = {
+    prefixes: [],
+    paths: [],
+    perFile: [{ file: "ui.tsx", path: "spacing.md", reason: "a design token, not a doc" }],
+  };
+  const deps = { ...DEPS, allowlist };
+  assert.deepEqual(scanFile("ui.tsx", "`spacing.md`", deps).findings, []);
+  assert.equal(
+    scanFile("other.tsx", "`spacing.md`", deps).findings.length,
+    1,
+    "the same token elsewhere is more likely a real dead pointer",
+  );
 });
