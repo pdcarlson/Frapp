@@ -127,7 +127,10 @@ export async function probeStack(): Promise<boolean> {
  * there is a property of the queries, not of RLS — which is precisely why it
  * needs testing. RLS policy coverage is a separate concern, and lives in the
  * PGlite harness (`scripts/check-pglite-migrations.mjs`), whose black-box tier
- * reads each table as a non-owner role.
+ * reads four tables as a non-owner role — the two chat tables, plus `members`
+ * and `financial_invoices` as default-deny. Every other table has policy
+ * *presence* checked and its behaviour unexercised, so do not read this as
+ * "RLS is regression-tested" for a table you are adding a client read path to.
  */
 export function createServiceRoleClient(): FrappSupabaseClient {
   const creds = readCredentials();

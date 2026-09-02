@@ -81,6 +81,21 @@ await db.exec(`
   create or replace function auth.jwt()  returns jsonb language sql as $$ select '{}'::jsonb $$;
 `);
 
+// Stand up the `authenticated` role BEFORE applying migrations. ~18 migrations
+// wrap policy and grant statements in `if exists (select 1 from pg_roles where
+// rolname = 'authenticated')` — the repo's dominant idiom for anything that
+// targets a client role, because the role exists on hosted Supabase but not in
+// a bare Postgres. Without the role here, every one of those blocks is skipped
+// silently, so the harness validates a schema the hosted project does not run.
+//
+// That was a live false-PASS, not a theoretical one: a permissive
+// `create policy ... to authenticated using (true)` written in that idiom left
+// this entire script green while handing every signed-in client every row of
+// the table. Creating the role is what makes the black-box tiers below see the
+// policies they exist to check, and it exercises the `to authenticated` clause
+// itself (`v_role_clause`), which previously was never applied here.
+await db.exec("create role authenticated nologin;");
+
 const migrationResults = [];
 const tApplyStart = performance.now();
 
@@ -1308,6 +1323,11 @@ if (readSeeded) {
 
       drop role if exists rls_probe;
       create role rls_probe nologin;
+      -- Membership in the authenticated role is what subjects the probe to
+      -- policies carrying a TO authenticated clause. Without it those policies
+      -- exist but never apply to this role, and every read below is answered
+      -- by default-deny rather than by the policy under test.
+      grant authenticated to rls_probe;
       grant usage on schema public to rls_probe;
       grant select on public.chat_message_actions to rls_probe;
       grant select on public.chat_messages to rls_probe;
@@ -1317,9 +1337,10 @@ if (readSeeded) {
       grant select on public.members to rls_probe;
       grant select on public.financial_invoices to rls_probe;
       grant execute on function public.can_read_chat_message(uuid) to rls_probe;
-      -- Mirrors the request context of a signed-in Supabase client. On PGlite the
-      -- policy carries no TO clause (no authenticated role exists), so it
-      -- applies to rls_probe and the qual is what decides visibility.
+      -- Mirrors the request context of a signed-in Supabase client. The
+      -- authenticated role is created before the migrations apply, so the TO
+      -- clause is real here and rls_probe inherits it via the grant above;
+      -- the qual is then what decides visibility.
       create or replace function auth.role() returns text language sql as $$ select 'authenticated'::text $$;
     `);
 
@@ -1728,71 +1749,133 @@ if (readSeeded) {
     // bypasses RLS entirely. So the assertion that carries the value is the
     // negative one: a signed-in reader sees NOTHING, including in their own
     // chapter. The day a migration adds `using (true)`, or a chapter-scoped
-    // policy whose tenant predicate is wrong, this tier goes red — which is the
-    // whole of #423's "CI fails when a migration introduces a policy that
-    // allows cross-chapter reads".
+    // policy whose tenant predicate is wrong, this tier goes red.
     //
     // NOTE this is deliberately NOT "at least one policy per table is exercised
     // as authenticated", the way #423's first acceptance criterion words it.
     // That phrasing presumes a policy that does not exist for either table; the
     // enforceable form of the same intent is the deny below.
     //
+    // Scope, stated so nobody reads more into it than it proves: this covers
+    // THESE TWO TABLES. A permissive policy added to any of the other ~46
+    // RLS-enabled tables changes no assertion here — the every-public-table
+    // invariant further up checks `relrowsecurity`, not what the policies do.
+    // `chat_notification_preferences` is the known uncovered one: it carries a
+    // client-reachable SELECT policy and only a name-set + tautology tripwire.
+    //
     // A bare "sees zero rows" check would be worthless on its own — a missing
     // GRANT, a fixture that never inserted, or a typo'd table name each produce
     // zero just as convincingly as working RLS, and all three fail SILENTLY
-    // green forever. So each table goes through three guards in order: the
-    // privilege is held, the rows exist when read as owner, and only then that
-    // the probe sees none of them.
+    // green forever. So each table goes through guards in order: the privilege
+    // is held, the rows exist when read as owner, the catalog carries no
+    // client-reachable policy of any command shape, and only then that the
+    // probe sees none of the rows.
     console.log("\n=== members / financial_invoices default-deny (black-box, SET ROLE) ===");
-    await db.exec(`
-      insert into financial_invoices (id, chapter_id, user_id, title, amount, due_date) values
-        ('${F.invA}', '${F.chapA}', '${F.userAId}', 'Chapter A dues', 15000, '2026-01-31'),
-        ('${F.invB}', '${F.chapB}', '${F.userBId}', 'Chapter B dues', 25000, '2026-01-31');
-    `);
+    // Seeded in its own savepoint. A future NOT NULL column on
+    // financial_invoices would otherwise raise straight past the header just
+    // printed, into the tier-wide catch, and the log would show this heading
+    // with nothing under it — a reader scanning for the deny assertions sees
+    // absence, not failure, and `missing` counts 1 instead of the dozen
+    // assertions that never ran.
+    let denySeeded = true;
+    await db.exec("savepoint deny_seed;");
+    try {
+      await db.exec(`
+        insert into financial_invoices (id, chapter_id, user_id, title, amount, due_date) values
+          ('${F.invA}', '${F.chapA}', '${F.userAId}', 'Chapter A dues', 15000, '2026-01-31'),
+          ('${F.invB}', '${F.chapB}', '${F.userBId}', 'Chapter B dues', 25000, '2026-01-31');
+      `);
+      await db.exec("release savepoint deny_seed;");
+    } catch (e) {
+      denySeeded = false;
+      missing += 1;
+      await db.exec("rollback to savepoint deny_seed; release savepoint deny_seed;");
+      console.log(
+        `SKIP  members / financial_invoices default-deny — fixture seed failed, 0 of its assertions ran` +
+          `\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`,
+      );
+    }
 
     const FIXTURE_CHAPTERS = `('${F.chapA}', '${F.chapB}')`;
-    const DENY_TABLES = [
-      // Seeded counts are scoped to the two fixture chapters, so an unrelated
-      // seed elsewhere in this file cannot silently change them. The probe read
-      // below is deliberately NOT scoped: default-deny means zero rows total,
-      // and an unscoped count also catches a policy that leaks some OTHER
-      // chapter's rows while correctly hiding these.
-      { table: "members", seeded: 6 },
-      { table: "financial_invoices", seeded: 2 },
-    ];
+    // Deliberately NOT a row-count assertion. The exact cardinality is not
+    // load-bearing — the guard only needs "there is something to deny" — and
+    // pinning it couples this tier to the shared chat fixture, which has grown
+    // twice already (userE for the cross-chapter role_ids case, userF for the
+    // uppercased one). A third addition would fail here, in a tier its author
+    // never touched, with a message naming neither the seed block nor the
+    // literal to bump.
+    const DENY_TABLES = ["members", "financial_invoices"];
 
     const DENY_READERS = [
       { who: "a chapter-A member reading their own chapter", uid: F.userAAuth },
       { who: "a chapter-B member (cross-tenant)", uid: F.userBAuth },
       { who: "a chapter-A member holding the '*' wildcard", uid: F.userDAuth },
-      { who: "no JWT (null auth.uid())", uid: null },
+      // A real anon reader: null uid AND auth.role() = 'anon'. Stubbing only
+      // the uid would leave this indistinguishable from a signed-in reader,
+      // which is how an `auth.role() = 'anon'` policy stays invisible.
+      { who: "an anonymous reader (no JWT, auth.role() = 'anon')", uid: null },
     ];
 
-    for (const t of DENY_TABLES) {
-      {
-        const name = `rls_probe holds SELECT on ${t.table} (so a zero-row read means RLS, not a missing grant)`;
-        const res = await db.query(
-          `select has_table_privilege('rls_probe', 'public.${t.table}', 'select') as ok`,
-        );
-        if (res.rows[0].ok === true) {
-          console.log(`OK    ${name}`);
-        } else {
-          missing += 1;
-          console.log(`MISS  ${name}\n        ↳ the deny assertions below would pass vacuously`);
-        }
+    for (const table of denySeeded ? DENY_TABLES : []) {
+      // Both guards below `continue` on failure rather than falling through.
+      // Printing four confident `OK ... reads 0 rows` lines underneath a MISS
+      // that just declared them meaningless is worse than printing nothing:
+      // `missing` goes up either way, but anyone reading the log — or grepping
+      // it for the deny assertions — sees green on a property never tested.
+      const privileged = await db.query(
+        `select has_table_privilege('rls_probe', 'public.${table}', 'select') as ok`,
+      );
+      const privName = `rls_probe holds SELECT on ${table} (so a zero-row read means RLS, not a missing grant)`;
+      if (privileged.rows[0].ok !== true) {
+        missing += 1;
+        console.log(`MISS  ${privName}\n        ↳ skipping ${table}: its deny assertions would pass vacuously`);
+        continue;
       }
+      console.log(`OK    ${privName}`);
 
-      {
-        const name = `${t.table} holds ${t.seeded} fixture row(s) as owner (the deny below has something to deny)`;
-        const res = await db.query(
-          `select count(*)::int as n from public.${t.table} where chapter_id in ${FIXTURE_CHAPTERS}`,
+      const seeded = await db.query(
+        `select count(*)::int as n from public.${table} where chapter_id in ${FIXTURE_CHAPTERS}`,
+      );
+      const seedName = `${table} holds fixture rows as owner (the deny below has something to deny)`;
+      if (seeded.rows[0].n < 1) {
+        missing += 1;
+        console.log(`MISS  ${seedName}\n        ↳ skipping ${table}: 0 rows, so denying them proves nothing`);
+        continue;
+      }
+      console.log(`OK    ${seedName} — ${seeded.rows[0].n} row(s)`);
+
+      // The read probe below is `select`-only, so it is structurally blind to
+      // the WRITE half of default-deny: `for insert with check (true)` or
+      // `for update using (true)` leaves every read assertion green. That
+      // matters more than it sounds — Supabase's default
+      // `grant all on all tables in schema public to anon, authenticated`
+      // stands (no table-level revoke exists in supabase/migrations/), so on a
+      // permissive UPDATE policy any signed-in client could rewrite
+      // `members.role_ids` and grant itself permissions.
+      //
+      // Both tables are supposed to carry NO policy a client role can reach,
+      // in any command shape, so assert exactly that from the catalog — it
+      // covers INSERT/UPDATE/DELETE/ALL without needing a write probe per
+      // command. `supabase_auth_admin` is excluded: it is a Supabase-internal
+      // role, not a client, and `members` legitimately carries one such policy
+      // on hosted projects.
+      const clientPolicies = await db.query(
+        `select policyname, cmd, roles::text as roles
+           from pg_policies
+          where schemaname = 'public' and tablename = '${table}'
+            and roles <> '{supabase_auth_admin}'`,
+      );
+      const anyCmdName = `${table} carries no client-reachable policy of ANY command (covers the write path)`;
+      if (clientPolicies.rows.length === 0) {
+        console.log(`OK    ${anyCmdName}`);
+      } else {
+        missing += 1;
+        console.log(
+          `MISS  ${anyCmdName}\n        ↳ ` +
+            clientPolicies.rows
+              .map((r) => `${r.policyname} [${r.cmd}] to ${r.roles}`)
+              .join("\n        ↳ "),
         );
-        if (res.rows[0].n === t.seeded) {
-          console.log(`OK    ${name}`);
-        } else {
-          missing += 1;
-          console.log(`MISS  ${name}\n        ↳ expected ${t.seeded}, found ${res.rows[0].n}`);
-        }
       }
 
       for (const s of DENY_READERS) {
@@ -1802,10 +1885,18 @@ if (readSeeded) {
         if (s.uid !== null && typeof s.uid !== "string") {
           throw new Error(`DENY_READERS scenario "${s.who}" has a non-fixture uid`);
         }
+        // `auth.role()` is varied with the identity, not left at the tier-wide
+        // 'authenticated'. Without this the "no JWT" scenario is not an
+        // unauthenticated reader at all — it is a signed-in reader who happens
+        // to have a null uid, so a policy spelled `using (auth.role() =
+        // 'anon')` reads as default-deny here and hands the table to every
+        // unauthenticated PostgREST client in production.
         await db.exec(
           s.uid === null
-            ? `create or replace function auth.uid() returns uuid language sql as $$ select null::uuid $$;`
-            : `create or replace function auth.uid() returns uuid language sql as $$ select '${s.uid}'::uuid $$;`,
+            ? `create or replace function auth.uid()  returns uuid language sql as $$ select null::uuid $$;
+               create or replace function auth.role() returns text language sql as $$ select 'anon'::text $$;`
+            : `create or replace function auth.uid()  returns uuid language sql as $$ select '${s.uid}'::uuid $$;
+               create or replace function auth.role() returns text language sql as $$ select 'authenticated'::text $$;`,
         );
         // Each read gets its own savepoint. A policy that references a table
         // the probe cannot read raises `permission denied` rather than
@@ -1821,7 +1912,7 @@ if (readSeeded) {
         let seen;
         let failure = null;
         try {
-          const res = await db.query(`select count(*)::int as n from public.${t.table}`);
+          const res = await db.query(`select count(*)::int as n from public.${table}`);
           seen = res.rows[0].n;
         } catch (e) {
           failure = String(e?.message ?? e).split("\n")[0];
@@ -1831,12 +1922,27 @@ if (readSeeded) {
           } catch {
             /* the savepoint rollback below is what actually recovers */
           }
-          await db.exec(
-            failure === null ? "release savepoint deny_probe;" : "rollback to savepoint deny_probe;",
-          );
+          // Guarded like the `reset role` above, and for the same reason: a
+          // throw raised in `finally` REPLACES the verdict the try/catch just
+          // computed, collapsing this scenario and every one after it into the
+          // single opaque outer ERR that the savepoints exist to prevent.
+          //
+          // `rollback to savepoint` does NOT destroy the savepoint (verified —
+          // rolling back to the same name three times succeeds), so the error
+          // branch must release it explicitly or every failing scenario leaves
+          // another live subtransaction open inside the outer transaction.
+          try {
+            if (failure === null) {
+              await db.exec("release savepoint deny_probe;");
+            } else {
+              await db.exec("rollback to savepoint deny_probe; release savepoint deny_probe;");
+            }
+          } catch (e) {
+            failure ??= `savepoint cleanup failed: ${String(e?.message ?? e).split("\n")[0]}`;
+          }
         }
 
-        const name = `${t.table}: ${s.who} reads 0 rows`;
+        const name = `${table}: ${s.who} reads 0 rows`;
         if (failure !== null) {
           missing += 1;
           // Still a failure, not an excuse: the table is supposed to be
@@ -1847,7 +1953,7 @@ if (readSeeded) {
         } else {
           missing += 1;
           console.log(
-            `MISS  ${name}\n        ↳ read ${seen} row(s) — a policy now exposes ${t.table} to a client role`,
+            `MISS  ${name}\n        ↳ read ${seen} row(s) — a policy now exposes ${table} to a client role`,
           );
         }
       }

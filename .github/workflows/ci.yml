@@ -945,10 +945,14 @@ jobs:
   # ownership-scoped reaction policies). Covers what static
   # `check:migration-safety` can't: the SQL actually runs and the schema lands.
   # It also runs the black-box *enforcement* tier: a non-owner `rls_probe` role
-  # reads the tables for real, asserting exact visibility sets on the chat
-  # tables and zero rows on `members` / `financial_invoices`, which must stay
-  # default-deny. Out of reach: Realtime, Presence, and GoTrue with real JWTs
-  # — those live in the NestJS Jest tier (see ADR-11/ADR-12 + AGENT_INFRA.md).
+  # reads four tables for real — exact visibility sets on the two chat tables,
+  # zero rows on `members` / `financial_invoices`, which must stay default-deny.
+  # The `authenticated` role is created before migrations apply, so the ~18
+  # migrations that guard policies behind `rolname = 'authenticated'` actually
+  # run and their `to authenticated` clause binds the probe.
+  # Out of reach: Realtime, Presence, GoTrue with real JWTs, and `to anon`
+  # targeting (no `anon` role here, though `auth.role()` is stubbed to it).
+  # Those live in the NestJS Jest tier (see ADR-11/ADR-12 + AGENT_INFRA.md).
   pglite-migrations:
     needs: changes
     if: ${{ github.event_name == 'push' || needs.changes.outputs.pglite == 'true' }}
