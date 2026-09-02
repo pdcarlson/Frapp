@@ -152,9 +152,13 @@ The cases where it beats the local stack:
 
 - **Realtime / Presence as the hosted stack negotiates it** — local Supabase does not
   reproduce the hosted WebSocket path. Pair with [`realtime-resilience`](../realtime-resilience/SKILL.md).
-- **RLS as GoTrue enforces it**, with a real JWT and a real role. The PGlite tier
-  (`npm run check:pglite-migrations`) asserts policy *presence and shape*; only hosted
-  staging asserts *enforcement*.
+- **RLS as GoTrue enforces it**, with a real JWT. The PGlite tier
+  (`npm run check:pglite-migrations`) does assert *enforcement* black-box for four tables —
+  it reads them through a non-owner role granted `authenticated`, with `auth.uid()`/`auth.role()`
+  stubbed per scenario — so a policy whose predicate is wrong is settled in-loop and does not
+  need staging. What only hosted staging settles is a **real GoTrue-minted JWT** (claims beyond
+  `sub`/`role`, including `custom_access_token_hook` output) and `TO anon` targeting, since
+  PGlite has no `anon` role. Read the job's output before deciding you need staging.
 - **`custom_access_token_hook` actually being enabled** — the exact drift class that went
   unnoticed in #805.
 - **Is staging serving this commit** — **for the API (Render staging) only.** Since the
@@ -229,7 +233,10 @@ not from an agent session.
   [`AGENT_INFRA.md`](../../../docs/internal/ci-cd/AGENT_INFRA.md).
 - **Provider APIs** (Render, Vercel, Sentry, PostHog) — blocked to direct
   `fetch`, reached via **MCP**, which does not go through the network allowlist at all. Use
-  [`infrastructure-research`](../infrastructure-research/SKILL.md). Exception: **Infisical
+  [`infrastructure-research`](../infrastructure-research/SKILL.md). (The live allowlist carries
+  an unexplained bare `vercel.com` line — drift, not a sanctioned direct-`fetch` path; see
+  [`CLOUD_SANDBOX.md`](../../../docs/internal/environment/CLOUD_SANDBOX.md#whats-configured-in-the-web-ui).)
+  Only sanctioned exception: **Infisical
   has no MCP connector** — it is reached by direct `fetch` via the allowlisted
   `app.infisical.com` instead ([#1279](https://github.com/pdcarlson/Frapp/issues/1279)); in
   an environment without that allowlist line, report Infisical state as unverified.
