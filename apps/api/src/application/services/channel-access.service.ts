@@ -8,7 +8,10 @@ import { CHAT_CHANNEL_REPOSITORY } from '../../domain/repositories/chat.reposito
 import type { IChatChannelRepository } from '../../domain/repositories/chat.repository.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
-import type { ChatChannel } from '../../domain/entities/chat.entity';
+import type {
+  ChatChannel,
+  ChatChannelView,
+} from '../../domain/entities/chat.entity';
 import { canAccessChannel, isAlumniPostableChannel } from '@repo/validation';
 import type { ChannelOperation } from '@repo/validation';
 import { RbacService } from './rbac.service';
@@ -207,6 +210,69 @@ export class ChannelAccessService {
     if (!member) return [];
 
     return this.applyReadPredicate(chapterId, userId, inChapter);
+  }
+
+  /**
+   * Annotate already-readable channels with `can_post`, decided by the same
+   * `canAccessChannel` predicate the write path (`assertChannelAccess`)
+   * enforces — so a client's composer state and the server's actual gate
+   * cannot drift. #704: surfaces the alumni-post restriction (and the
+   * existing read-only-without-`announcements:post` case) as one capability
+   * flag instead of shipping the caller's raw alumni status.
+   *
+   * Callers must have already filtered to channels the caller may `read`
+   * (`filterAccessibleChannels` / `assertChannelAccess`) — this only adds the
+   * post-capability projection on top, it does not itself decide visibility.
+   */
+  async withPostCapability(
+    chapterId: string,
+    userId: string,
+    channels: ChatChannel[],
+  ): Promise<ChatChannelView[]> {
+    if (channels.length === 0) return [];
+
+    // Same short-circuit `assertChannelAccess` uses: skip the Alumni-role
+    // lookup entirely when every candidate is alumni-postable by construction
+    // (DMs, GROUP_DMs), so a chapter with no alumni carries no extra query.
+    const needsAlumniLookup = channels.some(
+      (channel) => !isAlumniPostableChannel(toPredicateChannel(channel)),
+    );
+    const isAlumni = needsAlumniLookup
+      ? await this.rbac.isAlumni(chapterId, userId)
+      : false;
+
+    // `|| isAlumni` matters here for the same reason it does in
+    // `assertChannelAccess`: an alumni caller who ALSO holds `*` (President)
+    // bypasses the restriction (spec/behavior/alumni.md — "a chapter cannot
+    // lock itself out by assigning the Alumni role to its own President"),
+    // and that bypass is decided inside `canAccessChannel` by checking
+    // `permissions.includes('*')`. Without this clause, an alumni President
+    // posting in an ordinary PUBLIC channel would compute `permissions: []`
+    // (not ROLE_GATED, not read-only), so the wildcard check would never see
+    // `*` and `can_post` would come back `false` for a caller whose actual
+    // send succeeds — the exact client/server drift this method exists to
+    // prevent.
+    const needsPermissions = channels.some(
+      (channel) =>
+        channel.type === 'ROLE_GATED' ||
+        channel.is_read_only === true ||
+        isAlumni,
+    );
+    const permissions = needsPermissions
+      ? await this.rbac.getEffectivePermissions(chapterId, userId)
+      : [];
+
+    return channels.map((channel) => ({
+      ...channel,
+      can_post: canAccessChannel({
+        channel: toPredicateChannel(channel),
+        userId,
+        isChapterMember: true,
+        permissions,
+        operation: 'post',
+        isAlumni,
+      }),
+    }));
   }
 
   /**

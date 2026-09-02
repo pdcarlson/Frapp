@@ -48,6 +48,7 @@ import type { IStorageProvider } from '../../domain/adapters/storage.interface';
 import { CHAT_ARCHIVE_BUCKET } from '../../domain/constants/storage';
 import type {
   ChatChannel,
+  ChatChannelView,
   ChatChannelCategory,
   ChatMessage,
   ChatMessageAction,
@@ -283,14 +284,18 @@ export class ChatService {
    * entire private and direct-message graph, which is a strictly larger leak
    * than the unread counts already filter for.
    */
-  async getChannels(chapterId: string, userId: string): Promise<ChatChannel[]> {
+  async getChannels(
+    chapterId: string,
+    userId: string,
+  ): Promise<ChatChannelView[]> {
     const channels = await this.channelRepo.findByChapter(chapterId);
 
-    return this.channelAccess.filterAccessibleChannels(
+    const accessible = await this.channelAccess.filterAccessibleChannels(
       chapterId,
       userId,
       channels,
     );
+    return this.channelAccess.withPostCapability(chapterId, userId, accessible);
   }
 
   /**
@@ -302,8 +307,14 @@ export class ChatService {
     id: string,
     chapterId: string,
     userId: string,
-  ): Promise<ChatChannel> {
-    return this.assertChannelAccess(id, chapterId, userId);
+  ): Promise<ChatChannelView> {
+    const channel = await this.assertChannelAccess(id, chapterId, userId);
+    const [withCapability] = await this.channelAccess.withPostCapability(
+      chapterId,
+      userId,
+      [channel],
+    );
+    return withCapability;
   }
 
   /**
