@@ -226,8 +226,26 @@ The **Accent server contrast disclosure** row is a third, independent question f
 |---|---|---|
 | Loading | — | `Loading chapter documents...` |
 | Empty | `No documents here yet` | `Upload chapter files like bylaws, agendas, and meeting minutes so everyone can find them.` |
+| Empty (search, all files) | `No documents match that search` | `Nothing in the chapter library has "{query}" in its title.` |
+| Empty (search, inside a folder) | `No documents match that search` | `No match in this folder. Try "All files" to search the whole library.` |
 | Error | `Couldn't load documents` | `Confirm your chapter access and retry.` |
 | Offline | `Documents unavailable offline` | `Reconnect to browse the chapter library and download files.` |
+| Offline (search active) | `Search needs a connection` | `Clear the search to browse the documents already on this device.` |
+| Folder list failed (inline, under the rail) | — | `Couldn't load the folder list, so these are read from the documents shown. Empty folders and folder management are unavailable until it loads.` |
+
+Three of these exist to keep one state from impersonating another:
+
+- A search that matched nothing is not an empty library. The default empty copy
+  invites an upload, which is the wrong instruction for a member who mistyped a
+  title.
+- Search is served by the API, so each query is a cache key that an offline
+  member has never fetched. Falling to the plain offline card would replace a
+  library they still have cached; naming the search as the thing that needs a
+  connection keeps the recovery in the member's hands.
+- The folder rail is its own request and can fail while the documents load
+  fine. It degrades to names derived from the loaded documents rather than
+  rendering as a chapter with no folders — so the notice reports what is
+  actually missing (empty folders and management), not a false absence.
 
 ### Notifications (dashboard)
 
