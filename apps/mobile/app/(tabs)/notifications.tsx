@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import {
@@ -23,6 +23,7 @@ import {
 import { NOTIFICATION_FALLBACK_PATHNAME } from "@/lib/notifications/targets";
 import { asRoute } from "@/lib/href";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { useNowTick } from "@/lib/use-now-tick";
 
 /**
  * s14 — Notifications (`canvas-screens.dc.html:474`).
@@ -73,16 +74,12 @@ export default function NotificationsScreen() {
   const [isMarkingAll, setIsMarkingAll] = useState(false);
   const [markAllNote, setMarkAllNote] = useState<string | null>(null);
 
-  // `now` is state, not a value captured inside the memo. React Query's
-  // structural sharing keeps the data reference stable when a refetch returns
-  // identical rows, so a `new Date()` read inside the memo would freeze the
-  // TODAY/EARLIER split at mount — a row from 11:47 PM would still sit under
-  // TODAY at 12:10 AM on a tab screen that never unmounts.
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 60_000);
-    return () => clearInterval(id);
-  }, []);
+  // `now` ticks rather than being read once inside the memo below: React
+  // Query's structural sharing keeps the data reference stable when a refetch
+  // returns identical rows, so a `new Date()` read inside the memo would
+  // freeze the TODAY/EARLIER split at mount — a row from 11:47 PM would still
+  // sit under TODAY at 12:10 AM on a tab screen that never unmounts.
+  const now = useNowTick();
 
   const groups = useMemo(
     () => selectNotificationGroups(notificationsQuery.data, now),
