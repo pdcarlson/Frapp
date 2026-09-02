@@ -102,6 +102,83 @@ Chat is not a module — it is the spine of the app, and every other capability 
 - A bookmark does not affect the underlying message's lifecycle. If the original message is deleted, the bookmark surfaces a "[message deleted]" placeholder.
 - Bookmarks are the right answer for "I want to remember this myself" without elevating to chapter-wide visibility.
 
+**How the privacy is enforced (#462).** Bookmarks live in their own
+`chat_message_bookmarks` table, unique on `(user_id, message_id)` — not as state
+on the message, because a bookmark is a fact about a *(viewer, message)* pair
+rather than about the message. Three things make "not even a channel admin can
+see who bookmarked what" structural rather than a matter of review, and all
+three have to hold:
+
+- **No route accepts a caller-supplied user id.** `ChatBookmarkController`
+  derives the owner from `@CurrentUser('id')` on every route, so there is no
+  parameter to escalate through.
+- **`IChatMessageBookmarkRepository` offers no by-message query.** There is
+  deliberately no "who bookmarked this" and no count, so the question cannot be
+  asked. Adding one is what would quietly make this section false.
+- **The table enables RLS with zero policies**, like `channel_read_receipts` and
+  `message_reactions`, so there is no client-reachable read path at all. That is
+  not a missing policy — it is the guarantee.
+- **`user_id` is stripped in the repository**, by `stripBookmarkRow`, mirroring
+  `stripAttachmentRow`. Note *where*: this API registers no
+  `ClassSerializerInterceptor`, so a `@ApiOkResponse` DTO is documentation and
+  does not filter anything off the wire. An earlier draft of this section
+  claimed the field was absent because the DTO omitted it, which was false —
+  the DTO omitted it and it shipped anyway. A response-shape guarantee in this
+  codebase has to be enforced by the code that builds the response.
+- **Account deletion purges the rows.** `anonymize_user` deletes them
+  explicitly, like every sibling per-user table. The FK's `on delete cascade` is
+  *not* the mechanism and never fires: deletion tombstones the `users` row
+  rather than deleting it, so a cascade from `users(id)` is unreachable.
+
+`channels:manage` grants nothing here: a moderator can pin, delete and moderate
+a message and still cannot learn that anyone saved it. That asymmetry with pin
+is the point.
+
+Bookmarking authorizes the message at **`read`**, not `post` — a bookmark
+authors nothing in the channel, so an announcement in a read-only channel (which
+is exactly the kind of message members want to keep) stays bookmarkable. Both
+write routes are idempotent, so a double-tap or an offline retry is a no-op.
+
+**Losing access to a channel redacts the message, but never removes the
+bookmark and never blocks removing it.** The list re-checks channel access on
+every read, because the query re-reads `chat_messages` live — it returns the
+message as it is *now*, so without the check a member who left `#exec` would
+keep receiving edits made after they left. What they get instead is their own
+row with the message blanked (`message_available: false`), which the client
+renders non-interactively but still offers a Remove control on — the panel is
+the only place such a row can be cleared, since the message-row chip is
+reachable only from a channel the member can open.
+
+The redaction is built as an **allowlist**: the redacted message is constructed
+from the three fields that cannot carry a post-revocation signal — the
+message's `id`, `channel_id` and `created_at`, all fixed at save time — and
+everything else the endpoint serves is replaced. A denylist would serve any
+newly added column to a member who had lost access, with nothing failing.
+
+The endpoint's message projection is **nine fields**, not the whole row, and
+that is a disclosure control rather than a size optimization: `deleteMessage`
+blanks `content` and `metadata` but not `payload`, so serving the full row meant
+a bookmarked poll or event card that had since been deleted shipped its payload
+on an endpoint whose declared type says the message reads `[message deleted]`.
+Three places spell that list — `BOOKMARK_MESSAGE_COLUMNS`,
+`BookmarkedMessageDto`, and the `BookmarkedMessage` entity — and they must stay
+in step. Two things follow, and both are load-bearing:
+
+- **Un-bookmarking does not authorize the message.** It cannot: the row exists
+  precisely because access was lost, so authorizing would make a member's own
+  bookmark permanently undeletable. The delete is scoped by
+  `(user_id, message_id, chapter_id)` and always answers 204.
+- **An archived Group DM is not a revocation.** Archiving freezes posting, not
+  reading, so the access check passes `includeArchived` — otherwise a bookmark
+  in an archived Group DM would be redacted while the member can still open the
+  channel.
+
+The deletion rule above is load-bearing on an implementation detail worth
+stating: `deleteMessage` soft-deletes, rewriting `content` to
+`[message deleted]` and keeping the row, so the placeholder *is* the message's
+own content. The bookmarks query therefore must **not** filter `is_deleted` —
+adding that filter would make the bookmark vanish, the opposite of this rule.
+
 **No sender-extend on ephemerality.** Senders cannot extend the lifetime of their own message past channel retention rules. The two ways content becomes durable are a chapter-elevated **pin** (visible to everyone who can see the channel) or a **bookmark** (private to the bookmarker). This keeps ephemerality real — there's no third path that lets a sender unilaterally make their own content stick around.
 
 **Typing indicators:**
