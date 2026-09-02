@@ -159,7 +159,7 @@ export class ActivityFeedService {
       'backwork',
     ] as const;
     const domains = await Promise.allSettled([
-      this.eventItems(chapterId),
+      this.eventItems(chapterId, userId),
       this.pointsItems(chapterId, userId),
       Promise.resolve(this.memberItems(members)),
       this.announcementItems(chapterId, userId, roster),
@@ -177,8 +177,20 @@ export class ActivityFeedService {
     return topByDate(items, (item) => item.timestamp, cappedLimit);
   }
 
-  private async eventItems(chapterId: string): Promise<ActivityFeedItem[]> {
-    const events = await this.eventService.findByChapter(chapterId);
+  /**
+   * `viewerId` is not optional here, unlike on `findByChapter` itself: the feed
+   * emits `title: event.name` and `body: event.location` for every event it
+   * returns, so calling without a viewer republishes a role-targeted event's
+   * name and location to members `GET /v1/events/:id` returns 404 to. This
+   * route is gated on `members:view` — the same permission the role-filtered
+   * `GET /v1/events` requires — so the gate above is not a substitute for the
+   * filter. See `spec/behavior/events.md` § Role-based required attendance.
+   */
+  private async eventItems(
+    chapterId: string,
+    viewerId: string,
+  ): Promise<ActivityFeedItem[]> {
+    const events = await this.eventService.findByChapter(chapterId, viewerId);
     const now = Date.now();
     const createdCutoff = now - EVENT_CREATED_LOOKBACK_MS;
 

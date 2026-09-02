@@ -84,7 +84,13 @@ describe('ActivityFeedService', () => {
   it('scopes every domain call to the given chapter', async () => {
     await service.getFeed(CHAPTER_ID, USER_ID);
 
-    expect(mockEventService.findByChapter).toHaveBeenCalledWith(CHAPTER_ID);
+    // The viewer id is load-bearing, not incidental: without it
+    // `findByChapter` skips the `required_role_ids` filter and the feed
+    // republishes a role-targeted event's name and location (#1469).
+    expect(mockEventService.findByChapter).toHaveBeenCalledWith(
+      CHAPTER_ID,
+      USER_ID,
+    );
     expect(mockPointsService.getUserSummary).toHaveBeenCalledWith(
       CHAPTER_ID,
       USER_ID,
@@ -111,6 +117,40 @@ describe('ActivityFeedService', () => {
     // call — it is what keeps point rows to the caller's own, matching the
     // spec's "own point changes" rule.
     expect(mockPointsService.getUserSummary).toHaveBeenCalled();
+  });
+
+  // #1469: the feed emits `title: event.name` and `body: event.location`, so
+  // an unfiltered read here republishes exactly what the role gate hides. The
+  // filtering itself is EventService's (and tested there); what this pins is
+  // that the feed asks for the *viewer's* events rather than the chapter's.
+  it('does not surface a role-targeted event the viewer cannot see', async () => {
+    mockEventService.findByChapter.mockImplementation(
+      async (_chapterId: string, viewerId?: string) =>
+        viewerId
+          ? []
+          : [
+              eventFixture({
+                id: 'evt-exec',
+                name: 'Exec Discipline Review',
+                location: 'Chapter House',
+                // Far-future so it lands in the "upcoming" branch — with the
+                // fixture's default past start_time this test would pass even
+                // with the filter removed.
+                start_time: '2099-01-01T00:00:00.000Z',
+                end_time: '2099-01-01T01:00:00.000Z',
+                required_role_ids: ['role-officer'],
+              }),
+            ],
+    );
+
+    const feed = await service.getFeed(CHAPTER_ID, USER_ID);
+
+    expect(mockEventService.findByChapter).toHaveBeenCalledWith(
+      CHAPTER_ID,
+      USER_ID,
+    );
+    expect(JSON.stringify(feed)).not.toContain('Exec Discipline Review');
+    expect(JSON.stringify(feed)).not.toContain('Chapter House');
   });
 
   it('returns items newest-first across domains', async () => {
