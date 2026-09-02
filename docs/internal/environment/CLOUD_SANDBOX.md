@@ -46,16 +46,26 @@ staging.frapp.live
 api-staging.frapp.live
 hnoyzpidbmizhbqaiity.supabase.co
 app.infisical.com
+vercel.com
 ```
 
 The first two are what makes `supabase start` work. The middle four are the **live staging
 egress** described in [Live staging egress](#live-staging-egress) below; omit them and the
 sandbox is still fully functional for local-stack work, it just cannot reach the deployed
-environment. The last is the **Infisical API**
+environment. The seventh is the **Infisical API**
 ([#1279](https://github.com/pdcarlson/Frapp/issues/1279)): secrets access for agents, bounded
 by the service token — scoped `dev` + `staging` **read-only**, never `prod` — not by the
 network. Omit it and secrets stay unreadable from the sandbox
 (credential details: [`AGENT_CREDENTIALS.md`](./AGENT_CREDENTIALS.md)).
+
+The eighth, `vercel.com`, was **observed in the live environment on 2026-09-02** while
+confirming the allowlist for [#1447](https://github.com/pdcarlson/Frapp/issues/1447); it was
+not previously recorded here, and this entry documents what is configured rather than a
+requirement anything is known to depend on. It is a **bare apex**, so by the matching rules in
+[Wildcard semantics](#wildcard-semantics--weaker-than-the-docs-imply) it permits `vercel.com`
+alone — not `*.vercel.com`, and no Frapp production host. Do not delete it on the assumption it
+is stray without first checking what breaks; do not treat its presence as precedent for adding
+undocumented entries.
 
 **Three of the staging four are literal hosts on purpose.** Both wildcards a reader reaches for —
 `*.frapp.live` and `*.supabase.co` — silently include **production**, because prod and
