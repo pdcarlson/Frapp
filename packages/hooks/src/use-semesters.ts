@@ -3,6 +3,21 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useFrappClient } from "./use-frapp-client";
 
+/**
+ * `GET /v1/semesters` declares no OpenAPI response schema, so
+ * openapi-typescript emits `never` for its body and `useSemesters()`'s `data`
+ * is untyped at the wire. This is the one hand-maintained mirror of the
+ * `semester_archives` row shape — import it rather than re-declaring it (web
+ * previously had two identical copies, in the Points page and Settings).
+ */
+export type SemesterArchive = {
+  id: string;
+  label: string;
+  start_date: string;
+  end_date: string;
+  created_at: string;
+};
+
 export function useSemesters() {
   const client = useFrappClient();
   return useQuery({

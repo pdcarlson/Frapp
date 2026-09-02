@@ -57,7 +57,14 @@ When a user checks into an event:
   unresolved row: it is a record officers read ids out of, not a name slot.
 - Rank is the member's position on the **whole** board for the selected window.
   Filtering the view — by name or by pasted user id — never renumbers it.
-- Configurable time window: all-time, this semester, this month.
+- Configurable time window: all-time, this semester, this month, or one
+  specific archived semester by id (`semester_archive_id`, resolved against
+  that archive's own `[start_date, end_date]` calendar-day range) — the
+  archive selection overrides the enum window entirely. `GET /v1/points/me`,
+  `GET /v1/points/leaderboard`, `GET /v1/points/members/:userId`, and
+  `POST /v1/reports/points` all accept it; the web Points page's "Archived
+  period" picker (backed by `useSemesters()`) drives the leaderboard and
+  balance summary. The Reports page and mobile do not yet expose it (#1526).
 - Visible to all members.
 - Admins see the full transaction ledger for all members. Members see only their own transactions plus the leaderboard rankings.
 

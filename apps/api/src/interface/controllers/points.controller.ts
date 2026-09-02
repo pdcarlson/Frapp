@@ -46,7 +46,12 @@ export class PointsController {
     @Query() query: PointsWindowQueryDto,
   ) {
     const window: PointsWindow = query.window ?? 'all';
-    return this.pointsService.getUserSummary(chapterId, userId, window);
+    return this.pointsService.getUserSummary(
+      chapterId,
+      userId,
+      window,
+      query.semester_archive_id,
+    );
   }
 
   @Get('leaderboard')
@@ -56,7 +61,11 @@ export class PointsController {
     @Query() query: PointsWindowQueryDto,
   ) {
     const window: PointsWindow = query.window ?? 'all';
-    return this.pointsService.getLeaderboard(chapterId, window);
+    return this.pointsService.getLeaderboard(
+      chapterId,
+      window,
+      query.semester_archive_id,
+    );
   }
 
   @Get('transactions')
@@ -88,7 +97,12 @@ export class PointsController {
     @Query() query: PointsWindowQueryDto,
   ) {
     const window: PointsWindow = query.window ?? 'all';
-    return this.pointsService.getUserSummary(chapterId, userId, window);
+    return this.pointsService.getUserSummary(
+      chapterId,
+      userId,
+      window,
+      query.semester_archive_id,
+    );
   }
 
   @Post('adjust')

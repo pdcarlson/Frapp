@@ -55,6 +55,7 @@ describe('SemesterRolloverService', () => {
     mockArchiveRepo = {
       findByChapter: jest.fn(),
       findLatestByChapter: jest.fn(),
+      findById: jest.fn(),
       create: jest.fn(),
       createWithPromotion: jest.fn(),
     };
