@@ -19,10 +19,10 @@ alter table scheduled_notification_dispatches
     threshold in ('DUE_SOON', 'OVERDUE', 'AUTO_ABSENT', 'EXPIRED', 'EVENT_REMINDER')
   );
 
--- Supporting index for the reminder sweep, which filters `events` on a
--- bounded `start_time` window every five minutes.
--- 20260805140000_scheduled_notification_dispatches.sql added
--- `idx_events_end_time` for the auto-absent sweep on exactly these grounds;
--- the reminder sweep reads the other end of the event and needs its own, or
--- every tick sequentially scans the whole events table.
-create index if not exists idx_events_start_time on events (start_time);
+-- No index is added here on purpose. The reminder sweep filters `events` on a
+-- bounded `start_time` window every five minutes, and `idx_events_start_time`
+-- already covers that — it has existed since
+-- 00000000000000_initial_schema.sql. (The auto-absent sweep needed
+-- `idx_events_end_time` added in 20260805140000 precisely because `end_time`,
+-- unlike `start_time`, had none.) A `create index if not exists` here would be
+-- dead SQL that reads like the sweep's index lives in this migration.

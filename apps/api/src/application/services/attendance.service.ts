@@ -15,6 +15,7 @@ import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.i
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import type { EventAttendance } from '../../domain/entities/event-attendance.entity';
 import { RbacService } from './rbac.service';
+import { hasRequiredRole } from './event.service';
 import { isValidZone, pointInPolygon } from '../../domain/utils/geofence';
 import {
   mintCheckInToken,
@@ -339,9 +340,14 @@ export class AttendanceService {
     const allMembers = await this.memberRepo.findByChapter(chapterId);
 
     if (isRoleTargeted) {
-      const requiredRoleIdSet = new Set(event.required_role_ids);
+      // `hasRequiredRole` rather than a local intersection: it is the predicate
+      // `GET /v1/events` and search already filter visibility with, and its own
+      // docstring exists to stop a change landing at one call site and not the
+      // other. That matters more here than anywhere — this list decides who is
+      // told an event's *name*, so any drift from the visibility rule is a
+      // disclosure, not a mismatch.
       return allMembers.filter((m) =>
-        m.role_ids.some((roleId) => requiredRoleIdSet.has(roleId)),
+        hasRequiredRole(event.required_role_ids, m.role_ids),
       );
     }
 
