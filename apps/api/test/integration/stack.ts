@@ -125,8 +125,9 @@ export async function probeStack(): Promise<boolean> {
  * accepted and correctly scoped. `ReportService` itself runs under the
  * service-role client in production (`SUPABASE_CLIENT`), so chapter isolation
  * there is a property of the queries, not of RLS — which is precisely why it
- * needs testing. RLS policy coverage is a separate concern, tracked on the
- * PGlite harness in #423.
+ * needs testing. RLS policy coverage is a separate concern, and lives in the
+ * PGlite harness (`scripts/check-pglite-migrations.mjs`), whose black-box tier
+ * reads each table as a non-owner role.
  */
 export function createServiceRoleClient(): FrappSupabaseClient {
   const creds = readCredentials();
