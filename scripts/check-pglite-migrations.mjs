@@ -196,6 +196,55 @@ const LANDMARKS = [
       /WHERE/i.test(rows[0].indexdef),
   },
   {
+    // Both plain unique indexes on chat_notification_preferences are ON CONFLICT
+    // targets for one arm each of the mute API, and neither can be replaced by
+    // the original expression index `idx_chat_notif_prefs_unique`: PostgREST's
+    // `on_conflict` takes column names and cannot express its
+    // `coalesce(scope_id::text, scope_kind)`. Nor can either substitute for the
+    // other — a unique index treats NULLs as distinct, and the arms are exactly
+    // complementary in which of scope_id/scope_kind is NULL.
+    //
+    // So dropping either one does not fail a build or a test; it makes the
+    // corresponding endpoint 500 with `42P10 there is no unique or exclusion
+    // constraint matching the ON CONFLICT specification` on every call, at
+    // runtime, in production. That is precisely the class of thing this file
+    // exists to pin, and it is why the pairing is asserted here rather than
+    // recorded as a one-time manual observation in a migration header.
+    name: "chat_notification_preferences carries a plain UNIQUE ON CONFLICT target for BOTH the channel and kind arms",
+    sql: `select indexname, indexdef from pg_indexes
+            where tablename = 'chat_notification_preferences'
+              and indexname in ('idx_chat_notif_prefs_channel_unique',
+                                'idx_chat_notif_prefs_kind_unique')
+            order by indexname`,
+    ok: (rows) => {
+      if (rows.length !== 2) return false;
+      const byName = Object.fromEntries(rows.map((r) => [r.indexname, r.indexdef]));
+      const channel = byName.idx_chat_notif_prefs_channel_unique ?? "";
+      const kind = byName.idx_chat_notif_prefs_kind_unique ?? "";
+      const scoped = (def) =>
+        // `CREATE UNIQUE INDEX`, not a bare /UNIQUE/ — both index NAMES end in
+        // `_unique`, so matching the word anywhere in the definition passes a
+        // plain non-unique index on its name alone. Caught by mutation-testing
+        // this predicate rather than by reading it.
+        /CREATE UNIQUE INDEX/i.test(def) &&
+        /user_id/.test(def) &&
+        /chapter_id/.test(def) &&
+        /\bscope\b/.test(def) &&
+        // Neither may be partial or expression-based, or ON CONFLICT stops
+        // matching it — the whole point of these two existing.
+        !/WHERE/i.test(def) &&
+        !/coalesce/i.test(def);
+      return (
+        scoped(channel) &&
+        scoped(kind) &&
+        /scope_id/.test(channel) &&
+        !/scope_kind/.test(channel) &&
+        /scope_kind/.test(kind) &&
+        !/scope_id/.test(kind)
+      );
+    },
+  },
+  {
     // A nullable sender is only safe because the row still names its author.
     // Dropping this constraint would let a message exist with no attribution at
     // all, which every renderer would then have to invent copy for.

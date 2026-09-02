@@ -178,7 +178,40 @@ shell, so an unscoped error asserts a failure on channels the member never touch
 
 Chat-specific levels live in the `chat_notification_preferences` table (ADR-06), separately from the broader `notification_preferences` table because chat needs a tri-state (`all` / `mentions` / `off`) and two scope arms — per-channel and per-kind. Both arms are keyed by `(user_id, chapter_id, scope, coalesce(scope_id::text, scope_kind))` with a unique constraint that allows exactly one row per (scope, key).
 
-That key is an **expression** index, which matters to anyone adding a write path: `ON CONFLICT (a, b, c)` only matches an index defined on those exact columns or expressions, and PostgREST's `on_conflict` parameter takes column names and cannot express `coalesce(...)`. So the channel-scoped upsert targets a second, plain unique index on `(user_id, chapter_id, scope, scope_id)` added by `20260829011200_chat_notif_prefs_channel_upsert_target.sql`. The two do not disagree: for `scope='channel'` rows the expression reduces to `scope_id::text`, which the table's CHECK already guarantees is non-null on that arm; for `scope='kind'` rows `scope_id` is NULL and unique indexes treat NULLs as distinct, so the second index constrains that arm not at all and the original still governs it.
+That key is an **expression** index, which matters to anyone adding a write path: `ON CONFLICT (a, b, c)` only matches an index defined on those exact columns or expressions, and PostgREST's `on_conflict` parameter takes column names and cannot express `coalesce(...)`. So each arm's upsert targets its own plain unique index:
+
+| Arm | Plain index | Added by |
+| --- | --- | --- |
+| `channel` | `(user_id, chapter_id, scope, scope_id)` | `20260829011200_chat_notif_prefs_channel_upsert_target.sql` |
+| `kind` | `(user_id, chapter_id, scope, scope_kind)` | `20260902170000_chat_notif_prefs_kind_upsert_target.sql` |
+
+None of the three disagree, because each plain index constrains exactly one arm and is inert on the other. For `scope='channel'` rows the expression reduces to `scope_id::text`, which the table's CHECK already guarantees is non-null on that arm, and `scope_kind` is NULL so the kind index does not apply; for `scope='kind'` rows the mirror holds. Unique indexes treat NULLs as distinct, which is what makes each one inert outside its arm. The expression index still enforces the real invariant across both.
+
+**A new arm needs its own plain index.** The channel index cannot serve the kind arm — its `scope_id` is NULL on every kind row, so `ON CONFLICT` matches nothing and each write would INSERT a duplicate rather than update. Dropping either index does not fail a build or a test; it makes that arm's endpoint raise `42P10 there is no unique or exclusion constraint matching the ON CONFLICT specification` at runtime, on every call. The pairing is therefore asserted by `check:pglite-migrations`, which pins that both exist, are `CREATE UNIQUE INDEX`, are neither partial nor expression-based, and cover the arm each is named for.
+
+### Write paths
+
+| Route | Scope |
+| --- | --- |
+| `GET /v1/channels/notification-preferences` | the caller's effective level per channel, **for an ordinary (`text`) message** |
+| `PUT /v1/channels/{id}/notification-preference` | set one channel's level |
+| `GET /v1/channels/notification-preferences/kinds` | the caller's per-kind **overrides** |
+| `PUT /v1/channels/notification-preferences/kinds/{kind}` | set one kind's override |
+| `DELETE /v1/channels/notification-preferences/kinds/{kind}` | clear one kind's override |
+
+Every write keys the row on the authenticated user, never on a body or path value — a mute is per-user, and accepting a caller-supplied user id would let any member silence another member's notifications.
+
+**The two reads answer different questions, and the difference is load-bearing.** The channel read resolves the precedence chain through the worker's own `resolveLevel`, so it reports the level that will actually be applied to an **ordinary `text` message** in each channel — including a kind override on `text` that outranks the channel's default. It is the number a per-channel mute UI should display. Reimplementing that chain locally is what let the two disagree once before: the endpoint read only channel rows, which was correct only while nothing could write a kind row.
+
+Its scope is one kind by construction, and that bound is real: a channel does not have a single level across kinds. A member who overrides `announcement` to `off` is muted for announcements in `#announcements` while this endpoint — asked about `text` — still reports `all` for that channel. Neither read is wrong; together they say "ordinary messages here are `all`, announcements anywhere are `off`". A UI that wants the level for a *specific* kind must combine the two, and one that renders a single per-channel toggle should say it governs ordinary messages.
+
+The kind read reports **overrides only**, with `level: null` where the member has set none. It deliberately does not fill in a default, because a kind has none to fill in: what a kind falls back to depends on the channel a message lands in, so `announcement` resolves `all` in `#announcements` and `mentions` elsewhere. Reporting a single scalar would state the wrong level for the seeded `#announcements`, and a settings screen that wrote back what it displayed would thereby *create* an override silently downgrading that channel. `DELETE` exists for the same reason: a kind override outranks every channel's name-derived default, so one a member could not remove would be a permanent invisible downgrade. It validates against every `CHAT_MESSAGE_KIND` rather than the settable subset, so that moving a kind out of that subset later cannot strand a row already written for it.
+
+**The channel arm has no `DELETE`, and since this endpoint began resolving kind overrides that is a real gap rather than a considered omission.** It used to be one: while the channel read only ever returned name-derived defaults, writing a displayed value back was behaviourally identical to having no row. It no longer is — a displayed value may now be a kind override, so a client that saves what it renders can materialise channel rows that outrank the override and cannot then be removed. No shipped client does this (the web popover writes only on an explicit click), which is why it is tracked rather than fixed here; the fix is the symmetric `DELETE /v1/channels/{id}/notification-preference`.
+
+The kind routes take no channel and perform no channel-access check, because a kind is chapter-wide and the response reveals nothing about which channels exist.
+
+`imported` and `loading` are **rejected** by the setter and **absent** from the list, rather than merely undocumented: the first because the worker refuses that kind before any preference is read (below), the second because it is the optimistic placeholder a heavy slash command posts before its real card replaces it — a preference for it would work, which is the problem, pushing "Recording points…" for a card reconciled away seconds later. `chat_messages.kind` carries no CHECK constraint (`text not null default 'text'`), so the setter also validates the kind against the settable set; without that, a misspelled kind would persist a row matching no message ever, which the member would read as an active setting.
 
 Defaults when no row is set (see ADR-06; the `defaultLevelFor` helper encodes the precedence rules):
 
@@ -190,11 +223,11 @@ Defaults when no row is set (see ADR-06; the `defaultLevelFor` helper encodes th
 | `imported` kind (any channel)     | `off` (absolute — see below) |
 | Every other channel               | `mentions`    |
 
-Precedence in the push worker is **channel-pref ▶ kind-pref ▶ default**. A user who explicitly sets `(scope='kind', scope_kind='system_audit', level='all')` opts in to audit-bridge pushes; otherwise audit messages never page anyone.
+Precedence in the push worker is **channel-pref ▶ kind-pref ▶ default**. A user who explicitly sets `(scope='kind', scope_kind='system_audit', level='all')` opts in to audit-bridge pushes; otherwise audit messages never page anyone. That opt-in is reachable from `PUT /v1/channels/notification-preferences/kinds/system_audit` (see **Write paths** above); until that route shipped the kind arm was readable by the worker but writable by nobody, so the branch always evaluated an empty set.
 
 **What the worker counts as an announcement** — `kind === 'announcement'` **or** a channel named `announcements` — decides the push's title, its URGENT priority, and its `announcements` category together, from one predicate. All three, because they must not disagree: the category once keyed on `kind` alone, so an ordinary message in an `announcements` channel went out titled "New Announcement" at URGENT while labelled `category: 'chat'`. Once URGENT became exempt from the category gate (#1041), that mismatch let those pushes escape the member's coarse **Chat** switch — the only control that had been silencing them. Note the consequence, which is real and deliberate: because the channel *name* feeds this predicate, ordinary conversation in a channel called `announcements` is delivered URGENT and is not mutable by any member-facing switch. Narrowing that heuristic is part of #1323.
 
-**`imported` is the one kind with no opt-in.** `decidePush` refuses it ahead of every other rule, including the presence check and the mention override, and `ChatPushWorkerService.handleMessage` exits on it before it even loads the chapter roster — an import is thousands of rows arriving as fast as Postgres can write them through a Realtime handler with no backpressure, so deciding downstream would mean thousands of roster loads. The mention carve-out is the load-bearing half: imported bodies are years of prose full of `@name` tokens, and a mention lifts a muted channel's `off`, so a kind-level default alone would not hold. "Notify me about backfilled history" is not a setting anyone wants.
+**`imported` is the one kind with no opt-in — and is therefore not settable.** (It is not the only kind excluded from the settable set; `loading` is too, for the unrelated reason given under **Write paths**.) `PUT /v1/channels/notification-preferences/kinds/imported` returns 400 and the kind is omitted from the list response, because a stored row for it could never be read: `decidePush` refuses it ahead of every other rule, including the presence check and the mention override, and `ChatPushWorkerService.handleMessage` exits on it before it even loads the chapter roster — an import is thousands of rows arriving as fast as Postgres can write them through a Realtime handler with no backpressure, so deciding downstream would mean thousands of roster loads. The mention carve-out is the load-bearing half: imported bodies are years of prose full of `@name` tokens, and a mention lifts a muted channel's `off`, so a kind-level default alone would not hold. "Notify me about backfilled history" is not a setting anyone wants.
 
 ## Audit-log → `#chapter-audit` bridge
 
