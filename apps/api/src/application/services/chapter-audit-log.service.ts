@@ -4,11 +4,7 @@ import {
   type IChapterAuditLogRepository,
 } from '../../domain/repositories/chapter-audit-log.repository.interface';
 import { ChapterAuditLog } from '../../domain/entities/chapter-audit-log.entity';
-import {
-  LIST_QUERY_LIMIT_DEFAULT,
-  LIST_QUERY_LIMIT_MAX,
-  LIST_QUERY_LIMIT_MIN,
-} from '../../domain/constants/list-query-limits';
+import { clampListLimit } from '../../domain/constants/list-query-limits';
 
 export interface RecordAuditEntryInput {
   chapterId: string;
@@ -74,10 +70,7 @@ export class ChapterAuditLogService {
     chapterId: string,
     options: { before?: string; limit?: number } = {},
   ): Promise<ChapterAuditLog[]> {
-    const limit = Math.max(
-      LIST_QUERY_LIMIT_MIN,
-      Math.min(options.limit ?? LIST_QUERY_LIMIT_DEFAULT, LIST_QUERY_LIMIT_MAX),
-    );
+    const limit = clampListLimit(options.limit);
 
     // Validated, not reformatted: `new Date(x).toISOString()` truncates a
     // `timestamptz`'s microsecond precision to milliseconds, which can drop

@@ -125,3 +125,16 @@ export function useMyPermissions(options?: { enabled?: boolean }) {
     enabled,
   });
 }
+
+/**
+ * The viewer's flattened permission set for the active chapter, or `[]`
+ * while it is loading/disabled.
+ *
+ * Thin convenience wrapper around {@link useMyPermissions} for the common
+ * case of call sites that only need the `permissions` array, not the full
+ * query object.
+ */
+export function usePermissionList(): readonly string[] {
+  const { data } = useMyPermissions();
+  return Array.isArray(data?.permissions) ? data.permissions : [];
+}
