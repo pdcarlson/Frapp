@@ -15,6 +15,17 @@ description: >
 > Local-stack work: [`testing`](../testing/SKILL.md). Provider runtime truth via MCP:
 > [`infrastructure-research`](../infrastructure-research/SKILL.md).
 
+> **2026-09-02 — the web and landing staging hosts are frozen; the API and Supabase halves are
+> not.** Both Vercel projects were unlinked from Git (`frapp-landing` 2026-09-01, `frapp-web`
+> 2026-09-02), so **nothing deploys staging web or landing on merge**: those hosts still serve
+> their last Git builds — landing `2bf143b`, web `0372c6d` — until the CI-driven replacement in
+> [#1578](https://github.com/pdcarlson/Frapp/issues/1578) lands. A web or landing check against
+> staging therefore tests an **old build**, not your change, so it can neither confirm nor refute
+> a claim about a commit merged since. The **API (Render staging) and hosted Supabase** halves of
+> this skill are unaffected and remain the reason to use it. Canonical record: **ADR-21** in
+> [`spec/architecture/README.md`](../../../spec/architecture/README.md); the failing verify jobs
+> are [#1579](https://github.com/pdcarlson/Frapp/issues/1579).
+
 Sandbox sessions can reach **deployed staging** when the cloud environment's network
 allowlist carries the live-egress lines
 ([`CLOUD_SANDBOX.md` § Live staging egress](../../../docs/internal/environment/CLOUD_SANDBOX.md#live-staging-egress)).
@@ -146,8 +157,11 @@ The cases where it beats the local stack:
   staging asserts *enforcement*.
 - **`custom_access_token_hook` actually being enabled** — the exact drift class that went
   unnoticed in #805.
-- **Is staging serving this commit** — the Vercel alias lag documented in
-  [`DEPLOYMENT.md`](../../../docs/internal/ops/DEPLOYMENT.md) is directly observable here.
+- **Is staging serving this commit** — **for the API (Render staging) only.** Since the
+  2026-09-02 fence above, staging web and landing are frozen at a fixed build that no merge
+  advances, so the Vercel alias lag described in
+  [`DEPLOYMENT.md`](../../../docs/internal/ops/DEPLOYMENT.md) is no longer observable here —
+  those hosts always serve an old commit, and finding that they do proves nothing about yours.
 
 ### Playwright against the deployed UI
 
@@ -189,7 +203,9 @@ at it.
 There is no pixel-baseline suite to point at staging any more — `web-visual-regression`,
 its spec and its committed PNGs were deleted (see
 [`QUALITY_GATES.md`](../../../docs/internal/ci-cd/QUALITY_GATES.md)). For a visual check
-against deployed staging, take a screenshot and look at it.
+against deployed staging, take a screenshot and look at it — but per the 2026-09-02 fence at the
+top of this file, that screenshot shows the **frozen** web/landing build, not your commit, so it
+reads the deployed UI's current state and never verifies a change you merged.
 
 ## 5. Writes and cleanup
 
