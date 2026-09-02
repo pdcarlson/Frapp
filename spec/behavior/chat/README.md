@@ -232,7 +232,7 @@ Slash commands turn chat into the dispatcher for every ops module. The full comm
 
 ## Message Persistence
 
-Every message is written to `chat_messages` in Postgres **before** being broadcast to connected clients. If realtime delivery fails, the message is still persisted and will appear on the next history fetch or page refresh.
+Every message is written to `chat_messages` in Postgres **first**, and reaches connected clients only as a consequence of that write — Realtime replicates the row to the channel's Postgres Changes subscribers. The API performs no separate publish step (ADR-02; see `spec/ui/resilience.md` §3.2). If realtime delivery fails, the message is still persisted and will appear on the next history fetch or page refresh.
 
 ## Read Receipts
 

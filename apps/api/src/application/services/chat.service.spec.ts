@@ -30,7 +30,6 @@ import type {
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 import type { IStorageProvider } from '../../domain/adapters/storage.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type {
   ChatChannel,
   ChatMessage,
@@ -78,20 +77,6 @@ describe('ChatService', () => {
     hasAlumniRole: jest.Mock;
     isAlumni: jest.Mock;
   };
-  /**
-   * The Realtime broadcast goes through `SUPABASE_CLIENT.channel(topic)` →
-   * `channel.send({ ... })` and is best-effort. Wire a fake that records
-   * the topic + payload so `sendMessage` tests can assert the emit.
-   */
-  let mockSupabase: {
-    channel: jest.Mock;
-    removeChannel: jest.Mock;
-  };
-  let broadcasts: Array<{
-    topic: string;
-    payload: { type: string; event: string; payload: unknown };
-  }>;
-
   const baseMember = {
     id: 'mem-1',
     user_id: 'user-1',
@@ -234,17 +219,6 @@ describe('ChatService', () => {
       isAlumni: jest.fn().mockResolvedValue(false),
     };
 
-    broadcasts = [];
-    mockSupabase = {
-      channel: jest.fn((topic: string) => ({
-        send: jest.fn(async (payload) => {
-          broadcasts.push({ topic, payload });
-          return 'ok';
-        }),
-      })),
-      removeChannel: jest.fn().mockResolvedValue(undefined),
-    };
-
     // Defaults: caller is a member of the chapter, channel resolves, no special
     // permissions. Individual tests override to exercise denial paths.
     mockChannelRepo.findById.mockResolvedValue(baseChannel);
@@ -273,7 +247,6 @@ describe('ChatService', () => {
         },
         { provide: STORAGE_PROVIDER, useValue: mockStorageProvider },
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
-        { provide: SUPABASE_CLIENT, useValue: mockSupabase },
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: RbacService, useValue: mockRbac },
         { provide: ActivationService, useValue: mockActivation },
@@ -1726,28 +1699,7 @@ describe('ChatService', () => {
       ).rejects.toBeInstanceOf(ChatMessageDuplicateError);
     });
 
-    it('emits a Realtime broadcast for new messages on the chapter:<channel_id> topic', async () => {
-      mockMessageRepo.create.mockResolvedValue(baseMessage);
-
-      await service.sendMessage({
-        chapter_id: 'ch-1',
-        channel_id: 'ch-chan-1',
-        sender_id: 'user-1',
-        content: 'Hello',
-      });
-
-      expect(broadcasts).toHaveLength(1);
-      expect(broadcasts[0]).toEqual({
-        topic: `chapter:${baseMessage.channel_id}`,
-        payload: {
-          type: 'broadcast',
-          event: 'new_message',
-          payload: baseMessage,
-        },
-      });
-    });
-
-    it('does NOT broadcast (and does NOT insert) when authz denies the send', async () => {
+    it('does NOT insert when authz denies the send', async () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
 
       await expect(
@@ -1759,23 +1711,6 @@ describe('ChatService', () => {
         }),
       ).rejects.toThrow(ForbiddenException);
       expect(mockMessageRepo.create).not.toHaveBeenCalled();
-      expect(broadcasts).toHaveLength(0);
-    });
-
-    it('still returns success when the broadcast throws (Postgres Changes is the source of truth)', async () => {
-      mockMessageRepo.create.mockResolvedValue(baseMessage);
-      mockSupabase.channel.mockImplementationOnce(() => {
-        throw new Error('boom');
-      });
-
-      const result = await service.sendMessage({
-        chapter_id: 'ch-1',
-        channel_id: 'ch-chan-1',
-        sender_id: 'user-1',
-        content: 'Hello',
-      });
-
-      expect(result.message).toEqual(baseMessage);
     });
 
     it('should reject empty content', async () => {
