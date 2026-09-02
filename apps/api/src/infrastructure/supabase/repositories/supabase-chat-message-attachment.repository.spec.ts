@@ -192,3 +192,158 @@ describe('SupabaseChatMessageAttachmentRepository — tenant scope', () => {
     expect(harness.ops).toHaveLength(0);
   });
 });
+
+/**
+ * `findSharedObjects` (#514) — the read that keeps a message delete from
+ * purging an object another message still points at.
+ *
+ * Seeded with the shape only the Discord importer produces: two messages in one
+ * channel whose attachment rows carry the **same** `bucket` + `storage_path`.
+ * The table's unique key is `(message_id, bucket, storage_path)`, so this is a
+ * legal state, and the importer reaches it deliberately — DCE deduplicates
+ * identical media, and every reference resolves to the one object.
+ *
+ * Not wrapped in `assertScoped`: this read is deliberately cross-chapter. The
+ * question is "does another undeleted message still point at these bytes", and
+ * a chapter-scoped answer could only ever be falsely negative — the direction
+ * that deletes a live file. It returns no tenant data; every path it can return
+ * was supplied by the caller.
+ *
+ * **Not covered here, and worth knowing:** the harness evaluates the dotted
+ * embed filter (`chat_messages.is_deleted`) but records the `select()` string
+ * without parsing it, so the `!inner` token itself has no coverage. Against
+ * real PostgREST, dropping `!inner` turns the embed filter into a non-filter
+ * and every already-deleted message starts sparing objects again — the leak
+ * these tests exist to pin. That is query shape, and it belongs to the
+ * live-PostgREST integration suite, exactly as the sibling `findByMessage`
+ * block above already notes for its own embed.
+ */
+describe('SupabaseChatMessageAttachmentRepository — findSharedObjects', () => {
+  const CHANNEL = '0a000000-0000-4000-8000-000000000190';
+  const CHANNEL_OTHER = '0b000000-0000-4000-8000-000000000190';
+  const KEEPER = '0a000000-0000-4000-8000-000000000191';
+  const DOOMED = '0a000000-0000-4000-8000-000000000192';
+  const SHARED_PATH = `chapters/${CHAPTER_A}/chat-archive/${CHANNEL}/dce-dedup.png`;
+  const SOLE_PATH = `chapters/${CHAPTER_A}/chat/${CHANNEL}/${DOOMED}/only-mine.pdf`;
+
+  let harness: TenantHarness;
+  let repo: SupabaseChatMessageAttachmentRepository;
+
+  const row = (
+    id: string,
+    messageId: string,
+    path: string,
+    bucket: string,
+    deleted = false,
+  ) => ({
+    id,
+    message_id: messageId,
+    channel_id: CHANNEL,
+    bucket,
+    storage_path: path,
+    filename: path.split('/').pop(),
+    content_type: 'image/png',
+    byte_size: 128,
+    width: null,
+    height: null,
+    external_url: null,
+    created_at: '2026-01-01T00:00:00.000Z',
+    chat_channels: { chapter_id: CHAPTER_A },
+    // The read joins `chat_messages!inner(is_deleted)`: an object held only by
+    // already-deleted messages must not read as shared.
+    chat_messages: { is_deleted: deleted },
+  });
+
+  beforeEach(() => {
+    harness = createTenantHarness({
+      tables: {
+        chat_channels: [
+          inA({ id: CHANNEL, name: 'imported', type: 'PUBLIC' }),
+          // Present only to satisfy the harness, which refuses a
+          // single-chapter seed. It proves nothing about this read on its own
+          // — no attachment row lives in B — and is not claimed to.
+          inB({ id: CHANNEL_OTHER, name: 'imported', type: 'PUBLIC' }),
+        ],
+        chat_message_attachments: [
+          row('att-keeper', KEEPER, SHARED_PATH, 'chat-archive'),
+          row('att-doomed-shared', DOOMED, SHARED_PATH, 'chat-archive'),
+          row('att-doomed-sole', DOOMED, SOLE_PATH, 'chat'),
+        ],
+      },
+      untenantedTables: ['chat_message_attachments'],
+    });
+    repo = new SupabaseChatMessageAttachmentRepository(harness.client);
+  });
+
+  it('reports the object a surviving message still references', async () => {
+    const shared = await repo.findSharedObjects(
+      [
+        { bucket: 'chat-archive', storage_path: SHARED_PATH },
+        { bucket: 'chat', storage_path: SOLE_PATH },
+      ],
+      DOOMED,
+    );
+
+    expect(shared).toEqual([
+      { bucket: 'chat-archive', storage_path: SHARED_PATH },
+    ]);
+  });
+
+  it('does not count a reference held by an already-deleted message', async () => {
+    // Soft delete leaves attachment rows in place. Counting them would let two
+    // deleted messages spare each other's object forever — nothing would ever
+    // purge it, which is the leak #514 exists to close.
+    harness = createTenantHarness({
+      tables: {
+        chat_channels: [
+          inA({ id: CHANNEL, name: 'imported', type: 'PUBLIC' }),
+          inB({ id: CHANNEL_OTHER, name: 'imported', type: 'PUBLIC' }),
+        ],
+        chat_message_attachments: [
+          row('att-gone', KEEPER, SHARED_PATH, 'chat-archive', true),
+          row('att-doomed-shared', DOOMED, SHARED_PATH, 'chat-archive'),
+        ],
+      },
+      untenantedTables: ['chat_message_attachments'],
+    });
+    repo = new SupabaseChatMessageAttachmentRepository(harness.client);
+
+    const shared = await repo.findSharedObjects(
+      [{ bucket: 'chat-archive', storage_path: SHARED_PATH }],
+      DOOMED,
+    );
+
+    expect(shared).toEqual([]);
+  });
+
+  it("does not count the deleted message's own rows as a reference", async () => {
+    // `DOOMED` carries SOLE_PATH itself. Without the `message_id` exclusion
+    // every object would look shared and nothing would ever be purged — the
+    // guard would silently turn the whole fix off.
+    const shared = await repo.findSharedObjects(
+      [{ bucket: 'chat', storage_path: SOLE_PATH }],
+      DOOMED,
+    );
+
+    expect(shared).toEqual([]);
+  });
+
+  it('matches on bucket as well as path', async () => {
+    // Both halves are now `.eq()` filters in the query. Same path, wrong
+    // bucket must not read as shared, or a `chat` object would be spared by a
+    // `chat-archive` row.
+    const shared = await repo.findSharedObjects(
+      [{ bucket: 'chat', storage_path: SHARED_PATH }],
+      DOOMED,
+    );
+
+    expect(shared).toEqual([]);
+  });
+
+  it('issues no query for an empty candidate list', async () => {
+    const shared = await repo.findSharedObjects([], DOOMED);
+
+    expect(shared).toEqual([]);
+    expect(harness.ops).toHaveLength(0);
+  });
+});
