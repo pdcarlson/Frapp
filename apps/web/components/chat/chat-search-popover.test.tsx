@@ -188,6 +188,91 @@ describe("ChatSearchPopover", () => {
     expect(screen.queryByText(/no messages match/i)).not.toBeInTheDocument();
   });
 
+  it("does not search while the popover is closed", async () => {
+    renderPopover();
+
+    // Radix keeps this component mounted and unmounts only the content, so an
+    // ungated query lives on in a closed popover — and with `staleTime: 0` and
+    // the app's global `refetchOnWindowFocus`, every later tab refocus re-fires
+    // a search nobody is looking at, into a throttle bucket the ⌘K palette
+    // shares.
+    expect(useSearch).toHaveBeenCalledWith("", "chan-1");
+    expect(useSearch).not.toHaveBeenCalledWith(
+      expect.stringMatching(/\S/),
+      expect.anything(),
+    );
+  });
+
+  it("stops searching again once the popover is dismissed", async () => {
+    const user = userEvent.setup();
+    renderPopover();
+    await user.click(screen.getByRole("button", { name: /search messages/i }));
+    await user.type(screen.getByRole("searchbox"), "budget");
+    await waitFor(() => {
+      expect(useSearch).toHaveBeenLastCalledWith("budget", "chan-1");
+    });
+
+    await user.keyboard("{Escape}");
+
+    await waitFor(() => {
+      expect(useSearch).toHaveBeenLastCalledWith("", "chan-1");
+    });
+  });
+
+  it("does not announce a result count for a failed search", async () => {
+    useSearch.mockReturnValue(
+      result({ data: undefined, isError: true, refetch: vi.fn() }),
+    );
+    const user = userEvent.setup();
+    renderPopover();
+    await user.click(screen.getByRole("button", { name: /search messages/i }));
+    await user.type(screen.getByRole("searchbox"), "budget");
+
+    await screen.findByRole("alert");
+    // Announcing "0 results" here tells a screen-reader user the channel holds
+    // no match when the search never completed — the visual layer distinguishes
+    // "we stopped looking" from "we found nothing" and the aria layer must too.
+    const live = document.querySelector('[aria-live="polite"]');
+    expect(live?.textContent).toBe("");
+  });
+
+  it("does not announce a result count for a timed-out search", async () => {
+    useSearch.mockReturnValue(
+      result({
+        data: {
+          payload: { messages: [] },
+          timedOut: true,
+          timedOutSources: ["messages"],
+        },
+      }),
+    );
+    const user = userEvent.setup();
+    renderPopover();
+    await user.click(screen.getByRole("button", { name: /search messages/i }));
+    await user.type(screen.getByRole("searchbox"), "budget");
+
+    await screen.findByText(/timed out/i);
+    const live = document.querySelector('[aria-live="polite"]');
+    expect(live?.textContent).toBe("");
+  });
+
+  it("shows the scope as chapter-wide when no channel is open, rather than claiming otherwise", async () => {
+    const user = userEvent.setup();
+    renderPopover({ activeChannelId: null });
+    await user.click(screen.getByRole("button", { name: /search messages/i }));
+
+    // The tab state, the request and the per-row labels all read from one
+    // effective scope. Previously "This channel" rendered aria-checked while
+    // the search ran chapter-wide AND the rows hid the channel labels that
+    // would have revealed it.
+    expect(
+      screen.getByRole("radio", { name: /all channels/i }),
+    ).toHaveAttribute("aria-checked", "true");
+    expect(
+      screen.getByRole("radio", { name: /this channel/i }),
+    ).toHaveAttribute("aria-checked", "false");
+  });
+
   it("offers a retry on failure instead of painting it as no matches", async () => {
     const refetch = vi.fn();
     useSearch.mockReturnValue(

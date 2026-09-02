@@ -147,14 +147,24 @@ vi.mock("./reconnect-pill", () => ({
 vi.mock("./message-timeline", async () => {
   const React = await import("react");
   const MessageTimeline = React.forwardRef<
-    { scrollToMessage: (id: string) => void },
+    { scrollToMessage: (id: string) => boolean },
     {
+      messages?: Array<{ id: string }>;
       onDelete?: (messageId: string) => void;
       canManageChannel?: boolean;
     }
-  >(function MessageTimeline({ onDelete, canManageChannel }, ref) {
+  >(function MessageTimeline({ messages, onDelete, canManageChannel }, ref) {
+    // Models the REAL contract: the timeline can only scroll to a message it
+    // has, and reports which happened. A mock that always returned `undefined`
+    // asserted a timeline that silently succeeds at everything — the fixture
+    // modelling the assumption rather than the server, which is how the
+    // unreachable-target case stayed invisible in the first place.
     React.useImperativeHandle(ref, () => ({
-      scrollToMessage: mockScrollToMessage,
+      scrollToMessage: (id: string) => {
+        const found = (messages ?? []).some((m) => m.id === id);
+        if (found) mockScrollToMessage(id);
+        return found;
+      },
     }));
     return (
       <div data-testid="message-timeline">
@@ -256,13 +266,35 @@ describe("ChatShell deep-link targets", () => {
   });
 
   it("consumes a search hit in another channel even when the URL named a different one", async () => {
-    // The regression this pins: the jump effect used to guard on
-    // `initialChannelId` — the URL param — so arriving at `?channel=A` and
-    // then picking a hit in channel B compared B against the stale A on every
-    // pass and returned, leaving the target permanently unconsumed. The
-    // target's own channel is tracked separately now.
+    // Two regressions in one case.
+    //
+    // 1. The jump effect used to guard on `initialChannelId` — the URL param —
+    //    so arriving at `?channel=A` and then picking a hit in channel B
+    //    compared B against the stale A on every pass and returned, leaving
+    //    the target permanently unconsumed.
+    // 2. The target message exists ONLY in the destination channel. That is
+    //    what makes this fail against the racing implementation the production
+    //    comment warns about: scrolling before the switch runs against the
+    //    outgoing channel, which does not contain `only-in-random`, so the
+    //    scroll no-ops. With one shared message fixture for every channel, a
+    //    direct scroll would have satisfied the assertion and the test would
+    //    have passed on the bug it claims to pin.
+    mockUseChatChannel.mockImplementation((channelId: string | null) =>
+      chatChannelResult({
+        messages:
+          channelId === "chan-random"
+            ? [
+                {
+                  id: "only-in-random",
+                  content: "hi",
+                  created_at: "2026-01-01T00:02:00Z",
+                },
+              ]
+            : MESSAGES,
+      }),
+    );
     searchHit.mockReturnValue({
-      message: { id: "msg-1" },
+      message: { id: "only-in-random" },
       channelId: "chan-random",
     });
     render(<ChatShell initialChannelId="chan-general" />);
@@ -271,11 +303,82 @@ describe("ChatShell deep-link targets", () => {
     fireEvent.click(screen.getByTestId("search-jump"));
 
     await waitFor(() => {
-      expect(mockScrollToMessage).toHaveBeenCalledWith("msg-1");
+      expect(mockScrollToMessage).toHaveBeenCalledWith("only-in-random");
     });
     // And the shell actually switched — the jump is not a scroll in the old
     // channel that happens to share a message id.
     expect(screen.getByTestId("composer")).toHaveTextContent("chan-random");
+  });
+
+  it("refetches the channel list for a cross-channel search hit, so a just-created DM is not a false miss", () => {
+    searchHit.mockReturnValue({
+      message: { id: "msg-1" },
+      channelId: "chan-random",
+    });
+    render(<ChatShell />);
+    mockRefetch.mockClear();
+
+    fireEvent.click(screen.getByTestId("search-jump"));
+
+    // Search reads channels live while `useChannels()` serves a cached list.
+    // Without this the id fails `channels.some(...)`, the shell silently falls
+    // back to #general, and the jump strands.
+    expect(mockRefetch).toHaveBeenCalled();
+  });
+
+  it("says so when a jump target is not in the loaded window, instead of doing nothing", async () => {
+    searchHit.mockReturnValue({
+      message: { id: "way-older-than-the-window" },
+      channelId: "chan-general",
+    });
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("search-jump"));
+
+    // The defect this replaces: the popover closed, nothing scrolled, and
+    // nothing was said — a control that appears broken rather than a limit
+    // that is stated. Search exists to reach messages beyond the loaded
+    // window, so this is the common path, not an edge case.
+    expect(
+      await screen.findByText(/older than the history loaded here/i),
+    ).toBeTruthy();
+    expect(mockScrollToMessage).not.toHaveBeenCalled();
+  });
+
+  it("clears the unreachable notice once the message actually arrives", async () => {
+    searchHit.mockReturnValue({
+      message: { id: "msg-late" },
+      channelId: "chan-general",
+    });
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("search-jump"));
+    expect(
+      await screen.findByText(/older than the history loaded here/i),
+    ).toBeTruthy();
+
+    // The target stays pending, so a message that arrives later still gets its
+    // jump — the deep-link behaviour #328 shipped, kept rather than traded away
+    // for the notice.
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({
+        messages: [
+          ...MESSAGES,
+          {
+            id: "msg-late",
+            content: "late",
+            created_at: "2026-01-02T00:00:00Z",
+          },
+        ],
+      }),
+    );
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    await waitFor(() => {
+      expect(mockScrollToMessage).toHaveBeenCalledWith("msg-late");
+    });
+    expect(
+      screen.queryByText(/older than the history loaded here/i),
+    ).toBeNull();
   });
 
   it("scrolls to a supplied message once it is present in the loaded window", () => {

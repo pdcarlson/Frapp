@@ -26,7 +26,8 @@ beforeAll(() => {
     };
   }
   if (!HTMLElement.prototype.releasePointerCapture) {
-    HTMLElement.prototype.releasePointerCapture = function releasePointerCapture() {};
+    HTMLElement.prototype.releasePointerCapture =
+      function releasePointerCapture() {};
   }
 });
 

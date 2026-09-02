@@ -76,14 +76,33 @@ export function ChatSearchPopover({
 
   const debouncedQuery = useDebouncedValue(query.trim(), 200);
   const hasMinQuery = debouncedQuery.length >= SEARCH_MIN_QUERY_LENGTH;
+  // True while the member has typed something the debounce has not caught up
+  // to. Without this the panel shows the PREVIOUS query's hits as though they
+  // were current for 200ms — `isFetching` is false in that window because no
+  // request is in flight yet — and a fast click jumps to a message that does
+  // not match what is on screen.
+  const isSettling = query.trim() !== debouncedQuery;
 
-  // "This channel" with no channel open would scope to nothing and render an
-  // honest-looking empty state for a question that was never asked, so it
-  // falls back to chapter-wide rather than pretending.
+  // With no channel open there is nothing to scope to, so the effective scope
+  // is chapter-wide. `effectiveScope` (not `scope`) drives the request, the tab
+  // state AND the per-row channel labels, so the three cannot disagree — the
+  // earlier split let the tab render "This channel" as checked while the search
+  // ran chapter-wide and the rows hid the labels that would have shown it.
+  const effectiveScope: ChatSearchScope = activeChannelId ? scope : "chapter";
   const channelFilter =
-    scope === "channel" && activeChannelId ? activeChannelId : undefined;
+    effectiveScope === "channel" && activeChannelId
+      ? activeChannelId
+      : undefined;
 
-  const search = useSearch(hasMinQuery ? debouncedQuery : "", channelFilter);
+  // Gated on `open`: Radix keeps this component mounted and only unmounts
+  // `PopoverContent`, so an ungated query kept living in a closed popover —
+  // and with `staleTime: 0` plus the app's global `refetchOnWindowFocus`, every
+  // later tab refocus re-issued a search nobody was looking at, against a route
+  // whose throttle bucket the ⌘K palette shares.
+  const search = useSearch(
+    open && hasMinQuery ? debouncedQuery : "",
+    channelFilter,
+  );
 
   const hits = useMemo<ChatSearchHit[]>(() => {
     const payload = search.data?.payload as { messages?: unknown } | undefined;
@@ -125,32 +144,48 @@ export function ChatSearchPopover({
           >
             <ScopeTab
               label="This channel"
-              selected={scope === "channel"}
+              selected={effectiveScope === "channel"}
               disabled={!activeChannelId}
               onSelect={() => setScope("channel")}
             />
             <ScopeTab
               label="All channels"
-              selected={scope === "chapter"}
+              selected={effectiveScope === "chapter"}
               onSelect={() => setScope("chapter")}
             />
           </div>
         </div>
 
         <div aria-live="polite" role="status" className="sr-only">
-          {hasMinQuery && !search.isFetching
+          {/*
+            Announces a count ONLY for a settled, successful search. Gating this
+            on `!isFetching` alone announced "0 results" over the top of "Search
+            failed" and "Search timed out" — telling a screen-reader user the
+            channel holds no match when the search never finished, which is
+            precisely the "we stopped looking" vs "we found nothing" distinction
+            spec/behavior/search.md requires the client to preserve.
+          */}
+          {hasMinQuery &&
+          !isSettling &&
+          !search.isFetching &&
+          !search.isError &&
+          !messagesTimedOut
             ? `${hits.length} ${hits.length === 1 ? "result" : "results"}`
             : ""}
         </div>
 
         <ChatSearchResults
           hasMinQuery={hasMinQuery}
-          isFetching={search.isFetching}
+          // `isSettling` folds the debounce window into the pending state, so
+          // the panel never presents one query's hits under another's text.
+          // `isFetching && !search.data` (not bare `isFetching`) keeps a
+          // background refetch from blanking a list the member is reading.
+          isPending={isSettling || (search.isFetching && !search.data)}
           isError={search.isError}
           onRetry={() => void search.refetch()}
           timedOut={messagesTimedOut}
           hits={hits}
-          scope={scope}
+          scope={effectiveScope}
           activeChannelId={activeChannelId}
           channelNameFor={channelNameFor}
           nameFor={nameFor}
@@ -190,7 +225,14 @@ function ScopeTab({
         selected
           ? "bg-accent-subtle text-accent-text"
           : "text-muted-foreground hover:bg-accent-subtle hover:text-accent-text",
-        disabled && "cursor-not-allowed opacity-50 hover:bg-transparent",
+        // components.md §3's single disabled recipe — card fill, neutral
+        // hairline, `--disabled` text — matching `button.tsx`, which bans
+        // `opacity-50` by name because it dims label and fill equally and lands
+        // wherever the underlying colour happened to be. `pointer-events-none`
+        // is part of that recipe and also stops the hover rules above from
+        // recolouring a control that cannot be used.
+        disabled &&
+          "pointer-events-none border border-border bg-card text-disabled",
         FOCUS_RING,
       )}
     >
@@ -201,7 +243,7 @@ function ScopeTab({
 
 function ChatSearchResults({
   hasMinQuery,
-  isFetching,
+  isPending,
   isError,
   onRetry,
   timedOut,
@@ -213,7 +255,7 @@ function ChatSearchResults({
   onPick,
 }: {
   hasMinQuery: boolean;
-  isFetching: boolean;
+  isPending: boolean;
   isError: boolean;
   onRetry: () => void;
   timedOut: boolean;
@@ -234,7 +276,7 @@ function ChatSearchResults({
       </p>
     );
   }
-  if (isFetching) {
+  if (isPending) {
     return (
       <p className="px-3 py-4 text-[12.5px] text-muted-foreground">
         Searching…

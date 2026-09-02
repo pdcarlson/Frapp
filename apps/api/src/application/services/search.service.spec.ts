@@ -34,6 +34,25 @@ describe('SearchService', () => {
     return chain;
   };
 
+  /**
+   * `makeChain` with the `.eq()` calls recorded, so a test can assert which
+   * filters actually reached the query builder rather than only inspecting the
+   * rows that came back. A pushed-down filter is invisible in the result when
+   * the mock returns fixed data, so without this the push-down could silently
+   * disappear.
+   */
+  const makeRecordingChain = (
+    sink: Array<[string, unknown]>,
+    resolveValue: { data: unknown[]; error: unknown },
+  ) => {
+    const chain = makeChain(resolveValue);
+    chain.eq = jest.fn().mockImplementation((col: string, val: unknown) => {
+      sink.push([col, val]);
+      return chain;
+    });
+    return chain;
+  };
+
   beforeEach(async () => {
     mockSupabase = {
       from: jest
@@ -253,16 +272,27 @@ describe('SearchService', () => {
     describe('single-channel scope (#469)', () => {
       // `spec/behavior/chat/README.md`: "full-text search within a single
       // channel or across all channels the user can access."
+      //
+      // These drive `searchWithinBudget`, NOT `search()`. `search()` has no
+      // caller outside this file — the HTTP route calls `searchWithinBudget` —
+      // so testing through it would have left the route's own `channelId`
+      // forwarding unexercised, and a refactor that dropped the argument there
+      // would have degraded every channel-scoped search to chapter-wide with a
+      // fully green suite.
       let searchedChannelIds: string[] = [];
       let tablesQueried: string[] = [];
+      // Every `.eq(col, val)` applied to the chat_channels candidate query, so
+      // the push-down can be asserted rather than assumed.
+      let channelSelectFilters: Array<[string, unknown]> = [];
 
       const mockChannels = () => {
         searchedChannelIds = [];
         tablesQueried = [];
+        channelSelectFilters = [];
         (mockSupabase.from as jest.Mock).mockImplementation((table: string) => {
           tablesQueried.push(table);
           if (table === 'chat_channels') {
-            return makeChain({
+            return makeRecordingChain(channelSelectFilters, {
               data: [
                 {
                   id: 'pub',
@@ -320,7 +350,7 @@ describe('SearchService', () => {
       it('narrows the message scan to the one requested channel', async () => {
         mockChannels();
 
-        await service.search('ch-1', 'user-1', 'hello', 'pub-2');
+        await service.searchWithinBudget('ch-1', 'user-1', 'hello', 'pub-2');
 
         // The whole point: the narrowing reaches SQL. Filtering client-side
         // would be wrong, because SEARCH_LIMIT is applied by the database
@@ -331,7 +361,7 @@ describe('SearchService', () => {
       it('returns nothing for a channel the caller cannot read, without a 403', async () => {
         mockChannels();
 
-        const result = await service.search(
+        const { results: result } = await service.searchWithinBudget(
           'ch-1',
           'user-1',
           'hello',
@@ -347,7 +377,12 @@ describe('SearchService', () => {
       it('returns nothing for a channel id that does not exist', async () => {
         mockChannels();
 
-        const result = await service.search('ch-1', 'user-1', 'hello', 'nope');
+        const { results: result } = await service.searchWithinBudget(
+          'ch-1',
+          'user-1',
+          'hello',
+          'nope',
+        );
 
         // Same empty answer as an inaccessible channel, deliberately: telling
         // the two apart would make search a channel-existence oracle.
@@ -358,7 +393,12 @@ describe('SearchService', () => {
       it('runs only the message source, leaving the other three empty', async () => {
         mockChannels();
 
-        const result = await service.search('ch-1', 'user-1', 'hello', 'pub');
+        const { results: result } = await service.searchWithinBudget(
+          'ch-1',
+          'user-1',
+          'hello',
+          'pub',
+        );
 
         expect(result.messages).toHaveLength(1);
         expect(result.backwork).toEqual([]);
@@ -374,17 +414,44 @@ describe('SearchService', () => {
       it('still fans out to all four sources when no channel is named', async () => {
         mockChannels();
 
-        await service.search('ch-1', 'user-1', 'hello');
+        await service.searchWithinBudget('ch-1', 'user-1', 'hello');
 
         expect(tablesQueried).toContain('backwork_resources');
         expect(tablesQueried).toContain('events');
         expect(searchedChannelIds).toEqual(['pub', 'pub-2']);
       });
 
+      it('narrows the candidate channel query itself, not just the result', async () => {
+        mockChannels();
+
+        await service.searchWithinBudget('ch-1', 'user-1', 'hello', 'pub-2');
+
+        // Without the push-down, validating one known channel still selects
+        // every channel row in the chapter — on an archive-imported chapter
+        // that is a chapter-wide scan per debounced keystroke, inside a 500ms
+        // per-source budget.
+        expect(channelSelectFilters).toContainEqual(['id', 'pub-2']);
+        // And still chapter-scoped: the narrowing must not replace that.
+        expect(channelSelectFilters).toContainEqual(['chapter_id', 'ch-1']);
+      });
+
+      it('does not narrow the candidate query for a chapter-wide search', async () => {
+        mockChannels();
+
+        await service.searchWithinBudget('ch-1', 'user-1', 'hello');
+
+        expect(channelSelectFilters.map(([col]) => col)).not.toContain('id');
+      });
+
       it('still refuses a sub-minimum query, channel or not', async () => {
         mockChannels();
 
-        const result = await service.search('ch-1', 'user-1', 'hi', 'pub');
+        const { results: result } = await service.searchWithinBudget(
+          'ch-1',
+          'user-1',
+          'hi',
+          'pub',
+        );
 
         expect(tablesQueried).toEqual([]);
         expect(result.messages).toEqual([]);

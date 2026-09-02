@@ -259,10 +259,17 @@ export class SearchService {
    * `spec/behavior/chat/README.md` specifies ("full-text search within a single
    * channel or across all channels the user can access"). When it is present
    * only the message source runs and the other three return empty, because a
-   * channel-scoped query is definitionally a chat search: firing the backwork,
-   * event and member scans would be three queries no such caller renders, on a
-   * route carrying `@ThrottleExpensiveRead()`, once per debounced keystroke.
-   * The response shape is unchanged either way.
+   * channel-scoped query is definitionally a chat search. The response shape is
+   * unchanged either way.
+   *
+   * **This is not a general "chat search is cheap" guarantee, and it would be
+   * dishonest to describe it as one.** It skips three sources only for the
+   * *single-channel* form. A chat caller searching chapter-wide sends no
+   * `channelId` and therefore still pays the full four-source fan-out, exactly
+   * as the command palette does — there is no source-selection parameter, and
+   * adding one is tracked separately rather than smuggled in here. So the
+   * saving is real for the default scope and absent for the wide one; any
+   * per-keystroke cost argument has to be read with that split in mind.
    */
   private async collect(
     chapterId: string,
@@ -473,15 +480,34 @@ export class SearchService {
     query: string,
     channelId?: string,
   ): Promise<ChatMessage[]> {
-    const accessible = await this.accessibleChannelIds(chapterId, userId);
     // A channel-scoped search is still resolved through `accessibleChannelIds`
-    // rather than trusting the caller's id — intersecting is what keeps the one
-    // access path this method's comment below insists on. A channel that does
-    // not exist, sits in another chapter, or is simply not readable by this
-    // caller intersects to nothing and returns empty. That is deliberate: a 403
-    // here would answer "does this channel id exist?" for a member who cannot
-    // read it, turning search into a channel-existence oracle (the 403-vs-404
+    // rather than trusting the caller's id — that is what keeps the single
+    // access path this method's comment below insists on. The id is pushed down
+    // as a candidate filter rather than applied to the result: narrowing the
+    // *candidate* set cannot widen the answer, because `canAccessChannel` still
+    // decides every id that comes back, but it does keep a single-channel
+    // search from scanning every channel row in the chapter on each debounced
+    // keystroke — which on an archive-imported chapter (hundreds of channels,
+    // the case this method's own docstring cites) is the difference between a
+    // scoped lookup and a chapter-wide scan inside a 500 ms budget.
+    //
+    // A channel that does not exist, sits in another chapter, or is simply not
+    // readable by this caller comes back empty. That is deliberate: a 403 here
+    // would answer "does this channel id exist?" for a member who cannot read
+    // it, turning search into a channel-existence oracle (the 403-vs-404
     // distinction #1565 is open about elsewhere in chat).
+    const accessible = await this.accessibleChannelIds(
+      chapterId,
+      userId,
+      channelId,
+    );
+    // The push-down above is an optimisation; THIS is the correctness
+    // guarantee, and the two are deliberately not merged. Relying on the
+    // pushed-down `.eq('id', …)` alone would mean that if that filter is ever
+    // dropped or reordered, a channel-scoped search silently widens to every
+    // channel the caller can read — still no privilege escalation, but the
+    // wrong answer, returned confidently. Keeping the intersection makes the
+    // narrow result true by construction rather than by query shape.
     const channelIds = channelId
       ? accessible.filter((id) => id === channelId)
       : accessible;
@@ -516,11 +542,21 @@ export class SearchService {
   private async accessibleChannelIds(
     chapterId: string,
     userId: string,
+    /**
+     * Optional candidate narrowing. Purely a *reduction* of the rows considered
+     * — every id returned has still passed `canAccessChannel`, so this can make
+     * the answer smaller but never larger. The `chapter_id` filter below is not
+     * relaxed by it, so an id from another chapter matches nothing.
+     */
+    onlyChannelId?: string,
   ): Promise<string[]> {
-    const { data: channels, error: chError } = (await this.supabase
+    const channelQuery = this.supabase
       .from('chat_channels')
       .select('id, type, member_ids, required_permissions')
-      .eq('chapter_id', chapterId)) as QueryResult<{
+      .eq('chapter_id', chapterId);
+    const { data: channels, error: chError } = (await (onlyChannelId
+      ? channelQuery.eq('id', onlyChannelId)
+      : channelQuery)) as QueryResult<{
       id: string;
       type: ChannelType;
       member_ids: string[] | null;

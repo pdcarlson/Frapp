@@ -21,6 +21,7 @@ import {
   useOrgConfig,
 } from "@repo/hooks";
 import { can } from "@repo/validation";
+import { Button } from "@/components/ui/button";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { asArray } from "@/lib/utils";
@@ -206,6 +207,13 @@ export function ChatShell({
   // returned every time. `null` means "no channel was named; jump in whatever
   // channel ends up active", which is the message-only link case.
   const [pendingChannelId, setPendingChannelId] = useState(initialChannelId);
+  // Set when a jump target resolved to a channel but was not in its loaded
+  // window. This is the difference between a control that quietly does nothing
+  // and one that says why it could not — the whole reason `scrollToMessage`
+  // now reports reachability.
+  const [unreachableMessageId, setUnreachableMessageId] = useState<
+    string | null
+  >(null);
   // `initialChannelId`/`initialMessageId` are only read by `useState`'s
   // initializer on first mount. A second deep link (another notification, a
   // second command-palette hit) navigated to while `/chat` is already
@@ -232,6 +240,7 @@ export function ChatShell({
     setChannelTargetDismissed(false);
     setPendingMessageId(initialMessageId);
     setPendingChannelId(initialChannelId);
+    setUnreachableMessageId(null);
   }, [initialChannelId, initialMessageId]);
 
   // `useChannels()` can serve a read up to its `staleTime` old. A channel
@@ -292,21 +301,27 @@ export function ChatShell({
   // Same resolution as `activeChannelName`, for any channel — a search hit in
   // another channel has to be labelled with the name a member would recognise,
   // and a DM's stored `dm-<uuidA>-<uuidB>` is not it.
-  const channelNameFor = useCallback(
-    (channelId: string) => {
-      const found = channels.find((ch) => ch.id === channelId);
-      if (!found) return null;
-      return directChannelDisplayName(
-        {
-          name: found.name,
-          type: found.type,
-          member_ids: found.member_ids ?? [],
-        },
-        userId,
-        memberNames,
+  //
+  // Built once as a Map rather than a `channels.find` per lookup: this is called
+  // per rendered search hit per render, and the shell already keeps
+  // `levelByChannelId` in exactly this shape a few lines up.
+  const channelTitles = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const ch of channels) {
+      map.set(
+        ch.id,
+        directChannelDisplayName(
+          { name: ch.name, type: ch.type, member_ids: ch.member_ids ?? [] },
+          userId,
+          memberNames,
+        ),
       );
-    },
-    [channels, userId, memberNames],
+    }
+    return map;
+  }, [channels, userId, memberNames]);
+  const channelNameFor = useCallback(
+    (channelId: string) => channelTitles.get(channelId) ?? null,
+    [channelTitles],
   );
 
   const announcementsChannelId = useMemo(
@@ -449,37 +464,65 @@ export function ChatShell({
   // Pins are a navigation affordance, not a list: the popover's rows were
   // rendered as buttons but `onJump` was never wired, so every one of them was
   // inert. The timeline exposes the scroll, the shell owns the wiring.
+  const [threadParentId, setThreadParentId] = useState<string | null>(null);
   const timeline = useRef<MessageTimelineHandle | null>(null);
   const jumpToMessage = useCallback((messageId: string) => {
     timeline.current?.scrollToMessage(messageId);
   }, []);
 
-  // A search hit in the active channel is just a scroll. A hit in another
-  // channel is the same "select the channel, then jump once the message is
-  // actually loaded" problem a `?message=` deep link solves, so it reuses that
-  // machinery (`pendingMessageId` + the jump effect below) rather than racing
-  // the channel switch with its own scroll — which would fire against the
-  // outgoing channel's timeline and silently do nothing.
+  // Every search hit takes the same route as a `?message=` deep link —
+  // `pendingMessageId` + the jump effect below — including a hit in the channel
+  // already open.
+  //
+  // The same-channel case used to scroll directly, on the reasoning that no
+  // channel switch had to be waited for. That was wrong in the way that matters
+  // most here: `scrollToMessage` cannot reach a message outside the loaded
+  // window, so for any hit older than the backfill it did nothing at all, said
+  // nothing, and left nothing pending to retry. Search exists to reach old
+  // messages, so that was the common case, not the edge — an inert row of
+  // exactly the kind `components.md` §5 bans. One path for both cases means the
+  // unreachable-target handling below covers both too.
   const jumpToSearchHit = useCallback(
     (hit: ChatSearchHit) => {
-      if (hit.channelId === activeChannelId) {
-        jumpToMessage(hit.message.id);
-        return;
+      if (hit.channelId !== activeChannelId) {
+        setSelectedChannelId(hit.channelId);
+        setChannelTargetDismissed(false);
+        // Search reads `chat_channels` live while `useChannels()` serves up to
+        // its `staleTime`, so a hit can legitimately name a channel the cached
+        // list has never seen (a DM opened moments ago). Without this the id
+        // fails `channels.some(...)`, `activeChannelId` quietly falls back to
+        // #general, and the member lands somewhere they did not ask for with
+        // the jump stranded. The deep-link path already forces this refetch for
+        // the same reason.
+        void refetchChannels();
+        // A jump out of the channel a thread belongs to must close it, the same
+        // cleanup picking a channel from the rail does. Left open, the panel
+        // merely fails to resolve against the new channel — and pops back up
+        // unbidden on any later jump that returns to its channel.
+        setThreadParentId(null);
       }
-      setSelectedChannelId(hit.channelId);
-      setChannelTargetDismissed(false);
+      setUnreachableMessageId(null);
       setPendingMessageId(hit.message.id);
       setPendingChannelId(hit.channelId);
     },
-    [activeChannelId, jumpToMessage],
+    [activeChannelId, refetchChannels],
   );
 
-  // A caller-supplied `?message=` jumps to that message once it's actually
-  // present in the loaded window. `pendingMessageId` (declared above,
-  // resynced whenever a new target arrives) is only cleared on success — a
-  // message outside the channel's initial backfill window stays pending and
-  // gets a free retry as more history loads, rather than being silently
-  // spent on an id `scrollToMessage` couldn't find.
+  // A pending target (a `?message=` link or a search hit) jumps once that
+  // message is present in the loaded window.
+  //
+  // A miss keeps the target pending — a message that arrives later still gets
+  // its jump, which is the behaviour deep links have always had — but it no
+  // longer keeps *quiet* about it. `scrollToMessage` now reports reachability,
+  // so a miss sets the notice rendered in the header below and a later hit
+  // clears it. Silence was survivable for pins (a pin you can see is loaded by
+  // definition) and is not for search, whose whole job is reaching messages
+  // beyond the loaded window: every such hit looked like an inert row.
+  //
+  // Note what this does NOT claim: nothing backfills older history today
+  // (`useChatChannel` fetches one window and exposes no pagination), so a
+  // genuinely old target is only reachable if a newer message happens to bring
+  // it into range. Actually reaching it needs real backfill (#1571).
   useEffect(() => {
     if (!pendingMessageId) return;
     // A named channel target must resolve to it first — a message id paired
@@ -490,20 +533,22 @@ export function ChatShell({
       return;
     }
     if (channel.isLoading) return;
-    if (!channel.messages.some((m) => m.id === pendingMessageId)) return;
-    jumpToMessage(pendingMessageId);
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- consuming a one-shot deep-link target once it's been acted on, not syncing render state
-    setPendingMessageId(null);
+    const jumped = timeline.current?.scrollToMessage(pendingMessageId) ?? false;
+    if (jumped) {
+      setPendingMessageId(null);
+      setPendingChannelId(null);
+      setUnreachableMessageId(null);
+    } else {
+      setUnreachableMessageId(pendingMessageId);
+    }
   }, [
     pendingMessageId,
     activeChannelId,
     pendingChannelId,
     channel.isLoading,
     channel.messages,
-    jumpToMessage,
   ]);
 
-  const [threadParentId, setThreadParentId] = useState<string | null>(null);
   const threadParent = useMemo(() => {
     if (!threadParentId) return null;
     return channel.messages.find((m) => m.id === threadParentId) ?? null;
@@ -652,6 +697,25 @@ export function ChatShell({
               />
             </div>
           </div>
+          {unreachableMessageId ? (
+            // The alternative was the popover closing and the timeline not
+            // moving — a row that looks broken rather than a limit that is
+            // stated. Dismissible because it reports a past action, not a
+            // condition of the channel.
+            <div className="mt-2 flex items-start justify-between gap-2">
+              <p role="status" className="text-[12.5px] text-muted-foreground">
+                That message is older than the history loaded here, so the
+                timeline can’t jump to it yet.
+              </p>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setUnreachableMessageId(null)}
+              >
+                Dismiss
+              </Button>
+            </div>
+          ) : null}
           {channel.typingUsers.length > 0 ? (
             <p className="mt-1 text-[12.5px] text-muted-foreground">
               {channel.typingUsers.length === 1

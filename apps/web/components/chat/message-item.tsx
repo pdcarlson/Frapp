@@ -222,7 +222,9 @@ export function MessageItem({
     if (!showActions || isEditing) return;
     if (
       event.target instanceof Element &&
-      event.target.closest("button, a, input, textarea, select, [role='button']")
+      event.target.closest(
+        "button, a, input, textarea, select, [role='button']",
+      )
     ) {
       return;
     }
@@ -301,63 +303,64 @@ export function MessageItem({
    * left the cluster genuinely unreachable there (#1193) — `isTapRevealed`
    * below is the third way in, driven by `handleRowTap`.
    */
-  const actions = showActions && !isEditing ? (
-    <div
-      className={cn(
-        "absolute top-0 z-10 flex items-center gap-1.5 rounded-sm bg-background p-1",
-        "transition-opacity",
-        "group-hover/message:pointer-events-auto group-hover/message:opacity-100",
-        "group-focus-within/message:pointer-events-auto group-focus-within/message:opacity-100",
-        // Coarse-pointer path: a tap on the row sets `isTapRevealed`, since
-        // `:hover`/`:focus-within` never fire there. Kept as a JS-driven
-        // class rather than a `pointer-coarse:` variant so the same row also
-        // works from a stylus or a mouse click, and so "tapping elsewhere
-        // dismisses this" (the parent list's single `tapRevealedId`) has
-        // something to key off.
-        isTapRevealed
-          ? "pointer-events-auto opacity-100"
-          : "pointer-events-none opacity-0",
-        selfBubble ? "left-5" : "right-5",
-      )}
-    >
-      <ReactionQuickPick
-        reactions={message.reactions}
-        viewerId={viewerId}
-        onReact={(emoji) => onReact(message.id, emoji)}
-        onUnreact={(emoji) => onUnreact(message.id, emoji)}
-      />
-      {onOpenThread ? (
-        <button
-          type="button"
-          className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA, "gap-1")}
-          onClick={() => onOpenThread(message)}
-        >
-          <ThreadGlyph className="h-3.5 w-3.5" />
-          Reply
-        </button>
-      ) : null}
-      {canEdit ? (
-        <button
-          type="button"
-          className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA, "gap-1")}
-          onClick={startEdit}
-        >
-          <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-          Edit
-        </button>
-      ) : null}
-      {canDelete ? (
-        <button
-          type="button"
-          className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA, "gap-1")}
-          onClick={() => onDelete?.(message.id)}
-        >
-          <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-          Delete
-        </button>
-      ) : null}
-    </div>
-  ) : null;
+  const actions =
+    showActions && !isEditing ? (
+      <div
+        className={cn(
+          "absolute top-0 z-10 flex items-center gap-1.5 rounded-sm bg-background p-1",
+          "transition-opacity",
+          "group-hover/message:pointer-events-auto group-hover/message:opacity-100",
+          "group-focus-within/message:pointer-events-auto group-focus-within/message:opacity-100",
+          // Coarse-pointer path: a tap on the row sets `isTapRevealed`, since
+          // `:hover`/`:focus-within` never fire there. Kept as a JS-driven
+          // class rather than a `pointer-coarse:` variant so the same row also
+          // works from a stylus or a mouse click, and so "tapping elsewhere
+          // dismisses this" (the parent list's single `tapRevealedId`) has
+          // something to key off.
+          isTapRevealed
+            ? "pointer-events-auto opacity-100"
+            : "pointer-events-none opacity-0",
+          selfBubble ? "left-5" : "right-5",
+        )}
+      >
+        <ReactionQuickPick
+          reactions={message.reactions}
+          viewerId={viewerId}
+          onReact={(emoji) => onReact(message.id, emoji)}
+          onUnreact={(emoji) => onUnreact(message.id, emoji)}
+        />
+        {onOpenThread ? (
+          <button
+            type="button"
+            className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA, "gap-1")}
+            onClick={() => onOpenThread(message)}
+          >
+            <ThreadGlyph className="h-3.5 w-3.5" />
+            Reply
+          </button>
+        ) : null}
+        {canEdit ? (
+          <button
+            type="button"
+            className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA, "gap-1")}
+            onClick={startEdit}
+          >
+            <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+            Edit
+          </button>
+        ) : null}
+        {canDelete ? (
+          <button
+            type="button"
+            className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA, "gap-1")}
+            onClick={() => onDelete?.(message.id)}
+          >
+            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+            Delete
+          </button>
+        ) : null}
+      </div>
+    ) : null;
 
   const editForm = (
     <div className="flex w-full flex-col gap-1.5 rounded-lg border border-border bg-card p-2">
@@ -441,7 +444,10 @@ export function MessageItem({
               {isPending ? (
                 <span className="inline-flex items-center gap-1.5">
                   <span aria-hidden="true">·</span>
-                  <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+                  <Loader2
+                    className="h-3 w-3 animate-spin"
+                    aria-hidden="true"
+                  />
                   sending
                 </span>
               ) : null}
@@ -457,7 +463,12 @@ export function MessageItem({
               {onRetry ? (
                 <button
                   type="button"
-                  className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA, "gap-1")}
+                  className={cn(
+                    CHIP.base,
+                    CHIP.neutral,
+                    CHIP_HIT_AREA,
+                    "gap-1",
+                  )}
                   onClick={() => onRetry(message.client_message_id)}
                 >
                   Retry
@@ -466,7 +477,12 @@ export function MessageItem({
               {onDiscard ? (
                 <button
                   type="button"
-                  className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA, "gap-1")}
+                  className={cn(
+                    CHIP.base,
+                    CHIP.neutral,
+                    CHIP_HIT_AREA,
+                    "gap-1",
+                  )}
                   onClick={() => onDiscard(message.client_message_id)}
                 >
                   <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
@@ -544,7 +560,12 @@ export function MessageItem({
               {onDiscard ? (
                 <button
                   type="button"
-                  className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA, "gap-1")}
+                  className={cn(
+                    CHIP.base,
+                    CHIP.neutral,
+                    CHIP_HIT_AREA,
+                    "gap-1",
+                  )}
                   onClick={() => onDiscard(message.client_message_id)}
                 >
                   <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />

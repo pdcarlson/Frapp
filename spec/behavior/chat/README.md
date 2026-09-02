@@ -126,14 +126,23 @@ Chat is not a module — it is the spine of the app, and every other capability 
 Both scopes are served by `GET /v1/search`; the single-channel form passes an optional
 `channelId` ([`../search.md`](../search.md#single-channel-scope)). On web the surface is
 `ChatSearchPopover` in the channel header, alongside the pins popover, defaulting to the
-active channel with an "All channels" toggle. Picking a hit scrolls the timeline to it, or
-switches channel first and jumps once the message has loaded — the same
-`/chat?channel=&message=` machinery a deep link uses, so an out-of-window target waits for
-more history rather than being silently spent.
+active channel with an "All channels" toggle. Picking a hit selects its channel if it is not
+already open and then jumps, through the same `/chat?channel=&message=` target machinery a
+deep link uses.
 
-**Highlighted snippets are not implemented yet** — for this surface or any other. `ts_headline`
-is specced for all four search sources and built for none; see #1356. Result rows show the
-message body truncated, not a match-centred snippet.
+**Three parts of the bullets above are aspirational, and the shipped surface says so rather
+than pretending otherwise:**
+
+- **Highlighted snippets do not exist**, for this surface or any other. `ts_headline` is
+  specced for all four search sources and built for none; see #1356. Rows show the message
+  body truncated, not a match-centred snippet.
+- **Results are not grouped by channel.** They are one list ordered newest-first, with a
+  per-row channel label when a hit is outside the channel in view.
+- **A jump can only reach the loaded window.** Web loads one page of channel history and has
+  no older-history backfill, so a hit older than that window cannot be scrolled to. The
+  timeline reports reachability instead of silently doing nothing, and the shell states the
+  limit in the channel header; the target stays pending, so a message that arrives later still
+  gets its jump. Reaching genuinely old hits needs real backfill — see #1571.
 
 ## Announcements
 

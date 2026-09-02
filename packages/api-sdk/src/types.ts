@@ -7401,7 +7401,7 @@ export interface operations {
                 /** @description Search query */
                 q: string;
                 /** @description Narrow the search to one chat channel. This is the single-channel form of search specified in spec/behavior/chat/README.md: only the `messages` source runs and `backwork`, `events` and `members` come back empty. The channel is still resolved through the caller’s accessible-channel set, so an unreadable or unknown id returns no matches rather than an error. */
-                channelId?: string;
+                channelId?: unknown;
             };
             header?: never;
             path?: never;

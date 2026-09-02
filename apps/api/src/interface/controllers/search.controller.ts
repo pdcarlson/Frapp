@@ -19,6 +19,23 @@ import {
 } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '../../domain/constants/permissions';
 
+/**
+ * Coerce the raw `channelId` query value to a single trimmed id, or `undefined`
+ * for anything that is not one.
+ *
+ * `@Query()` hands back whatever `qs` parsed, which is **not** always a string:
+ * `?channelId=a&channelId=b` yields an array and `?channelId[k]=v` an object,
+ * and Nest's `ValidationPipe` does not coerce a `String` metatype. A bare
+ * `.trim()` therefore threw `channelId.trim is not a function` and turned a
+ * malformed read into a 500. Anything that is not a non-empty string is treated
+ * as absent — the same chapter-wide search the parameter's omission gives —
+ * rather than being rejected, because a duplicated query param is a client bug
+ * that should degrade, not an attack that needs an error.
+ */
+function normalizeChannelId(raw: unknown): string | undefined {
+  return typeof raw === 'string' ? raw.trim() || undefined : undefined;
+}
+
 @ApiTags('Search')
 @ApiBearerAuth()
 @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
@@ -49,14 +66,14 @@ export class SearchController {
     @CurrentUser('id') userId: string,
     @Query('q') query: string,
     @Res({ passthrough: true }) res: Response,
-    @Query('channelId') channelId?: string,
+    @Query('channelId') channelId?: unknown,
   ) {
     const { results, timedOut, timedOutSources } =
       await this.searchService.searchWithinBudget(
         chapterId,
         userId,
         query ?? '',
-        channelId?.trim() || undefined,
+        normalizeChannelId(channelId),
       );
     if (timedOut) {
       res.setHeader('x-search-timeout', '1');

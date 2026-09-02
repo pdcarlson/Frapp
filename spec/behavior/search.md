@@ -30,12 +30,21 @@ single channel or across all channels the user can access"*), which the cross-do
 alone could not express.
 
 - **Only the `messages` source runs**; `backwork`, `events` and `members` come back empty. The
-  response shape is unchanged. A channel-scoped query is definitionally a chat search, and the
-  route carries `@ThrottleExpensiveRead()` while the web surface fires once per debounced
-  keystroke — running the other three would be work no such caller renders.
+  response shape is unchanged. A channel-scoped query is definitionally a chat search, so
+  running the other three would be work no such caller renders.
+
+  This saving applies to the **single-channel form only**. A chat caller searching chapter-wide
+  sends no `channelId` and still pays the full four-source fan-out, exactly as the command
+  palette does — there is no source-selection parameter today. Do not read this bullet as
+  "chat search is cheap"; it is cheap for the default scope and unchanged for the wide one.
 - **The channel is intersected with the caller's accessible-channel set, never trusted.** It is
   the same `accessibleChannelIds` → `canAccessChannel` path the unscoped form uses, so search
-  cannot disagree with chat about which role-gated channels a member may read.
+  cannot disagree with chat about which role-gated channels a member may read. The id is *also*
+  pushed down as a candidate filter on the channel query so a single-channel search does not
+  scan every channel row in the chapter — but the intersection is kept as the correctness
+  guarantee, deliberately not replaced by it. Narrowing candidates cannot widen the answer;
+  relying on the pushed-down filter alone would mean that dropping it silently widens a scoped
+  search to every readable channel.
 - **An inaccessible or unknown `channelId` returns no matches, not a 403.** Distinguishing the
   two would answer "does this channel id exist?" for a member who cannot read it, making search
   a channel-existence oracle. An empty or whitespace-only value is treated as absent (chapter-wide)

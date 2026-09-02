@@ -30,7 +30,9 @@ function renderList(items: MentionSuggestionItem[], command = vi.fn()) {
 function press(ref: React.RefObject<MentionListHandle | null>, key: string) {
   let handled = false;
   act(() => {
-    handled = ref.current!.onKeyDown({ event: { key } as KeyboardEvent } as never);
+    handled = ref.current!.onKeyDown({
+      event: { key } as KeyboardEvent,
+    } as never);
   });
   return handled;
 }
@@ -201,7 +203,9 @@ describe("MentionList — selectedIndex clamped synchronously, not only via effe
       rerender(<MentionList ref={ref} items={narrowed} command={command} />);
       // Same act() batch as the narrowing render — the clamp must already
       // be in effect for this render, not only after a subsequent one.
-      ref.current!.onKeyDown({ event: { key: "Enter" } as KeyboardEvent } as never);
+      ref.current!.onKeyDown({
+        event: { key: "Enter" } as KeyboardEvent,
+      } as never);
     });
     expect(command).toHaveBeenCalledWith(ITEMS[2]);
   });

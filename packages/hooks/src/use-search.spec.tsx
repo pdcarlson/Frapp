@@ -76,7 +76,11 @@ describe("useSearch", () => {
     const chapterAData = { members: [{ id: "from-a" }] };
     const chapterBData = { members: [{ id: "from-b" }] };
 
-    queryClient.setQueryData(["search", "chapter-a", "shared"], {
+    // The key must match the CURRENT key shape or this test proves nothing:
+    // a seed with fewer elements can never collide, so the assertions below
+    // would hold even if `chapterId` were dropped from the key entirely. The
+    // trailing `null` is the chapter-wide `channelId` slot.
+    queryClient.setQueryData(["search", "chapter-a", "shared", null], {
       payload: chapterAData,
       timedOut: false,
       timedOutSources: [],
@@ -99,6 +103,84 @@ describe("useSearch", () => {
     expect(result.current.data?.payload).toEqual(chapterBData);
     expect(result.current.data?.payload).not.toEqual(chapterAData);
     expect(mockClient.GET).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends channelId as a request param for a single-channel search", async () => {
+    const mockClient = {
+      GET: vi.fn().mockResolvedValue({
+        data: { messages: [] },
+        error: undefined,
+        response: mockResponse(),
+      }),
+    };
+
+    const { result } = renderHook(() => useSearch("dues", "chan-1"), {
+      wrapper: createWrapper(queryClient, mockClient, "chapter-a"),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    // It has to reach the request. The per-source cap is applied by the
+    // database across every accessible channel, so a client-side narrowing of
+    // the response would return nothing whenever a channel's matches rank
+    // below that cut — and could not tell that apart from no matches at all.
+    expect(mockClient.GET).toHaveBeenCalledWith("/v1/search", {
+      params: { query: { q: "dues", channelId: "chan-1" } },
+    });
+  });
+
+  it("omits channelId entirely for a chapter-wide search", async () => {
+    const mockClient = {
+      GET: vi.fn().mockResolvedValue({
+        data: { messages: [] },
+        error: undefined,
+        response: mockResponse(),
+      }),
+    };
+
+    const { result } = renderHook(() => useSearch("dues"), {
+      wrapper: createWrapper(queryClient, mockClient, "chapter-a"),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    // Not `channelId: undefined` — the param must be absent, so the server
+    // takes the chapter-wide branch rather than narrowing to nothing.
+    expect(mockClient.GET).toHaveBeenCalledWith("/v1/search", {
+      params: { query: { q: "dues" } },
+    });
+  });
+
+  it("does not reuse one scope's cached results for the other", async () => {
+    const channelData = { messages: [{ id: "from-channel" }] };
+    const chapterData = { messages: [{ id: "from-chapter" }] };
+
+    // Same chapter, same query string, different scope. If `channelId` were
+    // dropped from the query key these would collide, and toggling the scope
+    // tabs would render the other scope's hits — which would make the feature
+    // look exactly like the client-side filter it must never be.
+    queryClient.setQueryData(["search", "chapter-a", "dues", "chan-1"], {
+      payload: channelData,
+      timedOut: false,
+      timedOutSources: [],
+    });
+
+    const mockClient = {
+      GET: vi.fn().mockResolvedValue({
+        data: chapterData,
+        error: undefined,
+        response: mockResponse(),
+      }),
+    };
+
+    const { result } = renderHook(() => useSearch("dues"), {
+      wrapper: createWrapper(queryClient, mockClient, "chapter-a"),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data?.payload).toEqual(chapterData);
+    expect(result.current.data?.payload).not.toEqual(channelData);
   });
 
   it("is disabled when the active chapter is not set", () => {

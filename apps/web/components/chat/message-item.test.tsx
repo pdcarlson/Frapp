@@ -258,7 +258,8 @@ describe("MessageItem tap-to-reveal (#1193)", () => {
     // is genuinely true — the scoped check this guards against a false
     // suppress from a *different* row's leftover selection (below).
     const anchorNode = row.querySelector("p, span") ?? row.firstElementChild;
-    if (!anchorNode) throw new Error("row has no child to anchor a selection on");
+    if (!anchorNode)
+      throw new Error("row has no child to anchor a selection on");
     const getSelectionSpy = vi.spyOn(window, "getSelection").mockReturnValue({
       toString: () => "hello",
       anchorNode,
@@ -304,7 +305,11 @@ describe("MessageItem tap-to-reveal (#1193)", () => {
     const user = userEvent.setup();
     const onToggleTapReveal = vi.fn();
     const onOpenThread = vi.fn();
-    renderItemWithProps({ onToggleTapReveal, onOpenThread, isTapRevealed: true });
+    renderItemWithProps({
+      onToggleTapReveal,
+      onOpenThread,
+      isTapRevealed: true,
+    });
 
     await user.click(screen.getByRole("button", { name: /reply/i }));
 
@@ -368,9 +373,7 @@ describe("MessageItem edit and delete", () => {
       onDelete: vi.fn(),
     });
 
-    expect(
-      screen.getByRole("button", { name: /delete/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /delete/i })).toBeInTheDocument();
   });
 
   it("offers Delete on someone else's message only with channels:manage", () => {
@@ -472,7 +475,11 @@ describe("MessageItem edit and delete", () => {
     rerender(
       <div role="list">
         <MessageItem
-          message={message({ id: "msg-1", sender_id: VIEWER, content: "hello v2" })}
+          message={message({
+            id: "msg-1",
+            sender_id: VIEWER,
+            content: "hello v2",
+          })}
           viewerId={VIEWER}
           showHeader
           nameFor={nameFor}
@@ -502,7 +509,11 @@ describe("MessageItem edit and delete", () => {
     rerender(
       <div role="list">
         <MessageItem
-          message={message({ id: "msg-1", sender_id: VIEWER, content: "hello v2" })}
+          message={message({
+            id: "msg-1",
+            sender_id: VIEWER,
+            content: "hello v2",
+          })}
           viewerId={VIEWER}
           showHeader
           nameFor={nameFor}

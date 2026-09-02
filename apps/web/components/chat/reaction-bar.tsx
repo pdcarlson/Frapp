@@ -55,7 +55,9 @@ export function ReactionChips({
       userIds,
     }))
     .filter(
-      (group): group is { actionType: string; emoji: string; userIds: string[] } =>
+      (
+        group,
+      ): group is { actionType: string; emoji: string; userIds: string[] } =>
         group.emoji != null && group.userIds.length > 0,
     );
   if (entries.length === 0) return null;

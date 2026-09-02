@@ -104,25 +104,31 @@ describe("unreadAnnouncement", () => {
   });
 
   it("announces a direct message distinctly from a channel", () => {
-    expect(
-      unreadAnnouncement({ unreadCount: 3, mentionCount: 0 }, true),
-    ).toBe("3 unread direct messages");
-    expect(
-      unreadAnnouncement({ unreadCount: 3, mentionCount: 0 }, false),
-    ).toBe("3 unread messages");
+    expect(unreadAnnouncement({ unreadCount: 3, mentionCount: 0 }, true)).toBe(
+      "3 unread direct messages",
+    );
+    expect(unreadAnnouncement({ unreadCount: 3, mentionCount: 0 }, false)).toBe(
+      "3 unread messages",
+    );
   });
 });
 
 describe("ChannelList unread badges", () => {
   it("shows the neutral badge with the unread count on a plain unread channel", () => {
-    renderList([general], new Map([["c-gen", { unreadCount: 4, mentionCount: 0 }]]));
+    renderList(
+      [general],
+      new Map([["c-gen", { unreadCount: 4, mentionCount: 0 }]]),
+    );
 
     const badge = screen.getByText("4");
     expect(badge).toBeInTheDocument();
   });
 
   it("shows the mention badge, not the raw total, when the channel has an @-mention", () => {
-    renderList([general], new Map([["c-gen", { unreadCount: 9, mentionCount: 1 }]]));
+    renderList(
+      [general],
+      new Map([["c-gen", { unreadCount: 9, mentionCount: 1 }]]),
+    );
 
     expect(screen.getByText("@ 1")).toBeInTheDocument();
     expect(screen.queryByText("9")).not.toBeInTheDocument();
