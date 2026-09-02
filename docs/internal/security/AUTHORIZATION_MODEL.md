@@ -266,20 +266,52 @@ The two things that bound this *through the API* — `assertChannelAccess` narro
 
 ### Storage buckets
 
-All **seven** buckets are declared `public = false` in IaC, so nothing is served by an unauthenticated
+All **eight** buckets are declared `public = false` in IaC, so nothing is served by an unauthenticated
 URL:
 
-| Bucket | Declared in | MIME allowlist |
-| --- | --- | --- |
-| `branding`, `profiles` | `20260808204500_declare_dashboard_created_buckets.sql` | images |
-| `documents`, `backwork`, `chat` | same | per-bucket |
-| `service` (service proof) | `20260803231500_service_proof_bucket.sql` | images + `application/pdf` |
-| `reports` | `20260805133000_reports_bucket.sql` | `application/pdf` |
+| Bucket | Declared in | MIME allowlist | Size cap |
+| --- | --- | --- | --- |
+| `branding`, `profiles` | `20260808204500_declare_dashboard_created_buckets.sql` | images | 25 MB |
+| `documents`, `backwork`, `chat` | same | per-bucket | 25 MB |
+| `service` (service proof) | `20260803231500_service_proof_bucket.sql` | images + `application/pdf` | 25 MB |
+| `reports` | `20260805133000_reports_bucket.sql` | `application/pdf` | 25 MB |
+| `chat-archive` (Discord import media) | `20260823124000_chat_archive_bucket.sql` | images, video, audio, documents, archives — **no SVG** | 100 MB |
 
 Clients never read a bucket directly; the API issues short-lived signed URLs after running the same
-route guards. Every bucket carries a MIME allowlist and a 25 MB (`26214400`) size cap. Note the five
-dashboard-created buckets were only brought into IaC by #690 — their pre-migration public/private
-state is tracked in #770.
+route guards. Every bucket carries a MIME allowlist and a size cap. The table above is this document's
+summary of them; the declarations, the exact byte values and the reasoning behind each are owned once
+by [`spec/architecture/README.md`](../../../spec/architecture/README.md) § 7 — change them there, and
+keep this table to what a security reader needs. Note the five dashboard-created buckets were only
+brought into IaC by #690 — their pre-migration public/private state is tracked in #770.
+
+**No bucket in this repo carries storage RLS policies**, and that is deliberate rather than an
+omission: reads are API-issued signed URLs, which do not consult RLS at all, and direct client access
+stays denied by default. A bucket's protection is therefore **entirely** the route guard that decides
+whether to mint a URL. Do not read `chat-archive`'s lack of RLS as making it weaker than its
+siblings; none of them have it.
+
+**Object-path obscurity is not a second layer — treat every path as guessable.** This is the
+inverse of a tempting reading of the paragraph above. The worked case is in
+[`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages): an
+imported author avatar and a message attachment share one `chat-archive` object layout
+(`archiveMediaObjectPath`), so nothing in a path distinguishes them. A caller-supplied path would
+therefore let someone fetch an attachment under the guise of an avatar, bypassing channel access
+entirely. Any endpoint that mints a signed URL must re-derive the object path server-side **after**
+the authorization check, never accept one from the caller.
+
+`chat-archive` is written **two ways**, and the MIME list binds differently on each — do not treat it
+as a server-write-only bucket:
+
+- **Bot importer** — writes server-side through `IStorageProvider.uploadFile` on the service-role key
+  (`discord-export-worker.service.ts`), passing the content type the server itself resolved. There
+  `allowed_mime_types` is a second belt.
+- **Upload importer** — mints signed upload URLs and the browser PUTs straight to storage
+  (`POST /v1/discord-imports/:id/upload-urls`, `channels:manage`, via
+  `DiscordImportService.requestUploadUrls`). The uploader sets its own `Content-Type` header, so on
+  this path the bucket column is the **only** enforcement, exactly as for a member-upload bucket.
+
+The bucket's own migration comment describes only the server-side path, because the upload path was
+added afterwards in `20260824120000_discord_import.sql`. Read the code, not that comment.
 
 ---
 
