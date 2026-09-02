@@ -257,14 +257,18 @@ export class EventService {
     // A role-targeted event must not be broadcast as a chat card. #1463 made
     // `required_role_ids` gate read access — list, detail, ICS, search and the
     // event notifications all restrict a targeted event to members holding one
-    // of its roles — but the `kind:"event"` card bypasses every one of those:
-    // it embeds name / start / end / location / point_value into a message row
-    // that Realtime fans out to every reader of the channel, so an ineligible
-    // member sees in chat exactly what `GET /v1/events/:id` 404s to hide.
+    // of its roles — but the `kind:"event"` card bypassed all of it: it embeds
+    // name / start / end / location / point_value into a message row that
+    // Realtime fans out to every reader of the channel, so an ineligible
+    // member saw in chat exactly what `GET /v1/events/:id` 404s to hide.
+    // (The activity feed was open the same way and is closed alongside this —
+    // see `ActivityFeedService.eventItems`.)
     //
     // Refusing is the only option the current architecture actually supports.
     // The card is a *snapshot*, not a live window — the renderer reads the
-    // embedded payload and never re-reads the event (see
+    // embedded payload and never re-reads the event (its only refetch is the
+    // `events:update`-gated attendance roster, whose holders are exempt from
+    // the role gate anyway; see
     // `apps/web/components/chat/renderers/event-card.tsx`), so the details are
     // already in the row before any client-side check could run. Redacting
     // per viewer would mean the server withholding payload fields per
@@ -280,6 +284,11 @@ export class EventService {
     // a refused create leaves no event row behind. An empty array is
     // untargeted per `spec/behavior/events.md` § `required_role_ids` wire
     // semantics and is deliberately allowed through.
+    //
+    // Either chat key alone is refused, not just the pair. Neither half posts
+    // a card on its own today (the mismatch is warned about below), but
+    // accepting one piecemeal would make the guard depend on which key a
+    // caller happened to omit.
     if (
       (input.required_role_ids?.length ?? 0) > 0 &&
       (input.channel_id || input.client_message_id)

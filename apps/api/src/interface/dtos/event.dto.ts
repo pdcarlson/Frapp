@@ -109,7 +109,7 @@ export class CreateEventDto {
 
   @ApiPropertyOptional({
     description:
-      'When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. Rejected with a 400 when `required_role_ids` is non-empty — the card is broadcast to every reader of the channel, so a role-targeted event cannot have one.',
+      'When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. Rejected with a 400 when `required_role_ids` is non-empty, on this key or `client_message_id` alone — the card is broadcast to every reader of the channel, so a create cannot both target roles and post one. (`PATCH` can still add targeting to an event whose card already posted; that card is left as-is.)',
   })
   @IsOptional()
   @IsUUID()
@@ -117,7 +117,7 @@ export class CreateEventDto {
 
   @ApiPropertyOptional({
     description:
-      'Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`.',
+      'Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Rejected with a 400 when `required_role_ids` is non-empty, even without `channel_id` — see that field.',
   })
   @IsOptional()
   @IsUUID()
