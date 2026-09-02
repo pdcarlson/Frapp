@@ -648,7 +648,10 @@ After any rollback event:
 * **Why a third index**, when one already looks close enough: the channel index
   is on `scope_id`, which is NULL on every `kind` row, and unique indexes treat
   NULLs as distinct — so it constrains the kind arm not at all and cannot be an
-  `ON CONFLICT` target for it. Verified in both directions on the local stack.
+  `ON CONFLICT` target for it. `check:pglite-migrations` asserts both plain
+  indexes exist with the right shape, so this is a standing gate rather than a
+  one-time observation — a rollback that drops the index without reverting the
+  API will fail that check.
 
 ## Rollback the chat-mute upsert target
 

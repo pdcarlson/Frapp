@@ -1930,7 +1930,7 @@
             "bearer": []
           }
         ],
-        "summary": "The caller's own per-message-kind notification levels",
+        "summary": "The caller's own per-message-kind notification overrides; level is null where none is set. For the level actually applied to a channel, read GET /v1/channels/notification-preferences.",
         "tags": [
           "Chat"
         ]
@@ -1977,6 +1977,40 @@
           }
         ],
         "summary": "Set the caller's notification level for one message kind",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "delete": {
+        "operationId": "ChatController_clearKindNotificationLevel_v1",
+        "parameters": [
+          {
+            "name": "kind",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KindNotificationPreferenceDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Clear the caller's override for one message kind, returning it to the default",
         "tags": [
           "Chat"
         ]
@@ -7943,10 +7977,9 @@
               "points",
               "hours",
               "system_audit",
-              "loading",
               "announcement"
             ],
-            "description": "A `chat_messages.kind`. `imported` is absent by design — the push worker refuses that kind before any preference is read, so it is not settable."
+            "description": "A `chat_messages.kind`. `imported` and `loading` are absent by design — the first is refused by the push worker before any preference is read, and the second is an internal optimistic placeholder rather than a category of message a member receives."
           },
           "level": {
             "type": "string",
@@ -7954,7 +7987,9 @@
               "all",
               "mentions",
               "off"
-            ]
+            ],
+            "nullable": true,
+            "description": "The member's chapter-wide override for this kind, or null when they have set none. Null is not a level: what a kind falls back to depends on the channel a message lands in (an `announcement` resolves `all` in a channel named `announcements` and `mentions` elsewhere), so there is no single default to report here. For the effective level of a real message, read GET /v1/channels/notification-preferences."
           }
         },
         "required": [
@@ -7972,7 +8007,7 @@
               "mentions",
               "off"
             ],
-            "description": "all = every message of this kind; mentions = only when you are mentioned; off = muted. A channel-scoped preference outranks this one for messages in that channel."
+            "description": "all = every message of this kind; mentions = only when you are mentioned; off = muted, though @mentions still notify — the one exception is the system_audit kind, whose off a mention does not lift. A channel-scoped preference outranks this one for messages in that channel."
           }
         },
         "required": [

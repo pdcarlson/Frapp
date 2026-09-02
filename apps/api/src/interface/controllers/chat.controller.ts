@@ -117,7 +117,8 @@ export class ChatController {
   // reader looking for one should find the other.
   @Get('notification-preferences/kinds')
   @ApiOperation({
-    summary: "The caller's own per-message-kind notification levels",
+    summary:
+      "The caller's own per-message-kind notification overrides; level is null where none is set. For the level actually applied to a channel, read GET /v1/channels/notification-preferences.",
   })
   @ApiOkResponse({ type: KindNotificationPreferenceDto, isArray: true })
   async getKindNotificationPreferences(
@@ -144,6 +145,20 @@ export class ChatController {
       kind,
       dto.level,
     );
+  }
+
+  @Delete('notification-preferences/kinds/:kind')
+  @ApiOperation({
+    summary:
+      "Clear the caller's override for one message kind, returning it to the default",
+  })
+  @ApiOkResponse({ type: KindNotificationPreferenceDto })
+  async clearKindNotificationLevel(
+    @Param('kind') kind: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<KindNotificationPreferenceDto> {
+    return this.chatService.clearKindNotificationLevel(chapterId, userId, kind);
   }
 
   @Get(':id')

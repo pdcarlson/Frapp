@@ -368,7 +368,7 @@ export class SetKindNotificationLevelDto {
   @ApiProperty({
     enum: CHAT_NOTIFICATION_LEVELS,
     description:
-      'all = every message of this kind; mentions = only when you are mentioned; off = muted. A channel-scoped preference outranks this one for messages in that channel.',
+      'all = every message of this kind; mentions = only when you are mentioned; off = muted, though @mentions still notify — the one exception is the system_audit kind, whose off a mention does not lift. A channel-scoped preference outranks this one for messages in that channel.',
   })
   @IsIn(CHAT_NOTIFICATION_LEVELS)
   level: (typeof CHAT_NOTIFICATION_LEVELS)[number];
@@ -378,12 +378,18 @@ export class KindNotificationPreferenceDto {
   @ApiProperty({
     enum: SETTABLE_NOTIFICATION_KINDS,
     description:
-      'A `chat_messages.kind`. `imported` is absent by design — the push worker refuses that kind before any preference is read, so it is not settable.',
+      'A `chat_messages.kind`. `imported` and `loading` are absent by design — the first is refused by the push worker before any preference is read, and the second is an internal optimistic placeholder rather than a category of message a member receives.',
   })
   kind: SettableNotificationKind;
 
-  @ApiProperty({ enum: CHAT_NOTIFICATION_LEVELS })
-  level: (typeof CHAT_NOTIFICATION_LEVELS)[number];
+  @ApiProperty({
+    enum: CHAT_NOTIFICATION_LEVELS,
+    type: String,
+    nullable: true,
+    description:
+      "The member's chapter-wide override for this kind, or null when they have set none. Null is not a level: what a kind falls back to depends on the channel a message lands in (an `announcement` resolves `all` in a channel named `announcements` and `mentions` elsewhere), so there is no single default to report here. For the effective level of a real message, read GET /v1/channels/notification-preferences.",
+  })
+  level: (typeof CHAT_NOTIFICATION_LEVELS)[number] | null;
 }
 
 /** Bounds one request to roughly one page of distinct message authors (#1231). */

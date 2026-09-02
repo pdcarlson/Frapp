@@ -69,15 +69,7 @@ export class ChatNotificationPreferenceRepository {
     userId: string,
     chapterId: string,
   ): Promise<ChatNotificationPreferenceRow[]> {
-    const { data, error } = await this.supabase
-      .from('chat_notification_preferences')
-      .select('user_id, chapter_id, scope, scope_id, scope_kind, level')
-      .eq('user_id', userId)
-      .eq('chapter_id', chapterId)
-      .eq('scope', 'channel');
-
-    if (error) throw error;
-    return data ?? [];
+    return this.findPreferencesForUserByScope(userId, chapterId, 'channel');
   }
 
   /**
@@ -85,19 +77,59 @@ export class ChatNotificationPreferenceRepository {
    *
    * Throws rather than degrading to `[]`, for the same reason as
    * {@link findChannelPreferencesForUser}: here the array *is* the answer, and
-   * an empty one on a database error would render every kind at its default,
+   * an empty one on a database error would render every kind as un-overridden,
    * indistinguishable from the user having set nothing.
    */
   async findKindPreferencesForUser(
     userId: string,
     chapterId: string,
   ): Promise<ChatNotificationPreferenceRow[]> {
+    return this.findPreferencesForUserByScope(userId, chapterId, 'kind');
+  }
+
+  /**
+   * Drop the caller's kind-scoped row, returning that kind to its default.
+   *
+   * Scoped by `user_id` AND `chapter_id` as well as the kind: the delete must
+   * be unable to reach another member's row or the same member's row in a
+   * chapter this request is not for, exactly as the upsert's conflict key is.
+   *
+   * Deleting a row that does not exist is a success, not an error — PostgREST
+   * reports zero affected rows and the caller's intent is already satisfied.
+   */
+  async deleteKindLevel(
+    userId: string,
+    chapterId: string,
+    kind: string,
+  ): Promise<void> {
+    const { error } = await this.supabase
+      .from('chat_notification_preferences')
+      .delete()
+      .eq('user_id', userId)
+      .eq('chapter_id', chapterId)
+      .eq('scope', 'kind')
+      .eq('scope_kind', kind);
+
+    if (error) throw error;
+  }
+
+  /**
+   * The shared body of the two scope-specific finders above. They differ only
+   * in the `scope` literal, and jscpd flagged them as clones; the public
+   * methods stay separate because their *contracts* differ (each is documented
+   * against its own arm and its own caller), but the query lives once.
+   */
+  private async findPreferencesForUserByScope(
+    userId: string,
+    chapterId: string,
+    scope: 'channel' | 'kind',
+  ): Promise<ChatNotificationPreferenceRow[]> {
     const { data, error } = await this.supabase
       .from('chat_notification_preferences')
       .select('user_id, chapter_id, scope, scope_id, scope_kind, level')
       .eq('user_id', userId)
       .eq('chapter_id', chapterId)
-      .eq('scope', 'kind');
+      .eq('scope', scope);
 
     if (error) throw error;
     return data ?? [];

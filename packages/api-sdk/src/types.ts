@@ -836,7 +836,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The caller's own per-message-kind notification levels */
+        /** The caller's own per-message-kind notification overrides; level is null where none is set. For the level actually applied to a channel, read GET /v1/channels/notification-preferences. */
         get: operations["ChatController_getKindNotificationPreferences_v1"];
         put?: never;
         post?: never;
@@ -857,7 +857,8 @@ export interface paths {
         /** Set the caller's notification level for one message kind */
         put: operations["ChatController_setKindNotificationLevel_v1"];
         post?: never;
-        delete?: never;
+        /** Clear the caller's override for one message kind, returning it to the default */
+        delete: operations["ChatController_clearKindNotificationLevel_v1"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3166,16 +3167,19 @@ export interface components {
         };
         KindNotificationPreferenceDto: {
             /**
-             * @description A `chat_messages.kind`. `imported` is absent by design — the push worker refuses that kind before any preference is read, so it is not settable.
+             * @description A `chat_messages.kind`. `imported` and `loading` are absent by design — the first is refused by the push worker before any preference is read, and the second is an internal optimistic placeholder rather than a category of message a member receives.
              * @enum {string}
              */
-            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "system_audit" | "loading" | "announcement";
-            /** @enum {string} */
-            level: "all" | "mentions" | "off";
+            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "system_audit" | "announcement";
+            /**
+             * @description The member's chapter-wide override for this kind, or null when they have set none. Null is not a level: what a kind falls back to depends on the channel a message lands in (an `announcement` resolves `all` in a channel named `announcements` and `mentions` elsewhere), so there is no single default to report here. For the effective level of a real message, read GET /v1/channels/notification-preferences.
+             * @enum {string|null}
+             */
+            level: "all" | "mentions" | "off" | null;
         };
         SetKindNotificationLevelDto: {
             /**
-             * @description all = every message of this kind; mentions = only when you are mentioned; off = muted. A channel-scoped preference outranks this one for messages in that channel.
+             * @description all = every message of this kind; mentions = only when you are mentioned; off = muted, though @mentions still notify — the one exception is the system_audit kind, whose off a mention does not lift. A channel-scoped preference outranks this one for messages in that channel.
              * @enum {string}
              */
             level: "all" | "mentions" | "off";
@@ -5155,6 +5159,27 @@ export interface operations {
                 "application/json": components["schemas"]["SetKindNotificationLevelDto"];
             };
         };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KindNotificationPreferenceDto"];
+                };
+            };
+        };
+    };
+    ChatController_clearKindNotificationLevel_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             200: {
                 headers: {

@@ -66,7 +66,7 @@ import { ChannelAccessService } from './channel-access.service';
 import { ActivationService } from './activation.service';
 import { ChatNotificationPreferenceRepository } from '../../modules/chat-push-worker/chat-notification-preference.repository';
 import type { ChatNotificationLevel } from '../../modules/chat-push-worker/chat-notification-preference.repository';
-import { defaultLevelFor } from '../../modules/chat-push-worker/push-rules';
+import { resolveLevel } from '../../modules/chat-push-worker/push-rules';
 import { ChannelCacheService } from '../../modules/chat-push-worker/channel-cache.service';
 
 const MAX_PINNED_MESSAGES = 50;
@@ -1241,11 +1241,19 @@ export class ChatService {
    * client-side.
    */
   async getChannelNotificationPreferences(chapterId: string, userId: string) {
-    const [rows, channels] = await Promise.all([
+    // BOTH arms are loaded, not just the channel one. Kind-scoped rows became
+    // writable in #500, and `resolveLevel` consults them whenever a channel has
+    // no row of its own — so reading only the channel arm would report the
+    // pre-#500 answer. A member who sets the `text` kind to `off` would see
+    // every channel rendered `mentions` here while the worker pushed nothing,
+    // which is exactly the "UI that disagrees with the worker about whether you
+    // are muted" this method's contract exists to prevent.
+    const [channelRows, kindRows, channels] = await Promise.all([
       this.chatNotificationPrefs.findChannelPreferencesForUser(
         userId,
         chapterId,
       ),
+      this.chatNotificationPrefs.findKindPreferencesForUser(userId, chapterId),
       this.channelRepo.findByChapter(chapterId),
     ]);
 
@@ -1256,38 +1264,47 @@ export class ChatService {
     );
     if (accessible.length === 0) return [];
 
-    const stored = new Map<string, ChatNotificationLevel>();
-    for (const row of rows) {
-      if (row.scope_id !== null) stored.set(row.scope_id, row.level);
-    }
+    const preferences = [...channelRows, ...kindRows];
 
+    // Delegated to the worker's own `resolveLevel` rather than reimplementing
+    // channel-pref ▶ kind-pref ▶ default here. The previous local version
+    // silently fell out of step with the worker the moment the kind arm gained
+    // a write path; sharing the function makes that class of drift structural
+    // rather than something a reviewer has to notice.
+    //
     // `'text'` is the ordinary-message kind: this endpoint answers "what does
-    // this channel do by default", not "what would this one message do". The
-    // kind-scoped arms (`system_audit`, `imported`) are decided per message in
-    // `decidePush` and are deliberately not user-settable here.
+    // this channel do for an ordinary message", not "what would this one
+    // message do".
     return accessible.map((channel) => ({
       channel_id: channel.id,
-      level: stored.get(channel.id) ?? defaultLevelFor(channel.name, 'text'),
+      level: resolveLevel(channel.name, channel.id, 'text', preferences),
     }));
   }
 
   /**
-   * The caller's own per-kind notification levels (#500).
+   * The caller's own per-kind notification overrides (#500).
    *
-   * Every settable kind is returned, with its stored level or the default the
-   * worker would apply — same contract as the per-channel endpoint above, and
-   * for the same reason: a UI that has to guess a default client-side is a UI
-   * that can disagree with the worker about whether you are muted.
+   * Every settable kind is returned; `level` is the stored override, or
+   * **`null`** where the member has set none.
    *
-   * The default is read through `defaultLevelFor` with an empty channel name.
-   * A kind preference is chapter-wide, so there is no channel whose name could
-   * feed the `announcements` / `chapter-audit` name arms of that function —
-   * passing `''` selects the kind-driven arms only, which is exactly the
-   * question this endpoint answers. `imported` is excluded from the list, so
-   * its absolute `off` is never presented as something a member could change.
+   * `null` rather than a filled-in default, which is the one place this
+   * endpoint deliberately differs from its per-channel sibling. A kind
+   * preference is chapter-wide, but the default it would fall back to is
+   * **not**: `defaultLevelFor` resolves an `announcement` message to `all` in
+   * a channel named `announcements` and `mentions` anywhere else, so there is
+   * no single chapter-wide default for a kind to report. Inventing one would
+   * be worse than useless in two concrete ways — it would state `mentions` for
+   * `announcement` when the seeded `#announcements` channel actually resolves
+   * `all`, and a settings screen that PUT back what it displayed would thereby
+   * *create* an override that silently downgrades that channel, with no way to
+   * undo it short of the DELETE below.
+   *
+   * The effective level for a real message is the per-channel endpoint's
+   * answer, which resolves the full channel-pref ▶ kind-pref ▶ default chain.
+   * This endpoint answers only "what have I overridden".
    *
    * No channel-access check is needed or possible here: a kind is not a
-   * channel, so the row reveals nothing about which channels exist.
+   * channel, so the response reveals nothing about which channels exist.
    */
   async getKindNotificationPreferences(chapterId: string, userId: string) {
     const rows = await this.chatNotificationPrefs.findKindPreferencesForUser(
@@ -1302,8 +1319,39 @@ export class ChatService {
 
     return SETTABLE_NOTIFICATION_KINDS.map((kind) => ({
       kind,
-      level: stored.get(kind) ?? defaultLevelFor('', kind),
+      level: stored.get(kind) ?? null,
     }));
+  }
+
+  /**
+   * Clear the caller's override for one kind, returning it to the default.
+   *
+   * The counterpart to the setter, and not optional surface: because a kind
+   * override outranks every channel's name-derived default, an override a
+   * member cannot remove is a permanent, invisible downgrade of
+   * `#announcements`. The channel arm needs no equivalent — writing a
+   * channel's own default back is behaviourally identical to having no row,
+   * so that arm has no unreachable state.
+   *
+   * Idempotent: clearing an override that is not set is a no-op, not a 404.
+   * The caller's intent ("I want no override for this kind") is satisfied
+   * either way, and reporting 404 would leak nothing useful while making a
+   * retry after a dropped response fail.
+   */
+  async clearKindNotificationLevel(
+    chapterId: string,
+    userId: string,
+    kind: string,
+  ) {
+    if (!isSettableNotificationKind(kind)) {
+      throw new BadRequestException(
+        `Unsupported notification kind '${kind}'. Settable kinds: ` +
+          SETTABLE_NOTIFICATION_KINDS.join(', '),
+      );
+    }
+
+    await this.chatNotificationPrefs.deleteKindLevel(userId, chapterId, kind);
+    return { kind, level: null };
   }
 
   /**

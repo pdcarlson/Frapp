@@ -23,31 +23,49 @@ export const CHAT_MESSAGE_KINDS = [
 export type ChatMessageKind = (typeof CHAT_MESSAGE_KINDS)[number];
 
 /**
- * The one kind a member may NOT set a notification preference for (#500).
+ * Kinds a member may NOT set a notification preference for (#500), each for
+ * its own reason. Both would be dead controls — the failure
+ * `spec/behavior/notifications.md` rejects for the `announcements` category.
  *
- * `spec/behavior/notifications.md` — "`imported` is the one kind with no
- * opt-in." `ChatPushWorkerService.handleMessage` returns on an imported row
- * before it loads the chapter roster, and `decidePush` refuses the kind ahead
- * of every other rule including the mention override, so a stored preference
- * for it could never be consulted. Exposing that toggle would ship a control
- * that silently does nothing — the dead-control failure the same spec rejects
- * for the `announcements` category.
+ * - **`imported`** — "the one kind with no opt-in" (same spec).
+ *   `ChatPushWorkerService.handleMessage` returns on an imported row before it
+ *   loads the chapter roster, and `decidePush` refuses the kind ahead of every
+ *   other rule including the mention override, so a stored preference for it
+ *   could never be consulted.
+ * - **`loading`** — the optimistic placeholder a heavy slash command posts
+ *   before its real card replaces it. It is a genuine `chat_messages` row that
+ *   the worker evaluates normally, so a preference for it would *work* — which
+ *   is the problem. Setting it to `all` would push "Recording points…" to the
+ *   chapter for a card reconciled away seconds later, leaving a notification
+ *   pointing at a message that no longer exists. It is internal machinery, not
+ *   a category of message a member receives.
  */
-export const NON_SETTABLE_NOTIFICATION_KIND =
-  'imported' satisfies ChatMessageKind;
+export const NON_SETTABLE_NOTIFICATION_KINDS = [
+  'loading',
+  'imported',
+] as const satisfies readonly ChatMessageKind[];
+
+type NonSettableNotificationKind =
+  (typeof NON_SETTABLE_NOTIFICATION_KINDS)[number];
 
 /**
  * Kinds a member may set a per-kind notification level for.
  *
- * Derived from {@link CHAT_MESSAGE_KINDS} rather than hand-listed, so a kind
- * added to the hot path becomes settable by default instead of silently
- * missing from the settings surface. `system_audit` is the load-bearing
- * member: the spec names `(scope='kind', scope_kind='system_audit',
- * level='all')` as the documented opt-in to audit-bridge pushes.
+ * Derived by subtraction from {@link CHAT_MESSAGE_KINDS} rather than
+ * hand-listed, so a new *member-facing* kind becomes settable without a second
+ * edit. The trade-off is deliberate and has one sharp edge: a new **internal**
+ * kind would also become settable by default, so anything added to
+ * `CHAT_MESSAGE_KINDS` that a member should never toggle belongs in
+ * {@link NON_SETTABLE_NOTIFICATION_KINDS} in the same change.
+ *
+ * `system_audit` is the load-bearing member: the spec names
+ * `(scope='kind', scope_kind='system_audit', level='all')` as the documented
+ * opt-in to audit-bridge pushes.
  */
 export const SETTABLE_NOTIFICATION_KINDS = CHAT_MESSAGE_KINDS.filter(
-  (kind) => kind !== NON_SETTABLE_NOTIFICATION_KIND,
-) as readonly Exclude<ChatMessageKind, typeof NON_SETTABLE_NOTIFICATION_KIND>[];
+  (kind) =>
+    !(NON_SETTABLE_NOTIFICATION_KINDS as readonly string[]).includes(kind),
+) as readonly Exclude<ChatMessageKind, NonSettableNotificationKind>[];
 
 export type SettableNotificationKind =
   (typeof SETTABLE_NOTIFICATION_KINDS)[number];
