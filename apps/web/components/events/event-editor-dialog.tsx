@@ -175,6 +175,13 @@ type EventEditorDialogProps = {
   event: EventRecord | null;
   usingPreviewData: boolean;
   onSaved: () => Promise<void> | void;
+  /**
+   * Prefill for a fresh create — e.g. the calendar view's click-to-create.
+   * `datetime-local` value strings, matching `isoToLocalInput`'s output.
+   * Ignored in edit mode, where `event`'s own schedule always wins.
+   */
+  initialStartAt?: string;
+  initialEndAt?: string;
 };
 
 export function EventEditorDialog({
@@ -185,6 +192,8 @@ export function EventEditorDialog({
   event,
   usingPreviewData,
   onSaved,
+  initialStartAt,
+  initialEndAt,
 }: EventEditorDialogProps) {
   const createEventMutation = useCreateEvent();
   const updateEventMutation = useUpdateEvent();
@@ -273,8 +282,8 @@ export function EventEditorDialog({
     setName("");
     setDescription("");
     setLocation("");
-    setStartAt("");
-    setEndAt("");
+    setStartAt(initialStartAt ?? "");
+    setEndAt(initialEndAt ?? "");
     setPointValue(10);
     setIsMandatory(true);
     setRecurrenceRule("NONE");
@@ -282,7 +291,7 @@ export function EventEditorDialog({
     setRequiredRoleIds([]);
     setCheckInZone([]);
     setCheckInZoneName("");
-  }, [event, mode, open]);
+  }, [event, mode, open, initialStartAt, initialEndAt]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const submitLabel = useMemo(() => {
@@ -319,11 +328,7 @@ export function EventEditorDialog({
     setCheckInZone((previous) => previous.filter((row) => row.id !== id));
   }
 
-  function handleVertexChange(
-    id: string,
-    axis: "lat" | "lng",
-    value: string,
-  ) {
+  function handleVertexChange(id: string, axis: "lat" | "lng", value: string) {
     setCheckInZone((previous) =>
       previous.map((row) => (row.id === id ? { ...row, [axis]: value } : row)),
     );

@@ -26,6 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   EmptyState,
   ErrorState,
@@ -46,6 +47,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { EventDetailSheet } from "@/components/events/event-detail-sheet";
 import { EventEditorDialog } from "@/components/events/event-editor-dialog";
+import { EventsCalendar } from "@/components/events/events-calendar";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
@@ -55,6 +57,17 @@ import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { getErrorMessage } from "@/lib/utils";
 
 type EventRow = Record<string, unknown>;
+
+// Local `datetime-local` value, matching `EventEditorDialog`'s own
+// `isoToLocalInput` output shape (no timezone suffix).
+function dateToLocalInputValue(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+// A day click carries no time of day, so the create form opens with a
+// reasonable default slot (6-7pm) rather than midnight-to-midnight.
+const CALENDAR_DEFAULT_START_HOUR = 18;
 
 export function EventsPage() {
   const { isOffline } = useNetwork();
@@ -81,6 +94,9 @@ export function EventsPage() {
   const editorDialog = useGatedDialog(eventWriteGate);
   const [editorMode, setEditorMode] = useState<"create" | "edit">("create");
   const [activeEvent, setActiveEvent] = useState<EventRow | null>(null);
+  // Set only by a calendar day click, so the "New Event" button and the
+  // empty-state CTA keep opening a blank form exactly as they do today.
+  const [calendarCreateDay, setCalendarCreateDay] = useState<Date | null>(null);
   const eventsQuery = useEvents();
   const autoAbsent = useAutoAbsent();
   const { confirm, confirmDialog } = useConfirmDialog();
@@ -149,6 +165,17 @@ export function EventsPage() {
       return true;
     });
   }, [events, query, attendanceFilter, recurrenceFilter, timeFilter, nowTick]);
+  const calendarCreateDefaults = useMemo(() => {
+    if (!calendarCreateDay) return null;
+    const start = new Date(calendarCreateDay);
+    start.setHours(CALENDAR_DEFAULT_START_HOUR, 0, 0, 0);
+    const end = new Date(start.getTime() + 60 * 60 * 1000);
+    return {
+      startAt: dateToLocalInputValue(start),
+      endAt: dateToLocalInputValue(end),
+    };
+  }, [calendarCreateDay]);
+
   const visibleEventIds = filteredEvents.map((event) =>
     String(event.id ?? event.name ?? ""),
   );
@@ -209,7 +236,8 @@ export function EventsPage() {
     if (failures.length === 0) {
       const totalMarked = results.reduce(
         (sum, result) =>
-          sum + (result.status === "fulfilled" ? (result.value?.marked ?? 0) : 0),
+          sum +
+          (result.status === "fulfilled" ? (result.value?.marked ?? 0) : 0),
         0,
       );
       toast({
@@ -220,8 +248,9 @@ export function EventsPage() {
     } else {
       const eventName = (eventId: string) =>
         String(
-          events.find((event) => String(event.id ?? event.name ?? "") === eventId)
-            ?.name ?? eventId,
+          events.find(
+            (event) => String(event.id ?? event.name ?? "") === eventId,
+          )?.name ?? eventId,
         );
       const detail = failures
         .map(
@@ -279,6 +308,7 @@ export function EventsPage() {
             onClick={() => {
               setEditorMode("create");
               setActiveEvent(null);
+              setCalendarCreateDay(null);
               editorDialog.setOpen(true);
             }}
           >
@@ -380,147 +410,193 @@ export function EventsPage() {
         </Card>
       ) : null}
 
-      {filteredEvents.length === 0 ? (
-        <EmptyState
-          title={stateMicrocopy.events.emptyTitle}
-          description={stateMicrocopy.events.emptyDescription}
-          actionLabel="Create first event"
-          actionProps={eventWriteGate.controlProps()}
-          onAction={() => {
-            setEditorMode("create");
-            setActiveEvent(null);
-            editorDialog.setOpen(true);
-          }}
-        />
-      ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Upcoming & Recent Events</CardTitle>
-            <CardDescription>
-              Attendance windows and point values are configured per event.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className={dashboardCheckboxCellClassName}>
-                    <label className={dashboardCheckboxHitAreaClassName}>
-                      <input
-                        type="checkbox"
-                        aria-label="Select all visible events"
-                        className={dashboardTableCheckboxClassName}
-                        checked={allVisibleSelected}
-                        onChange={(event) =>
-                          toggleAllVisibleEvents(event.target.checked)
-                        }
-                      />
-                    </label>
-                  </TableHead>
-                  <TableHead>Event</TableHead>
-                  <TableHead>Schedule</TableHead>
-                  <TableHead>Location</TableHead>
-                  <TableHead>Points</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredEvents.map((event) => {
-                  const eventId = String(
-                    event.id ?? event.name ?? "unknown-event",
-                  );
-                  const eventName = String(event.name ?? "Untitled event");
-                  const pointValue =
-                    typeof event.point_value === "number"
-                      ? event.point_value
-                      : 0;
-                  const isMandatory =
-                    typeof event.is_mandatory === "boolean"
-                      ? event.is_mandatory
-                      : false;
-                  const recurrenceRule =
-                    typeof event.recurrence_rule === "string"
-                      ? event.recurrence_rule
-                      : "";
-                  // One derived value: the row fill and the checkbox must never
-                  // disagree about whether the row is selected.
-                  const isSelected = selectedEventIds.includes(eventId);
-                  const requiredRoleIds = Array.isArray(event.required_role_ids)
-                    ? event.required_role_ids.filter(
-                        (id): id is string => typeof id === "string",
-                      )
-                    : [];
-                  return (
-                    <TableRow
-                      key={eventId}
-                      data-state={isSelected ? "selected" : undefined}
-                    >
-                      <TableCell className={dashboardCheckboxCellClassName}>
+      <Tabs defaultValue="list">
+        <TabsList>
+          <TabsTrigger value="list">List</TabsTrigger>
+          <TabsTrigger value="calendar">Calendar</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="list">
+          {filteredEvents.length === 0 ? (
+            <EmptyState
+              title={stateMicrocopy.events.emptyTitle}
+              description={stateMicrocopy.events.emptyDescription}
+              actionLabel="Create first event"
+              actionProps={eventWriteGate.controlProps()}
+              onAction={() => {
+                setEditorMode("create");
+                setActiveEvent(null);
+                setCalendarCreateDay(null);
+                editorDialog.setOpen(true);
+              }}
+            />
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">
+                  Upcoming & Recent Events
+                </CardTitle>
+                <CardDescription>
+                  Attendance windows and point values are configured per event.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className={dashboardCheckboxCellClassName}>
                         <label className={dashboardCheckboxHitAreaClassName}>
                           <input
                             type="checkbox"
-                            aria-label={`Select ${eventName}`}
+                            aria-label="Select all visible events"
                             className={dashboardTableCheckboxClassName}
-                            checked={isSelected}
-                            onChange={(eventValue) =>
-                              toggleEventSelection(
-                                eventId,
-                                eventValue.target.checked,
-                              )
+                            checked={allVisibleSelected}
+                            onChange={(event) =>
+                              toggleAllVisibleEvents(event.target.checked)
                             }
                           />
                         </label>
-                      </TableCell>
-                      <TableCell className="font-semibold">
-                        {eventName}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {formatDate(event.start_time)}
-                      </TableCell>
-                      <TableCell>{String(event.location ?? "TBD")}</TableCell>
-                      <TableCell>{pointValue}</TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-2">
-                          {isMandatory ? (
-                            <Badge>Mandatory</Badge>
-                          ) : (
-                            <Badge variant="secondary">Optional</Badge>
-                          )}
-                          {recurrenceRule ? (
-                            <Badge variant="outline" className="gap-1">
-                              <EventsGlyph className="h-3.5 w-3.5" />
-                              {recurrenceRule}
-                            </Badge>
-                          ) : null}
-                          {requiredRoleIds.length > 0 ? (
-                            <Badge variant="outline" className="gap-1">
-                              <RolesGlyph className="h-3.5 w-3.5" />
-                              Targeted
-                            </Badge>
-                          ) : null}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => {
-                            setActiveEvent(event);
-                            setDetailSheetOpen(true);
-                          }}
-                        >
-                          View details
-                        </Button>
-                      </TableCell>
+                      </TableHead>
+                      <TableHead>Event</TableHead>
+                      <TableHead>Schedule</TableHead>
+                      <TableHead>Location</TableHead>
+                      <TableHead>Points</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
+                  </TableHeader>
+                  <TableBody>
+                    {filteredEvents.map((event) => {
+                      const eventId = String(
+                        event.id ?? event.name ?? "unknown-event",
+                      );
+                      const eventName = String(event.name ?? "Untitled event");
+                      const pointValue =
+                        typeof event.point_value === "number"
+                          ? event.point_value
+                          : 0;
+                      const isMandatory =
+                        typeof event.is_mandatory === "boolean"
+                          ? event.is_mandatory
+                          : false;
+                      const recurrenceRule =
+                        typeof event.recurrence_rule === "string"
+                          ? event.recurrence_rule
+                          : "";
+                      // One derived value: the row fill and the checkbox must never
+                      // disagree about whether the row is selected.
+                      const isSelected = selectedEventIds.includes(eventId);
+                      const requiredRoleIds = Array.isArray(
+                        event.required_role_ids,
+                      )
+                        ? event.required_role_ids.filter(
+                            (id): id is string => typeof id === "string",
+                          )
+                        : [];
+                      return (
+                        <TableRow
+                          key={eventId}
+                          data-state={isSelected ? "selected" : undefined}
+                        >
+                          <TableCell className={dashboardCheckboxCellClassName}>
+                            <label
+                              className={dashboardCheckboxHitAreaClassName}
+                            >
+                              <input
+                                type="checkbox"
+                                aria-label={`Select ${eventName}`}
+                                className={dashboardTableCheckboxClassName}
+                                checked={isSelected}
+                                onChange={(eventValue) =>
+                                  toggleEventSelection(
+                                    eventId,
+                                    eventValue.target.checked,
+                                  )
+                                }
+                              />
+                            </label>
+                          </TableCell>
+                          <TableCell className="font-semibold">
+                            {eventName}
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {formatDate(event.start_time)}
+                          </TableCell>
+                          <TableCell>
+                            {String(event.location ?? "TBD")}
+                          </TableCell>
+                          <TableCell>{pointValue}</TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-2">
+                              {isMandatory ? (
+                                <Badge>Mandatory</Badge>
+                              ) : (
+                                <Badge variant="secondary">Optional</Badge>
+                              )}
+                              {recurrenceRule ? (
+                                <Badge variant="outline" className="gap-1">
+                                  <EventsGlyph className="h-3.5 w-3.5" />
+                                  {recurrenceRule}
+                                </Badge>
+                              ) : null}
+                              {requiredRoleIds.length > 0 ? (
+                                <Badge variant="outline" className="gap-1">
+                                  <RolesGlyph className="h-3.5 w-3.5" />
+                                  Targeted
+                                </Badge>
+                              ) : null}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => {
+                                setActiveEvent(event);
+                                setDetailSheetOpen(true);
+                              }}
+                            >
+                              View details
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="calendar">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Chapter Calendar</CardTitle>
+              <CardDescription>
+                Click a date to schedule an event there, or select an event to
+                view its details.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <EventsCalendar
+                events={filteredEvents}
+                createDisabled={!eventWriteGate.allowed}
+                onSelectEvent={(event) => {
+                  setActiveEvent(event);
+                  setDetailSheetOpen(true);
+                }}
+                onCreateOnDay={(day) => {
+                  setEditorMode("create");
+                  setActiveEvent(null);
+                  setCalendarCreateDay(day);
+                  editorDialog.setOpen(true);
+                }}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       <EventDetailSheet
         open={detailSheetOpen}
@@ -545,6 +621,8 @@ export function EventsPage() {
         mode={editorMode}
         event={activeEvent}
         usingPreviewData={false}
+        initialStartAt={calendarCreateDefaults?.startAt}
+        initialEndAt={calendarCreateDefaults?.endAt}
         onSaved={async () => {
           await eventsQuery.refetch();
         }}
