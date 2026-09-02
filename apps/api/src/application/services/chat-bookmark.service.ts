@@ -8,6 +8,55 @@ import type {
 import { ChannelAccessService } from './channel-access.service';
 
 /**
+ * What a bookmark looks like once its channel is no longer readable.
+ *
+ * The row stays — the member saved it, and it is their row — but every field
+ * that could carry content, identity, or *subsequent activity* is replaced.
+ * That last category is the one worth being explicit about: an earlier cut
+ * blanked the content but left `is_pinned`, `pinned_at`, `edited_at`, `kind`
+ * and `reply_to_id` intact, which meant a member who had lost access could
+ * still watch the message get pinned or edited. Redacting the body while
+ * leaving a live activity side-channel is not redaction.
+ *
+ * Two fields deliberately survive:
+ *
+ * - `channel_id`, because it is not new information — the member chose to save
+ *   from that channel and already knew which one it was.
+ * - `created_at`, for the same reason: it is immutable and was visible when
+ *   they saved. Nothing about it changes after revocation, so it carries no
+ *   post-revocation signal.
+ */
+export const BOOKMARK_REDACTED_CONTENT =
+  '[unavailable — you no longer have access to this channel]';
+
+function redactBookmarkedMessage(
+  bookmark: ChatMessageBookmarkWithMessage,
+): ChatMessageBookmarkWithMessage {
+  return {
+    ...bookmark,
+    message_available: false,
+    message: {
+      ...bookmark.message,
+      sender_id: null,
+      author_name: null,
+      author_avatar_path: null,
+      author_external_id: null,
+      content: BOOKMARK_REDACTED_CONTENT,
+      type: 'TEXT',
+      kind: 'text',
+      payload: null,
+      metadata: {},
+      mentions: [],
+      reply_to_id: null,
+      is_pinned: false,
+      pinned_at: null,
+      edited_at: null,
+      is_deleted: false,
+    },
+  };
+}
+
+/**
  * Personal message bookmarks (#462), per `spec/behavior/chat/README.md`
  * § Bookmarks (personal).
  *
@@ -50,9 +99,16 @@ export class ChatBookmarkService {
    * but not post to. `'post'` here would deny exactly the messages members most
    * want to keep.
    *
-   * `chapter_id` is taken from the resolved channel rather than the request
-   * header, so a bookmark can never be filed under a chapter the message does
-   * not belong to even if the two disagreed.
+   * `chapter_id` is the **request's** chapter (`x-chapter-id`, via
+   * `@CurrentChapterId()`), not a value read off the resolved channel — an
+   * earlier version of this comment said the opposite and was wrong. The
+   * invariant still holds, but by a different mechanism, and the difference
+   * matters to anyone adding a second write path: `assertMessageAccess`
+   * resolves the channel with `channelRepo.findById(channelId, chapterId)`,
+   * which is itself chapter-scoped, so a message outside this chapter 404s
+   * before we ever reach the insert. The guarantee is that downstream check,
+   * not a structural derivation. A future write path that authorizes some other
+   * way must re-establish it rather than assume it.
    */
   async bookmarkMessage(
     messageId: string,
@@ -66,44 +122,89 @@ export class ChatBookmarkService {
   /**
    * Remove the caller's own bookmark.
    *
-   * Still authorizes the message first. Skipping that would look harmless —
-   * you can only delete your own row — but it would turn this route into an
-   * existence oracle: a caller could probe arbitrary message uuids and
-   * distinguish 404 from 204. Authorizing first means an unreachable message
-   * answers 404 whether or not a bookmark exists.
+   * **Deliberately does NOT authorize the message.** An earlier cut did, on
+   * anti-oracle grounds, and that was a mistake in both directions.
    *
-   * Deleting a bookmark that isn't there succeeds. There is no state to
-   * reconcile and no information to leak either way, and an idempotent DELETE
-   * is what makes the client's optimistic toggle safe to retry.
+   * It broke a real case. Losing access to a channel does not delete your
+   * bookmarks — by design, per `listBookmarks` — so authorizing the message
+   * here meant that the moment Bob rotated off exec, `DELETE` on his own
+   * `#exec` bookmark answered **403**. The row stayed in his panel, redacted,
+   * unjumpable, and now permanently undeletable, with no path in the API or
+   * the UI to clear it. A member must always be able to remove their own row.
+   *
+   * And it did not buy the protection it was there for. This route is
+   * unconditionally idempotent: deleting a bookmark that is not there succeeds
+   * exactly like deleting one that is, so the response cannot distinguish the
+   * two whether or not the message is authorized. The assert added a 403-vs-204
+   * split keyed on *channel access* — which is to say it created an oracle
+   * rather than closing one.
+   *
+   * What keeps it safe is the scoping instead: the delete matches on
+   * `(user_id, message_id, chapter_id)`, so a caller can only ever remove their
+   * own row in their own chapter, and every outcome is 204.
    */
   async unbookmarkMessage(
     messageId: string,
     chapterId: string,
     userId: string,
   ): Promise<void> {
-    await this.channelAccess.assertMessageAccess(messageId, chapterId, userId);
-    await this.bookmarkRepo.delete(userId, messageId);
+    await this.bookmarkRepo.delete(userId, messageId, chapterId);
   }
 
   /**
    * The caller's own bookmarks in this chapter, newest first, each with its
    * message.
    *
-   * No channel re-authorization pass, deliberately: every row was authorized at
-   * the moment it was created, and the alternative — re-filtering on read —
-   * would silently drop a member's bookmarks when they leave a private channel,
-   * which is a data-loss surprise rather than a protection. The rows are the
-   * caller's own; the messages in them are ones they could see when they saved
-   * them. If that trade ever needs revisiting it is a spec change, not a bug
-   * fix.
+   * **Channel access is re-checked on every read, and this is not optional.**
+   * An earlier cut of this method skipped it, reasoning that each row was
+   * authorized when it was created and that re-filtering would silently drop a
+   * member's saved messages when they left a private channel. The second half
+   * of that is a fair concern; the first half is simply wrong, and `/diff-review`
+   * caught it. The embed re-reads `chat_messages` on **every request**, so what
+   * comes back is the message's *current* content, not a snapshot taken at save
+   * time. A member who bookmarked a message in `#exec`, then lost the role, kept
+   * receiving that message — including edits made after they lost access. Losing
+   * a permission has to revoke the read, and it did not.
    *
-   * Deleted messages stay in the list carrying their `[message deleted]`
-   * content, per the spec's placeholder rule.
+   * The fix keeps both properties instead of trading one away: the bookmark row
+   * always survives, and the message is **redacted** when its channel is no
+   * longer readable. The member still sees that they saved something and can
+   * still unsave it; they just stop receiving its content. That is why this
+   * redacts rather than filtering rows out, which is what
+   * {@link ChannelAccessService.filterAccessibleChannelIds} does for
+   * `SearchService` — search has no row of the caller's own to preserve.
+   *
+   * Deleted messages are a different case and stay verbatim: `deleteMessage`
+   * already rewrote `content` to `[message deleted]`, which is the placeholder
+   * the spec asks for.
    */
   async listBookmarks(
     chapterId: string,
     userId: string,
   ): Promise<ChatMessageBookmarkWithMessage[]> {
-    return this.bookmarkRepo.findByUserAndChapter(userId, chapterId);
+    const bookmarks = await this.bookmarkRepo.findByUserAndChapter(
+      userId,
+      chapterId,
+    );
+    if (bookmarks.length === 0) return [];
+
+    const accessible = await this.channelAccess.filterAccessibleChannelIds(
+      chapterId,
+      userId,
+      // De-duplicated: a member with 40 bookmarks in one channel must not make
+      // the predicate resolve that channel 40 times.
+      [...new Set(bookmarks.map((b) => b.message.channel_id))],
+      // An archived Group DM (#348) is still readable by whoever remains in it
+      // — only posting is frozen. Without this the archive would read as a
+      // revocation and redact messages the member can still open in the
+      // timeline, which is a worse lie than the leak this pass is fixing.
+      { includeArchived: true },
+    );
+
+    return bookmarks.map((bookmark) =>
+      accessible.has(bookmark.message.channel_id)
+        ? { ...bookmark, message_available: true }
+        : redactBookmarkedMessage(bookmark),
+    );
   }
 }

@@ -3257,6 +3257,7 @@ export interface components {
             sender_id: string | null;
             author_name?: string | null;
             author_avatar_path?: string | null;
+            author_external_id?: string | null;
             /** @description Reads “[message deleted]” once the message is deleted — the bookmark keeps its row and surfaces that placeholder rather than disappearing. */
             content: string;
             is_deleted: boolean;
@@ -3270,6 +3271,7 @@ export interface components {
             /** @description When the caller saved it — not when the message was sent. */
             created_at: string;
             message: components["schemas"]["BookmarkedMessageDto"];
+            message_available: boolean;
         };
         BookmarkRefDto: {
             /** Format: uuid */

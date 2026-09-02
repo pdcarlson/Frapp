@@ -61,9 +61,11 @@ export interface MessageItemProps {
    */
   isBookmarked?: boolean;
   /**
-   * Toggles the viewer's bookmark. Absent on surfaces that don't wire
-   * bookmarks (the thread panel today), which hides the affordance rather than
-   * rendering a control that does nothing.
+   * Toggles the viewer's bookmark. Optional so a surface that does not wire
+   * bookmarks hides the affordance rather than rendering a control that does
+   * nothing — both surfaces that render messages today (the timeline and the
+   * thread panel) do wire it, since a threaded reply is just as much a message
+   * the viewer can see.
    */
   onToggleBookmark?: (messageId: string, next: boolean) => void;
   /** Gates the Delete affordance on messages that aren't the viewer's own. */

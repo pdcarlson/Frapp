@@ -137,6 +137,56 @@ describe("BookmarksPopover", () => {
     expect(screen.getByText("[message deleted]")).toBeInTheDocument();
   });
 
+  it("does not offer a jump for a message whose channel is no longer readable", async () => {
+    // `message_available: false` means the API redacted the row because the
+    // viewer lost access. Jumping would set the shell's channel to one absent
+    // from the viewer's channel list, which silently resolves to #general and
+    // never scrolls — a control that looks like it worked and did the wrong
+    // thing. The row must not be a button at all.
+    const onJump = vi.fn();
+    renderPanel({
+      bookmarks: [
+        entry({
+          message_available: false,
+          message: message({ content: "[unavailable]" }),
+        }),
+      ],
+      onJump,
+    });
+
+    await userEvent.click(screen.getByRole("button"));
+
+    expect(
+      screen.queryByRole("button", { name: /unavailable/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("[unavailable]")).toBeInTheDocument();
+    expect(onJump).not.toHaveBeenCalled();
+  });
+
+  it("still counts and lists a redacted row, so the member can see they saved it", () => {
+    // Redacting rather than dropping the row is the whole point: the member
+    // keeps the record of their own bookmark (and, in the API, the ability to
+    // delete it) even though the content is no longer theirs to read.
+    renderPanel({ bookmarks: [entry({ message_available: false })] });
+
+    expect(
+      screen.getByRole("button", { name: "1 bookmarked messages" }),
+    ).toBeInTheDocument();
+  });
+
+  it("treats a row with no availability field as available", async () => {
+    // Forward-compatibility with a cached payload from before the field
+    // existed: defaulting "unknown" to unavailable would make every row inert
+    // for one render after a deploy.
+    const onJump = vi.fn();
+    renderPanel({ bookmarks: [entry()], onJump });
+
+    await userEvent.click(screen.getByRole("button"));
+    await userEvent.click(screen.getByRole("button", { name: /dues link/ }));
+
+    expect(onJump).toHaveBeenCalledWith("chan-random", "msg-1");
+  });
+
   it("timestamps the row by when it was saved, not when the message was sent", async () => {
     // The two differ by a day in this fixture. A member scanning their
     // bookmarks is looking for "the thing I saved recently", so the save time

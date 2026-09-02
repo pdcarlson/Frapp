@@ -166,19 +166,8 @@ describe('SupabaseChatMessageBookmarkRepository — tenant scope', () => {
     expect(deleted?.message.content).toBe('[message deleted]');
   });
 
-  it('findOne is scoped by user as well as message', async () => {
-    // Same message id, wrong user: must not resolve. Otherwise a caller could
-    // learn that somebody bookmarked a given message.
-    await expect(
-      repo.findOne(USER_SHARED, MESSAGE_A_OTHER_USER),
-    ).resolves.toBeNull();
-    await expect(repo.findOne(USER_A, MESSAGE_A_OTHER_USER)).resolves.toEqual(
-      expect.objectContaining({ id: BOOKMARK_A_OTHER_USER }),
-    );
-  });
-
   it('delete removes only the caller own bookmark, not another member on the same message', async () => {
-    await repo.delete(USER_SHARED, MESSAGE_A_OTHER_USER);
+    await repo.delete(USER_SHARED, MESSAGE_A_OTHER_USER, CHAPTER_A);
 
     expect(harness.rows('chat_message_bookmarks').map((r) => r.id)).toContain(
       BOOKMARK_A_OTHER_USER,
@@ -186,7 +175,7 @@ describe('SupabaseChatMessageBookmarkRepository — tenant scope', () => {
   });
 
   it('delete leaves the other chapter bookmark in place', async () => {
-    await repo.delete(USER_SHARED, MESSAGE_A);
+    await repo.delete(USER_SHARED, MESSAGE_A, CHAPTER_A);
 
     const remaining = harness
       .rows('chat_message_bookmarks')
@@ -194,6 +183,32 @@ describe('SupabaseChatMessageBookmarkRepository — tenant scope', () => {
     expect(remaining).not.toContain(BOOKMARK_A);
     expect(remaining).toContain(BOOKMARK_B);
     expect(remaining).toHaveLength(5);
+  });
+
+  it('never returns user_id to the caller', async () => {
+    // A disclosure boundary, not tidiness: NestJS does not serialize to the
+    // declared @ApiOkResponse DTO (no ClassSerializerInterceptor is registered
+    // anywhere in this app), so the DTO is documentation and this strip is the
+    // only thing keeping `user_id` off the wire. `/diff-review` caught the
+    // spec claiming otherwise while the field shipped.
+    const rows = await repo.findByUserAndChapter(USER_SHARED, CHAPTER_A);
+
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(row).not.toHaveProperty('user_id');
+    }
+  });
+
+  it('delete will not reach a bookmark in another chapter', async () => {
+    // The predicate looks redundant against the (user_id, message_id) unique
+    // constraint. It is the guard for a future caller that does not authorize
+    // the message first — which, since the lost-access fix, is the bookmark
+    // path itself.
+    await repo.delete(USER_SHARED, MESSAGE_B, CHAPTER_A);
+
+    expect(harness.rows('chat_message_bookmarks').map((r) => r.id)).toContain(
+      BOOKMARK_B,
+    );
   });
 
   it('create is idempotent and does not duplicate an existing bookmark', async () => {

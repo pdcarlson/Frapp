@@ -239,12 +239,15 @@ export interface IChatMessageBookmarkRepository {
     messageId: string,
     chapterId: string,
   ): Promise<ChatMessageBookmark>;
-  /** Removes the caller's own bookmark. A no-op when there wasn't one. */
-  delete(userId: string, messageId: string): Promise<void>;
-  findOne(
-    userId: string,
-    messageId: string,
-  ): Promise<ChatMessageBookmark | null>;
+  /**
+   * Removes the caller's own bookmark. A no-op when there wasn't one.
+   *
+   * Takes `chapterId` even though `(user_id, message_id)` is already globally
+   * unique. That redundancy is the point: without it the method's safety would
+   * rest entirely on its caller, and the signature would give no hint that a
+   * chapter was ever involved.
+   */
+  delete(userId: string, messageId: string, chapterId: string): Promise<void>;
   /**
    * The caller's bookmarks in one chapter, newest first, each joined to its
    * message.

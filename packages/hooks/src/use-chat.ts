@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { createChapterQueryKeys } from "./chapter-query-keys";
 
 export function useChannels() {
   const client = useFrappClient();
@@ -787,10 +788,13 @@ export function useDeleteCategory() {
 // `["bookmarks"]` would serve the outgoing chapter's rows across a switch, the
 // bug `chapter-query-keys.ts` exists to make untypeable.
 
-export const bookmarkKeys = {
-  all: ["bookmarks"] as const,
-  list: (chapterId: string | null) => ["bookmarks", chapterId, "list"] as const,
-};
+// Built with the shared factory rather than hand-rolled. `chapter-query-keys.ts`
+// exists precisely so a key missing its tenant scope cannot type-check, and its
+// docblock is explicit: "Do not add `string | null` back. A hook that has no
+// chapter yet should not build a key; it should leave the query `enabled:
+// false`." The first draft here hand-rolled a `string | null` signature while
+// citing that module — the exact drift it was written to prevent.
+export const bookmarkKeys = createChapterQueryKeys("bookmarks");
 
 /**
  * The viewer's own bookmarks in the active chapter, newest first, each with
@@ -805,7 +809,9 @@ export function useBookmarks() {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   return useQuery({
-    queryKey: bookmarkKeys.list(chapterId),
+    // `chapterId!` is safe under `enabled` below: the factory refuses a null
+    // chapter by design, and the query never runs without one.
+    queryKey: bookmarkKeys.list(chapterId!),
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/bookmarks");
       if (error) throw error;
@@ -843,7 +849,9 @@ export function useBookmarkMessage() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: bookmarkKeys.list(chapterId) });
+      queryClient.invalidateQueries({
+        queryKey: bookmarkKeys.lists(chapterId!),
+      });
     },
   });
 }
@@ -861,7 +869,9 @@ export function useUnbookmarkMessage() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: bookmarkKeys.list(chapterId) });
+      queryClient.invalidateQueries({
+        queryKey: bookmarkKeys.lists(chapterId!),
+      });
     },
   });
 }

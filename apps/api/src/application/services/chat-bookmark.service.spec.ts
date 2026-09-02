@@ -1,6 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
-import { ChatBookmarkService } from './chat-bookmark.service';
+import {
+  BOOKMARK_REDACTED_CONTENT,
+  ChatBookmarkService,
+} from './chat-bookmark.service';
 import { ChannelAccessService } from './channel-access.service';
 import { CHAT_MESSAGE_BOOKMARK_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
 import type { IChatMessageBookmarkRepository } from '../../domain/repositories/chat.repository.interface';
@@ -41,17 +44,25 @@ const bookmark: ChatMessageBookmark = {
 describe('ChatBookmarkService', () => {
   let service: ChatBookmarkService;
   let mockRepo: jest.Mocked<IChatMessageBookmarkRepository>;
-  let mockChannelAccess: { assertMessageAccess: jest.Mock };
+  let mockChannelAccess: {
+    assertMessageAccess: jest.Mock;
+    filterAccessibleChannelIds: jest.Mock;
+  };
 
   beforeEach(async () => {
     mockRepo = {
       create: jest.fn().mockResolvedValue(bookmark),
       delete: jest.fn().mockResolvedValue(undefined),
-      findOne: jest.fn().mockResolvedValue(null),
       findByUserAndChapter: jest.fn().mockResolvedValue([]),
     };
     mockChannelAccess = {
       assertMessageAccess: jest.fn().mockResolvedValue(message()),
+      // Default: every channel the fixtures use is readable.
+      filterAccessibleChannelIds: jest
+        .fn()
+        .mockImplementation((_c: string, _u: string, ids: string[]) =>
+          Promise.resolve(new Set(ids)),
+        ),
     };
 
     const moduleRef: TestingModule = await Test.createTestingModule({
@@ -109,26 +120,38 @@ describe('ChatBookmarkService', () => {
   });
 
   describe('unbookmarkMessage', () => {
-    it('authorizes the message first, so the route is not an existence oracle', async () => {
-      // Deleting only ever touches the caller's own row, so it is tempting to
-      // skip the access check. That would make this route answer "does this
-      // message id exist?" for any uuid a caller cared to try, distinguishing
-      // 404 from 204. Authorizing first collapses both to 404.
+    it('does NOT authorize the message, so a lost-access bookmark stays removable', async () => {
+      // The regression this pins. An earlier cut authorized the message here on
+      // anti-oracle grounds, which meant that the moment a member rotated off a
+      // ROLE_GATED channel, DELETE on their own bookmark answered 403 — leaving
+      // a row they could see, could not read, could not jump to, and could not
+      // remove by any path in the API or the UI. A member must always be able to
+      // delete their own row.
       mockChannelAccess.assertMessageAccess.mockRejectedValue(
-        new NotFoundException('Message not found'),
+        new ForbiddenException(),
       );
 
       await expect(
         service.unbookmarkMessage(MESSAGE, CHAPTER, USER),
-      ).rejects.toThrow(NotFoundException);
-      expect(mockRepo.delete).not.toHaveBeenCalled();
+      ).resolves.toBeUndefined();
+      expect(mockChannelAccess.assertMessageAccess).not.toHaveBeenCalled();
+      expect(mockRepo.delete).toHaveBeenCalledWith(USER, MESSAGE, CHAPTER);
+    });
+
+    it('scopes the delete by chapter as well as user and message', async () => {
+      // The pair (user_id, message_id) is already globally unique, so the
+      // chapter predicate looks redundant — and is exactly what stops this from
+      // reaching across chapters if a future caller drops the authorization the
+      // bookmark path no longer performs.
+      await service.unbookmarkMessage(MESSAGE, CHAPTER, USER);
+
+      expect(mockRepo.delete).toHaveBeenCalledWith(USER, MESSAGE, CHAPTER);
     });
 
     it('succeeds when there was no bookmark to remove', async () => {
       await expect(
         service.unbookmarkMessage(MESSAGE, CHAPTER, USER),
       ).resolves.toBeUndefined();
-      expect(mockRepo.delete).toHaveBeenCalledWith(USER, MESSAGE);
     });
   });
 
@@ -148,6 +171,7 @@ describe('ChatBookmarkService', () => {
       // even though that query stayed correct.
       const deleted: ChatMessageBookmarkWithMessage = {
         ...bookmark,
+        message_available: true,
         message: message({ content: '[message deleted]', is_deleted: true }),
       };
       mockRepo.findByUserAndChapter.mockResolvedValue([deleted]);
@@ -158,18 +182,92 @@ describe('ChatBookmarkService', () => {
       expect(rows[0].message.content).toBe('[message deleted]');
     });
 
-    it('does not re-authorize channels on read, so leaving a channel does not erase bookmarks', async () => {
-      // Characterisation of a deliberate choice, not an oversight. Re-filtering
-      // by current channel access would silently drop a member's saved messages
-      // when they leave a private channel — data loss dressed as a protection.
-      // Every row was authorized when it was created.
+    it('keeps the row but redacts the message when the channel is no longer readable', async () => {
+      // The leak `/diff-review` caught. The embed re-reads chat_messages on
+      // every request, so this list served the message's CURRENT content — a
+      // member who lost access kept receiving edits made after they lost it.
+      // Redacting rather than dropping the row keeps the member able to see and
+      // remove their own bookmark.
+      mockRepo.findByUserAndChapter.mockResolvedValue([
+        { ...bookmark, message: message({ content: 'secret bank details' }) },
+      ]);
+      mockChannelAccess.filterAccessibleChannelIds.mockResolvedValue(new Set());
+
+      const rows = await service.listBookmarks(CHAPTER, USER);
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0].message_available).toBe(false);
+      expect(rows[0].message.content).not.toContain('secret');
+      expect(rows[0].message.content).toBe(BOOKMARK_REDACTED_CONTENT);
+    });
+
+    it('redacts post-revocation activity, not just the body', async () => {
+      // Blanking `content` while leaving `is_pinned` / `edited_at` / `kind`
+      // intact would leave a live activity side-channel: the member could still
+      // watch a message they cannot read get pinned or edited.
+      mockRepo.findByUserAndChapter.mockResolvedValue([
+        {
+          ...bookmark,
+          message: message({
+            is_pinned: true,
+            pinned_at: '2026-02-01T00:00:00.000Z',
+            edited_at: '2026-02-02T00:00:00.000Z',
+            kind: 'poll',
+            payload: { options: ['a', 'b'] },
+          }),
+        },
+      ]);
+      mockChannelAccess.filterAccessibleChannelIds.mockResolvedValue(new Set());
+
+      const [row] = await service.listBookmarks(CHAPTER, USER);
+
+      expect(row.message.is_pinned).toBe(false);
+      expect(row.message.pinned_at).toBeNull();
+      expect(row.message.edited_at).toBeNull();
+      expect(row.message.payload).toBeNull();
+      expect(row.message.kind).toBe('text');
+    });
+
+    it('treats an archived Group DM as still readable', async () => {
+      // #348: archiving freezes posting, not reading — a remaining member can
+      // still open the channel. `filterAccessibleChannelIds` excludes archived
+      // channels by default because its other callers want the ACTIVE list, so
+      // taking that default here would redact messages the member can still
+      // read in the timeline.
       mockRepo.findByUserAndChapter.mockResolvedValue([
         { ...bookmark, message: message() },
       ]);
 
       await service.listBookmarks(CHAPTER, USER);
 
-      expect(mockChannelAccess.assertMessageAccess).not.toHaveBeenCalled();
+      expect(mockChannelAccess.filterAccessibleChannelIds).toHaveBeenCalledWith(
+        CHAPTER,
+        USER,
+        ['ch-1'],
+        { includeArchived: true },
+      );
+    });
+
+    it('resolves each distinct channel once, not once per bookmark', async () => {
+      mockRepo.findByUserAndChapter.mockResolvedValue([
+        { ...bookmark, id: 'bm-1', message: message() },
+        { ...bookmark, id: 'bm-2', message: message({ id: 'msg-2' }) },
+        { ...bookmark, id: 'bm-3', message: message({ id: 'msg-3' }) },
+      ]);
+
+      await service.listBookmarks(CHAPTER, USER);
+
+      const ids = mockChannelAccess.filterAccessibleChannelIds.mock
+        .calls[0][2] as string[];
+      expect(ids).toEqual(['ch-1']);
+    });
+
+    it('does not call the access predicate at all when there are no bookmarks', async () => {
+      await service.listBookmarks(CHAPTER, USER);
+
+      expect(
+        mockChannelAccess.filterAccessibleChannelIds,
+      ).not.toHaveBeenCalled();
     });
   });
 });

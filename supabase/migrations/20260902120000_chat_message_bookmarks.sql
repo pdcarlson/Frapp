@@ -21,11 +21,15 @@ create table if not exists public.chat_message_bookmarks (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references users(id) on delete cascade,
   message_id uuid not null references chat_messages(id) on delete cascade,
-  -- Denormalized from the message's channel so the per-chapter list (AC 3) is a
-  -- single indexed read rather than a two-hop join through chat_channels on
-  -- every open. It is written from the channel the message actually lives in --
-  -- never from a caller-supplied value -- and the service authorizes the
-  -- message before inserting, so it cannot disagree with the channel's chapter.
+  -- Denormalized so the per-chapter list (AC 3) is a single indexed read rather
+  -- than a two-hop join through chat_channels on every open. It is written from
+  -- the REQUEST's chapter, not read off the channel row; what keeps the two in
+  -- agreement is that the service authorizes the message through a
+  -- chapter-scoped channel lookup before inserting, so a message from another
+  -- chapter never reaches this table. There is deliberately no DB-level check
+  -- tying this column to the message's channel -- it would need a trigger or a
+  -- composite FK through chat_channels -- so that application check is the whole
+  -- of the guarantee.
   chapter_id uuid not null references chapters(id) on delete cascade,
   created_at timestamptz not null default now(),
   -- Bookmarking is idempotent per member: the toggle inserts on conflict do

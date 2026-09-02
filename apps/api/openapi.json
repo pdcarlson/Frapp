@@ -8225,6 +8225,10 @@
             "type": "string",
             "nullable": true
           },
+          "author_external_id": {
+            "type": "string",
+            "nullable": true
+          },
           "content": {
             "type": "string",
             "description": "Reads “[message deleted]” once the message is deleted — the bookmark keeps its row and surfaces that placeholder rather than disappearing."
@@ -8262,13 +8266,17 @@
           },
           "message": {
             "$ref": "#/components/schemas/BookmarkedMessageDto"
+          },
+          "message_available": {
+            "type": "boolean"
           }
         },
         "required": [
           "id",
           "message_id",
           "created_at",
-          "message"
+          "message",
+          "message_available"
         ]
       },
       "BookmarkRefDto": {

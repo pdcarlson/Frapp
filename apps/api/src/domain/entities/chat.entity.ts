@@ -252,10 +252,13 @@ export interface ChannelReadReceipt {
  * a bookmark is a property of the (viewer, message) pair rather than of the
  * message. Unique on `(user_id, message_id)`.
  *
- * `chapter_id` is denormalized from the message's channel so the per-chapter
- * list is one indexed read. It is always derived server-side from the channel
- * the message lives in — never accepted from a caller — so it cannot disagree
- * with the channel's own chapter.
+ * `chapter_id` is denormalized so the per-chapter list is one indexed read
+ * rather than a two-hop join through `chat_channels`. It is written from the
+ * request's chapter, and what keeps it honest is that the write path authorizes
+ * the message through a chapter-scoped channel lookup first — so a message
+ * belonging to another chapter is rejected before the insert. It is not read
+ * off the channel row itself; a second write path that authorizes differently
+ * would have to re-establish that.
  */
 export interface ChatMessageBookmark {
   id: string;
@@ -278,4 +281,19 @@ export interface ChatMessageBookmark {
  */
 export interface ChatMessageBookmarkWithMessage extends ChatMessageBookmark {
   message: ChatMessage;
+  /**
+   * Whether the caller can still read the channel this message lives in.
+   *
+   * `false` means `message` has been redacted by `ChatBookmarkService` — the
+   * member saved it while they had access and has since lost it (removed from a
+   * PRIVATE channel, rotated off a ROLE_GATED one). The row is kept so they can
+   * see and remove their own bookmark; the content is not theirs to read any
+   * more.
+   *
+   * An explicit flag rather than letting clients sniff the sentinel content:
+   * the UI has to render such a row non-interactively (jumping would land the
+   * member in a channel they cannot open), and keying that off a magic string
+   * is the kind of coupling that breaks the first time the copy is reworded.
+   */
+  message_available: boolean;
 }

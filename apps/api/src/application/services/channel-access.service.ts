@@ -194,6 +194,7 @@ export class ChannelAccessService {
     chapterId: string,
     userId: string,
     channelIds: string[],
+    options: { includeArchived?: boolean } = {},
   ): Promise<Set<string>> {
     const wanted = new Set(channelIds);
     if (wanted.size === 0) return new Set();
@@ -208,8 +209,21 @@ export class ChannelAccessService {
     // Mirrors `filterAccessibleChannels`' archived exclusion (#348) — this is
     // the other batch predicate `getUnreadCounts` and the chapter-wide poll
     // list go through, and the two must not drift on what counts as active.
+    //
+    // `includeArchived` exists because "is this channel in my active list?" and
+    // "may I read this channel?" are different questions, and #348 answers them
+    // differently: an archived Group DM leaves the active list but stays
+    // *readable* by whoever remains in `member_ids` (`canAccessChannel` denies
+    // only the post). Every caller above wants the first question. Bookmarks
+    // (#462) want the second — a member who saved a message in a Group DM that
+    // later archived has not lost the right to read it, and treating the
+    // archive as a revocation would redact rows they can still open in the
+    // timeline. Defaults to the active-list meaning so no existing caller
+    // changes.
     const candidates = channels.filter(
-      (channel) => wanted.has(channel.id) && !channel.archived_at,
+      (channel) =>
+        wanted.has(channel.id) &&
+        (options.includeArchived || !channel.archived_at),
     );
     if (candidates.length === 0) return new Set();
 

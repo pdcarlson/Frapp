@@ -118,6 +118,17 @@ three have to hold:
 - **The table enables RLS with zero policies**, like `channel_read_receipts` and
   `message_reactions`, so there is no client-reachable read path at all. That is
   not a missing policy — it is the guarantee.
+- **`user_id` is stripped in the repository**, by `stripBookmarkRow`, mirroring
+  `stripAttachmentRow`. Note *where*: this API registers no
+  `ClassSerializerInterceptor`, so a `@ApiOkResponse` DTO is documentation and
+  does not filter anything off the wire. An earlier draft of this section
+  claimed the field was absent because the DTO omitted it, which was false —
+  the DTO omitted it and it shipped anyway. A response-shape guarantee in this
+  codebase has to be enforced by the code that builds the response.
+- **Account deletion purges the rows.** `anonymize_user` deletes them
+  explicitly, like every sibling per-user table. The FK's `on delete cascade` is
+  *not* the mechanism and never fires: deletion tombstones the `users` row
+  rather than deleting it, so a cascade from `users(id)` is unreachable.
 
 `channels:manage` grants nothing here: a moderator can pin, delete and moderate
 a message and still cannot learn that anyone saved it. That asymmetry with pin
@@ -127,6 +138,23 @@ Bookmarking authorizes the message at **`read`**, not `post` — a bookmark
 authors nothing in the channel, so an announcement in a read-only channel (which
 is exactly the kind of message members want to keep) stays bookmarkable. Both
 write routes are idempotent, so a double-tap or an offline retry is a no-op.
+
+**Losing access to a channel redacts the message, but never removes the
+bookmark and never blocks removing it.** The list re-checks channel access on
+every read, because the query re-reads `chat_messages` live — it returns the
+message as it is *now*, so without the check a member who left `#exec` would
+keep receiving edits made after they left. What they get instead is their own
+row with the message blanked (`message_available: false`), which the client
+renders non-interactively. Two things follow, and both are load-bearing:
+
+- **Un-bookmarking does not authorize the message.** It cannot: the row exists
+  precisely because access was lost, so authorizing would make a member's own
+  bookmark permanently undeletable. The delete is scoped by
+  `(user_id, message_id, chapter_id)` and always answers 204.
+- **An archived Group DM is not a revocation.** Archiving freezes posting, not
+  reading, so the access check passes `includeArchived` — otherwise a bookmark
+  in an archived Group DM would be redacted while the member can still open the
+  channel.
 
 The deletion rule above is load-bearing on an implementation detail worth
 stating: `deleteMessage` soft-deletes, rewriting `content` to

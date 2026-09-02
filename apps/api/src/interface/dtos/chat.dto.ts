@@ -406,6 +406,15 @@ export class BookmarkedMessageDto {
   @ApiProperty({ type: String, nullable: true, required: false })
   author_avatar_path?: string | null;
 
+  /**
+   * The author's id in the source system, for an imported archive message.
+   * Declared because `resolveAuthorLabel` in `@repo/hooks` reads it as part of
+   * the author fallback chain — omitting it here would type it away on the
+   * client while it still arrived on the wire.
+   */
+  @ApiProperty({ type: String, nullable: true, required: false })
+  author_external_id?: string | null;
+
   @ApiProperty({
     type: String,
     description:
@@ -444,6 +453,14 @@ export class BookmarkDto {
 
   @ApiProperty({ type: BookmarkedMessageDto })
   message: BookmarkedMessageDto;
+
+  /**
+   * False when the caller has since lost access to the message's channel, in
+   * which case `message` is redacted and the client must not offer a jump —
+   * jumping would land the member in a channel they cannot open.
+   */
+  @ApiProperty({ type: Boolean })
+  message_available: boolean;
 }
 
 /**

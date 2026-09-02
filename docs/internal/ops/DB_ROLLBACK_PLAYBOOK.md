@@ -1387,3 +1387,30 @@ migration re-runs cleanly against a database that already has it.
 reaches the table only through the service-role client, and the absence of a
 client-reachable policy is what makes "not even a channel admin can see who
 bookmarked what" hold structurally. Do not "fix" it by adding one.
+
+## Rollback anonymize_user bookmark purge (20260902160000)
+
+Function-only change (#462): `create or replace function anonymize_user(...)`
+adding one `delete from chat_message_bookmarks where user_id = p_user_id;`
+alongside the existing per-user purges.
+
+To roll back, re-apply the previous definition from
+`20260803140000_account_deletion_anonymize_user_rpc.sql` — the whole function
+body is in that file, and `create or replace` makes replaying it idempotent:
+
+```sql
+-- Re-run the CREATE OR REPLACE block from
+-- supabase/migrations/20260803140000_account_deletion_anonymize_user_rpc.sql
+```
+
+**Rolling this back is a data-retention regression, not a feature rollback.**
+Without the purge line, a deleted member's bookmark rows survive account
+deletion carrying `(user_id, message_id, chapter_id, created_at)` — which is
+exactly the "who saved what" that `spec/behavior/chat/README.md` promises nobody
+can see. The FK's `on delete cascade` does **not** cover it: `anonymize_user`
+tombstones the `users` row rather than deleting it, so nothing ever cascades.
+Only roll back alongside dropping `chat_message_bookmarks` itself.
+
+**Re-applying is safe** and idempotent; the extra delete is a no-op on a user
+with no bookmarks, and re-running the whole function on an already-tombstoned
+user is the documented retry path.

@@ -332,11 +332,19 @@ export function ChatShell({
     (messageId: string, next: boolean) => {
       // Both routes are idempotent server-side, so a double-tap or a retry is
       // a no-op rather than an error — no in-flight guard is needed here.
+      //
+      // A failure is NOT swallowed, though. There is no optimistic write, so a
+      // failed save leaves the chip reading "Save" exactly as if nothing had
+      // been tapped — the member gets silence and concludes the feature is
+      // broken. The sibling control in this same header (notification level)
+      // already surfaces its failure as a `role="alert"`; this follows it.
       if (next) bookmarkMessage.mutate(messageId);
       else unbookmarkMessage.mutate(messageId);
     },
     [bookmarkMessage, unbookmarkMessage],
   );
+  const bookmarkWriteFailed =
+    bookmarkMessage.isError || unbookmarkMessage.isError;
 
   const { confirm, confirmDialog } = useConfirmDialog();
   const deleteMessage = channel.delete;
@@ -651,6 +659,15 @@ export function ChatShell({
                 nameFor={nameFor}
                 onJump={jumpToMessage}
               />
+              {bookmarkWriteFailed ? (
+                // In the header rather than inside the popover, for the reason
+                // the notification-level alert beside it records: a popover
+                // unmounts its content when dismissed, so an alert in there is
+                // only seen by someone who happens to reopen it.
+                <p role="alert" className="text-[12.5px] text-destructive">
+                  Bookmark not saved
+                </p>
+              ) : null}
               <BookmarksPopover
                 bookmarks={bookmarks}
                 nameFor={nameFor}

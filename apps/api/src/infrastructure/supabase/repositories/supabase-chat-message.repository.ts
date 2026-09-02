@@ -50,7 +50,7 @@ function effectivePollListLimit(requested?: number): number {
  * `normalizeRow` would drop it, so listing it here would add bytes to every
  * message page for a field that is discarded on arrival.
  */
-const CHAT_MESSAGE_COLUMNS =
+export const CHAT_MESSAGE_COLUMNS =
   'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, type, kind, payload, client_message_id, reply_to_id, metadata, mentions, is_pinned, pinned_at, edited_at, is_deleted, created_at' as const;
 
 @Injectable()

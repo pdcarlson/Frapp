@@ -19,6 +19,13 @@ export interface BookmarkEntry {
   message_id: string;
   created_at: string;
   message: ChatMessage;
+  /**
+   * False when the viewer has lost access to the message's channel since
+   * saving it. The API redacts `message` in that case; this row must not offer
+   * a jump, because the channel is no longer in the viewer's channel list and
+   * navigating to it would silently drop them into #general instead.
+   */
+  message_available?: boolean;
 }
 
 /**
@@ -88,27 +95,19 @@ export function BookmarksPopover({
           </p>
         ) : (
           <ul className="max-h-72 divide-y divide-border overflow-y-auto">
-            {bookmarks.map((bookmark) => (
-              <li key={bookmark.id}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    // Dismiss on jump, for the reason the pins panel records:
-                    // a 320px panel left open over the pane it just scrolled
-                    // hides the message it navigated to.
-                    setOpen(false);
-                    onJump?.(bookmark.message.channel_id, bookmark.message_id);
-                  }}
-                  className={cn(
-                    "block w-full px-3 py-3 text-left text-[12.5px] transition-colors",
-                    "hover:bg-accent-subtle hover:text-accent-text",
-                    FOCUS_RING,
-                  )}
-                >
+            {bookmarks.map((bookmark) => {
+              // `!== false` rather than truthiness: an older cached payload has
+              // no such field, and treating "unknown" as "unavailable" would
+              // make every row inert for one render after a deploy.
+              const available = bookmark.message_available !== false;
+              const body = (
+                <>
                   <span className="block font-semibold text-foreground">
                     {/* viewerId null, matching the pins panel: this list names
                         every author including the viewer rather than "You". */}
-                    {resolveAuthorLabel(bookmark.message, nameFor, null)}
+                    {available
+                      ? resolveAuthorLabel(bookmark.message, nameFor, null)
+                      : "Unavailable"}
                   </span>
                   <span className="block text-muted-foreground">
                     {formatClock(bookmark.created_at)}
@@ -118,7 +117,9 @@ export function BookmarksPopover({
                     `[message deleted]` placeholder the API returns — the spec
                     requires the bookmark to survive the deletion rather than
                     vanish. It is italicised so it reads as a tombstone rather
-                    than as somebody having typed that.
+                    than as somebody having typed that. A redacted row is
+                    italicised for the same reason: neither string was typed by
+                    a person.
 
                     foundations §7 is a hard MUST NOT on body text below 16, and
                     a bookmark's body is a message.
@@ -126,14 +127,53 @@ export function BookmarksPopover({
                   <span
                     className={cn(
                       "mt-1 line-clamp-3 block whitespace-pre-wrap text-base text-muted-foreground",
-                      bookmark.message.is_deleted && "italic",
+                      (bookmark.message.is_deleted || !available) && "italic",
                     )}
                   >
                     {bookmark.message.content}
                   </span>
-                </button>
-              </li>
-            ))}
+                </>
+              );
+              return (
+                <li key={bookmark.id}>
+                  {/*
+                    A row whose channel the viewer can no longer read is a
+                    static <div>, not a disabled <button>. Jumping would set the
+                    shell's channel to one absent from the viewer's channel
+                    list, which silently resolves to #general and never scrolls
+                    — a control that appears to work and quietly does the wrong
+                    thing, which is worse than the dead ends components.md §5
+                    already bans.
+                  */}
+                  {available ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // Dismiss on jump, for the reason the pins panel
+                        // records: a 320px panel left open over the pane it
+                        // just scrolled hides the message it navigated to.
+                        setOpen(false);
+                        onJump?.(
+                          bookmark.message.channel_id,
+                          bookmark.message_id,
+                        );
+                      }}
+                      className={cn(
+                        "block w-full px-3 py-3 text-left text-[12.5px] transition-colors",
+                        "hover:bg-accent-subtle hover:text-accent-text",
+                        FOCUS_RING,
+                      )}
+                    >
+                      {body}
+                    </button>
+                  ) : (
+                    <div className="block w-full px-3 py-3 text-left text-[12.5px]">
+                      {body}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </PopoverContent>
