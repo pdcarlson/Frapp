@@ -13,8 +13,8 @@ describe('Supabase repository write typing', () => {
     (name) => name.startsWith('supabase-') && name.endsWith('.repository.ts'),
   );
 
-  it('covers all 37 repository files', () => {
-    expect(files).toHaveLength(37);
+  it('covers all 38 repository files', () => {
+    expect(files).toHaveLength(38);
   });
 
   it('injects FrappSupabaseClient (not a bare SupabaseClient)', () => {
