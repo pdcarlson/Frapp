@@ -43,6 +43,18 @@ export interface EventDetail extends EventRow {
    * exact boundary to anyone who asked for the event.
    */
   hasCheckInZone: boolean;
+  /**
+   * The series rule (`WEEKLY` / `BIWEEKLY` / `MONTHLY`), or `null` for a
+   * one-off. Read by the calendar export so a recurring meeting exports as a
+   * series rather than a single occurrence.
+   */
+  recurrence_rule: string | null;
+  /**
+   * Set on a materialized child occurrence, `null` on a series parent or a
+   * one-off. Load-bearing for the export: only a parent may describe the
+   * series, or a child would re-export the whole series under its own id.
+   */
+  parent_event_id: string | null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -140,5 +152,7 @@ export function selectEventDetail(data: unknown): EventDetail | null {
     check_in_zone_name: str(data, "check_in_zone_name"),
     hasCheckInZone:
       Array.isArray(data.check_in_zone) && data.check_in_zone.length > 0,
+    recurrence_rule: str(data, "recurrence_rule"),
+    parent_event_id: str(data, "parent_event_id"),
   };
 }
