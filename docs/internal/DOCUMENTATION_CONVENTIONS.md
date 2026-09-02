@@ -2,7 +2,14 @@
 
 The **authoritative** guide to where docs/spec changes go. Read this before adding or moving any doc.
 The goal: keep `docs/` and `spec/` clean and navigable, and stop the structure from drifting when
-agents satisfy the docs-sync CI gate. Enforced (in part) by [`scripts/check-docs-structure.mjs`](../../scripts/check-docs-structure.mjs).
+agents satisfy the docs-sync CI gate.
+
+**This map is enforced, not advisory.** The table below is checked against
+[`scripts/ci/lib/docs-structure.mjs`](../../scripts/ci/lib/docs-structure.mjs) — the same map as data —
+in both directions by `check-doc-tables.mjs`, so the two cannot drift apart. That manifest is what
+[`scripts/check-docs-structure.mjs`](../../scripts/check-docs-structure.mjs) validates the **whole
+tree** against on every PR. Until 2026-09 it read only the paths a PR *added*, which is how
+`docs/hooks/` and `docs/performance/` came to exist without a row here.
 
 ## Hard rules
 
@@ -17,11 +24,17 @@ agents satisfy the docs-sync CI gate. Enforced (in part) by [`scripts/check-docs
 3. **Do not generate one-off narrative markdown** (audits, PR-consolidation writeups, "NOTES",
    "STATUS", thread-resolution maps, migration plans). That kind of file is what this restructure
    removed. Durable facts go in the canonical doc; ephemeral work goes into **GitHub Issues** (file a `triage`-labeled issue).
+   This does not forbid *doing* a restructure — it forbids narrating one into a file. A planned
+   change to the layout is an `[Epic]` with sub-issues (rule 4) plus an edit to the manifest, which
+   is executable and therefore cannot go stale the way a plan document does.
 4. **Work status is not a doc.** It lives in **GitHub Issues**, reached via the GitHub MCP — see
    [`ci-cd/GITHUB_PM.md`](ci-cd/GITHUB_PM.md). A new initiative → an `[Epic]` parent issue with
    sub-issues. Don't track status in `docs/` or `spec/`.
 5. **One canonical place per fact.** Elsewhere, link to it (path + heading). If two docs must
-   summarize, one paragraph max, then link out.
+   summarize, one paragraph max, then link out. The gates enforce *where a fact lives* and *that a
+   pointer resolves* — never that two prose statements of the same fact agree. Duplicating a fact is
+   still how a wrong one spreads: in #1586 a single wrong timestamp reached five files in one commit
+   because the list had been copied six times.
 
 ## Where things go
 
@@ -49,6 +62,25 @@ agents satisfy the docs-sync CI gate. Enforced (in part) by [`scripts/check-docs
 | Work status / planning | **GitHub Issues** — not a doc; see [`ci-cd/GITHUB_PM.md`](ci-cd/GITHUB_PM.md) |
 | Product-planning canvas (Buildpad export) | `.buildpad/` — **read-only background, never a doc home**; see below |
 | In-flight consolidation scope + progress | `REFACTOR-PLAN.md` / `REFACTOR-PROGRESS.md` at repo root — **temporary scratch, never a doc home**; see below |
+
+## Naming
+
+**kebab-case `.md`, or `README.md`.** Enforced whole-tree by
+[`scripts/check-docs-structure.mjs`](../../scripts/check-docs-structure.mjs).
+
+There was no naming rule before 2026-09, and the corpus split along one seam: all 28
+`SCREAMING_SNAKE_CASE` files live under `docs/internal/`, while `docs/guides/`, `docs/performance/`
+and every part of `spec/` were already kebab. Those 28 are grandfathered in the manifest's
+`LEGACY_NAMES`, which is a **ratchet, not an amnesty**: an entry that no longer matches a tracked
+file fails the gate, so a rename must delete its entry in the same commit and the list can only
+shrink. Nothing new may be added to it.
+
+`.dc.html` design exports under `spec/ui/design-system/reference/` are exempt — they are artifacts of
+a design tool, not prose, and keep that tool's naming.
+
+Renaming a doc is never just a rename: `check-doc-paths.mjs` and `check-doc-refs.mjs` are both
+whole-tree and will fail on every citation the old name left behind, including citations in source
+code that no other gate can see.
 
 ## Satisfying the docs-sync gate (`scripts/check-docs-impact.mjs`)
 
