@@ -22,6 +22,7 @@ import type {
   ChatMessage,
   ChatMessageAction,
   ChatMessageAttachment,
+  ChatMessageBookmark,
   ChatNotificationPreference,
   DiscordConnection,
   DiscordImport,
@@ -117,6 +118,7 @@ export interface Database {
       discord_import_files: TableDefinition<DiscordImportFile>;
       message_reactions: TableDefinition<MessageReaction>;
       channel_read_receipts: TableDefinition<ChannelReadReceipt>;
+      chat_message_bookmarks: TableDefinition<ChatMessageBookmark>;
       poll_votes: TableDefinition<PollVote>;
       push_tokens: TableDefinition<PushToken>;
       notifications: TableDefinition<Notification>;

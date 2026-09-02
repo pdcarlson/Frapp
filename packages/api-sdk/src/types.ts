@@ -1142,6 +1142,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/bookmarks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the caller's own bookmarked messages in this chapter */
+        get: operations["ChatBookmarkController_listBookmarks_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/bookmarks/messages/{messageId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bookmark a message (idempotent) */
+        post: operations["ChatBookmarkController_bookmarkMessage_v1"];
+        /** Remove the caller’s bookmark (idempotent) */
+        delete: operations["ChatBookmarkController_unbookmarkMessage_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events": {
         parameters: {
             query?: never;
@@ -3225,6 +3260,40 @@ export interface components {
              * @enum {string}
              */
             level: "all" | "mentions" | "off";
+        };
+        BookmarkedMessageDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            channel_id: string;
+            /** @description Null for an imported archive message, which names its author in author_name instead. */
+            sender_id: string | null;
+            author_name?: string | null;
+            author_avatar_path?: string | null;
+            author_external_id?: string | null;
+            /** @description Reads “[message deleted]” once the message is deleted — the bookmark keeps its row and surfaces that placeholder rather than disappearing. */
+            content: string;
+            is_deleted: boolean;
+            created_at: string;
+        };
+        BookmarkDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            message_id: string;
+            /** @description When the caller saved it — not when the message was sent. */
+            created_at: string;
+            message: components["schemas"]["BookmarkedMessageDto"];
+            message_available: boolean;
+        };
+        BookmarkRefDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            message_id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            created_at: string;
         };
         GeofenceCoordinateDto: {
             lat: number;
@@ -5606,6 +5675,65 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ChannelNotificationPreferenceDto"];
                 };
+            };
+        };
+    };
+    ChatBookmarkController_listBookmarks_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookmarkDto"][];
+                };
+            };
+        };
+    };
+    ChatBookmarkController_bookmarkMessage_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookmarkRefDto"];
+                };
+            };
+        };
+    };
+    ChatBookmarkController_unbookmarkMessage_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

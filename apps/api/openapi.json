@@ -2742,6 +2742,99 @@
         ]
       }
     },
+    "/v1/bookmarks": {
+      "get": {
+        "operationId": "ChatBookmarkController_listBookmarks_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BookmarkDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the caller's own bookmarked messages in this chapter",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/bookmarks/messages/{messageId}": {
+      "post": {
+        "operationId": "ChatBookmarkController_bookmarkMessage_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookmarkRefDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Bookmark a message (idempotent)",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "delete": {
+        "operationId": "ChatBookmarkController_unbookmarkMessage_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove the caller’s bookmark (idempotent)",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/events": {
       "get": {
         "operationId": "EventController_list_v1",
@@ -8158,6 +8251,110 @@
         },
         "required": [
           "level"
+        ]
+      },
+      "BookmarkedMessageDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "channel_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sender_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "Null for an imported archive message, which names its author in author_name instead."
+          },
+          "author_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "author_avatar_path": {
+            "type": "string",
+            "nullable": true
+          },
+          "author_external_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "content": {
+            "type": "string",
+            "description": "Reads “[message deleted]” once the message is deleted — the bookmark keeps its row and surfaces that placeholder rather than disappearing."
+          },
+          "is_deleted": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "channel_id",
+          "sender_id",
+          "content",
+          "is_deleted",
+          "created_at"
+        ]
+      },
+      "BookmarkDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "message_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "description": "When the caller saved it — not when the message was sent."
+          },
+          "message": {
+            "$ref": "#/components/schemas/BookmarkedMessageDto"
+          },
+          "message_available": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "message_id",
+          "created_at",
+          "message",
+          "message_available"
+        ]
+      },
+      "BookmarkRefDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "message_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "message_id",
+          "chapter_id",
+          "created_at"
         ]
       },
       "GeofenceCoordinateDto": {

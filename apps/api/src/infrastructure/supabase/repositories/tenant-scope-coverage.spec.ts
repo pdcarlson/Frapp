@@ -135,11 +135,11 @@ describe('API repository tenant-scope coverage', () => {
 
     // Pinned so shrinking coverage is a deliberate edit rather than a silent
     // regression. Raise it as backlog entries are cleared. Denominator is
-    // every `*.repository.ts` under `apps/api/src` (37 supabase-* plus the
+    // every `*.repository.ts` under `apps/api/src` (38 supabase-* plus the
     // two module-local workers).
     expect({ covered, total: repositories.length }).toEqual({
-      covered: 30,
-      total: 39,
+      covered: 31,
+      total: 40,
     });
   });
 });

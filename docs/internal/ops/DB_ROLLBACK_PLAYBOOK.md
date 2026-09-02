@@ -1401,3 +1401,81 @@ SELECT id, chapter_id, name, check_in_zone, check_in_zone_name
 **Re-applying is safe.** Both `ADD COLUMN` statements are `IF NOT EXISTS`, so the
 migration is idempotent; the CHECK constraint is not, so re-running against a
 table that still carries it needs the `DROP CONSTRAINT` above first.
+
+## Rollback personal message bookmarks (20260902120000)
+
+Additive DDL: one new table plus two indexes, no changes to any existing table
+or column (#462).
+
+```sql
+DROP TABLE IF EXISTS public.chat_message_bookmarks;
+```
+
+**Order matters, and it is wider than the feature.** Two consumers, not one:
+
+1. `ChatBookmarkService` reads and writes this table on every `/v1/bookmarks*`
+   request, and the web chat shell loads the list on every chat page view. With
+   the table gone the Bookmarks panel renders its error state; the timeline
+   keeps working, because bookmark state is a separate query from messages.
+2. **`anonymize_user` deletes from this table** (migration `20260902160000`).
+   plpgsql resolves the relation at execution time, so dropping the table while
+   that function definition is installed makes every `anonymize_user` call raise
+   `42P01` — and `DELETE /v1/users/me` stops working entirely. That is an
+   outage of the account-deletion path, not a degraded panel.
+
+So the order is: **revert `anonymize_user` to its `20260803140000` definition
+first** (see the entry below), deploy a build without #462, and only then drop
+the table. Dropping first takes account deletion down with it.
+
+**Dropping destroys member data that cannot be re-derived.** A bookmark is a
+member's own private note-to-self; nothing else in the schema records it, and
+`chat_messages` carries no trace of who saved what (deliberately — see the
+migration's own comment on why the privacy guarantee lives in the absence of a
+policy). Prefer leaving the table in place if the rollback is only about hiding
+the feature: the surface is client-side, so a build without #462 simply stops
+reading it.
+
+**Snapshot before dropping:**
+
+```sql
+SELECT id, user_id, message_id, chapter_id, created_at
+  FROM public.chat_message_bookmarks ORDER BY created_at DESC;
+```
+
+**Re-applying is safe.** `CREATE TABLE IF NOT EXISTS`, both indexes
+`IF NOT EXISTS`, and `ENABLE ROW LEVEL SECURITY` is idempotent — so the
+migration re-runs cleanly against a database that already has it.
+
+**RLS note for anyone auditing after a restore.** The table enables RLS with
+**zero policies**, which is correct and matches `channel_read_receipts`,
+`message_reactions` and `poll_votes`. It is not a missing-policy defect: the API
+reaches the table only through the service-role client, and the absence of a
+client-reachable policy is what makes "not even a channel admin can see who
+bookmarked what" hold structurally. Do not "fix" it by adding one.
+
+## Rollback anonymize_user bookmark purge (20260902160000)
+
+Function-only change (#462): `create or replace function anonymize_user(...)`
+adding one `delete from chat_message_bookmarks where user_id = p_user_id;`
+alongside the existing per-user purges.
+
+To roll back, re-apply the previous definition from
+`20260803140000_account_deletion_anonymize_user_rpc.sql` — the whole function
+body is in that file, and `create or replace` makes replaying it idempotent:
+
+```sql
+-- Re-run the CREATE OR REPLACE block from
+-- supabase/migrations/20260803140000_account_deletion_anonymize_user_rpc.sql
+```
+
+**Rolling this back is a data-retention regression, not a feature rollback.**
+Without the purge line, a deleted member's bookmark rows survive account
+deletion carrying `(user_id, message_id, chapter_id, created_at)` — which is
+exactly the "who saved what" that `spec/behavior/chat/README.md` promises nobody
+can see. The FK's `on delete cascade` does **not** cover it: `anonymize_user`
+tombstones the `users` row rather than deleting it, so nothing ever cascades.
+Only roll back alongside dropping `chat_message_bookmarks` itself.
+
+**Re-applying is safe** and idempotent; the extra delete is a no-op on a user
+with no bookmarks, and re-running the whole function on an already-tombstoned
+user is the documented retry path.

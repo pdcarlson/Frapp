@@ -28,6 +28,25 @@ const MESSAGES = [
   { id: "msg-2", content: "world", created_at: "2026-01-01T00:01:00Z" },
 ];
 
+const mockBookmarks = vi.fn(() => ({
+  data: [] as Array<{
+    id: string;
+    message_id: string;
+    created_at: string;
+    message: Record<string, unknown>;
+  }>,
+  isLoading: false,
+  isError: false,
+}));
+const mockBookmarkMutate = vi.fn();
+const mockUnbookmarkMutate = vi.fn();
+const mockBookmarkReset = vi.fn();
+const mockUnbookmarkReset = vi.fn();
+// Drives the shell's `bookmarkWriteFailed` alert. The first version of this
+// mock had no `isError` at all, so the alert branch was unreachable from any
+// test and deleting it entirely would have passed CI.
+const mockBookmarkIsError = vi.fn(() => false);
+
 // ChatShell pulls a wide surface from @repo/hooks; stub every hook it reads
 // so the component renders from a controlled `channels`/message state
 // instead of hitting the network.
@@ -49,6 +68,23 @@ vi.mock("@repo/hooks", () => ({
   useChapterRoster: () => ({ data: [] }),
   useMyPermissions: () => mockUseMyPermissions(),
   directChannelDisplayName: () => "",
+  // Bookmarks (#462). The shell renders the panel unconditionally, so these
+  // have to exist here even though this file's assertions are about deep links,
+  // the composer remount and delete wiring. `mockBookmarks` lets the bookmark
+  // cases below drive the list without touching the other suites' setup.
+  useBookmarks: () => mockBookmarks(),
+  useBookmarkedMessageIds: () =>
+    new Set(mockBookmarks().data.map((b: { message_id: string }) => b.message_id)),
+  useBookmarkMessage: () => ({
+    mutate: mockBookmarkMutate,
+    reset: mockBookmarkReset,
+    isError: mockBookmarkIsError(),
+  }),
+  useUnbookmarkMessage: () => ({
+    mutate: mockUnbookmarkMutate,
+    reset: mockUnbookmarkReset,
+    isError: false,
+  }),
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
@@ -97,6 +133,24 @@ vi.mock("./thread-panel", () => ({
 }));
 vi.mock("./pins-popover", () => ({
   PinsPopover: () => <div data-testid="pins-popover" />,
+}));
+// Exposes `onJump` as a button so the cross-channel jump (#462) can be driven
+// without opening a real Radix popover. The panel's own rendering is covered in
+// `bookmarks-popover.test.tsx`; what belongs here is the shell wiring.
+vi.mock("./bookmarks-popover", () => ({
+  BookmarksPopover: ({
+    onJump,
+  }: {
+    onJump?: (channelId: string, messageId: string) => void;
+  }) => (
+    <button
+      type="button"
+      data-testid="bookmarks-popover"
+      onClick={() => onJump?.("chan-random", "msg-2")}
+    >
+      bookmarks
+    </button>
+  ),
 }));
 vi.mock("./notification-level-popover", () => ({
   NotificationLevelPopover: () => <div data-testid="notification-level-popover" />,
@@ -156,6 +210,9 @@ beforeEach(() => {
   mockComposerMount.mockClear();
   mockUseMyPermissions.mockReset();
   mockUseMyPermissions.mockReturnValue({ data: { permissions: [] } });
+  mockBookmarkIsError.mockReturnValue(false);
+  mockBookmarkReset.mockClear();
+  mockUnbookmarkReset.mockClear();
 });
 
 describe("ChatShell deep-link targets", () => {
@@ -395,5 +452,80 @@ describe("ChatShell delete-message wiring", () => {
         screen.queryByText("Delete this message?"),
       ).not.toBeInTheDocument();
     });
+  });
+});
+
+/**
+ * Bookmarks are chapter-wide, so jumping to one routinely means switching
+ * channel first (#462) — unlike the in-channel pins panel, whose `onJump` can
+ * scroll the timeline it is already looking at.
+ */
+describe("ChatShell bookmark jump (#462)", () => {
+  it("switches to the bookmarked message's channel and scrolls to it", async () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(mockScrollToMessage).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("bookmarks-popover"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("composer")).toHaveTextContent("chan-random");
+    });
+    expect(mockScrollToMessage).toHaveBeenCalledWith("msg-2");
+  });
+
+  it("jumps even when the URL named a different channel", async () => {
+    // The regression the `pendingJumpChannelId` split exists to prevent. The
+    // old guard compared the pending jump against `initialChannelId` — the
+    // *URL's* channel — so once the shell switched away from it, every
+    // subsequent jump was silently dropped. A member who arrived from a
+    // notification into #general and then opened a bookmark in #random got
+    // nothing: the channel switched, the scroll never fired.
+    render(
+      <ChatShell initialChannelId="chan-general" initialMessageId="msg-1" />,
+    );
+    expect(mockScrollToMessage).toHaveBeenCalledWith("msg-1");
+    mockScrollToMessage.mockClear();
+
+    fireEvent.click(screen.getByTestId("bookmarks-popover"));
+
+    await waitFor(() => {
+      expect(mockScrollToMessage).toHaveBeenCalledWith("msg-2");
+    });
+  });
+});
+
+describe("ChatShell bookmark write failure (#462)", () => {
+  it("says nothing while writes are succeeding", () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.queryByText("Bookmark not updated")).toBeNull();
+  });
+
+  it("surfaces a failed bookmark write as an alert", () => {
+    // Without this the failure is completely silent: there is no optimistic
+    // write, so a failed save leaves the chip reading "Save" exactly as if
+    // nothing had been tapped, and the member concludes the feature is broken.
+    mockBookmarkIsError.mockReturnValue(true);
+
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Bookmark not updated",
+    );
+  });
+
+  it("clears the alert on a channel switch", async () => {
+    // Both mutations live at the shell level and TanStack keeps `isError` set
+    // until the next attempt, so an unreset alert would follow the member into
+    // every channel for the rest of the session.
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+    mockBookmarkReset.mockClear();
+
+    rerender(<ChatShell initialChannelId="chan-random" />);
+
+    await waitFor(() => {
+      expect(mockBookmarkReset).toHaveBeenCalled();
+    });
+    expect(mockUnbookmarkReset).toHaveBeenCalled();
   });
 });
