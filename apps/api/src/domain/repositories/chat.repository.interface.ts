@@ -7,6 +7,8 @@ import {
   MessageReaction,
   ChannelReadReceipt,
   ChannelUnreadCount,
+  ChatMessageBookmarkRef,
+  ChatMessageBookmarkWithMessage,
 } from '../entities/chat.entity';
 
 export const CHAT_CHANNEL_REPOSITORY = 'CHAT_CHANNEL_REPOSITORY';
@@ -18,6 +20,8 @@ export const CHAT_MESSAGE_ATTACHMENT_REPOSITORY =
 export const MESSAGE_REACTION_REPOSITORY = 'MESSAGE_REACTION_REPOSITORY';
 export const CHANNEL_READ_RECEIPT_REPOSITORY =
   'CHANNEL_READ_RECEIPT_REPOSITORY';
+export const CHAT_MESSAGE_BOOKMARK_REPOSITORY =
+  'CHAT_MESSAGE_BOOKMARK_REPOSITORY';
 
 /** Postgres unique-violation error code. */
 export const PG_UNIQUE_VIOLATION = '23505';
@@ -212,6 +216,50 @@ export interface IChannelReadReceiptRepository {
     chapterId: string,
     userId: string,
   ): Promise<ChannelUnreadCount[]>;
+}
+
+/**
+ * Personal message bookmarks (#462).
+ *
+ * **Every method takes `userId` and every query filters on it.** There is no
+ * "find by message" or "count for message" here, deliberately: the spec says no
+ * one — not even a channel admin — can see who bookmarked what, so a repository
+ * method that answers a question about *other* people's bookmarks is a
+ * capability this feature must not own. Adding one later is the change that
+ * would quietly make the privacy claim false, so its absence is the design.
+ */
+export interface IChatMessageBookmarkRepository {
+  /**
+   * Idempotent create. Returns the existing row on a repeat rather than
+   * raising `PG_UNIQUE_VIOLATION`, so a double-tap or an offline retry is a
+   * no-op instead of an error the client has to special-case.
+   */
+  create(
+    userId: string,
+    messageId: string,
+    chapterId: string,
+  ): Promise<ChatMessageBookmarkRef>;
+  /**
+   * Removes the caller's own bookmark. A no-op when there wasn't one.
+   *
+   * Takes `chapterId` even though `(user_id, message_id)` is already globally
+   * unique. That redundancy is the point: without it the method's safety would
+   * rest entirely on its caller, and the signature would give no hint that a
+   * chapter was ever involved.
+   */
+  delete(userId: string, messageId: string, chapterId: string): Promise<void>;
+  /**
+   * The caller's bookmarks in one chapter, newest first, each joined to its
+   * message.
+   *
+   * Does **not** filter `is_deleted`: a bookmark whose message was deleted must
+   * still appear, carrying the message's own `[message deleted]` content as the
+   * placeholder the spec requires.
+   */
+  findByUserAndChapter(
+    userId: string,
+    chapterId: string,
+  ): Promise<ChatMessageBookmarkWithMessage[]>;
 }
 
 /**
