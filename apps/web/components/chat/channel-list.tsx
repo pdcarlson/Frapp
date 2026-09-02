@@ -17,6 +17,17 @@ export interface ChatChannel {
   is_read_only?: boolean;
   muted?: boolean | null;
   /**
+   * Server-decided capability (#704): whether the caller may post in this
+   * channel right now, via `ChannelAccessService.withPostCapability` — the
+   * same `canAccessChannel` predicate the write path enforces. Optional and
+   * treated as `true` when absent (a channel from before this field existed,
+   * or the brief window after `getOrCreateDm`/`createGroupDm` returns a row
+   * that hasn't gone through the list projection) rather than a claim the
+   * caller can't post, since every prior caller of this type assumed exactly
+   * that.
+   */
+  can_post?: boolean;
+  /**
    * `users.id` of each participant, on DM and group-DM rows. Optional because
    * the shell builds these with an unchecked `asArray<ChatChannel>` cast and has
    * no normalizing selector — declaring it required would be a claim the
