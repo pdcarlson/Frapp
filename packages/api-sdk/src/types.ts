@@ -236,110 +236,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/roles": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List chapter roles */
-        get: operations["RbacController_list_v1"];
-        put?: never;
-        /** Create a custom role */
-        post: operations["RbacController_create_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/roles/permissions-catalog": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get system permissions catalog */
-        get: operations["RbacController_catalog_v1"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/roles/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Delete a custom role */
-        delete: operations["RbacController_delete_v1"];
-        options?: never;
-        head?: never;
-        /** Update a role */
-        patch: operations["RbacController_update_v1"];
-        trace?: never;
-    };
-    "/v1/roles/transfer-presidency": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Transfer presidency to another member */
-        post: operations["RbacController_transferPresidency_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/roles/presidency-claim-status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Whether the caller may claim the chapter's vacant presidency */
-        get: operations["RbacController_presidencyClaimStatus_v1"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/roles/claim-presidency": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Claim the chapter's vacant presidency */
-        post: operations["RbacController_claimPresidency_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/chapters/{id}/config": {
         parameters: {
             query?: never;
@@ -461,6 +357,110 @@ export interface paths {
         get: operations["ChapterAuditLogController_list_v1"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List chapter roles */
+        get: operations["RbacController_list_v1"];
+        put?: never;
+        /** Create a custom role */
+        post: operations["RbacController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/roles/permissions-catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get system permissions catalog */
+        get: operations["RbacController_catalog_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/roles/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a custom role */
+        delete: operations["RbacController_delete_v1"];
+        options?: never;
+        head?: never;
+        /** Update a role */
+        patch: operations["RbacController_update_v1"];
+        trace?: never;
+    };
+    "/v1/roles/transfer-presidency": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Transfer presidency to another member */
+        post: operations["RbacController_transferPresidency_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/roles/presidency-claim-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether the caller may claim the chapter's vacant presidency */
+        get: operations["RbacController_presidencyClaimStatus_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/roles/claim-presidency": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Claim the chapter's vacant presidency */
+        post: operations["RbacController_claimPresidency_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2921,30 +2921,6 @@ export interface components {
             /** @description Storage path returned from logo-url */
             storage_path: string;
         };
-        CreateRoleDto: {
-            name: string;
-            permissions: string[];
-            display_order?: number;
-            color?: string;
-        };
-        UpdateRoleDto: {
-            name?: string;
-            permissions?: string[];
-            display_order?: number;
-            color?: string;
-        };
-        TransferPresidencyDto: {
-            /** Format: uuid */
-            target_member_id: string;
-        };
-        PresidencyClaimStatusDto: {
-            /** @description Whether the chapter currently has no President. */
-            needs_president: boolean;
-            /** @description Whether the caller holds the chapter's next-highest-ranked role with a live member, and may call POST /v1/roles/claim-presidency right now. */
-            eligible: boolean;
-            /** @description Name of the eligible role, or null when no role below President has any member at all (the "Frapp support intervenes" case). */
-            next_role_name: string | null;
-        };
         BetaConfigDto: {
             enabled?: boolean;
             /** @enum {string} */
@@ -3095,6 +3071,30 @@ export interface components {
             };
             member_visible: boolean;
             created_at: string;
+        };
+        CreateRoleDto: {
+            name: string;
+            permissions: string[];
+            display_order?: number;
+            color?: string;
+        };
+        UpdateRoleDto: {
+            name?: string;
+            permissions?: string[];
+            display_order?: number;
+            color?: string;
+        };
+        TransferPresidencyDto: {
+            /** Format: uuid */
+            target_member_id: string;
+        };
+        PresidencyClaimStatusDto: {
+            /** @description Whether the chapter currently has no President. */
+            needs_president: boolean;
+            /** @description Whether the caller holds the chapter's next-highest-ranked role with a live member, and may call POST /v1/roles/claim-presidency right now. */
+            eligible: boolean;
+            /** @description Name of the eligible role, or null when no role below President has any member at all (the "Frapp support intervenes" case). */
+            next_role_name: string | null;
         };
         MemberCustomFieldValueDto: {
             field_id: string;
@@ -4251,160 +4251,6 @@ export interface operations {
             };
         };
     };
-    RbacController_list_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    RbacController_create_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateRoleDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    RbacController_catalog_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    RbacController_delete_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    RbacController_update_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateRoleDto"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    RbacController_transferPresidency_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TransferPresidencyDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    RbacController_presidencyClaimStatus_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PresidencyClaimStatusDto"];
-                };
-            };
-        };
-    };
-    RbacController_claimPresidency_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     ChapterConfigController_getConfig_v1: {
         parameters: {
             query?: never;
@@ -4684,6 +4530,160 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ChapterAuditLogEntryDto"][];
                 };
+            };
+        };
+    };
+    RbacController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RbacController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRoleDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RbacController_catalog_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RbacController_delete_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RbacController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRoleDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RbacController_transferPresidency_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransferPresidencyDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RbacController_presidencyClaimStatus_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PresidencyClaimStatusDto"];
+                };
+            };
+        };
+    };
+    RbacController_claimPresidency_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
