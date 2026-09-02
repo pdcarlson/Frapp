@@ -160,8 +160,10 @@ citations rotting silently, and the size of `scripts/doc-paths-allowlist.json` i
 how much rot accumulated while it only reported.
 
 Being in the array is *intent*, not live state — branch protection changes only when an admin runs
-`npm run configure:branch-protection`. Do that once this lands and `main` is green; read live state
-from the API per [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
+`npm run configure:branch-protection`. That is a human step with an admin PAT: the bare command is a
+live `PUT`, and an agent session runs `npm run configure:branch-protection:verify` (which writes
+nothing) and nothing else. Ask for the apply once this lands and `main` is green; read live state
+per [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
 
 ### Rosters (`check-doc-tables.mjs`)
 
@@ -190,8 +192,9 @@ Run locally: `npm run check:doc-tables`. Unit tests:
 `scripts/ci/__tests__/check-doc-tables.test.mjs`, covered by `ci-scripts-tests`.
 
 **Rollout.** Reports on every PR, not merge-blocking yet. Promote by adding `"doc-tables"` to
-`DOCS_CHECKS` and re-running `npm run configure:branch-protection` once it has run green on the
-target branch.
+`DOCS_CHECKS` — an ordinary PR — and then having a human re-run
+`npm run configure:branch-protection` once it has run green on the target branch. The apply is the
+human half by policy, which is why promoting a check to required is filed as a `[human]` issue.
 
 ### Env slugs (`check-env-slugs.mjs`)
 
