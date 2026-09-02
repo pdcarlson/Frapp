@@ -159,6 +159,7 @@ describe('ChatService', () => {
     mockAttachmentRepo = {
       createMany: jest.fn().mockResolvedValue([]),
       findByMessage: jest.fn().mockResolvedValue([]),
+      findSharedObjects: jest.fn().mockResolvedValue([]),
     };
 
     mockReactionRepo = {
@@ -1993,6 +1994,148 @@ describe('ChatService', () => {
       await expect(
         service.deleteMessage('msg-1', 'ch-1', 'user-2', false),
       ).rejects.toThrow(ForbiddenException);
+    });
+
+    // #514: the spec says "Attachments for deleted messages are removed from
+    // Storage". Soft-delete alone left the objects behind, still billable and
+    // still reachable by any signed URL issued before the delete.
+    describe('attachment purge (#514)', () => {
+      const attachment = {
+        id: 'att-1',
+        message_id: 'msg-1',
+        channel_id: 'ch-chan-1',
+        bucket: 'chat',
+        storage_path: 'chapters/ch-1/chat/ch-chan-1/msg-1/minutes.pdf',
+        filename: 'minutes.pdf',
+        content_type: 'application/pdf',
+        byte_size: 2048,
+        width: null,
+        height: null,
+        external_url: null,
+        created_at: '2026-01-01T00:00:00.000Z',
+      };
+      const uploaded = attachment;
+
+      beforeEach(() => {
+        mockMessageRepo.findById.mockResolvedValue(baseMessage);
+        mockMessageRepo.update.mockResolvedValue({
+          ...baseMessage,
+          is_deleted: true,
+        });
+      });
+
+      it('deletes the message objects from Storage', async () => {
+        mockAttachmentRepo.findByMessage.mockResolvedValue([uploaded]);
+
+        await service.deleteMessage('msg-1', 'ch-1', 'user-1', false);
+
+        expect(mockStorageProvider.deleteFiles).toHaveBeenCalledWith('chat', [
+          uploaded.storage_path,
+        ]);
+      });
+
+      it('keeps an object another message still references', async () => {
+        // The Discord importer maps every reference to a deduplicated export
+        // file onto one object, and the table's unique key is per message — so
+        // purging blind would delete the surviving message's bytes.
+        const shared = {
+          ...attachment,
+          id: 'att-shared',
+          bucket: 'chat-archive',
+          storage_path: 'chapters/ch-1/chat-archive/ch-chan-1/shared.png',
+        };
+        mockAttachmentRepo.findByMessage.mockResolvedValue([uploaded, shared]);
+        mockAttachmentRepo.findSharedObjects.mockResolvedValue([
+          { bucket: shared.bucket, storage_path: shared.storage_path },
+        ]);
+
+        await service.deleteMessage('msg-1', 'ch-1', 'user-1', false);
+
+        expect(mockAttachmentRepo.findSharedObjects).toHaveBeenCalledWith(
+          [
+            { bucket: 'chat', storage_path: uploaded.storage_path },
+            { bucket: 'chat-archive', storage_path: shared.storage_path },
+          ],
+          'msg-1',
+        );
+        // Only the unshared one goes, and the shared bucket is never called.
+        expect(mockStorageProvider.deleteFiles).toHaveBeenCalledTimes(1);
+        expect(mockStorageProvider.deleteFiles).toHaveBeenCalledWith('chat', [
+          uploaded.storage_path,
+        ]);
+      });
+
+      it('groups the delete per bucket', async () => {
+        const archived = {
+          ...attachment,
+          id: 'att-2',
+          bucket: 'chat-archive',
+          storage_path: 'chapters/ch-1/chat-archive/ch-chan-1/old.png',
+        };
+        mockAttachmentRepo.findByMessage.mockResolvedValue([
+          uploaded,
+          archived,
+        ]);
+
+        await service.deleteMessage('msg-1', 'ch-1', 'user-1', false);
+
+        expect(mockStorageProvider.deleteFiles).toHaveBeenCalledWith('chat', [
+          uploaded.storage_path,
+        ]);
+        expect(mockStorageProvider.deleteFiles).toHaveBeenCalledWith(
+          'chat-archive',
+          [archived.storage_path],
+        );
+      });
+
+      it('still soft-deletes when Storage fails', async () => {
+        // The row is the source of truth; an outage must not roll back a
+        // delete the member asked for, or 500 them.
+        mockAttachmentRepo.findByMessage.mockResolvedValue([uploaded]);
+        mockStorageProvider.deleteFiles.mockRejectedValue(
+          new Error('storage down'),
+        );
+
+        const result = await service.deleteMessage(
+          'msg-1',
+          'ch-1',
+          'user-1',
+          false,
+        );
+
+        expect(result.is_deleted).toBe(true);
+        expect(mockMessageRepo.update).toHaveBeenCalled();
+      });
+
+      it('touches Storage not at all for a message with no attachments', async () => {
+        mockAttachmentRepo.findByMessage.mockResolvedValue([]);
+
+        await service.deleteMessage('msg-1', 'ch-1', 'user-1', false);
+
+        expect(mockAttachmentRepo.findSharedObjects).not.toHaveBeenCalled();
+        expect(mockStorageProvider.deleteFiles).not.toHaveBeenCalled();
+      });
+
+      it('purges only after the message is flagged deleted', async () => {
+        // Ordering is load-bearing: `getMessageAttachments` 404s an
+        // `is_deleted` message, so once the flag lands the files are
+        // unreachable whatever Storage does next. Purging first and then
+        // failing the update would leave a visible message with dead
+        // downloads.
+        const order: string[] = [];
+        mockAttachmentRepo.findByMessage.mockResolvedValue([uploaded]);
+        mockMessageRepo.update.mockImplementation(async () => {
+          order.push('update');
+          return { ...baseMessage, is_deleted: true };
+        });
+        mockStorageProvider.deleteFiles.mockImplementation(async () => {
+          order.push('deleteFiles');
+        });
+
+        await service.deleteMessage('msg-1', 'ch-1', 'user-1', false);
+
+        expect(order).toEqual(['update', 'deleteFiles']);
+      });
     });
   });
 

@@ -50,6 +50,7 @@ import type {
   ChatChannelCategory,
   ChatMessage,
   ChatMessageAction,
+  ChatMessageAttachment,
   ChatMessageAttachmentWithUrl,
   ChatMessageKind,
   ChannelType,
@@ -962,11 +963,96 @@ export class ChatService {
       );
     }
 
-    return this.messageRepo.update(messageId, {
+    // Read the attachment rows *before* the update only because they are the
+    // input to the purge below — not because the update would destroy them.
+    // (The issue this closes, #514, assumed paths lived in `metadata` and were
+    // wiped; they have since moved to `chat_message_attachments`, which
+    // soft-delete never touches.)
+    const attachments = await this.attachmentRepo.findByMessage(
+      messageId,
+      chapterId,
+    );
+
+    const deleted = await this.messageRepo.update(messageId, {
       content: '[message deleted]',
       is_deleted: true,
       metadata: {},
     });
+
+    // Purge after the flag lands, not before. `getMessageAttachments` already
+    // 404s an `is_deleted` message, so the moment this update commits the API
+    // mints no further download URLs and the files are unreachable whatever
+    // Storage does next. Purging first and then failing the update would leave
+    // a *visible* message whose downloads 404 — strictly worse than the
+    // orphaned object a failed purge leaves, which is the state we are in today
+    // anyway. Best-effort for the same reason: the row is the source of truth,
+    // and a Storage outage must not roll back a delete the member asked for.
+    await this.purgeAttachmentObjects(attachments, messageId);
+
+    return deleted;
+  }
+
+  /**
+   * Delete the Storage objects belonging to a deleted message, skipping any
+   * another message still references.
+   *
+   * The guard is not defensive programming: `chat_message_attachments` is
+   * unique on `(message_id, bucket, storage_path)` — per message — and the
+   * Discord importer maps every reference to a deduplicated export file onto
+   * one object, so two messages sharing an object is a supported state. Without
+   * the check, deleting either message would delete the other's bytes.
+   *
+   * Grouped per bucket because imported media lives in `chat-archive` while
+   * uploads live in `chat`, and one message can in principle carry both.
+   */
+  private async purgeAttachmentObjects(
+    attachments: readonly ChatMessageAttachment[],
+    messageId: string,
+  ): Promise<void> {
+    if (attachments.length === 0) return;
+
+    try {
+      const shared = await this.attachmentRepo.findSharedObjects(
+        attachments.map(({ bucket, storage_path }) => ({
+          bucket,
+          storage_path,
+        })),
+        messageId,
+      );
+      const sharedKeys = new Set(
+        shared.map((row) => `${row.bucket} ${row.storage_path}`),
+      );
+
+      const byBucket = new Map<string, string[]>();
+      for (const attachment of attachments) {
+        const key = `${attachment.bucket} ${attachment.storage_path}`;
+        if (sharedKeys.has(key)) continue;
+        const paths = byBucket.get(attachment.bucket) ?? [];
+        // A message may list the same object twice; deleting it twice is
+        // harmless but the dedupe keeps the provider call honest.
+        if (!paths.includes(attachment.storage_path)) {
+          paths.push(attachment.storage_path);
+        }
+        byBucket.set(attachment.bucket, paths);
+      }
+
+      for (const [bucket, paths] of byBucket) {
+        await this.storageProvider.deleteFiles(bucket, paths);
+      }
+
+      if (sharedKeys.size > 0) {
+        this.logger.log('Kept chat attachment objects still referenced', {
+          messageId,
+          keptCount: sharedKeys.size,
+        });
+      }
+    } catch (error) {
+      this.logger.warn('Failed to purge chat attachment objects', {
+        messageId,
+        attachmentCount: attachments.length,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   // ── Pins ─────────────────────────────────────────────────────────────

@@ -86,6 +86,9 @@ Chat is not a module — it is the spine of the app, and every other capability 
 - A sender can delete their own messages. Users with `channels:manage` permission can delete any message in channels they manage. The permission is resolved **in the message's own chapter, after channel access is confirmed** — holding `channels:manage` in the caller's active chapter grants nothing over a message in another one.
 - Edit, delete, pin and unpin all authorize through the same channel-access lookup as reads: a message whose channel does not resolve within the caller's active chapter returns 404, and sender ownership alone is never sufficient (a member removed from a chapter must not keep editing their history there).
 - Deleted messages are soft-deleted: content is replaced with "[message deleted]", `is_deleted = true`. Attachments for deleted messages are removed from Storage.
+  - The purge runs **after** the row is flagged, and is best-effort: `GET /v1/channels/:id/messages/:messageId/attachments` already 404s a deleted message, so the files stop being reachable the moment the flag commits, whatever Storage does next. A Storage failure is logged and leaves an orphaned object; it never rolls back the delete or fails the request.
+  - **An object another message still references is kept.** `chat_message_attachments` is unique on `(message_id, bucket, storage_path)` — per message, not per object — and the Discord importer maps every reference to a deduplicated export file onto the same object, so two messages sharing one is a supported state. Deleting either message purges only the objects nothing else points at.
+  - The attachment **rows** are not deleted. They disappear only with the message itself via `ON DELETE CASCADE`; keeping them is what lets the reference check above stay correct, and the read path already refuses them for a deleted message.
 
 **Pinned messages (chapter-elevated):**
 

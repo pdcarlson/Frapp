@@ -310,4 +310,26 @@ export interface IChatMessageAttachmentRepository {
     messageId: string,
     chapterId: string,
   ): Promise<ChatMessageAttachment[]>;
+
+  /**
+   * Which of `candidates` some message *other than* `excludingMessageId` still
+   * references.
+   *
+   * Exists so deleting a message can purge its Storage objects without
+   * destroying another message's. The unique constraint on this table is
+   * `(message_id, bucket, storage_path)` — per message, not per object — and
+   * the Discord importer deliberately maps every reference to a deduplicated
+   * export file onto the *same* object (`domain/utils/discord-export.ts`), so
+   * two messages sharing one object is a supported state, not a corruption.
+   *
+   * Deliberately **not** chapter-scoped, unlike `findByMessage`. The question
+   * is "does anything anywhere still point at these bytes", and a scoped answer
+   * could only ever be falsely negative — which is the direction that deletes a
+   * live file. It returns no tenant data: the caller supplied every path it can
+   * get back.
+   */
+  findSharedObjects(
+    candidates: readonly { bucket: string; storage_path: string }[],
+    excludingMessageId: string,
+  ): Promise<{ bucket: string; storage_path: string }[]>;
 }
