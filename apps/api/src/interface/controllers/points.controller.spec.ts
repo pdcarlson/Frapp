@@ -58,6 +58,7 @@ describe('PointsController', () => {
         chapterId,
         userId,
         'all',
+        undefined,
       );
       expect(result).toEqual(expectedResult);
     });
@@ -76,6 +77,29 @@ describe('PointsController', () => {
         chapterId,
         userId,
         'semester',
+        undefined,
+      );
+      expect(result).toEqual(expectedResult);
+    });
+
+    it('forwards semester_archive_id, overriding window (#377)', async () => {
+      const chapterId = 'chapter-1';
+      const userId = 'user-1';
+      const query: PointsWindowQueryDto = {
+        window: 'month',
+        semester_archive_id: 'sa-1',
+      };
+      const expectedResult = { total: 30 } as any;
+
+      pointsService.getUserSummary.mockResolvedValue(expectedResult);
+
+      const result = await controller.getMe(chapterId, userId, query);
+
+      expect(pointsService.getUserSummary).toHaveBeenCalledWith(
+        chapterId,
+        userId,
+        'month',
+        'sa-1',
       );
       expect(result).toEqual(expectedResult);
     });
@@ -94,6 +118,7 @@ describe('PointsController', () => {
       expect(pointsService.getLeaderboard).toHaveBeenCalledWith(
         chapterId,
         'all',
+        undefined,
       );
       expect(result).toEqual(expectedResult);
     });
@@ -110,6 +135,27 @@ describe('PointsController', () => {
       expect(pointsService.getLeaderboard).toHaveBeenCalledWith(
         chapterId,
         'month',
+        undefined,
+      );
+      expect(result).toEqual(expectedResult);
+    });
+
+    it('forwards semester_archive_id, overriding window (#377)', async () => {
+      const chapterId = 'chapter-1';
+      const query: PointsWindowQueryDto = {
+        window: 'all',
+        semester_archive_id: 'sa-1',
+      };
+      const expectedResult = [] as any;
+
+      pointsService.getLeaderboard.mockResolvedValue(expectedResult);
+
+      const result = await controller.getLeaderboard(chapterId, query);
+
+      expect(pointsService.getLeaderboard).toHaveBeenCalledWith(
+        chapterId,
+        'all',
+        'sa-1',
       );
       expect(result).toEqual(expectedResult);
     });
@@ -130,6 +176,7 @@ describe('PointsController', () => {
         chapterId,
         userId,
         'all',
+        undefined,
       );
       expect(result).toEqual(expectedResult);
     });
@@ -148,6 +195,29 @@ describe('PointsController', () => {
         chapterId,
         userId,
         'semester',
+        undefined,
+      );
+      expect(result).toEqual(expectedResult);
+    });
+
+    it('forwards semester_archive_id, overriding window (#377)', async () => {
+      const chapterId = 'chapter-1';
+      const userId = 'user-2';
+      const query: PointsWindowQueryDto = {
+        window: 'semester',
+        semester_archive_id: 'sa-1',
+      };
+      const expectedResult = { total: 75 } as any;
+
+      pointsService.getUserSummary.mockResolvedValue(expectedResult);
+
+      const result = await controller.getMember(chapterId, userId, query);
+
+      expect(pointsService.getUserSummary).toHaveBeenCalledWith(
+        chapterId,
+        userId,
+        'semester',
+        'sa-1',
       );
       expect(result).toEqual(expectedResult);
     });

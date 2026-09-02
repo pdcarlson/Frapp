@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { NotFoundException } from '@nestjs/common';
 import {
   REPORT_AGGREGATE_MAX_ROWS,
   REPORT_MAX_ROWS,
@@ -11,7 +12,10 @@ import type { FrappSupabaseClient } from '../../infrastructure/supabase/database
 describe('ReportService', () => {
   let service: ReportService;
   let mockSupabase: jest.Mocked<Pick<FrappSupabaseClient, 'from' | 'rpc'>>;
-  let mockSemesterArchiveRepo: { findLatestByChapter: jest.Mock };
+  let mockSemesterArchiveRepo: {
+    findLatestByChapter: jest.Mock;
+    findById: jest.Mock;
+  };
 
   /**
    * A PostgREST-shaped chain that honours `.range()` by actually slicing its
@@ -82,6 +86,7 @@ describe('ReportService', () => {
 
     mockSemesterArchiveRepo = {
       findLatestByChapter: jest.fn().mockResolvedValue(null),
+      findById: jest.fn().mockResolvedValue(null),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -252,6 +257,53 @@ describe('ReportService', () => {
       expect(
         (mockSupabase.rpc as jest.Mock).mock.calls[0][1].p_since,
       ).toBeNull();
+    });
+
+    describe('semester_archive_id (#377)', () => {
+      it('overrides `window` and passes the archive’s own [since, until] bounds', async () => {
+        mockSemesterArchiveRepo.findById.mockResolvedValue({
+          id: 'arch-1',
+          chapter_id: 'ch-1',
+          label: 'Spring 2026',
+          start_date: '2026-01-15',
+          end_date: '2026-05-15',
+          created_at: '2026-05-16T00:00:00.000Z',
+        });
+
+        await service.getPointsReport('ch-1', {
+          window: 'month', // must be ignored — the archive id wins
+          semester_archive_id: 'arch-1',
+        });
+
+        expect(mockSemesterArchiveRepo.findById).toHaveBeenCalledWith(
+          'arch-1',
+          'ch-1',
+        );
+        expect(
+          mockSemesterArchiveRepo.findLatestByChapter,
+        ).not.toHaveBeenCalled();
+        const call = (mockSupabase.rpc as jest.Mock).mock.calls[0][1];
+        expect(call.p_since).toBe('2026-01-14T23:59:59.999Z');
+        expect(call.p_until).toBe('2026-05-15T23:59:59.999Z');
+      });
+
+      it('passes p_until=null when no archive is selected', async () => {
+        await service.getPointsReport('ch-1', {});
+
+        expect(
+          (mockSupabase.rpc as jest.Mock).mock.calls[0][1].p_until,
+        ).toBeNull();
+      });
+
+      it('throws NotFoundException for an archive id that is unknown or belongs to another chapter', async () => {
+        mockSemesterArchiveRepo.findById.mockResolvedValue(null);
+
+        await expect(
+          service.getPointsReport('ch-1', {
+            semester_archive_id: 'not-a-real-id',
+          }),
+        ).rejects.toThrow(NotFoundException);
+      });
     });
   });
 

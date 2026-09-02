@@ -148,6 +148,7 @@ describe('Attendance + points flow (e2e)', () => {
       'chapter-1',
       'user-1',
       'all',
+      undefined,
     );
   });
 });
