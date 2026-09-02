@@ -98,4 +98,7 @@ Scheduled routines 1–3 have a narrower write surface (`suggestion`-labeled iss
 product-code PRs) — [`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
 [`docs-upkeep`](../docs-upkeep/SKILL.md) (routine 4) differs on both counts: it opens docs-only
 PRs and files nothing here except a proven human-only blocker.
+[`hygiene-scan`](../hygiene-scan/SKILL.md) (routine 5) files through this skill exactly as feature
+work does — the label set above plus its own visible `fp=hygiene/…` marker so daily runs dedup —
+under the per-run cap its skill sets.
 **This skill is used from feature work; it does not put you under that product-code ban.**
