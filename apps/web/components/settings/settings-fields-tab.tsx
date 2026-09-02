@@ -35,7 +35,7 @@ import {
   OfflineState,
 } from "@/components/shared/async-states";
 import { useToast } from "@/hooks/use-toast";
-import { getErrorMessage } from "@/lib/utils";
+import { getErrorMessage, parseGuardedInt } from "@/lib/utils";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -353,14 +353,16 @@ function AddFieldForm({ canManage }: { canManage: boolean }) {
   }
 
   function setMaxLength(raw: string) {
-    // Guard-parse: only commit a positive integer (matches Workflows/Dues).
     const trimmed = raw.trim();
     if (trimmed === "") {
       setDraft((prev) => ({ ...prev, maxLength: "" }));
       return;
     }
-    const parsed = Number(trimmed);
-    if (!Number.isInteger(parsed) || parsed < 1) return;
+    // Guard-parse: only commit a positive integer (matches Workflows/Dues).
+    // maxLength is stored as the trimmed string (bound directly to the
+    // input), not the parsed number, so parseGuardedInt is used only for
+    // its validation here.
+    if (parseGuardedInt(raw, 1) === undefined) return;
     setDraft((prev) => ({ ...prev, maxLength: trimmed }));
   }
 

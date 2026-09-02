@@ -13,7 +13,7 @@ import {
   useAttendance,
   useEvent,
   useMintCheckInToken,
-  useMyPermissions,
+  usePermissionList,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { can } from "@repo/validation";
@@ -81,11 +81,7 @@ export default function HostCheckInScreen() {
   // `can` from @repo/validation, not a local `includes` — an owner's grant is
   // the wildcard `*`, so a bare membership test would lock out exactly the
   // people most likely to be hosting.
-  const { data: permData } = useMyPermissions();
-  const permissions = useMemo(() => {
-    const raw = (permData as { permissions?: unknown } | undefined)?.permissions;
-    return Array.isArray(raw) ? (raw as string[]) : [];
-  }, [permData]);
+  const permissions = usePermissionList();
   const canHost = can("events:update", permissions);
 
   const eventQuery = useEvent(eventId);

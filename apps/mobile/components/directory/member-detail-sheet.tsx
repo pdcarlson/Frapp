@@ -2,7 +2,7 @@ import { forwardRef, useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
-import { useCustomRoles, useMember, useMyPermissions, useRoles } from "@repo/hooks";
+import { useCustomRoles, useMember, usePermissionList, useRoles } from "@repo/hooks";
 import { can } from "@repo/validation";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
@@ -71,12 +71,7 @@ export const MemberDetailSheet = forwardRef<
   // already applies for its Chapter · Admin section. A viewer who lacks it
   // simply doesn't get custom-role names resolved, rather than firing a
   // request that comes back 403.
-  const permissionsQuery = useMyPermissions();
-  const permissions = useMemo(() => {
-    const raw = (permissionsQuery.data as { permissions?: unknown } | undefined)
-      ?.permissions;
-    return Array.isArray(raw) ? (raw as string[]) : [];
-  }, [permissionsQuery.data]);
+  const permissions = usePermissionList();
   const canViewCustomRoles = can("chapter-config:view", permissions);
   const customRolesQuery = useCustomRoles({ enabled: canViewCustomRoles });
 
