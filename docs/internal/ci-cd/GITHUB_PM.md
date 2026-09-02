@@ -109,10 +109,10 @@ explicit prioritization" rule. Remove `triage` and add exactly one `P1`–`P4` i
   deployment are intentional states, not findings. Revisit when production becomes a goal; see #814
   for the decision record. **Caveat (2026-08-30):** this bullet's premise — that production does not
   yet exist — no longer holds. `frapp-prod` is live and `deploy-production.yml` deploys to it
-  (`spec/architecture/README.md` ADR-20) — though as of 2026-09-02 its provider-guardrail preflight
-  fails on the retired Vercel Git integration, so production deploys are currently blocked
-  (canonical record: ADR-21 in `spec/architecture/README.md`; the guardrail/verify repair is #1579,
-  the CI-driven Vercel deploy that replaces the integration is #1578). The label's scope is the
+  (`spec/architecture/README.md` ADR-20). Its provider-guardrail preflight briefly failed on the
+  retired Vercel Git integration and blocked production deploys; #1579 inverted that assertion on
+  2026-09-02 (canonical record: ADR-21 in `spec/architecture/README.md`, with its 2026-09-02
+  amendment; the CI-driven Vercel deploy that replaces the integration is still #1578). The label's scope is the
   owner's to redefine, so nothing here changes on an agent's initiative; but do not read this
   bullet as evidence that a production-shaped risk is theoretical. Tracked in #1381.
 - Legacy labels from the pre-Linear era (`bug`, `Improvement`, `release:*`) persist on old issues;
