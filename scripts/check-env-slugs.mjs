@@ -53,6 +53,11 @@ const SCAN_ROOTS = [
   ".infisical.json",
   ENVIRONMENTS_CONFIG,
   ".github/workflows",
+  // Composite actions are the other place a step can carry an `env-slug:`. The
+  // Infisical injection is a named candidate for extraction into one (#1382),
+  // and a slug that moved into an unscanned file would make this gate pass
+  // vacuously over it -- the failure this file's section 0 exists to refuse.
+  ".github/actions",
   "docs",
   "spec",
   CANONICAL_DOC,
@@ -174,8 +179,12 @@ function main() {
     }
   }
 
-  // ── 3. Workflows — `env-slug:` passed to Infisical/secrets-action ───────────────
-  for (const wf of walk(".github/workflows", (f) => /\.ya?ml$/.test(f))) {
+  // ── 3. Workflows and composite actions — `env-slug:` passed to Infisical/secrets-action ──
+  const actionYaml = (f) => /\.ya?ml$/.test(f);
+  for (const wf of [
+    ...walk(".github/workflows", actionYaml),
+    ...walk(".github/actions", actionYaml),
+  ]) {
     const text = read(wf);
     if (text) scan(wf, text, /env-slug:\s*["\']([A-Za-z0-9_-]+)["\']/g, "env-slug:");
   }
