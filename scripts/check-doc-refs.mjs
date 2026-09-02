@@ -10,14 +10,17 @@
 //
 // The consequence is not hypothetical: the PREVIOUS restructure (the spec split
 // tracked in #432) left dead pointers behind that nothing has caught since.
-// `apps/api/README.md` alone pointed at three files that no longer exist.
+// `apps/api/README.md` alone pointed at three files that no longer exist, and
+// the seed file still named the pre-split behavior spec.
 //
 // Widening check-doc-paths' scope would not have worked. Its extractor requires
 // an inline code span, because that is how prose cites a path; source files cite
-// them bare, in comments — `supabase/seed.sql` says "defined in spec/behavior.md
-// Section 2" with no backticks. So this gate uses a bare-path extractor, and
+// them bare, in comments — the seed file said "defined in <the behavior spec>
+// Section 2" with no backticks at all. So this gate uses a bare-path extractor, and
 // keeps its own allowlist, while reusing that file's allowlist machinery
 // verbatim so the two behave identically where they overlap.
+//
+// Note this gate scans its own source, so the comments here name no dead path.
 //
 // See docs/internal/ci-cd/DOCS_CI.md for how this fits the other docs gates.
 
@@ -45,12 +48,14 @@ export const EXCLUDED = [
   // A gitleaks finding baseline: each entry pins a path AND a commit SHA, so it
   // describes the tree as it was, on purpose.
   ".gitleaks-baseline.json",
-  // The sibling allowlist's whole job is to name paths that do not resolve.
+  // Both allowlists exist to NAME paths that do not resolve; scanning them would
+  // make every excuse its own violation.
   "scripts/doc-paths-allowlist.json",
+  "scripts/doc-refs-allowlist.json",
 ];
 
 // Assertion fixtures are synthetic by construction — a gate's own test must be
-// able to write `spec/invented/thing.md` and assert that it is rejected. This is
+// able to name an invented path under spec/ and assert that it is rejected. This is
 // the same carve-out check-doc-paths.mjs makes when it strips fenced code blocks
 // before extracting: a worked example is not a claim about the tree.
 export const EXCLUDED_SEGMENTS = ["__tests__/"];
@@ -68,8 +73,9 @@ export function inScope(p) {
 
 /**
  * A reference inside a URL is not a repo path. `.gitleaks-baseline.json` is
- * excluded wholesale, but permalinks turn up in comments too, and resolving
- * `github.com/…/docs/x.md` against the working tree is meaningless.
+ * excluded wholesale, but permalinks turn up in comments too, and resolving a
+ * https://github.com/owner/repo/blob/sha/docs/guides/testing.md permalink
+ * against the working tree is meaningless.
  */
 export function isUrlContext(line, index) {
   const start = line.lastIndexOf(" ", index) + 1;

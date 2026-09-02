@@ -73,6 +73,22 @@ test("assertion fixtures are excluded, at any depth", () => {
   assert.equal(isExcluded("apps/api/src/foo/bar.spec.ts"), false);
 });
 
+test("the gate excludes its OWN allowlist, not just the sibling one", () => {
+  // Regression: only doc-paths-allowlist.json was excluded at first. Once this
+  // gate's own allowlist became a tracked file, every excuse in it — the path
+  // AND the path named in its reason prose — was reported as a violation of
+  // itself. It is scanned by its own scope, so this is not hypothetical.
+  assert.equal(isExcluded(ALLOWLIST_PATH), true);
+  assert.equal(EXCLUDED.includes(ALLOWLIST_PATH), true);
+});
+
+test("the gate's own source is IN scope, so its comments must name no dead path", () => {
+  // Self-scanning is deliberate: a lint that exempts itself is how the example
+  // in a comment quietly becomes wrong. Keeping it in scope is what forced the
+  // header comments here to describe dead pointers instead of citing them.
+  assert.equal(inScope("scripts/check-doc-refs.mjs"), true);
+});
+
 test("the exclusion lists are non-empty and anchored", () => {
   assert.ok(EXCLUDED.length > 0);
   assert.deepEqual(EXCLUDED_SEGMENTS, ["__tests__/"]);
