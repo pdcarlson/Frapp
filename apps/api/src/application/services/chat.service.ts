@@ -41,8 +41,6 @@ import {
   MEMBER_REPOSITORY,
   type IMemberRepository,
 } from '../../domain/repositories/member.repository.interface';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 import type { IStorageProvider } from '../../domain/adapters/storage.interface';
 import { CHAT_ARCHIVE_BUCKET } from '../../domain/constants/storage';
@@ -224,14 +222,6 @@ function assertCardPollVoteAllowed(
       );
   }
 }
-/**
- * Realtime topic the web client subscribes to per channel. Matches the
- * topic used by the retired `chat-send` Edge Function so subscribed
- * clients pick up `new_message` broadcasts without any wire change.
- */
-function realtimeTopicForChannel(channelId: string): string {
-  return `chapter:${channelId}`;
-}
 
 export interface CreateCategoryInput {
   chapter_id: string;
@@ -262,8 +252,6 @@ export class ChatService {
     private readonly memberRepo: IMemberRepository,
     @Inject(STORAGE_PROVIDER)
     private readonly storageProvider: IStorageProvider,
-    @Inject(SUPABASE_CLIENT)
-    private readonly supabase: FrappSupabaseClient,
     private readonly notificationService: NotificationService,
     private readonly channelAccess: ChannelAccessService,
     private readonly activation: ActivationService,
@@ -583,10 +571,16 @@ export class ChatService {
    *   `(channel_id, sender_id, client_message_id)` triple returns the
    *   existing row with `deduplicated: true` instead of inserting again
    *   (partial unique index `idx_chat_messages_dedupe`).
-   * - Best-effort Realtime broadcast on the channel topic so subscribed
-   *   clients see new messages without waiting for Postgres Changes; the
-   *   broadcast failure never fails the request because Postgres Changes
-   *   is the source of truth.
+   * - Emits no Realtime broadcast. Delivery is the Postgres Changes
+   *   subscription on `chat_messages` (`spec/ui/resilience.md` §3.2), which
+   *   clients hold on `chat:channel:<id>`. A `new_message` broadcast used to
+   *   be emitted here on a bespoke `chapter:<id>` topic, left over from the
+   *   `chat-send` Edge Function ADR-11 retired; no client ever subscribed to
+   *   it, so it was removed in #472 rather than instrumented. See the ADR-11
+   *   amendment (2026-09-02, #472); ADR-02 is the rule that Broadcast in chat
+   *   carries presence and typing rather than messages, and ADR-10 is the one
+   *   that fixes the topic at `chat:channel:<id>`. Pinned by
+   *   `chat-realtime-carrier.spec.ts`.
    */
   async sendMessage(
     input: SendMessageInput,
@@ -730,8 +724,6 @@ export class ChatService {
       });
     }
 
-    await this.broadcastNewMessage(message);
-
     // Funnel step 4 (#267): the chapter's first *human* message. Server-
     // originated posts are excluded — the onboarding welcome message would
     // otherwise mark every chapter as having chatted the moment it was
@@ -747,31 +739,6 @@ export class ChatService {
     }
 
     return { message, deduplicated };
-  }
-
-  /**
-   * Emit a Realtime broadcast on the channel topic. Mirrors the retired
-   * Edge Function: best-effort — a broadcast failure is logged and
-   * swallowed because Postgres Changes is the authoritative source.
-   */
-  private async broadcastNewMessage(message: ChatMessage): Promise<void> {
-    try {
-      const channel = this.supabase.channel(
-        realtimeTopicForChannel(message.channel_id),
-      );
-      await channel.send({
-        type: 'broadcast',
-        event: 'new_message',
-        payload: message,
-      });
-      await this.supabase.removeChannel(channel);
-    } catch (error) {
-      this.logger.debug('chat broadcast failed (Postgres Changes will catch)', {
-        messageId: message.id,
-        channelId: message.channel_id,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
   }
 
   /**
