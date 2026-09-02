@@ -53,6 +53,17 @@ interface ComposerProps {
    */
   isDirect?: boolean;
   isReadOnly: boolean;
+  /**
+   * Server-decided capability (#704): whether the caller may post in this
+   * channel at all, from `ChatChannel.can_post` — already folds in the
+   * read-only gate (a holder of `announcements:post`, or `*`, gets `true` in
+   * a read-only channel), so this is the single source of truth for whether
+   * the composer renders live. Undefined defaults to `!isReadOnly`, matching
+   * the pre-#704 behavior for a caller that hasn't wired this yet, or a
+   * channel from the brief window before `getOrCreateDm`/`createGroupDm`'s
+   * response goes through the list projection.
+   */
+  canPost?: boolean;
   draft: string;
   onChangeDraft: (body: string) => void;
   onSend: (
@@ -153,6 +164,7 @@ export function Composer({
   channelName,
   isDirect,
   isReadOnly,
+  canPost,
   draft,
   onChangeDraft,
   onSend,
@@ -426,11 +438,39 @@ export function Composer({
     [editor, onSlashDispatch, toast],
   );
 
-  if (isReadOnly) {
+  // `canPost` is the single source of truth for whether *this caller* may
+  // post here right now — it already folds in the read-only gate (a holder
+  // of `announcements:post`, or `*`, gets `canPost: true` in a read-only
+  // channel). `isReadOnly` on its own used to gate the whole composer
+  // unconditionally, which meant nobody — not even the President — could
+  // ever get a live composer in `#announcements`, regardless of permission.
+  // `isReadOnly` is read here only to pick which explanation applies: the
+  // read-only case (no `announcements:post`) and the alumni lifecycle
+  // restriction (`spec/behavior/alumni.md`) are the only two ways `can_post`
+  // comes back false — read access to reach this channel at all is a
+  // precondition of it appearing in the caller's channel list, so there is
+  // no third case to distinguish.
+  //
+  // `canPost` defaults to `!isReadOnly`, not to `true` unconditionally: a
+  // caller that only passes `isReadOnly` (predating this prop, or a channel
+  // row that hasn't gone through the server's capability projection yet)
+  // must still get the old read-only-blocks-everyone behavior rather than a
+  // falsely-live composer.
+  const resolvedCanPost = canPost ?? !isReadOnly;
+  if (!resolvedCanPost) {
     return (
       <p className="border-t border-border px-4 py-3 text-[12.5px] text-muted-foreground">
-        This channel is read-only. Posting requires the{" "}
-        <code className="font-mono">announcements:post</code> permission.
+        {isReadOnly ? (
+          <>
+            This channel is read-only. Posting requires the{" "}
+            <code className="font-mono">announcements:post</code> permission.
+          </>
+        ) : (
+          <>
+            Alumni can read this channel but not post. Alumni may post in{" "}
+            <code className="font-mono">#alumni</code> and direct messages.
+          </>
+        )}
       </p>
     );
   }

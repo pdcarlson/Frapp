@@ -12,12 +12,17 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { ChatMessage } from "@repo/chat-core/types";
-import { useMarkChannelRead, useMemberDisplayNames } from "@repo/hooks";
+import {
+  useChannel,
+  useMarkChannelRead,
+  useMemberDisplayNames,
+} from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { MessageBubble } from "@/components/chat/message-bubble";
 import { PollCard } from "@/components/chat/poll-card";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
+import { selectPostCapability } from "@/lib/chat/channel-list";
 import { getKeyboardPath } from "@/lib/keyboard";
 import { useConnection } from "@/lib/connection/use-connection";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -56,6 +61,20 @@ export default function ChatThreadScreen() {
     const value = Array.isArray(raw) ? raw[0] : raw;
     return typeof value === "string" && value.length > 0 ? value : null;
   }, [params.channelId]);
+
+  // Channel-level metadata (#704) — mobile had no read-only/post gating of any
+  // kind before this, unlike web's `chat-shell.tsx`. `can_post` already folds
+  // in `is_read_only`; `isReadOnly` is only read separately to pick which of
+  // the two disabled hints applies (read-only-without-permission vs. the
+  // alumni restriction — the two cases `spec/ui/design-system/writing.md` §
+  // Chat documents). `selectPostCapability` parses the payload defensively
+  // the same way `selectChannels` does — `GET /v1/channels/{id}` infers as
+  // `never` in the generated SDK.
+  const channelQuery = useChannel(channelId ?? "");
+  const { isReadOnly: channelIsReadOnly, canPost: channelCanPost } = useMemo(
+    () => selectPostCapability(channelQuery.data),
+    [channelQuery.data],
+  );
 
   const {
     messages,
@@ -326,7 +345,7 @@ export default function ChatThreadScreen() {
           value={draft}
           onChangeText={handleChangeText}
           onSend={handleSend}
-          canSend={canSend}
+          canSend={canSend && channelCanPost}
           placeholder="Message"
           // A send that never reached the outbox has no failed bubble to show
           // (nothing was queued), so this line is the only report of it.
@@ -340,12 +359,20 @@ export default function ChatThreadScreen() {
             // `ChatComposer` keys `editable` on it — so leading with the
             // offline branch promised "messages send when you reconnect" over
             // an input the member cannot type into, which is the one state
-            // where nothing will be queued and nothing will send.
+            // where nothing will be queued and nothing will send. The
+            // channel-level `can_post` gate (#704) comes next, ahead of
+            // offline: a channel the caller cannot post in stays not-postable
+            // whether or not they're connected, so offline is not the more
+            // relevant fact to lead with there.
             (!canSend
               ? "Connecting to chat…"
-              : appOffline
-                ? "You're offline — messages send when you reconnect."
-                : null)
+              : !channelCanPost
+                ? channelIsReadOnly
+                  ? "This channel is read-only. Posting requires the announcements:post permission."
+                  : "Alumni can read this channel but not post. Alumni may post in #alumni and direct messages."
+                : appOffline
+                  ? "You're offline — messages send when you reconnect."
+                  : null)
           }
           hintTone={sendError ? "error" : "muted"}
         />
