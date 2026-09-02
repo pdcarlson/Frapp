@@ -188,7 +188,13 @@ issue if anything looks off):
   `area:dx`; carries no label description, and its scope is likewise the owner's to define) ·
   `area:mobile` (same story, rostered 2026-08-24 — in use on #1237 for `apps/mobile` work that
   is neither `area:ux` nor `area:api`; carries no label description, and its scope is likewise
-  the owner's to define)
+  the owner's to define) · `area:chat` (same story, rostered 2026-09-02 — in use on #1499 for
+  chat dispatch work spanning `packages/chat-core` and its call sites; carries no label
+  description, and its scope is likewise the owner's to define. Note it **overlaps** the surface
+  labels rather than partitioning them, since chat ships on web, mobile and the API — #1499 alone
+  touches `packages/chat-core` plus `apps/web` and `apps/mobile` call sites — so an issue can
+  reasonably carry `area:chat` *and* a surface label. Whether that is intended is the owner's
+  call, not a routine's)
 - **Scope:** `scope:production` — work that only becomes relevant once a production environment
   exists (owner decision 2026-08-10; see
   [`GITHUB_PM.md` → Labels and priority](GITHUB_PM.md#labels-and-priority-lean-taxonomy) and the
