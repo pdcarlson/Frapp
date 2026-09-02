@@ -36,6 +36,15 @@ export interface SearchResult {
 export type SearchSource = keyof SearchResult;
 
 const SEARCH_LIMIT = 10;
+
+/**
+ * Guards the pushed-down channel-id filter. `chat_channels.id` is a `uuid`
+ * column, and PostgREST answers a malformed comparison with `22P02` rather than
+ * an empty set — so an unvalidated push-down would turn a garbage `channelId`
+ * into a 500 instead of the "no matches" the API contract promises.
+ */
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MIN_QUERY_LENGTH = 3;
 const SEARCH_TIMEOUT_MS = 500;
 
@@ -187,6 +196,7 @@ export class SearchService {
     chapterId: string,
     userId: string,
     query: string,
+    channelId?: string,
   ): Promise<SearchResult> {
     const q = query.trim();
     // Spec default: queries shorter than 3 characters return an empty result
@@ -194,7 +204,13 @@ export class SearchService {
     if (q.length < MIN_QUERY_LENGTH) {
       return emptyResult();
     }
-    return this.collect(chapterId, userId, q, (_source, work) => work);
+    return this.collect(
+      chapterId,
+      userId,
+      q,
+      (_source, work) => work,
+      channelId,
+    );
   }
 
   /**
@@ -214,6 +230,7 @@ export class SearchService {
     chapterId: string,
     userId: string,
     query: string,
+    channelId?: string,
   ): Promise<{
     results: SearchResult;
     timedOut: boolean;
@@ -231,6 +248,7 @@ export class SearchService {
       q,
       (source, work, fallback) =>
         withinBudget(source, work, fallback, timedOutSources, this.logger),
+      channelId,
     );
     return {
       results,
@@ -245,13 +263,37 @@ export class SearchService {
    * Shared by {@link search} and {@link searchWithinBudget} so the two cannot
    * drift on which sources exist or what each one is handed — the only
    * difference between them is the `wrap` they pass.
+   *
+   * `channelId` narrows this to the **single-channel** form of search that
+   * `spec/behavior/chat/README.md` specifies ("full-text search within a single
+   * channel or across all channels the user can access"). When it is present
+   * only the message source runs and the other three return empty, because a
+   * channel-scoped query is definitionally a chat search. The response shape is
+   * unchanged either way.
+   *
+   * **This is not a general "chat search is cheap" guarantee, and it would be
+   * dishonest to describe it as one.** It skips three sources only for the
+   * *single-channel* form. A chat caller searching chapter-wide sends no
+   * `channelId` and therefore still pays the full four-source fan-out, exactly
+   * as the command palette does — there is no source-selection parameter today.
+   * So the saving is real for the default scope and absent for the wide one;
+   * any per-keystroke cost argument has to be read with that split in mind.
    */
   private async collect(
     chapterId: string,
     userId: string,
     q: string,
     wrap: SourceWrapper,
+    channelId?: string,
   ): Promise<SearchResult> {
+    if (channelId) {
+      const messages = await wrap(
+        'messages',
+        this.searchMessages(chapterId, userId, q, channelId),
+        [],
+      );
+      return { backwork: [], events: [], members: [], messages };
+    }
     // Every source takes the raw query: all four parse it as a full-text query
     // rather than matching it as a substring.
     const [backwork, events, members, messages] = await Promise.all([
@@ -444,8 +486,39 @@ export class SearchService {
     chapterId: string,
     userId: string,
     query: string,
+    channelId?: string,
   ): Promise<ChatMessage[]> {
-    const channelIds = await this.accessibleChannelIds(chapterId, userId);
+    // A channel-scoped search is still resolved through `accessibleChannelIds`
+    // rather than trusting the caller's id — that is what keeps the single
+    // access path this method's comment below insists on. The id is pushed down
+    // as a candidate filter rather than applied to the result: narrowing the
+    // *candidate* set cannot widen the answer, because `canAccessChannel` still
+    // decides every id that comes back, but it does keep a single-channel
+    // search from scanning every channel row in the chapter on each debounced
+    // keystroke — which on an archive-imported chapter (hundreds of channels,
+    // the case this method's own docstring cites) is the difference between a
+    // scoped lookup and a chapter-wide scan inside a 500 ms budget.
+    //
+    // A channel that does not exist, sits in another chapter, or is simply not
+    // readable by this caller comes back empty. That is deliberate: a 403 here
+    // would answer "does this channel id exist?" for a member who cannot read
+    // it, turning search into a channel-existence oracle (the 403-vs-404
+    // distinction #1565 is open about elsewhere in chat).
+    const accessible = await this.accessibleChannelIds(
+      chapterId,
+      userId,
+      channelId,
+    );
+    // The push-down above is an optimisation; THIS is the correctness
+    // guarantee, and the two are deliberately not merged. Relying on the
+    // pushed-down `.eq('id', …)` alone would mean that if that filter is ever
+    // dropped or reordered, a channel-scoped search silently widens to every
+    // channel the caller can read — still no privilege escalation, but the
+    // wrong answer, returned confidently. Keeping the intersection makes the
+    // narrow result true by construction rather than by query shape.
+    const channelIds = channelId
+      ? accessible.filter((id) => id === channelId)
+      : accessible;
     if (!channelIds.length) return [];
 
     const { data, error } = (await this.supabase
@@ -477,11 +550,30 @@ export class SearchService {
   private async accessibleChannelIds(
     chapterId: string,
     userId: string,
+    /**
+     * Optional candidate narrowing. Purely a *reduction* of the rows considered
+     * — every id returned has still passed `canAccessChannel`, so this can make
+     * the answer smaller but never larger. The `chapter_id` filter below is not
+     * relaxed by it, so an id from another chapter matches nothing.
+     */
+    onlyChannelId?: string,
   ): Promise<string[]> {
-    const { data: channels, error: chError } = (await this.supabase
+    const channelQuery = this.supabase
       .from('chat_channels')
       .select('id, type, member_ids, required_permissions')
-      .eq('chapter_id', chapterId)) as QueryResult<{
+      .eq('chapter_id', chapterId);
+    // Only push the id down when it could actually BE one. `chat_channels.id`
+    // is a `uuid` column, so PostgREST rejects a malformed value with 22P02 and
+    // `throwIfError` turns that into a 500 — which would make
+    // `?channelId=general` an error instead of the empty result this method's
+    // caller documents and the spec promises. A non-uuid simply skips the
+    // narrowing and falls through to the JS intersection, which matches nothing
+    // and returns empty. The filter is an optimisation; it must never be the
+    // thing that decides whether the request succeeds.
+    const { data: channels, error: chError } = (await (onlyChannelId &&
+    UUID_PATTERN.test(onlyChannelId)
+      ? channelQuery.eq('id', onlyChannelId)
+      : channelQuery)) as QueryResult<{
       id: string;
       type: ChannelType;
       member_ids: string[] | null;

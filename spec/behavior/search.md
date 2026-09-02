@@ -22,6 +22,39 @@ A single search bar accessible from the top of the mobile and web app:
 
 - Member results are one query, not two: `members` with a `users!inner(…)` embed, filtered by `users.display_name_search` and scoped by the outer `chapter_id`. `users` is a **global** table, so that outer `.eq('chapter_id', …)` is the only thing keeping this source chapter-local — the embed filters within the chapter's members rather than searching users at large. It previously loaded the entire chapter roster before filtering.
 
+## Single-channel scope
+
+`GET /v1/search` takes an optional **`channelId`**. It serves the single-channel half of the
+chat search contract ([`chat/README.md`](chat/README.md) § Search: *"full-text search within a
+single channel or across all channels the user can access"*), which the cross-domain form
+alone could not express.
+
+- **Only the `messages` source runs**; `backwork`, `events` and `members` come back empty. The
+  response shape is unchanged. A channel-scoped query is definitionally a chat search, so
+  running the other three would be work no such caller renders.
+
+  This saving applies to the **single-channel form only**. A chat caller searching chapter-wide
+  sends no `channelId` and still pays the full four-source fan-out, exactly as the command
+  palette does — there is no source-selection parameter today. Do not read this bullet as
+  "chat search is cheap"; it is cheap for the default scope and unchanged for the wide one.
+- **The channel is intersected with the caller's accessible-channel set, never trusted.** It is
+  the same `accessibleChannelIds` → `canAccessChannel` path the unscoped form uses, so search
+  cannot disagree with chat about which role-gated channels a member may read. The id is *also*
+  pushed down as a candidate filter on the channel query so a single-channel search does not
+  scan every channel row in the chapter — but the intersection is kept as the correctness
+  guarantee, deliberately not replaced by it. Narrowing candidates cannot widen the answer;
+  relying on the pushed-down filter alone would mean that dropping it silently widens a scoped
+  search to every readable channel.
+- **An inaccessible or unknown `channelId` returns no matches, not a 403.** Distinguishing the
+  two would answer "does this channel id exist?" for a member who cannot read it, making search
+  a channel-existence oracle. An empty or whitespace-only value is treated as absent (chapter-wide)
+  rather than as a channel that cannot exist.
+
+**This filter cannot be replaced by filtering the response.** The per-source cap is applied by
+the database across every channel the caller can read, so a client narrowing a global result to
+one channel gets nothing whenever that channel's matches rank below the cut — and cannot tell
+that apart from a channel with no matches. Narrowing has to reach SQL.
+
 ## MVP defaults
 
 v1 ships with the following defaults. Chapter admins cannot override them; tuning requires a code change. These numbers exist so implementers don't have to guess — revisit with real usage signal before v2.

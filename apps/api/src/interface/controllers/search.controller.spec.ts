@@ -91,6 +91,56 @@ describe('SearchController', () => {
       'ch-1',
       'user-1',
       '',
+      undefined,
+    );
+  });
+
+  it('passes channelId through for the single-channel form of search', async () => {
+    searchService.searchWithinBudget.mockResolvedValue({
+      results: emptyResult,
+      timedOut: false,
+      timedOutSources: [],
+    });
+    const res = makeRes();
+
+    await controller.search('ch-1', 'user-1', 'budget', res, 'chan-9');
+
+    expect(searchService.searchWithinBudget).toHaveBeenCalledWith(
+      'ch-1',
+      'user-1',
+      'budget',
+      'chan-9',
+    );
+  });
+
+  it.each([
+    ['an omitted channelId', undefined],
+    ['an empty channelId', ''],
+    ['a whitespace-only channelId', '   '],
+    // `qs` yields an array for `?channelId=a&channelId=b` and an object for
+    // `?channelId[k]=v`, and Nest's ValidationPipe does not coerce a String
+    // metatype — so a bare `.trim()` here turned a malformed read into a 500.
+    ['a repeated channelId', ['a', 'b']],
+    ['a bracketed channelId', { k: 'v' }],
+    ['a non-string channelId', 42],
+  ])('treats %s as chapter-wide, not as a channel named ""', async (_, raw) => {
+    searchService.searchWithinBudget.mockResolvedValue({
+      results: emptyResult,
+      timedOut: false,
+      timedOutSources: [],
+    });
+    const res = makeRes();
+
+    await controller.search('ch-1', 'user-1', 'budget', res, raw);
+
+    // `?channelId=` with no value must not narrow to a channel that cannot
+    // exist — that would intersect to nothing and render "no matches in this
+    // channel" for a search the member meant to run across all of them.
+    expect(searchService.searchWithinBudget).toHaveBeenCalledWith(
+      'ch-1',
+      'user-1',
+      'budget',
+      undefined,
     );
   });
 });

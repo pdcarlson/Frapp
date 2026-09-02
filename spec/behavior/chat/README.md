@@ -223,6 +223,29 @@ Presence is ephemeral per ADR-02: it lives on the Realtime socket and is never p
 - Search returns message snippets with highlighted matches, grouped by channel.
 - Search respects permissions: only messages from channels the user can see are returned.
 
+Both scopes are served by `GET /v1/search`; the single-channel form passes an optional
+`channelId` ([`../search.md`](../search.md#single-channel-scope)). On web the surface is
+`ChatSearchPopover` in the channel header, alongside the pins popover, defaulting to the
+active channel with an "All channels" toggle. Picking a hit selects its channel if it is not
+already open and then jumps, reusing the same in-shell pending-target machinery a
+`/chat?channel=&message=` deep link resolves through. **It does not change the URL** — a
+search jump is not shareable, back-button-recoverable, or reload-surviving; only a real deep
+link is.
+
+**Three parts of the bullets above are aspirational, and the shipped surface says so rather
+than pretending otherwise:**
+
+- **Highlighted snippets do not exist**, for this surface or any other. `ts_headline` is
+  specced for all four search sources and built for none; see #1356. Rows show the message
+  body truncated, not a match-centred snippet.
+- **Results are not grouped by channel.** They are one list ordered newest-first, with a
+  per-row channel label when a hit is outside the channel in view.
+- **A jump can only reach the loaded window.** Web loads one page of channel history and has
+  no older-history backfill, so a hit older than that window cannot be scrolled to. The
+  timeline reports reachability instead of silently doing nothing, and the shell states the
+  limit in the channel header; the target stays pending, so a message that arrives later still
+  gets its jump. Reaching genuinely old hits needs real backfill — see #1571.
+
 ## Announcements
 
 - The `#announcements` channel is special: only members with `announcements:post` permission can send messages. All members can read.
