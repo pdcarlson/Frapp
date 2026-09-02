@@ -254,9 +254,20 @@ export function DocumentsPage() {
     from the loaded documents. Those entries carry no `id`, which is precisely
     right — without a folder record there is nothing to rename, reorder or
     delete, and the management controls key on `id` being present.
+
+    The derivation only runs against an *unfiltered* list. `documents` is the
+    search response, so deriving from it mid-search would rebuild the rail out
+    of the matches alone and drop every folder containing nothing that matched —
+    tabs vanishing key by key as someone types, including the selected one. So
+    while a search is active and the endpoint is down, the rail keeps only its
+    two built-in filters and the notice below says so. Remembering the last
+    unfiltered list instead would mean a ref written during render or a
+    setState in an effect, both of which the compiler rejects and neither of
+    which is worth it to prop up a degraded path.
   */
   const railFolders = useMemo<FolderRow[]>(() => {
     if (!foldersQuery.isError) return folders;
+    if (deferredSearch) return [];
     const names = new Set<string>();
     for (const doc of documents) {
       if (doc.folder) names.add(doc.folder);
@@ -264,7 +275,7 @@ export function DocumentsPage() {
     return Array.from(names)
       .sort((a, b) => a.localeCompare(b))
       .map((name) => ({ id: null, name, sort_order: null }));
-  }, [folders, foldersQuery.isError, documents]);
+  }, [folders, foldersQuery.isError, deferredSearch, documents]);
 
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
 
@@ -996,9 +1007,9 @@ export function DocumentsPage() {
             */}
             {foldersQuery.isError ? (
               <p className="px-2 pt-2 text-xs text-muted-foreground">
-                Couldn&apos;t load the folder list, so these are read from the
-                documents shown. Empty folders and folder management are
-                unavailable until it loads.{" "}
+                {deferredSearch
+                  ? "Couldn't load the folder list, so folder filters are unavailable while searching. Clear the search to get them back."
+                  : "Couldn't load the folder list, so these are read from the documents shown. Empty folders and folder management are unavailable until it loads."}{" "}
                 <button
                   type="button"
                   className={`underline ${FOCUS_RING_OFFSET}`}

@@ -917,3 +917,54 @@ describe("DocumentsPage search and folder resilience", () => {
     expect(move.className).toContain("pointer-coarse:w-11");
   });
 });
+
+describe("DocumentsPage derived folder fallback under search", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOffline.value = false;
+    resolvedDocumentsQuery();
+    chapter.active();
+  });
+
+  it("never derives folder tabs from a search result set", async () => {
+    // The fallback derives from `documents`, which IS the search response. If it
+    // ran mid-search, a query matching only Governance files would delete the
+    // Rush tab keystroke by keystroke — the rail describing the result set
+    // instead of the chapter. It drops to the two built-in filters instead, and
+    // the notice says why.
+    foldersQuery.data = [];
+    foldersQuery.isError = true;
+    documentsQuery.data = [
+      BYLAWS,
+      { ...BYLAWS, id: "doc-2", title: "Rush schedule", folder: "Rush" },
+    ];
+    const user = userEvent.setup();
+    const { rerender } = render(<DocumentsPage />);
+
+    // Unfiltered: both folders derive fine.
+    expect(screen.getByRole("button", { name: /^Rush$/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Governance$/ }),
+    ).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Search documents"), "bylaws");
+    // The server answers with Governance matches only.
+    documentsQuery.data = [BYLAWS];
+    rerender(<DocumentsPage />);
+
+    await waitFor(() =>
+      expect(documentsArgs.value).toEqual({ search: "bylaws" }),
+    );
+    // Neither tab survives — crucially including Governance, which the result
+    // set *would* have produced. Deriving a rail from matches is the bug.
+    expect(
+      screen.queryByRole("button", { name: /^Governance$/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^Rush$/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/folder filters are unavailable while searching/i),
+    ).toBeInTheDocument();
+  });
+});
