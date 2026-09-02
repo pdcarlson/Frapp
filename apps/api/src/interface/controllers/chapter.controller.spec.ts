@@ -173,9 +173,16 @@ describe('ChapterController', () => {
         failedContrastChecks: [],
       });
 
-      const result = await controller.update(chapterId, dto);
+      const result = await controller.update(chapterId, 'user-1', dto);
 
-      expect(chapterService.update).toHaveBeenCalledWith(chapterId, dto);
+      // The actor is forwarded so the save can be attributed in
+      // `chapter_audit_log` (#486) — an audit row with a null actor would read
+      // as a system write rather than an officer's edit.
+      expect(chapterService.update).toHaveBeenCalledWith(
+        chapterId,
+        dto,
+        'user-1',
+      );
       expect(result).toEqual({ ...expectedChapter, failedContrastChecks: [] });
     });
 
@@ -206,7 +213,7 @@ describe('ChapterController', () => {
         failedContrastChecks: [],
       });
 
-      const result = await controller.update(chapterId, dto);
+      const result = await controller.update(chapterId, 'user-1', dto);
 
       expect(result).not.toHaveProperty('stripe_customer_id');
       expect(result).not.toHaveProperty('subscription_id');
@@ -228,7 +235,7 @@ describe('ChapterController', () => {
         failedContrastChecks,
       });
 
-      const result = await controller.update(chapterId, dto);
+      const result = await controller.update(chapterId, 'user-1', dto);
 
       expect(result.failedContrastChecks).toEqual(failedContrastChecks);
     });
@@ -241,7 +248,7 @@ describe('ChapterController', () => {
         failedContrastChecks: [],
       });
 
-      const result = await controller.update(chapterId, dto);
+      const result = await controller.update(chapterId, 'user-1', dto);
 
       expect(result.failedContrastChecks).toEqual([]);
     });
