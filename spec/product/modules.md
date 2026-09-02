@@ -39,7 +39,7 @@
 - **Customer:** The chapter (organization).
 - **Provider:** Stripe.
 - **Model:** Fixed monthly subscription (e.g. $150/mo flat).
-- **Enforcement:** If the chapter's subscription is not active, the "Invite Member" endpoint returns 402 Payment Required.
+- **Enforcement:** Subscription state gates **writes**, applied by `ChapterGuard` at the request boundary. Its refusals are **403** — the API returns no 402 anywhere — though `BillingService` layers its own **400** refusals on top (a duplicate checkout while a live subscription exists, or a portal session for a chapter with no Stripe customer yet). A free-tier wedge (ten controllers, chat / members / **invites** among them) keeps writing while a chapter is `incomplete`, so a chapter fresh out of the onboarding wizard can invite before it has ever paid. A `past_due` chapter gets a 3-day grace window in which invite _minting_ is blocked while its other free-tier writes continue; after that window, and for `canceled`, **guarded** writes are blocked. Two things deliberately survive that lock, so "read-only" describes the guarded surface rather than the whole API: `@SubscriptionExempt()` billing-recovery routes, so a lapsed chapter can pay its way back; and routes carrying no `ChapterGuard` at all — invite redeem, notification preferences, analytics events — which were never subscription-gated in the first place. Full matrix, including the exact codes and the `GET`/`HEAD`/`OPTIONS` definition of a read: [`docs/guides/api-architecture.md`](../../docs/guides/api-architecture.md) § Subscription enforcement (ChapterGuard).
 
 ### Internal Ledger (House Points)
 
@@ -160,7 +160,8 @@
 
 - "Chapter Files" storage area for organizational documents (bylaws, constitutions, agendas, etc.).
 - Separate from Backwork (no academic metadata).
-- Optional flat folder structure (one level deep).
+- Optional flat folder structure (one level deep). Folders are first-class records: officers create, rename, reorder and delete them from the dashboard, and naming a new folder during upload still registers it. Renaming re-files the documents in it; deleting moves them to the root rather than deleting them.
+- Documents are searchable by title, combinable with the folder filter.
 - All members can view/download. Upload requires `chapter_docs:upload`; management requires `chapter_docs:manage`.
 
 ## Semester Rollover

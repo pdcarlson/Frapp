@@ -118,10 +118,10 @@ Two consequences worth stating plainly:
 
 | | |
 | --- | --- |
-| Producer | [`.github/workflows/db-backup.yml`](../../../.github/workflows/db-backup.yml) — nightly 07:00 UTC, plus `workflow_dispatch` |
+| Producer | [`.github/workflows/db-backup.yml`](../../../.github/workflows/db-backup.yml) — nightly 06:30 UTC, plus `workflow_dispatch` |
 | Script | [`scripts/db-backup.sh`](../../../scripts/db-backup.sh) |
 | Contents | three gzipped SQL files — roles, schema, data — plus a manifest carrying a SHA-256 per file |
-| Scope | `frapp-staging` only. Production is deferred by choice (#814 / `scope:production`) |
+| Scope | `frapp-staging` only — not deferred by choice: `frapp-prod` is `ACTIVE_HEALTHY` and serving traffic, but a `schedule:`-triggered job naming `environment: production` would suspend on ADR-19's required-reviewer gate every night. See #1435 (the design trap), #1403 (Supabase Pro / PITR) and #1421 (an offsite restore rehearsed at least once) |
 | Destination | A private Cloudflare R2 bucket, outside Supabase on purpose — Supabase deletes its own backups with the project. Provisioned 2026-08-27 (#1287): scoped API token (object read/write on that one bucket), `BACKUP_S3_*` secrets in Infisical `staging` at `/` — see [`ENV_REFERENCE.md`](../environment/ENV_REFERENCE.md) § Offsite Backup Secrets |
 | Retention | `BACKUP_RETENTION_DAYS`, default 30, pruned by the same workflow |
 | First verified run | [2026-08-27, run 1](https://github.com/pdcarlson/Frapp/actions/runs/33116113194) — upload plus independent read-back listing all 4 objects |
@@ -909,6 +909,20 @@ After any rollback event:
 * **⚠️ Note**: Additive DDL only — no existing table's data is touched, so nothing that predates the migration can be lost. But **redeploy the API at the pre-FRA-24 revision first**, or disable the sweeps. `ScheduledJobsService` claims a row before *every* unit of work, and `ScheduledJobsRepository` treats an unexpected insert error as "not claimed", so with the table gone **all three claim-based sweeps silently stop doing anything** (report retention takes no claim and is unaffected) — reminders send nothing, and attendance auto-absent stops marking. They fail safe (no crash, no double-send) but they also fail *quietly*: the only signal is a `dispatch claim failed` line per item. Auto-absent is not exempt — it claims under `entity_type = 'EVENT'` so it runs once per event instead of once per replica per hour.
 * **Data caveat**: the rows are delivery bookkeeping — which reminder has already gone out for which invoice/task. Dropping the table erases that memory, so **re-applying the migration and re-enabling the sweeps re-sends every reminder still inside the 7-day `OVERDUE_LOOKBACK_DAYS` window** (and any invoice/task due the next day). Members see duplicates for anything in that window; older items stay silent because the lookback bound excludes them. If that matters, snapshot the table before dropping and restore it alongside the re-apply.
 
+## Rollback pre-event reminder dispatch support
+
+* **Migration**: `20260902040000_event_reminder_dispatch_threshold.sql`
+* **Action**: the migration widens one `CHECK` constraint on the existing `scheduled_notification_dispatches` table and adds **no** index and no column. Reverting narrows the constraint back:
+  ```sql
+  DELETE FROM scheduled_notification_dispatches WHERE threshold = 'EVENT_REMINDER'; -- see data caveat
+  ALTER TABLE scheduled_notification_dispatches DROP CONSTRAINT scheduled_notification_dispatches_threshold_check;
+  ALTER TABLE scheduled_notification_dispatches ADD CONSTRAINT scheduled_notification_dispatches_threshold_check CHECK (threshold IN ('DUE_SOON', 'OVERDUE', 'AUTO_ABSENT', 'EXPIRED'));
+  ```
+  The narrowed `CHECK` will reject the `ADD CONSTRAINT` outright while any `threshold = 'EVENT_REMINDER'` row still exists, hence the `DELETE` first. Note the constraint above must be re-added with `'EXPIRED'` still in it — narrowing all the way back to the original three values would break the poll-expiry sweep as well; roll that back separately and in order if you intend to revert both.
+* **No index to drop.** Unlike the poll-expiry rollback above, there is nothing to `DROP INDEX` here. The sweep reads `events.start_time`, which `idx_events_start_time` already covers from `00000000000000_initial_schema.sql` — **do not drop it**; it predates this feature and `EventService.findByChapter`/`findChildren` order on that column.
+* **⚠️ Note**: Additive DDL only — no existing constraint value, table, or row is removed by the forward migration, so nothing that predates it can be lost. **Redeploy the API at the pre-#391 revision first**, or disable `ScheduledJobsService.handleEventReminderSweep` — with the narrowed `CHECK` back in place, `claimDispatch('EVENT', …, 'EVENT_REMINDER', …)` fails the insert (constraint violation, not `23505`) and `ScheduledJobsRepository` treats that as "not claimed", so the reminder sweep fails safe (no crash, no double-send) but silently stops reminding anyone — the only signal is a `dispatch claim failed` line per event. The auto-absent sweep is unaffected: it claims under the same `entity_type = 'EVENT'` but the untouched `'AUTO_ABSENT'` threshold.
+* **Data caveat**: the deleted rows record which events have already had a reminder sent. Unlike the invoice/task sweeps there is **no lookback window here** — the sweep only ever looks 30 minutes *forward* — so re-applying the migration and re-enabling the sweep re-sends a reminder only for events that are still more than zero and at most 30 minutes from starting at that moment. In practice that is at most a handful of events and is self-limiting; there is no risk of a backlog blast. Snapshot the `threshold = 'EVENT_REMINDER'` rows first only if you care about the audit trail.
+
 ## Rollback poll-expiry dispatch support
 
 * **Migration**: `20260902010000_poll_expiry_dispatch.sql`
@@ -1077,6 +1091,11 @@ After any rollback event:
   $$;
   ```
 * **Note**: Grant-only change, no data loss and no function body change — restores the pre-migration Postgres-default EXECUTE-to-PUBLIC behavior for `anon`/`authenticated`. Should not be needed: all three RPCs are `security invoker` (RLS still applies under the caller's own privileges) and both callers (`ReportService.getPointsReport`, `SupabasePollVoteRepository`) already go through the API's `service_role` client, which keeps EXECUTE regardless. Only relevant if some other caller was found to invoke these RPCs directly as `anon`/`authenticated` (e.g. via PostgREST) after this migration shipped — confirm that caller's actual need before rolling back, since re-opening the grant is exactly the convention gap #678 closed.
+
+## Rollback `get_points_report` RPC `p_until` bound
+* **Migration**: `20260902010001_get_points_report_until.sql` (supersedes `20260604140000_get_points_report_window_filter.sql`)
+* **Action**: Run `DROP FUNCTION IF EXISTS get_points_report(uuid, uuid, timestamptz, timestamptz);`, then recreate the 3-arg `(uuid, uuid, timestamptz)` overload from `20260604140000`, and re-apply its EXECUTE lock-down (revoke from `public`/`anon`/`authenticated`, grant to `service_role`) per `20260901173000`.
+* **Note**: Additive/no data loss — the migration drops the 3-arg overload and recreates the RPC with an added `p_until timestamptz` upper bound (#377), used to filter to one specific archived semester's `[start_date, end_date]` calendar-day range rather than only "since the latest archive, through now". The API calls the new 4-arg overload from `ReportService.getPointsReport` on every path (the `window`-based path always passes `p_until: null`; the new `semester_archive_id` path passes a real bound), so a forward-fix — deploy an API revision that reverts to the prior 3-arg call — is required before dropping the 4-arg overload, or every points report request fails. The migration also re-applies the EXECUTE lock-down to the new signature, since `DROP FUNCTION` removes the old signature's grants along with it; a rollback that skips re-applying the lock-down leaves the recreated 3-arg function on Postgres's EXECUTE-to-PUBLIC default.
 
 ## Rollback Group DM leave + archive (20260901180000)
 * **Migration**: `20260901180000_chat_channels_archived_at.sql`

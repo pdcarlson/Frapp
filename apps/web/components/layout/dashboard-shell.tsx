@@ -23,6 +23,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import { SKIP_LINK_CLASSES } from "@/components/ui/focus";
 import { DashboardCommandMenu } from "@/components/layout/dashboard-command-menu";
 import { DashboardNotificationDrawer } from "@/components/layout/dashboard-notification-drawer";
 import { AccountMenu } from "@/components/layout/account-menu";
@@ -334,10 +335,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
           </div>
         </SheetContent>
       </Sheet>
-      <a
-        href="#main-content"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm"
-      >
+      <a href="#main-content" className={SKIP_LINK_CLASSES}>
         Skip to main content
       </a>
       <div className="mx-auto flex w-full max-w-[1400px]">

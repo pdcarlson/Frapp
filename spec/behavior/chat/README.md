@@ -114,8 +114,27 @@ Chat is not a module — it is the spine of the app, and every other capability 
 
 - Member online status is tracked via Supabase Realtime Presence.
 - Presence heartbeat: ~30 seconds. If no heartbeat is received, the user is marked offline.
-- Online status is visible in the member list sidebar and in DM conversations.
+- Online status is visible in the member list sidebar and in DM conversations. The web **Directory** (`/members`) renders it today; the DM and channel member lists do not yet.
 - Statuses: Online, Idle (app open but inactive for >5 minutes), Offline.
+
+**Two presence topics, deliberately.** They answer different questions and must not be merged:
+
+| Topic | Scope | Read by |
+| --- | --- | --- |
+| `chat:channel:<channelId>` | Who has *this channel* open | The push worker, via service role, to suppress pushes to members already looking (ADR-10) |
+| `presence:chapter:<chapterId>` | Who is present in the *chapter* at all | The web Directory |
+
+The chat topic's channel config and its `{ userId, ts }` payload are a cross-service contract pinned by `packages/chat-core/src/presence-contract.test.ts`. Re-keying it or widening its payload silently disables push suppression, so a surface needing chapter-wide presence takes the second topic rather than extending the first.
+
+Both are **public** Realtime channels, so presence is advisory and must never be an input to an authorization decision — it can be both read and forged by anyone holding the anon key. Why they are public, and what that exposes, is [`docs/internal/security/AUTHORIZATION_MODEL.md`](../../../docs/internal/security/AUTHORIZATION_MODEL.md) § "The policies that do exist".
+
+**`ts` is last activity, not last publish** — this is what makes Idle reachable. If every publish stamped the current time, `ts` could never age past the 5-minute threshold and every present member would read Online forever. Instead a re-publish carries the *unchanged* activity timestamp, and the two signals split the three states: presence membership answers Online-vs-Offline, and `ts` answers Online-vs-Idle. Activity is approximated from throttled pointer, key, scroll and focus events plus `visibilitychange` — the browser cannot observe attention directly, and the throttle floor is the ~30s cadence, so the worst-case error is one interval against a five-minute window. A `visibilitychange` to *hidden* does not count as activity; treating it as such would reset the idle clock at the moment a member walks away.
+
+**Nothing expires a presence entry.** Supabase Realtime presence is connection-scoped — there is no TTL and no reaper — so an entry goes away when the channel or socket tears down, not when a client stops publishing. There is therefore no liveness heartbeat to maintain: publishing happens on join, on every re-join (which is what restores a member after a drop), and when activity genuinely advances. A periodic re-publish of an unchanged payload would broadcast a diff to every subscriber and buy nothing.
+
+**Presence is published from the app shell, not from the screen that displays it.** A member is present because the app is open, not because they are looking at the Directory — so the tracking half is mounted for every dashboard route. Scoping it to the reading screen would make the dot mean "has the Directory open" and render everyone in Chat as Offline.
+
+Presence is ephemeral per ADR-02: it lives on the Realtime socket and is never persisted, so it costs no Postgres write and leaves no row to reap when a member disconnects.
 
 **Search:**
 

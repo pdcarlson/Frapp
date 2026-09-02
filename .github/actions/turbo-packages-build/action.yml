@@ -1,0 +1,70 @@
+name: Turbo packages build
+description: >
+  Compile `packages/*` through turbo, reusing the `.turbo` build cache that
+  ADR-15 lever (A) introduced. One job produces the cache and the rest consume
+  it read-only; this action is the single definition of the cache key both
+  halves must agree on.
+
+inputs:
+  save:
+    description: >
+      `true` in the one job that produces the cache (`packages-build`), which
+      uses `actions/cache` so the post-job hook writes `.turbo` back. Every
+      other job leaves this at `false` and gets `actions/cache/restore`, which
+      has no post hook and so cannot race the producer for the same key.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    # The key lives here, once, rather than twice in the two cache branches
+    # below -- which is the whole reason this step exists. It was previously
+    # repeated verbatim in all eight call sites, where a producer and a
+    # consumer could silently drift onto different keys.
+    #
+    # What drift actually costs, stated accurately: because `restore-keys`
+    # keeps the shared `turbo-pkgbuild-<os>-` prefix, a consumer whose exact
+    # key drifts still restores the producer's most recent `.turbo` through
+    # the prefix, and turbo's own content hashing still hits for unchanged
+    # packages. So it degrades to a stale-but-useful cache, NOT a cold
+    # rebuild; a true cold rebuild needs the prefix itself to drift. Either
+    # way it fails silently, because a cache miss is not an error -- that
+    # silence, not the magnitude, is why this is single-sourced.
+    #
+    # Considered and rejected: collapsing to `cache/restore` + a conditional
+    # `cache/save`. It is NOT cheaper: four declared steps either way, and
+    # three run for a consumer either way (the alternative's extra main step
+    # falls on the producer, where it merely replaces this shape's post hook).
+    # It dedupes nothing either, since `path` appears twice either way. What it
+    # would cost is real: `actions/cache` carries `post-if: success()`, so it
+    # skips the save when a LATER step in the job fails, and an inline save
+    # cannot express that because it has already run by then. This action is a
+    # faithful extraction of eight hand-written blocks and keeps their exact
+    # semantics.
+    - name: Compute turbo cache key
+      id: cache-key
+      shell: bash
+      run: |
+        echo "key=turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}" >> "$GITHUB_OUTPUT"
+        echo "restore-key=turbo-pkgbuild-${{ runner.os }}-" >> "$GITHUB_OUTPUT"
+
+    - name: Cache turbo build outputs
+      if: inputs.save == 'true'
+      uses: actions/cache@v4
+      with:
+        path: .turbo
+        key: ${{ steps.cache-key.outputs.key }}
+        restore-keys: ${{ steps.cache-key.outputs.restore-key }}
+
+    - name: Restore turbo build outputs
+      if: inputs.save != 'true'
+      uses: actions/cache/restore@v4
+      with:
+        path: .turbo
+        key: ${{ steps.cache-key.outputs.key }}
+        restore-keys: ${{ steps.cache-key.outputs.restore-key }}
+
+    - name: Build shared packages
+      shell: bash
+      run: npx turbo run build --filter='./packages/*'

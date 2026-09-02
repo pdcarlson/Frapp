@@ -202,7 +202,7 @@ to be caught in review.
 | --- | --- | --- |
 | `chat_message_actions` | `_select` | `auth.role() = 'authenticated' AND can_read_chat_message(message_id)` — per-row channel-membership check via a `SECURITY DEFINER` function mirroring `canAccessChannel`. RLS is the only gate here: the web reads it directly (`packages/chat-core/src/realtime-manager.ts`, 2 call sites) |
 | `chat_messages` | `_select` | `auth.role() = 'authenticated' AND can_read_chat_message(id) AND kind <> 'imported'` — the same predicate applied to the message row itself, plus the imported-archive exclusion. Introduced by `20260816140000_realtime_carrier_repair.sql` so the chat `postgres_changes` subscription can receive rows, then **superseded by `20260823123000_chat_imported_kind_semantics.sql`**, which added the third conjunct: Realtime evaluates this policy per subscriber, so it is what stops a bulk archive import fanning a frame per row to every open client. RLS is the only gate, as above |
-| `realtime.messages` | `realtime_messages_scoped_select` | Authorises the three private change-ping topics by prefix (`notif:` / `events:` / `attendance:`), each behind a `SECURITY DEFINER` scope predicate (own user, chapter membership, event's chapter membership). Purely additive: `realtime.messages` had RLS on with **no** policy, which denied every private channel. Chat's typing/presence channels are *public* and bypass this table entirely |
+| `realtime.messages` | `realtime_messages_scoped_select` | Authorises the three private change-ping topics by prefix (`notif:` / `events:` / `attendance:`), each behind a `SECURITY DEFINER` scope predicate (own user, chapter membership, event's chapter membership). Purely additive: `realtime.messages` had RLS on with **no** policy, which denied every private channel. Chat's typing/presence channels, and the Directory's `presence:chapter:<chapterId>` channel, are *public* and bypass this table entirely — the `case` ends in `else false`, so any topic outside the three prefixes is denied on a private channel and must ship a fourth branch here before it can go private. **Public presence is unauthenticated both ways:** anyone with the anon key and the id can read the roster, and because presence identity comes from the tracked payload rather than the caller's JWT, can also forge an entry for another user. Presence is therefore advisory — never an input to an authorization decision |
 | `chat_message_actions` | `_insert`, `_delete` | `user_id in (select id from users where supabase_auth_id = auth.uid())` — own rows only |
 | `chat_notification_preferences` | `_select_own` | Own rows only |
 | `chapter_audit_log` | `_no_update`, `_no_delete` | `using (false)` — append-only, tightens rather than widens |
@@ -364,13 +364,48 @@ The rest of the e2e suite stubs `ChapterGuard`; this spec must not, or it tests 
 
 ### RLS enforcement (`scripts/check-pglite-migrations.mjs`)
 
-The two tables where **RLS is the only gate** are covered black-box, by reading them as an
-unprivileged `rls_probe` role rather than by pattern-matching the policy expression:
+Four tables are covered black-box, by reading them as an unprivileged `rls_probe` role rather than
+by pattern-matching the policy expression. The first two are the ones where **RLS is the only gate**
+(a browser or mobile Supabase client reads them directly, including over Realtime); the last two are
+read only through the service-role client, and are covered because a policy appearing on them at all
+would be the regression:
 
 | Table | Coverage |
 | --- | --- |
 | `chat_message_actions` | membership/tenancy matrix (read path) |
 | `chat_messages` | membership/tenancy matrix (#977) + the imported-archive exclusion (#974) + a post-archive tenancy re-check (#977) |
+| `members` | default-deny: every probe identity reads 0 rows (#423) |
+| `financial_invoices` | default-deny: every probe identity reads 0 rows (#423) |
+
+The last two are the inverse assertion. Neither carries a policy a client role can reach —
+`financial_invoices` has none at all, and `members`' only policy is `to supabase_auth_admin`, a role
+PGlite does not have — so the property under test is that they stay unreadable. Each is guarded
+against passing vacuously: the probe's `SELECT` privilege is asserted, and the fixture rows are
+asserted present as owner, before any zero-row claim is made. The probe read itself is unscoped, so
+a policy leaking some *other* chapter's rows fails too.
+
+Because the probe reads with `SELECT` only, it is structurally blind to a permissive **write**
+policy (`for insert with check (true)` leaves every read assertion green, and Supabase's default
+`grant all … to anon, authenticated` is never revoked at table level). So each of the two also
+carries a catalog assertion that it holds **no client-reachable policy of any command shape**,
+which covers INSERT/UPDATE/DELETE/ALL without a write probe per command.
+
+Two things make the whole tier meaningful rather than decorative, and both were false-PASS bugs
+before they were fixed:
+
+- **The `authenticated` role is created before migrations apply.** ~18 migrations guard their policy
+  and grant statements behind `if exists (select 1 from pg_roles where rolname = 'authenticated')`.
+  Without the role those blocks are skipped silently, so a `create policy … to authenticated using
+  (true)` written in that idiom — the repo's dominant one — left the entire harness green.
+- **`auth.role()` is varied per scenario**, not pinned to `'authenticated'`. Otherwise the
+  "no JWT" reader is merely a signed-in reader with a null `uid`, and a policy spelled
+  `using (auth.role() = 'anon')` reads as default-deny here while being world-readable in
+  production.
+
+**This is four tables, not the whole schema.** A permissive policy added to any of the other
+RLS-enabled tables changes no assertion in the harness; the every-public-table invariant covers
+`relrowsecurity` only, not what the policies do. `chat_notification_preferences` is the known gap —
+it carries a client-reachable `SELECT` policy with no black-box coverage (tracked separately).
 
 `rls_probe` is granted `SELECT` only, so this tier proves the **read** path by execution. The
 own-row `INSERT`/`DELETE` policies on `chat_message_actions` are covered by shape assertions over

@@ -1,4 +1,5 @@
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
 
 // Tiptap's ProseMirror view does not render document content into jsdom's
@@ -92,6 +93,29 @@ describe("Composer placeholder wiring", () => {
     expect(placeholderTextFrom(capturedExtensions.at(-1)!)).toBe(
       composerPlaceholder("random"),
     );
+  });
+});
+
+/**
+ * #396: the trigger button announced neither that it opens a dialog nor
+ * whether that dialog is currently open — a screen-reader user got no signal
+ * distinguishing this from a plain action button.
+ */
+describe("Composer slash-command trigger (#396)", () => {
+  it("reflects the palette's open state via aria-expanded, and opens a modal dialog", async () => {
+    const user = userEvent.setup();
+    render(<Composer {...baseProps()} />);
+
+    const trigger = screen.getByRole("button", {
+      name: /open slash commands/i,
+    });
+    expect(trigger).toHaveAttribute("aria-haspopup", "dialog");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(trigger);
+
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("dialog")).toHaveAttribute("aria-modal", "true");
   });
 });
 

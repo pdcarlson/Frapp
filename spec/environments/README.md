@@ -16,13 +16,13 @@
 | **Stripe**   | Test mode (`sk_test_`)            | Test mode (`sk_test_`)                  | Live mode (`sk_live_`)                |
 | **Push**     | Expo Go (dev)                     | EAS internal builds                     | Production builds                     |
 
-Each Supabase project (local, staging, production) is fully isolated: separate database, auth users, storage buckets, and API keys.
+Each Supabase project (local, staging, production) is fully isolated: separate database, auth users, storage buckets, and API keys. The staging Landing and Web App cells describe the intended model: as of 2026-09-02 both Vercel projects are unlinked from Git (ADR-21), so those two hosts are frozen at their last Git build — see §6 **Web and Landing (Vercel)**.
 
 ### Branch-to-environment mapping
 
 | Branch      | Purpose                              | Deployment behavior                                    |
 | ----------- | ------------------------------------ | ------------------------------------------------------ |
-| `main`      | Pre-production / staging integration | Triggers staging and Vercel Preview domain deployments |
+| `main`      | Pre-production / staging integration | Triggers staging and Vercel Preview domain deployments — Vercel Preview retired (ADR-21; landing 2026-09-01, web 2026-09-02), see §6 |
 | `feature/*` | Short-lived feature work             | No automatic Vercel deployments; merged into `main`    |
 
 Production is **not** mapped to a branch. It is deployed by running the **Deploy
@@ -128,7 +128,7 @@ npm run generate -w packages/api-sdk
 - **Purpose:** QA, stakeholder demos, mobile TestFlight/internal builds.
 - **Git branch:** `main` — pushes trigger staging/pre-production deployments.
 - **Supabase:** Dedicated staging project (separate from production). Create via Supabase dashboard or CLI.
-- **Web / Landing:** Vercel Preview deployments with staging domains (`app.staging.frapp.live`, `staging.frapp.live`), filtered to the `main` branch.
+- **Web / Landing:** Vercel Preview deployments with staging domains (`app.staging.frapp.live`, `staging.frapp.live`), filtered to the `main` branch. **Not running as of 2026-09-02:** both Vercel projects are unlinked from Git (ADR-21), so no push produces a preview and both staging hosts are frozen at their last Git build — see §6 **Web and Landing (Vercel)**.
 - **API:** Render staging service (`frapp-api-staging`), auto-deploys from `main`, pointing at Supabase staging.
 - **Mobile:** EAS internal distribution builds (`eas build --profile preview`).
 - **Stripe:** Test mode keys (`sk_test_`).
@@ -143,7 +143,8 @@ npm run generate -w packages/api-sdk
   and the `production` environment's Required reviewers).
 - **Supabase:** Dedicated production project. Fully isolated users, database, storage.
 - **Web App:** `app.frapp.live` (Vercel, production deployment created by the workflow
-  through the API with `target: production`).
+  through the API with `target: production`) — currently blocked; see §6 **Web and Landing
+  (Vercel)**, 2026-09-02.
 - **Landing:** `frapp.live` (Vercel, same).
 - **API:** Render production service (`frapp-api-prod`), deployed by commit id through
   the Render API, pointing at Supabase production + Stripe live keys. Render-side
@@ -248,7 +249,7 @@ session model (Opus). There is no `claude-review-gate` required check, no `claud
 
 ### Key Design Decisions
 
-- **The frontend build gate is production-shaped, not preview-shaped.** `web-production-build` builds `apps/web` and `apps/landing` under `npm ci --omit=dev`, matching Vercel's production install, because nothing in CI ran `next build` before #1374 and that gap took production down twice (#1331, #1372). Staging frontends are still verified through Vercel preview deployments off `main`; production deployments are created by `deploy-production.yml`. The build-shape difference between the two is a recorded trade-off — ADR-20 decision 3.
+- **The frontend build gate is production-shaped, not preview-shaped.** `web-production-build` builds `apps/web` and `apps/landing` under `npm ci --omit=dev`, matching Vercel's production install, because nothing in CI ran `next build` before #1374 and that gap took production down twice (#1331, #1372). Staging frontends are still verified through Vercel preview deployments off `main`; production deployments are created by `deploy-production.yml`. The build-shape difference between the two is a recorded trade-off — ADR-20 decision 3. **The staging half of that has not run since the unlink** (landing 2026-09-01, web 2026-09-02): with both Vercel projects unlinked from Git (ADR-21) no push produces a preview, so no Vercel build of either frontend happens on merge any more — see §6 **Web and Landing (Vercel)**.
 - **No placeholder secrets.** CI never sets `NEXT_PUBLIC_SUPABASE_URL` or similar to dummy values. All env-dependent builds happen in the provider (Vercel/Render).
 - **API contract check uses git-diff.** The `openapi.json` is committed as a source-of-truth artifact. CI checks freshness via `git diff` — it does not bootstrap the NestJS application, avoiding the need for Supabase/Stripe credentials in CI.
 - **Mobile CI is lint + typecheck only.** EAS builds are expensive and slow; they run on-demand, not per-PR.
@@ -258,6 +259,15 @@ If any required check fails, the PR cannot be merged. Branch protection rules en
 ---
 
 ## 6. Continuous Deployment (CD)
+
+> **Current state (2026-09-02) — the Vercel half of this section is not running.** Both Vercel
+> projects were deliberately unlinked from Git (landing 2026-09-01, web 2026-09-02), so no push
+> deploys web or landing, and the guardrails preflight inside `deploy-production.yml` currently
+> blocks production deploys of every service; Render **staging** (the `deploy-api.yml` push path)
+> and EAS are unaffected. What follows stays written as intended. **ADR-21** in
+> [`../architecture/README.md`](../architecture/README.md) is the canonical record of the unlink,
+> the freeze points and the live breakages; the repair work is **#1579** (guardrails and verify)
+> and **#1578** (CI-driven Vercel deploys).
 
 Staging deploy steps are gated by CI: after CI succeeds on `main`, `deploy-api.yml` runs database migrations and triggers the Render staging deploy, and Vercel produces a Preview deployment from the same push. Nothing about production is push-triggered — `deploy-production.yml` creates the Render deploy and both Vercel production deployments itself, for a commit a human named.
 
@@ -280,6 +290,19 @@ jobs is in `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and boots
 secrets.
 
 ### Web and Landing (Vercel)
+
+> **Current state (2026-09-02) — both projects are unlinked from Git** (Vercel reports
+> `link: null` for both), so nothing below that depends on the Git integration is running: no push
+> produces a preview, and both staging hosts are frozen at their last Git build — landing `2bf143b`
+> (2026-09-01T20:19Z) and web `0372c6d` (2026-09-02T02:41:42Z). The bullets below are kept as the
+> intended model, and the `git.deploymentEnabled` and `ignoreCommand` keys stay in both
+> `vercel.json` files: they are the versioned form of settings that are otherwise dashboard-only, so
+> re-linking Git must not find them missing. **ADR-21** in
+> [`../architecture/README.md`](../architecture/README.md) is the canonical record of the unlink,
+> the per-project freeze points and the live breakages; the repair work is **#1579** (the
+> production-guardrails assertion and the failing `verify-deployments.yml` verify step) and
+> **#1578** (CI/CD stage 7 — `vercel build` plus `vercel deploy --prebuilt --prod` from Actions,
+> designed but not built).
 
 - Push to `main` triggers **preview** Vercel deployments (staging domains).
 - Production deployments are **created by the workflow**, not by a push: a fresh build of
@@ -314,7 +337,7 @@ secrets.
 
 ### Deploy Ordering
 
-**Default:** Vercel (frontends) and Render (API) deployments run in parallel after merge. Database migrations always run before the API deploy (enforced by the deploy workflow's job dependency chain).
+**Default:** Vercel (frontends) and Render (API) deployments run in parallel after merge — the Vercel half of this default has not run since the unlink (ADR-21; landing 2026-09-01, web 2026-09-02); see §6 **Web and Landing (Vercel)**. Database migrations always run before the API deploy (enforced by the deploy workflow's job dependency chain).
 
 **Exception — breaking API changes:** Use the split-PR flow in `docs/internal/quality/PR_REVIEW_PROCESS.md` when compatibility is not maintained:
 
@@ -322,7 +345,7 @@ secrets.
 2. Verify the API health check passes.
 3. Merge frontend follow-up PRs only after API verification.
 
-Because Vercel deploys are push-triggered, hold frontend merges until the API is confirmed healthy. Breaking changes must be documented in the PR description and flagged for manual coordination. Use backward-compatible migration patterns wherever possible to avoid this scenario.
+Because Vercel deploys are push-triggered, hold frontend merges until the API is confirmed healthy. **Since 2026-09-02 no Vercel deploy is push-triggered at all** — both projects are unlinked from Git (ADR-21), so a frontend merge currently reaches no deployed host and this ordering rule describes what must hold once CI/CD stage 7 (#1578) restores an automatic path, not anything running today. Breaking changes must be documented in the PR description and flagged for manual coordination. Use backward-compatible migration patterns wherever possible to avoid this scenario.
 
 ### Release labels for version tags
 
@@ -439,4 +462,4 @@ Frapp is primarily developed in Claude Code web sessions. Each runs in a fresh, 
 
 ## Claude Code Routines environment
 
-The scheduled backlog agents run as **Claude Code Routines**: each firing starts a fresh Claude Code web session in the same environment as interactive cloud sessions (repo cloned from `main`, the SessionStart hook and injected MCP servers included), so no separate sandbox config exists. The routines are configured in the Claude Code UI (config-as-code isn't supported), so the canonical prompts and every setting are version-controlled in [`docs/internal/ci-cd/ROUTINES.md`](../../docs/internal/ci-cd/ROUTINES.md). There are **four** routines — two staggered daily, two weekly. Three write to **GitHub Issues** via the **GitHub MCP** the environment pre-approves (keyless; Linear was retired 2026-08-08, see ADR-16 amendment 5); the fourth writes docs. None write to Linear and none edit product code (a docs-only PR is the single exception, per `ROUTINES.md`): the **Issue Curator** ([`.claude/skills/issue-curator/SKILL.md`](../../.claude/skills/issue-curator/SKILL.md)) maintains + files `suggestion` issues into the `triage` inbox, **Issue Triage** ([`.claude/skills/issue-triage/SKILL.md`](../../.claude/skills/issue-triage/SKILL.md)) prioritizes/buckets/promotes ~1h later, and the weekly **PR Follow-ups** harvester ([`.claude/skills/pr-followups/SKILL.md`](../../.claude/skills/pr-followups/SKILL.md)) sweeps human-action/deferred items from PR threads into the inbox. Weekly on Wednesday, **Docs Upkeep** ([`.claude/skills/docs-upkeep/SKILL.md`](../../.claude/skills/docs-upkeep/SKILL.md)) sweeps a rotating fifth of the docs corpus and fixes stale claims in a docs-only PR — the one routine that repairs rather than files (ADR-16 amendment 6).
+The scheduled backlog agents run as **Claude Code Routines**: each firing starts a fresh Claude Code web session in the same environment as interactive cloud sessions (repo cloned from `main`, the SessionStart hook and injected MCP servers included), so no separate sandbox config exists. The routines are configured in the Claude Code UI (config-as-code isn't supported), so the canonical prompts and every setting are version-controlled in [`docs/internal/ci-cd/ROUTINES.md`](../../docs/internal/ci-cd/ROUTINES.md). There are **five** routines — three daily, two weekly. Three write to **GitHub Issues** via the **GitHub MCP** the environment pre-approves (keyless; Linear was retired 2026-08-08, see ADR-16 amendment 5); the fourth writes docs; the fifth writes product code. None write to Linear, and only the fifth edits product code (per `ROUTINES.md`): the **Issue Curator** ([`.claude/skills/issue-curator/SKILL.md`](../../.claude/skills/issue-curator/SKILL.md)) maintains + files `suggestion` issues into the `triage` inbox, **Issue Triage** ([`.claude/skills/issue-triage/SKILL.md`](../../.claude/skills/issue-triage/SKILL.md)) prioritizes/buckets/promotes ~1h later, and the weekly **PR Follow-ups** harvester ([`.claude/skills/pr-followups/SKILL.md`](../../.claude/skills/pr-followups/SKILL.md)) sweeps human-action/deferred items from PR threads into the inbox. Weekly on Wednesday, **Docs Upkeep** ([`.claude/skills/docs-upkeep/SKILL.md`](../../.claude/skills/docs-upkeep/SKILL.md)) sweeps a rotating fifth of the docs corpus and fixes stale claims in a docs-only PR — the first routine that repairs rather than files (ADR-16 amendment 6). Daily at 06:00 ET, before the others, **Hygiene Scan** ([`.claude/skills/hygiene-scan/SKILL.md`](../../.claude/skills/hygiene-scan/SKILL.md)) grounds itself in the engineering standards and gates, reads a rotating fifth of the codebase whole, and fixes one verified hygiene theme in a product-code PR a human merges — the only routine allowed to edit product code (ADR-16 amendment 7).

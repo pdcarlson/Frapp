@@ -81,8 +81,9 @@ Three things about it are load-bearing:
   not as something a deploy will tidy up.
 
   > The job is listed in `scripts/ci/lib/required-checks.mjs`, but listing it is
-  > not the same as enforcing it: required checks only change when someone runs
-  > `npm run configure:branch-protection`. Until that happens this job runs and reports
+  > not the same as enforcing it: required checks only change when an admin runs
+  > `npm run configure:branch-protection` (a human step; an agent session runs
+  > `npm run configure:branch-protection:verify`, which writes nothing). Until that happens this job runs and reports
   > on every PR without blocking a merge — the same rollout state as `secret-scan`,
   > `clean-checkout-typecheck`, and `dependency-audit` (#813).
 

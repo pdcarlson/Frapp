@@ -171,11 +171,11 @@ Where a dialog's `open` state lives in a parent, the **parent** carries the gate
 
 Three of `chapter-document`'s six writes — folder create, rename and delete — have no client counterpart yet: the documents page derives its folder list from the loaded documents and its folder buttons are pure filters. A folder-management UI must adopt the gate when it lands.
 
-**Free-tier** (writes survive `incomplete`, and `past_due` inside grace): `chapter` · `chapter-config` · `chat` · `custom-field` · `custom-role` · `invite` · `member` · `rbac` · `search` · `user`. The two `@GraceBlocked` routes are `POST /invites` and `POST /invites/batch`.
+**Free-tier** (writes survive `incomplete`, and `past_due` inside grace): `chapter` · `chapter-config` · `chat` · `custom-field` · `custom-role` · `invite` · `member` · `rbac` · `search` · `user`. The three `@GraceBlocked` routes are `POST /invites`, `POST /invites/batch` and `POST /invites/email`.
 
 **Exempt:** `billing` (whole class — the recovery path) and `POST /invoices/:id/payment-intent`.
 
-**Not chapter-guarded at all**, so never subscription-gated despite carrying writes: `analytics`, `notification`, `chapter-directory`, `webhook`, and `POST /chapters`, `POST /chapters/onboard`, `POST /chapters/:id/activate`. Gating these would lock a lapsed chapter out of settings and push registration it is entitled to — over-gating is a worse defect than the late 403.
+**Not chapter-guarded at all**, so never subscription-gated despite carrying writes: `analytics`, `notification`, `webhook`, and `POST /chapters`, `POST /chapters/onboard`, `POST /chapters/:id/activate`, `POST /invites/redeem`. (`chapter-directory` is also un-guarded but has no non-GET route, so it contributes no write surface.) Gating these would lock a lapsed chapter out of settings and push registration it is entitled to — over-gating is a worse defect than the late 403. `redeem` is the subtle one: it sits on an otherwise-guarded controller, and the chapter it writes to is `invite.chapter_id`, which `ChapterGuard` never sees — guarding it would gate the redeemer's _current_ chapter and 400 a user who has none.
 
 ### What "fail fast" means concretely
 
@@ -200,8 +200,9 @@ Minimum release requirements:
 - Semantic labels for icon-only buttons
 - 4.5:1 text contrast minimum
 - 3:1 non-text UI contrast minimum
-- Dialogs move focus to the first input on open (the primary control when there is no input), trap focus while open, and return focus to the trigger on close
-- A hidden "Skip to main content" link that becomes visible on focus and jumps to the page's main landmark
+- Dialogs move focus to the first input on open (the primary control when there is no input), trap focus while open, and return focus to the trigger on close — Radix only does the last part automatically for a dialog opened via `<DialogTrigger>`. A dialog opened from controlled `open` state with no `DialogTrigger` (the chat slash palette, opened by typing `/`) gets no free trigger-return: `DialogContent`'s `onCloseAutoFocus` calls `context.triggerRef.current?.focus()`, and that ref is only ever populated by `<DialogTrigger>` mounting (`#396`). Such a dialog needs its own explicit refocus on close.
+- A hidden "Skip to main content" link that becomes visible on focus and jumps to the page's main landmark — a route whose main landmark hides real content behind its own sub-navigation (chat's channel rail before the timeline) should carry a second, route-scoped skip link to the content past that sub-navigation (`#396`)
+- Dialogs are announced as modal (`aria-modal="true"`) — Radix's `DialogContent` does not set this itself (verified against `@radix-ui/react-dialog@1.1.23`; only `role="dialog"` comes for free even in its default modal variant), so `apps/web/components/ui/dialog.tsx` sets it explicitly on every consumer (`#396`)
 
 Execution protocol and evidence requirements: [`../../../docs/internal/quality/ACCESSIBILITY_TESTING_PROTOCOL.md`](../../../docs/internal/quality/ACCESSIBILITY_TESTING_PROTOCOL.md).
 
