@@ -1,0 +1,74 @@
+-- A unique index PostgREST can name as an ON CONFLICT target for the
+-- KIND-scoped notification preference write (#500).
+--
+-- This is the exact counterpart of
+-- `20260829011200_chat_notif_prefs_channel_upsert_target.sql`, which did the
+-- same job for the channel arm. Read that file first; the reasoning below only
+-- covers what differs.
+--
+-- WHY THE CHANNEL MIGRATION DID NOT ALREADY SOLVE THIS
+--
+-- That migration added:
+--
+--   create unique index idx_chat_notif_prefs_channel_unique
+--     on chat_notification_preferences (user_id, chapter_id, scope, scope_id);
+--
+-- and its own header is explicit that it does nothing for the kind arm:
+--
+--   "For `scope='kind'` rows `scope_id` IS NULL, and a unique index treats
+--    NULLs as distinct by default ... so this index imposes no constraint on
+--    that arm at all"
+--
+-- That was correct and deliberate at the time — nothing wrote kind rows. It
+-- also means the kind upsert cannot borrow it: `ON CONFLICT (user_id,
+-- chapter_id, scope, scope_id)` against a row whose `scope_id` is NULL matches
+-- nothing, so every "change my level for this kind" call would INSERT a
+-- duplicate rather than update, until the original expression index rejected it
+-- with a unique violation on the second write.
+--
+-- And the original expression index still cannot be named directly:
+--
+--   create unique index idx_chat_notif_prefs_unique
+--     on chat_notification_preferences (
+--       user_id, chapter_id, scope, coalesce(scope_id::text, scope_kind)
+--     );
+--
+-- `ON CONFLICT (a, b, c)` only matches an index defined on those exact columns
+-- or expressions, and PostgREST's `on_conflict` parameter takes column NAMES
+-- and cannot express `coalesce(...)`. Against the expression index alone
+-- Postgres raises `42P10 there is no unique or exclusion constraint matching
+-- the ON CONFLICT specification`.
+--
+-- WHY IT IS SAFE ALONGSIDE THE OTHER TWO
+--
+-- Symmetric to the channel case, with the arms swapped. For `scope='kind'` rows
+-- `coalesce(scope_id::text, scope_kind)` reduces to `scope_kind` exactly when
+-- `scope_id` is null, which the table's `chat_notif_prefs_scope_id_when_channel`
+-- CHECK already guarantees for that arm — so this index and the expression index
+-- agree on every kind row. For `scope='channel'` rows `scope_kind` IS NULL and
+-- NULLs are distinct, so this index constrains that arm not at all and the
+-- channel rows stay governed by the other two exactly as before.
+--
+-- All three indexes are load-bearing: the expression one enforces the real
+-- invariant across both arms, and each plain one is the ON CONFLICT target for
+-- one arm's write path.
+--
+-- LOCKS
+--
+-- `create index` (not CONCURRENTLY -- Supabase migrations run inside a
+-- transaction and CONCURRENTLY cannot) holds SHARE and blocks writes to
+-- `chat_notification_preferences` for its duration. The table holds at most one
+-- row per user per scope key they have deliberately configured, so it is small
+-- in every environment and stays small.
+--
+-- ROLLBACK
+--
+--   drop index if exists public.idx_chat_notif_prefs_kind_unique;
+--
+-- Purely additive and independently droppable. Dropping it loses no data and
+-- re-tightens nothing: the original expression index still enforces the real
+-- invariant. The only consequence is that the per-kind level upsert stops
+-- working, so revert the API alongside it.
+
+create unique index if not exists idx_chat_notif_prefs_kind_unique
+  on chat_notification_preferences (user_id, chapter_id, scope, scope_kind);

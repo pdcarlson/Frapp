@@ -829,6 +829,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/notification-preferences/kinds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's own per-message-kind notification overrides; level is null where none is set. For the level actually applied to a channel, read GET /v1/channels/notification-preferences. */
+        get: operations["ChatController_getKindNotificationPreferences_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/notification-preferences/kinds/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set the caller's notification level for one message kind */
+        put: operations["ChatController_setKindNotificationLevel_v1"];
+        post?: never;
+        /** Clear the caller's override for one message kind, returning it to the default */
+        delete: operations["ChatController_clearKindNotificationLevel_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/channels/{id}": {
         parameters: {
             query?: never;
@@ -3165,6 +3200,37 @@ export interface components {
             /** @enum {string} */
             level: "all" | "mentions" | "off";
         };
+        KindNotificationPreferenceDto: {
+            /**
+             * @description A `chat_messages.kind`. `imported` and `loading` are absent by design — the first is refused by the push worker before any preference is read, and the second is an internal optimistic placeholder rather than a category of message a member receives.
+             * @enum {string}
+             */
+            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "system_audit" | "announcement";
+            /**
+             * @description The member's chapter-wide override for this kind, or null when they have set none. Null is not a level: what a kind falls back to depends on the channel a message lands in (an `announcement` resolves `all` in a channel named `announcements` and `mentions` elsewhere), so there is no single default to report here. For the effective level of a real message, read GET /v1/channels/notification-preferences.
+             * @enum {string|null}
+             */
+            level: "all" | "mentions" | "off" | null;
+        };
+        SetKindNotificationLevelDto: {
+            /**
+             * @description all = every message of this kind; mentions = only when you are mentioned; off = muted, though @mentions still notify — the one exception is the system_audit kind, whose off a mention does not lift. A channel-scoped preference outranks this one for messages in that channel.
+             * @enum {string}
+             */
+            level: "all" | "mentions" | "off";
+        };
+        ClearedKindNotificationPreferenceDto: {
+            /**
+             * @description The kind whose override was cleared. Wider than the settable set on purpose — see the DELETE route.
+             * @enum {string}
+             */
+            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "system_audit" | "imported" | "loading" | "announcement";
+            /**
+             * @description Always null: the override is gone, and what the kind now falls back to depends on the channel.
+             * @enum {string|null}
+             */
+            level: "all" | "mentions" | "off" | null;
+        };
         CreateChannelDto: {
             name: string;
             description?: string;
@@ -5137,6 +5203,71 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChannelNotificationPreferenceDto"][];
+                };
+            };
+        };
+    };
+    ChatController_getKindNotificationPreferences_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KindNotificationPreferenceDto"][];
+                };
+            };
+        };
+    };
+    ChatController_setKindNotificationLevel_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetKindNotificationLevelDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KindNotificationPreferenceDto"];
+                };
+            };
+        };
+    };
+    ChatController_clearKindNotificationLevel_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClearedKindNotificationPreferenceDto"];
                 };
             };
         };
