@@ -65,6 +65,32 @@ describe('SupabaseSemesterArchiveRepository — tenant scope', () => {
     expect(latest?.id).toBe(ARCHIVE_B);
   });
 
+  it('findById returns the archive when it belongs to the caller chapter', async () => {
+    const found = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findById(ARCHIVE_B, CHAPTER_B),
+    );
+
+    expect(found?.id).toBe(ARCHIVE_B);
+  });
+
+  it('findById returns null for an archive id that belongs to another chapter', async () => {
+    // The #377 picker endpoints 404 on this — a caller must not be able to
+    // read another chapter's archive by guessing or reusing its id.
+    const found = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findById(ARCHIVE_A, CHAPTER_B),
+    );
+
+    expect(found).toBeNull();
+  });
+
+  it('findById returns null for an id that does not exist at all', async () => {
+    const found = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findById('0b000000-0000-4000-8000-000000000199', CHAPTER_B),
+    );
+
+    expect(found).toBeNull();
+  });
+
   it('create writes the archive under the caller chapter', async () => {
     const created = await harness.expectTenantScoped(CHAPTER_B, () =>
       repo.create({
