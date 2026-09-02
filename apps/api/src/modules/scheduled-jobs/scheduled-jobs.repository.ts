@@ -51,6 +51,20 @@ export interface SweepEventRow {
   end_time: string;
 }
 
+/**
+ * An event about to start. Carries the targeting fields because the reminder's
+ * audience is resolved per event, and `name`/`start_time` because they are the
+ * notification copy.
+ */
+export interface SweepUpcomingEventRow {
+  id: string;
+  chapter_id: string;
+  name: string;
+  start_time: string;
+  is_mandatory: boolean;
+  required_role_ids: string[] | null;
+}
+
 export interface SweepInvoiceRow {
   id: string;
   chapter_id: string;
@@ -141,6 +155,48 @@ export class ScheduledJobsRepository {
         (row) => row.is_mandatory || (row.required_role_ids?.length ?? 0) > 0,
       )
       .map(({ id, chapter_id, end_time }) => ({ id, chapter_id, end_time }));
+  }
+
+  /**
+   * Events starting inside `(startAfter, startOnOrBefore]` that could require
+   * attendance: mandatory, or role-targeted.
+   *
+   * The lower bound is **exclusive and is `now`** at every call site, which is
+   * what stops a reminder going out about an event that has already begun. A
+   * reminder is only ever early, never late.
+   *
+   * Role targeting is filtered in code rather than in the query for the same
+   * reason `findEventsPendingAutoAbsent` does it: a cleared
+   * `required_role_ids` is stored as a non-null empty array, which
+   * `not.is.null` matches even though nothing is actually targeted.
+   */
+  async findEventsStartingBetween(
+    startAfter: Date,
+    startOnOrBefore: Date,
+  ): Promise<SweepUpcomingEventRow[]> {
+    const rows = await this.fetchAllPages<SweepUpcomingEventRow>(
+      'event-reminder sweep: event lookup failed',
+      (from, to) =>
+        this.supabase
+          .from('events')
+          .select(
+            'id, chapter_id, name, start_time, is_mandatory, required_role_ids',
+          )
+          .gt('start_time', startAfter.toISOString())
+          .lte('start_time', startOnOrBefore.toISOString())
+          .or('is_mandatory.eq.true,required_role_ids.not.is.null')
+          // `id` breaks ties, for the same reason as the auto-absent sweep:
+          // offset paging over a non-unique sort key has no guaranteed total
+          // order between statements, so events sharing a `start_time` across
+          // a page boundary could be returned twice or skipped entirely.
+          .order('start_time', { ascending: true })
+          .order('id', { ascending: true })
+          .range(from, to),
+    );
+
+    return rows.filter(
+      (row) => row.is_mandatory || (row.required_role_ids?.length ?? 0) > 0,
+    );
   }
 
   /**
