@@ -114,8 +114,23 @@ Chat is not a module — it is the spine of the app, and every other capability 
 
 - Member online status is tracked via Supabase Realtime Presence.
 - Presence heartbeat: ~30 seconds. If no heartbeat is received, the user is marked offline.
-- Online status is visible in the member list sidebar and in DM conversations.
+- Online status is visible in the member list sidebar and in DM conversations. The web **Directory** (`/members`) renders it today; the DM and channel member lists do not yet.
 - Statuses: Online, Idle (app open but inactive for >5 minutes), Offline.
+
+**Two presence topics, deliberately.** They answer different questions and must not be merged:
+
+| Topic | Scope | Read by |
+| --- | --- | --- |
+| `chat:channel:<channelId>` | Who has *this channel* open | The push worker, via service role, to suppress pushes to members already looking (ADR-10) |
+| `presence:chapter:<chapterId>` | Who is present in the *chapter* at all | The web Directory |
+
+The chat topic's channel config and its `{ userId, ts }` payload are a cross-service contract pinned by `packages/chat-core/src/presence-contract.test.ts`. Re-keying it or widening its payload silently disables push suppression, so a surface needing chapter-wide presence takes the second topic rather than extending the first.
+
+Both are **public** Realtime channels. The private-channel authoriser `realtime_messages_scoped_select` matches only the three change-ping topic shapes and ends in `else false`, so a private presence topic would join, report `SUBSCRIBED`, and deliver nothing until that policy grew another branch. The tradeoff this accepts: a holder of the anon key and a chapter UUID can observe which *user ids* are currently present — opaque ids and a timestamp, no names or email.
+
+**`ts` is last activity, not last heartbeat** — this is what makes Idle reachable. A heartbeat has to keep re-tracking or Realtime drops the member from the presence map, so if each heartbeat stamped the current time, `ts` would never age past the 5-minute threshold and every present member would read Online forever. Instead the heartbeat re-sends the *unchanged* activity timestamp, and the two signals split the three states: presence membership answers Online-vs-Offline, and `ts` answers Online-vs-Idle. Activity is approximated from throttled pointer, key, scroll, focus and `visibilitychange` events — the browser cannot observe attention directly, and the throttle floor is the heartbeat interval, so the worst-case error is one interval against a five-minute window.
+
+Presence is ephemeral per ADR-02: it lives on the Realtime socket and is never persisted, so it costs no Postgres write and leaves no row to reap when a member disconnects.
 
 **Search:**
 
