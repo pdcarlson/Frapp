@@ -11,10 +11,11 @@
  */
 
 /** Entity families the dispatch log dedups. */
-export type DispatchEntityType = 'INVOICE' | 'TASK' | 'EVENT';
+export type DispatchEntityType = 'INVOICE' | 'TASK' | 'EVENT' | 'POLL';
 
 /** Work thresholds, one dispatch row per (entity, threshold, due date). */
-export type DispatchThreshold = 'DUE_SOON' | 'OVERDUE' | 'AUTO_ABSENT';
+export type DispatchThreshold =
+  'DUE_SOON' | 'OVERDUE' | 'AUTO_ABSENT' | 'EXPIRED';
 
 export interface ScheduledNotificationDispatch {
   id: string;
