@@ -6,7 +6,10 @@ This guide defines how we work on Frapp: branch workflow, commit messages, and s
 
 One long-lived branch, two environments:
 
-- `main` — the integration branch (every merge deploys to Vercel Preview domains and staging infrastructure)
+- `main` — the integration branch (every merge deploys to Render staging infrastructure; the
+  **Vercel half ended 2026-09-02** — `frapp-landing` was unlinked from Git 2026-09-01 and
+  `frapp-web` 2026-09-02, so no merge deploys web or landing and both hosts serve frozen builds.
+  Canonical record: ADR-21 in [`spec/architecture/README.md`](../../spec/architecture/README.md))
 - `feature/*` — short-lived branches for individual features and fixes
 
 Production is not a branch. It is deployed from a **named commit on `main`** by the
