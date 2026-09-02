@@ -69,6 +69,21 @@ export interface SweepTaskRow {
   due_date: string;
 }
 
+interface PollCandidateRow {
+  id: string;
+  channel_id: string;
+  metadata: { question?: string; expires_at?: string } | null;
+  chat_channels: { chapter_id: string } | { chapter_id: string }[] | null;
+}
+
+export interface SweepPollRow {
+  id: string;
+  chapter_id: string;
+  channel_id: string;
+  question: string;
+  expires_at: string;
+}
+
 /**
  * Data access for the scheduled sweeps.
  *
@@ -173,6 +188,74 @@ export class ScheduledJobsRepository {
           .order('id', { ascending: true })
           .range(from, to),
     );
+  }
+
+  /**
+   * Open (not manually closed), not-yet-notified polls whose `expires_at`
+   * falls inside the window. `expires_at`/`question` live in `metadata`
+   * (there is no dedicated column — see `idx_chat_messages_poll_expires_at`,
+   * added by `20260902010000_poll_expiry_dispatch.sql` for this query), and
+   * `chapter_id` isn't on `chat_messages` at all — both are read through the
+   * same `chat_channels!inner` embed `findPollsByChapter` filters through,
+   * mirrored here as a lookup rather than a filter since the sweep runs
+   * across every chapter at once.
+   */
+  async findExpiredPollsPendingNotice(
+    expiredAfter: Date,
+    expiredBefore: Date,
+  ): Promise<SweepPollRow[]> {
+    const rows = await this.fetchAllPages<PollCandidateRow>(
+      'poll-expiry sweep: lookup failed',
+      (from, to) =>
+        // Cast at the query boundary: the generated `Database` type has no
+        // `Relationships` metadata for `chat_messages` (it's a hand-written
+        // `TableDefinition` shim, not full `supabase gen types` output), so
+        // supabase-js can't confirm the `chat_channels` embed and infers it
+        // as a `SelectQueryError` instead of the real shape. Same fix
+        // `search.service.ts` and `supabase-member.repository.ts` use for
+        // the same embed-inference gap.
+        this.supabase
+          .from('chat_messages')
+          .select('id, channel_id, metadata, chat_channels!inner(chapter_id)')
+          .eq('type', 'POLL')
+          .eq('is_deleted', false)
+          .is('metadata->>closed_at', null)
+          .gte('metadata->>expires_at', expiredAfter.toISOString())
+          .lte('metadata->>expires_at', expiredBefore.toISOString())
+          .order('id', { ascending: true })
+          .range(from, to) as unknown as PromiseLike<{
+          data: PollCandidateRow[] | null;
+          error: unknown;
+        }>,
+    );
+
+    return rows
+      .map((row): SweepPollRow | null => {
+        const chapter = Array.isArray(row.chat_channels)
+          ? row.chat_channels[0]
+          : row.chat_channels;
+        const question = row.metadata?.question;
+        const expiresAt = row.metadata?.expires_at;
+        if (!chapter || !question || !expiresAt) {
+          // Unlike a query error (handled, and retried, by `fetchAllPages`),
+          // a row that fails this shape check is dropped for good — it will
+          // never satisfy the check on a later tick either. Log it so a
+          // malformed POLL row doesn't silently and permanently stop getting
+          // its expiry notice with nothing pointing at why.
+          this.logger.warn(
+            `poll-expiry sweep: dropping malformed POLL row ${row.id} (missing chapter, question, or expires_at)`,
+          );
+          return null;
+        }
+        return {
+          id: row.id,
+          chapter_id: chapter.chapter_id,
+          channel_id: row.channel_id,
+          question,
+          expires_at: expiresAt,
+        };
+      })
+      .filter((row): row is SweepPollRow => row !== null);
   }
 
   /**

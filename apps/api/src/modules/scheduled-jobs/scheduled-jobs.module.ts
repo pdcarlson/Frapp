@@ -6,6 +6,7 @@ import { NotificationModule } from '../notification/notification.module';
 import { ChapterConfigModule } from '../chapter-config/chapter-config.module';
 import { ChapterModule } from '../chapter/chapter.module';
 import { ReportRetentionModule } from '../report-retention/report-retention.module';
+import { PollModule } from '../poll/poll.module';
 
 /**
  * Scheduled workers for spec-required, time-triggered behavior that no user
@@ -23,7 +24,8 @@ import { ReportRetentionModule } from '../report-retention/report-retention.modu
  * quiet-hours-aware fanout, `ChapterConfigModule` for the per-chapter dues
  * grace that defines "overdue", `ChapterModule` for `MEMBER_REPOSITORY`, used
  * to confirm a task's assigner still belongs to the chapter, and
- * `ReportRetentionModule` for the generated-report reaper.
+ * `ReportRetentionModule` for the generated-report reaper, and `PollModule`
+ * for the `system_audit` expiry announcement (#404).
  */
 @Module({
   imports: [
@@ -32,6 +34,7 @@ import { ReportRetentionModule } from '../report-retention/report-retention.modu
     ChapterConfigModule,
     ChapterModule,
     ReportRetentionModule,
+    PollModule,
   ],
   providers: [ScheduledJobsService, ScheduledJobsRepository],
   exports: [ScheduledJobsService],

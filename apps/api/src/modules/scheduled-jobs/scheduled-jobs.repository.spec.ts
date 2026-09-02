@@ -29,7 +29,7 @@ function makeSupabase(pages: Page[]) {
   let deleting = false;
 
   const builder: Record<string, unknown> = {};
-  for (const method of ['select', 'gte', 'lte', 'in', 'or', 'order']) {
+  for (const method of ['select', 'gte', 'lte', 'in', 'or', 'order', 'is']) {
     builder[method] = jest.fn(() => builder);
   }
 
@@ -201,6 +201,95 @@ describe('ScheduledJobsRepository', () => {
     });
   });
 
+  describe('findExpiredPollsPendingNotice', () => {
+    it('extracts chapter_id, question and expires_at through the chat_channels embed', async () => {
+      const { repo } = await buildRepo([
+        {
+          data: [
+            {
+              id: 'poll-1',
+              channel_id: 'chan-1',
+              metadata: {
+                question: 'Pizza or tacos?',
+                expires_at: '2026-08-05T10:00:00Z',
+              },
+              // PostgREST projects a to-one embed as an object.
+              chat_channels: { chapter_id: 'chap-1' },
+            },
+            {
+              id: 'poll-2',
+              channel_id: 'chan-2',
+              metadata: {
+                question: 'Formal or casual?',
+                expires_at: '2026-08-05T11:00:00Z',
+              },
+              // Some clients/typings hand back a single-element array instead.
+              chat_channels: [{ chapter_id: 'chap-2' }],
+            },
+          ],
+          error: null,
+        },
+      ]);
+
+      const result = await repo.findExpiredPollsPendingNotice(
+        new Date('2026-08-04T12:00:00Z'),
+        new Date('2026-08-05T12:00:00Z'),
+      );
+
+      expect(result).toEqual([
+        {
+          id: 'poll-1',
+          chapter_id: 'chap-1',
+          channel_id: 'chan-1',
+          question: 'Pizza or tacos?',
+          expires_at: '2026-08-05T10:00:00Z',
+        },
+        {
+          id: 'poll-2',
+          chapter_id: 'chap-2',
+          channel_id: 'chan-2',
+          question: 'Formal or casual?',
+          expires_at: '2026-08-05T11:00:00Z',
+        },
+      ]);
+    });
+
+    it('drops a row missing its embed, question, or expires_at rather than throwing', async () => {
+      const { repo } = await buildRepo([
+        {
+          data: [
+            {
+              id: 'poll-no-embed',
+              channel_id: 'chan-1',
+              metadata: { question: 'Q', expires_at: '2026-08-05T10:00:00Z' },
+              chat_channels: null,
+            },
+            {
+              id: 'poll-no-question',
+              channel_id: 'chan-1',
+              metadata: { expires_at: '2026-08-05T10:00:00Z' },
+              chat_channels: { chapter_id: 'chap-1' },
+            },
+            {
+              id: 'poll-ok',
+              channel_id: 'chan-1',
+              metadata: { question: 'Q', expires_at: '2026-08-05T10:00:00Z' },
+              chat_channels: { chapter_id: 'chap-1' },
+            },
+          ],
+          error: null,
+        },
+      ]);
+
+      const result = await repo.findExpiredPollsPendingNotice(
+        new Date('2026-08-04T12:00:00Z'),
+        new Date('2026-08-05T12:00:00Z'),
+      );
+
+      expect(result.map((r) => r.id)).toEqual(['poll-ok']);
+    });
+  });
+
   describe('claimDispatch', () => {
     it('claims the reminder and records the due date in the key', async () => {
       const { repo, supabase } = await buildRepo([{ data: null, error: null }]);
@@ -271,10 +360,10 @@ describe('ScheduledJobsRepository', () => {
 
 /**
  * Tenant-scope half of this file. Sweeps (`findEventsPendingAutoAbsent`,
- * `findOpenInvoicesDueBetween`, `findIncompleteTasksDueBetween`) are
- * cross-chapter by design: the worker has no caller chapter and pages every
- * tenant. Those paths are characterised as unscoped, not asserted with
- * `expectTenantScoped`.
+ * `findOpenInvoicesDueBetween`, `findIncompleteTasksDueBetween`,
+ * `findExpiredPollsPendingNotice`) are cross-chapter by design: the worker
+ * has no caller chapter and pages every tenant. Those paths are
+ * characterised as unscoped, not asserted with `expectTenantScoped`.
  *
  * `claimDispatch` and `releaseDispatch` are the tenant-bound writes: they
  * insert and delete `scheduled_notification_dispatches` with the chapter
@@ -291,6 +380,10 @@ const DISPATCH_B = '0b000000-0000-4000-8000-000000000222';
 const DISPATCH_ENTITY = '0c000000-0000-4000-8000-000000000223';
 const TASK_A = '0a000000-0000-4000-8000-000000000224';
 const TASK_B = '0b000000-0000-4000-8000-000000000224';
+const CHANNEL_A = '0a000000-0000-4000-8000-000000000225';
+const CHANNEL_B = '0b000000-0000-4000-8000-000000000225';
+const POLL_A = '0a000000-0000-4000-8000-000000000226';
+const POLL_B = '0b000000-0000-4000-8000-000000000226';
 
 const tenantSeed = () => ({
   events: [
@@ -393,6 +486,47 @@ const tenantSeed = () => ({
       created_at: '2026-01-01T00:00:00.000Z',
     }),
   ],
+  chat_channels: [
+    inA({ id: CHANNEL_A, name: 'general', type: 'PUBLIC' }),
+    inB({ id: CHANNEL_B, name: 'general', type: 'PUBLIC' }),
+  ],
+  chat_messages: [
+    inA({
+      id: POLL_A,
+      channel_id: CHANNEL_A,
+      sender_id: USER_SHARED,
+      content: 'Pizza or tacos?',
+      type: 'POLL',
+      metadata: {
+        question: 'Pizza or tacos?',
+        options: ['Pizza', 'Tacos'],
+        choice_mode: 'single',
+        expires_at: '2026-09-01T00:00:00.000Z',
+      },
+      is_deleted: false,
+      created_at: '2026-01-01T00:00:00.000Z',
+      // How PostgREST projects `chat_channels!inner(chapter_id)` back onto
+      // the row — the harness resolves an embed from whatever the seed row
+      // carries, it does not perform the join itself.
+      chat_channels: { chapter_id: CHAPTER_A },
+    }),
+    inB({
+      id: POLL_B,
+      channel_id: CHANNEL_B,
+      sender_id: USER_SHARED,
+      content: 'Pizza or tacos?',
+      type: 'POLL',
+      metadata: {
+        question: 'Pizza or tacos?',
+        options: ['Pizza', 'Tacos'],
+        choice_mode: 'single',
+        expires_at: '2026-09-01T00:00:00.000Z',
+      },
+      is_deleted: false,
+      created_at: '2026-01-01T00:00:00.000Z',
+      chat_channels: { chapter_id: CHAPTER_B },
+    }),
+  ],
 });
 
 describe('ScheduledJobsRepository — tenant scope', () => {
@@ -400,7 +534,15 @@ describe('ScheduledJobsRepository — tenant scope', () => {
   let repo: ScheduledJobsRepository;
 
   beforeEach(() => {
-    harness = createTenantHarness({ tables: tenantSeed() });
+    harness = createTenantHarness({
+      tables: tenantSeed(),
+      // `chat_messages` has no `chapter_id`; resolved through `chat_channels`
+      // the same way `SupabaseChatMessageRepository`'s tenant-scope spec does.
+      untenantedTables: ['chat_messages'],
+      parentTenant: {
+        chat_messages: { column: 'channel_id', table: 'chat_channels' },
+      },
+    });
     repo = new ScheduledJobsRepository(harness.client);
   });
 
@@ -433,6 +575,17 @@ describe('ScheduledJobsRepository — tenant scope', () => {
     );
 
     expect(rows.map((r) => r.id).sort()).toEqual([TASK_A, TASK_B].sort());
+    const [op] = harness.ops;
+    expect(op.filters.some((f) => f.column === 'chapter_id')).toBe(false);
+  });
+
+  it('findExpiredPollsPendingNotice is a cross-chapter sweep (characterised)', async () => {
+    const rows = await repo.findExpiredPollsPendingNotice(
+      new Date('2026-08-01T00:00:00.000Z'),
+      new Date('2026-09-15T00:00:00.000Z'),
+    );
+
+    expect(rows.map((r) => r.id).sort()).toEqual([POLL_A, POLL_B].sort());
     const [op] = harness.ops;
     expect(op.filters.some((f) => f.column === 'chapter_id')).toBe(false);
   });

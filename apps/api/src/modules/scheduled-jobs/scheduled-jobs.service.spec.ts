@@ -3,6 +3,7 @@ import { AttendanceService } from '../../application/services/attendance.service
 import { NotificationService } from '../../application/services/notification.service';
 import { ChapterWorkflowsService } from '../../application/services/chapter-workflows.service';
 import { ReportRetentionService } from '../../application/services/report-retention.service';
+import { PollService } from '../../application/services/poll.service';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import { ScheduledJobsService } from './scheduled-jobs.service';
 import { ScheduledJobsRepository } from './scheduled-jobs.repository';
@@ -28,6 +29,8 @@ describe('ScheduledJobsService', () => {
   let findOpenInvoicesDueBetween: jest.Mock;
   let findIncompleteTasksDueBetween: jest.Mock;
   let sweepExpiredReports: jest.Mock;
+  let findExpiredPollsPendingNotice: jest.Mock;
+  let announceExpiry: jest.Mock;
 
   const INVOICE = {
     id: 'inv-1',
@@ -62,6 +65,8 @@ describe('ScheduledJobsService', () => {
     sweepExpiredReports = jest
       .fn()
       .mockResolvedValue({ deleted: 0, failed: 0 });
+    findExpiredPollsPendingNotice = jest.fn().mockResolvedValue([]);
+    announceExpiry = jest.fn().mockResolvedValue(undefined);
 
     const mod = await Test.createTestingModule({
       providers: [
@@ -72,6 +77,7 @@ describe('ScheduledJobsService', () => {
             findEventsPendingAutoAbsent,
             findOpenInvoicesDueBetween,
             findIncompleteTasksDueBetween,
+            findExpiredPollsPendingNotice,
             claimDispatch,
             releaseDispatch,
           },
@@ -80,6 +86,7 @@ describe('ScheduledJobsService', () => {
         { provide: NotificationService, useValue: { notifyUser } },
         { provide: ChapterWorkflowsService, useValue: { getDuesGraceDays } },
         { provide: ReportRetentionService, useValue: { sweepExpiredReports } },
+        { provide: PollService, useValue: { announceExpiry } },
         { provide: MEMBER_REPOSITORY, useValue: { findByUserAndChapter } },
       ],
     }).compile();
@@ -426,6 +433,103 @@ describe('ScheduledJobsService', () => {
         '2026-07-29',
         TOMORROW,
       );
+    });
+  });
+
+  describe('sweepExpiredPolls', () => {
+    const POLL = {
+      id: 'poll-1',
+      chapter_id: 'chap-1',
+      channel_id: 'chan-1',
+      question: 'Pizza or tacos?',
+      expires_at: '2026-08-05T10:00:00Z',
+    };
+
+    it('announces a poll whose deadline has passed', async () => {
+      findExpiredPollsPendingNotice.mockResolvedValue([POLL]);
+
+      const result = await service.sweepExpiredPolls(NOW);
+
+      expect(result).toEqual({ announced: 1 });
+      expect(claimDispatch).toHaveBeenCalledWith(
+        'chap-1',
+        'POLL',
+        'poll-1',
+        'EXPIRED',
+        '2026-08-05',
+      );
+      expect(announceExpiry).toHaveBeenCalledWith(
+        'poll-1',
+        'chan-1',
+        'Pizza or tacos?',
+      );
+    });
+
+    it('queries a bounded lookback window ending now', async () => {
+      await service.sweepExpiredPolls(NOW);
+
+      expect(findExpiredPollsPendingNotice).toHaveBeenCalledWith(
+        new Date('2026-08-04T12:00:00Z'),
+        NOW,
+      );
+    });
+
+    // expires_at is validated only as a string (CreatePollDto), so a
+    // malformed value can reach the sweep. `new Date(bad).toISOString()`
+    // throws a generic RangeError; this must be caught with a specific,
+    // named log line rather than silently retrying every tick until the
+    // poll ages out of the lookback window.
+    it('skips a poll with an unparseable expires_at, without claiming it', async () => {
+      findExpiredPollsPendingNotice.mockResolvedValue([
+        { ...POLL, expires_at: 'not-a-date' },
+      ]);
+
+      const result = await service.sweepExpiredPolls(NOW);
+
+      expect(result).toEqual({ announced: 0 });
+      expect(claimDispatch).not.toHaveBeenCalled();
+      expect(announceExpiry).not.toHaveBeenCalled();
+    });
+
+    it('skips a poll another tick or replica already claimed', async () => {
+      findExpiredPollsPendingNotice.mockResolvedValue([POLL]);
+      claimDispatch.mockResolvedValue(false);
+
+      const result = await service.sweepExpiredPolls(NOW);
+
+      expect(result).toEqual({ announced: 0 });
+      expect(announceExpiry).not.toHaveBeenCalled();
+    });
+
+    // The claim is taken before the post, so a failed post must give the
+    // claim back or the announcement is lost forever.
+    it('releases the claim when the announcement post fails', async () => {
+      findExpiredPollsPendingNotice.mockResolvedValue([POLL]);
+      announceExpiry.mockRejectedValue(new Error('insert failed'));
+
+      const result = await service.sweepExpiredPolls(NOW);
+
+      expect(result).toEqual({ announced: 0 });
+      expect(releaseDispatch).toHaveBeenCalledWith(
+        'chap-1',
+        'POLL',
+        'poll-1',
+        'EXPIRED',
+        '2026-08-05',
+      );
+    });
+
+    it('keeps sweeping after one poll fails', async () => {
+      findExpiredPollsPendingNotice.mockResolvedValue([
+        { ...POLL, id: 'poll-bad' },
+        { ...POLL, id: 'poll-ok' },
+      ]);
+      claimDispatch.mockRejectedValueOnce(new Error('db down'));
+
+      const result = await service.sweepExpiredPolls(NOW);
+
+      expect(result).toEqual({ announced: 1 });
+      expect(announceExpiry).toHaveBeenCalledTimes(1);
     });
   });
 
