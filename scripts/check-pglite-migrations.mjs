@@ -71,9 +71,12 @@ const db = new PGlite({ extensions: { pgcrypto, vector } });
 await db.waitReady;
 
 // PGlite ships without the `auth.*` namespace Supabase RLS policies reference.
-// Stub the three functions so policy DDL parses; we don't run as the
-// `authenticated` role here, we only verify policy *presence*. Integration
-// enforcement lives in the NestJS Jest tier per ADR-11.
+// Stub the three functions so policy DDL parses. These are the DEFAULTS: the
+// black-box tiers further down replace `auth.uid()` and `auth.role()` per
+// scenario to impersonate a signed-in or anonymous client, and read the tables
+// through a non-owner role that is granted `authenticated`. So this file does
+// verify enforcement, not only presence — what stays with the NestJS Jest tier
+// is a real GoTrue-minted JWT (claims beyond `sub`/`role`), per ADR-11/ADR-12.
 await db.exec(`
   create schema if not exists auth;
   create or replace function auth.uid()  returns uuid language sql as $$ select null::uuid $$;
@@ -1116,11 +1119,16 @@ console.log("\n=== Functional smoke: anonymize_user ===");
 
 // ─── chat_message_actions read enforcement (FRA-38) ─────────────────────────
 //
-// The membership-scoped SELECT policy delegates to can_read_chat_message(). PGlite
-// has no `authenticated` role, so the black-box tiers below stand up an
-// `rls_probe` role of their own; real-JWT enforcement (claims beyond
-// `sub`/`role`) still lives in the NestJS Jest tier. This tier is the layer
-// under that: it tests the SECURITY DEFINER predicate directly —
+// The membership-scoped SELECT policy delegates to can_read_chat_message(). The
+// black-box tiers below stand up an `rls_probe` role because RLS does not apply
+// to superusers or table owners — a non-owner is required to be subject to a
+// policy at all. That role is deliberately GRANTED `authenticated` (see the
+// grant below); without that membership every `TO authenticated` policy stops
+// applying to it and every read silently falls back to default-deny, so the
+// visibility-set assertions would pass on empty results for the wrong reason.
+// Real-JWT enforcement (claims beyond `sub`/`role`) still lives in the NestJS
+// Jest tier. This tier is the layer under that: it tests the SECURITY DEFINER
+// predicate directly —
 // seeding two chapters with one channel per type — and drive it by swapping the
 // auth.uid() stub per scenario. Combined with the shape assertion above (the policy
 // wires `auth.role()='authenticated' AND can_read_chat_message(message_id)`), a

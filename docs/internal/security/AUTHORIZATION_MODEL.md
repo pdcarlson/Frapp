@@ -364,8 +364,11 @@ The rest of the e2e suite stubs `ChapterGuard`; this spec must not, or it tests 
 
 ### RLS enforcement (`scripts/check-pglite-migrations.mjs`)
 
-The tables where **RLS is the only gate** are covered black-box, by reading them as an
-unprivileged `rls_probe` role rather than by pattern-matching the policy expression:
+Four tables are covered black-box, by reading them as an unprivileged `rls_probe` role rather than
+by pattern-matching the policy expression. The first two are the ones where **RLS is the only gate**
+(a browser or mobile Supabase client reads them directly, including over Realtime); the last two are
+read only through the service-role client, and are covered because a policy appearing on them at all
+would be the regression:
 
 | Table | Coverage |
 | --- | --- |
