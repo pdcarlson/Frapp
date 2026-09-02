@@ -31,7 +31,6 @@ describe('ChatController', () => {
       providers: [
         { provide: ChatService, useValue: service },
         { provide: RbacService, useValue: rbacService },
-        { provide: 'SUPABASE_CLIENT', useValue: {} },
       ],
     })
       .overrideGuard(SupabaseAuthGuard)
