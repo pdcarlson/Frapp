@@ -458,7 +458,11 @@ describe('ScheduledJobsService', () => {
         'EXPIRED',
         '2026-08-05',
       );
-      expect(announceExpiry).toHaveBeenCalledWith('chan-1', 'Pizza or tacos?');
+      expect(announceExpiry).toHaveBeenCalledWith(
+        'poll-1',
+        'chan-1',
+        'Pizza or tacos?',
+      );
     });
 
     it('queries a bounded lookback window ending now', async () => {
@@ -468,6 +472,23 @@ describe('ScheduledJobsService', () => {
         new Date('2026-08-04T12:00:00Z'),
         NOW,
       );
+    });
+
+    // expires_at is validated only as a string (CreatePollDto), so a
+    // malformed value can reach the sweep. `new Date(bad).toISOString()`
+    // throws a generic RangeError; this must be caught with a specific,
+    // named log line rather than silently retrying every tick until the
+    // poll ages out of the lookback window.
+    it('skips a poll with an unparseable expires_at, without claiming it', async () => {
+      findExpiredPollsPendingNotice.mockResolvedValue([
+        { ...POLL, expires_at: 'not-a-date' },
+      ]);
+
+      const result = await service.sweepExpiredPolls(NOW);
+
+      expect(result).toEqual({ announced: 0 });
+      expect(claimDispatch).not.toHaveBeenCalled();
+      expect(announceExpiry).not.toHaveBeenCalled();
     });
 
     it('skips a poll another tick or replica already claimed', async () => {

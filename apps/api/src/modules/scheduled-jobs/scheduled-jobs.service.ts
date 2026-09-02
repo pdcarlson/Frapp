@@ -296,7 +296,23 @@ export class ScheduledJobsService {
     // sweeps read straight off the row, this is derived, but the same
     // stability requirement applies: every tick that sees this poll before
     // it's claimed must compute the same key.
-    const dueDate = toDateKey(new Date(poll.expires_at));
+    //
+    // `expires_at` is caller-supplied and validated only as a string
+    // (`CreatePollDto` has no `@IsISO8601()`), so a malformed value reaching
+    // this far is possible. Guard explicitly
+    // rather than letting `toDateKey`'s `.toISOString()` throw a generic
+    // `RangeError` the sweep's outer catch would log without naming the
+    // cause — an unparseable date can never become parseable on a later
+    // tick, so this poll would otherwise retry silently for the whole
+    // lookback window and then drop with no diagnostic pointing at why.
+    const expiresAt = new Date(poll.expires_at);
+    if (Number.isNaN(expiresAt.getTime())) {
+      this.logger.error(
+        `poll-expiry sweep: poll ${poll.id} has an unparseable expires_at ("${poll.expires_at}"); skipping`,
+      );
+      return false;
+    }
+    const dueDate = toDateKey(expiresAt);
     const claimed = await this.repository.claimDispatch(
       poll.chapter_id,
       'POLL',
@@ -307,7 +323,11 @@ export class ScheduledJobsService {
     if (!claimed) return false;
 
     try {
-      await this.pollService.announceExpiry(poll.channel_id, poll.question);
+      await this.pollService.announceExpiry(
+        poll.id,
+        poll.channel_id,
+        poll.question,
+      );
       return true;
     } catch (error) {
       this.logger.error(

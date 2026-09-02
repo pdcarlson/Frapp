@@ -236,7 +236,17 @@ export class ScheduledJobsRepository {
           : row.chat_channels;
         const question = row.metadata?.question;
         const expiresAt = row.metadata?.expires_at;
-        if (!chapter || !question || !expiresAt) return null;
+        if (!chapter || !question || !expiresAt) {
+          // Unlike a query error (handled, and retried, by `fetchAllPages`),
+          // a row that fails this shape check is dropped for good — it will
+          // never satisfy the check on a later tick either. Log it so a
+          // malformed POLL row doesn't silently and permanently stop getting
+          // its expiry notice with nothing pointing at why.
+          this.logger.warn(
+            `poll-expiry sweep: dropping malformed POLL row ${row.id} (missing chapter, question, or expires_at)`,
+          );
+          return null;
+        }
         return {
           id: row.id,
           chapter_id: chapter.chapter_id,

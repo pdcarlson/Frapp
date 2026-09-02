@@ -352,8 +352,23 @@ export class PollService {
    * for `system_audit`, so this is visible in the channel without paging
    * anyone — the sweep's caller (`ScheduledJobsService`) is what decides
    * whether this fires at all, once per poll (dispatch claim).
+   *
+   * Re-checks `closed_at` immediately before posting: the sweep's candidate
+   * list is a point-in-time snapshot, and the creator can manually `close()`
+   * the same poll in the gap between that snapshot and this call. Without
+   * this check a manual close would still get a spurious "has closed" auto
+   * notice — and, because the sweep's dispatch claim is already taken by
+   * then, one nothing could later correct.
    */
-  async announceExpiry(channelId: string, question: string): Promise<void> {
+  async announceExpiry(
+    pollId: string,
+    channelId: string,
+    question: string,
+  ): Promise<void> {
+    const current = await this.messageRepo.findById(pollId);
+    const metadata = current?.metadata as PollMetadata | undefined;
+    if (metadata?.closed_at) return;
+
     await this.messageRepo.create({
       channel_id: channelId,
       sender_id: SYSTEM_SENDER_ID,
