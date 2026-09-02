@@ -1,0 +1,51 @@
+name: Turbo packages build
+description: >
+  Compile `packages/*` through turbo, reusing the `.turbo` build cache that
+  ADR-15 lever (A) introduced. One job produces the cache and the rest consume
+  it read-only; this action is the single definition of the cache key both
+  halves must agree on.
+
+inputs:
+  save:
+    description: >
+      `true` in the one job that produces the cache (`packages-build`), which
+      uses `actions/cache` so the post-job hook writes `.turbo` back. Every
+      other job leaves this at `false` and gets `actions/cache/restore`, which
+      has no post hook and so cannot race the producer for the same key.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    # The key lives here, once. It was previously repeated verbatim in all
+    # eight call sites, which is how a producer and a consumer could silently
+    # drift onto different keys and turn every downstream job into a cold
+    # rebuild -- the exact cost ADR-15 lever (A) exists to remove, failing
+    # silently because a cache miss is not an error.
+    - name: Compute turbo cache key
+      id: cache-key
+      shell: bash
+      run: |
+        echo "key=turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}" >> "$GITHUB_OUTPUT"
+        echo "restore-key=turbo-pkgbuild-${{ runner.os }}-" >> "$GITHUB_OUTPUT"
+
+    - name: Cache turbo build outputs
+      if: inputs.save == 'true'
+      uses: actions/cache@v4
+      with:
+        path: .turbo
+        key: ${{ steps.cache-key.outputs.key }}
+        restore-keys: ${{ steps.cache-key.outputs.restore-key }}
+
+    - name: Restore turbo build outputs
+      if: inputs.save != 'true'
+      uses: actions/cache/restore@v4
+      with:
+        path: .turbo
+        key: ${{ steps.cache-key.outputs.key }}
+        restore-keys: ${{ steps.cache-key.outputs.restore-key }}
+
+    - name: Build shared packages
+      shell: bash
+      run: npx turbo run build --filter='./packages/*'
