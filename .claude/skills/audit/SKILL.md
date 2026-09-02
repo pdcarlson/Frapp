@@ -269,10 +269,24 @@ For each migration:
 |----------|------|--------------|
 | CI | `.github/workflows/ci.yml` | All required CI jobs passing, correct branch triggers |
 | Deploy (staging) | `.github/workflows/deploy-api.yml` | Secret handling, migration gating, health checks |
-| Deploy (production) | `.github/workflows/deploy-production.yml` | SHA validation (ancestor of `main` + CI green), the replay/apply fence, provider guardrail preflight, deploy-by-commit, strict CANCELED handling |
-| Production guardrails | `.github/workflows/production-guardrails.yml` | Render auto-deploy off, Vercel Production Branch not `main` — both dashboard-only and fail open |
+| Deploy (production) | `.github/workflows/deploy-production.yml` | SHA validation (ancestor of `main` + CI green), the replay/apply fence, provider guardrail preflight (currently red — see next row), deploy-by-commit, strict CANCELED handling |
+| Production guardrails | `.github/workflows/production-guardrails.yml` | Render auto-deploy off and tracking `main` — dashboard-only and fails open; the Vercel half is red as of 2026-09-02 and is to be **inverted, not dropped** — see below |
 | Release | `.github/workflows/release.yml` | Version bump logic, tag creation, `workflow_call` input plumbing |
 | Docs | `.github/workflows/docs.yml` (`docs-spec-sync` job) | Spec sync enforcement |
+
+Both Vercel projects were unlinked from Git (landing 2026-09-01, web 2026-09-02), so
+`assertVercelProductionBranch` reads an absent `project.link.productionBranch` and treats it as a
+violation — red daily, and red as the `deploy-production.yml` preflight, where it blocks production
+deploys (`--migrations-only` drops only frapp-landing's assertion; frapp-web's stays). Repair is
+tracked in **#1579**; the canonical record of the unlink and everything it broke is **ADR-21** in
+[`spec/architecture/README.md`](../../../spec/architecture/README.md) — read it there, do not
+re-derive it here.
+
+**The Vercel row stays auditable, pointed the other way.** No Production Branch setting exists while
+`link` is null, but *staying unlinked* is itself unversioned dashboard state, and #1579's fix is to
+**invert** the assertion rather than delete it. So audit the invariant that replaced it: **both
+projects are still unlinked** — Vercel `list_projects` reports `link: null` for `frapp-web` and
+`frapp-landing`, and a **present** Git link is now the finding.
 
 ### Secret exposure in workflows
 
@@ -282,13 +296,23 @@ For each migration:
 
 ### Branch protection
 
+From an agent session run **this command and nothing else** — it reads live protection, diffs it
+against the roster, and writes nothing:
+
 ```bash
-npm run configure:branch-protection -- --dry-run
+npm run configure:branch-protection:verify
 ```
+
+> **Never the bare `npm run configure:branch-protection`** — with no flags it is a LIVE `PUT` of the
+> whole protection payload (the script prints `Mode: LIVE`). And never
+> `npm run configure:branch-protection --dry-run` **without** the `--` separator: npm swallows the
+> flag, the script sees zero argv, `assertKnownArgs` has nothing to reject, and it **applies**.
+> Applying branch protection is a human step with an admin PAT, by policy — an audit never applies.
 
 (`configure-branch-protection` reads `GITHUB_PAT` first, with aliases tolerated (`GITHUB_TOKEN`, `GH_PAT`, `GH_TOKEN`) — export it per [`docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).)
 
-Compare output with expected checks in `CONTRIBUTING.md`.
+`:verify` exits non-zero on any divergence and names it, so compare its output against the roster in
+`CONTRIBUTING.md` rather than eyeballing a dry run.
 
 ---
 
