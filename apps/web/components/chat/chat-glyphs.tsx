@@ -47,6 +47,31 @@ export function PinGlyph({ className, active }: ChatGlyphProps) {
 }
 
 /**
+ * Bookmarked message — the personal counterpart to `PinGlyph` (#462).
+ *
+ * A ribbon rather than a second pin, and that distinction is doing real work
+ * rather than decoration: pin and bookmark sit in the same action cluster on
+ * the same row, and `spec/behavior/chat/README.md` makes them opposites — pin
+ * is the chapter-public elevation, a bookmark is private to the bookmarker.
+ * Two similar silhouettes there would invite a member to elevate a message to
+ * the whole chapter while meaning to save it for themselves.
+ *
+ * Filled when `active`, matching `PinGlyph`'s convention for "this state is on"
+ * (§1), so the toggle reads at a glance without relying on the label alone.
+ */
+export function BookmarkGlyph({ className, active }: ChatGlyphProps) {
+  return (
+    <Svg className={className}>
+      <path
+        d="M6.5 3.75h11v16.5l-5.5-4.2-5.5 4.2z"
+        {...stroke}
+        {...fillProps(active)}
+      />
+    </Svg>
+  );
+}
+
+/**
  * Attach a file.
  *
  * Stroke-only, like `SendGlyph` and the shell's `MenuGlyph`: a paperclip is an

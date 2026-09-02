@@ -220,6 +220,7 @@ composer controls, 16px in card eyebrows and inline metadata (§2).
 | Semantic intent | Glyph |
 |---|---|
 | Pinned message | `PinGlyph` |
+| Bookmarked message (personal) | `BookmarkGlyph` |
 | Attach a file | `AttachGlyph` |
 | Send | `SendGlyph` |
 | Add a reaction | `ReactionGlyph` |
