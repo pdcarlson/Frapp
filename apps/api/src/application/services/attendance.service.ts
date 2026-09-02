@@ -306,6 +306,51 @@ export class AttendanceService {
     });
   }
 
+  /**
+   * The members an event actually applies to.
+   *
+   * Exported (rather than inlined into `markAutoAbsent`) because the pre-event
+   * reminder sweep must address exactly this audience and no other. A second,
+   * independently-written copy of this rule is the failure mode worth
+   * preventing: a reminder that resolved role targeting even slightly
+   * differently would push a role-targeted event's name to members who cannot
+   * see that event through `GET /v1/events` at all.
+   *
+   * - **Role-targeted** (`required_role_ids` non-empty) → members holding an
+   *   intersecting role, alumni included. Targeting names its audience
+   *   explicitly, so nothing is subtracted from it.
+   * - **Mandatory, untargeted** → every member except alumni. Alumni cannot
+   *   check in to a non-targeted event and cannot self-excuse, so including
+   *   them would hand every alumnus a guaranteed ABSENT record on every
+   *   mandatory event.
+   * - **Neither** → `[]`. An optional, untargeted event requires nothing of
+   *   anyone, so it has no required audience.
+   *
+   * Note `required_role_ids` is stored as a non-null empty array when cleared,
+   * so emptiness — not nullness — is the test.
+   */
+  async resolveRequiredMembers(
+    chapterId: string,
+    event: { is_mandatory: boolean; required_role_ids?: string[] | null },
+  ): Promise<Awaited<ReturnType<IMemberRepository['findByChapter']>>> {
+    const isRoleTargeted = (event.required_role_ids?.length ?? 0) > 0;
+    if (!event.is_mandatory && !isRoleTargeted) return [];
+
+    const allMembers = await this.memberRepo.findByChapter(chapterId);
+
+    if (isRoleTargeted) {
+      const requiredRoleIdSet = new Set(event.required_role_ids!);
+      return allMembers.filter((m) =>
+        m.role_ids.some((roleId) => requiredRoleIdSet.has(roleId)),
+      );
+    }
+
+    const alumniRoleId = await this.rbac.getAlumniRoleId(chapterId);
+    return alumniRoleId
+      ? allMembers.filter((m) => !m.role_ids.includes(alumniRoleId))
+      : allMembers;
+  }
+
   async markAutoAbsent(
     eventId: string,
     chapterId: string,
@@ -325,30 +370,9 @@ export class AttendanceService {
       );
     }
 
-    if (
-      !event.is_mandatory &&
-      (!event.required_role_ids || event.required_role_ids.length === 0)
-    ) {
+    const requiredMembers = await this.resolveRequiredMembers(chapterId, event);
+    if (requiredMembers.length === 0) {
       return { marked: 0 };
-    }
-
-    const allMembers = await this.memberRepo.findByChapter(chapterId);
-
-    let requiredMembers: typeof allMembers;
-    if (event.required_role_ids && event.required_role_ids.length > 0) {
-      const requiredRoleIdSet = new Set(event.required_role_ids);
-      requiredMembers = allMembers.filter((m) =>
-        m.role_ids.some((roleId) => requiredRoleIdSet.has(roleId)),
-      );
-    } else {
-      // Alumni cannot check in to a non-targeted event and cannot self-excuse,
-      // so including them here would hand every alumnus a guaranteed ABSENT
-      // record on every mandatory event. A role-targeted event is filtered
-      // above and keeps whoever it names, alumni included.
-      const alumniRoleId = await this.rbac.getAlumniRoleId(chapterId);
-      requiredMembers = alumniRoleId
-        ? allMembers.filter((m) => !m.role_ids.includes(alumniRoleId))
-        : allMembers;
     }
 
     const existingRecords = await this.attendanceRepo.findByEvent(eventId);

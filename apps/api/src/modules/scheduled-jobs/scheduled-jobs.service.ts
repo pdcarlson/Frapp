@@ -20,6 +20,7 @@ import {
   type SweepInvoiceRow,
   type SweepTaskRow,
   type SweepPollRow,
+  type SweepUpcomingEventRow,
 } from './scheduled-jobs.repository';
 
 /**
@@ -36,6 +37,24 @@ const AUTO_ABSENT_LOOKBACK_HOURS = 24;
  * polls it skipped instead of leaving them silently unannounced forever.
  */
 const POLL_EXPIRY_LOOKBACK_HOURS = 24;
+
+/**
+ * How far ahead of `start_time` a pre-event reminder goes out
+ * (`spec/behavior/notifications.md`).
+ *
+ * The spec names 1hr / 30min / 15min as a per-member choice. No preference
+ * column exists for that yet, so one fixed offset ships first and the toggle
+ * is tracked separately — the sweep is written against this constant, not
+ * against a literal, so adding the preference is a change of *source*, not a
+ * rewrite.
+ *
+ * Unlike the lookback windows above, this is not slack: it is the reminder's
+ * actual lead time, and it doubles as the sweep's window. An event is
+ * reminded about on the first tick that sees it inside the window, so a
+ * missed tick makes the reminder *later*, never absent — and never late,
+ * because the window's lower bound is `now`.
+ */
+const EVENT_REMINDER_LEAD_MINUTES = 30;
 
 /**
  * Reminder lead time. `spec/behavior/tasks.md` fixes this at 1 day for tasks;
@@ -119,6 +138,17 @@ export class ScheduledJobsService {
   @Cron(CronExpression.EVERY_5_MINUTES)
   async handlePollExpirySweep(): Promise<void> {
     await this.sweepExpiredPolls(new Date());
+  }
+
+  /**
+   * Five-minutely, matching the poll-expiry sweep. The reminder's usefulness
+   * is time-relative — a "starts in 30 minutes" nudge delivered on an hourly
+   * tick would land anywhere from 30 down to 0 minutes out, which is the one
+   * thing it must not do.
+   */
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async handleEventReminderSweep(): Promise<void> {
+    await this.sweepEventReminders(new Date());
   }
 
   @Cron(CronExpression.EVERY_DAY_AT_9AM)
@@ -343,6 +373,88 @@ export class ScheduledJobsService {
       );
       return false;
     }
+  }
+
+  /**
+   * Remind members about an event they are required at, shortly before it
+   * starts (`spec/behavior/notifications.md`).
+   *
+   * The window is `(now, now + EVENT_REMINDER_LEAD_MINUTES]`. Its lower bound
+   * is what makes this safe to run every five minutes: an event that has
+   * already started falls out of the window, so a backed-up worker sends
+   * nothing rather than a burst of "starting soon" pushes about events that
+   * are already underway.
+   *
+   * Quiet hours and the member's `events` category preference are not handled
+   * here — `NotificationService.notifyUser` applies both, and reminders send
+   * at its default NORMAL priority precisely so they stay subject to them.
+   */
+  async sweepEventReminders(now: Date): Promise<{ sent: number }> {
+    const startsBefore = new Date(
+      now.getTime() + EVENT_REMINDER_LEAD_MINUTES * 60 * 1000,
+    );
+
+    const events = await this.repository.findEventsStartingBetween(
+      now,
+      startsBefore,
+    );
+
+    let sent = 0;
+    for (const event of events) {
+      try {
+        if (await this.notifyEventStartingSoon(event)) sent += 1;
+      } catch (error) {
+        this.logger.error(
+          `event-reminder sweep: event ${event.id} failed`,
+          error as Error,
+        );
+      }
+    }
+
+    if (sent > 0) {
+      this.logger.log(`event-reminder sweep: sent ${sent} reminders`);
+    }
+    return { sent };
+  }
+
+  /**
+   * Audience comes from `AttendanceService.resolveRequiredMembers`, the same
+   * call the auto-absent sweep makes, so a reminder can never reach someone a
+   * role-targeted event is invisible to.
+   *
+   * An event with no required members is claimed anyway rather than skipped:
+   * `claimAndNotify` releases a claim only when a send *failed*, and there is
+   * a real difference between "nobody to tell" and "telling them did not
+   * work". Returning early here — before the claim — is what expresses that,
+   * and it costs nothing because the next tick re-evaluates the same empty
+   * audience just as cheaply.
+   */
+  private async notifyEventStartingSoon(
+    event: SweepUpcomingEventRow,
+  ): Promise<boolean> {
+    const recipients = await this.attendanceService.resolveRequiredMembers(
+      event.chapter_id,
+      event,
+    );
+    if (recipients.length === 0) return false;
+
+    // Derived from the event row, never from `now`, so every tick inside the
+    // window computes the same claim key — the same discipline the
+    // auto-absent sweep applies to `end_time`.
+    const startsOn = toDateKey(new Date(event.start_time));
+
+    return this.claimAndNotify({
+      chapterId: event.chapter_id,
+      entityType: 'EVENT',
+      entityId: event.id,
+      threshold: 'EVENT_REMINDER',
+      dueDate: startsOn,
+      recipients: recipients.map((member) => member.user_id),
+      title: 'Event starting soon',
+      body: `"${event.name}" starts in ${EVENT_REMINDER_LEAD_MINUTES} minutes.`,
+      category: 'events',
+      target: { screen: 'events', eventId: event.id },
+    });
   }
 
   /**
