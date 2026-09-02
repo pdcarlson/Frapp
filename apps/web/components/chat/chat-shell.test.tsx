@@ -8,6 +8,7 @@ const {
   mockUseChatChannel,
   mockComposerMount,
   mockUseMyPermissions,
+  searchHit,
 } = vi.hoisted(() => ({
   mockScrollToMessage: vi.fn(),
   mockRefetch: vi.fn(),
@@ -15,6 +16,10 @@ const {
   mockComposerMount: vi.fn(),
   mockUseMyPermissions: vi.fn(() => ({
     data: { permissions: [] as string[] },
+  })),
+  searchHit: vi.fn(() => ({
+    message: { id: "msg-2" },
+    channelId: "chan-general",
   })),
 }));
 
@@ -116,6 +121,20 @@ vi.mock("./thread-panel", () => ({
 }));
 vi.mock("./pins-popover", () => ({
   PinsPopover: () => <div data-testid="pins-popover" />,
+}));
+// Stubbed down to a single button that fires `onJump` with whatever hit the
+// test set, so these cases exercise the *shell's* jump wiring rather than the
+// popover's own search behaviour (which chat-search-popover.test.tsx owns).
+vi.mock("./chat-search-popover", () => ({
+  ChatSearchPopover: ({
+    onJump,
+  }: {
+    onJump: (hit: { message: { id: string }; channelId: string }) => void;
+  }) => (
+    <button data-testid="search-jump" onClick={() => onJump(searchHit())}>
+      search
+    </button>
+  ),
 }));
 vi.mock("./notification-level-popover", () => ({
   NotificationLevelPopover: () => (
@@ -222,6 +241,41 @@ describe("ChatShell deep-link targets", () => {
 
     expect(screen.queryByText("Channel not found")).toBeNull();
     expect(screen.getByTestId("channel-list")).toBeTruthy();
+  });
+
+  it("scrolls straight to a search hit in the channel already open", () => {
+    searchHit.mockReturnValue({
+      message: { id: "msg-2" },
+      channelId: "chan-general",
+    });
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("search-jump"));
+
+    expect(mockScrollToMessage).toHaveBeenCalledWith("msg-2");
+  });
+
+  it("consumes a search hit in another channel even when the URL named a different one", async () => {
+    // The regression this pins: the jump effect used to guard on
+    // `initialChannelId` — the URL param — so arriving at `?channel=A` and
+    // then picking a hit in channel B compared B against the stale A on every
+    // pass and returned, leaving the target permanently unconsumed. The
+    // target's own channel is tracked separately now.
+    searchHit.mockReturnValue({
+      message: { id: "msg-1" },
+      channelId: "chan-random",
+    });
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(mockScrollToMessage).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("search-jump"));
+
+    await waitFor(() => {
+      expect(mockScrollToMessage).toHaveBeenCalledWith("msg-1");
+    });
+    // And the shell actually switched — the jump is not a scroll in the old
+    // channel that happens to share a message id.
+    expect(screen.getByTestId("composer")).toHaveTextContent("chan-random");
   });
 
   it("scrolls to a supplied message once it is present in the loaded window", () => {
