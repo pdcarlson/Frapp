@@ -2742,6 +2742,82 @@
         ]
       }
     },
+    "/v1/bookmarks": {
+      "get": {
+        "operationId": "ChatBookmarkController_listBookmarks_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the caller's own bookmarked messages in this chapter",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/bookmarks/messages/{messageId}": {
+      "post": {
+        "operationId": "ChatBookmarkController_bookmarkMessage_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Bookmark a message (idempotent)",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "delete": {
+        "operationId": "ChatBookmarkController_unbookmarkMessage_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove the caller’s bookmark (idempotent)",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/events": {
       "get": {
         "operationId": "EventController_list_v1",

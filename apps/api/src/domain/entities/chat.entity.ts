@@ -244,3 +244,38 @@ export interface ChannelReadReceipt {
   last_read_at: string;
   updated_at: string;
 }
+
+/**
+ * A member's private bookmark on one message (#462).
+ *
+ * The row is the whole of the fact: there is no state on the message, because
+ * a bookmark is a property of the (viewer, message) pair rather than of the
+ * message. Unique on `(user_id, message_id)`.
+ *
+ * `chapter_id` is denormalized from the message's channel so the per-chapter
+ * list is one indexed read. It is always derived server-side from the channel
+ * the message lives in — never accepted from a caller — so it cannot disagree
+ * with the channel's own chapter.
+ */
+export interface ChatMessageBookmark {
+  id: string;
+  user_id: string;
+  message_id: string;
+  chapter_id: string;
+  created_at: string;
+}
+
+/**
+ * A bookmark joined to the message it points at, which is what the Bookmarks
+ * view actually renders.
+ *
+ * `message` is deliberately non-optional and NOT filtered on `is_deleted`: the
+ * spec requires a bookmark whose message was deleted to surface the
+ * "[message deleted]" placeholder rather than disappear, and `deleteMessage`
+ * already rewrites `content` to exactly that string while keeping the row. So
+ * the placeholder is the message's own content, and the only way to break that
+ * guarantee is to filter deleted rows out of this query.
+ */
+export interface ChatMessageBookmarkWithMessage extends ChatMessageBookmark {
+  message: ChatMessage;
+}

@@ -4,13 +4,20 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { CHAT_CHANNEL_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
-import type { IChatChannelRepository } from '../../domain/repositories/chat.repository.interface';
+import {
+  CHAT_CHANNEL_REPOSITORY,
+  CHAT_MESSAGE_REPOSITORY,
+} from '../../domain/repositories/chat.repository.interface';
+import type {
+  IChatChannelRepository,
+  IChatMessageRepository,
+} from '../../domain/repositories/chat.repository.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import type {
   ChatChannel,
   ChatChannelView,
+  ChatMessage,
 } from '../../domain/entities/chat.entity';
 import { canAccessChannel, isAlumniPostableChannel } from '@repo/validation';
 import type { ChannelOperation } from '@repo/validation';
@@ -47,6 +54,8 @@ export class ChannelAccessService {
   constructor(
     @Inject(CHAT_CHANNEL_REPOSITORY)
     private readonly channelRepo: IChatChannelRepository,
+    @Inject(CHAT_MESSAGE_REPOSITORY)
+    private readonly messageRepo: IChatMessageRepository,
     @Inject(MEMBER_REPOSITORY)
     private readonly memberRepo: IMemberRepository,
     private readonly rbac: RbacService,
@@ -122,6 +131,52 @@ export class ChannelAccessService {
     }
 
     return channel;
+  }
+
+  /**
+   * Authorize a caller for a **message** by resolving message → channel →
+   * chapter, then delegating to {@link assertChannelAccess}. A message in a
+   * channel the caller cannot see (or in another chapter) is rejected.
+   *
+   * `operation` defaults to `'read'`, which is right for actions that don't
+   * author channel content (delete, pin, react, vote, bookmark). Pass `'post'`
+   * for anything that writes member-authored content into the channel —
+   * otherwise the post-side gates (read-only channels, the Alumni lifecycle
+   * rule) are bypassed by editing an existing message instead of sending a new
+   * one.
+   *
+   * Lives here, beside `assertChannelAccess`, for the reason that method's own
+   * docblock gives: more than one surface authorizes a message now (`ChatService`
+   * for pin/delete/react, `ChatBookmarkService` for bookmarks), and two copies of
+   * a message-level authorization helper is exactly the drift this service
+   * exists to prevent. `ChatService` keeps a thin private delegate so its call
+   * sites read unchanged.
+   */
+  async assertMessageAccess(
+    messageId: string,
+    chapterId: string,
+    userId: string,
+    operation: ChannelOperation = 'read',
+  ): Promise<ChatMessage> {
+    const message = await this.messageRepo.findById(messageId);
+    if (!message) throw new NotFoundException('Message not found');
+    try {
+      await this.assertChannelAccess(
+        message.channel_id,
+        chapterId,
+        userId,
+        operation,
+      );
+    } catch (error) {
+      // A message whose channel is in another chapter surfaces as a
+      // channel-level 404 — normalize it so callers cannot distinguish
+      // "message missing" from "message in a chapter you can't see".
+      if (error instanceof NotFoundException) {
+        throw new NotFoundException('Message not found');
+      }
+      throw error;
+    }
+    return message;
   }
 
   /**

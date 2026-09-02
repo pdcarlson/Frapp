@@ -2,8 +2,14 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ChannelAccessService } from './channel-access.service';
 import { RbacService } from './rbac.service';
-import { CHAT_CHANNEL_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
-import type { IChatChannelRepository } from '../../domain/repositories/chat.repository.interface';
+import {
+  CHAT_CHANNEL_REPOSITORY,
+  CHAT_MESSAGE_REPOSITORY,
+} from '../../domain/repositories/chat.repository.interface';
+import type {
+  IChatChannelRepository,
+  IChatMessageRepository,
+} from '../../domain/repositories/chat.repository.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import type { ChatChannel } from '../../domain/entities/chat.entity';
@@ -11,6 +17,7 @@ import type { ChatChannel } from '../../domain/entities/chat.entity';
 describe('ChannelAccessService', () => {
   let service: ChannelAccessService;
   let mockChannelRepo: jest.Mocked<IChatChannelRepository>;
+  let mockMessageRepo: jest.Mocked<IChatMessageRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
   let mockRbac: {
     getEffectivePermissions: jest.Mock;
@@ -66,6 +73,9 @@ describe('ChannelAccessService', () => {
       delete: jest.fn(),
       leaveGroupDm: jest.fn(),
     };
+    mockMessageRepo = {
+      findById: jest.fn(),
+    } as unknown as jest.Mocked<IChatMessageRepository>;
     mockMemberRepo = {
       findById: jest.fn(),
       findByUser: jest.fn(),
@@ -86,6 +96,7 @@ describe('ChannelAccessService', () => {
       providers: [
         ChannelAccessService,
         { provide: CHAT_CHANNEL_REPOSITORY, useValue: mockChannelRepo },
+        { provide: CHAT_MESSAGE_REPOSITORY, useValue: mockMessageRepo },
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
         { provide: RbacService, useValue: mockRbac },
       ],
