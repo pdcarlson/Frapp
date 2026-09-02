@@ -22,12 +22,27 @@ type EventsCalendarProps = {
    */
   onCreateOnDay: (day: Date) => void;
   createDisabled: boolean;
+  /**
+   * Ties the disabled create button to its explanation, matching every other
+   * gated control on this page — pass `SubscriptionGate.noticeId` when
+   * `createDisabled` is true (i.e. `eventWriteGate.controlProps()`'s own
+   * `aria-describedby`), `undefined` otherwise.
+   */
+  createDescribedBy?: string;
+  /**
+   * Lifted to the parent rather than kept as local state: the Calendar tab
+   * lives inside a Radix `TabsContent`, which unmounts on tab switch by
+   * default, and a `useState` here would silently reset to the current month
+   * every time an officer navigates away and back.
+   */
+  monthAnchor: Date;
+  onMonthAnchorChange: (next: Date) => void;
 };
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MAX_VISIBLE_EVENTS_PER_DAY = 3;
 
-function startOfMonth(date: Date): Date {
+export function startOfMonth(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), 1);
 }
 
@@ -58,10 +73,15 @@ export function EventsCalendar({
   onSelectEvent,
   onCreateOnDay,
   createDisabled,
+  createDescribedBy,
+  monthAnchor,
+  onMonthAnchorChange,
 }: EventsCalendarProps) {
-  const [monthAnchor, setMonthAnchor] = useState(() =>
-    startOfMonth(new Date()),
-  );
+  // Per-day "show all" toggle for a day whose event count exceeds the
+  // visible cap — keyed by day so expanding one busy day doesn't expand
+  // every other day too. Reset is implicit: a fresh month grid means fresh
+  // keys, so navigating away and back naturally collapses everything.
+  const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
 
   const days = useMemo(() => buildMonthGrid(monthAnchor), [monthAnchor]);
 
@@ -104,19 +124,17 @@ export function EventsCalendar({
   });
 
   function goToPreviousMonth() {
-    setMonthAnchor(
-      (previous) =>
-        new Date(previous.getFullYear(), previous.getMonth() - 1, 1),
+    onMonthAnchorChange(
+      new Date(monthAnchor.getFullYear(), monthAnchor.getMonth() - 1, 1),
     );
   }
   function goToNextMonth() {
-    setMonthAnchor(
-      (previous) =>
-        new Date(previous.getFullYear(), previous.getMonth() + 1, 1),
+    onMonthAnchorChange(
+      new Date(monthAnchor.getFullYear(), monthAnchor.getMonth() + 1, 1),
     );
   }
   function goToToday() {
-    setMonthAnchor(startOfMonth(new Date()));
+    onMonthAnchorChange(startOfMonth(new Date()));
   }
 
   return (
@@ -161,10 +179,11 @@ export function EventsCalendar({
             const dayEvents = eventsByDay.get(key) ?? [];
             const isCurrentMonth = day.getMonth() === monthAnchor.getMonth();
             const isToday = key === todayKey;
-            const visibleEvents = dayEvents.slice(
-              0,
-              MAX_VISIBLE_EVENTS_PER_DAY,
-            );
+            const isExpanded = expandedDays.has(key);
+            const visibleEvents =
+              isExpanded || dayEvents.length <= MAX_VISIBLE_EVENTS_PER_DAY
+                ? dayEvents
+                : dayEvents.slice(0, MAX_VISIBLE_EVENTS_PER_DAY);
             const overflowCount = dayEvents.length - visibleEvents.length;
             const dayLabel = day.toLocaleDateString(undefined, {
               month: "long",
@@ -184,6 +203,7 @@ export function EventsCalendar({
                   type="button"
                   disabled={createDisabled}
                   aria-label={`Create event on ${dayLabel}`}
+                  aria-describedby={createDescribedBy}
                   className={cn(
                     "flex h-7 w-7 items-center justify-center self-start rounded-full border border-transparent text-xs font-semibold transition-colors",
                     FOCUS_RING,
@@ -250,9 +270,24 @@ export function EventsCalendar({
                     );
                   })}
                   {overflowCount > 0 ? (
-                    <span className="px-1.5 text-[11px] text-muted-foreground">
+                    <button
+                      type="button"
+                      className={cn(
+                        "rounded-xs px-1.5 py-0.5 text-left text-[11px] font-semibold text-muted-foreground transition-colors",
+                        FOCUS_RING,
+                        "hover:bg-accent-subtle hover:text-foreground",
+                      )}
+                      aria-label={`Show ${overflowCount} more event${overflowCount > 1 ? "s" : ""} on ${dayLabel}`}
+                      onClick={() =>
+                        setExpandedDays((previous) => {
+                          const next = new Set(previous);
+                          next.add(key);
+                          return next;
+                        })
+                      }
+                    >
                       +{overflowCount} more
-                    </span>
+                    </button>
                   ) : null}
                 </div>
               </div>

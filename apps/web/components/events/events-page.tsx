@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import {
   EventsGlyph,
@@ -46,8 +46,14 @@ import {
 } from "@/components/shared/table-controls";
 import { useToast } from "@/hooks/use-toast";
 import { EventDetailSheet } from "@/components/events/event-detail-sheet";
-import { EventEditorDialog } from "@/components/events/event-editor-dialog";
-import { EventsCalendar } from "@/components/events/events-calendar";
+import {
+  EventEditorDialog,
+  isoToLocalInput,
+} from "@/components/events/event-editor-dialog";
+import {
+  EventsCalendar,
+  startOfMonth,
+} from "@/components/events/events-calendar";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
@@ -57,13 +63,6 @@ import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { getErrorMessage } from "@/lib/utils";
 
 type EventRow = Record<string, unknown>;
-
-// Local `datetime-local` value, matching `EventEditorDialog`'s own
-// `isoToLocalInput` output shape (no timezone suffix).
-function dateToLocalInputValue(date: Date): string {
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
 
 // A day click carries no time of day, so the create form opens with a
 // reasonable default slot (6-7pm) rather than midnight-to-midnight.
@@ -97,6 +96,11 @@ export function EventsPage() {
   // Set only by a calendar day click, so the "New Event" button and the
   // empty-state CTA keep opening a blank form exactly as they do today.
   const [calendarCreateDay, setCalendarCreateDay] = useState<Date | null>(null);
+  // Lifted here (not local to EventsCalendar) because the Calendar tab's
+  // content unmounts on tab switch — see EventsCalendar's own comment.
+  const [calendarMonthAnchor, setCalendarMonthAnchor] = useState<Date>(() =>
+    startOfMonth(new Date()),
+  );
   const eventsQuery = useEvents();
   const autoAbsent = useAutoAbsent();
   const { confirm, confirmDialog } = useConfirmDialog();
@@ -120,10 +124,14 @@ export function EventsPage() {
 
   const nowTick = useNow();
 
-  const filteredEvents = useMemo(() => {
-    const queryLower = query.trim().toLowerCase();
-    const now = nowTick;
-    return events.filter((event) => {
+  // Shared by both views: search text, attendance policy, cadence. Time
+  // (upcoming/past/all) is deliberately NOT here — it's a list-view concept
+  // ("what's coming up"), and applying it to the calendar would silently
+  // empty out every day outside today's window the moment an officer
+  // navigates to a past or far-future month.
+  const matchesNonTimeFilters = useCallback(
+    (event: EventRow) => {
+      const queryLower = query.trim().toLowerCase();
       const name = String(event.name ?? "").toLowerCase();
       const location = String(event.location ?? "").toLowerCase();
       const recurrenceRule =
@@ -151,28 +159,38 @@ export function EventsPage() {
       if (recurrenceFilter === "one-time" && isRecurring) {
         return false;
       }
+      return true;
+    },
+    [query, attendanceFilter, recurrenceFilter],
+  );
 
-      if (timeFilter !== "all") {
-        const startRaw =
-          typeof event.start_time === "string" ? event.start_time : null;
-        if (!startRaw) return timeFilter === "upcoming";
-        const startMs = new Date(startRaw).getTime();
-        if (Number.isNaN(startMs)) return timeFilter === "upcoming";
-        if (timeFilter === "upcoming" && startMs < now) return false;
-        if (timeFilter === "past" && startMs >= now) return false;
-      }
+  const calendarEvents = useMemo(
+    () => events.filter(matchesNonTimeFilters),
+    [events, matchesNonTimeFilters],
+  );
 
+  const filteredEvents = useMemo(() => {
+    const now = nowTick;
+    return calendarEvents.filter((event) => {
+      if (timeFilter === "all") return true;
+      const startRaw =
+        typeof event.start_time === "string" ? event.start_time : null;
+      if (!startRaw) return timeFilter === "upcoming";
+      const startMs = new Date(startRaw).getTime();
+      if (Number.isNaN(startMs)) return timeFilter === "upcoming";
+      if (timeFilter === "upcoming" && startMs < now) return false;
+      if (timeFilter === "past" && startMs >= now) return false;
       return true;
     });
-  }, [events, query, attendanceFilter, recurrenceFilter, timeFilter, nowTick]);
+  }, [calendarEvents, timeFilter, nowTick]);
   const calendarCreateDefaults = useMemo(() => {
     if (!calendarCreateDay) return null;
     const start = new Date(calendarCreateDay);
     start.setHours(CALENDAR_DEFAULT_START_HOUR, 0, 0, 0);
     const end = new Date(start.getTime() + 60 * 60 * 1000);
     return {
-      startAt: dateToLocalInputValue(start),
-      endAt: dateToLocalInputValue(end),
+      startAt: isoToLocalInput(start.toISOString()),
+      endAt: isoToLocalInput(end.toISOString()),
     };
   }, [calendarCreateDay]);
 
@@ -580,8 +598,13 @@ export function EventsPage() {
             </CardHeader>
             <CardContent>
               <EventsCalendar
-                events={filteredEvents}
+                events={calendarEvents}
+                monthAnchor={calendarMonthAnchor}
+                onMonthAnchorChange={setCalendarMonthAnchor}
                 createDisabled={!eventWriteGate.allowed}
+                createDescribedBy={
+                  eventWriteGate.allowed ? undefined : eventWriteGate.noticeId
+                }
                 onSelectEvent={(event) => {
                   setActiveEvent(event);
                   setDetailSheetOpen(true);

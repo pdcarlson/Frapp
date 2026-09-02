@@ -42,7 +42,7 @@ import { getErrorMessage } from "@/lib/utils";
 
 type EventRecord = Record<string, unknown>;
 
-function isoToLocalInput(value: unknown): string {
+export function isoToLocalInput(value: unknown): string {
   if (typeof value !== "string") return "";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
