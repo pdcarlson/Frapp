@@ -92,7 +92,18 @@ vi.mock("@/lib/chat/use-chat-channel", () => ({
 // doesn't provide) are stubbed — this test is about ChatShell's own
 // deep-link wiring, not their internals.
 vi.mock("./channel-list", () => ({
-  ChannelList: () => <div data-testid="channel-list" />,
+  ChannelList: ({ onPick }: { onPick?: (ch: { id: string }) => void }) => (
+    <div data-testid="channel-list">
+      {/* Enough of the rail to drive a channel switch, which is a distinct
+          path from a deep link or a search jump and clears different state. */}
+      <button
+        data-testid="pick-random"
+        onClick={() => onPick?.({ id: "chan-random" })}
+      >
+        random
+      </button>
+    </div>
+  ),
 }));
 // Mounts (not renders) are the signal #1014's fix depends on: the real
 // `<Composer>` bakes its placeholder into a Tiptap extension at editor
@@ -343,6 +354,52 @@ describe("ChatShell deep-link targets", () => {
       await screen.findByText(/older than the history loaded here/i),
     ).toBeTruthy();
     expect(mockScrollToMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not carry the unreachable notice into a channel the message was never in", async () => {
+    searchHit.mockReturnValue({
+      message: { id: "never-loaded" },
+      channelId: "chan-general",
+    });
+    render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("search-jump"));
+    expect(
+      await screen.findByText(/older than the history loaded here/i),
+    ).toBeTruthy();
+
+    // Switching channels from the rail must not leave #general's notice
+    // standing in #random's header, claiming something about a message that
+    // was never in #random.
+    fireEvent.click(screen.getByTestId("pick-random"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("composer")).toHaveTextContent("chan-random");
+    });
+    expect(
+      screen.queryByText(/older than the history loaded here/i),
+    ).toBeNull();
+  });
+
+  it("retries when the same unreachable hit is picked again", async () => {
+    searchHit.mockReturnValue({
+      message: { id: "never-loaded" },
+      channelId: "chan-general",
+    });
+    render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("search-jump"));
+    expect(
+      await screen.findByText(/older than the history loaded here/i),
+    ).toBeTruthy();
+
+    // The natural "did that work?" second click. Without a nonce in the effect
+    // deps the target id is unchanged, so nothing re-runs: the notice clears
+    // and no jump is attempted — an inert row again, which is the whole defect
+    // this surface was fixed to stop producing.
+    fireEvent.click(screen.getByTestId("search-jump"));
+
+    expect(
+      await screen.findByText(/older than the history loaded here/i),
+    ).toBeTruthy();
   });
 
   it("keeps the unreachable notice dismissed when new messages arrive", async () => {

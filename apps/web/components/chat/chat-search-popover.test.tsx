@@ -188,21 +188,10 @@ describe("ChatSearchPopover", () => {
     expect(screen.queryByText(/no messages match/i)).not.toBeInTheDocument();
   });
 
-  it("does not search while the popover is closed", async () => {
-    renderPopover();
-
-    // Radix keeps this component mounted and unmounts only the content, so an
-    // ungated query lives on in a closed popover — and with `staleTime: 0` and
-    // the app's global `refetchOnWindowFocus`, every later tab refocus re-fires
-    // a search nobody is looking at, into a throttle bucket the ⌘K palette
-    // shares.
-    expect(useSearch).toHaveBeenCalledWith("", "chan-1");
-    expect(useSearch).not.toHaveBeenCalledWith(
-      expect.stringMatching(/\S/),
-      expect.anything(),
-    );
-  });
-
+  // Replaces a weaker sibling that asserted `useSearch` was called with "" on a
+  // freshly-rendered, never-typed popover — true under any implementation,
+  // including one with no `open` gate at all. This one types first, so removing
+  // the gate genuinely fails it.
   it("stops searching again once the popover is dismissed", async () => {
     const user = userEvent.setup();
     renderPopover();

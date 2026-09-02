@@ -76,11 +76,15 @@ describe("useSearch", () => {
     const chapterAData = { members: [{ id: "from-a" }] };
     const chapterBData = { members: [{ id: "from-b" }] };
 
-    // The key must match the CURRENT key shape or this test proves nothing:
-    // a seed with fewer elements can never collide, so the assertions below
-    // would hold even if `chapterId` were dropped from the key entirely. The
-    // trailing `null` is the chapter-wide `channelId` slot.
-    queryClient.setQueryData(["search", "chapter-a", "shared", null], {
+    // Seeded under the key a chapter-BLIND implementation would build, not the
+    // one the correct implementation builds. That is the whole trick, and it is
+    // easy to get backwards: seeding the correct key proves nothing, because a
+    // key missing `chapterId` simply would not collide with it and the test
+    // passes either way. Seeding the broken shape means that if `chapterId` is
+    // ever dropped, the hook collides with this entry and serves chapter A's
+    // results to a member of chapter B — and this test fails, which is the
+    // regression it exists to catch.
+    queryClient.setQueryData(["search", "shared", null], {
       payload: chapterAData,
       timedOut: false,
       timedOutSources: [],
@@ -155,11 +159,14 @@ describe("useSearch", () => {
     const channelData = { messages: [{ id: "from-channel" }] };
     const chapterData = { messages: [{ id: "from-chapter" }] };
 
-    // Same chapter, same query string, different scope. If `channelId` were
-    // dropped from the query key these would collide, and toggling the scope
-    // tabs would render the other scope's hits — which would make the feature
-    // look exactly like the client-side filter it must never be.
-    queryClient.setQueryData(["search", "chapter-a", "dues", "chan-1"], {
+    // Seeded under the key a scope-BLIND implementation would build (no
+    // `channelId` element), for the same reason as the chapter case above: a
+    // seed carrying the element under test can never collide with a key that
+    // has dropped it. With this seed, dropping `channelId` makes the
+    // chapter-wide render collide with the single-channel entry — which is
+    // exactly the bug that would make the scope tabs look like the
+    // client-side filter this feature must never be.
+    queryClient.setQueryData(["search", "chapter-a", "dues"], {
       payload: channelData,
       timedOut: false,
       timedOutSources: [],

@@ -127,8 +127,10 @@ Both scopes are served by `GET /v1/search`; the single-channel form passes an op
 `channelId` ([`../search.md`](../search.md#single-channel-scope)). On web the surface is
 `ChatSearchPopover` in the channel header, alongside the pins popover, defaulting to the
 active channel with an "All channels" toggle. Picking a hit selects its channel if it is not
-already open and then jumps, through the same `/chat?channel=&message=` target machinery a
-deep link uses.
+already open and then jumps, reusing the same in-shell pending-target machinery a
+`/chat?channel=&message=` deep link resolves through. **It does not change the URL** — a
+search jump is not shareable, back-button-recoverable, or reload-surviving; only a real deep
+link is.
 
 **Three parts of the bullets above are aspirational, and the shipped surface says so rather
 than pretending otherwise:**

@@ -211,9 +211,22 @@ export function ChatShell({
   // window. This is the difference between a control that quietly does nothing
   // and one that says why it could not — the whole reason `scrollToMessage`
   // now reports reachability.
-  const [unreachableMessageId, setUnreachableMessageId] = useState<
-    string | null
-  >(null);
+  //
+  // Scoped to the channel it was raised in, not a bare message id. An
+  // unscoped notice followed the member around: switching channels from the
+  // rail left it standing in a channel the message was never in, and a
+  // `?message=` link with no channel (so no `pendingChannelId` to gate on)
+  // re-raised it in every channel visited until it was dismissed.
+  const [unreachableTarget, setUnreachableTarget] = useState<{
+    messageId: string;
+    channelId: string | null;
+  } | null>(null);
+  // Bumped on every jump request so re-picking the SAME hit re-runs the effect.
+  // Without it, asking again for a target already resolved as unreachable
+  // changed no dependency, so the effect never re-ran: the notice cleared and
+  // nothing else happened — an inert row again, on the natural "did that work?"
+  // second click.
+  const [jumpAttempt, setJumpAttempt] = useState(0);
   // `initialChannelId`/`initialMessageId` are only read by `useState`'s
   // initializer on first mount. A second deep link (another notification, a
   // second command-palette hit) navigated to while `/chat` is already
@@ -240,7 +253,8 @@ export function ChatShell({
     setChannelTargetDismissed(false);
     setPendingMessageId(initialMessageId);
     setPendingChannelId(initialChannelId);
-    setUnreachableMessageId(null);
+    setUnreachableTarget(null);
+    setJumpAttempt((n) => n + 1);
   }, [initialChannelId, initialMessageId]);
 
   // `useChannels()` can serve a read up to its `staleTime` old. A channel
@@ -465,6 +479,11 @@ export function ChatShell({
   // rendered as buttons but `onJump` was never wired, so every one of them was
   // inert. The timeline exposes the scroll, the shell owns the wiring.
   const [threadParentId, setThreadParentId] = useState<string | null>(null);
+  // Channel-scoped: the notice belongs to the channel the jump was attempted
+  // in, so it never follows the member into a channel the message was never in.
+  const showUnreachableNotice =
+    unreachableTarget !== null &&
+    unreachableTarget.channelId === activeChannelId;
   const timeline = useRef<MessageTimelineHandle | null>(null);
   const jumpToMessage = useCallback((messageId: string) => {
     timeline.current?.scrollToMessage(messageId);
@@ -501,9 +520,10 @@ export function ChatShell({
         // unbidden on any later jump that returns to its channel.
         setThreadParentId(null);
       }
-      setUnreachableMessageId(null);
+      setUnreachableTarget(null);
       setPendingMessageId(hit.message.id);
       setPendingChannelId(hit.channelId);
+      setJumpAttempt((n) => n + 1);
     },
     [activeChannelId, refetchChannels],
   );
@@ -537,9 +557,12 @@ export function ChatShell({
     if (jumped) {
       setPendingMessageId(null);
       setPendingChannelId(null);
-      setUnreachableMessageId(null);
+      setUnreachableTarget(null);
     } else {
-      setUnreachableMessageId(pendingMessageId);
+      setUnreachableTarget({
+        messageId: pendingMessageId,
+        channelId: activeChannelId,
+      });
     }
   }, [
     pendingMessageId,
@@ -547,6 +570,7 @@ export function ChatShell({
     pendingChannelId,
     channel.isLoading,
     channel.messages,
+    jumpAttempt,
   ]);
 
   const threadParent = useMemo(() => {
@@ -621,6 +645,10 @@ export function ChatShell({
             onPick={(ch) => {
               setSelectedChannelId(ch.id);
               setThreadParentId(null);
+              // Deliberately leaves any pending jump target alone — it is
+              // gated on its own channel and will resolve if the member
+              // returns. Only the notice is channel-scoped for display.
+              setUnreachableTarget(null);
             }}
           />
         </div>
@@ -697,33 +725,41 @@ export function ChatShell({
               />
             </div>
           </div>
-          {unreachableMessageId ? (
-            // The alternative was the popover closing and the timeline not
-            // moving — a row that looks broken rather than a limit that is
-            // stated. Dismissible because it reports a past action, not a
-            // condition of the channel.
-            <div className="mt-2 flex items-start justify-between gap-2">
-              <p role="status" className="text-[12.5px] text-muted-foreground">
-                That message is older than the history loaded here, so the
-                timeline can’t jump to it yet.
-              </p>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  // Abandons the target, not just the notice. Clearing only the
-                  // message would leave it pending, so the effect would re-raise
-                  // this the moment any new message arrived in the channel — a
-                  // dismiss that visibly un-dismisses itself.
-                  setUnreachableMessageId(null);
-                  setPendingMessageId(null);
-                  setPendingChannelId(null);
-                }}
-              >
-                Dismiss
-              </Button>
-            </div>
-          ) : null}
+          {/*
+            The container is ALWAYS mounted and carries the live region; only
+            its contents swap. A live region inserted into the DOM at the same
+            instant it gains content is not announced by most screen readers —
+            which would have left AT users with exactly the silent no-op this
+            notice exists to replace, just relocated. The search popover's own
+            `sr-only` region is mounted the same way.
+          */}
+          <div aria-live="polite" role="status">
+            {showUnreachableNotice ? (
+              // Dismissible because it reports a past action, not a standing
+              // condition of the channel.
+              <div className="mt-2 flex items-start justify-between gap-2">
+                <p className="text-[12.5px] text-muted-foreground">
+                  That message is older than the history loaded here, so the
+                  timeline can’t jump to it yet.
+                </p>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    // Abandons the target, not just the notice. Clearing only
+                    // the message would leave it pending, so the effect would
+                    // re-raise this the moment any new message arrived — a
+                    // dismiss that visibly un-dismisses itself.
+                    setUnreachableTarget(null);
+                    setPendingMessageId(null);
+                    setPendingChannelId(null);
+                  }}
+                >
+                  Dismiss
+                </Button>
+              </div>
+            ) : null}
+          </div>
           {channel.typingUsers.length > 0 ? (
             <p className="mt-1 text-[12.5px] text-muted-foreground">
               {channel.typingUsers.length === 1

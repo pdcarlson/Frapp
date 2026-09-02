@@ -54,6 +54,12 @@ export class SearchController {
   @ApiQuery({
     name: 'channelId',
     required: false,
+    // Declared explicitly because the handler param is typed `unknown` (the
+    // runtime value is whatever `qs` parsed, which is not always a string).
+    // Without this the emitted contract carries an empty schema and the SDK
+    // generates `channelId?: unknown` — the only untyped parameter in the file,
+    // and one that would let a caller pass an object with no type error.
+    type: String,
     description:
       'Narrow the search to one chat channel. This is the single-channel form ' +
       'of search specified in spec/behavior/chat/README.md: only the `messages` ' +

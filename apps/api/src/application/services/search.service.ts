@@ -36,6 +36,15 @@ export interface SearchResult {
 export type SearchSource = keyof SearchResult;
 
 const SEARCH_LIMIT = 10;
+
+/**
+ * Guards the pushed-down channel-id filter. `chat_channels.id` is a `uuid`
+ * column, and PostgREST answers a malformed comparison with `22P02` rather than
+ * an empty set — so an unvalidated push-down would turn a garbage `channelId`
+ * into a 500 instead of the "no matches" the API contract promises.
+ */
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MIN_QUERY_LENGTH = 3;
 const SEARCH_TIMEOUT_MS = 500;
 
@@ -266,10 +275,9 @@ export class SearchService {
    * dishonest to describe it as one.** It skips three sources only for the
    * *single-channel* form. A chat caller searching chapter-wide sends no
    * `channelId` and therefore still pays the full four-source fan-out, exactly
-   * as the command palette does — there is no source-selection parameter, and
-   * adding one is tracked separately rather than smuggled in here. So the
-   * saving is real for the default scope and absent for the wide one; any
-   * per-keystroke cost argument has to be read with that split in mind.
+   * as the command palette does — there is no source-selection parameter today.
+   * So the saving is real for the default scope and absent for the wide one;
+   * any per-keystroke cost argument has to be read with that split in mind.
    */
   private async collect(
     chapterId: string,
@@ -554,7 +562,16 @@ export class SearchService {
       .from('chat_channels')
       .select('id, type, member_ids, required_permissions')
       .eq('chapter_id', chapterId);
-    const { data: channels, error: chError } = (await (onlyChannelId
+    // Only push the id down when it could actually BE one. `chat_channels.id`
+    // is a `uuid` column, so PostgREST rejects a malformed value with 22P02 and
+    // `throwIfError` turns that into a 500 — which would make
+    // `?channelId=general` an error instead of the empty result this method's
+    // caller documents and the spec promises. A non-uuid simply skips the
+    // narrowing and falls through to the JS intersection, which matches nothing
+    // and returns empty. The filter is an optimisation; it must never be the
+    // thing that decides whether the request succeeds.
+    const { data: channels, error: chError } = (await (onlyChannelId &&
+    UUID_PATTERN.test(onlyChannelId)
       ? channelQuery.eq('id', onlyChannelId)
       : channelQuery)) as QueryResult<{
       id: string;
