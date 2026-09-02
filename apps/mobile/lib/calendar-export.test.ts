@@ -96,6 +96,56 @@ describe("calendar-export", () => {
       expect(result).toContain("LOCATION:123 Main St\\, New York\\, NY");
       expect(result).toContain("UID:20240215T140000Z-Meeting: Part 1\\; Part 2@frapp.live");
     });
+
+    const recurringInput = {
+      title: "Chapter Meeting",
+      description: "Weekly chapter meeting.",
+      location: "Chapter House",
+      startAtIso: "2024-02-15T14:00:00.000Z",
+      endAtIso: "2024-02-15T15:00:00.000Z",
+      deepLinkUrl: "https://frapp.live/events/123",
+    };
+
+    it.each([
+      ["WEEKLY", "RRULE:FREQ=WEEKLY;COUNT=13"],
+      ["BIWEEKLY", "RRULE:FREQ=WEEKLY;INTERVAL=2;COUNT=7"],
+      ["MONTHLY", "RRULE:FREQ=MONTHLY;COUNT=7"],
+    ])("emits the %s series rule, matching the API exporter", (rule, expected) => {
+      const result = buildIcsContent({ ...recurringInput, recurrenceRule: rule });
+
+      expect(result).toContain(expected);
+    });
+
+    it("omits RRULE when no recurrence rule is supplied", () => {
+      expect(buildIcsContent(recurringInput)).not.toContain("RRULE");
+      expect(
+        buildIcsContent({ ...recurringInput, recurrenceRule: null }),
+      ).not.toContain("RRULE");
+    });
+
+    // Matches the API: an unexportable rule degrades to a single VEVENT rather
+    // than throwing, so a member's download never fails over a stored value.
+    it("degrades to a plain VEVENT for a rule it cannot express", () => {
+      const result = buildIcsContent({
+        ...recurringInput,
+        recurrenceRule: "DAILY",
+      });
+
+      expect(result).not.toContain("RRULE");
+      expect(result).toContain("BEGIN:VEVENT");
+      expect(result).toContain("END:VCALENDAR");
+    });
+
+    it("places RRULE inside the VEVENT block", () => {
+      const lines = buildIcsContent({
+        ...recurringInput,
+        recurrenceRule: "WEEKLY",
+      }).split("\r\n");
+
+      const rruleAt = lines.findIndex((line) => line.startsWith("RRULE:"));
+      expect(rruleAt).toBeGreaterThan(lines.indexOf("BEGIN:VEVENT"));
+      expect(rruleAt).toBeLessThan(lines.indexOf("END:VEVENT"));
+    });
   });
 
   describe("exportEventToCalendar", () => {
