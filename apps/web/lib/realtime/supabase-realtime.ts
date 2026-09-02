@@ -77,7 +77,23 @@ function enqueue(topic: string, operation: () => Promise<void>): Promise<void> {
 export function attachRealtimeChannel(
   topic: string,
   configure: (channel: RealtimeChannel) => RealtimeChannel,
-  options: { private?: boolean } = {},
+  options: {
+    private?: boolean;
+    /**
+     * Called with the channel every time it reaches `SUBSCRIBED` — the initial
+     * join and every reconnect.
+     *
+     * This exists because a caller cannot reach that moment on its own. The
+     * channel is minted inside the topic queue below, which runs on a
+     * microtask, so a caller's code after `attachRealtimeChannel(...)` returns
+     * still sees no channel; and `configure` runs *before* `subscribe()`, where
+     * a `push` throws `tried to push before joining`. Presence tracking needs
+     * exactly this seam: `track()` is only meaningful once joined, and must be
+     * re-sent after a reconnect or the member silently vanishes from the
+     * presence map for the rest of the session.
+     */
+    onSubscribed?: (channel: RealtimeChannel) => void;
+  } = {},
 ): () => void {
   const client = getRealtimeClient();
   let detached = false;
@@ -117,6 +133,16 @@ export function attachRealtimeChannel(
     // localStorage, so a member removed from a chapter still asks for
     // `events:<that chapter>` on their next login and is denied forever.
     channel.subscribe((status) => {
+      if (status === "SUBSCRIBED") {
+        // Contained: this runs inside a library callback, so a throw here has
+        // no owner and would surface as an unhandled error mid-commit.
+        try {
+          options.onSubscribed?.(channel);
+        } catch (error) {
+          console.warn(`realtime: topic "${topic}" onSubscribed failed`, error);
+        }
+        return;
+      }
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
         console.warn(`realtime: topic "${topic}" join ${status}`);
       }

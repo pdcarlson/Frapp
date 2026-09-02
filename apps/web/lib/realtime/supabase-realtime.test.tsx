@@ -380,3 +380,91 @@ describe("useRealtimeTable — effect re-run on an unchanged topic (#817)", () =
     expect(created).toHaveLength(0);
   });
 });
+
+/**
+ * `onSubscribed` exists because a caller cannot reach the joined moment on its
+ * own: the channel is minted inside the topic queue (a microtask), so code
+ * after `attachRealtimeChannel(...)` returns still sees nothing, and `configure`
+ * runs before the join, where a push throws. Chapter presence needs exactly
+ * this seam — `track()` is only meaningful once joined, and must be re-sent on
+ * every reconnect or the member silently vanishes from the presence map.
+ */
+describe("attachRealtimeChannel — onSubscribed", () => {
+  let created: FakeChannel[];
+  let attachRealtimeChannel: typeof import("./supabase-realtime").attachRealtimeChannel;
+  let warn: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+    const fake = makeFakeSupabase();
+    mocks.supabase = fake.supabase;
+    created = fake.created;
+    warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    ({ attachRealtimeChannel } = await import("./supabase-realtime"));
+  });
+
+  /** The status callback the helper hands to `subscribe()`. */
+  function statusCallback(channel: FakeChannel): (status: string) => void {
+    return channel.subscribe.mock.calls[0]![0] as (status: string) => void;
+  }
+
+  test("is not called before the channel reaches SUBSCRIBED", async () => {
+    const onSubscribed = vi.fn();
+    attachRealtimeChannel("presence:chapter:x", (c) => c, { onSubscribed });
+    await flush();
+
+    expect(created).toHaveLength(1);
+    expect(onSubscribed).not.toHaveBeenCalled();
+  });
+
+  test("fires with the channel on SUBSCRIBED, and again on every re-join", async () => {
+    const onSubscribed = vi.fn();
+    attachRealtimeChannel("presence:chapter:x", (c) => c, { onSubscribed });
+    await flush();
+    const notify = statusCallback(created[0]!);
+
+    notify("SUBSCRIBED");
+    expect(onSubscribed).toHaveBeenCalledTimes(1);
+    expect(onSubscribed.mock.calls[0]![0]).toBe(created[0]);
+
+    // A reconnect re-runs the same callback — this is what re-publishes
+    // presence after a drop.
+    notify("SUBSCRIBED");
+    expect(onSubscribed).toHaveBeenCalledTimes(2);
+  });
+
+  test("is not called for an error status, and the error is still warned", async () => {
+    const onSubscribed = vi.fn();
+    attachRealtimeChannel("presence:chapter:x", (c) => c, { onSubscribed });
+    await flush();
+
+    statusCallback(created[0]!)("CHANNEL_ERROR");
+
+    expect(onSubscribed).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalled();
+  });
+
+  /**
+   * The callback runs inside a library callback, where a throw has no owner and
+   * would surface mid-commit — the shape that unmounted the shell in #783.
+   */
+  test("a throwing callback is contained, not propagated", async () => {
+    attachRealtimeChannel("presence:chapter:x", (c) => c, {
+      onSubscribed: () => {
+        throw new Error("boom");
+      },
+    });
+    await flush();
+
+    expect(() => statusCallback(created[0]!)("SUBSCRIBED")).not.toThrow();
+    expect(warn).toHaveBeenCalled();
+  });
+
+  test("attaching without the option still subscribes normally", async () => {
+    attachRealtimeChannel("presence:chapter:x", (c) => c);
+    await flush();
+
+    expect(() => statusCallback(created[0]!)("SUBSCRIBED")).not.toThrow();
+  });
+});

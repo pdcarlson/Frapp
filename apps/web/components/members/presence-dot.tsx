@@ -2,62 +2,52 @@
 
 import {
   presenceLabel,
+  presenceStatusKind,
   type PresenceStatus,
 } from "@/lib/realtime/presence-status";
 
 /**
- * The Online / Idle / Offline dot shown beside a member.
+ * The Online / Idle / Offline dot pinned to a member's avatar.
  *
- * Colour is not the only carrier. The dot has an accessible name
- * (`presenceLabel`) so a screen reader announces "Online" rather than nothing,
- * and Idle is a hollow ring while Online is filled — so the two remain
- * distinguishable without colour vision, which colour alone would not give
- * (`success` and `warning` are a green/amber pair).
+ * `status: null` renders nothing — the honest answer before presence has
+ * resolved and while the socket is suppressed. Offline is a claim about *that
+ * member*, so it must never be shown as a stand-in for "we don't know yet".
+ * Taking `null` here rather than at each call site keeps that rule in one place
+ * instead of repeating a ternary at every avatar.
  *
- * Rendered from semantic tokens (`bg-success`, `bg-warning`,
- * `bg-muted-foreground`) rather than literal palette steps, so it follows the
- * chapter theme like every other surface.
+ * The ring matches the surface behind it so the dot reads as its own token
+ * rather than merging into the avatar's edge.
+ *
+ * **Accessibility is split by context.** A dot inside a non-interactive
+ * container names itself, so a screen reader announces "Online". A dot inside
+ * an interactive ancestor must not: an `img`-role descendant contributes to the
+ * *button's* accessible name, so the card view's button would be named
+ * "Online Jane Doe President 12 pts…" and would silently rename itself as
+ * presence changed. There the dot is marked decorative and the caller carries
+ * the status in the button's own `aria-label`, where it is deliberate and in a
+ * fixed position.
  */
-
-const DOT_CLASS: Record<PresenceStatus, string> = {
-  online: "bg-success",
-  // Hollow: same hue as the token, but a ring rather than a fill, so Online and
-  // Idle differ in shape as well as colour.
-  idle: "border-2 border-warning bg-transparent",
-  offline: "bg-muted-foreground/40",
-};
-
-export function PresenceDot({
+export function AvatarPresenceDot({
   status,
-  className = "",
+  decorative = false,
 }: {
-  status: PresenceStatus;
-  className?: string;
+  status: PresenceStatus | null;
+  decorative?: boolean;
 }) {
+  if (!status) return null;
   const label = presenceLabel(status);
+  const shared = `absolute bottom-0 right-0 inline-block h-2.5 w-2.5 shrink-0 rounded-full ring-2 ring-card ${presenceStatusKind(status)}`;
+
+  if (decorative) {
+    return <span aria-hidden="true" data-presence={status} className={shared} />;
+  }
   return (
     <span
       role="img"
       aria-label={label}
       title={label}
       data-presence={status}
-      className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${DOT_CLASS[status]} ${className}`}
-    />
-  );
-}
-
-/**
- * The dot pinned to the bottom-right of an avatar.
- *
- * The ring matches the surface behind it so the dot reads as a separate token
- * rather than merging into the avatar edge, which is the usual failure when a
- * status dot overlaps a photo.
- */
-export function AvatarPresenceDot({ status }: { status: PresenceStatus }) {
-  return (
-    <PresenceDot
-      status={status}
-      className="absolute bottom-0 right-0 ring-2 ring-card"
+      className={shared}
     />
   );
 }

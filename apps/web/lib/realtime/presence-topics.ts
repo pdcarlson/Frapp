@@ -20,9 +20,20 @@
  * would be denied for every subscriber until that policy grew a fourth branch
  * — an RLS migration. Chat presence is already public for the same payload, so
  * this follows the shipped precedent rather than changing the auth substrate.
- * The tradeoff, recorded rather than buried: a holder of the anon key and a
- * chapter UUID can observe which *user ids* are currently present in that
- * chapter. No names, no email — the payload is ids and a timestamp.
+ *
+ * The tradeoff, recorded rather than buried, and it runs **both ways**. A
+ * holder of the anon key (it ships in the browser bundle) and a chapter UUID
+ * can (a) *read* which user ids are currently present — ids and a timestamp, no
+ * names or email — and (b) *write*: presence identity is taken from the
+ * payload, not bound to the caller's JWT, so `track({ userId: <anyone> })` can
+ * make an arbitrary member render Online. Neither is a new class — chat's
+ * presence topic is public with the identical payload, where a forged entry
+ * additionally suppresses a real member's ADR-10 push notifications — but this
+ * is the first surface that turns presence into a *rendered claim about a named
+ * person*, so it is stated here rather than inferred. Canonical home for the
+ * authorisation half: `docs/internal/security/AUTHORIZATION_MODEL.md`
+ * § "The policies that do exist". Anything that must be trustworthy about who is online needs the
+ * private-channel path and the RLS branch that comes with it.
  *
  * Kept tiny and dependency-free so the pin test can import it without pulling
  * in React or the Supabase client, matching `change-topics.ts`.
@@ -40,9 +51,3 @@
 export function chapterPresenceTopic(chapterId: string): string {
   return `presence:chapter:${chapterId}`;
 }
-
-/** The presence payload this app tracks. `ts` is last *activity*, not last heartbeat. */
-export type ChapterPresencePayload = {
-  userId: string;
-  ts: number;
-};

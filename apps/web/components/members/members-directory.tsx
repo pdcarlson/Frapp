@@ -4,7 +4,6 @@ import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, LayoutGrid, List } from "lucide-react";
 import { InviteGlyph, SearchGlyph } from "@/components/members/directory-glyphs";
 import {
-  useActiveChapterId,
   useLeaderboard,
   useMemberSearch,
   useMembers,
@@ -30,9 +29,11 @@ import { InviteMemberDialog } from "@/components/members/invite-member-dialog";
 import { MemberDetailSheet } from "@/components/members/member-detail-sheet";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { AvatarPresenceDot } from "@/components/members/presence-dot";
-import { useChapterPresence } from "@/lib/realtime/use-chapter-presence";
-import type { PresenceStatus } from "@/lib/realtime/presence-status";
-import { useFrappUser } from "@/lib/auth/use-frapp-user";
+import { useChapterPresenceContext } from "@/lib/providers/chapter-presence-provider";
+import {
+  presenceLabel,
+  type PresenceStatus,
+} from "@/lib/realtime/presence-status";
 import { vocab } from "@/lib/vocabulary";
 import { asArray, initials } from "@/lib/utils";
 import { stateMicrocopy } from "@/lib/state-microcopy";
@@ -113,31 +114,10 @@ export function MembersDirectory() {
   const orgConfig = useOrgConfig();
   const updateRolesMutation = useUpdateMemberRoles();
   // Presence is chapter-wide and ephemeral (ADR-02) — it rides the Realtime
-  // socket and touches no table, so this adds no query and no write. It is
-  // suppressed while the network provider says we are offline: the socket is
-  // down, so every member would otherwise read Offline, which is a claim about
-  // *them* made from a fault on *our* side.
-  const chapterId = useActiveChapterId();
-  const { userId: viewerId } = useFrappUser();
-  const presence = useChapterPresence({
-    chapterId,
-    viewerId,
-    enabled: !isOffline,
-  });
-
-  /**
-   * Status for a row, or `null` to render no dot at all.
-   *
-   * Absence is the honest answer until the first presence `sync` lands, and
-   * while the socket is suppressed. Defaulting to Offline instead would state
-   * something false about every member for as long as the join takes — and
-   * "Offline" is a claim about *them*, not about our connection.
-   */
-  function presenceStatusOf(member: MemberRow): PresenceStatus | null {
-    if (!presence.isReady) return null;
-    const id = typeof member.user_id === "string" ? member.user_id : "";
-    return id ? presence.statusOf(id) : null;
-  }
+  // socket and touches no table, so this adds no query and no write. The
+  // subscription is owned by the dashboard shell, not by this screen: a member
+  // is present because the app is open, not because they are on this page.
+  const presence = useChapterPresenceContext();
   const usingSearch = deferredQuery.length > 0;
   const activeQuery = usingSearch ? searchQuery : membersQuery;
 
@@ -193,6 +173,11 @@ export function MembersDirectory() {
   }, [membersQuery.data]);
 
   const pointsOf = (member: MemberRow) => pointsByUserId.get(member.user_id) ?? 0;
+  // `null` until presence has resolved for this chapter — the dot renders
+  // nothing rather than claiming Offline, which would be a statement about the
+  // member sourced from our own unfinished join.
+  const presenceStatusOf = (member: MemberRow): PresenceStatus | null =>
+    presence.isReady ? presence.statusOf(member.user_id) : null;
   const primaryRoleName = (member: MemberRow): string => {
     const firstId = Array.isArray(member.role_ids) ? member.role_ids[0] : undefined;
     if (!firstId) return "—";
@@ -607,9 +592,7 @@ export function MembersDirectory() {
                                 ) : null}
                                 <AvatarFallback>{initials(name)}</AvatarFallback>
                               </Avatar>
-                              {presenceStatusOf(member) ? (
-                                <AvatarPresenceDot status={presenceStatusOf(member)!} />
-                              ) : null}
+                              <AvatarPresenceDot status={presenceStatusOf(member)} />
                             </div>
                             <div>
                               <span>{name}</span>
@@ -639,11 +622,23 @@ export function MembersDirectory() {
                 {pageMembers.map((member) => {
                   const id = memberId(member);
                   const name = displayNameOf(member);
+                  const status = presenceStatusOf(member);
                   return (
                     <button
                       key={id}
                       type="button"
                       onClick={() => openMember(id)}
+                      // Named explicitly rather than letting the name be
+                      // assembled from every text node inside. The dot is an
+                      // `img`-role descendant, so it would otherwise prepend
+                      // "Online" to the button's name and silently rename it
+                      // whenever presence changed. Stated here, the status is
+                      // deliberate and always in the same position.
+                      aria-label={
+                        status
+                          ? `${name}, ${presenceLabel(status)}`
+                          : name
+                      }
                       className={`flex flex-col items-center gap-2 rounded-lg border border-border p-4 text-center transition-colors hover:bg-accent-subtle ${FOCUS_RING}`}
                     >
                       <div className="relative">
@@ -653,9 +648,7 @@ export function MembersDirectory() {
                           ) : null}
                           <AvatarFallback>{initials(name)}</AvatarFallback>
                         </Avatar>
-                        {presenceStatusOf(member) ? (
-                          <AvatarPresenceDot status={presenceStatusOf(member)!} />
-                        ) : null}
+                        <AvatarPresenceDot status={status} decorative />
                       </div>
                       <div>
                         <p className="font-semibold">{name}</p>

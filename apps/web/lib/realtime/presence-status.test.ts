@@ -5,8 +5,13 @@ import {
   presenceLabel,
   presenceMapFrom,
   presenceStatusFor,
+  presenceStatusKind,
+  sameRoster,
+  type PresenceStatus,
 } from "./presence-status";
 import { chapterPresenceTopic } from "./presence-topics";
+
+const ALL_STATUSES: PresenceStatus[] = ["online", "idle", "offline"];
 
 /**
  * These pin the spec's timing rules (`spec/behavior/chat/README.md` §
@@ -133,6 +138,84 @@ describe("presenceMapFrom", () => {
       presenceMapFrom({ a: "not-an-array" } as unknown as Record<string, never[]>)
         .size,
     ).toBe(0);
+  });
+});
+
+/**
+ * Presence is a domain status vocabulary like `poll-status.ts` and
+ * `settings-status.ts`, and the invariant those share — pinned for them in
+ * `components/shared/status-kind.test.ts` — is that **no domain status is ever
+ * painted in the chapter accent**. #1202 found five that were, and the families
+ * with no mapper were exactly the ones nobody could check. This is presence's
+ * half of that check.
+ */
+describe("presenceStatusKind", () => {
+  test("no status is painted in the chapter accent", () => {
+    for (const status of ALL_STATUSES) {
+      const kind = presenceStatusKind(status);
+      expect(kind, status).not.toMatch(/\b(bg|border|ring|text)-primary\b/);
+      expect(kind, status).not.toMatch(/\baccent\b/);
+    }
+  });
+
+  test("every status gets a treatment, and no two share one", () => {
+    const kinds = ALL_STATUSES.map(presenceStatusKind);
+    expect(kinds.every((k) => k.length > 0)).toBe(true);
+    expect(new Set(kinds).size).toBe(ALL_STATUSES.length);
+  });
+
+  /**
+   * `--success` and `--warning` are a green/amber pair, which is the classic
+   * pair colour-vision deficiency collapses — so Online and Idle must differ in
+   * shape too, not only in hue.
+   */
+  test("Idle is a ring and Online is a fill, so they differ without colour", () => {
+    expect(presenceStatusKind("idle")).toContain("border-2");
+    expect(presenceStatusKind("online")).not.toContain("border-2");
+  });
+
+  /**
+   * The ring's interior sits over an avatar photo. `bg-transparent` would let
+   * the photo through, so an amber-ish image would make Idle read as filled —
+   * losing the shape distinction exactly where the colour one is weakest.
+   */
+  test("the Idle ring has an opaque interior", () => {
+    expect(presenceStatusKind("idle")).toContain("bg-card");
+    expect(presenceStatusKind("idle")).not.toContain("bg-transparent");
+  });
+});
+
+describe("sameRoster", () => {
+  test("equal contents compare equal even as different Map instances", () => {
+    expect(
+      sameRoster(new Map([["u1", 1]]), new Map([["u1", 1]])),
+    ).toBe(true);
+  });
+
+  test("a changed timestamp is a change", () => {
+    expect(sameRoster(new Map([["u1", 1]]), new Map([["u1", 2]]))).toBe(false);
+  });
+
+  test("a different member set is a change, both directions", () => {
+    const one = new Map([["u1", 1]]);
+    const two = new Map([
+      ["u1", 1],
+      ["u2", 1],
+    ]);
+    expect(sameRoster(one, two)).toBe(false);
+    expect(sameRoster(two, one)).toBe(false);
+  });
+
+  /**
+   * Same size, disjoint keys — the case a size-only comparison would call
+   * equal, freezing the directory on the previous roster.
+   */
+  test("same size with different members is a change", () => {
+    expect(sameRoster(new Map([["u1", 1]]), new Map([["u2", 1]]))).toBe(false);
+  });
+
+  test("two empty rosters are equal", () => {
+    expect(sameRoster(new Map(), new Map())).toBe(true);
   });
 });
 
