@@ -171,11 +171,11 @@ Where a dialog's `open` state lives in a parent, the **parent** carries the gate
 
 Three of `chapter-document`'s six writes — folder create, rename and delete — have no client counterpart yet: the documents page derives its folder list from the loaded documents and its folder buttons are pure filters. A folder-management UI must adopt the gate when it lands.
 
-**Free-tier** (writes survive `incomplete`, and `past_due` inside grace): `chapter` · `chapter-config` · `chat` · `custom-field` · `custom-role` · `invite` · `member` · `rbac` · `search` · `user`. The two `@GraceBlocked` routes are `POST /invites` and `POST /invites/batch`.
+**Free-tier** (writes survive `incomplete`, and `past_due` inside grace): `chapter` · `chapter-config` · `chat` · `custom-field` · `custom-role` · `invite` · `member` · `rbac` · `search` · `user`. The three `@GraceBlocked` routes are `POST /invites`, `POST /invites/batch` and `POST /invites/email`.
 
 **Exempt:** `billing` (whole class — the recovery path) and `POST /invoices/:id/payment-intent`.
 
-**Not chapter-guarded at all**, so never subscription-gated despite carrying writes: `analytics`, `notification`, `chapter-directory`, `webhook`, and `POST /chapters`, `POST /chapters/onboard`, `POST /chapters/:id/activate`. Gating these would lock a lapsed chapter out of settings and push registration it is entitled to — over-gating is a worse defect than the late 403.
+**Not chapter-guarded at all**, so never subscription-gated despite carrying writes: `analytics`, `notification`, `webhook`, and `POST /chapters`, `POST /chapters/onboard`, `POST /chapters/:id/activate`, `POST /invites/redeem`. (`chapter-directory` is also un-guarded but has no non-GET route, so it contributes no write surface.) Gating these would lock a lapsed chapter out of settings and push registration it is entitled to — over-gating is a worse defect than the late 403. `redeem` is the subtle one: it sits on an otherwise-guarded controller, and the chapter it writes to is `invite.chapter_id`, which `ChapterGuard` never sees — guarding it would gate the redeemer's _current_ chapter and 400 a user who has none.
 
 ### What "fail fast" means concretely
 
