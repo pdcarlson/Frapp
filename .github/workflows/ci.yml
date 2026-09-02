@@ -61,6 +61,11 @@ jobs:
               - 'packages/**'
               - 'package-lock.json'
               - 'turbo.json'
+              # Both gated jobs build `packages/*` through this action, so it is
+              # as build-affecting as `turbo.json`. Omitting it would let a PR
+              # that edits only the action skip two REQUIRED checks, which
+              # report Success when skipped (see the header above).
+              - '.github/actions/**'
             pglite:
               - 'supabase/migrations/**'
               - 'scripts/check-pglite-migrations.mjs'

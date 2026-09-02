@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -8,75 +8,187 @@ import { dirname, join } from "node:path";
 //
 // The `.turbo` cache key from ADR-15 lever (A) used to be written out verbatim in
 // all eight of its call sites in `ci.yml` -- one producer (`actions/cache`) and
-// seven consumers (`actions/cache/restore`). That duplication is uniquely nasty
-// because its failure is silent: edit the key in the producer and forget one
-// consumer, and that job stops hitting the cache and rebuilds every package from
-// cold on every run. A cache miss is not an error, so CI stays green and the only
-// symptom is a slow job nobody attributes to a typo weeks earlier.
+// seven consumers (`actions/cache/restore`). The reason that mattered is not the
+// magnitude of the loss but its silence: a drifted key degrades the cache (see
+// the action's own comment for why `restore-keys` makes it a stale hit rather
+// than a cold rebuild) and nothing goes red, because a cache miss is not an
+// error.
 //
-// The extraction is only worth anything if the copies stay gone. Per AGENTS.md
-// § Tech debt protocol, a shared helper living beside surviving local copies is a
-// net loss -- so this test fails if a hand-written block comes back, rather than
-// waiting for someone to notice the minutes.
-//
-// Parsed by hand rather than with a YAML library on purpose, matching
-// `workflow-concurrency.test.mjs`: every test in this directory imports `node:`
-// modules only, and `yaml` is present here as a transitive override rather than a
-// declared dependency.
+// The extraction is only worth anything if the copies stay gone AND the new
+// single point of failure is itself pinned. An earlier draft of this file
+// asserted only the first half -- so renaming the action's `save` input would
+// have left `packages-build` silently taking the read-only branch, never writing
+// `.turbo`, with all six tests green. Both halves are asserted now.
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const WORKFLOWS = join(REPO, ".github", "workflows");
-const ACTION = join(REPO, ".github", "actions", "turbo-packages-build", "action.yml");
+const ACTIONS = join(REPO, ".github", "actions");
+const ACTION_DIR = "turbo-packages-build";
+const ACTION = join(ACTIONS, ACTION_DIR, "action.yml");
 
-const USES = "uses: ./.github/actions/turbo-packages-build";
+const USES_RE = /^\s*uses:\s*\.\/\.github\/actions\/turbo-packages-build\s*$/;
 
-/** Every `*.yml` under `.github/workflows`, as `{ name, text }`. */
-function workflows() {
-  return readdirSync(WORKFLOWS)
-    .filter((f) => /\.ya?ml$/.test(f))
-    .map((name) => ({ name, text: readFileSync(join(WORKFLOWS, name), "utf8") }));
+// Quote-tolerant: `--filter='./packages/*'`, `--filter="./packages/*"` and
+// `--filter=./packages/*` are the same instruction to bash, so a guard that
+// matched only the first spelling could be evaded by retyping it.
+const BUILD_CMD_RE = /turbo\s+run\s+build\s+--filter[=\s]['"]?\.\/packages\/\*/;
+
+// GitHub stringifies action inputs, so `save: true`, `save: 'true'` and
+// `save: "true"` all arrive as "true" and all select the write branch. Matching
+// only the double-quoted spelling would let an unquoted second producer through
+// -- which is the exact race this file's producer assertion exists to forbid.
+const SAVE_TRUE_RE = /^\s*save:\s*["']?true["']?\s*$/;
+
+/** `{ name, text }` for every YAML file under a directory tree. */
+function yamlFilesUnder(root, rel = "") {
+  const dir = join(root, rel);
+  let entries;
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return [];
+  }
+  const out = [];
+  for (const entry of entries) {
+    const full = join(dir, entry);
+    const name = rel ? `${rel}/${entry}` : entry;
+    if (statSync(full).isDirectory()) out.push(...yamlFilesUnder(root, name));
+    else if (/\.ya?ml$/.test(entry)) out.push({ name, text: readFileSync(full, "utf8") });
+  }
+  return out;
 }
 
-/** Lines of one `  <jobId>:` block in a workflow, up to the next job. */
+/**
+ * Every YAML file that must NOT hand-write the cache key or the build command:
+ * all workflows, plus every composite action except the canonical one. The
+ * second half matters because this change established `.github/actions/` as a
+ * pattern, so the next copy of the block is likelier to land there than in a
+ * workflow.
+ */
+function guardedFiles() {
+  return [
+    ...yamlFilesUnder(WORKFLOWS).map((f) => ({ ...f, name: `.github/workflows/${f.name}` })),
+    ...yamlFilesUnder(ACTIONS)
+      .filter((f) => !f.name.startsWith(`${ACTION_DIR}/`))
+      .map((f) => ({ ...f, name: `.github/actions/${f.name}` })),
+  ];
+}
+
+/**
+ * Lines of one `  <jobId>:` block in a workflow, comments stripped.
+ *
+ * Comments are stripped for two independent reasons, both of which produced a
+ * false result in an earlier draft: a job's explanatory comment block sits
+ * ABOVE its header and therefore inside the PREVIOUS job's slice, so a comment
+ * naming the action would otherwise read as that job using it; and the
+ * next-job regex must tolerate an inline comment on a header (`  foo: # bar`)
+ * or the block silently bleeds into the following job.
+ */
 function jobBlock(text, jobId) {
   const lines = text.split("\n");
   const key = (l) => l.replace(/\s+$/, "");
-  const start = lines.findIndex((l) => key(l) === `  ${jobId}:`);
+  const isHeader = (l) => /^ {2}[a-zA-Z0-9_-]+:(\s*#.*)?$/.test(key(l));
+  const start = lines.findIndex((l) => key(l).replace(/\s*#.*$/, "") === `  ${jobId}:`);
   if (start === -1) return null;
   let end = lines.length;
   for (let i = start + 1; i < lines.length; i++) {
-    if (/^ {2}[a-zA-Z0-9_-]+:$/.test(key(lines[i]))) {
+    if (isHeader(lines[i])) {
       end = i;
       break;
     }
   }
-  return lines.slice(start, end).join("\n");
+  return lines
+    .slice(start, end)
+    .filter((l) => !/^\s*#/.test(l))
+    .join("\n");
 }
 
+/** Jobs that must build shared packages through the action. */
+const CONSUMERS = [
+  "lint-and-typecheck",
+  "api-tests",
+  "web-tests",
+  "api-contract-check",
+  "dependency-cruiser",
+  "mobile-validate",
+  "web-responsive-floor",
+];
+const PRODUCER = "packages-build";
+
+// Both carry an in-file comment saying a build/cache step silently disarms them:
+// `clean-checkout-typecheck` reproduces a bare install on a cold machine, and
+// `web-production-build` builds under a production prune. Prebuilt `dist/` on
+// disk hides the failure each exists to surface, and a one-line `uses:` is now
+// by far the easiest way to add one by accident.
+const MUST_NOT_USE = ["clean-checkout-typecheck", "web-production-build"];
+
 describe("turbo-packages-build composite action", () => {
+  const ci = () => readFileSync(join(WORKFLOWS, "ci.yml"), "utf8");
+  const action = () => readFileSync(ACTION, "utf8");
+
   it("exists and is a composite action", () => {
     assert.ok(existsSync(ACTION), `${ACTION} is missing`);
-    const text = readFileSync(ACTION, "utf8");
-    assert.match(text, /using:\s*composite/, "action must declare `using: composite`");
+    assert.match(action(), /using:\s*composite/, "action must declare `using: composite`");
+  });
+
+  // Without this the guard is pointed only at the place the key LEFT, not the
+  // place it went -- so editing a hashFiles glob, or dropping the prefix, would
+  // pass green while silently changing what every job restores.
+  it("still single-sources the exact cache key", () => {
+    const text = action();
+    // Asserted on the key EXPRESSION rather than on a surrounding `key:` or
+    // `echo key=`, so the assertion survives a change to how the action plumbs
+    // the value through while still failing if the value itself moves.
+    assert.ok(
+      text.includes(
+        "turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', " +
+          "'turbo.json', 'packages/**/src/**', 'packages/**/package.json', " +
+          "'packages/**/tsconfig.json') }}",
+      ),
+      "the cache key changed -- every previously saved entry stops matching. If that " +
+        "is intended, update this assertion deliberately rather than letting it drift.",
+    );
+    assert.match(
+      text,
+      /restore-key=turbo-pkgbuild-\$\{\{ runner\.os \}\}-/,
+      "the `turbo-pkgbuild-<os>-` restore-keys prefix is what keeps a drifted exact " +
+        "key a stale hit instead of a cold rebuild",
+    );
+  });
+
+  // A rename here is not a hard error at runtime: GitHub emits a non-fatal
+  // `Warning: Unexpected input(s) 'save'`, `inputs.save` goes unset, and the
+  // producer silently takes the read-only branch -- so `.turbo` is never written
+  // and every job rebuilds, forever, with CI green.
+  it("still honours the `save` input on both branches", () => {
+    const text = action();
+    assert.match(text, /^ {2}save:$/m, "the `save` input must keep its name");
+    assert.match(text, /if:\s*inputs\.save == 'true'/, "the write branch must be gated on it");
+    assert.match(text, /if:\s*inputs\.save != 'true'/, "the read branch must be gated on it");
+    assert.match(text, /uses:\s*actions\/cache@v4/, "the producer branch must save the cache");
+    assert.match(
+      text,
+      /uses:\s*actions\/cache\/restore@v4/,
+      "consumers must use the restore-only action, which has no post hook to race the producer",
+    );
   });
 
   it("is the only place the turbo cache key is written", () => {
-    const offenders = workflows()
-      .filter((w) => w.text.includes("turbo-pkgbuild"))
-      .map((w) => w.name);
+    const offenders = guardedFiles()
+      .filter((f) => f.text.includes("turbo-pkgbuild"))
+      .map((f) => f.name);
     assert.deepEqual(
       offenders,
       [],
       "the `turbo-pkgbuild-` cache key belongs only in " +
-        ".github/actions/turbo-packages-build/action.yml -- a workflow spelling it " +
-        "out again can drift onto a different key and silently rebuild from cold",
+        ".github/actions/turbo-packages-build/action.yml",
     );
   });
 
   it("is the only place packages/* is built", () => {
-    const offenders = workflows()
-      .filter((w) => w.text.includes("turbo run build --filter='./packages/*'"))
-      .map((w) => w.name);
+    const offenders = guardedFiles()
+      .filter((f) => BUILD_CMD_RE.test(f.text))
+      .map((f) => f.name);
     assert.deepEqual(
       offenders,
       [],
@@ -85,58 +197,66 @@ describe("turbo-packages-build composite action", () => {
   });
 
   it("has exactly one producer, and it is packages-build", () => {
-    const ci = readFileSync(join(WORKFLOWS, "ci.yml"), "utf8");
-    const savers = ci.split("\n").filter((l) => /^\s*save:\s*"true"\s*$/.test(l));
+    const text = ci();
+    const savers = text.split("\n").filter((l) => SAVE_TRUE_RE.test(l));
     assert.equal(
       savers.length,
       1,
-      "exactly one job may pass `save: \"true\"` -- a second writer races the first " +
+      'exactly one job may pass a truthy `save` -- a second writer races the first ' +
         "for the same cache key",
     );
-    const producer = jobBlock(ci, "packages-build");
-    assert.ok(producer, "ci.yml must still define a `packages-build` job");
-    assert.match(producer, /save:\s*"true"/, "packages-build is the job that writes the cache");
+    const producer = jobBlock(text, PRODUCER);
+    assert.ok(producer, `ci.yml must still define a \`${PRODUCER}\` job`);
+    assert.ok(
+      producer.split("\n").some((l) => SAVE_TRUE_RE.test(l)),
+      `${PRODUCER} is the job that writes the cache`,
+    );
   });
 
   it("is used by every job that needs prebuilt packages", () => {
-    const ci = readFileSync(join(WORKFLOWS, "ci.yml"), "utf8");
-    // packages-build produces; the rest consume. `web-responsive-floor` is the
-    // one ADR-15's own text still omits -- it is listed here so the count cannot
-    // drift again unnoticed.
-    const expected = [
-      "packages-build",
-      "lint-and-typecheck",
-      "api-tests",
-      "web-tests",
-      "api-contract-check",
-      "dependency-cruiser",
-      "mobile-validate",
-      "web-responsive-floor",
-    ];
-    for (const jobId of expected) {
-      const block = jobBlock(ci, jobId);
+    const text = ci();
+    // `web-responsive-floor` is the one ADR-15's original text omitted, which is
+    // how its consumer count went stale at six. Listed explicitly so the same
+    // drift cannot recur unnoticed.
+    for (const jobId of [PRODUCER, ...CONSUMERS]) {
+      const block = jobBlock(text, jobId);
       assert.ok(block, `ci.yml must still define a \`${jobId}\` job`);
-      assert.ok(block.includes(USES), `${jobId} must build packages through the shared action`);
+      assert.ok(
+        block.split("\n").some((l) => USES_RE.test(l)),
+        `${jobId} must build packages through the shared action`,
+      );
     }
-    const total = ci.split("\n").filter((l) => l.trim() === USES).length;
-    assert.equal(total, expected.length, "unexpected extra or missing call site in ci.yml");
   });
 
   it("stays out of the two jobs that exist to catch a cold build", () => {
-    const ci = readFileSync(join(WORKFLOWS, "ci.yml"), "utf8");
-    // Both jobs carry an in-file comment saying adding a build/cache step
-    // silently disarms them: `clean-checkout-typecheck` reproduces a bare
-    // install on a cold machine, and `web-production-build` builds under a
-    // production prune. Prebuilt `dist/` on disk hides the failure each exists
-    // to surface, and the shared action is now the easiest way to add one.
-    for (const jobId of ["clean-checkout-typecheck", "web-production-build"]) {
-      const block = jobBlock(ci, jobId);
+    const text = ci();
+    for (const jobId of MUST_NOT_USE) {
+      const block = jobBlock(text, jobId);
       assert.ok(block, `ci.yml must still define a \`${jobId}\` job`);
       assert.ok(
-        !block.includes(USES),
+        !block.split("\n").some((l) => USES_RE.test(l)),
         `${jobId} must NOT use the shared build action -- it exists to fail when ` +
           "shared packages cannot build from a cold tree",
       );
     }
+  });
+
+  // A job gated on `changes.web` that builds packages must have the action in
+  // that filter, or a PR touching only the action skips it -- and both gated
+  // jobs are REQUIRED checks, which report Success when skipped.
+  it("is a path-filter input for the gated jobs that use it", () => {
+    const text = ci();
+    const gated = CONSUMERS.filter((j) => {
+      const block = jobBlock(text, j);
+      return block && block.includes("needs.changes.outputs.web");
+    });
+    assert.ok(gated.length > 0, "expected at least one web-gated consumer");
+    assert.match(
+      text,
+      /^\s*- '\.github\/actions\/\*\*'$/m,
+      `${gated.join(", ")} are gated on changes.web and build through the action, so ` +
+        "'.github/actions/**' must be in that filter or a PR editing only the action " +
+        "skips required checks that report Success when skipped",
+    );
   });
 });
