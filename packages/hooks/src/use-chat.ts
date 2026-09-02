@@ -2,7 +2,8 @@
 
 import { useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useFrappClient } from "./use-frapp-client";
+import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { createChapterQueryKeys } from "./chapter-query-keys";
 
 export function useChannels() {
   const client = useFrappClient();
@@ -774,6 +775,103 @@ export function useDeleteCategory() {
       // invalidation above alone leaves cached channel rows pointing at a
       // category id that no longer exists.
       queryClient.invalidateQueries({ queryKey: ["channels"] });
+    },
+  });
+}
+
+// ── Bookmarks (#462) ────────────────────────────────────────────────────────
+//
+// Personal and private, per `spec/behavior/chat/README.md` § Bookmarks. The API
+// derives the owner from the bearer token and never takes a user id, so there
+// is nothing viewer-scoped for these hooks to pass — but the *cache* is still
+// per-viewer-per-chapter data, so the key carries the chapter. An unscoped
+// `["bookmarks"]` would serve the outgoing chapter's rows across a switch, the
+// bug `chapter-query-keys.ts` exists to make untypeable.
+
+// Built with the shared factory rather than hand-rolled. `chapter-query-keys.ts`
+// exists precisely so a key missing its tenant scope cannot type-check, and its
+// docblock is explicit: "Do not add `string | null` back. A hook that has no
+// chapter yet should not build a key; it should leave the query `enabled:
+// false`." The first draft here hand-rolled a `string | null` signature while
+// citing that module — the exact drift it was written to prevent.
+export const bookmarkKeys = createChapterQueryKeys("bookmarks");
+
+/**
+ * The viewer's own bookmarks in the active chapter, newest first, each with
+ * its message.
+ *
+ * Deliberately one query rather than a per-message "is this bookmarked?" —
+ * `useIsBookmarked` below derives that from this list, so the timeline renders
+ * bookmark state for a whole page without a second round trip, and the popover
+ * and the per-row toggle can never disagree about what is bookmarked.
+ */
+export function useBookmarks() {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    // `chapterId!` is safe under `enabled` below: the factory refuses a null
+    // chapter by design, and the query never runs without one.
+    queryKey: bookmarkKeys.list(chapterId!),
+    queryFn: async () => {
+      const { data, error } = await client.GET("/v1/bookmarks");
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!chapterId,
+  });
+}
+
+/**
+ * Set of bookmarked message ids for the active chapter.
+ *
+ * Memoized on the query data so the timeline's per-row lookup is O(1) and does
+ * not rebuild on every render.
+ */
+export function useBookmarkedMessageIds(): Set<string> {
+  const { data } = useBookmarks();
+  return useMemo(
+    () => new Set((data ?? []).map((bookmark) => bookmark.message_id)),
+    [data],
+  );
+}
+
+export function useBookmarkMessage() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationFn: async (messageId: string) => {
+      const { data, error } = await client.POST(
+        "/v1/bookmarks/messages/{messageId}",
+        { params: { path: { messageId } } },
+      );
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: bookmarkKeys.lists(chapterId!),
+      });
+    },
+  });
+}
+
+export function useUnbookmarkMessage() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationFn: async (messageId: string) => {
+      const { error } = await client.DELETE(
+        "/v1/bookmarks/messages/{messageId}",
+        { params: { path: { messageId } } },
+      );
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: bookmarkKeys.lists(chapterId!),
+      });
     },
   });
 }

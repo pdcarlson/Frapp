@@ -907,41 +907,28 @@ export class ChatService {
   }
 
   /**
-   * Authorize a caller for a message by resolving message → channel → chapter,
-   * then delegating to {@link assertChannelAccess}. A message in a channel the
-   * caller cannot see (or in another chapter) is rejected.
+   * Authorize a caller for a message by resolving message → channel → chapter.
+   * A message in a channel the caller cannot see (or in another chapter) is
+   * rejected.
    *
-   * `operation` defaults to `'read'`, which is right for actions that don't
-   * author channel content (delete, pin, react, vote). Pass `'post'` for
-   * anything that writes member-authored content into the channel — otherwise
-   * the post-side gates (read-only channels, the Alumni lifecycle rule) are
-   * bypassed by editing an existing message instead of sending a new one.
+   * Delegates to the shared {@link ChannelAccessService} for the same reason
+   * {@link assertChannelAccess} does: the bookmark surface (#462) authorizes
+   * messages too, and a second copy of this resolution would be free to drift
+   * from the one the chat hot path uses. The body moved there; this stays as a
+   * thin delegate so the call sites below read unchanged.
    */
-  private async assertMessageAccess(
+  private assertMessageAccess(
     messageId: string,
     chapterId: string,
     userId: string,
     operation: 'read' | 'post' = 'read',
   ): Promise<ChatMessage> {
-    const message = await this.messageRepo.findById(messageId);
-    if (!message) throw new NotFoundException('Message not found');
-    try {
-      await this.assertChannelAccess(
-        message.channel_id,
-        chapterId,
-        userId,
-        operation,
-      );
-    } catch (error) {
-      // A message whose channel is in another chapter surfaces as a
-      // channel-level 404 — normalize it so callers cannot distinguish
-      // "message missing" from "message in a chapter you can't see".
-      if (error instanceof NotFoundException) {
-        throw new NotFoundException('Message not found');
-      }
-      throw error;
-    }
-    return message;
+    return this.channelAccess.assertMessageAccess(
+      messageId,
+      chapterId,
+      userId,
+      operation,
+    );
   }
 
   async editMessage(
