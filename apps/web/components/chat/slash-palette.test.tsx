@@ -111,4 +111,25 @@ describe("SlashPalette", () => {
     expect(screen.getByText("/poll")).toBeInTheDocument();
     expect(screen.getByText("/announce")).toBeInTheDocument();
   });
+
+  // #396: Radix's `DialogContent` never sets `aria-modal` on its own
+  // (verified against @radix-ui/react-dialog@1.1.23 — only `role="dialog"`
+  // comes for free), so a screen reader could treat this as a non-modal
+  // region and let a swipe/arrow gesture escape into the composer behind it
+  // while the palette is open. `apps/web/components/ui/dialog.tsx` now sets
+  // it explicitly on every `DialogContent` consumer; this pins it for the
+  // one this issue was filed against.
+  it("is announced as a modal dialog", () => {
+    render(
+      <SlashPalette
+        open
+        isModuleEnabled={() => true}
+        status="ready"
+        onSelect={noop}
+        onOpenChange={noop}
+      />,
+    );
+
+    expect(screen.getByRole("dialog")).toHaveAttribute("aria-modal", "true");
+  });
 });

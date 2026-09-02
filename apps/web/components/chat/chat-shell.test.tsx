@@ -260,6 +260,57 @@ describe("ChatShell composer remount per channel (#1014)", () => {
 });
 
 /**
+ * #396: `/chat` never repeated `dashboard-shell.tsx`'s "Skip to main content"
+ * pattern, so a keyboard user re-tabbed through the whole channel rail on
+ * every visit to reach the timeline — and the timeline carried no `log`/
+ * `feed` semantics at all, so a screen reader had no live-region cue that new
+ * messages were being appended.
+ */
+describe("ChatShell accessibility landmarks (#396)", () => {
+  it("renders a skip link that targets the timeline", () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    const skipLink = screen.getByRole("link", { name: /skip to messages/i });
+    expect(skipLink).toHaveAttribute("href", "#chat-timeline");
+  });
+
+  it("marks the timeline region as a log landmark, but not a live one", () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    // `role="log"` alone still carries an ARIA-spec implicit `aria-live:
+    // polite` default, so this has to be explicit `"off"` — MessageTimeline
+    // virtualizes, and a live region wired to its subtree would re-announce
+    // already-read messages every time ordinary scrolling remounts them.
+    const log = screen.getByRole("log", { name: /chat timeline/i });
+    expect(log).toHaveAttribute("id", "chat-timeline");
+    expect(log).toHaveAttribute("aria-live", "off");
+  });
+
+  it("does not narrate the backfilled history as new on initial load", () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.queryByText(/^new message from/i)).not.toBeInTheDocument();
+  });
+
+  it("announces a genuinely new incoming message, decoupled from the virtualized timeline", () => {
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+    expect(screen.queryByText(/^new message from/i)).not.toBeInTheDocument();
+
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({
+        messages: [
+          ...MESSAGES,
+          { id: "msg-3", content: "just landed", created_at: "2026-01-01T00:02:00Z" },
+        ],
+      }),
+    );
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.getByText(/new message from someone/i)).toBeInTheDocument();
+  });
+});
+
+/**
  * `ChatShell` computes `canManageChannel` and owns the delete-confirmation
  * flow itself (`MessageTimeline`/`ThreadPanel` only render the button and
  * call the handler back) — this is the one place that logic can be tested
