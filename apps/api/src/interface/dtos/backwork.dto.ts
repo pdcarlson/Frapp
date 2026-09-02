@@ -5,6 +5,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -123,4 +124,27 @@ export class UpdateDepartmentDto {
   @IsString()
   @MaxLength(255)
   name?: string;
+}
+
+export class UpdateProfessorDto {
+  @ApiPropertyOptional({ description: 'Professor name' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  name?: string;
+}
+
+export class MergeBackworkTaxonomyDto {
+  @ApiProperty({
+    description: 'Id of the row to merge into; the source is deleted',
+  })
+  @IsUUID()
+  target_id: string;
+}
+
+export class MergeBackworkTaxonomyResponseDto {
+  @ApiProperty({
+    description: 'Count of resources reassigned from source to target',
+  })
+  reassigned: number;
 }

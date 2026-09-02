@@ -73,19 +73,28 @@ describe('BackworkService', () => {
       findByFileHash: jest.fn(),
       create: jest.fn(),
       delete: jest.fn(),
+      countByDepartment: jest.fn(),
+      countByProfessor: jest.fn(),
+      reassignDepartment: jest.fn(),
+      reassignProfessor: jest.fn(),
     };
 
     mockDepartmentRepo = {
       findByChapter: jest.fn(),
       findByCode: jest.fn(),
+      findById: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      delete: jest.fn(),
     };
 
     mockProfessorRepo = {
       findByChapter: jest.fn(),
       findByName: jest.fn(),
+      findById: jest.fn(),
       create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
     };
 
     mockStorageProvider = {
@@ -529,6 +538,192 @@ describe('BackworkService', () => {
       mockProfessorRepo.findByChapter.mockResolvedValue([baseProfessor]);
       const result = await service.getProfessors('ch-1');
       expect(result).toEqual([baseProfessor]);
+    });
+  });
+
+  describe('updateProfessor', () => {
+    it('should update professor name', async () => {
+      mockProfessorRepo.update.mockResolvedValue({
+        ...baseProfessor,
+        name: 'Dr. Jones',
+      });
+
+      const result = await service.updateProfessor('prof-1', 'ch-1', {
+        name: 'Dr. Jones',
+      });
+
+      expect(mockProfessorRepo.update).toHaveBeenCalledWith('prof-1', 'ch-1', {
+        name: 'Dr. Jones',
+      });
+      expect(result.name).toBe('Dr. Jones');
+    });
+
+    it('should not update a professor owned by another chapter (404)', async () => {
+      mockProfessorRepo.update.mockResolvedValue(null);
+
+      await expect(
+        service.updateProfessor('prof-other-chapter', 'ch-1', {
+          name: 'Hijacked',
+        }),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('deleteDepartment', () => {
+    it('deletes a department with no referencing resources', async () => {
+      mockDepartmentRepo.findById.mockResolvedValue(baseDepartment);
+      mockResourceRepo.countByDepartment.mockResolvedValue(0);
+      mockDepartmentRepo.delete.mockResolvedValue();
+
+      await service.deleteDepartment('dept-1', 'ch-1');
+
+      expect(mockResourceRepo.countByDepartment).toHaveBeenCalledWith(
+        'ch-1',
+        'dept-1',
+      );
+      expect(mockDepartmentRepo.delete).toHaveBeenCalledWith('dept-1', 'ch-1');
+    });
+
+    it('blocks deletion while resources still reference the department', async () => {
+      mockDepartmentRepo.findById.mockResolvedValue(baseDepartment);
+      mockResourceRepo.countByDepartment.mockResolvedValue(3);
+
+      await expect(service.deleteDepartment('dept-1', 'ch-1')).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(mockDepartmentRepo.delete).not.toHaveBeenCalled();
+    });
+
+    // Regression: a chapter-scoped `.eq('id', id).eq('chapter_id', chapterId)`
+    // delete of a nonexistent or cross-chapter id matches zero rows, and
+    // PostgREST does not treat that as an error — so without this existence
+    // check the request would have silently "succeeded" with a 200 instead
+    // of the 404 every other mutation in this file returns for the same case.
+    it('404s rather than silently no-opping on a nonexistent or cross-chapter id', async () => {
+      mockDepartmentRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.deleteDepartment('dept-other-chapter', 'ch-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockResourceRepo.countByDepartment).not.toHaveBeenCalled();
+      expect(mockDepartmentRepo.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('deleteProfessor', () => {
+    it('deletes a professor with no referencing resources', async () => {
+      mockProfessorRepo.findById.mockResolvedValue(baseProfessor);
+      mockResourceRepo.countByProfessor.mockResolvedValue(0);
+      mockProfessorRepo.delete.mockResolvedValue();
+
+      await service.deleteProfessor('prof-1', 'ch-1');
+
+      expect(mockProfessorRepo.delete).toHaveBeenCalledWith('prof-1', 'ch-1');
+    });
+
+    it('blocks deletion while resources still reference the professor', async () => {
+      mockProfessorRepo.findById.mockResolvedValue(baseProfessor);
+      mockResourceRepo.countByProfessor.mockResolvedValue(1);
+
+      await expect(service.deleteProfessor('prof-1', 'ch-1')).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(mockProfessorRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('404s rather than silently no-opping on a nonexistent or cross-chapter id', async () => {
+      mockProfessorRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.deleteProfessor('prof-other-chapter', 'ch-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockResourceRepo.countByProfessor).not.toHaveBeenCalled();
+      expect(mockProfessorRepo.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('mergeDepartments', () => {
+    const other: BackworkDepartment = {
+      ...baseDepartment,
+      id: 'dept-2',
+      code: 'MATH',
+    };
+
+    it('reassigns referencing resources then deletes the source', async () => {
+      mockDepartmentRepo.findById.mockImplementation(async (id) =>
+        id === 'dept-1' ? baseDepartment : id === 'dept-2' ? other : null,
+      );
+      mockResourceRepo.reassignDepartment.mockResolvedValue(4);
+      mockDepartmentRepo.delete.mockResolvedValue();
+
+      const result = await service.mergeDepartments('dept-1', 'dept-2', 'ch-1');
+
+      expect(mockResourceRepo.reassignDepartment).toHaveBeenCalledWith(
+        'ch-1',
+        'dept-1',
+        'dept-2',
+      );
+      expect(mockDepartmentRepo.delete).toHaveBeenCalledWith('dept-1', 'ch-1');
+      expect(result).toEqual({ reassigned: 4 });
+    });
+
+    it('rejects merging a department into itself', async () => {
+      await expect(
+        service.mergeDepartments('dept-1', 'dept-1', 'ch-1'),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockDepartmentRepo.findById).not.toHaveBeenCalled();
+    });
+
+    it('404s when the source or target is not in this chapter', async () => {
+      mockDepartmentRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.mergeDepartments('dept-1', 'dept-other-chapter', 'ch-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockResourceRepo.reassignDepartment).not.toHaveBeenCalled();
+      expect(mockDepartmentRepo.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('mergeProfessors', () => {
+    const other: BackworkProfessor = {
+      ...baseProfessor,
+      id: 'prof-2',
+      name: 'Dr. Jones',
+    };
+
+    it('reassigns referencing resources then deletes the source', async () => {
+      mockProfessorRepo.findById.mockImplementation(async (id) =>
+        id === 'prof-1' ? baseProfessor : id === 'prof-2' ? other : null,
+      );
+      mockResourceRepo.reassignProfessor.mockResolvedValue(2);
+      mockProfessorRepo.delete.mockResolvedValue();
+
+      const result = await service.mergeProfessors('prof-1', 'prof-2', 'ch-1');
+
+      expect(mockResourceRepo.reassignProfessor).toHaveBeenCalledWith(
+        'ch-1',
+        'prof-1',
+        'prof-2',
+      );
+      expect(mockProfessorRepo.delete).toHaveBeenCalledWith('prof-1', 'ch-1');
+      expect(result).toEqual({ reassigned: 2 });
+    });
+
+    it('rejects merging a professor into itself', async () => {
+      await expect(
+        service.mergeProfessors('prof-1', 'prof-1', 'ch-1'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('404s when the source or target is not in this chapter', async () => {
+      mockProfessorRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.mergeProfessors('prof-1', 'prof-other-chapter', 'ch-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockResourceRepo.reassignProfessor).not.toHaveBeenCalled();
+      expect(mockProfessorRepo.delete).not.toHaveBeenCalled();
     });
   });
 });
