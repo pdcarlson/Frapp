@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ChatService } from '../../application/services/chat.service';
+import { ChatBookmarkService } from '../../application/services/chat-bookmark.service';
 import { ChatController } from '../../interface/controllers/chat.controller';
+import { ChatBookmarkController } from '../../interface/controllers/chat-bookmark.controller';
 import { SupabaseChatChannelRepository } from '../../infrastructure/supabase/repositories/supabase-chat-channel.repository';
 import { SupabaseChatCategoryRepository } from '../../infrastructure/supabase/repositories/supabase-chat-category.repository';
 import { SupabaseChatMessageRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message.repository';
@@ -8,6 +10,7 @@ import { SupabaseChatMessageActionRepository } from '../../infrastructure/supaba
 import { SupabaseChatMessageAttachmentRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message-attachment.repository';
 import { SupabaseMessageReactionRepository } from '../../infrastructure/supabase/repositories/supabase-message-reaction.repository';
 import { SupabaseReadReceiptRepository } from '../../infrastructure/supabase/repositories/supabase-read-receipt.repository';
+import { SupabaseChatMessageBookmarkRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message-bookmark.repository';
 import {
   CHAT_CHANNEL_REPOSITORY,
   CHAT_CATEGORY_REPOSITORY,
@@ -16,6 +19,7 @@ import {
   CHAT_MESSAGE_ATTACHMENT_REPOSITORY,
   MESSAGE_REACTION_REPOSITORY,
   CHANNEL_READ_RECEIPT_REPOSITORY,
+  CHAT_MESSAGE_BOOKMARK_REPOSITORY,
 } from '../../domain/repositories/chat.repository.interface';
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 import { SupabaseStorageService } from '../../infrastructure/storage/supabase-storage.service';
@@ -50,7 +54,7 @@ import { ChannelCacheModule } from '../chat-push-worker/channel-cache.module';
     AuthModule,
     ChannelCacheModule,
   ],
-  controllers: [ChatController],
+  controllers: [ChatController, ChatBookmarkController],
   providers: [
     // Provided directly rather than by importing `ChatPushWorkerModule`, which
     // would pull the worker's Realtime subscription lifecycle into the request
@@ -59,6 +63,9 @@ import { ChannelCacheModule } from '../chat-push-worker/channel-cache.module';
     // the same table would be two places for one table's queries to drift.
     ChatNotificationPreferenceRepository,
     ChatService,
+    // Bookmarks (#462) share this module's wiring but not `ChatService` — see
+    // the service's own docblock for why they are a separate class.
+    ChatBookmarkService,
     {
       provide: CHAT_CHANNEL_REPOSITORY,
       useClass: SupabaseChatChannelRepository,
@@ -86,6 +93,10 @@ import { ChannelCacheModule } from '../chat-push-worker/channel-cache.module';
     {
       provide: CHANNEL_READ_RECEIPT_REPOSITORY,
       useClass: SupabaseReadReceiptRepository,
+    },
+    {
+      provide: CHAT_MESSAGE_BOOKMARK_REPOSITORY,
+      useClass: SupabaseChatMessageBookmarkRepository,
     },
     { provide: STORAGE_PROVIDER, useClass: SupabaseStorageService },
   ],
