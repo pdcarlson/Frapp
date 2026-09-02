@@ -14,15 +14,32 @@
 //      `autoDeployTrigger: "commit"` — a push deployed it without waiting for
 //      CI. Combined with the branch change to `main` (also asserted here) that
 //      is the single most destructive configuration available to this repo.
-//   2. Vercel's Production Branch must NOT be `main`, for web and landing.
+//   2. Vercel `frapp-web` and `frapp-landing` must NOT be linked to Git.
 //
-// Note the shape of assertion 2: it is "not main", not "equals X". After the
-// branch is deleted, `productionBranch: "production"` points at a branch that no
-// longer exists, and that is the SAFE state — no push can ever match it, so
-// nothing auto-promotes and the dispatch workflow is the only path. Pinning it
-// to a live branch name is what would be dangerous. An ABSENT value fails too:
-// Vercel falls back to the repository's default branch when the field is unset,
-// and the default branch is `main`.
+// Assertion 2 was INVERTED on 2026-09-02 (#1579). It used to read "Production
+// Branch must not be `main`", with an ABSENT value failing because Vercel fell
+// back to the repository default branch. ADR-21 then retired the Git
+// integration outright: both projects are unlinked, `link` is null, and a
+// Production Branch no longer exists to assert. Under the old assertion that
+// permanent, intended state read as a violation, which reddened the daily run
+// and — because this same script is `deploy-production.yml`'s preflight —
+// blocked every production deploy.
+//
+// So the assertion now proves the thing that actually keeps production safe
+// post-ADR-21: there is no Git link at all, therefore no Production Branch and
+// no push path. A PRESENT link is the violation, because re-linking silently
+// restores BOTH fail-open dashboard settings the unlink removed. Inverted
+// rather than deleted, deliberately: staying unlinked is itself unversioned
+// dashboard state, so it needs an assertion exactly as the Production Branch
+// did. ADR-21 in `spec/architecture/README.md` is the canonical record.
+//
+// Note what this costs. The old assertion failed CLOSED — absent meant
+// violation — so a malformed or empty response could not be mistaken for a
+// pass. The inverted one treats absent as the pass, so it MUST first establish
+// that it is looking at a real project body; otherwise `{}` from a changed API
+// shape, or an error envelope, would read as "unlinked" and green. That is what
+// `looksLikeVercelProject` is for, and it is the load-bearing half of this
+// assertion rather than a nicety.
 //
 // ── Why not a job in staging-conformance.mjs ───────────────────────────────
 // That script's charter, and its alert issue title, are staging-scoped
@@ -51,6 +68,13 @@ import { requireEnv } from "./lib/env.mjs";
 import { resilientFetch } from "./lib/http.mjs";
 import { fetchJson } from "./lib/providers.mjs";
 
+// Deliberately NOT renamed when assertion 2 was inverted (#1579), even though
+// "production branch" now under-describes it. This string is the issue LOOKUP
+// KEY — see the header — so changing it orphans any open alert filed under the
+// old wording, which then can never self-close. #1564 is exactly such an alert.
+// The cost of the stale half-sentence is a slightly wide title; the cost of
+// renaming is an immortal P1 issue. Rename only in a change that also closes
+// every open alert carrying the old title.
 export const ALERT_ISSUE_TITLE =
   "Production deploy guardrails have drifted — auto-deploy or production branch is wrong";
 export const ALERT_ISSUE_LOOKUP_LABEL = "routine-state";
@@ -94,28 +118,59 @@ export function assertRenderService(service) {
 }
 
 /**
- * Vercel's Production Branch must not be `main`, and must be readable.
+ * Does this response body actually look like a Vercel project?
  *
- * Absent is a violation, not a pass: Vercel falls back to the repository
- * default branch (which is `main`) when the field is unset.
+ * The inverted assertion below treats an absent `link` as the PASS, so it can
+ * only be trusted once we know we are reading a project at all. Vercel's
+ * `/v9/projects/{id}` returns the project object with `id` and `name` at the
+ * top level; an error envelope (`{ error: { code, message } }`), an empty
+ * object, or a future response shape has neither. Without this check, any of
+ * those would present as "no link, therefore safe" — a guardrail reporting
+ * success having verified nothing, on the only path to production.
  */
-export function assertVercelProductionBranch(project, label) {
-  const branch = project?.link?.productionBranch;
+export function looksLikeVercelProject(project) {
+  return (
+    typeof project === "object" &&
+    project !== null &&
+    typeof project.id === "string" &&
+    project.id !== ""
+  );
+}
 
-  if (branch === undefined || branch === null || branch === "") {
+/**
+ * Vercel `frapp-web` and `frapp-landing` must NOT be linked to Git (ADR-21).
+ *
+ * A PRESENT link is the violation: re-linking restores the Production Branch
+ * and auto-deploy-from-push settings the unlink removed, both of which fail
+ * open. An absent link is the pass — but only once the body is confirmed to be
+ * a project, since absent-means-pass is otherwise indistinguishable from a
+ * response we failed to understand.
+ */
+export function assertVercelNoGitLink(project, label) {
+  if (!looksLikeVercelProject(project)) {
     return [
-      `Vercel ${label} has no Production Branch set, so Vercel falls back to the repository ` +
-        `default branch (main). Every merge to main would become a production deployment. ` +
-        `Set it in the dashboard (the REST API exposes link.productionBranch read-only).`,
+      `Vercel ${label} did not return a readable project object, so this run could not ` +
+        `determine whether it is linked to Git. Unreadable is not a pass — an absent 'link' in ` +
+        `an unrecognised response shape is exactly what a silent regression would look like.`,
     ];
   }
-  if (branch === "main") {
-    return [
-      `Vercel ${label} has Production Branch = 'main'. Every merge to main deploys straight to ` +
-        `production, bypassing deploy-production.yml entirely. Change it in the dashboard.`,
-    ];
-  }
-  return [];
+
+  const link = project.link;
+  if (link === undefined || link === null) return [];
+
+  // A link object with nothing identifying in it is still a link: the project
+  // is attached to a repository, which is the condition ADR-21 removed.
+  const where = [link.type, link.org && link.repo ? `${link.org}/${link.repo}` : null]
+    .filter(Boolean)
+    .join(" ");
+  return [
+    `Vercel ${label} is linked to Git${where ? ` (${where})` : ""}. ADR-21 retired the Vercel ` +
+      `Git integration; a link restores BOTH fail-open dashboard settings it removed — the ` +
+      `Production Branch, and auto-deploy from push — so merges to main could ship to ` +
+      `production with no CI gate, no migration gate and no approval. Disconnect it in the ` +
+      `Vercel dashboard (Settings -> Git), or amend ADR-21 if the integration is coming back ` +
+      `deliberately.`,
+  ];
 }
 
 /**
@@ -123,7 +178,7 @@ export function assertVercelProductionBranch(project, label) {
  *
  * `checked` names what this run actually read. It is not decoration: with
  * `--render-only` the Vercel projects are never fetched, and a success line that
- * still said "neither Vercel project promotes from main" would be an
+ * still said "neither Vercel project is linked to Git" would be an
  * affirmative written assurance about a setting nothing looked at — on the only
  * path to production, in the step whose whole job is asserting the two settings
  * that fail open. That is the "reports success having verified nothing" failure
@@ -134,12 +189,12 @@ export function buildSummary(findings, { checked = ["render", "vercel"] } = {}) 
   if (findings.length === 0) {
     const full = checked.includes("vercel");
     const parts = ["Render auto-deploy is off and tracking main"];
-    if (full) parts.push("neither Vercel project promotes from main");
-    else if (checked.includes("vercel-web")) parts.push("frapp-web does not promote from main");
+    if (full) parts.push("neither Vercel project is linked to Git");
+    else if (checked.includes("vercel-web")) parts.push("frapp-web is not linked to Git");
     return full
       ? `All production deploy guardrails hold: ${parts.join("; ")}.`
       : `The production deploy guardrails THIS RUN CHECKED hold: ${parts.join("; ")}. ` +
-          `frapp-landing's Production Branch was NOT read (--migrations-only); it has no Supabase ` +
+          `frapp-landing's Git link was NOT read (--migrations-only); it has no Supabase ` +
           `client, so it cannot be coupled to a schema change.`;
   }
   return [`${findings.length} production guardrail violation(s):`, ...findings.map((f) => `- ${f}`)].join("\n");
@@ -181,7 +236,7 @@ export async function collectFindings({
         what: `Vercel project ${project.label}`,
         fetchImpl,
       });
-      findings.push(...assertVercelProductionBranch(body, project.label));
+      findings.push(...assertVercelNoGitLink(body, project.label));
     } catch (error) {
       findings.push(`Could not read Vercel project ${project.label}: ${error.message}. Unreadable is not a pass.`);
     }
@@ -213,7 +268,7 @@ async function main() {
   const preflight = process.argv.includes("--preflight");
 
   // `--migrations-only` drops exactly ONE assertion: frapp-landing's Vercel
-  // Production Branch. It exists for one caller, `deploy-production.yml` under
+  // Git link. It exists for one caller, `deploy-production.yml` under
   // `scope: migrations-only`, which writes to the database and deploys no code.
   //
   // An earlier cut of this flag was called `--render-only` and dropped BOTH
@@ -225,10 +280,11 @@ async function main() {
   // `packages/chat-core/src/realtime-manager.ts` binds `postgres_changes` to
   // `public.chat_messages` and `public.chat_message_actions`. Tables, columns,
   // publication membership and RLS policies are exactly what a migration
-  // changes — so if frapp-web's Production Branch has drifted to `main`, every
-  // merge has already shipped a production dashboard wired straight to the
-  // schema this run is about to change. That is the case most worth catching
-  // before a migrations-only apply, not least.
+  // changes — so if frapp-web were re-linked to Git, every merge could already
+  // have shipped a production dashboard wired straight to the schema this run
+  // is about to change. The reasoning survives the #1579 inversion intact: only
+  // the mechanism changed (a link rather than a branch name), not which project
+  // a database-only run can honestly skip.
   //
   // frapp-landing genuinely has no Supabase client (verified: no
   // `@supabase/supabase-js` or `createClient` anywhere under apps/landing), so
@@ -240,9 +296,9 @@ async function main() {
   }
   if (migrationsOnly) {
     console.log(
-      "ℹ️  --migrations-only: asserting Render auto-deploy and frapp-web's Vercel Production " +
-        "Branch. frapp-landing is NOT checked — it has no Supabase client, so its Production " +
-        "Branch cannot be coupled to the schema this run changes.",
+      "ℹ️  --migrations-only: asserting Render auto-deploy and frapp-web's Vercel Git link. " +
+        "frapp-landing is NOT checked — it has no Supabase client, so it cannot be coupled to " +
+        "the schema this run changes.",
     );
   }
 
