@@ -1,4 +1,10 @@
-import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type {
   FrappSupabaseClient,
@@ -132,7 +138,7 @@ export class ChapterConfigService {
     const { data: chapter, error } = await this.supabase
       .from('chapters')
       .select(
-        'id, name, university, org_archetype, enabled_modules, vocabulary, branding, theme_palette, beta_config, analytics_opt_out',
+        'id, name, university, org_archetype, enabled_modules, vocabulary, branding, theme_palette, beta_config, analytics_opt_out, default_invite_role_id',
       )
       .eq('id', chapterId)
       .maybeSingle();
@@ -240,12 +246,54 @@ export class ChapterConfigService {
       theme_palette: chapter.theme_palette ?? {},
       beta_config: chapter.beta_config ?? {},
       analytics_opt_out: chapter.analytics_opt_out ?? false,
+      // #422. `null` is meaningful here — "no default configured", which
+      // InviteService reads as "fall back to the seeded Member role". A
+      // deleted role clears this via `on delete set null`, so a client never
+      // sees an id that no longer resolves.
+      default_invite_role_id: chapter.default_invite_role_id ?? null,
       workflows,
       dues,
       service,
       points,
       role_pack: archetype.rolePack,
     };
+  }
+
+  /**
+   * #422. Guards the one cross-tenant hazard this field introduces: the id is
+   * caller-supplied, and `roles` is chapter-scoped, so an id belonging to
+   * another chapter would otherwise persist happily and then resolve to that
+   * chapter's role name on every subsequent invite.
+   *
+   * The database FK only proves the role *exists*; it cannot prove it is
+   * *this* chapter's without a redundant unique key on `roles (id,
+   * chapter_id)`. So the check lives here, and it filters on `chapter_id` in
+   * the query rather than reading the row and comparing after — a
+   * cross-chapter id then comes back as "not found" and is indistinguishable
+   * from a nonexistent one, which is the correct thing to tell the caller.
+   */
+  private async assertRoleBelongsToChapter(
+    chapterId: string,
+    roleId: string,
+  ): Promise<void> {
+    const { data, error } = await this.supabase
+      .from('roles')
+      .select('id')
+      .eq('id', roleId)
+      .eq('chapter_id', chapterId)
+      .maybeSingle();
+
+    if (error) {
+      this.logger.error('Failed to validate default invite role', error);
+      throw error;
+    }
+    if (!data) {
+      throw new BadRequestException({
+        code: 'chapter.config.invalid_default_invite_role',
+        message:
+          'default_invite_role_id must name a role that belongs to this chapter.',
+      });
+    }
   }
 
   async patchConfig(
@@ -280,6 +328,26 @@ export class ChapterConfigService {
         to: dto.analytics_opt_out,
       };
       update['analytics_opt_out'] = dto.analytics_opt_out;
+    }
+    // #422: the role new invites default to. Nullable scalar FK on the
+    // chapters row. `null` is a real value here (clear the default), so this
+    // branch keys on `!== undefined` rather than truthiness — otherwise
+    // clearing it would be indistinguishable from not touching it.
+    if (
+      dto.default_invite_role_id !== undefined &&
+      dto.default_invite_role_id !== existing.default_invite_role_id
+    ) {
+      if (dto.default_invite_role_id !== null) {
+        await this.assertRoleBelongsToChapter(
+          chapterId,
+          dto.default_invite_role_id,
+        );
+      }
+      diff['default_invite_role_id'] = {
+        from: existing.default_invite_role_id,
+        to: dto.default_invite_role_id,
+      };
+      update['default_invite_role_id'] = dto.default_invite_role_id;
     }
     // JSON columns are patched, not replaced: a partial payload deep-merges
     // onto the existing value so untouched keys are preserved.

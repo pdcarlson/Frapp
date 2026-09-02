@@ -7302,6 +7302,12 @@
           "analytics_opt_out": {
             "type": "boolean",
             "description": "When true, disables pseudonymous product analytics for this chapter (data-retention.md #analytics-events-pseudonymous)."
+          },
+          "default_invite_role_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Role id new invites default to when the caller does not name one. Null clears the default, and invites fall back to the seeded Member role. Must belong to this chapter (400 otherwise)."
           }
         }
       },
@@ -7922,19 +7928,16 @@
         "properties": {
           "role": {
             "type": "string",
-            "description": "Role name to assign to invited member"
+            "description": "Role name to assign. Omit to use the chapter's configured default invite role."
           }
-        },
-        "required": [
-          "role"
-        ]
+        }
       },
       "BatchCreateInvitesDto": {
         "type": "object",
         "properties": {
           "role": {
             "type": "string",
-            "description": "Role name to assign"
+            "description": "Role name to assign. Omit to use the chapter's configured default invite role."
           },
           "count": {
             "type": "number",
@@ -7942,7 +7945,6 @@
           }
         },
         "required": [
-          "role",
           "count"
         ]
       },
@@ -7951,7 +7953,7 @@
         "properties": {
           "role": {
             "type": "string",
-            "description": "Role name to assign"
+            "description": "Role name to assign. Omit to use the chapter's configured default invite role."
           },
           "emails": {
             "description": "Email addresses to invite, one invite token per address",
@@ -7962,7 +7964,6 @@
           }
         },
         "required": [
-          "role",
           "emails"
         ]
       },

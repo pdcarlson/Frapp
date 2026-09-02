@@ -83,6 +83,15 @@ The only lifecycle rule today is the **Alumni** role (see [`alumni.md`](alumni.m
 - Roles have a **display_order** (integer, for UI sorting) and an optional **color** (hex string, for chat name colors like Discord).
 - A user with no assigned roles has zero permissions (fail-safe closed).
 
+## Default Invite Role
+
+A chapter can nominate the role that new invites use when the sender does not name one. It is set in Settings → Roles by a caller holding `chapter-config:manage`, read and written through `GET`/`PATCH /v1/chapters/:id/config` as `default_invite_role_id`, and audit-logged like every other config change.
+
+- **Resolution order** is explicit role → `chapters.default_invite_role_id` → the seeded Member role, which is resolved by `system_key` rather than by name (see Role Lifecycle above). A chapter that sets no default therefore behaves exactly as it did before this field existed. A blank or whitespace-only role name counts as "not named" rather than being stored as-is.
+- **The id is stored, not the name.** `invites.role` is a display-name string matched by name at redeem time; a name persisted here would silently dangle on rename or delete, quietly demoting every later invite to the Member fallback. The id is resolved to a name at invite time instead.
+- **Deleting the role clears the default** — the column is `on delete set null`, so the chapter reports "no default configured" rather than pointing at a role that no longer exists.
+- **Cross-chapter ids are rejected with 400.** The database foreign key only proves the role exists; that it belongs to *this* chapter is enforced in `ChapterConfigService`, which is the layer that knows the caller's chapter. This matters because RLS is enabled with no permissive policies and the API holds the service-role key, so tenant isolation here is application-layer. The exception carries the code `chapter.config.invalid_default_invite_role`, but note that `AllExceptionsFilter` currently serialises only `message` — so **clients cannot branch on that code today**; it is an internal label until #1020 lands.
+
 ## Presidency Transfer
 
 The President role is a system role that always carries the `*` wildcard permission.

@@ -2986,6 +2986,11 @@ export interface components {
             workflows?: components["schemas"]["WorkflowConfigDto"][];
             /** @description When true, disables pseudonymous product analytics for this chapter (data-retention.md #analytics-events-pseudonymous). */
             analytics_opt_out?: boolean;
+            /**
+             * Format: uuid
+             * @description Role id new invites default to when the caller does not name one. Null clears the default, and invites fall back to the seeded Member role. Must belong to this chapter (400 otherwise).
+             */
+            default_invite_role_id?: string | null;
         };
         CustomRoleDto: {
             id: string;
@@ -3154,18 +3159,18 @@ export interface components {
             has_completed_onboarding: boolean;
         };
         CreateInviteDto: {
-            /** @description Role name to assign to invited member */
-            role: string;
+            /** @description Role name to assign. Omit to use the chapter's configured default invite role. */
+            role?: string;
         };
         BatchCreateInvitesDto: {
-            /** @description Role name to assign */
-            role: string;
+            /** @description Role name to assign. Omit to use the chapter's configured default invite role. */
+            role?: string;
             /** @description Number of invites to generate */
             count: number;
         };
         BulkEmailInviteDto: {
-            /** @description Role name to assign */
-            role: string;
+            /** @description Role name to assign. Omit to use the chapter's configured default invite role. */
+            role?: string;
             /** @description Email addresses to invite, one invite token per address */
             emails: string[];
         };

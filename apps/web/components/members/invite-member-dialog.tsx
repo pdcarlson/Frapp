@@ -7,6 +7,7 @@ import {
   useBatchCreateInvites,
   useCreateInvite,
   useInvites,
+  useOrgConfig,
   useRevokeInvite,
   useRoles,
 } from "@repo/hooks";
@@ -35,6 +36,17 @@ type RoleRow = {
   id: string;
   name: string;
 };
+
+/**
+ * Seeded display name of the Member system role — the role a chapter with no
+ * configured default falls back to.
+ *
+ * Matched by name here because `GET /v1/roles` does not project `system_key`.
+ * The server-side fallback in `InviteService.resolveInviteRole` resolves the
+ * same role by `system_key`, so a chapter that renamed Member still lands
+ * correctly there; this constant only decides what the picker *shows* first.
+ */
+const SEEDED_MEMBER_ROLE_NAME = "Member";
 
 type InviteRow = {
   id: string;
@@ -86,10 +98,14 @@ type InviteMemberDialogProps = {
 
 export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   const [open, setOpen] = useState(false);
-  const [roleName, setRoleName] = useState("Member");
+  const [roleName, setRoleName] = useState(SEEDED_MEMBER_ROLE_NAME);
+  // #422: whether the admin has picked a role in this dialog session. Until
+  // they do, the picker follows the chapter's configured default.
+  const [hasPickedRole, setHasPickedRole] = useState(false);
   const [inviteCount, setInviteCount] = useState(1);
   const [generatedInvites, setGeneratedInvites] = useState<InviteRow[]>([]);
   const rolesQuery = useRoles();
+  const orgConfigQuery = useOrgConfig();
   const invitesQuery = useInvites();
   const createInviteMutation = useCreateInvite();
   const createBatchInvitesMutation = useBatchCreateInvites();
@@ -138,17 +154,88 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
     return normalizeInvites(invitesQuery.data);
   }, [invitesQuery.data]);
 
+  // #422: the chapter's configured default invite role, resolved id → name
+  // against the live catalog. `undefined` while the config query is in flight
+  // or when no default is set.
+  const defaultRoleName = useMemo(() => {
+    const configuredId = orgConfigQuery.data?.default_invite_role_id;
+    if (!configuredId) return undefined;
+    return roleOptions.find((role: RoleRow) => role.id === configuredId)?.name;
+  }, [orgConfigQuery.data?.default_invite_role_id, roleOptions]);
+
+  /**
+   * Keep the picker on the chapter's configured default until the admin picks
+   * something themselves.
+   *
+   * The old form only corrected `roleName` when it named a role that did not
+   * exist, which cannot work here: the roles query and the config query
+   * resolve independently, so whenever roles land first the picker settles on
+   * a valid-but-arbitrary role and the default — arriving milliseconds later —
+   * is never applied. Tracking the explicit choice separately makes the
+   * condition "has the admin chosen?" rather than "is the current value
+   * broken?", which is the question actually being asked.
+   */
   useEffect(() => {
-    if (!roleOptions.some((role: RoleRow) => role.name === roleName)) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- keep the picker on a role that still exists after the catalog loads
-      setRoleName(roleOptions[0]?.name ?? "Member");
+    if (hasPickedRole) {
+      // Still correct a chosen role that has since disappeared from the
+      // catalog, which is what the previous form got right.
+      if (
+        roleOptions.length > 0 &&
+        !roleOptions.some((role: RoleRow) => role.name === roleName)
+      ) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- keep the picker on a role that still exists after the catalog loads
+        setRoleName(
+          defaultRoleName ??
+            roleOptions.find(
+              (role: RoleRow) => role.name === SEEDED_MEMBER_ROLE_NAME,
+            )?.name ??
+            roleOptions[0]?.name ??
+            SEEDED_MEMBER_ROLE_NAME,
+        );
+      }
+      return;
     }
-  }, [roleName, roleOptions]);
+    // Member — not `roleOptions[0]` — is the fallback when no default is
+    // configured. `roleOptions` is sorted alphabetically, so seeding off it
+    // would pre-select **Alumni** on every chapter that has not set a default
+    // (which is all of them: the column ships null with no backfill). That
+    // would hand new members the alumni lifecycle restrictions instead of
+    // Member, and it is precisely the arbitrary default this issue exists to
+    // remove — reached by a new route. Matching Member by name reproduces the
+    // pre-#422 behaviour exactly; the server-side fallback resolves the same
+    // role by `system_key`, which also survives a rename.
+    const preferred =
+      defaultRoleName ??
+      roleOptions.find((role: RoleRow) => role.name === SEEDED_MEMBER_ROLE_NAME)
+        ?.name ??
+      roleOptions[0]?.name ??
+      SEEDED_MEMBER_ROLE_NAME;
+    // No disable directive needed here: the rule reports once per effect, and
+    // the branch above already carries it.
+    if (preferred !== roleName) {
+      setRoleName(preferred);
+    }
+  }, [defaultRoleName, hasPickedRole, roleName, roleOptions]);
 
   const isSubmitting =
     createInviteMutation.isPending || createBatchInvitesMutation.isPending;
 
   const activeInviteRows = inviteRows.filter((invite) => invite.used_at === null);
+
+  /**
+   * Reopening starts a fresh invite, so the chapter default applies again
+   * rather than the role picked during a previous session.
+   *
+   * Every close path routes through here, including the footer's Done button.
+   * Radix only fires `onOpenChange` for its own dismiss paths (Escape, the
+   * overlay, X, the trigger), so a `setOpen(false)` wired directly to a button
+   * would skip the reset — leaving Done and Escape to produce different state
+   * from the same user intent.
+   */
+  function handleOpenChange(next: boolean) {
+    if (!next) setHasPickedRole(false);
+    setOpen(next);
+  }
 
   function handleInviteCountChange(event: React.ChangeEvent<HTMLInputElement>) {
     const parsed = Number(event.target.value);
@@ -228,7 +315,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
@@ -256,7 +343,10 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
             <span className="text-muted-foreground">Role</span>
             <select
               value={roleName}
-              onChange={(event) => setRoleName(event.target.value)}
+              onChange={(event) => {
+                setHasPickedRole(true);
+                setRoleName(event.target.value);
+              }}
               className={dashboardFilterSelectClassName}
             >
               {roleOptions.map((role) => (
@@ -376,7 +466,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
           >
             Refresh
           </Button>
-          <Button onClick={() => setOpen(false)}>Done</Button>
+          <Button onClick={() => handleOpenChange(false)}>Done</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

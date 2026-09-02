@@ -51,6 +51,7 @@ jest.mock('@repo/chapter-theme', () => ({
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
+import { BadRequestException } from '@nestjs/common';
 import { ChapterConfigService } from './chapter-config.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { ActivationService } from './activation.service';
@@ -72,6 +73,14 @@ function makeSupabase(
   enabledModules: Record<string, boolean> = {},
   serviceRow: Record<string, unknown> | null = null,
   pointsRow: Record<string, unknown> | null = null,
+  // #422: the persisted default invite role, and what a `roles` lookup for a
+  // candidate id resolves to. `roleLookupRow: null` models both "no such role"
+  // and "belongs to another chapter" — the service filters on `chapter_id` in
+  // the query, so those are the same answer by construction.
+  options: {
+    defaultInviteRoleId?: string | null;
+    roleLookupRow?: { id: string } | null;
+  } = {},
 ) {
   const chapterRow = {
     id: CHAPTER_ID,
@@ -82,6 +91,7 @@ function makeSupabase(
     theme_palette: {},
     beta_config: { enabled: true, style: 'sidebar_pill' },
     analytics_opt_out: false,
+    default_invite_role_id: options.defaultInviteRoleId ?? null,
   };
 
   const workflowUpsert = jest.fn().mockReturnValue({ error: null });
@@ -157,6 +167,38 @@ function makeSupabase(
       builder.upsert = jest.fn((rows: unknown, opts: unknown) =>
         pointsUpsert(rows, opts),
       );
+      return builder;
+    }
+    if (table === 'roles') {
+      /*
+       * This mock RECORDS the filters and only returns the row when the query
+       * actually scoped by both `id` and `chapter_id`.
+       *
+       * The obvious version — `eq` returning `builder` unconditionally and
+       * `maybeSingle` resolving a fixture picked up front — cannot tell a
+       * chapter-scoped query from an unscoped one, so the cross-chapter test
+       * below passes even with `.eq('chapter_id', chapterId)` deleted from
+       * the service. That was verified by mutation, not assumed: with the
+       * naive mock, removing the filter left 33/33 green. A test that cannot
+       * fail for the reason it exists is worse than no test, because it
+       * reports coverage of the one invariant RLS is not enforcing for us.
+       */
+      const filters: Record<string, unknown> = {};
+      const builder: Record<string, jest.Mock> = {};
+      builder.select = jest.fn().mockReturnValue(builder);
+      builder.eq = jest.fn((column: string, value: unknown) => {
+        filters[column] = value;
+        return builder;
+      });
+      builder.maybeSingle = jest.fn(() => {
+        const row = options.roleLookupRow ?? null;
+        const scoped =
+          filters.chapter_id === CHAPTER_ID && filters.id !== undefined;
+        return Promise.resolve({
+          data: scoped ? row : null,
+          error: null,
+        });
+      });
       return builder;
     }
     if (table === 'chapter_audit_log') {
@@ -774,5 +816,152 @@ describe('ChapterConfigService — activation funnel (#267)', () => {
     });
 
     expect(mockActivation.record).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * #422. `default_invite_role_id` is a nullable scalar FK on the chapters row.
+ * The database FK proves the role exists; only this service can prove it is
+ * *this* chapter's, so that check is the one worth pinning.
+ */
+describe('ChapterConfigService default invite role (#422)', () => {
+  it('returns the persisted default from getConfig', async () => {
+    const supabase = makeSupabase([], null, {}, null, null, {
+      defaultInviteRoleId: 'role-pledge',
+    });
+    const service = await buildService(supabase);
+
+    const config = await service.getConfig(CHAPTER_ID);
+
+    expect(config.default_invite_role_id).toBe('role-pledge');
+  });
+
+  it('reports null when no default is configured', async () => {
+    const supabase = makeSupabase([], null, {}, null, null, {});
+    const service = await buildService(supabase);
+
+    const config = await service.getConfig(CHAPTER_ID);
+
+    expect(config.default_invite_role_id).toBeNull();
+  });
+
+  it('persists a role that belongs to the chapter', async () => {
+    const supabase = makeSupabase([], null, {}, null, null, {
+      roleLookupRow: { id: 'role-pledge' },
+    });
+    const service = await buildService(supabase);
+
+    await service.patchConfig(CHAPTER_ID, 'user-1', {
+      default_invite_role_id: 'role-pledge',
+    });
+
+    expect(supabase.chapterUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ default_invite_role_id: 'role-pledge' }),
+    );
+  });
+
+  /*
+   * The tenant-isolation case. RLS is enabled with no permissive policies and
+   * the API holds the service-role key, so a cross-chapter id would otherwise
+   * persist happily and then resolve to another chapter's role name on every
+   * subsequent invite.
+   */
+  it('rejects a role from another chapter with 400', async () => {
+    const supabase = makeSupabase([], null, {}, null, null, {
+      roleLookupRow: null,
+    });
+    const service = await buildService(supabase);
+
+    await expect(
+      service.patchConfig(CHAPTER_ID, 'user-1', {
+        default_invite_role_id: 'role-elsewhere',
+      }),
+    ).rejects.toThrow(BadRequestException);
+    expect(supabase.chapterUpdate).not.toHaveBeenCalled();
+  });
+
+  /*
+   * Guards the guard. If `assertRoleBelongsToChapter` ever stops filtering by
+   * `chapter_id`, this fails immediately and by name — rather than the
+   * cross-chapter test above silently continuing to pass, which is what it did
+   * before the mock recorded its filters.
+   */
+  it('scopes the role lookup by chapter_id, not just by id', async () => {
+    const supabase = makeSupabase([], null, {}, null, null, {
+      roleLookupRow: { id: 'role-pledge' },
+    });
+    const service = await buildService(supabase);
+
+    await service.patchConfig(CHAPTER_ID, 'user-1', {
+      default_invite_role_id: 'role-pledge',
+    });
+
+    const rolesBuilder = supabase.from.mock.results.find(
+      (result, index) => supabase.from.mock.calls[index][0] === 'roles',
+    )?.value as { eq: jest.Mock };
+    expect(rolesBuilder.eq).toHaveBeenCalledWith('id', 'role-pledge');
+    expect(rolesBuilder.eq).toHaveBeenCalledWith('chapter_id', CHAPTER_ID);
+  });
+
+  it('rejects a role id that does not exist with 400', async () => {
+    const supabase = makeSupabase([], null, {}, null, null, {
+      roleLookupRow: null,
+    });
+    const service = await buildService(supabase);
+
+    await expect(
+      service.patchConfig(CHAPTER_ID, 'user-1', {
+        default_invite_role_id: 'role-missing',
+      }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  /*
+   * Clearing is a real operation, not a no-op: null returns invites to the
+   * seeded Member fallback. It must skip validation — there is no role to
+   * validate — and must still reach the update, which is why `patchConfig`
+   * keys this branch on `!== undefined` rather than truthiness.
+   */
+  it('clears the default without validating, when passed null', async () => {
+    const supabase = makeSupabase([], null, {}, null, null, {
+      defaultInviteRoleId: 'role-pledge',
+      roleLookupRow: null,
+    });
+    const service = await buildService(supabase);
+
+    await service.patchConfig(CHAPTER_ID, 'user-1', {
+      default_invite_role_id: null,
+    });
+
+    expect(supabase.chapterUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ default_invite_role_id: null }),
+    );
+  });
+
+  it('audits the change like every other config write', async () => {
+    const supabase = makeSupabase([], null, {}, null, null, {
+      roleLookupRow: { id: 'role-pledge' },
+    });
+    const service = await buildService(supabase);
+
+    await service.patchConfig(CHAPTER_ID, 'user-1', {
+      default_invite_role_id: 'role-pledge',
+    });
+
+    expect(supabase.auditInsert).toHaveBeenCalled();
+  });
+
+  it('is a no-op when the value is unchanged', async () => {
+    const supabase = makeSupabase([], null, {}, null, null, {
+      defaultInviteRoleId: 'role-pledge',
+      roleLookupRow: { id: 'role-pledge' },
+    });
+    const service = await buildService(supabase);
+
+    await service.patchConfig(CHAPTER_ID, 'user-1', {
+      default_invite_role_id: 'role-pledge',
+    });
+
+    expect(supabase.chapterUpdate).not.toHaveBeenCalled();
   });
 });

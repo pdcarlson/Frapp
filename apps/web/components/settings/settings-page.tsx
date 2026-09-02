@@ -878,6 +878,14 @@ function SettingsPageContent() {
                 archetypeKey={archetypeKey}
                 canManage={canManage}
                 catalog={permissionsCatalog}
+                defaultInviteRoleId={config?.default_invite_role_id ?? null}
+                isSavingConfig={pendingConfigKeys.has("default_invite_role_id")}
+                onSaveDefaultInviteRole={(roleId) =>
+                  patchConfig(
+                    { default_invite_role_id: roleId },
+                    "Default invite role saved",
+                  )
+                }
               />,
             )}
           </TabsContent>
