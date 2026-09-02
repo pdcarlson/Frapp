@@ -286,13 +286,15 @@ commit.
 
 ### Deploy verification is no longer a branch-protection question
 
-`verify-deployments.yml` polls Render and Vercel after a push to `main` and emits
-`verify-render-api`, `verify-vercel-web`, `verify-vercel-landing`. Both Vercel jobs now fail on
-every push to `main`, but they broke separately rather than together: `verify-vercel-landing` from
-run #428 (2026-09-01T20:28Z) onward, `verify-vercel-web` only from run #437 (2026-09-02T03:04Z),
-having still gone green on runs #428–#436 in between. The cause and the per-project boundaries are
-in **ADR-21** ([`spec/architecture/README.md`](../../../spec/architecture/README.md)); the repair is
-[#1579](https://github.com/pdcarlson/Frapp/issues/1579). This runbook used to
+`verify-deployments.yml` polls Render after a push to `main` and emits `verify-render-api`. It used
+to emit `verify-vercel-web` and `verify-vercel-landing` too; both were **removed on 2026-09-02** by
+[#1579](https://github.com/pdcarlson/Frapp/issues/1579), because ADR-21's Git unlink means no push
+produces a Vercel deployment for them to verify. They had failed on every push, and separately
+rather than together: `verify-vercel-landing` from run #428 (2026-09-01T20:28Z) onward,
+`verify-vercel-web` only from run #437 (2026-09-02T03:04Z), having still gone green on runs
+#428–#436 in between. The cause and the per-project boundaries are in **ADR-21**
+([`spec/architecture/README.md`](../../../spec/architecture/README.md)); Vercel verification
+returns with [#1578](https://github.com/pdcarlson/Frapp/issues/1578). This runbook used to
 carry a recipe for promoting those three to required checks **on `production`**, once the
 workflow had stabilised.
 

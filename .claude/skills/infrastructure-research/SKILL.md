@@ -229,12 +229,15 @@ curl -s https://api.frapp.live/health           # Production
 > **Nothing deploys staging web or landing on merge any more**, so each host is frozen at its last
 > Git build — **landing `2bf143b` (2026-09-01T20:19Z)**, **web `0372c6d` (2026-09-02T02:41:42Z)** —
 > and a deployment list whose newest entry is that build is expected state; anything newer, or
-> anything older, is worth reporting. The Vercel guardrail assertion is red daily and blocks
-> production deploys as the `deploy-production.yml` preflight. **ADR-21** in
+> anything older, is worth reporting. The Vercel guardrail assertion was red daily and blocked
+> production deploys as the `deploy-production.yml` preflight, until #1579 inverted it (below).
+> **ADR-21** in
 > [`spec/architecture/README.md`](../../../spec/architecture/README.md) is the canonical record —
 > the per-job failure boundaries in `verify-deployments.yml`, what else is broken, and what is only
-> presumed broken. Repairs are tracked in **#1579** (guardrail and verify jobs) and **#1578** (the
-> replacement CI-driven deploys — designed, not built; nothing runs them today).
+> presumed broken. **#1579 landed 2026-09-02**: the guardrail now asserts the *absence* of a Git
+> link (`assertVercelNoGitLink`) and `verify-deployments.yml`'s two Vercel jobs were removed, so a
+> red daily guardrails run once again means real drift. **#1578** (the replacement CI-driven
+> deploys) is still designed, not built — nothing runs them today.
 
 ### List deployments
 
