@@ -15,17 +15,25 @@ name: Nightly Backup
 # either project has. Supabase's own free-tier guidance is exactly this:
 # https://supabase.com/docs/guides/platform/backups
 #
-# Production is deliberately out of scope for now (#814 / `scope:production`).
-# Adding it is a config change — a second job with `environment: production` — not
-# a rewrite, which is why every value below comes from the environment.
+# Production is out of scope for now, but not because it is deferred: `frapp-prod`
+# is `ACTIVE_HEALTHY` and has served production traffic since `deploy-production.yml`
+# shipped (#1340). It is out of scope because naming `environment: production` on a
+# `schedule:`-triggered job would suspend every nightly run on ADR-19's required-
+# reviewer gate — a backup nobody approves at 03:00 ET is not a backup. #1435 records
+# that design trap; #1403 (Supabase Pro, for PITR/daily backups) and #1421 (an offsite
+# restore rehearsed at least once, still unproven even for staging) are the other two
+# open blockers. See #1383 (stage 5) for the decision this is waiting on.
 #
 # Restoring what this produces: docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md.
 
 on:
   schedule:
-    # 07:00 UTC — 03:00 ET, off-peak for a US-college user base, and clear of the
-    # deploy pipeline so a dump never races a migration apply.
-    - cron: "0 7 * * *"
+    # 06:30 UTC — 02:30 ET, off-peak for a US-college user base, clear of the deploy
+    # pipeline, and 30 minutes ahead of the 07:00/07:15/07:30 watchdogs (staging-
+    # conformance, check-migration-drift, production-guardrails) so a pg_dump never
+    # overlaps a Management API read of the same project. Full schedule documented in
+    # docs/internal/ci-cd/AGENT_INFRA.md § Scheduled conformance.
+    - cron: "30 6 * * *"
   workflow_dispatch:
     inputs:
       storage_rehearsal:

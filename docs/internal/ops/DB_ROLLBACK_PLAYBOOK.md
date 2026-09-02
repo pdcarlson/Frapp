@@ -118,7 +118,7 @@ Two consequences worth stating plainly:
 
 | | |
 | --- | --- |
-| Producer | [`.github/workflows/db-backup.yml`](../../../.github/workflows/db-backup.yml) — nightly 07:00 UTC, plus `workflow_dispatch` |
+| Producer | [`.github/workflows/db-backup.yml`](../../../.github/workflows/db-backup.yml) — nightly 06:30 UTC, plus `workflow_dispatch` |
 | Script | [`scripts/db-backup.sh`](../../../scripts/db-backup.sh) |
 | Contents | three gzipped SQL files — roles, schema, data — plus a manifest carrying a SHA-256 per file |
 | Scope | `frapp-staging` only. Production is deferred by choice (#814 / `scope:production`) |

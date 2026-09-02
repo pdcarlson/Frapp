@@ -1,23 +1,30 @@
 name: Staging conformance
 
-# The repository's only scheduled verification. Every other workflow is
-# push-triggered, which meant environment drift stayed invisible until someone
-# happened to push — staging sat 38 migrations behind with all checks green, the
-# Infisical credential was dead for 71 days (#696/#763), and the custom access
-# token hook was never enabled after #643 (#805). A quiet week looked identical
-# to a healthy one. See #838.
+# The repository's first scheduled verification (#838), and still the only one that
+# runs a live sign-in probe. Every push-triggered workflow left environment drift
+# invisible until someone happened to push — staging sat 38 migrations behind with
+# all checks green, the Infisical credential was dead for 71 days (#696/#763), and
+# the custom access token hook was never enabled after #643 (#805). A quiet week
+# looked identical to a healthy one.
 #
 # Semantics live in scripts/ci/staging-conformance.mjs.
 # Unit tests: scripts/ci/__tests__/staging-conformance.test.mjs (`npm run test:ci-scripts`).
 #
-# Scope is frapp-staging ONLY. frapp-prod is intentionally INACTIVE while
-# production is deferred, and alerting on that would be alerting on a decision
-# (see #814). Extend to production when it is provisioned, not before.
+# Scope is frapp-staging ONLY — not because frapp-prod is inactive (it is
+# `ACTIVE_HEALTHY` and has served production traffic since deploy-production.yml
+# shipped, #1340) but because this workflow has not yet been extended to it.
+# Extending it needs its assertions and its alert-issue title/marker parameterized
+# per target so a production failure doesn't collide with or mask a staging one —
+# real design work, tracked as remaining scope in #1384. Doc pointer:
+# docs/internal/ci-cd/AGENT_INFRA.md § Scheduled conformance.
 
 on:
   schedule:
-    # 07:00 UTC daily — after any overnight provider maintenance window, and
-    # early enough that a drifted staging is known before the working day.
+    # 07:30 UTC daily — after any overnight provider maintenance window, early
+    # enough that a drifted staging is known before the working day, and staggered
+    # 30 minutes past the 07:00 check-migration-drift.yml / db-backup.yml at 06:30
+    # so this workflow's Management API reads never overlap the backup's pg_dump.
+    # Full schedule: docs/internal/ci-cd/AGENT_INFRA.md § Scheduled conformance.
     #
     # ⚠️ GitHub DISABLES scheduled triggers in a repository with no activity for
     # 60 days, notifying the repo owner by email only. This is the one workflow
@@ -25,7 +32,7 @@ on:
     # exactly backwards for it: a long quiet stretch silently turns off the
     # thing watching the quiet stretch. If the repo goes dormant, re-enable it
     # from the Actions tab. Tracked in AGENT_INFRA.md § "Scheduled conformance".
-    - cron: "0 7 * * *"
+    - cron: "30 7 * * *"
   workflow_dispatch:
 
 permissions:
