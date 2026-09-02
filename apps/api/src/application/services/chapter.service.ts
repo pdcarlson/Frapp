@@ -387,11 +387,18 @@ export class ChapterService {
     // the #795 divergence has `branding.colors.accent` different from
     // `accent_color`, so re-saving the stored column value still repaints every
     // branded surface. Recorded explicitly so that save is not invisible.
+    // Only when the mirror already held a value AND it moved. `chapters.branding`
+    // is `jsonb not null default '{}'`, and the #795 backfill only touched rows
+    // whose `branding->'colors'->>'accent'` was already non-null — so a chapter
+    // that never went through an onboarding branding step has `accent_color` set
+    // and `branding = {}`. Treating that absent mirror as a change would fire on
+    // *every* accent save for those chapters, re-opening the very no-op card the
+    // case-fold fix above closes. Populating the mirror for the first time is
+    // the system catching up, not an edit the officer made.
     const previousBrandingAccent = branding.colors?.accent ?? null;
-    const brandingAccentChanged = !isSameAccent(
-      previousBrandingAccent,
-      colors.accent,
-    );
+    const brandingAccentChanged =
+      previousBrandingAccent !== null &&
+      !isSameAccent(previousBrandingAccent, colors.accent);
 
     await this.recordProfileAudit(
       id,
@@ -477,15 +484,21 @@ export class ChapterService {
       diff[field] = { from: previous, to: next };
     }
 
-    // Not written when nothing changed — the same rule `chapter-config.service.ts`
-    // already applies at its own no-op early return (lines 400-407), not a
-    // divergence from it. It matters more here because the Settings form
-    // re-sends every stored value on save (see the accent_color note above), so
-    // without this an officer who opened Settings and pressed Save without
-    // editing would mirror a "chapter profile updated" message into the
-    // member-visible `#chapter-audit` channel. `ChatBridgeWorkerService.summarize`
-    // renders an empty diff as a bare action name, so such a row would carry no
-    // information at all.
+    // Not written when nothing changed. The Settings form re-sends every stored
+    // value on save (see the accent_color note above), so without this an
+    // officer who opened Settings and pressed Save without editing would mirror
+    // a "chapter profile updated" message into the member-visible
+    // `#chapter-audit` channel — and one carrying no information, since
+    // `ChatBridgeWorkerService.summarize` renders an empty diff as a bare
+    // action name.
+    //
+    // Stated about this writer only, deliberately. Two earlier attempts at this
+    // comment characterised `chapter-config.service.ts` and got it wrong both
+    // times — it is neither "unconditional" nor the same rule. Its early return
+    // (`chapter-config.service.ts:400-406`) is gated on an empty *update
+    // payload*, not an empty diff, so it still writes a `from`-equals-`to` row
+    // for any jsonb field a client re-sends unchanged (#1605). Do not
+    // re-describe it here without reading it.
     if (Object.keys(diff).length === 0) return;
 
     await this.auditLog.record({

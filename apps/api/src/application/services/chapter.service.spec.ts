@@ -886,6 +886,26 @@ describe('ChapterService', () => {
       expect(mockAuditLog.record).not.toHaveBeenCalled();
     });
 
+    // `chapters.branding` is `jsonb not null default '{}'`, and the #795
+    // backfill only touched rows whose branding accent was already set — so a
+    // chapter that never went through an onboarding branding step has the
+    // column set and an EMPTY branding object. That is the common shape, not an
+    // edge case, and it is the one a `branding`-carrying fixture hides.
+    it('writes no row for a re-save on a chapter whose branding mirror is empty', async () => {
+      mockChapterRepo.findById.mockResolvedValue({
+        ...stored,
+        branding: {},
+      });
+      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+
+      await service.update('ch-1', { accent_color: '#8B0000' }, 'user-9');
+
+      // Populating the mirror for the first time is the system catching up, not
+      // an edit. Counting it as a change fires on every accent save for these
+      // chapters — exactly the no-op card the rest of this block prevents.
+      expect(mockAuditLog.record).not.toHaveBeenCalled();
+    });
+
     it('audits a branding-mirror repair even when the column value is unchanged', async () => {
       // The #795 divergence: the column and the authoritative branding accent
       // disagree. Settings seeds its draft from the column, so pressing Save
