@@ -28,7 +28,8 @@ GitHub Issues (canonical: planning, status, Triage intake)
    ▲ Claude Code (web) via the GitHub MCP — the path /next uses
    ▲ Claude Code Routines (scheduled: curator + triage + PR follow-ups) via the same GitHub MCP
      (a fourth, Docs Upkeep, writes docs rather than issues — it files nothing here except a
-      proven human-only blocker)
+      proven human-only blocker; a fifth, Hygiene Scan, writes product code and files its
+      follow-ups here under a per-run cap)
    ▲ PRs close work natively (Fixes #N on merge)
 ```
 
@@ -62,7 +63,7 @@ GitHub Issues (canonical: planning, status, Triage intake)
 | Actor | Reaches GitHub Issues via | Notes |
 | --- | --- | --- |
 | **Claude Code** (web, interactive) | **GitHub MCP** (`mcp__github__issue_write` / `issue_read` / `list_issues` / `search_issues` / `add_issue_comment` / `sub_issue_write`) | The only sanctioned path. Shell access to `api.github.com` is session-dependent — observed proxy-blocked (403 "GitHub access is not enabled for this session") and working, both on 2026-08-08 — so never rely on `gh`/REST from a sandbox. No fallback tracker. |
-| **Claude Code Routines** (scheduled) | The **same GitHub MCP** — routine sessions run in the same web environment | If the MCP is unavailable at fire time, the routine stops and reports (Docs Upkeep excepted — it writes a PR, not issues). See [`ROUTINES.md`](ROUTINES.md). |
+| **Claude Code Routines** (scheduled) | The **same GitHub MCP** — routine sessions run in the same web environment | If the MCP is unavailable at fire time, the routine stops and reports (Docs Upkeep and Hygiene Scan excepted — they write a PR, not issues, and push the branch and report its name when the MCP is down). See [`ROUTINES.md`](ROUTINES.md). |
 | **CI / scripts** | `GITHUB_TOKEN` / `GITHUB_PAT` inside GitHub Actions only | The PAT works in Actions and on laptops, **not** in cloud sandboxes. PAT policy: [`AGENT_INFRA.md`](AGENT_INFRA.md). |
 
 ---

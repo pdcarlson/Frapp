@@ -903,6 +903,44 @@ routine may not rewrite one to match today's code.
 
 - Runbook: [`ROUTINES.md`](../../docs/internal/ci-cd/ROUTINES.md).
 
+#### ADR-16 amendment 7 — a fifth Routine, and the first that edits product code (2026-09-02)
+
+**Context:** amendment 6 left four Routines that between them keep the tracker and the docs
+honest and never touch product code. Code hygiene had the problem docs had before amendment 6:
+the Curator's engineering lens *files* it, and filed hygiene ages. The repo has no dead-code
+tooling at all; its anti-pattern catalogue (the rule sections of `spec/engineering.md`) is
+enforced only by whoever happens to be reading; `dependency-cruiser` carries seven grandfathered
+violations that "exist to shrink"; and `jscpd` is a repo-wide percentage that only ratchets down
+when someone consolidates. A first scheduled sweep landed with #1539 as a skill plus eight fixes,
+without a runbook entry or an ADR, so the docs contradicted the repo: `ROUTINES.md` still said
+four routines under a product-code ban that the fifth skill on `main` broke. Its fixes also showed
+what an ungrounded sweep does: it traded one domain-layer import for a try/catch at four sites,
+three of them byte-identical (then filed #1538 to dedupe those three), restyled a line of the
+frozen `apps/landing`
+surface on the strength of an "established idiom" that exists nowhere in the repo, and moved a file
+out of a grandfathered violation without shrinking the baseline.
+
+**Decision:** add a fifth Routine, **Hygiene Scan** (`.claude/skills/hygiene-scan/`, replacing the
+#1539 skill), daily at 06:00 ET on **Fable 5.1**. It grounds itself first — the engineering
+standard, the tech-debt protocol, the Signet-vs-legacy line, the app skill for the day's area, the
+gates and their baselines, the ledger of prior runs — then reads a calendar-derived fifth of the
+codebase *whole*, never just the recent diff, questioning legacy shapes rather than patching
+around them, and **fixes one bounded, verified theme in a product-code PR** that a human merges.
+What it will not fix unattended it files through `file-follow-up` (capped per run) or records in a
+`routine-state` ledger issue so the next run does not re-litigate it.
+
+**What this changes and what it does not.** It lifts the product-code ban **for this routine
+only**, and only for repair: whole-pattern fixes that delete what they replace, leave the codebase
+net simpler, and are proven by typecheck, lint, the workspace tests and the gates that cover the
+change. It keeps every other rule — never self-merge, one PR per run, at most one open PR at a
+time, the pre-push review gate, no migrations, no CI workflows, no dependency bumps, no visual
+change on a frozen surface, no behaviour change except a bug fix carried by a failing-then-passing
+test and called out on its own. It also makes the first exception to the 2026-08-21 "cadence sets
+the tier" model convention: this daily routine runs on the top tier because editing product code
+unattended is where a weaker judgement is most expensive.
+
+- Runbook: [`ROUTINES.md`](../../docs/internal/ci-cd/ROUTINES.md).
+
 ### ADR-17: Secret scanning — gitleaks pre-commit + CI gate (2026-06-03)
 
 **Decision:** Implement the ADR-13 secret-scanning mitigation with [`gitleaks`](https://github.com/gitleaks/gitleaks) at three layers that share **one pinned binary and one `/.gitleaks.toml`** (`[extend] useDefault = true` + a tight allowlist), all routed through `scripts/scan-secrets.mjs`: (1) a **pre-commit hook** (`.githooks/pre-commit`, wired via `core.hooksPath` by the root `prepare` script `scripts/setup-git-hooks.mjs` — zero new npm deps) scanning staged changes; (2) **`npm run ci:local-gate`**, which now range-scans the branch's commits; and (3) a **`secret-scan` CI job** in `ci.yml` — fast and standalone (no `npm ci`; fetches the pinned binary via the checksum-verified `scripts/install-gitleaks.sh`), scanning only the PR/push commit range and registered as a **required check** in `scripts/configure-branch-protection.mjs`. The adoption-time claim that a full-history audit found no existing leaks, so no baseline ships, **no longer holds**: the 2026-08-15 audit (#851) found five historical findings — all triaged as false positives, none rotatable — so **a `/.gitleaks-baseline.json` now ships** with those five accepted fingerprints, generated `--redact` (no secret values). Without it the audit command exits non-zero on every run. Do not delete it as a stray artifact; regenerate it only alongside a new audit-record entry, and only from a clone with the full ref set. Runbook: [`docs/internal/ci-cd/SECRET_SCANNING.md`](../../docs/internal/ci-cd/SECRET_SCANNING.md).
