@@ -100,3 +100,13 @@ export const FOCUS_RING_ALWAYS =
  */
 export const FOCUS_RING_WITHIN =
   "focus-within:border-primary focus-within:ring-[3px] focus-within:ring-ring/25"
+
+/**
+ * A "Skip to X" link: invisible until it is the focused element, then pinned
+ * to the top-left corner. `dashboard-shell.tsx`'s app-wide skip link and any
+ * route that needs its own past a sub-navigation (chat's channel rail, per
+ * #396) share this — a hand-copied className string is exactly the kind of
+ * recipe this file exists to keep in one place; see the top-of-file comment.
+ */
+export const SKIP_LINK_CLASSES =
+  "sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm"
