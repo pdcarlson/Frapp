@@ -41,6 +41,7 @@ export {
   DocumentsGlyph,
   PollsGlyph,
   ReportsGlyph,
+  SearchGlyph,
 } from "@/components/layout/nav-glyphs";
 
 export type ResourcesGlyphProps = DuotoneGlyphProps;
