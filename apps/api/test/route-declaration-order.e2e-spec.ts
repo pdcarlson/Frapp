@@ -67,6 +67,7 @@ describe('Route declaration order — a literal route must not be swallowed by :
   const chatServiceMock = {
     getUnreadCounts: jest.fn().mockResolvedValue([]),
     getChannelNotificationPreferences: jest.fn().mockResolvedValue([]),
+    getKindNotificationPreferences: jest.fn().mockResolvedValue([]),
     getChannel: jest.fn().mockResolvedValue({ id: 'wrong-handler' }),
   };
 
@@ -168,6 +169,29 @@ describe('Route declaration order — a literal route must not be swallowed by :
       chatServiceMock.getChannelNotificationPreferences,
     ).toHaveBeenCalledWith(CHAPTER_ID, 'member-1');
     expect(chatServiceMock.getChannel).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Two segments, so `@Get(':id')` cannot swallow this one the way it could a
+   * bare literal — but it is pinned anyway, because the thing that WOULD
+   * swallow it is a future `@Get(':id/:something')` on this controller, and
+   * that is exactly the kind of addition nobody would connect to this route.
+   */
+  it('GET /v1/channels/notification-preferences/kinds reaches getKindNotificationPreferences, not getChannel', async () => {
+    await request(app.getHttpServer())
+      .get(`${V1}/channels/notification-preferences/kinds`)
+      .set('authorization', 'Bearer token')
+      .set('x-chapter-id', CHAPTER_ID)
+      .expect(200);
+
+    expect(chatServiceMock.getKindNotificationPreferences).toHaveBeenCalledWith(
+      CHAPTER_ID,
+      'member-1',
+    );
+    expect(chatServiceMock.getChannel).not.toHaveBeenCalled();
+    expect(
+      chatServiceMock.getChannelNotificationPreferences,
+    ).not.toHaveBeenCalled();
   });
 
   // ── member.controller.ts (`/members`) ──
