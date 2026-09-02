@@ -107,17 +107,24 @@ this repo, a 404 meaning disabled, not a 403 meaning blocked (#921 covers turnin
 
 ### Check CI status on a branch
 
+*Laptop/Actions only — `gh` is not installed in cloud sandboxes; from a session, use the MCP
+(`actions_list`).*
+
 ```bash
 gh run list --branch main --limit 5
 ```
 
 ### View failed CI job logs
 
+*Laptop/Actions only — from a session, use the MCP (`get_job_logs` with `failed_only`).*
+
 ```bash
 gh run view <run_id> --log-failed
 ```
 
 ### Check PR status and reviews
+
+*Laptop/Actions only — from a session, use the MCP (`pull_request_read`).*
 
 ```bash
 gh pr view <number>
@@ -131,11 +138,14 @@ npm run configure:branch-protection:verify           # reads live and diffs; wri
 npm run configure:branch-protection -- --dry-run     # same read, prints the diff; the `--` is mandatory
 ```
 
-Prefer `:verify` from an agent session: it carries its own `--verify` and so cannot be mis-spelled
-into a write. The script's `hasFlag` is exact-match and an unrecognised spelling reads as *absent*,
-which means LIVE — `npm run configure:branch-protection --dry-run` (no `--`) is swallowed by npm, so
-the script sees zero args and applies. `assertKnownArgs` refuses an unknown argument it can see, but
-it cannot see one npm ate.
+**From an agent session run `npm run configure:branch-protection:verify` and nothing else.** Never
+the bare `npm run configure:branch-protection` — with no flags it prints `Mode: LIVE` and `PUT`s the
+whole protection payload. Never `--dry-run` without the `--` separator: `hasFlag` is exact-match and
+an unrecognised spelling reads as *absent*, which means LIVE, and
+`npm run configure:branch-protection --dry-run` (no `--`) is swallowed by npm, so the script sees
+zero args and **applies** (reproduced on npm 10.9.7). `assertKnownArgs` refuses an unknown argument
+it can see, but it cannot see one npm ate. `:verify` carries its own `--verify` and takes no flags,
+so it cannot be mis-spelled into a write.
 
 Both read through node's global `fetch` (`ghRequest` in `scripts/ci/lib/github.mjs`), so they take
 the direct route: **`:verify` exits 0 from a cloud sandbox**, confirmed 2026-09-02. That is a real
@@ -151,6 +161,8 @@ tolerated as aliases. Runbook:
 [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
 
 ### Find recent PRs touching a path
+
+*Laptop/Actions only — from a session, use the MCP (`list_pull_requests` / `search_pull_requests`).*
 
 ```bash
 gh pr list --search "supabase/migrations" --state merged --limit 5
@@ -211,22 +223,18 @@ curl -s https://api.frapp.live/health           # Production
 
 ## Vercel: Build and deployment status
 
-> **Git integration retired 2026-09-02 — read these results with that in mind.** The owner
-> disconnected **both** Vercel projects from Git; `list_projects` reports `link: null` for
-> `frapp-web` and `frapp-landing` alike. Deliberate owner decision, recorded as **ADR-21** in
-> [`spec/architecture/README.md`](../../../spec/architecture/README.md). Live right now: the daily
-> production-guardrails run is red on `assertVercelProductionBranch` (an absent
-> `project.link.productionBranch` reads as a violation), and because that script is also the
-> preflight inside `deploy-production.yml`, **production deploys are blocked**;
-> `verify-deployments.yml`'s Vercel jobs and `scripts/ci/ensure-vercel-staging-alias.mjs` fail on
-> every push to `main` since 2026-09-01T20:46Z; `scripts/ci/deploy-vercel-production.mjs` is
-> presumed broken because its `gitSource` argument needs the integration; and **nothing deploys
-> staging web or landing on merge any more** — those hosts are frozen at their last Git build
-> (landing `2bf143b` 2026-09-01T20:19Z, web `ad0f8c9` 2026-09-02T02:22Z). The replacement model —
-> `vercel build` plus `vercel deploy --prebuilt --prod` from GitHub Actions — is **designed, not
-> built**; nothing runs it today. So a Vercel deployment list whose newest entry is the frozen build
-> named above is expected state until that replacement exists — anything newer, or anything older, is
-> worth reporting.
+> **Git integration retired — read these results with that in mind.** The owner deliberately
+> disconnected **both** Vercel projects from Git, landing on **2026-09-01** and web on
+> **2026-09-02**; `list_projects` reports `link: null` for `frapp-web` and `frapp-landing` alike.
+> **Nothing deploys staging web or landing on merge any more**, so each host is frozen at its last
+> Git build — **landing `2bf143b` (2026-09-01T20:19Z)**, **web `0372c6d` (2026-09-02T02:41:42Z)** —
+> and a deployment list whose newest entry is that build is expected state; anything newer, or
+> anything older, is worth reporting. The Vercel guardrail assertion is red daily and blocks
+> production deploys as the `deploy-production.yml` preflight. **ADR-21** in
+> [`spec/architecture/README.md`](../../../spec/architecture/README.md) is the canonical record —
+> the per-job failure boundaries in `verify-deployments.yml`, what else is broken, and what is only
+> presumed broken. Repairs are tracked in **#1579** (guardrail and verify jobs) and **#1578** (the
+> replacement CI-driven deploys — designed, not built; nothing runs them today).
 
 ### List deployments
 
@@ -359,8 +367,9 @@ done
 
 1. `curl https://api-staging.frapp.live/health`
 2. Check Render deploys for recent failures
-3. Check Vercel deployments for web/landing build status — but since 2026-09-02 nothing deploys
-   them on merge (see the Vercel note above), so a build older than that is expected state
+3. Check Vercel deployments for web/landing build status — but since the Vercel Git unlink (landing
+   2026-09-01, web 2026-09-02) nothing deploys them on merge, so a build frozen at the SHAs in the
+   Vercel note above is expected state
 4. Compare Infisical staging secrets against expected keys in [`docs/internal/environment/ENV_REFERENCE.md`](../../../docs/internal/environment/ENV_REFERENCE.md)
 
 ### "Did a migration land in production?"

@@ -27,9 +27,12 @@ Use the **GitHub MCP** — the same path `/next` uses. Load schemas first, e.g.
 `ToolSearch("select:mcp__github__list_issues,mcp__github__issue_read,mcp__github__issue_write,
 mcp__github__add_issue_comment,mcp__github__search_issues,mcp__github__sub_issue_write")`. Verify
 access at the start of the run (an `issue_read` on a known issue resolves). **If the GitHub MCP is
-unavailable, stop and report — no fallback**, no REST calls (REST is not a tracker write path;
-reachability is route-dependent, not session-dependent, but that changes nothing for writes), no
-scratch files. The label roster and shared routine config live in [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md).
+unavailable, stop and report — no fallback**: no `gh`, no REST, no scratch files. **REST is never a
+substitute for the MCP on tracker work, read or write** — reachability is route-dependent, not
+session-dependent, and that changes nothing. The carve-out is only for provider settings the MCP
+exposes no tool for (branch protection, environments, rulesets, repo visibility,
+`vulnerability-alerts`) and the raw-`body` verification read under the escape hatch below — never
+issues, PRs or comments. The label roster and shared routine config live in [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md).
 
 ## Ownership boundary (read first — hard invariant)
 
@@ -89,8 +92,11 @@ marker you could rebuild from `fp=<area>/<slug>`.
 
 **So: prefer a comment over a rewrite.** Anything additive — a note, a finding, an Agent brief —
 goes in `add_issue_comment`, which is lossless. Rewrite only when you author the replacement body
-yourself, or under the narrow escape hatch (`WebFetch`-confirm the body has no comments and no
-tags, then un-escape entities):
+yourself, or under the narrow escape hatch — confirm the body has no HTML comment and no tags via a
+**direct REST read of the raw `body`** (`GET /repos/pdcarlson/Frapp/issues/<n>` on the direct route,
+node's built-in `fetch` with `GITHUB_PAT`), then un-escape entities. `WebFetch` cannot satisfy it: it
+reads rendered HTML, so it can never prove a comment's *absence*. That read is a verification read of
+an issue's raw text, not a tracker path — the procedure and its limits are in
 [`GITHUB_PM.md` → Reading a body you intend to rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity).
 
 Whenever you *do* write a body, **confirm the `fp=` marker is present in what you sent** — it is a

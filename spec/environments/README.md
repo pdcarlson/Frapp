@@ -16,13 +16,13 @@
 | **Stripe**   | Test mode (`sk_test_`)            | Test mode (`sk_test_`)                  | Live mode (`sk_live_`)                |
 | **Push**     | Expo Go (dev)                     | EAS internal builds                     | Production builds                     |
 
-Each Supabase project (local, staging, production) is fully isolated: separate database, auth users, storage buckets, and API keys. The staging Landing and Web App cells describe the intended model: since 2026-09-02 both Vercel projects are unlinked from Git (ADR-21), so those two hosts are frozen at their last Git build — see §6 **Web and Landing (Vercel)**.
+Each Supabase project (local, staging, production) is fully isolated: separate database, auth users, storage buckets, and API keys. The staging Landing and Web App cells describe the intended model: as of 2026-09-02 both Vercel projects are unlinked from Git (ADR-21), so those two hosts are frozen at their last Git build — see §6 **Web and Landing (Vercel)**.
 
 ### Branch-to-environment mapping
 
 | Branch      | Purpose                              | Deployment behavior                                    |
 | ----------- | ------------------------------------ | ------------------------------------------------------ |
-| `main`      | Pre-production / staging integration | Triggers staging and Vercel Preview domain deployments — Vercel Preview retired 2026-09-02 (ADR-21), see §6 |
+| `main`      | Pre-production / staging integration | Triggers staging and Vercel Preview domain deployments — Vercel Preview retired (ADR-21; landing 2026-09-01, web 2026-09-02), see §6 |
 | `feature/*` | Short-lived feature work             | No automatic Vercel deployments; merged into `main`    |
 
 Production is **not** mapped to a branch. It is deployed by running the **Deploy
@@ -128,7 +128,7 @@ npm run generate -w packages/api-sdk
 - **Purpose:** QA, stakeholder demos, mobile TestFlight/internal builds.
 - **Git branch:** `main` — pushes trigger staging/pre-production deployments.
 - **Supabase:** Dedicated staging project (separate from production). Create via Supabase dashboard or CLI.
-- **Web / Landing:** Vercel Preview deployments with staging domains (`app.staging.frapp.live`, `staging.frapp.live`), filtered to the `main` branch. **Not running since 2026-09-02:** both Vercel projects are unlinked from Git (ADR-21), so no push produces a preview and both staging hosts are frozen at their last Git build — see §6 **Web and Landing (Vercel)**.
+- **Web / Landing:** Vercel Preview deployments with staging domains (`app.staging.frapp.live`, `staging.frapp.live`), filtered to the `main` branch. **Not running as of 2026-09-02:** both Vercel projects are unlinked from Git (ADR-21), so no push produces a preview and both staging hosts are frozen at their last Git build — see §6 **Web and Landing (Vercel)**.
 - **API:** Render staging service (`frapp-api-staging`), auto-deploys from `main`, pointing at Supabase staging.
 - **Mobile:** EAS internal distribution builds (`eas build --profile preview`).
 - **Stripe:** Test mode keys (`sk_test_`).
@@ -249,7 +249,7 @@ session model (Opus). There is no `claude-review-gate` required check, no `claud
 
 ### Key Design Decisions
 
-- **The frontend build gate is production-shaped, not preview-shaped.** `web-production-build` builds `apps/web` and `apps/landing` under `npm ci --omit=dev`, matching Vercel's production install, because nothing in CI ran `next build` before #1374 and that gap took production down twice (#1331, #1372). Staging frontends are still verified through Vercel preview deployments off `main`; production deployments are created by `deploy-production.yml`. The build-shape difference between the two is a recorded trade-off — ADR-20 decision 3. **The staging half of that has not run since 2026-09-02:** with both Vercel projects unlinked from Git (ADR-21) no push produces a preview, so no Vercel build of either frontend happens on merge any more — see §6 **Web and Landing (Vercel)**.
+- **The frontend build gate is production-shaped, not preview-shaped.** `web-production-build` builds `apps/web` and `apps/landing` under `npm ci --omit=dev`, matching Vercel's production install, because nothing in CI ran `next build` before #1374 and that gap took production down twice (#1331, #1372). Staging frontends are still verified through Vercel preview deployments off `main`; production deployments are created by `deploy-production.yml`. The build-shape difference between the two is a recorded trade-off — ADR-20 decision 3. **The staging half of that has not run since the unlink** (landing 2026-09-01, web 2026-09-02): with both Vercel projects unlinked from Git (ADR-21) no push produces a preview, so no Vercel build of either frontend happens on merge any more — see §6 **Web and Landing (Vercel)**.
 - **No placeholder secrets.** CI never sets `NEXT_PUBLIC_SUPABASE_URL` or similar to dummy values. All env-dependent builds happen in the provider (Vercel/Render).
 - **API contract check uses git-diff.** The `openapi.json` is committed as a source-of-truth artifact. CI checks freshness via `git diff` — it does not bootstrap the NestJS application, avoiding the need for Supabase/Stripe credentials in CI.
 - **Mobile CI is lint + typecheck only.** EAS builds are expensive and slow; they run on-demand, not per-PR.
@@ -260,18 +260,14 @@ If any required check fails, the PR cannot be merged. Branch protection rules en
 
 ## 6. Continuous Deployment (CD)
 
-> **Current state (2026-09-02) — the Vercel half of this section describes a model that is not
-> running.** The owner disconnected both Vercel projects from Git on 2026-09-02, a deliberate
-> decision recorded as **ADR-21** in [`../architecture/README.md`](../architecture/README.md). The
-> Vercel push-deploy path described below — preview deployments from `main` — and the settings that
-> governed it (`git.deploymentEnabled` branch filtering, the `ignoreCommand` build-skip pin) have no
-> integration left to act on, and the production path through
-> `scripts/ci/deploy-vercel-production.mjs` is presumed broken. Render **staging** (the
-> `deploy-api.yml` push path) and EAS are unaffected; the Render **production** deploy and the
-> production migration apply are not — the guardrails preflight runs ahead of both in the single
-> `deploy` job of `deploy-production.yml`, so a failing preflight blocks that whole job. What is
-> intended stays written as intended here; **Web and Landing (Vercel)** below carries the measured
-> and presumed breakages and what replaces them.
+> **Current state (2026-09-02) — the Vercel half of this section is not running.** Both Vercel
+> projects were deliberately unlinked from Git (landing 2026-09-01, web 2026-09-02), so no push
+> deploys web or landing, and the guardrails preflight inside `deploy-production.yml` currently
+> blocks production deploys of every service; Render **staging** (the `deploy-api.yml` push path)
+> and EAS are unaffected. What follows stays written as intended. **ADR-21** in
+> [`../architecture/README.md`](../architecture/README.md) is the canonical record of the unlink,
+> the freeze points and the live breakages; the repair work is **#1579** (guardrails and verify)
+> and **#1578** (CI-driven Vercel deploys).
 
 Staging deploy steps are gated by CI: after CI succeeds on `main`, `deploy-api.yml` runs database migrations and triggers the Render staging deploy, and Vercel produces a Preview deployment from the same push. Nothing about production is push-triggered — `deploy-production.yml` creates the Render deploy and both Vercel production deployments itself, for a commit a human named.
 
@@ -295,34 +291,18 @@ secrets.
 
 ### Web and Landing (Vercel)
 
-> **Current state (2026-09-02) — both projects are disconnected from Git.** The owner unlinked
-> `frapp-web` and `frapp-landing` from the repository deliberately on 2026-09-02 (**ADR-21**);
-> Vercel's `list_projects` reports `link: null` for **both**. The bullets below are kept as the
-> intended model. Measured reality right now:
->
-> - **Nothing auto-deploys web or landing on merge to `main`.** No push produces a preview, so both
->   staging hosts are frozen at their last Git build: landing `2bf143b` (2026-09-01T20:19Z), web
->   `ad0f8c9` (2026-09-02T02:22Z).
-> - **The production path is presumed broken.** `scripts/ci/deploy-vercel-production.mjs` passes a
->   `gitSource` to Vercel's create-deployment API, which only means anything while the integration
->   exists. Presumed rather than measured — production has not been deployed since the unlink.
->   Separately, `assertVercelProductionBranch` in `scripts/ci/production-guardrails.mjs` reads
->   `project.link.productionBranch` and treats an absent value as a violation, which reddens the
->   daily 07:15 UTC guardrails run and, as a preflight inside `deploy-production.yml`, blocks every
->   production deploy.
-> - **`verify-deployments.yml`'s Vercel jobs and `scripts/ci/ensure-vercel-staging-alias.mjs` fail
->   on every push to `main`**, since 2026-09-01T20:46Z. They look for a deployment the integration
->   used to create.
-> - **Branch filtering and the `ignoreCommand` pin govern nothing.** Both keys are repo-versioned,
->   in `apps/web/vercel.json` and `apps/landing/vercel.json`, and there is no integration left for
->   them to govern — which makes **#1376 obsolete**. Separately, the Vercel half of the fail-open
->   risk ADR-19 and ADR-20 mitigated — the *dashboard-only* Production Branch setting, and
->   auto-deploy-from-push — is structurally gone rather than mitigated, because neither exists
->   without the Git link.
->
-> The replacement model — `vercel build` in a GitHub Actions job, then
-> `vercel deploy --prebuilt --prod` shipping that artifact — is **designed and not yet built**. No
-> workflow does it today. It is tracked as **CI/CD stage 7 under #1381**.
+> **Current state (2026-09-02) — both projects are unlinked from Git** (Vercel reports
+> `link: null` for both), so nothing below that depends on the Git integration is running: no push
+> produces a preview, and both staging hosts are frozen at their last Git build — landing `2bf143b`
+> (2026-09-01T20:19Z) and web `0372c6d` (2026-09-02T02:41:42Z). The bullets below are kept as the
+> intended model, and the `git.deploymentEnabled` and `ignoreCommand` keys stay in both
+> `vercel.json` files: they are the versioned form of settings that are otherwise dashboard-only, so
+> re-linking Git must not find them missing. **ADR-21** in
+> [`../architecture/README.md`](../architecture/README.md) is the canonical record of the unlink,
+> the per-project freeze points and the live breakages; the repair work is **#1579** (the
+> production-guardrails assertion and the failing `verify-deployments.yml` verify step) and
+> **#1578** (CI/CD stage 7 — `vercel build` plus `vercel deploy --prebuilt --prod` from Actions,
+> designed but not built).
 
 - Push to `main` triggers **preview** Vercel deployments (staging domains).
 - Production deployments are **created by the workflow**, not by a push: a fresh build of
@@ -357,7 +337,7 @@ secrets.
 
 ### Deploy Ordering
 
-**Default:** Vercel (frontends) and Render (API) deployments run in parallel after merge — the Vercel half of this default has not run since 2026-09-02 (ADR-21); see §6 **Web and Landing (Vercel)**. Database migrations always run before the API deploy (enforced by the deploy workflow's job dependency chain).
+**Default:** Vercel (frontends) and Render (API) deployments run in parallel after merge — the Vercel half of this default has not run since the unlink (ADR-21; landing 2026-09-01, web 2026-09-02); see §6 **Web and Landing (Vercel)**. Database migrations always run before the API deploy (enforced by the deploy workflow's job dependency chain).
 
 **Exception — breaking API changes:** Use the split-PR flow in `docs/internal/quality/PR_REVIEW_PROCESS.md` when compatibility is not maintained:
 
@@ -365,7 +345,7 @@ secrets.
 2. Verify the API health check passes.
 3. Merge frontend follow-up PRs only after API verification.
 
-Because Vercel deploys are push-triggered, hold frontend merges until the API is confirmed healthy. **Since 2026-09-02 no Vercel deploy is push-triggered at all** — both projects are unlinked from Git (ADR-21), so a frontend merge currently reaches no deployed host and this ordering rule describes what must hold once CI/CD stage 7 (#1381) restores an automatic path, not anything running today. Breaking changes must be documented in the PR description and flagged for manual coordination. Use backward-compatible migration patterns wherever possible to avoid this scenario.
+Because Vercel deploys are push-triggered, hold frontend merges until the API is confirmed healthy. **Since 2026-09-02 no Vercel deploy is push-triggered at all** — both projects are unlinked from Git (ADR-21), so a frontend merge currently reaches no deployed host and this ordering rule describes what must hold once CI/CD stage 7 (#1578) restores an automatic path, not anything running today. Breaking changes must be documented in the PR description and flagged for manual coordination. Use backward-compatible migration patterns wherever possible to avoid this scenario.
 
 ### Release labels for version tags
 

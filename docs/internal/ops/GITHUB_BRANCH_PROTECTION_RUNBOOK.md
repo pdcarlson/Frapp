@@ -68,8 +68,11 @@ echo 'GITHUB_PAT=<token>' >> .env
 > runbook only consumes the rule. The 2026-08-27 403 once recorded here — against
 > `GET /repos/pdcarlson/Frapp/branches/main/protection` — was a `curl` probe, so it measured the
 > proxy, not GitHub. [#680](https://github.com/pdcarlson/Frapp/issues/680)'s evidence table records
-> 403 and 200 for this endpoint class on the same day; the route rule explains that pattern without
-> the session having to be the variable, but the table does not record which route each probe took.
+> 403 and 200 for this endpoint class on the same day, and the route rule explains that pattern
+> without the session having to be the variable — but be honest about what that table says: it is a
+> **single row, and it attributes both the 403 and the 200 to `curl`**. So it does not corroborate
+> the route rule on its own; either the 200 was taken on a different route than the row implies, or
+> the row is imprecise. Today's direct measurement settles the rule either way.
 >
 > **Do not regenerate the PAT with broader scopes** — the 403 is not an auth failure. It looked
 > like one because `GET /user` *through* the proxy returns 200 (the proxy allows non-repo paths),
@@ -87,6 +90,12 @@ echo 'GITHUB_PAT=<token>' >> .env
 > picked up by `/next`. What an agent owns is the preparation: confirm every intended context has
 > reported green on the target branch, and confirm the job names match the array strings exactly —
 > the preconditions that make an apply safe, both checkable through the MCP server.
+>
+> **From an agent session the only sanctioned invocation is
+> `npm run configure:branch-protection:verify`, and nothing else.** Never the bare command — with no
+> flags it is a live `PUT` of the whole payload. Never `--dry-run` without the `--` separator —
+> npm swallows it and the script applies. Both traps are spelled out at the commands themselves in
+> Step 1 and Step 2; read them before running anything from this file.
 
 ## Step 1: Dry Run (Review Before Applying)
 
@@ -95,6 +104,17 @@ npm run configure:branch-protection -- --dry-run
 ```
 
 This prints the exact configuration that will be applied without making any changes. Review the output carefully.
+
+> **The `--` separator is load-bearing: without it, this command APPLIES.**
+> `npm run configure:branch-protection --dry-run` — no `--` — passes **zero** arguments through.
+> npm consumes `--dry-run` as its own option, so the script sees an empty `argv`: `hasFlag` is false
+> for both `--dry-run` and `--verify`, `assertKnownArgs` has nothing to reject, the script prints
+> `Mode: LIVE` and PUTs the entire protection payload. Reproduced on npm 10.9.7. The two spellings
+> differ by two characters and one is a governance write.
+>
+> **From an agent session, run `npm run configure:branch-protection:verify` and nothing else** —
+> never the bare command, never `--dry-run` without the `--`. Applying stays a human step with an
+> admin PAT (see **Prerequisites**).
 
 Since #1383 a dry run also **reads live protection back and prints the difference**, so the output
 answers "what would this actually change?" rather than only "what would this write?". A run that
@@ -120,9 +140,12 @@ code and a printed delta rather than a checkmark.
 > this runbook prescribes as a *command*: the `gh api` recipes further down are for laptops and
 > Actions, because `gh` is not installed in these sandboxes and honours `HTTPS_PROXY`, so it would
 > land on the 403 route. The dated `GET` observations elsewhere in this file were taken over that
-> same direct route and can be re-taken the same way.
+> same direct route and can be re-taken the same way. **A successful read in one session is not
+> evidence the next will work**: the direct route depends on that environment's network allowlist,
+> which this repository does not control — so try it, but never assume it.
 > `--verify` **fails** rather than passes when the read is refused, so an unreadable answer is
-> never mistaken for a matching one.
+> never mistaken for a matching one, and a refusal is never a licence to reach for the writing
+> command instead.
 >
 > **Verified 2026-09-02 from a cloud sandbox: exit 0.** Live `main` matched the roster on all 21
 > contexts — `migration-order` and `web-production-build` required, the demoted `migration-drift`
@@ -136,6 +159,14 @@ code and a printed delta rather than a checkmark.
 > a dated observation, not current state; re-run the command rather than citing this paragraph.
 
 ## Step 2: Apply
+
+> **Everything in this step is a LIVE write, and it is a human step with an admin PAT** — by
+> policy, not because it is unreachable (see **Prerequisites**). With no flags the script prints
+> `Mode: LIVE` and PUTs the **whole** protection payload, overwriting anything set by hand outside
+> the arrays. **An agent session must not run these commands**, and must not treat `--dry-run` as
+> the safe substitute: without the `--` separator npm swallows the flag and this same live apply is
+> what runs (Step 1). The only sanctioned agent invocation in this runbook is
+> `npm run configure:branch-protection:verify`.
 
 ```bash
 npm run configure:branch-protection
@@ -204,7 +235,7 @@ approval, not the merge.
 > gh api repos/pdcarlson/Frapp/branches/main/protection/required_status_checks --jq '.contexts'
 > ```
 >
-> Running `npm run configure:branch-protection` applies **everything** in the arrays, not just the entry you added, and PUTs the whole payload — anything set by hand outside the arrays is overwritten. Read the `--dry-run` output in full before applying.
+> Running `npm run configure:branch-protection` applies **everything** in the arrays, not just the entry you added, and PUTs the whole payload — anything set by hand outside the arrays is overwritten. Read the `-- --dry-run` output in full before applying — **the `--` separator is load-bearing**; without it npm swallows the flag and the script applies. From an agent session run `npm run configure:branch-protection:verify` and nothing else (see Prerequisites).
 
 **Docs check (from `.github/workflows/docs.yml`):**
 
@@ -239,26 +270,26 @@ branch-driven at all — `deploy-production.yml` creates them through the API fo
 commit.
 
 > **Dated note, 2026-09-02: the Vercel Git integration was retired (a deliberate owner decision),
-> and the paragraph above describes a model that no longer holds.** Both `frapp-web` and
-> `frapp-landing` report `link: null`, so `git.deploymentEnabled` governs nothing — there is no Git
-> integration left for it to limit. [`scripts/ci/deploy-vercel-production.mjs`](../../../scripts/ci/deploy-vercel-production.mjs)
-> passes `gitSource` on the create call, which needed that integration, so the API path above is
-> **presumed broken** — not observed failing. And `assertVercelProductionBranch` in
-> [`scripts/ci/production-guardrails.mjs`](../../../scripts/ci/production-guardrails.mjs) reads the
-> now-absent `project.link.productionBranch` as a violation, so the guardrails preflight inside
-> `deploy-production.yml` currently blocks production deploys outright — repairing that guardrail
-> is [#1579](https://github.com/pdcarlson/Frapp/issues/1579). The replacement —
-> `vercel build` plus `vercel deploy --prebuilt --prod` from Actions — is designed and **not built**
-> (CI/CD stage 7, [#1578](https://github.com/pdcarlson/Frapp/issues/1578), a sub-issue of #1381).
-> None of this changes the branch-protection policy stated here: Vercel deploys are not required
-> checks either way.
+> so the paragraph above describes a model that no longer holds.** Both projects report
+> `link: null`; with no integration left, `git.deploymentEnabled` limits nothing and the API path
+> above is **presumed broken, not observed failing** — but **keep the `git` block and the
+> `ignoreCommand` pin in both `vercel.json` files**, they are the versioned form of settings that
+> are otherwise dashboard-only and would fall back to unversioned dashboard state if Git is
+> re-linked. The canonical record of the unlink, its per-project dates and every live breakage is
+> **ADR-21** in [`spec/architecture/README.md`](../../../spec/architecture/README.md); the guardrail
+> repair is [#1579](https://github.com/pdcarlson/Frapp/issues/1579) and the CI-driven replacement
+> [#1578](https://github.com/pdcarlson/Frapp/issues/1578). None of this changes the
+> branch-protection policy stated here: Vercel deploys are not required checks either way.
 
 ### Deploy verification is no longer a branch-protection question
 
 `verify-deployments.yml` polls Render and Vercel after a push to `main` and emits
-`verify-render-api`, `verify-vercel-web`, `verify-vercel-landing` — the two Vercel jobs have failed
-on every push to `main` since 2026-09-01, for the reason in the dated note above
-([#1579](https://github.com/pdcarlson/Frapp/issues/1579)). This runbook used to
+`verify-render-api`, `verify-vercel-web`, `verify-vercel-landing`. Both Vercel jobs now fail on
+every push to `main`, but they broke separately rather than together: `verify-vercel-landing` from
+run #428 (2026-09-01T20:28Z) onward, `verify-vercel-web` only from run #437 (2026-09-02T03:04Z),
+having still gone green on runs #428–#436 in between. The cause and the per-project boundaries are
+in **ADR-21** ([`spec/architecture/README.md`](../../../spec/architecture/README.md)); the repair is
+[#1579](https://github.com/pdcarlson/Frapp/issues/1579). This runbook used to
 carry a recipe for promoting those three to required checks **on `production`**, once the
 workflow had stabilised.
 
@@ -306,6 +337,12 @@ Common causes and fixes:
 - **Stale required check reference:** a required context name no longer exists because the underlying workflow was removed.  
   **Fix:** remove the orphan context from the arrays in `scripts/ci/lib/required-checks.mjs`, then `gh api -X DELETE repos/<owner>/<repo>/branches/main/protection/required_status_checks/contexts -f 'contexts[]=<orphan>'`, and re-run the branch-protection script.
 
+> **Both fixes above are human steps.** The bare `npm run configure:branch-protection` is a live
+> `PUT`, and `gh` is a laptop/Actions tool — it is not installed in a cloud sandbox and reads
+> `HTTPS_PROXY`, so it would take the 403 route from one. An agent diagnosing a stuck check runs
+> `npm run configure:branch-protection:verify` to establish what live protection actually holds,
+> edits the roster array in the same PR, and leaves the apply to a human with an admin PAT.
+
 ## Verification Checklist
 
 The script now re-reads protection after the PUT and reports whether the result actually matches
@@ -339,7 +376,9 @@ If you need to merge urgently and a check is broken:
 1. Go to GitHub → Settings → Branches → Edit protection rule
 2. Temporarily remove the broken check from the required list
 3. Merge the PR
-4. **Immediately re-add the check** (run `npm run configure:branch-protection` again)
+4. **Immediately re-add the check** (run `npm run configure:branch-protection` again) — a human
+   step with an admin PAT; the bare command is a live `PUT`, and an agent must not run it even
+   under outage pressure
 5. Document the override in the PR description
 
 ## Updating Check Names
@@ -352,8 +391,11 @@ If CI job names change (e.g., renaming a workflow job), update:
 3. `CONTRIBUTING.md` — required checks section
 4. `spec/environments/README.md` — CI job matrix
 5. `docs/internal/ci-cd/DOCS_CI.md` — the docs-gate table and its **Required?** column
-6. Re-run `npm run configure:branch-protection` to apply the new names
-7. Confirm with `npm run configure:branch-protection:verify` — it exits non-zero if anything was missed
+6. Re-run `npm run configure:branch-protection` to apply the new names — **human step, admin PAT**;
+   the bare command is a live `PUT`, so an agent making the roster change in steps 1–5 opens the PR
+   and stops here
+7. Confirm with `npm run configure:branch-protection:verify` — it exits non-zero if anything was
+   missed, writes nothing, and is the one invocation an agent session may run
 
 This list is the drift engine, not a safety net — one source and four hand-kept copies is why
 `@repo/theme` and `packages/chat-integrations` went missing from every table at once. Steps 2–4 are
