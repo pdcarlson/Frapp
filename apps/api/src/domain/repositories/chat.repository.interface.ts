@@ -322,11 +322,20 @@ export interface IChatMessageAttachmentRepository {
    * export file onto the *same* object (`domain/utils/discord-export.ts`), so
    * two messages sharing one object is a supported state, not a corruption.
    *
-   * Deliberately **not** chapter-scoped, unlike `findByMessage`. The question
-   * is "does anything anywhere still point at these bytes", and a scoped answer
-   * could only ever be falsely negative — which is the direction that deletes a
-   * live file. It returns no tenant data: the caller supplied every path it can
-   * get back.
+   * Only **undeleted** messages count. Soft delete leaves these rows in place,
+   * so counting them would let two deleted messages spare each other's shared
+   * object forever — a leak dressed as a guard.
+   *
+   * Deliberately **not** chapter-scoped, unlike `findByMessage`: a scoped
+   * answer could only ever be falsely negative, and that is the direction that
+   * deletes a live file. It returns no tenant data — the caller supplied every
+   * path it can get back.
+   *
+   * **Scope limit, stated because the name overreaches:** this answers
+   * "does another chat *message attachment* still point at these bytes", not
+   * "does anything anywhere". `chat_messages.author_avatar_path` and
+   * `discord_import_files.storage_path` can resolve to the same imported
+   * object, and neither is consulted — see #1623.
    */
   findSharedObjects(
     candidates: readonly { bucket: string; storage_path: string }[],

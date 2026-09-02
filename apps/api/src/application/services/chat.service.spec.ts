@@ -2107,6 +2107,84 @@ describe('ChatService', () => {
         expect(mockMessageRepo.update).toHaveBeenCalled();
       });
 
+      it('keeps nothing back once every sharing message is deleted', async () => {
+        // The guard counts only UNDELETED messages. Filtering on message_id
+        // alone would let two deleted messages spare each other's object
+        // forever — the leak this fix exists to close, dressed as a guard.
+        // Here the sibling is already deleted, so the repo reports no sharer.
+        mockAttachmentRepo.findByMessage.mockResolvedValue([uploaded]);
+        mockAttachmentRepo.findSharedObjects.mockResolvedValue([]);
+
+        await service.deleteMessage('msg-1', 'ch-1', 'user-1', false);
+
+        expect(mockStorageProvider.deleteFiles).toHaveBeenCalledWith('chat', [
+          uploaded.storage_path,
+        ]);
+      });
+
+      it('keeps every object when the shared-object check fails', async () => {
+        // Fail closed: an unanswerable "is this shared?" must not read as
+        // "no". Keeping an orphan costs storage; guessing wrong destroys a
+        // live message's file.
+        mockAttachmentRepo.findByMessage.mockResolvedValue([uploaded]);
+        mockAttachmentRepo.findSharedObjects.mockRejectedValue(
+          new Error('postgrest down'),
+        );
+
+        const result = await service.deleteMessage(
+          'msg-1',
+          'ch-1',
+          'user-1',
+          false,
+        );
+
+        expect(result.is_deleted).toBe(true);
+        expect(mockStorageProvider.deleteFiles).not.toHaveBeenCalled();
+      });
+
+      it('still soft-deletes when the attachment lookup fails', async () => {
+        // This read used to sit outside the try/catch, so a transient
+        // PostgREST error turned a delete that was previously a single row
+        // update into a 500 with the message still visible.
+        mockAttachmentRepo.findByMessage.mockRejectedValue(
+          new Error('postgrest down'),
+        );
+
+        const result = await service.deleteMessage(
+          'msg-1',
+          'ch-1',
+          'user-1',
+          false,
+        );
+
+        expect(result.is_deleted).toBe(true);
+      });
+
+      it('still purges the second bucket when the first fails', async () => {
+        const archived = {
+          ...attachment,
+          id: 'att-2',
+          bucket: 'chat-archive',
+          storage_path: 'chapters/ch-1/chat-archive/ch-chan-1/old.png',
+        };
+        mockAttachmentRepo.findByMessage.mockResolvedValue([
+          uploaded,
+          archived,
+        ]);
+        mockStorageProvider.deleteFiles.mockImplementation(
+          async (bucket: string) => {
+            if (bucket === 'chat') throw new Error('chat bucket down');
+          },
+        );
+
+        await service.deleteMessage('msg-1', 'ch-1', 'user-1', false);
+
+        expect(mockStorageProvider.deleteFiles).toHaveBeenCalledWith(
+          'chat-archive',
+          [archived.storage_path],
+        );
+      });
+
       it('touches Storage not at all for a message with no attachments', async () => {
         mockAttachmentRepo.findByMessage.mockResolvedValue([]);
 

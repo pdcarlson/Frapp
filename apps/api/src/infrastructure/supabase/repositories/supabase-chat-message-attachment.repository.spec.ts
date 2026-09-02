@@ -225,6 +225,7 @@ describe('SupabaseChatMessageAttachmentRepository — findSharedObjects', () => 
     messageId: string,
     path: string,
     bucket: string,
+    deleted = false,
   ) => ({
     id,
     message_id: messageId,
@@ -239,6 +240,9 @@ describe('SupabaseChatMessageAttachmentRepository — findSharedObjects', () => 
     external_url: null,
     created_at: '2026-01-01T00:00:00.000Z',
     chat_channels: { chapter_id: CHAPTER_A },
+    // The read joins `chat_messages!inner(is_deleted)`: an object held only by
+    // already-deleted messages must not read as shared.
+    chat_messages: { is_deleted: deleted },
   });
 
   beforeEach(() => {
@@ -246,10 +250,9 @@ describe('SupabaseChatMessageAttachmentRepository — findSharedObjects', () => 
       tables: {
         chat_channels: [
           inA({ id: CHANNEL, name: 'imported', type: 'PUBLIC' }),
-          // The harness refuses a single-chapter seed — a filter cannot be
-          // shown to do anything against rows from one tenant. This read is
-          // deliberately cross-chapter, so B exists to prove exactly that:
-          // nothing here narrows by chapter.
+          // Present only to satisfy the harness, which refuses a
+          // single-chapter seed. It proves nothing about this read on its own
+          // — no attachment row lives in B — and is not claimed to.
           inB({ id: CHANNEL_OTHER, name: 'imported', type: 'PUBLIC' }),
         ],
         chat_message_attachments: [
@@ -275,6 +278,33 @@ describe('SupabaseChatMessageAttachmentRepository — findSharedObjects', () => 
     expect(shared).toEqual([
       { bucket: 'chat-archive', storage_path: SHARED_PATH },
     ]);
+  });
+
+  it('does not count a reference held by an already-deleted message', async () => {
+    // Soft delete leaves attachment rows in place. Counting them would let two
+    // deleted messages spare each other's object forever — nothing would ever
+    // purge it, which is the leak #514 exists to close.
+    harness = createTenantHarness({
+      tables: {
+        chat_channels: [
+          inA({ id: CHANNEL, name: 'imported', type: 'PUBLIC' }),
+          inB({ id: CHANNEL_OTHER, name: 'imported', type: 'PUBLIC' }),
+        ],
+        chat_message_attachments: [
+          row('att-gone', KEEPER, SHARED_PATH, 'chat-archive', true),
+          row('att-doomed-shared', DOOMED, SHARED_PATH, 'chat-archive'),
+        ],
+      },
+      untenantedTables: ['chat_message_attachments'],
+    });
+    repo = new SupabaseChatMessageAttachmentRepository(harness.client);
+
+    const shared = await repo.findSharedObjects(
+      [{ bucket: 'chat-archive', storage_path: SHARED_PATH }],
+      DOOMED,
+    );
+
+    expect(shared).toEqual([]);
   });
 
   it("does not count the deleted message's own rows as a reference", async () => {

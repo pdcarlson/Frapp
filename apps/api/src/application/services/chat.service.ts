@@ -963,94 +963,125 @@ export class ChatService {
       );
     }
 
-    // Read the attachment rows *before* the update only because they are the
-    // input to the purge below — not because the update would destroy them.
-    // (The issue this closes, #514, assumed paths lived in `metadata` and were
-    // wiped; they have since moved to `chat_message_attachments`, which
-    // soft-delete never touches.)
-    const attachments = await this.attachmentRepo.findByMessage(
-      messageId,
-      chapterId,
-    );
-
     const deleted = await this.messageRepo.update(messageId, {
       content: '[message deleted]',
       is_deleted: true,
       metadata: {},
     });
 
-    // Purge after the flag lands, not before. `getMessageAttachments` already
-    // 404s an `is_deleted` message, so the moment this update commits the API
-    // mints no further download URLs and the files are unreachable whatever
-    // Storage does next. Purging first and then failing the update would leave
-    // a *visible* message whose downloads 404 — strictly worse than the
-    // orphaned object a failed purge leaves, which is the state we are in today
-    // anyway. Best-effort for the same reason: the row is the source of truth,
-    // and a Storage outage must not roll back a delete the member asked for.
-    await this.purgeAttachmentObjects(attachments, messageId);
+    // Purge after the flag lands, not before. Soft delete leaves the attachment
+    // rows in place (they cascade only with the message itself), so nothing is
+    // lost by reading them afterwards — the ordering is chosen for the failure
+    // modes, not for access. `listMessageAttachments` 404s an `is_deleted`
+    // message, so once this update commits the API mints no *new* download
+    // URLs. Purging first and then failing the update would leave a visible
+    // message with dead downloads; this way a failed purge leaves an orphan,
+    // which is the state we are in today anyway.
+    //
+    // Everything after this point is best-effort — the row is the source of
+    // truth, and a Storage or PostgREST fault must not roll back a delete the
+    // member asked for, or turn it into a 500.
+    await this.purgeAttachmentObjects(messageId, chapterId);
 
     return deleted;
   }
 
   /**
-   * Delete the Storage objects belonging to a deleted message, skipping any
-   * another message still references.
+   * Delete the Storage objects belonging to a just-deleted message, skipping
+   * any an undeleted message still references.
    *
-   * The guard is not defensive programming: `chat_message_attachments` is
-   * unique on `(message_id, bucket, storage_path)` — per message — and the
-   * Discord importer maps every reference to a deduplicated export file onto
-   * one object, so two messages sharing an object is a supported state. Without
-   * the check, deleting either message would delete the other's bytes.
+   * Owns its own read so that every failure on this path — the attachment
+   * lookup, the reference probe, or Storage itself — is swallowed. Before this,
+   * a transient PostgREST error on the lookup turned a delete that used to be a
+   * single row update into a 500 with the message still visible.
+   *
+   * The reference guard is not defensive programming. `chat_message_attachments`
+   * is unique on `(message_id, bucket, storage_path)` — per message — so two
+   * messages may legitimately point at one object: the Discord importer maps
+   * every reference to a deduplicated export file onto the same object, and
+   * `validateAttachmentInputs` checks only the channel prefix, so a client can
+   * claim a path another message already uses (#1622). Without the check,
+   * deleting either message would delete the other's bytes.
    *
    * Grouped per bucket because imported media lives in `chat-archive` while
-   * uploads live in `chat`, and one message can in principle carry both.
+   * uploads live in `chat`, and each bucket is attempted independently: one
+   * bucket's outage must not strand the other's objects.
    */
   private async purgeAttachmentObjects(
-    attachments: readonly ChatMessageAttachment[],
     messageId: string,
+    chapterId: string,
   ): Promise<void> {
+    let attachments: ChatMessageAttachment[];
+    try {
+      attachments = await this.attachmentRepo.findByMessage(
+        messageId,
+        chapterId,
+      );
+    } catch (error) {
+      this.logger.warn('Could not read attachments to purge', {
+        messageId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
     if (attachments.length === 0) return;
 
+    let shared: { bucket: string; storage_path: string }[];
     try {
-      const shared = await this.attachmentRepo.findSharedObjects(
+      shared = await this.attachmentRepo.findSharedObjects(
         attachments.map(({ bucket, storage_path }) => ({
           bucket,
           storage_path,
         })),
         messageId,
       );
-      const sharedKeys = new Set(
-        shared.map((row) => `${row.bucket} ${row.storage_path}`),
-      );
-
-      const byBucket = new Map<string, string[]>();
-      for (const attachment of attachments) {
-        const key = `${attachment.bucket} ${attachment.storage_path}`;
-        if (sharedKeys.has(key)) continue;
-        const paths = byBucket.get(attachment.bucket) ?? [];
-        // A message may list the same object twice; deleting it twice is
-        // harmless but the dedupe keeps the provider call honest.
-        if (!paths.includes(attachment.storage_path)) {
-          paths.push(attachment.storage_path);
-        }
-        byBucket.set(attachment.bucket, paths);
-      }
-
-      for (const [bucket, paths] of byBucket) {
-        await this.storageProvider.deleteFiles(bucket, paths);
-      }
-
-      if (sharedKeys.size > 0) {
-        this.logger.log('Kept chat attachment objects still referenced', {
-          messageId,
-          keptCount: sharedKeys.size,
-        });
-      }
     } catch (error) {
-      this.logger.warn('Failed to purge chat attachment objects', {
+      // Fail closed: an unanswerable "is this shared?" must not be read as
+      // "no". Keeping an orphan costs storage; guessing wrong destroys a live
+      // message's file.
+      this.logger.warn('Could not check shared attachments; keeping objects', {
         messageId,
         attachmentCount: attachments.length,
         error: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+
+    const sharedKeys = new Set(
+      shared.map((row) => `${row.bucket} ${row.storage_path}`),
+    );
+    const byBucket = new Map<string, string[]>();
+    for (const attachment of attachments) {
+      if (sharedKeys.has(`${attachment.bucket} ${attachment.storage_path}`)) {
+        continue;
+      }
+      const paths = byBucket.get(attachment.bucket) ?? [];
+      if (!paths.includes(attachment.storage_path)) {
+        paths.push(attachment.storage_path);
+      }
+      byBucket.set(attachment.bucket, paths);
+    }
+
+    for (const [bucket, paths] of byBucket) {
+      try {
+        await this.storageProvider.deleteFiles(bucket, paths);
+      } catch (error) {
+        // Per bucket, and naming the paths: an operator reconciling orphans by
+        // hand needs to know which objects survived, and a `chat` outage must
+        // not skip the `chat-archive` deletes.
+        this.logger.warn('Failed to purge chat attachment objects', {
+          messageId,
+          bucket,
+          paths,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    if (sharedKeys.size > 0) {
+      this.logger.log('Kept chat attachment objects still referenced', {
+        messageId,
+        keptCount: sharedKeys.size,
       });
     }
   }
