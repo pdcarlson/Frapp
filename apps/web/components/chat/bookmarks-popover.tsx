@@ -11,15 +11,35 @@ import {
 } from "@/components/ui/popover";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { cn } from "@/lib/utils";
-import type { ChatMessage } from "@repo/chat-core/types";
+import type { MessageAuthor } from "@repo/hooks";
 import { resolveAuthorLabel } from "@repo/hooks";
 import { formatClock } from "@repo/formatting";
+
+/**
+ * The message as `GET /v1/bookmarks` serves it — a nine-field projection, not
+ * a `ChatMessage`.
+ *
+ * Typed narrowly on purpose. This was `ChatMessage` while the endpoint really
+ * did return all 19 columns; once the API narrowed to what `BookmarkedMessageDto`
+ * declares, keeping the wide type would have been a lie the compiler happily
+ * enforced — every field this panel does not receive would still autocomplete
+ * and typecheck, and read `undefined` at runtime. `MessageAuthor` is the shared
+ * shape `resolveAuthorLabel` already accepts, which is why it takes a structural
+ * type rather than the full row.
+ */
+export interface BookmarkedMessage extends MessageAuthor {
+  id: string;
+  channel_id: string;
+  content: string;
+  is_deleted: boolean;
+  created_at: string;
+}
 
 export interface BookmarkEntry {
   id: string;
   message_id: string;
   created_at: string;
-  message: ChatMessage;
+  message: BookmarkedMessage;
   /**
    * False when the viewer has lost access to the message's channel since
    * saving it. The API redacts `message` in that case; this row must not offer

@@ -5,7 +5,7 @@ import {
   BookmarksPopover,
   type BookmarkEntry,
 } from "./bookmarks-popover";
-import type { ChatMessage } from "@repo/chat-core/types";
+import type { BookmarkedMessage } from "./bookmarks-popover";
 
 /**
  * The personal Bookmarks panel (#462).
@@ -18,30 +18,23 @@ import type { ChatMessage } from "@repo/chat-core/types";
 
 const OTHER = "22222222-2222-4222-8222-222222222222";
 
-function message(overrides: Partial<ChatMessage> = {}): ChatMessage {
+function message(
+  overrides: Partial<BookmarkedMessage> = {},
+): BookmarkedMessage {
+  // Exactly the nine fields the API serves. Deliberately not a full
+  // `ChatMessage` fixture: seeding fields the endpoint does not return would
+  // let a test pass on data production never sends.
   return {
     id: "msg-1",
     channel_id: "chan-random",
     sender_id: OTHER,
     author_name: null,
-    author_avatar_path: null,
     author_external_id: null,
     content: "the dues link",
-    kind: "text",
-    payload: null,
-    reply_to_id: null,
-    is_pinned: false,
-    pinned_at: null,
-    edited_at: null,
     is_deleted: false,
     created_at: new Date(2026, 7, 16, 17, 9).toISOString(),
-    client_message_id: "client-1",
-    attachment_count: 0,
-    reactions: {},
-    actions: [],
-    _status: "confirmed",
     ...overrides,
-  } as ChatMessage;
+  };
 }
 
 const entry = (overrides: Partial<BookmarkEntry> = {}): BookmarkEntry => ({
