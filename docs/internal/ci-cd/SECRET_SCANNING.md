@@ -240,8 +240,10 @@ Method notes:
 
 The `secret-scan` job is registered in `scripts/ci/lib/required-checks.mjs` (`CI_CHECKS`), which is
 the intended required set. Whether it is live on a given branch depends on when an admin last ran
-`GITHUB_PAT=… npm run configure:branch-protection`; read live state per
-[`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md#required-status-checks)
+`GITHUB_PAT=… npm run configure:branch-protection`. That apply is a human step with an admin PAT:
+the bare command is a live `PUT` of the whole protection payload, and an agent session runs
+`npm run configure:branch-protection:verify` (which writes nothing) and nothing else. Read live state
+per [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md#required-status-checks)
 rather than from this page.
 
 ## Bumping the pinned version
