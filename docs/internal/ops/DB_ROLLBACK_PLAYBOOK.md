@@ -1089,6 +1089,11 @@ After any rollback event:
   ```
 * **Note**: Grant-only change, no data loss and no function body change — restores the pre-migration Postgres-default EXECUTE-to-PUBLIC behavior for `anon`/`authenticated`. Should not be needed: all three RPCs are `security invoker` (RLS still applies under the caller's own privileges) and both callers (`ReportService.getPointsReport`, `SupabasePollVoteRepository`) already go through the API's `service_role` client, which keeps EXECUTE regardless. Only relevant if some other caller was found to invoke these RPCs directly as `anon`/`authenticated` (e.g. via PostgREST) after this migration shipped — confirm that caller's actual need before rolling back, since re-opening the grant is exactly the convention gap #678 closed.
 
+## Rollback `get_points_report` RPC `p_until` bound
+* **Migration**: `20260902010001_get_points_report_until.sql` (supersedes `20260604140000_get_points_report_window_filter.sql`)
+* **Action**: Run `DROP FUNCTION IF EXISTS get_points_report(uuid, uuid, timestamptz, timestamptz);`, then recreate the 3-arg `(uuid, uuid, timestamptz)` overload from `20260604140000`, and re-apply its EXECUTE lock-down (revoke from `public`/`anon`/`authenticated`, grant to `service_role`) per `20260901173000`.
+* **Note**: Additive/no data loss — the migration drops the 3-arg overload and recreates the RPC with an added `p_until timestamptz` upper bound (#377), used to filter to one specific archived semester's `[start_date, end_date]` calendar-day range rather than only "since the latest archive, through now". The API calls the new 4-arg overload from `ReportService.getPointsReport` on every path (the `window`-based path always passes `p_until: null`; the new `semester_archive_id` path passes a real bound), so a forward-fix — deploy an API revision that reverts to the prior 3-arg call — is required before dropping the 4-arg overload, or every points report request fails. The migration also re-applies the EXECUTE lock-down to the new signature, since `DROP FUNCTION` removes the old signature's grants along with it; a rollback that skips re-applying the lock-down leaves the recreated 3-arg function on Postgres's EXECUTE-to-PUBLIC default.
+
 ## Rollback Group DM leave + archive (20260901180000)
 * **Migration**: `20260901180000_chat_channels_archived_at.sql`
 * **Action**:

@@ -5,14 +5,16 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 type PointWindow = "all" | "semester" | "month";
 
-export function useMyPoints(window?: PointWindow) {
+export function useMyPoints(window?: PointWindow, semesterArchiveId?: string) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   return useQuery({
-    queryKey: ["points", chapterId, "me", window],
+    queryKey: ["points", chapterId, "me", window, semesterArchiveId],
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/points/me", {
-        params: { query: { window } },
+        params: {
+          query: { window, semester_archive_id: semesterArchiveId },
+        },
       });
       if (error) throw error;
       return data;
@@ -25,14 +27,19 @@ export function useMyPoints(window?: PointWindow) {
   });
 }
 
-export function useLeaderboard(window?: PointWindow) {
+export function useLeaderboard(
+  window?: PointWindow,
+  semesterArchiveId?: string,
+) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   return useQuery({
-    queryKey: ["points", chapterId, "leaderboard", window],
+    queryKey: ["points", chapterId, "leaderboard", window, semesterArchiveId],
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/points/leaderboard", {
-        params: { query: { window } },
+        params: {
+          query: { window, semester_archive_id: semesterArchiveId },
+        },
       });
       if (error) throw error;
       return data;
@@ -84,14 +91,28 @@ export function usePointsTransactions(options?: {
   });
 }
 
-export function useMemberPoints(userId: string, window?: PointWindow) {
+export function useMemberPoints(
+  userId: string,
+  window?: PointWindow,
+  semesterArchiveId?: string,
+) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   return useQuery({
-    queryKey: ["points", chapterId, "members", userId, window],
+    queryKey: [
+      "points",
+      chapterId,
+      "members",
+      userId,
+      window,
+      semesterArchiveId,
+    ],
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/points/members/{userId}", {
-        params: { path: { userId }, query: { window } },
+        params: {
+          path: { userId },
+          query: { window, semester_archive_id: semesterArchiveId },
+        },
       });
       if (error) throw error;
       return data;
