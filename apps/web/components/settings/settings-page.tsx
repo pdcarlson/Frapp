@@ -886,7 +886,7 @@ function SettingsPageContent() {
                 canManage={canManage}
                 catalog={permissionsCatalog}
                 defaultInviteRoleId={config?.default_invite_role_id ?? null}
-                isSavingConfig={patchOrgConfig.isPending}
+                isSavingConfig={pendingConfigKeys.has("default_invite_role_id")}
                 onSaveDefaultInviteRole={(roleId) =>
                   patchConfig(
                     { default_invite_role_id: roleId },

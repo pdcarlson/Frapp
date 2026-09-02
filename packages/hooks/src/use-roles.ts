@@ -100,6 +100,12 @@ export function useDeleteRole() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["roles", chapterId] });
+      // Deleting a role can clear `chapters.default_invite_role_id` server-side
+      // via `on delete set null` (#422). The config query has a 5-minute
+      // staleTime, so without this the Settings card keeps showing the deleted
+      // id and warns that the default "no longer exists" — about a setting the
+      // server has already nulled.
+      queryClient.invalidateQueries({ queryKey: ["chapter-config", chapterId] });
     },
   });
 }

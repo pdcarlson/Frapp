@@ -31,6 +31,7 @@ import {
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
 import { getErrorMessage, parseGuardedInt } from "@/lib/utils";
+import { normalizeRoleOptions } from "@/lib/roles";
 import { RolesAndPermissionsPage } from "@/components/roles/roles-page";
 import {
   useCustomRoles,
@@ -161,23 +162,13 @@ function DefaultInviteRoleCard({
 }) {
   const rolesQuery = useRoles();
 
-  const roleOptions = useMemo(() => {
-    const rows = rolesQuery.data as unknown;
-    if (!Array.isArray(rows)) return [] as Array<{ id: string; name: string }>;
-    return rows
-      .flatMap((row: unknown) => {
-        if (!row || typeof row !== "object") return [];
-        const candidate = row as Record<string, unknown>;
-        if (
-          typeof candidate.id !== "string" ||
-          typeof candidate.name !== "string"
-        ) {
-          return [];
-        }
-        return [{ id: candidate.id, name: candidate.name }];
-      })
-      .sort((first, second) => first.name.localeCompare(second.name));
-  }, [rolesQuery.data]);
+  const roleOptions = useMemo(
+    () =>
+      normalizeRoleOptions(rolesQuery.data).sort((first, second) =>
+        first.name.localeCompare(second.name),
+      ),
+    [rolesQuery.data],
+  );
 
   // A configured role that is no longer in the catalog would render as "No
   // default" and silently rewrite the setting on the next save. The API's

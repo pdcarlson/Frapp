@@ -18,12 +18,19 @@ export function useInvites() {
   });
 }
 
+/**
+ * `role` is optional on all three create routes (#422). Omitting it makes the
+ * API resolve the chapter's configured default invite role, then the seeded
+ * Member role. Typed optional here so a caller can actually express "use the
+ * chapter default" — a required `role` would leave that server-side path
+ * unreachable from every shipped surface.
+ */
 export function useCreateInvite() {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (body: { role: string }) => {
+    mutationFn: async (body: { role?: string }) => {
       const { data, error } = await client.POST("/v1/invites", { body });
       if (error) throw error;
       return data;
@@ -39,7 +46,7 @@ export function useBatchCreateInvites() {
   const chapterId = useActiveChapterId();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (body: { role: string; count: number }) => {
+    mutationFn: async (body: { role?: string; count: number }) => {
       const { data, error } = await client.POST("/v1/invites/batch", { body });
       if (error) throw error;
       return data;
@@ -55,7 +62,7 @@ export function useEmailInvites() {
   const chapterId = useActiveChapterId();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (body: { role: string; emails: string[] }) => {
+    mutationFn: async (body: { role?: string; emails: string[] }) => {
       const { data, error } = await client.POST("/v1/invites/email", { body });
       if (error) throw error;
       return data;

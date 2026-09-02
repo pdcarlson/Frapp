@@ -1017,7 +1017,8 @@ After any rollback event:
   DROP INDEX IF EXISTS idx_chapters_default_invite_role_id;
   ALTER TABLE chapters DROP COLUMN IF EXISTS default_invite_role_id;
   ```
-* **Note**: Additive nullable FK to `roles(id)`; dropping it loses only each chapter's chosen default invite role. No invite data is affected — `invites.role` stores the resolved role **name**, so tokens already issued keep the role they were created with. `InviteService.resolveInviteRole` falls back to the seeded Member role when the column is absent or null, which is the pre-#422 behavior, so the API keeps working through the rollback window. Drop the index first: `on delete set null` uses it on role deletes.
+* **Note**: Additive nullable FK to `roles(id)`; dropping it loses only each chapter's chosen default invite role. No invite data is affected — `invites.role` stores the resolved role **name**, so tokens already issued keep the role they were created with. Drop the index first: `on delete set null` uses it on role deletes.
+* **⚠ Roll the API back first.** This column is **not** tolerated by the running code: `ChapterConfigService.getConfig` and `InviteService.resolveInviteRole` both name it in their `select`, and `getConfig` maps any error to `NotFoundException` — so dropping the column under a deployed API turns `GET /v1/chapters/:id/config` into a 404 for every chapter, taking the whole web dashboard's settings surface with it, and masking the real `42703` (undefined column). Deploy an API build that predates this change before running the DDL, or run both together in a maintenance window.
 
 ## Rollback `confirm_task_completion` RPC
 * **Migration**: `20260602210000_add_confirm_task_completion_rpc.sql`

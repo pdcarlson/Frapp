@@ -15,6 +15,8 @@ import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.i
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
 import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
+import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
+import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
 import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
 import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
 import { Invite } from '../../domain/entities/invite.entity';
@@ -79,6 +81,8 @@ export class InviteService {
     @Inject(INVITE_REPOSITORY) private readonly inviteRepo: IInviteRepository,
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
     @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
+    @Inject(CHAPTER_REPOSITORY)
+    private readonly chapterRepo: IChapterRepository,
     @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
     private readonly notificationService: NotificationService,
     private readonly activation: ActivationService,
@@ -129,14 +133,13 @@ export class InviteService {
     const explicit = requested?.trim();
     if (explicit) return explicit;
 
-    const roles = await this.roleRepo.findByChapter(chapterId);
-
-    const { data: chapter, error } = await this.supabase
-      .from('chapters')
-      .select('default_invite_role_id')
-      .eq('id', chapterId)
-      .maybeSingle();
-    if (error) throw error;
+    // Independent reads, so they overlap rather than stack: this path only
+    // runs when the caller named no role, and it would otherwise add two
+    // serial round-trips to an invite that previously issued none.
+    const [roles, chapter] = await Promise.all([
+      this.roleRepo.findByChapter(chapterId),
+      this.chapterRepo.findById(chapterId),
+    ]);
 
     const defaultRoleId = chapter?.default_invite_role_id ?? null;
     if (defaultRoleId) {

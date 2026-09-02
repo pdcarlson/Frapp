@@ -29,6 +29,9 @@ import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.i
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
 import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
+import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
+import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
+import type { Chapter } from '../../domain/entities/chapter.entity';
 import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
 import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
 import type { Invite } from '../../domain/entities/invite.entity';
@@ -57,6 +60,7 @@ describe('InviteService', () => {
   let mockUserRepo: jest.Mocked<IUserRepository>;
   let mockChatService: jest.Mocked<Pick<ChatService, 'getOrCreateDm'>>;
   let mockSupabase: { from: jest.Mock };
+  let mockChapterRepo: jest.Mocked<IChapterRepository>;
   let messageInsert: jest.Mock;
   /** Backs `chapters.default_invite_role_id` for the mock above (#422). */
   let chapterDefaultRoleId: string | null;
@@ -119,26 +123,27 @@ describe('InviteService', () => {
     };
     messageInsert = jest.fn().mockResolvedValue({ error: null });
     // #422: `resolveInviteRole` reads `chapters.default_invite_role_id`
-    // whenever the caller does not name a role. Defaults to "no default
-    // configured", which is the pre-#422 world every other test in this file
-    // assumes.
+    // through the chapter repository whenever the caller does not name a
+    // role. Defaults to "no default configured", which is the pre-#422 world
+    // every other test in this file assumes.
     chapterDefaultRoleId = null;
+    mockChapterRepo = {
+      findById: jest.fn(),
+      findBySubscriptionId: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+    };
+    // Read lazily so a test can set `chapterDefaultRoleId` after setup.
+    mockChapterRepo.findById.mockImplementation(() =>
+      Promise.resolve({
+        id: 'ch-1',
+        default_invite_role_id: chapterDefaultRoleId,
+      } as Chapter),
+    );
+
     mockSupabase = {
       from: jest.fn((table: string) => {
         if (table === 'chat_messages') return { insert: messageInsert };
-        if (table === 'chapters') {
-          return {
-            select: () => ({
-              eq: () => ({
-                maybeSingle: () =>
-                  Promise.resolve({
-                    data: { default_invite_role_id: chapterDefaultRoleId },
-                    error: null,
-                  }),
-              }),
-            }),
-          };
-        }
         return {};
       }),
     };
@@ -149,6 +154,7 @@ describe('InviteService', () => {
         { provide: INVITE_REPOSITORY, useValue: mockInviteRepo },
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
         { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
+        { provide: CHAPTER_REPOSITORY, useValue: mockChapterRepo },
         { provide: USER_REPOSITORY, useValue: mockUserRepo },
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: ActivationService, useValue: mockActivation },

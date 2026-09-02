@@ -189,8 +189,8 @@ describe("InviteMemberDialog default role", () => {
     mockRoles.mockReturnValue({ data: ROLES, isError: false });
     mockOrgConfig.mockReturnValue({ data: undefined, isError: false });
     await openDialog();
-    // Alphabetically first, and not what the chapter configured.
-    expect(rolePicker().value).toBe("Alumni");
+    // The no-default fallback, and not what the chapter configured.
+    expect(rolePicker().value).toBe("Member");
 
     mockOrgConfig.mockReturnValue({
       data: { default_invite_role_id: "role-pledge" },
@@ -216,12 +216,67 @@ describe("InviteMemberDialog default role", () => {
     expect(rolePicker().value).toBe("Alumni");
   });
 
-  it("falls back to the alphabetical first role when no default is configured", async () => {
+  /*
+   * The regression guard. `roleOptions` is sorted alphabetically, so seeding
+   * the picker off `roleOptions[0]` pre-selects **Alumni** on every chapter
+   * that has not configured a default — which is all of them, since the column
+   * ships null with no backfill. That would hand new members the alumni
+   * lifecycle restrictions instead of Member, reintroducing the arbitrary
+   * default #422 exists to remove. Member must win whenever it is in the
+   * catalog, exactly as it did before this field existed.
+   */
+  it("falls back to Member, not the alphabetically first role, when no default is configured", async () => {
     mockRoles.mockReturnValue({ data: ROLES, isError: false });
     mockOrgConfig.mockReturnValue({ data: {}, isError: false });
     await openDialog();
 
+    expect(rolePicker().value).toBe("Member");
+  });
+
+  it("falls back to the first role only when the catalog has no Member role", async () => {
+    mockRoles.mockReturnValue({
+      data: [
+        { id: "role-alumni", name: "Alumni" },
+        { id: "role-pledge", name: "New Member" },
+      ],
+      isError: false,
+    });
+    mockOrgConfig.mockReturnValue({ data: {}, isError: false });
+    await openDialog();
+
     expect(rolePicker().value).toBe("Alumni");
+  });
+
+  /*
+   * `GET /chapters/:id/config` needs `chapter-config:view`, while the dialog
+   * needs only `members:invite` — so a delegated recruitment officer can get a
+   * 403 here. Degrading to Member (not to whatever sorts first) keeps that
+   * failure boring.
+   */
+  it("degrades to Member when the config query fails", async () => {
+    mockRoles.mockReturnValue({ data: ROLES, isError: false });
+    mockOrgConfig.mockReturnValue({ data: undefined, isError: true });
+    await openDialog();
+
+    expect(rolePicker().value).toBe("Member");
+  });
+
+  it("re-adopts the default after the dialog is closed with Done", async () => {
+    mockRoles.mockReturnValue({ data: ROLES, isError: false });
+    mockOrgConfig.mockReturnValue({
+      data: { default_invite_role_id: "role-pledge" },
+      isError: false,
+    });
+    await openDialog();
+    await userEvent.selectOptions(rolePicker(), "Alumni");
+    expect(rolePicker().value).toBe("Alumni");
+
+    // Done sets state directly rather than going through Radix's dismiss
+    // path, so it is the close route most likely to skip the reset.
+    await userEvent.click(screen.getByRole("button", { name: /^done$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^invite$/i }));
+
+    expect(rolePicker().value).toBe("New Member");
   });
 
   /*
@@ -239,6 +294,6 @@ describe("InviteMemberDialog default role", () => {
     });
     await openDialog();
 
-    expect(rolePicker().value).toBe("Alumni");
+    expect(rolePicker().value).toBe("Member");
   });
 });

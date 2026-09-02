@@ -154,14 +154,34 @@ function makeSupabase(
       return builder;
     }
     if (table === 'roles') {
-      // `.select().eq('id', …).eq('chapter_id', …).maybeSingle()` — the
-      // chained `eq` is why this returns itself rather than a terminal.
+      /*
+       * This mock RECORDS the filters and only returns the row when the query
+       * actually scoped by both `id` and `chapter_id`.
+       *
+       * The obvious version — `eq` returning `builder` unconditionally and
+       * `maybeSingle` resolving a fixture picked up front — cannot tell a
+       * chapter-scoped query from an unscoped one, so the cross-chapter test
+       * below passes even with `.eq('chapter_id', chapterId)` deleted from
+       * the service. That was verified by mutation, not assumed: with the
+       * naive mock, removing the filter left 33/33 green. A test that cannot
+       * fail for the reason it exists is worse than no test, because it
+       * reports coverage of the one invariant RLS is not enforcing for us.
+       */
+      const filters: Record<string, unknown> = {};
       const builder: Record<string, jest.Mock> = {};
       builder.select = jest.fn().mockReturnValue(builder);
-      builder.eq = jest.fn().mockReturnValue(builder);
-      builder.maybeSingle = jest.fn().mockResolvedValue({
-        data: options.roleLookupRow ?? null,
-        error: null,
+      builder.eq = jest.fn((column: string, value: unknown) => {
+        filters[column] = value;
+        return builder;
+      });
+      builder.maybeSingle = jest.fn(() => {
+        const row = options.roleLookupRow ?? null;
+        const scoped =
+          filters.chapter_id === CHAPTER_ID && filters.id !== undefined;
+        return Promise.resolve({
+          data: scoped ? row : null,
+          error: null,
+        });
       });
       return builder;
     }
@@ -734,6 +754,29 @@ describe('ChapterConfigService default invite role (#422)', () => {
       }),
     ).rejects.toThrow(BadRequestException);
     expect(supabase.chapterUpdate).not.toHaveBeenCalled();
+  });
+
+  /*
+   * Guards the guard. If `assertRoleBelongsToChapter` ever stops filtering by
+   * `chapter_id`, this fails immediately and by name — rather than the
+   * cross-chapter test above silently continuing to pass, which is what it did
+   * before the mock recorded its filters.
+   */
+  it('scopes the role lookup by chapter_id, not just by id', async () => {
+    const supabase = makeSupabase([], null, {}, null, {
+      roleLookupRow: { id: 'role-pledge' },
+    });
+    const service = await buildService(supabase);
+
+    await service.patchConfig(CHAPTER_ID, 'user-1', {
+      default_invite_role_id: 'role-pledge',
+    });
+
+    const rolesBuilder = supabase.from.mock.results.find(
+      (result, index) => supabase.from.mock.calls[index][0] === 'roles',
+    )?.value as { eq: jest.Mock };
+    expect(rolesBuilder.eq).toHaveBeenCalledWith('id', 'role-pledge');
+    expect(rolesBuilder.eq).toHaveBeenCalledWith('chapter_id', CHAPTER_ID);
   });
 
   it('rejects a role id that does not exist with 400', async () => {

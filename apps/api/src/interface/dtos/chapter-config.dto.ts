@@ -240,9 +240,14 @@ export class PatchChapterConfigDto {
 
   /**
    * #422. `null` is an accepted value — it clears the default rather than
-   * meaning "unset", so this uses `@ValidateIf` instead of `@IsOptional()`,
-   * which would strip null out of validation *and* out of the branch in
-   * `patchConfig` that distinguishes "clear it" from "leave it alone".
+   * meaning "unset" — and the property survives `whitelist` either way, so
+   * `patchConfig` can still tell "clear it" from "leave it alone".
+   *
+   * `@ValidateIf` is belt-and-braces rather than load-bearing: `@IsOptional()`
+   * alone already skips validation for both `null` and `undefined`. It is kept
+   * to state the intent at the point of decision, since the null-is-meaningful
+   * contract is the easy thing to break here. A non-null, non-uuid value still
+   * fails, which is what matters.
    *
    * Format-validated as a UUID here; that the role exists and belongs to this
    * chapter is checked in the service, which is the only layer that knows the
