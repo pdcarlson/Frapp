@@ -1,0 +1,12 @@
+{
+  "$comment": "Excuses for scripts/check-doc-refs.mjs — bare docs/ and spec/ references in files OUTSIDE the documentation corpus (source, tests, workflows, migrations, shell). An entry that excuses nothing FAILS the run, so this list self-cleans. Prefer `perFile` over a repo-wide `paths` entry: a dead reference that is deliberate in one file is usually a genuine bug in another.",
+  "prefixes": [],
+  "paths": [],
+  "perFile": [
+    {
+      "file": "supabase/migrations/00000000000000_initial_schema.sql",
+      "path": "spec/architecture.md",
+      "reason": "Migration files are treated as immutable, so a stale header comment is left as shipped — the same call docs/internal/ops/DB_PROMOTION_RUNBOOK.md records for 20260824120000_discord_import.sql (#1409). The content moved to spec/architecture/README.md when spec/architecture.md was split (epic #432); this comment records what the schema was generated from at the time, which is historically accurate."
+    }
+  ]
+}
