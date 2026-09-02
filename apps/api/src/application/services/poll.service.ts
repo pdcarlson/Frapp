@@ -12,6 +12,7 @@ import type { IChatMessageRepository } from '../../domain/repositories/chat.repo
 import { POLL_VOTE_REPOSITORY } from '../../domain/repositories/poll-vote.repository.interface';
 import type { IPollVoteRepository } from '../../domain/repositories/poll-vote.repository.interface';
 import type { ChatMessage } from '../../domain/entities/chat.entity';
+import { SYSTEM_SENDER_ID } from '../../domain/constants/chat';
 import type { PollMetadata } from '../../domain/entities/poll-vote.entity';
 import { ChannelAccessService } from './channel-access.service';
 import { clampListLimit } from '../../domain/constants/list-query-limits';
@@ -335,6 +336,40 @@ export class PollService {
         closed_at: new Date().toISOString(),
         closed_by: userId,
       } satisfies PollMetadata,
+    });
+  }
+
+  /**
+   * Post a `system_audit` notice into the poll's channel announcing that it
+   * expired (#404). Uses `messageRepo.create` directly rather than
+   * `ChatService.sendMessage` — the same reason `notifyInviterOfAcceptance`
+   * and `postWelcomeMessage` bypass it: that path would reject
+   * `SYSTEM_SENDER_ID` as a poster. `push-rules.ts` already suppresses push
+   * for `system_audit`, so this is visible in the channel without paging
+   * anyone — the sweep's caller (`ScheduledJobsService`) is what decides
+   * whether this fires at all, once per poll (dispatch claim).
+   *
+   * Re-checks `closed_at` immediately before posting: the sweep's candidate
+   * list is a point-in-time snapshot, and the creator can manually `close()`
+   * the same poll in the gap between that snapshot and this call. Without
+   * this check a manual close would still get a spurious "has closed" auto
+   * notice — and, because the sweep's dispatch claim is already taken by
+   * then, one nothing could later correct.
+   */
+  async announceExpiry(
+    pollId: string,
+    channelId: string,
+    question: string,
+  ): Promise<void> {
+    const current = await this.messageRepo.findById(pollId);
+    const metadata = current?.metadata as PollMetadata | undefined;
+    if (metadata?.closed_at) return;
+
+    await this.messageRepo.create({
+      channel_id: channelId,
+      sender_id: SYSTEM_SENDER_ID,
+      content: `Poll "${question}" has closed.`,
+      kind: 'system_audit',
     });
   }
 
