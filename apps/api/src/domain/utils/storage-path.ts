@@ -1,5 +1,3 @@
-import { BadRequestException } from '@nestjs/common';
-
 /** The parser treats `%2e` as `.` when deciding what is a dot segment. */
 const PERCENT_DOT = /%2e/gi;
 
@@ -85,12 +83,19 @@ export function isUnsafeStoragePath(path: string): boolean {
   );
 }
 
-/** Throw `BadRequestException` when `path` could escape its prefix or bucket. */
+/**
+ * Throw a plain `Error` when `path` could escape its prefix or bucket.
+ *
+ * Domain-layer code must not depend on the NestJS framework, so this throws a
+ * plain `Error` rather than `BadRequestException` — callers in `application/`
+ * or `infrastructure/` (which may depend on NestJS) are responsible for
+ * translating it into the HTTP-facing exception.
+ */
 export function assertSafeStoragePath(
   path: string,
   message = 'Invalid storage path',
 ): void {
   if (isUnsafeStoragePath(path)) {
-    throw new BadRequestException(message);
+    throw new Error(message);
   }
 }

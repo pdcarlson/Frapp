@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Alert,
   AppState,
@@ -15,7 +15,7 @@ import {
   useCurrentChapter,
   useDeleteAccount,
   useGeofences,
-  useMyPermissions,
+  usePermissionList,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import {
@@ -338,12 +338,7 @@ export default function PreferencesScreen() {
 
   // `can`, never a bare `includes` — an owner's grant is the wildcard `*`, so a
   // membership test would lock out exactly the people this section is for.
-  const { data: permData } = useMyPermissions();
-  const permissions = useMemo(() => {
-    const raw = (permData as { permissions?: unknown } | undefined)
-      ?.permissions;
-    return Array.isArray(raw) ? (raw as string[]) : [];
-  }, [permData]);
+  const permissions = usePermissionList();
   const canSeeChapterAdmin = can("chapter-config:view", permissions);
 
   const chapterQuery = useCurrentChapter();
