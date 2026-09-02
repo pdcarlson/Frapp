@@ -28,6 +28,12 @@ import { useToast } from "@/hooks/use-toast";
 import { InviteMemberDialog } from "@/components/members/invite-member-dialog";
 import { MemberDetailSheet } from "@/components/members/member-detail-sheet";
 import { useNetwork } from "@/lib/providers/network-provider";
+import { AvatarPresenceDot } from "@/components/members/presence-dot";
+import { useChapterPresenceContext } from "@/lib/providers/chapter-presence-provider";
+import {
+  presenceLabel,
+  type PresenceStatus,
+} from "@/lib/realtime/presence-status";
 import { vocab } from "@/lib/vocabulary";
 import { asArray, initials } from "@/lib/utils";
 import { stateMicrocopy } from "@/lib/state-microcopy";
@@ -107,6 +113,11 @@ export function MembersDirectory() {
   const leaderboardQuery = useLeaderboard();
   const orgConfig = useOrgConfig();
   const updateRolesMutation = useUpdateMemberRoles();
+  // Presence is chapter-wide and ephemeral (ADR-02) — it rides the Realtime
+  // socket and touches no table, so this adds no query and no write. The
+  // subscription is owned by the dashboard shell, not by this screen: a member
+  // is present because the app is open, not because they are on this page.
+  const presence = useChapterPresenceContext();
   const usingSearch = deferredQuery.length > 0;
   const activeQuery = usingSearch ? searchQuery : membersQuery;
 
@@ -162,6 +173,11 @@ export function MembersDirectory() {
   }, [membersQuery.data]);
 
   const pointsOf = (member: MemberRow) => pointsByUserId.get(member.user_id) ?? 0;
+  // `null` until presence has resolved for this chapter — the dot renders
+  // nothing rather than claiming Offline, which would be a statement about the
+  // member sourced from our own unfinished join.
+  const presenceStatusOf = (member: MemberRow): PresenceStatus | null =>
+    presence.isReady ? presence.statusOf(member.user_id) : null;
   const primaryRoleName = (member: MemberRow): string => {
     const firstId = Array.isArray(member.role_ids) ? member.role_ids[0] : undefined;
     if (!firstId) return "—";
@@ -569,12 +585,15 @@ export function MembersDirectory() {
                         </TableCell>
                         <TableCell className="font-semibold">
                           <div className="flex items-center gap-3">
-                            <Avatar className="h-8 w-8">
-                              {member.avatar_url ? (
-                                <AvatarImage src={member.avatar_url} alt={name} />
-                              ) : null}
-                              <AvatarFallback>{initials(name)}</AvatarFallback>
-                            </Avatar>
+                            <div className="relative">
+                              <Avatar className="h-8 w-8">
+                                {member.avatar_url ? (
+                                  <AvatarImage src={member.avatar_url} alt={name} />
+                                ) : null}
+                                <AvatarFallback>{initials(name)}</AvatarFallback>
+                              </Avatar>
+                              <AvatarPresenceDot status={presenceStatusOf(member)} />
+                            </div>
                             <div>
                               <span>{name}</span>
                               {member.email ? (
@@ -603,19 +622,41 @@ export function MembersDirectory() {
                 {pageMembers.map((member) => {
                   const id = memberId(member);
                   const name = displayNameOf(member);
+                  const status = presenceStatusOf(member);
                   return (
                     <button
                       key={id}
                       type="button"
                       onClick={() => openMember(id)}
+                      // Named explicitly rather than letting the name be
+                      // assembled from every text node inside. The dot is an
+                      // `img`-role descendant, so it would otherwise prepend
+                      // "Online" to the button's name and silently rename it
+                      // whenever presence changed.
+                      //
+                      // `aria-label` overrides the whole subtree, so it has to
+                      // restate everything the card shows — naming only the
+                      // member and their status would *drop* the role, points
+                      // and join date a screen-reader user gets today. Same
+                      // content, fixed order, status last.
+                      aria-label={[
+                        name,
+                        primaryRoleName(member),
+                        `${pointsOf(member)} points`,
+                        `joined ${formatJoined(member.created_at)}`,
+                        ...(status ? [presenceLabel(status)] : []),
+                      ].join(", ")}
                       className={`flex flex-col items-center gap-2 rounded-lg border border-border p-4 text-center transition-colors hover:bg-accent-subtle ${FOCUS_RING}`}
                     >
-                      <Avatar className="h-14 w-14">
-                        {member.avatar_url ? (
-                          <AvatarImage src={member.avatar_url} alt={name} />
-                        ) : null}
-                        <AvatarFallback>{initials(name)}</AvatarFallback>
-                      </Avatar>
+                      <div className="relative">
+                        <Avatar className="h-14 w-14">
+                          {member.avatar_url ? (
+                            <AvatarImage src={member.avatar_url} alt={name} />
+                          ) : null}
+                          <AvatarFallback>{initials(name)}</AvatarFallback>
+                        </Avatar>
+                        <AvatarPresenceDot status={status} decorative />
+                      </div>
                       <div>
                         <p className="font-semibold">{name}</p>
                         <p className="text-[12.5px] text-muted-foreground">{primaryRoleName(member)}</p>
