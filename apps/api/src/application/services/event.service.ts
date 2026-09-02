@@ -260,6 +260,52 @@ export class EventService {
       throw new BadRequestException('end_time must be after start_time');
     }
 
+    // A role-targeted event must not be broadcast as a chat card. #1463 made
+    // `required_role_ids` gate read access — list, detail, ICS, search and the
+    // event notifications all restrict a targeted event to members holding one
+    // of its roles — but the `kind:"event"` card bypassed all of it: it embeds
+    // name / start / end / location / point_value into a message row that
+    // Realtime fans out to every reader of the channel, so an ineligible
+    // member saw in chat exactly what `GET /v1/events/:id` 404s to hide.
+    // (The activity feed was open the same way and is closed alongside this —
+    // see `ActivityFeedService.eventItems`.)
+    //
+    // Refusing is the only option the current architecture actually supports.
+    // The card is a *snapshot*, not a live window — the renderer reads the
+    // embedded payload and never re-reads the event (its only refetch is the
+    // `events:update`-gated attendance roster, whose holders are exempt from
+    // the role gate anyway; see
+    // `apps/web/components/chat/renderers/event-card.tsx`), so the details are
+    // already in the row before any client-side check could run. Redacting
+    // per viewer would mean the server withholding payload fields per
+    // recipient, which one broadcast row cannot do. And there is no channel to
+    // scope it to instead: channels gate on `required_permissions` (permission
+    // strings), events on `required_role_ids` (RBAC role ids), so "post it
+    // only in a channel gated to these roles" is not expressible.
+    //
+    // This costs no shipped behavior: `/event` cannot set `required_role_ids`
+    // (`dispatchEvent` in `packages/chat-core/src/dispatch.ts` sends no such
+    // key and the parser has no syntax for one), so only a direct
+    // `POST /v1/events` reaches this branch. Thrown before the repo write, so
+    // a refused create leaves no event row behind. An empty array is
+    // untargeted per `spec/behavior/events.md` § `required_role_ids` wire
+    // semantics and is deliberately allowed through.
+    //
+    // Either chat key alone is refused, not just the pair. Neither half posts
+    // a card on its own today (the mismatch is warned about below), but
+    // accepting one piecemeal would make the guard depend on which key a
+    // caller happened to omit.
+    if (
+      (input.required_role_ids?.length ?? 0) > 0 &&
+      (input.channel_id || input.client_message_id)
+    ) {
+      throw new BadRequestException(
+        'A role-targeted event cannot post a chat card: the card would show the ' +
+          'event to everyone in the channel, including members its ' +
+          'required_role_ids exclude. Create it without channel_id/client_message_id.',
+      );
+    }
+
     const parent = await this.eventRepo.create({
       chapter_id: input.chapter_id,
       name: input.name,
@@ -468,6 +514,11 @@ export class EventService {
    * attendance query (the chat message row is never mutated). Posts as the
    * creator into the channel they ran the command from; channel access is
    * re-checked by `ChatService.sendMessage`.
+   *
+   * Only ever reached for an **untargeted** event: `create` rejects a
+   * role-targeted event that asks for a card before writing the row, because
+   * this payload is broadcast to every reader of the channel and would bypass
+   * the `required_role_ids` read gate #1463 installed.
    */
   private async postEventCard(
     input: CreateEventInput,

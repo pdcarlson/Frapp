@@ -944,6 +944,80 @@ describe('EventService', () => {
 
       expect(result).toEqual(baseEvent);
     });
+
+    // #1469: the card is broadcast to every reader of the channel, so it would
+    // show an ineligible member exactly what #1463 made `GET /v1/events/:id`
+    // 404 to hide. Refused before the write, so no event row is orphaned.
+    describe('role-targeted events (#1469)', () => {
+      it('refuses to create a role-targeted event that asks for a card', async () => {
+        await expect(
+          service.create({ ...chatInput, required_role_ids: ['role-officer'] }),
+        ).rejects.toThrow(BadRequestException);
+
+        expect(mockEventRepo.create).not.toHaveBeenCalled();
+        expect(mockChatService.sendMessage).not.toHaveBeenCalled();
+      });
+
+      // Neither half posts a card on its own today, but accepting the pair
+      // piecemeal would make the guard depend on which key a caller omitted.
+      // `it.each` rather than a loop so a regression on one key names that key
+      // instead of aborting the other case.
+      it.each([
+        ['channel_id only', { channel_id: 'chan-1' }],
+        ['client_message_id only', { client_message_id: 'cmid-1' }],
+      ])('refuses a role-targeted event with %s', async (_label, chatKeys) => {
+        await expect(
+          service.create({
+            chapter_id: 'ch-1',
+            name: 'Exec Review',
+            start_time: baseEvent.start_time,
+            end_time: baseEvent.end_time,
+            created_by: 'user-1',
+            required_role_ids: ['role-officer'],
+            ...chatKeys,
+          }),
+        ).rejects.toThrow(BadRequestException);
+
+        expect(mockEventRepo.create).not.toHaveBeenCalled();
+        expect(mockChatService.sendMessage).not.toHaveBeenCalled();
+      });
+
+      it('still posts a card when required_role_ids is an empty array', async () => {
+        // `[]` is untargeted per the spec's wire semantics, so it must not be
+        // caught by a truthiness check on the array itself.
+        mockEventRepo.create.mockResolvedValue(baseEvent);
+        mockUserRepo.findByIds.mockResolvedValue([
+          { id: 'user-1', display_name: 'Alice' },
+        ]);
+
+        await service.create({ ...chatInput, required_role_ids: [] });
+
+        expect(mockChatService.sendMessage).toHaveBeenCalledTimes(1);
+      });
+
+      it('still creates a role-targeted event with no card requested', async () => {
+        // The dashboard path — role targeting is a supported feature; only the
+        // broadcast surface is refused. The stub must return a *targeted* row:
+        // `create` feeds the returned row's `required_role_ids` into
+        // `notifyEligibleMembers`, so resolving the untargeted `baseEvent`
+        // here would silently exercise the chapter-wide notification branch.
+        mockEventRepo.create.mockResolvedValue({
+          ...baseEvent,
+          required_role_ids: ['role-officer'],
+        });
+
+        await service.create({
+          chapter_id: 'ch-1',
+          name: 'Exec Review',
+          start_time: baseEvent.start_time,
+          end_time: baseEvent.end_time,
+          required_role_ids: ['role-officer'],
+        });
+
+        expect(mockEventRepo.create).toHaveBeenCalledTimes(1);
+        expect(mockChatService.sendMessage).not.toHaveBeenCalled();
+      });
+    });
   });
 
   describe('recurring series lifecycle', () => {
