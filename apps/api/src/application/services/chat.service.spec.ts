@@ -67,6 +67,8 @@ describe('ChatService', () => {
   let mockChatNotificationPrefs: {
     findChannelPreferencesForUser: jest.Mock;
     upsertChannelLevel: jest.Mock;
+    findKindPreferencesForUser: jest.Mock;
+    upsertKindLevel: jest.Mock;
   };
   let mockChannelCache: {
     get: jest.Mock;
@@ -218,6 +220,8 @@ describe('ChatService', () => {
     mockChatNotificationPrefs = {
       findChannelPreferencesForUser: jest.fn().mockResolvedValue([]),
       upsertChannelLevel: jest.fn(),
+      findKindPreferencesForUser: jest.fn().mockResolvedValue([]),
+      upsertKindLevel: jest.fn(),
     };
 
     mockChannelCache = {
@@ -2445,6 +2449,153 @@ describe('ChatService', () => {
       await expect(
         service.getChannelNotificationPreferences('ch-1', 'user-1'),
       ).resolves.toEqual([]);
+    });
+  });
+
+  // ── Per-kind notification level (#500) ───────────────────────────────
+
+  describe('setKindNotificationLevel', () => {
+    it('upserts the level for the caller and the given kind', async () => {
+      mockChatNotificationPrefs.upsertKindLevel.mockResolvedValue({
+        user_id: 'user-1',
+        chapter_id: 'ch-1',
+        scope: 'kind',
+        scope_id: null,
+        scope_kind: 'system_audit',
+        level: 'all',
+      });
+
+      const result = await service.setKindNotificationLevel(
+        'ch-1',
+        'user-1',
+        'system_audit',
+        'all',
+      );
+
+      expect(mockChatNotificationPrefs.upsertKindLevel).toHaveBeenCalledWith(
+        'user-1',
+        'ch-1',
+        'system_audit',
+        'all',
+      );
+      expect(result).toEqual({ kind: 'system_audit', level: 'all' });
+    });
+
+    /**
+     * `imported` is refused specifically, not merely absent from the list.
+     * `ChatPushWorkerService.handleMessage` returns on that kind before it
+     * loads the roster and `decidePush` refuses it ahead of the mention
+     * override, so a stored row could never be consulted — accepting the
+     * write would persist a setting that silently does nothing.
+     */
+    it('refuses `imported`, the one kind with no opt-in', async () => {
+      await expect(
+        service.setKindNotificationLevel('ch-1', 'user-1', 'imported', 'all'),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(mockChatNotificationPrefs.upsertKindLevel).not.toHaveBeenCalled();
+    });
+
+    /**
+     * `chat_messages.kind` carries no CHECK constraint (it is `text not null
+     * default 'text'`), so without this guard the database would happily
+     * store a preference for an invented kind that matches no message ever.
+     */
+    it('refuses a kind that is not a known chat message kind', async () => {
+      await expect(
+        service.setKindNotificationLevel(
+          'ch-1',
+          'user-1',
+          'sytsem_audit',
+          'off',
+        ),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(mockChatNotificationPrefs.upsertKindLevel).not.toHaveBeenCalled();
+    });
+
+    it('keys the row on the authenticated user, never a caller-supplied id', async () => {
+      mockChatNotificationPrefs.upsertKindLevel.mockResolvedValue({
+        user_id: 'user-1',
+        chapter_id: 'ch-1',
+        scope: 'kind',
+        scope_id: null,
+        scope_kind: 'poll',
+        level: 'off',
+      });
+
+      await service.setKindNotificationLevel('ch-1', 'user-1', 'poll', 'off');
+
+      const [userIdArg] =
+        mockChatNotificationPrefs.upsertKindLevel.mock.calls[0];
+      expect(userIdArg).toBe('user-1');
+    });
+  });
+
+  describe('getKindNotificationPreferences', () => {
+    it('returns every settable kind, stored level or worker default', async () => {
+      mockChatNotificationPrefs.findKindPreferencesForUser.mockResolvedValue([
+        {
+          user_id: 'user-1',
+          chapter_id: 'ch-1',
+          scope: 'kind',
+          scope_id: null,
+          scope_kind: 'poll',
+          level: 'off',
+        },
+      ]);
+
+      const result = await service.getKindNotificationPreferences(
+        'ch-1',
+        'user-1',
+      );
+
+      // The stored row wins for its kind.
+      expect(result).toContainEqual({ kind: 'poll', level: 'off' });
+      // `system_audit` defaults to `off` per the worker's own rule.
+      expect(result).toContainEqual({ kind: 'system_audit', level: 'off' });
+      // An ordinary kind with no stored row falls back to `mentions`.
+      expect(result).toContainEqual({ kind: 'text', level: 'mentions' });
+    });
+
+    /**
+     * The response must never present `imported` as changeable — its `off` is
+     * absolute, and listing it would imply a control that does nothing.
+     */
+    it('never lists `imported`', async () => {
+      const result = await service.getKindNotificationPreferences(
+        'ch-1',
+        'user-1',
+      );
+
+      expect(result.some((r) => r.kind === 'imported')).toBe(false);
+    });
+
+    /**
+     * Defaults are read through the worker's own `defaultLevelFor` rather than
+     * restated here, so the endpoint cannot drift from what the worker will
+     * actually do. A kind preference is chapter-wide, so the empty channel
+     * name deliberately selects the kind-driven arms only — a channel named
+     * `announcements` must not colour a chapter-wide kind default.
+     */
+    it('does not let channel-name defaults leak into kind defaults', async () => {
+      const result = await service.getKindNotificationPreferences(
+        'ch-1',
+        'user-1',
+      );
+
+      const announcement = result.find((r) => r.kind === 'announcement');
+      expect(announcement).toEqual({ kind: 'announcement', level: 'mentions' });
+    });
+
+    it('surfaces a repository failure rather than reporting every kind as default', async () => {
+      mockChatNotificationPrefs.findKindPreferencesForUser.mockRejectedValue(
+        new Error('db down'),
+      );
+
+      await expect(
+        service.getKindNotificationPreferences('ch-1', 'user-1'),
+      ).rejects.toThrow('db down');
     });
   });
 

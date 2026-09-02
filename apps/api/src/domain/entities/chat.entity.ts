@@ -33,7 +33,8 @@ export type ChatMessageKind = (typeof CHAT_MESSAGE_KINDS)[number];
  * that silently does nothing — the dead-control failure the same spec rejects
  * for the `announcements` category.
  */
-export const NON_SETTABLE_NOTIFICATION_KIND = 'imported' satisfies ChatMessageKind;
+export const NON_SETTABLE_NOTIFICATION_KIND =
+  'imported' satisfies ChatMessageKind;
 
 /**
  * Kinds a member may set a per-kind notification level for.
@@ -46,10 +47,7 @@ export const NON_SETTABLE_NOTIFICATION_KIND = 'imported' satisfies ChatMessageKi
  */
 export const SETTABLE_NOTIFICATION_KINDS = CHAT_MESSAGE_KINDS.filter(
   (kind) => kind !== NON_SETTABLE_NOTIFICATION_KIND,
-) as readonly Exclude<
-  ChatMessageKind,
-  typeof NON_SETTABLE_NOTIFICATION_KIND
->[];
+) as readonly Exclude<ChatMessageKind, typeof NON_SETTABLE_NOTIFICATION_KIND>[];
 
 export type SettableNotificationKind =
   (typeof SETTABLE_NOTIFICATION_KINDS)[number];

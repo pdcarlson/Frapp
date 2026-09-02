@@ -378,7 +378,7 @@ export class KindNotificationPreferenceDto {
   @ApiProperty({
     enum: SETTABLE_NOTIFICATION_KINDS,
     description:
-      "A `chat_messages.kind`. `imported` is absent by design — the push worker refuses that kind before any preference is read, so it is not settable.",
+      'A `chat_messages.kind`. `imported` is absent by design — the push worker refuses that kind before any preference is read, so it is not settable.',
   })
   kind: SettableNotificationKind;
 
