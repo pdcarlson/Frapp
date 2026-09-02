@@ -92,7 +92,7 @@ Every protected endpoint runs through a consistent guard chain:
   - A null `past_due_since` is treated as within grace (safe default; the billing webhook re-establishes the clock).
 - **`canceled`** — hard read-only lock for every write (`chapter.subscription.canceled`, 403), even `@FreeTier()`.
 
-Both hard locks are scoped to the **guarded surface**. Two sets of routes survive them by design: `@SubscriptionExempt()` ones (below), so a lapsed chapter can still pay its way back; and routes that declare no `ChapterGuard` at all — `POST /invites/redeem`, `PATCH /notifications/preferences`, `POST /analytics/events` — which were never subscription-gated. Whether redeem _should_ be is the open question in #1546.
+Both hard locks are scoped to the **guarded surface**. Two sets of routes survive them by design: `@SubscriptionExempt()` ones (below), so a lapsed chapter can still pay its way back; and routes that declare no `ChapterGuard` at all — among them `POST /v1/invites/redeem`, `PATCH /v1/notifications/preferences`, `POST /v1/analytics/events` — which were never subscription-gated. Whether redeem _should_ be is the open question in #1546.
 
 Route markers live in `src/interface/decorators/subscription.decorator.ts`: `@FreeTier()` (free wedge), `@GraceBlocked()` (free-tier route that must still be blocked during `past_due`, e.g. invite create), and `@SubscriptionExempt()` (bypass entirely, e.g. billing recovery endpoints). The `past_due_since` clock is set/cleared on Stripe webhook transitions in `BillingService` (set only on the into-`past_due` transition, so repeated events don't reset it; cleared on recovery).
 
