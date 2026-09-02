@@ -57,4 +57,33 @@ describe('SupabaseBackworkProfessorRepository — tenant scope', () => {
 
     expect(professor?.id).toBe(PROF_B);
   });
+
+  it('findById resolves to null for an id belonging to another chapter', async () => {
+    const found = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findById(PROF_A, CHAPTER_B),
+    );
+
+    expect(found).toBeNull();
+  });
+
+  it('update refuses an id belonging to another chapter', async () => {
+    const updated = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.update(PROF_A, CHAPTER_B, { name: 'Renamed' }),
+    );
+
+    expect(updated).toBeNull();
+    expect(
+      harness.rows('backwork_professors').find((p) => p.id === PROF_A)?.name,
+    ).toBe('Dr. Rivera');
+  });
+
+  it('delete refuses an id belonging to another chapter', async () => {
+    await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.delete(PROF_A, CHAPTER_B),
+    );
+
+    expect(
+      harness.rows('backwork_professors').some((p) => p.id === PROF_A),
+    ).toBe(true);
+  });
 });

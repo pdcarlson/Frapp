@@ -1,8 +1,10 @@
 "use client";
 
-import { Loader2, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { Loader2, Pencil, Trash2 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import { CHIP, CHIP_HIT_AREA } from "./chip";
 import { PinGlyph, ThreadGlyph } from "./chat-glyphs";
 import { ReactionChips, ReactionQuickPick } from "./reaction-bar";
@@ -39,6 +41,18 @@ export interface MessageItemProps {
   onOpenThread?: (message: ChatMessage) => void;
   onRetry?: (clientMessageId: string) => void;
   onDiscard?: (clientMessageId: string) => void;
+  /**
+   * Own messages only, and only the plain-text bubble kind — a card
+   * (poll, task, event…) has no free-text `content` a member typed, so
+   * there's nothing sensible to edit. Rejects on failure; the row stays in
+   * edit mode so the draft isn't lost (the rejection itself already raised
+   * a toast, from inside the action this callback wraps).
+   */
+  onEdit?: (messageId: string, content: string) => Promise<void>;
+  /** Own message, or any message when the viewer holds `channels:manage`. */
+  onDelete?: (messageId: string) => void;
+  /** Gates the Delete affordance on messages that aren't the viewer's own. */
+  canManageChannel?: boolean;
   /** Card action invoker (Vote, RSVP, …). Required for kinds like `poll`. */
   onAct?: (
     messageId: string,
@@ -89,6 +103,9 @@ export function MessageItem({
   onRetry,
   onDiscard,
   onAct,
+  onEdit,
+  onDelete,
+  canManageChannel,
   isTapRevealed,
   onToggleTapReveal,
 }: MessageItemProps) {
@@ -112,6 +129,60 @@ export function MessageItem({
   const isConfirmed = message._status === "confirmed";
   const selfBubble = isMine && rendersAsBubble(message);
   const showActions = !message.is_deleted && isConfirmed;
+  // Edit is server-enforced own-only (no `channels:manage` override, unlike
+  // delete) and only makes sense for the plain-text bubble kind — `selfBubble`
+  // already encodes both halves of that.
+  const canEdit = selfBubble && !!onEdit;
+  const canDelete = (isMine || !!canManageChannel) && !!onDelete;
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState(message.content);
+  const [editDirty, setEditDirty] = useState(false);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  // A row is not remounted by a content update — it's the same component
+  // instance, keyed by id (`message-timeline.tsx`) — so an untouched-but-open
+  // editor would otherwise keep showing what `message.content` was *when Edit
+  // was clicked*, not what it is now. Only auto-refreshes while nothing has
+  // been typed yet (`!editDirty`): the same viewer editing this message from a
+  // second tab is the only way `content` can change while it's their own open
+  // editor (edit is own-message-only), and once they've actually started
+  // typing here, syncing out from under them would be its own kind of data
+  // loss.
+  if (isEditing && !editDirty && editValue !== message.content) {
+    setEditValue(message.content);
+  }
+  // Someone else with `channels:manage` (or the sender from another tab) can
+  // delete this message out from under an editor that's already open — the
+  // server correctly rejects a save against a deleted message, but the row
+  // should not sit there still showing a stale, now-pointless draft form.
+  if (isEditing && message.is_deleted) {
+    setIsEditing(false);
+  }
+
+  function startEdit() {
+    setEditValue(message.content);
+    setEditDirty(false);
+    setIsEditing(true);
+  }
+
+  function cancelEdit() {
+    setIsEditing(false);
+  }
+
+  async function saveEdit() {
+    const trimmed = editValue.trim();
+    if (trimmed.length === 0 || !onEdit) return;
+    setIsSavingEdit(true);
+    try {
+      await onEdit(message.id, trimmed);
+      setIsEditing(false);
+    } catch {
+      // The action already toasted; stay in edit mode so the draft survives.
+    } finally {
+      setIsSavingEdit(false);
+    }
+  }
 
   /*
    * Tap-to-reveal, for the pointer the hover/focus-within reveal below cannot
@@ -148,7 +219,7 @@ export function MessageItem({
    *   is actually anchored inside this row's own subtree gets both right.
    */
   function handleRowTap(event: React.MouseEvent<HTMLDivElement>) {
-    if (!showActions) return;
+    if (!showActions || isEditing) return;
     if (
       event.target instanceof Element &&
       event.target.closest("button, a, input, textarea, select, [role='button']")
@@ -192,7 +263,13 @@ export function MessageItem({
     </>
   );
 
-  const reactions = (
+  // Deleted content has nothing left to react to. Reaction rows for a message
+  // are never deleted server-side (only the message's own content/metadata
+  // are), so without this a deleted row would keep showing its old chips as
+  // still-live react/unreact targets — the Delete button added here is the
+  // first UI path that can set `is_deleted` on a message a viewer is looking
+  // at without a reload, so this case was unreachable before.
+  const reactions = message.is_deleted ? null : (
     <ReactionChips
       reactions={message.reactions}
       viewerId={viewerId}
@@ -224,7 +301,7 @@ export function MessageItem({
    * left the cluster genuinely unreachable there (#1193) — `isTapRevealed`
    * below is the third way in, driven by `handleRowTap`.
    */
-  const actions = showActions ? (
+  const actions = showActions && !isEditing ? (
     <div
       className={cn(
         "absolute top-0 z-10 flex items-center gap-1.5 rounded-sm bg-background p-1",
@@ -259,8 +336,74 @@ export function MessageItem({
           Reply
         </button>
       ) : null}
+      {canEdit ? (
+        <button
+          type="button"
+          className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA, "gap-1")}
+          onClick={startEdit}
+        >
+          <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+          Edit
+        </button>
+      ) : null}
+      {canDelete ? (
+        <button
+          type="button"
+          className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA, "gap-1")}
+          onClick={() => onDelete?.(message.id)}
+        >
+          <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+          Delete
+        </button>
+      ) : null}
     </div>
   ) : null;
+
+  const editForm = (
+    <div className="flex w-full flex-col gap-1.5 rounded-lg border border-border bg-card p-2">
+      <Textarea
+        autoFocus
+        value={editValue}
+        onChange={(event) => {
+          setEditValue(event.target.value);
+          setEditDirty(true);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            cancelEdit();
+          }
+          if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            void saveEdit();
+          }
+        }}
+        disabled={isSavingEdit}
+        className="min-h-[60px] resize-none"
+      />
+      <div className="flex items-center justify-end gap-1.5">
+        <button
+          type="button"
+          className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA)}
+          onClick={cancelEdit}
+          disabled={isSavingEdit}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA, "gap-1")}
+          onClick={() => void saveEdit()}
+          disabled={isSavingEdit || editValue.trim().length === 0}
+        >
+          {isSavingEdit ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+          ) : null}
+          Save
+        </button>
+      </div>
+    </div>
+  );
 
   if (selfBubble) {
     return (
@@ -274,7 +417,7 @@ export function MessageItem({
         onClick={handleRowTap}
       >
         <div className="flex max-w-[86%] flex-col items-end">
-          {renderer}
+          {isEditing ? editForm : renderer}
           {reactions}
           {actions}
           {/*

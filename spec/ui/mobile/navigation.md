@@ -118,3 +118,14 @@ exists.
 can import the shared catalog instead of the slim local copy #1102 shipped while
 this file was frozen. That is the same integrator carve-out as `@repo/chat-core`
 and `expo-notifications`. The other six hotspots stay frozen.
+
+**`package.json` and `app.json` gained `expo-document-picker` and `expo-image-picker`**
+(#1045) — the dependency-declaration half of the fix for three drawn-but-unbuildable
+affordances (s21 upload, s15 avatar photo, s20 proof attachment), none of which had a way
+to pick a file off the device. `expo-image-picker` needed a config-plugin entry (a
+`photosPermission` string, camera and microphone permissions declined since this app
+already asks for camera access separately for check-in scanning and image-picker's own
+camera capture is not used); `expo-document-picker`'s plugin only touches iCloud
+entitlements behind `ios.usesIcloudStorage`, which this app does not set, so it needs no
+`plugins` entry. Same integrator carve-out as the rest of this section — the three
+surfaces themselves are still unbuilt and land as their own slices.

@@ -246,6 +246,111 @@ export class BackworkService {
     return this.professorRepo.findByChapter(chapterId);
   }
 
+  async updateProfessor(
+    id: string,
+    chapterId: string,
+    data: { name?: string },
+  ): Promise<BackworkProfessor> {
+    const updated = await this.professorRepo.update(id, chapterId, data);
+    if (!updated) {
+      throw new NotFoundException('Professor not found');
+    }
+    return updated;
+  }
+
+  /**
+   * Deletes a department, or a professor when `entity: 'professor'`. Blocks
+   * with a 400 (rather than orphaning the taxonomy on every resource that
+   * still references it, which the FK's `on delete set null` would otherwise
+   * do silently) while any resource is still tagged with it — `mergeXxx`
+   * below is the guided path to clear that first.
+   */
+  async deleteDepartment(id: string, chapterId: string): Promise<void> {
+    const existing = await this.departmentRepo.findById(id, chapterId);
+    if (!existing) {
+      throw new NotFoundException('Department not found');
+    }
+    const referenced = await this.resourceRepo.countByDepartment(chapterId, id);
+    if (referenced > 0) {
+      throw new BadRequestException(
+        `Cannot delete: ${referenced} resource(s) still reference this department. Merge it into another department first.`,
+      );
+    }
+    await this.departmentRepo.delete(id, chapterId);
+  }
+
+  async deleteProfessor(id: string, chapterId: string): Promise<void> {
+    const existing = await this.professorRepo.findById(id, chapterId);
+    if (!existing) {
+      throw new NotFoundException('Professor not found');
+    }
+    const referenced = await this.resourceRepo.countByProfessor(chapterId, id);
+    if (referenced > 0) {
+      throw new BadRequestException(
+        `Cannot delete: ${referenced} resource(s) still reference this professor. Merge it into another professor first.`,
+      );
+    }
+    await this.professorRepo.delete(id, chapterId);
+  }
+
+  /**
+   * Merges a duplicate department into another: every resource tagged
+   * `sourceId` is reassigned to `targetId`, then `sourceId` is deleted. Not
+   * wrapped in a DB transaction — the reassign-then-delete order means the
+   * only failure window is a resource created between the two calls, which
+   * the FK's `on delete set null` degrades to a blank (not orphaned/broken)
+   * department field on that one row, self-healing on the next re-tag. Lower
+   * risk than the ledger-touching operations elsewhere in this codebase that
+   * do need atomic RPCs.
+   */
+  async mergeDepartments(
+    sourceId: string,
+    targetId: string,
+    chapterId: string,
+  ): Promise<{ reassigned: number }> {
+    if (sourceId === targetId) {
+      throw new BadRequestException('Cannot merge a department into itself');
+    }
+    const [source, target] = await Promise.all([
+      this.departmentRepo.findById(sourceId, chapterId),
+      this.departmentRepo.findById(targetId, chapterId),
+    ]);
+    if (!source || !target) {
+      throw new NotFoundException('Department not found');
+    }
+    const reassigned = await this.resourceRepo.reassignDepartment(
+      chapterId,
+      sourceId,
+      targetId,
+    );
+    await this.departmentRepo.delete(sourceId, chapterId);
+    return { reassigned };
+  }
+
+  async mergeProfessors(
+    sourceId: string,
+    targetId: string,
+    chapterId: string,
+  ): Promise<{ reassigned: number }> {
+    if (sourceId === targetId) {
+      throw new BadRequestException('Cannot merge a professor into itself');
+    }
+    const [source, target] = await Promise.all([
+      this.professorRepo.findById(sourceId, chapterId),
+      this.professorRepo.findById(targetId, chapterId),
+    ]);
+    if (!source || !target) {
+      throw new NotFoundException('Professor not found');
+    }
+    const reassigned = await this.resourceRepo.reassignProfessor(
+      chapterId,
+      sourceId,
+      targetId,
+    );
+    await this.professorRepo.delete(sourceId, chapterId);
+    return { reassigned };
+  }
+
   private async resolveOrCreateDepartment(
     chapterId: string,
     code: string,
