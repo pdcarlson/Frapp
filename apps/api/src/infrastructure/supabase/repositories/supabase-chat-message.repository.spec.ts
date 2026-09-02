@@ -48,6 +48,7 @@ const message = (
   chapterId: string,
   authorAvatarPath: string | null = null,
   type: string = 'POLL',
+  metadata: Record<string, unknown> = { expires_at: null },
 ) => ({
   id,
   channel_id: channelId,
@@ -55,7 +56,7 @@ const message = (
   content: 'Are you coming to formal?',
   type,
   reply_to_id: null,
-  metadata: { expires_at: null },
+  metadata,
   is_pinned: false,
   pinned_at: null,
   edited_at: null,
@@ -75,6 +76,13 @@ const SHARED_AVATAR_B =
 const WITH_SHARED_AVATAR_1 = '0b000000-0000-4000-8000-000000000162';
 const WITH_SHARED_AVATAR_2 = '0b000000-0000-4000-8000-000000000163';
 const WITHOUT_AVATAR = '0b000000-0000-4000-8000-000000000164';
+
+// `active` filter fixtures (#379), in CHANNEL_A2 — a channel no other test
+// queries `findPollsByChapter` against, so these can't perturb the CHAPTER_B
+// assertions elsewhere in this file.
+const POLL_A_OPEN = '0a000000-0000-4000-8000-000000000171';
+const POLL_A_CLOSED_EARLY = '0a000000-0000-4000-8000-000000000172';
+const POLL_A_EXPIRED = '0a000000-0000-4000-8000-000000000173';
 
 const seed = () => ({
   chat_channels: [
@@ -101,6 +109,19 @@ const seed = () => ({
       'TEXT',
     ),
     message(WITHOUT_AVATAR, CHANNEL_B2, CHAPTER_B, null, 'TEXT'),
+    message(POLL_A_OPEN, CHANNEL_A2, CHAPTER_A, null, 'POLL', {
+      expires_at: null,
+    }),
+    // Manually closed well before its (still-future) deadline — the case the
+    // old expires_at-only SQL filter couldn't see.
+    message(POLL_A_CLOSED_EARLY, CHANNEL_A2, CHAPTER_A, null, 'POLL', {
+      expires_at: '2099-01-01T00:00:00.000Z',
+      closed_at: '2026-01-01T00:00:00.000Z',
+      closed_by: USER_SHARED,
+    }),
+    message(POLL_A_EXPIRED, CHANNEL_A2, CHAPTER_A, null, 'POLL', {
+      expires_at: '2020-01-01T00:00:00.000Z',
+    }),
   ],
 });
 
@@ -129,6 +150,26 @@ describe('SupabaseChatMessageRepository — tenant scope', () => {
     expect(
       harness.ops[0].filters.map((f) => [f.column, f.value]),
     ).toContainEqual(['chat_channels.chapter_id', CHAPTER_B]);
+  });
+
+  it('findPollsByChapter active=true excludes a manually closed poll even with a future expires_at (#379)', async () => {
+    const polls = await repo.findPollsByChapter(CHAPTER_A, {
+      channelId: CHANNEL_A2,
+      active: true,
+    });
+
+    expect(polls.map((p) => p.id)).toEqual([POLL_A_OPEN]);
+  });
+
+  it('findPollsByChapter active=false includes a manually closed poll even with a future expires_at, alongside an expired one (#379)', async () => {
+    const polls = await repo.findPollsByChapter(CHAPTER_A, {
+      channelId: CHANNEL_A2,
+      active: false,
+    });
+
+    expect(polls.map((p) => p.id).sort()).toEqual(
+      [POLL_A_CLOSED_EARLY, POLL_A_EXPIRED].sort(),
+    );
   });
 
   it('findPollsByChapter keeps the chapter filter when narrowed to a channel', async () => {

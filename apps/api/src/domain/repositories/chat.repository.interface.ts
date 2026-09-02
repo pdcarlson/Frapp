@@ -100,7 +100,8 @@ export interface IChatMessageRepository {
    * Optional `channelId` scopes to a single channel. `limit` caps result size
    * (undefined, non-finite, or non-positive values use the shared list default;
    * finite positive values are clamped to the shared list min/max in the repo).
-   * When `active` is set, expiration is enforced in SQL (via `metadata.expires_at`)
+   * When `active` is set, closure is enforced in SQL (via `metadata.expires_at`
+   * and `metadata.closed_at` — a poll is inactive once either fires, #379)
    * so `limit` applies after that filter, not before.
    */
   findPollsByChapter(
