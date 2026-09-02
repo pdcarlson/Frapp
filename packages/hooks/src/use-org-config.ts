@@ -10,7 +10,12 @@ import {
 import { useFrappClient, useActiveChapterId } from "./use-frapp-client";
 import type { components } from "@repo/api-sdk";
 import { isModuleEnabled } from "@repo/validation";
-import type { ChapterDuesConfig, PatchChapterConfig } from "@repo/validation";
+import { CHAPTER_POINTS_CONFIG_DEFAULTS } from "@repo/validation";
+import type {
+  ChapterDuesConfig,
+  ChapterPointsConfig,
+  PatchChapterConfig,
+} from "@repo/validation";
 
 /** A workflow row in the merged config: catalog presentation + chapter state. */
 export interface OrgWorkflow {
@@ -28,6 +33,24 @@ export interface OrgWorkflow {
 export type OrgDues = ChapterDuesConfig;
 
 /**
+ * The singleton points anti-fraud policy returned by
+ * `GET /chapters/:id/config` (#394). Same sourcing rationale as `OrgDues`.
+ */
+export type OrgPoints = ChapterPointsConfig;
+
+/**
+ * What `GET /chapters/:id/config` reports when a chapter has no
+ * `chapter_points_config` row, so a surface can render the active limits
+ * before the config query resolves without inventing its own numbers.
+ *
+ * Re-exported from `@repo/validation`, which the API reads for the same
+ * defaults — a hand-copied number here would compile forever while the
+ * server's moved, and the dashboard would state an anti-fraud limit nobody
+ * enforces.
+ */
+export const ORG_POINTS_DEFAULTS: OrgPoints = CHAPTER_POINTS_CONFIG_DEFAULTS;
+
+/**
  * Merged chapter config returned by `GET /chapters/:id/config` (archetype
  * defaults overlaid with per-chapter overrides). Known fields are typed; the
  * index signature keeps it forward-compatible with fields added server-side.
@@ -41,6 +64,7 @@ export interface OrgConfig {
   beta_config?: Record<string, unknown>;
   workflows?: OrgWorkflow[];
   dues?: OrgDues;
+  points?: OrgPoints;
   /** When true, this chapter has opted out of pseudonymous product analytics. */
   analytics_opt_out?: boolean;
   [key: string]: unknown;
