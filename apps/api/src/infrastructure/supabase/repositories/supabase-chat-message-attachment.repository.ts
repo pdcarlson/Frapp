@@ -109,8 +109,12 @@ export class SupabaseChatMessageAttachmentRepository implements IChatMessageAtta
     //    answer and be read as unreferenced. `.limit(1)` per path cannot be
     //    truncated into a wrong answer.
     //
-    // `MAX_ATTACHMENTS_PER_MESSAGE` is 10 and message deletion is rare, so the
-    // ceiling is ten small indexed probes on one delete.
+    // The cost is real and accepted, not waved away: there is no index on
+    // `(bucket, storage_path)` — the unique index leads with `message_id` — so
+    // each probe is a scan, and this trades one scan for up to
+    // `MAX_ATTACHMENTS_PER_MESSAGE` (10) of them. Message deletion is rare and
+    // a wrong answer here destroys a live file, so correctness wins; add the
+    // index if delete latency ever shows up.
     const seen = new Set<string>();
     const shared: { bucket: string; storage_path: string }[] = [];
 

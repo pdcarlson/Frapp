@@ -2107,21 +2107,6 @@ describe('ChatService', () => {
         expect(mockMessageRepo.update).toHaveBeenCalled();
       });
 
-      it('keeps nothing back once every sharing message is deleted', async () => {
-        // The guard counts only UNDELETED messages. Filtering on message_id
-        // alone would let two deleted messages spare each other's object
-        // forever — the leak this fix exists to close, dressed as a guard.
-        // Here the sibling is already deleted, so the repo reports no sharer.
-        mockAttachmentRepo.findByMessage.mockResolvedValue([uploaded]);
-        mockAttachmentRepo.findSharedObjects.mockResolvedValue([]);
-
-        await service.deleteMessage('msg-1', 'ch-1', 'user-1', false);
-
-        expect(mockStorageProvider.deleteFiles).toHaveBeenCalledWith('chat', [
-          uploaded.storage_path,
-        ]);
-      });
-
       it('keeps every object when the shared-object check fails', async () => {
         // Fail closed: an unanswerable "is this shared?" must not read as
         // "no". Keeping an orphan costs storage; guessing wrong destroys a

@@ -204,10 +204,19 @@ describe('SupabaseChatMessageAttachmentRepository — tenant scope', () => {
  * identical media, and every reference resolves to the one object.
  *
  * Not wrapped in `assertScoped`: this read is deliberately cross-chapter. The
- * question is "does anything anywhere still point at these bytes", and a
- * chapter-scoped answer could only ever be falsely negative — the direction
+ * question is "does another undeleted message still point at these bytes", and
+ * a chapter-scoped answer could only ever be falsely negative — the direction
  * that deletes a live file. It returns no tenant data; every path it can return
  * was supplied by the caller.
+ *
+ * **Not covered here, and worth knowing:** the harness evaluates the dotted
+ * embed filter (`chat_messages.is_deleted`) but records the `select()` string
+ * without parsing it, so the `!inner` token itself has no coverage. Against
+ * real PostgREST, dropping `!inner` turns the embed filter into a non-filter
+ * and every already-deleted message starts sparing objects again — the leak
+ * these tests exist to pin. That is query shape, and it belongs to the
+ * live-PostgREST integration suite, exactly as the sibling `findByMessage`
+ * block above already notes for its own embed.
  */
 describe('SupabaseChatMessageAttachmentRepository — findSharedObjects', () => {
   const CHANNEL = '0a000000-0000-4000-8000-000000000190';
@@ -320,9 +329,8 @@ describe('SupabaseChatMessageAttachmentRepository — findSharedObjects', () => 
   });
 
   it('matches on bucket as well as path', async () => {
-    // The query filters on `storage_path` alone (PostgREST has no tuple IN),
-    // so the bucket half is applied in memory. Same path, wrong bucket must
-    // not read as shared, or a `chat` object would be spared by a
+    // Both halves are now `.eq()` filters in the query. Same path, wrong
+    // bucket must not read as shared, or a `chat` object would be spared by a
     // `chat-archive` row.
     const shared = await repo.findSharedObjects(
       [{ bucket: 'chat', storage_path: SHARED_PATH }],
