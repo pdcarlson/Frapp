@@ -34,28 +34,34 @@ import { join } from 'node:path';
  * deliberately in #867 after a two-day silent-delivery bug; do not delete it
  * on the strength of a test that only ever looked at `apps/api/src`.
  *
- * Subscribing is untouched and must stay allowed: `chat-push-worker` and
- * `chat-bridge-worker` open `postgres_changes` subscriptions and Presence,
- * which is exactly how the sanctioned design works. Only *emitting* a
- * broadcast from the API is what this catches.
+ * Subscribing is untouched and must stay allowed: `chat-bridge-worker` and
+ * `chat-push-worker` both open `postgres_changes` subscriptions, and the push
+ * worker additionally reads Presence (the bridge worker does not). That is
+ * exactly how the sanctioned design works — only *emitting* a broadcast from
+ * the API is what this catches.
  *
  * Scope note, so the next reader does not overestimate this: it is a source
- * grep over `apps/api/src`, not a structural check. It catches the literal
- * re-introduction — including one moved into a sibling service, which a
- * file-scoped guard would have missed — but an emit written through an
- * indirection (a constant, a spread, a helper in another package) will slip
- * past. If a genuine sub-second broadcast path is ever wanted, that is #1613,
- * and it needs a client handler plus de-duplication against the Postgres
- * Changes echo, not a quiet re-add.
+ * grep over `apps/api/src`, not a structural check. It scans every non-spec
+ * `.ts` in the tree, so relocating code does not evade it, but an emit
+ * written through an indirection — a constant holding `'broadcast'`, a
+ * payload built by a helper, anything in another package — will slip past.
+ * If a genuine sub-second broadcast path is ever wanted, that is #1613, and
+ * it needs a client handler plus de-duplication against the Postgres Changes
+ * echo, not a quiet re-add.
  *
- * Both checks require *emit context* rather than matching a bare string,
- * because a bare string produces false failures on unrelated code: this
- * codebase already writes `` `user:${id}` ``-style cache and throttle keys
- * (`custom-throttler.guard.ts`), so a future per-chapter throttle bucket
- * would otherwise fail a test about Realtime topics. Comments are stripped
- * first for the same reason — otherwise the doc block you are reading, which
- * has to spell the banned shapes out to explain them, would break the test
- * it documents.
+ * The two assertions are deliberately shaped differently, because the two
+ * hazards are. An **emit** is local — the `type: 'broadcast'` and the
+ * `.send(` sit in one file — so that check requires both and stays quiet on
+ * a listener's payload type annotation. A **topic re-key** is not local: the
+ * literal and the `.channel(` call routinely live in different modules, so
+ * that check matches the bare literal and uses a ledger for exceptions.
+ *
+ * Comments are stripped before matching. Not for this file's sake — it is a
+ * `.spec.ts` and `sourceFiles` never scans it — but for the scanned files
+ * that discuss the rule, `chat.service.ts` above all: its `sendMessage`
+ * docstring explains the removed emit and is one placeholder edit
+ * (`chapter:<id>` → `chapter:${channelId}`) away from failing the topic
+ * assertion on a comment-only change.
  */
 describe('API Realtime carrier', () => {
   const API_SRC = join(__dirname, '..', '..');
@@ -98,6 +104,16 @@ describe('API Realtime carrier', () => {
     code: stripComments(readFileSync(f, 'utf8')),
   }));
 
+  /**
+   * Files that legitimately build a `chapter:<id>` string that is NOT a
+   * Realtime topic — a cache key, a throttle bucket, a log tag. Empty today.
+   *
+   * If a change of yours lands here, that is the intended escape hatch: add
+   * the path with a one-line reason. Do **not** loosen the assertion instead
+   * — it matches the bare literal on purpose (see the test below).
+   */
+  const CHAPTER_KEYS_THAT_ARE_NOT_TOPICS: string[] = [];
+
   it('is reading the real tree, not an empty one', () => {
     // Anchors the two greps below: a rename, a move, or a bad path would
     // otherwise make every `not.toMatch` pass vacuously.
@@ -122,13 +138,18 @@ describe('API Realtime carrier', () => {
   });
 
   it('mints no bespoke chapter:<id> realtime topic (ADR-10 topic coupling)', () => {
-    // Scoped to files that actually open a Realtime channel, so a
-    // `chapter:<id>` cache or throttle key elsewhere is not a violation.
-    const hits = sources.filter(
-      ({ code }) =>
-        /(`chapter:\$\{|['"]chapter:['"]\s*\+)/.test(code) &&
-        /\.channel\s*\(/.test(code),
-    );
-    expect(hits.map(({ rel }) => rel)).toEqual([]);
+    // Deliberately NOT conjoined with `.channel(` in the same file. The
+    // hazard here is a topic re-key, and re-keys split across files: a
+    // restored `realtimeTopicForChannel` helper in its own module has the
+    // literal but no `.channel(`, while its caller has `.channel(` but no
+    // literal, so a same-file conjunction passes both halves of the exact
+    // bug it is named for. The cost of matching the bare literal is that a
+    // `chapter:<id>` cache or throttle key would fail a Realtime test, so
+    // the escape hatch is this ledger rather than a weaker assertion.
+    const hits = sources
+      .filter(({ code }) => /(`chapter:\$\{|['"]chapter:['"]\s*\+)/.test(code))
+      .map(({ rel }) => rel)
+      .filter((rel) => !CHAPTER_KEYS_THAT_ARE_NOT_TOPICS.includes(rel));
+    expect(hits).toEqual([]);
   });
 });

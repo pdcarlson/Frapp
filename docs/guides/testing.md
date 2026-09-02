@@ -264,7 +264,7 @@ The chat hot path (send + react) moved from Supabase Edge Functions into the Nes
 
 - **`apps/api/src/application/services/chat.service.spec.ts`** — pins the wiring of `sendMessage` (idempotent insert on `client_message_id`, dedup-as-success on the partial unique index) and `recordMessageAction` (atomic dedup on the `chat_message_actions` unique index, vote-action UPSERT per ADR-07, no false-positive dedup on non-23505 errors).
 - **`apps/api/src/application/services/chat-access.spec.ts`** — pins the `canAccessChannel` predicate matrix (channel types, role-gated permissions, read-only / `announcements:post` gate).
-- **`apps/api/src/application/services/chat-realtime-carrier.spec.ts`** — a source-level guard (#472): the API emits no Realtime Broadcast and mints no bespoke `chapter:<id>` topic. It scans every non-spec `.ts` under `apps/api/src`, not just the chat service, so an emit moved into a sibling file is still caught. Message delivery is the Postgres Changes subscription on `chat_messages`; adding a broadcast fast-path is #1613, not a bug fix.
+- **`apps/api/src/application/services/chat-realtime-carrier.spec.ts`** — a source-level guard (#472): the API emits no Realtime Broadcast and mints no bespoke `chapter:<id>` topic. It scans every non-spec `.ts` under `apps/api/src`, not just the chat service, so relocating the code does not evade it; the topic check matches the bare literal (a re-key splits across files) and carries a ledger for `chapter:<id>` strings that are legitimately not topics. Message delivery is the Postgres Changes subscription on `chat_messages`; adding a broadcast fast-path is #1613, not a bug fix.
 
 Both run under `npm run test -w apps/api`. There's no separate Deno tier to install or maintain.
 
