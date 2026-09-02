@@ -632,13 +632,20 @@ export function MembersDirectory() {
                       // assembled from every text node inside. The dot is an
                       // `img`-role descendant, so it would otherwise prepend
                       // "Online" to the button's name and silently rename it
-                      // whenever presence changed. Stated here, the status is
-                      // deliberate and always in the same position.
-                      aria-label={
-                        status
-                          ? `${name}, ${presenceLabel(status)}`
-                          : name
-                      }
+                      // whenever presence changed.
+                      //
+                      // `aria-label` overrides the whole subtree, so it has to
+                      // restate everything the card shows — naming only the
+                      // member and their status would *drop* the role, points
+                      // and join date a screen-reader user gets today. Same
+                      // content, fixed order, status last.
+                      aria-label={[
+                        name,
+                        primaryRoleName(member),
+                        `${pointsOf(member)} points`,
+                        `joined ${formatJoined(member.created_at)}`,
+                        ...(status ? [presenceLabel(status)] : []),
+                      ].join(", ")}
                       className={`flex flex-col items-center gap-2 rounded-lg border border-border p-4 text-center transition-colors hover:bg-accent-subtle ${FOCUS_RING}`}
                     >
                       <div className="relative">
