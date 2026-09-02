@@ -62,7 +62,7 @@ Reading or uploading vault content requires **step-up authentication** beyond th
 When a chapter's subscription status moves to `canceled` (see [`data-retention.md`](data-retention.md) and [`product/onboarding.md`](../product/onboarding.md)):
 
 - Vault content is preserved in **read-only mode** along with the rest of the chapter's data — writes are blocked, reads through the elevated/step-up flow continue to work.
-- The per-chapter KMS/HSM key is **retained** for the chapter's full retention window and destroyed only when the chapter's data is purged (inactivity cleanup at 2 years, or explicit deletion request).
+- The per-chapter KMS/HSM key is **retained** for the chapter's full retention window and destroyed only when the chapter's data is purged. Both purge triggers are prospective, not live: inactivity cleanup at 2 years is a reserved right that is **not implemented and not yet decided** ([`data-retention.md` § Inactive Chapter Cleanup](data-retention.md#inactive-chapter-cleanup)), and no chapter-deletion request path is specified anywhere. In practice the key is retained indefinitely today.
 - **Recovery is not blocked by cancellation.** The standard HSM break-glass workflow above still applies; a vault export bundle (encrypted blob + key wrap) can be requested through the same multi-party authorization process and is delivered to the chapter's last verified president.
 - **Re-activation** restores write access without re-keying — the same per-chapter key resumes use.
 
