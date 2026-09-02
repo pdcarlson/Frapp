@@ -20,6 +20,7 @@ import {
   type SweepInvoiceRow,
   type SweepTaskRow,
   type SweepPollRow,
+  type SweepUpcomingEventRow,
 } from './scheduled-jobs.repository';
 
 /**
@@ -36,6 +37,35 @@ const AUTO_ABSENT_LOOKBACK_HOURS = 24;
  * polls it skipped instead of leaving them silently unannounced forever.
  */
 const POLL_EXPIRY_LOOKBACK_HOURS = 24;
+
+/**
+ * How far ahead of `start_time` a pre-event reminder goes out
+ * (`spec/behavior/notifications.md`).
+ *
+ * The spec names 1hr / 30min / 15min as a per-member choice. No preference
+ * column exists for that yet, so one fixed offset ships first and the toggle
+ * is tracked separately — the sweep is written against this constant, not
+ * against a literal, so adding the preference is a change of *source*, not a
+ * rewrite.
+ *
+ * Unlike the lookback windows above, this is **not** slack. It is the width of
+ * the sweep's whole window, and the window has no lookback at all: the lower
+ * bound is `now`, so an event that has started is never notified about.
+ *
+ * Read that as the trade it is. A missed tick makes the reminder *later* but
+ * still early — the copy reports the real remaining time, not this constant,
+ * which is why `startsInPhrase` exists. But there are only six ticks per
+ * event, and anything costing all six drops the reminder permanently: no
+ * claim is written, so nothing retries. Lengthening this window buys
+ * resilience and costs reminder precision; the two move together.
+ *
+ * The two ways to lose all six are not equally visible. A failing candidate
+ * query logs `event-reminder sweep: event lookup failed` per tick from
+ * `fetchAllPages` — that is the alertable signal. A worker that never ran
+ * logs nothing, and neither does a healthy tick with no upcoming events, so
+ * `{sent: 0}` on its own distinguishes nothing.
+ */
+const EVENT_REMINDER_LEAD_MINUTES = 30;
 
 /**
  * Reminder lead time. `spec/behavior/tasks.md` fixes this at 1 day for tasks;
@@ -121,6 +151,17 @@ export class ScheduledJobsService {
     await this.sweepExpiredPolls(new Date());
   }
 
+  /**
+   * Five-minutely, matching the poll-expiry sweep. The reminder's usefulness
+   * is time-relative — a "starts in 30 minutes" nudge delivered on an hourly
+   * tick would land anywhere from 30 down to 0 minutes out, which is the one
+   * thing it must not do.
+   */
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async handleEventReminderSweep(): Promise<void> {
+    await this.sweepEventReminders(new Date());
+  }
+
   @Cron(CronExpression.EVERY_DAY_AT_9AM)
   async handleInvoiceReminderSweep(): Promise<void> {
     await this.sweepInvoiceReminders(new Date());
@@ -134,9 +175,13 @@ export class ScheduledJobsService {
   /**
    * The only handler here that needs its own catch.
    *
-   * The other three reach the database through `fetchAllPages`, which absorbs
-   * a query error and returns `[]`, so they cannot reject. This one reaches
-   * *storage*, and a failure listing the bucket root propagates. An unhandled
+   * Every other handler here reaches the database through `fetchAllPages`,
+   * which absorbs a query error and returns `[]`, so none of them can reject —
+   * that, not their count, is the test to apply when adding one. This one
+   * reaches *storage*, and a failure listing the bucket root propagates.
+   * A handler whose candidate query does not go through `fetchAllPages`, or
+   * that awaits anything outside a per-item `try`, needs its own catch too.
+   * An unhandled
    * rejection out of a `@Cron` handler is not a logged blip — Node's default
    * `--unhandled-rejections=throw` turns it into an uncaught exception and
    * takes the API process down, hourly. A sweep that cannot start must skip
@@ -343,6 +388,128 @@ export class ScheduledJobsService {
       );
       return false;
     }
+  }
+
+  /**
+   * Remind members about an event they are required at, shortly before it
+   * starts (`spec/behavior/notifications.md`).
+   *
+   * The window is `(now, now + EVENT_REMINDER_LEAD_MINUTES]`. Its lower bound
+   * is what makes this safe to run every five minutes: an event that has
+   * already started falls out of the window, so a backed-up worker sends
+   * nothing rather than a burst of "starting soon" pushes about events that
+   * are already underway.
+   *
+   * Quiet hours and the member's `events` category preference are not handled
+   * here — `NotificationService.notifyUser` applies both, and reminders send
+   * at its default NORMAL priority precisely so they stay subject to them.
+   */
+  async sweepEventReminders(now: Date): Promise<{ sent: number }> {
+    const startsBefore = new Date(
+      now.getTime() + EVENT_REMINDER_LEAD_MINUTES * 60 * 1000,
+    );
+
+    const events = await this.repository.findEventsStartingBetween(
+      now,
+      startsBefore,
+    );
+
+    let sent = 0;
+    for (const event of events) {
+      try {
+        if (await this.notifyEventStartingSoon(event, now)) sent += 1;
+      } catch (error) {
+        this.logger.error(
+          `event-reminder sweep: event ${event.id} failed`,
+          error as Error,
+        );
+      }
+    }
+
+    if (sent > 0) {
+      // Events, not deliveries — one event fanned out to 200 members is 1
+      // here. Named accordingly so the number is not read as a push count.
+      this.logger.log(`event-reminder sweep: reminded ${sent} event(s)`);
+    }
+    return { sent };
+  }
+
+  /**
+   * Audience comes from `AttendanceService.resolveRequiredMembers`, the same
+   * call the auto-absent sweep makes, so a reminder can never reach someone a
+   * role-targeted event is invisible to.
+   *
+   * **Resolved lazily, behind the claim.** Passing a thunk rather than an array
+   * is what keeps the roster read off the five losing ticks: an event sits in
+   * the window for six of them, only the first can send, and
+   * `resolveRequiredMembers` is an unpaged read of every member in the chapter.
+   * This is the ordering `sweepAutoAbsent` already argues for ("Claim first …
+   * it stops the same event being re-processed on all 24 ticks"), and the
+   * lazy-recipients seam is how a claim-first sweep keeps using
+   * `claimAndNotify` instead of hand-rolling its own claim.
+   *
+   * An event with no required members therefore claims, resolves to nobody, and
+   * releases — `claimAndNotify` already treats "delivered to zero" as a release,
+   * so the claim does not outlive the tick and an event that gains its first
+   * required member later in the window is still reminded about.
+   *
+   * **Known limit: a same-UTC-day reschedule is not re-armed.** The claim key's
+   * date component is `scheduled_notification_dispatches.due_date`, a `date`
+   * column, so moving an event from 14:00 to 20:00 on the same day reuses the
+   * key and the second claim loses — the member's only reminder named the old
+   * time. Moving it across a UTC day boundary does re-arm. The separate "event
+   * updated" push softens this but does not replace the reminder. Widening the
+   * key needs a schema change shared with three other sweeps; tracked in #1550.
+   */
+  private async notifyEventStartingSoon(
+    event: SweepUpcomingEventRow,
+    now: Date,
+  ): Promise<boolean> {
+    // Derived from the event row, never from `now`, so every tick inside the
+    // window computes the same claim key — the same discipline the
+    // auto-absent sweep applies to `end_time`.
+    const startsOn = toDateKey(new Date(event.start_time));
+
+    return this.claimAndNotify({
+      chapterId: event.chapter_id,
+      entityType: 'EVENT',
+      entityId: event.id,
+      threshold: 'EVENT_REMINDER',
+      dueDate: startsOn,
+      recipients: async () =>
+        (
+          await this.attendanceService.resolveRequiredMembers(
+            event.chapter_id,
+            event,
+          )
+        ).map((member) => member.user_id),
+      title: 'Event starting soon',
+      body: `"${event.name}" ${this.startsInPhrase(event.start_time, now)}.`,
+      category: 'events',
+      target: { screen: 'events', eventId: event.id },
+    });
+  }
+
+  /**
+   * How far out the event actually is, not how far out the sweep aims to be.
+   *
+   * `EVENT_REMINDER_LEAD_MINUTES` is the width of the window, not the delivery
+   * offset: a restarted worker, or an event created inside its own window,
+   * enters the window already closer than the lead. Asserting the constant
+   * would tell a member they have 30 minutes when they have five, and for a
+   * mandatory event the cost of believing it is an auto-marked ABSENT.
+   *
+   * Rounds rather than truncates, so 29m40s reads "30 minutes" instead of "29".
+   * The sub-minute case gets its own phrasing because "in 0 minutes" is worse
+   * than useless.
+   */
+  private startsInPhrase(startTime: string, now: Date): string {
+    const minutes = Math.round(
+      (new Date(startTime).getTime() - now.getTime()) / 60_000,
+    );
+    if (minutes < 1) return 'is starting now';
+    if (minutes === 1) return 'starts in 1 minute';
+    return `starts in ${minutes} minutes`;
   }
 
   /**
@@ -567,6 +734,14 @@ export class ScheduledJobsService {
    * Recipients are deduped and delivered independently, so one member's
    * failure cannot silence another's; that matters for overdue tasks, where
    * the spec requires both the assignee and the assigner to hear about it.
+   *
+   * `recipients` may be a **thunk**, resolved only once the claim is won. The
+   * invoice and task sweeps already hold their recipient ids by the time they
+   * get here, so they pass an array; a sweep whose audience costs a query —
+   * the pre-event reminder reads the whole chapter roster — passes a function
+   * instead, and the losing ticks then cost one failed insert rather than a
+   * roster read they throw away. Resolving to an empty list is treated as
+   * "delivered to zero" below, so the claim is released rather than stranded.
    */
   private async claimAndNotify(params: {
     chapterId: string;
@@ -574,7 +749,7 @@ export class ScheduledJobsService {
     entityId: string;
     threshold: DispatchThreshold;
     dueDate: string;
-    recipients: string[];
+    recipients: string[] | (() => Promise<string[]>);
     title: string;
     body: string;
     category: string;
@@ -589,7 +764,24 @@ export class ScheduledJobsService {
     );
     if (!claimed) return false;
 
-    const recipients = [...new Set(params.recipients)];
+    // Resolved after the claim, so a thunk's cost is paid only by the tick
+    // that actually sends. A rejection here would strand the claim, so it is
+    // caught and treated as "delivered to zero", which releases below.
+    let resolved: string[];
+    try {
+      resolved =
+        typeof params.recipients === 'function'
+          ? await params.recipients()
+          : params.recipients;
+    } catch (error) {
+      this.logger.error(
+        `${params.entityType} ${params.entityId} (${params.threshold}): could not resolve recipients`,
+        error as Error,
+      );
+      resolved = [];
+    }
+
+    const recipients = [...new Set(resolved)];
     let delivered = 0;
 
     for (const userId of recipients) {
