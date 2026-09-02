@@ -5,7 +5,9 @@ import { AlertTriangle, RefreshCw } from "lucide-react";
 import { FlaggedGlyph } from "@/components/points/points-glyphs";
 import {
   memberFallbackLabel,
+  ORG_POINTS_DEFAULTS,
   useMemberDisplayNames,
+  useOrgConfig,
   usePointsTransactions,
 } from "@repo/hooks";
 import { Badge } from "@/components/ui/badge";
@@ -71,6 +73,14 @@ export function PointsAuditCard() {
   // and its map's keys are the same member ids the filter needs.
   const memberIds = useMemo(() => Object.keys(byId), [byId]);
 
+  // #394 — the two anti-fraud limits are chapter-configurable, so this
+  // description states what the chapter actually enforces rather than the
+  // "±100 points" it used to hardcode. Falls back to the documented defaults
+  // while the config query is in flight, or if it fails: those are exactly
+  // what an unconfigured chapter enforces, so the fallback is never a guess.
+  const orgConfig = useOrgConfig();
+  const pointsPolicy = orgConfig.data?.points ?? ORG_POINTS_DEFAULTS;
+
   const transactionsQuery = usePointsTransactions({
     userId: userFilter === "ALL" ? undefined : userFilter,
     category: categoryFilter === "ALL" ? undefined : categoryFilter,
@@ -113,8 +123,10 @@ export function PointsAuditCard() {
             </CardTitle>
             <CardDescription>
               Chapter-wide point transactions with optional flagged-only filter.
-              Flags are raised automatically when a single adjustment exceeds
-              ±100 points.
+              Flags are raised automatically when a single adjustment reaches ±
+              {pointsPolicy.anomaly_threshold} points. One admin may make up to{" "}
+              {pointsPolicy.adjustment_rate_limit_per_hour} adjustments per
+              hour. Both limits are set in Settings.
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">

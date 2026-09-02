@@ -7094,6 +7094,23 @@
           }
         }
       },
+      "PointsConfigDto": {
+        "type": "object",
+        "properties": {
+          "adjustment_rate_limit_per_hour": {
+            "type": "number",
+            "description": "Maximum manual point adjustments one admin may create per rolling hour (default 50). Must be at least 1 — a limit of 0 would refuse every adjustment with no way back through the API.",
+            "minimum": 1,
+            "example": 50
+          },
+          "anomaly_threshold": {
+            "type": "number",
+            "description": "Absolute point amount at or above which an adjustment is flagged for review (default 100). Must be at least 1 — a threshold of 0 would flag every transaction.",
+            "minimum": 1,
+            "example": 100
+          }
+        }
+      },
       "WorkflowConfigDto": {
         "type": "object",
         "properties": {
@@ -7139,6 +7156,9 @@
           },
           "service": {
             "$ref": "#/components/schemas/ServiceConfigDto"
+          },
+          "points": {
+            "$ref": "#/components/schemas/PointsConfigDto"
           },
           "workflows": {
             "type": "array",

@@ -283,6 +283,19 @@ export const ChapterDuesConfigSchema = z.object({
 });
 
 /**
+ * A chapter's points anti-fraud limits (#394 — `spec/behavior/points.md`
+ * § Anti-Fraud), persisted to `chapter_points_config`.
+ *
+ * Both floors are `min(1)`, mirroring the column CHECKs and the API DTO: a
+ * rate limit of 0 refuses every adjustment with no way back out through the
+ * append-only ledger, and a threshold of 0 flags every row.
+ */
+export const ChapterPointsConfigSchema = z.object({
+  adjustment_rate_limit_per_hour: z.number().int().min(1),
+  anomaly_threshold: z.number().int().min(1),
+});
+
+/**
  * A single workflow override submitted from Settings → Workflows. `key`
  * identifies a workflow in the chapter's catalog; `threshold` guard-parses to a
  * nonnegative integer (NaN/negative rejected — never stored).
@@ -437,6 +450,9 @@ export const PatchChapterConfigSchema = z.object({
     })
     .optional(),
   dues: ChapterDuesConfigSchema.optional(),
+  // Partial by design: an officer may move one limit without restating the
+  // other, and the API merges onto the stored row.
+  points: ChapterPointsConfigSchema.partial().optional(),
   workflows: z.array(ChapterWorkflowConfigSchema).optional(),
   // Per-chapter analytics opt-out (data-retention.md #analytics-events-pseudonymous).
   analytics_opt_out: z.boolean().optional(),
@@ -789,6 +805,7 @@ export type ConfirmUpload = z.infer<typeof ConfirmUploadSchema>;
 
 export type ChapterBranding = z.infer<typeof ChapterBrandingSchema>;
 export type ChapterDuesConfig = z.infer<typeof ChapterDuesConfigSchema>;
+export type ChapterPointsConfig = z.infer<typeof ChapterPointsConfigSchema>;
 export type PatchChapterConfig = z.infer<typeof PatchChapterConfigSchema>;
 export type ChapterCustomRole = z.infer<typeof ChapterCustomRoleSchema>;
 export type CreateCustomRole = z.infer<typeof CreateCustomRoleSchema>;
