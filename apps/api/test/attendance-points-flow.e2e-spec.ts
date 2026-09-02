@@ -53,6 +53,15 @@ describe('Attendance + points flow (e2e)', () => {
     getAttendance: jest.fn(),
     updateStatus: jest.fn(),
     markAutoAbsent: jest.fn(),
+    // Not used by any route under test. This override replaces
+    // AttendanceService for the whole AppModule, so ScheduledJobsModule
+    // resolves this object too, and the pre-event reminder sweep calls
+    // resolveRequiredMembers. Stubbed to keep the mock a faithful stand-in
+    // for the real service's shape — a missing method would be swallowed
+    // (the sweep resolves recipients inside a catch that degrades to "no
+    // recipients"), so the cost is a silently no-op sweep during this suite,
+    // not a crash.
+    resolveRequiredMembers: jest.fn().mockResolvedValue([]),
   };
   const pointsServiceMock = {
     getUserSummary: jest.fn().mockResolvedValue({
