@@ -344,6 +344,39 @@ After any rollback event:
   public` is not a partial fix, it is the original bug spelled explicitly — the guard
   rejects it for that reason.
 
+## Rollback the `chapter_points_config` table
+
+* **Migration**: `20260902143000_chapter_points_config.sql`
+* **Action**:
+  ```sql
+  DROP TABLE IF EXISTS chapter_points_config;
+  ```
+  The `updated_at` trigger is defined *on* the table, so it goes with it — no
+  separate `DROP TRIGGER`. `update_updated_at()` is shared and must stay.
+* **Order**: no coordination required, in either direction. This is the cleanest
+  case in this playbook: an absent row already means "use the defaults", so a
+  chapter with no row and a chapter whose table was just dropped are the same
+  state as far as the API is concerned. A build from *before* the migration never
+  reads the table; a build from *after* it reverted degrades per field to the
+  documented defaults (50 adjustments/hour, flag at ±100) — exactly the constants
+  `PointsService` hardcoded before [#394](https://github.com/pdcarlson/Frapp/issues/394).
+  Dropping under a running post-migration API is survivable for the same reason:
+  `ChapterPointsConfigService.getConfig` logs a warning and falls back rather than
+  throwing.
+* **One caveat, and it is a security one, not a data one**: the fallback is to the
+  *looser* defaults. A chapter that had tightened its limits (say 5 adjustments an
+  hour) silently returns to 50/hr and a ±100 flag threshold the moment the table
+  goes. Rolling this back **relaxes an anti-fraud control**, so if the rollback is
+  itself a response to abuse, restrict `points:adjust` or watch
+  `#chapter-audit` until the table is back.
+* **Data caveat**: the configured limits themselves are lost. There is no source
+  to re-derive them from, but they are recoverable by hand — every change was
+  written to `chapter_audit_log` under `action = 'chapter_config_updated'` with a
+  `points` key in its `diff`, so the last known value per chapter can be read back
+  out of the audit trail. Note the API blocks a `getConfigOrThrow` read error but
+  *not* a missing table with the fallback path, so the config endpoint keeps
+  serving defaults rather than erroring after a drop.
+
 ## Rollback the `chapter_documents` metadata columns
 
 * **Migration**: `20260831220000_chapter_documents_metadata.sql`
