@@ -22,6 +22,11 @@
 // verbatim — including the shared `loadAllowlist`, so both gates fail the same
 // way on the same malformed input.
 //
+// TWO passes, because a doc breaks in two ways: MOVED changes its path, which
+// REFERENCE_RE catches; RENAMED changes its filename, which BARE_BASENAME_RE
+// catches. Why each pass needs its own extractor, and why pass 2 resolves more
+// weakly, is in docs/internal/ci-cd/DOCS_CI.md § References — one copy, there.
+//
 // Note this gate scans its own source, so the comments here name no dead path.
 //
 // See docs/internal/ci-cd/DOCS_CI.md for how this fits the other docs gates.
@@ -49,6 +54,42 @@ export const ALLOWLIST_PATH = "scripts/doc-refs-allowlist.json";
 // rather than a path segment. No tracked file sits at a nested `docs/` today;
 // this keeps the gate honest if one ever does.
 export const REFERENCE_RE = /(?<![A-Za-z0-9_-]\/)(?:docs|spec)\/[A-Za-z0-9_./-]*\.md/g;
+
+// A markdown filename written WITHOUT any directory part.
+//
+// The lookbehind excludes a preceding path separator (a full path is the other
+// pattern's job, and matching both would double-count), a word character (so
+// this is a whole token), and a backslash — without which the octal escape in a
+// quoted-path example reads as a filename starting with a digit.
+//
+// The lookAHEAD is the same idea at the other end, and `\b` is not enough for
+// it: `\b` rejects a longer extension such as `.mdx`, but happily matches the
+// markdown-looking head of a COMPOUND one — a Handlebars template ending
+// `.md.hbs`, or a backup suffixed `.md-old`. That reports a dead doc for a file
+// that exists, and leaves no correct edit to make, since the reference already
+// names it. A compound extension must not match its own prefix.
+export const BARE_BASENAME_RE =
+  /(?<![A-Za-z0-9_./\\-])[A-Za-z0-9][A-Za-z0-9_-]*\.md(?![A-Za-z0-9_.-])/g;
+
+/**
+ * Blank out fenced code blocks, preserving line numbering.
+ *
+ * check-doc-paths.mjs strips fences because a worked example names files that
+ * need not exist. That gate reports per file, so it can collapse the block; this
+ * one reports a LINE, so the newlines have to survive.
+ *
+ * Pass 2 needs this and pass 1 does not, because of what each admits. 17 tracked
+ * markdown files sit outside the documentation corpus and so are scanned here —
+ * command files, the PR template, package READMEs — and a shell transcript in
+ * one of them naming a filename is an example, not a claim. Matched pairs only,
+ * exactly as the sibling gate does it: an unterminated fence must strip nothing
+ * rather than swallow the rest of the file.
+ */
+export function blankFencedBlocks(text) {
+  return text.replace(/^[ \t]*(```|~~~)[\s\S]*?^[ \t]*\1[ \t]*$/gm, (block) =>
+    block.replace(/[^\n]/g, ""),
+  );
+}
 
 // Files whose doc references are deliberately not live pointers.
 export const EXCLUDED = [
@@ -112,6 +153,71 @@ export function extractReferences(text) {
   return found;
 }
 
+/** Every bare markdown filename in a file, with no directory part. */
+export function extractBasenameReferences(text) {
+  const found = [];
+  blankFencedBlocks(text)
+    .split("\n")
+    .forEach((line, i) => {
+      for (const m of line.matchAll(BARE_BASENAME_RE)) {
+        if (isUrlContext(line, m.index)) continue;
+        found.push({ token: m[0], line: i + 1 });
+      }
+    });
+  return found;
+}
+
+/**
+ * A bare filename resolves if ANY tracked file has that basename — it names no
+ * directory, so it cannot say which one it meant.
+ */
+export function basenameIndex(trackedPaths) {
+  return new Set(trackedPaths.map((p) => p.slice(p.lastIndexOf("/") + 1)));
+}
+
+/**
+ * Both passes over one file. Extracted so the WIRING is testable, not just the
+ * extractors: with the scan inlined in main(), deleting the second pass outright
+ * left every unit test green and the gate reporting success.
+ */
+export function scanFile(file, text, { trackedSet, basenames, allowlist }) {
+  const findings = [];
+  const used = new Set();
+  let referenceCount = 0;
+  let basenameCount = 0;
+
+  for (const { token, line } of extractReferences(text)) {
+    referenceCount++;
+    if (trackedSet.has(token)) continue;
+    const excusedBy = matchAllowlist(allowlist, token, file);
+    if (excusedBy) {
+      used.add(excusedBy);
+      continue;
+    }
+    findings.push({ file, line, token });
+  }
+
+  for (const { token, line } of extractBasenameReferences(text)) {
+    basenameCount++;
+    // The allowlist is consulted BEFORE resolution here, the reverse of the path
+    // pass. A pass-2 excuse says "this token is not a document reference at all",
+    // which stays true whether or not some file happens to carry that name.
+    // Checking resolution first would stop the entry being used the day anyone
+    // adds a file with that basename — and an entry that excuses nothing FAILS
+    // the run, so the gate would demand deleting an excuse still covering live
+    // tokens.
+    const excusedBy = matchAllowlist(allowlist, token, file);
+    if (excusedBy) {
+      used.add(excusedBy);
+      continue;
+    }
+    if (basenames.has(token)) continue;
+    findings.push({ file, line, token });
+  }
+
+  return { findings, used, referenceCount, basenameCount };
+}
+
 // A NUL in the first few KB is the classic binary test. It is needed because
 // `readFileSync(file, "utf8")` does NOT throw on non-text bytes — it substitutes
 // U+FFFD — so the earlier `text === null` check caught filesystem errors only
@@ -149,33 +255,36 @@ function main() {
   const allowlist = loaded.allowlist;
 
   const files = tracked.filter(inScope);
+  const basenames = basenameIndex(tracked);
   const findings = [];
   const used = new Set();
   let referenceCount = 0;
+  let basenameCount = 0;
+  // Two populations, counted apart. One shared denominator would make neither
+  // recoverable, and reads as the path pass having spread to ~100 more files
+  // when its coverage has not changed at all.
   const filesWithRefs = new Set();
+  const filesWithBasenames = new Set();
 
   for (const file of files) {
     const text = readText(file);
     if (text === null) continue; // a binary asset, or unreadable
-    for (const { token, line } of extractReferences(text)) {
-      referenceCount++;
-      filesWithRefs.add(file);
-      if (trackedSet.has(token)) continue;
-      const excusedBy = matchAllowlist(allowlist, token, file);
-      if (excusedBy) {
-        used.add(excusedBy);
-        continue;
-      }
-      findings.push({ file, line, token });
-    }
+    const r = scanFile(file, text, { trackedSet, basenames, allowlist });
+    if (r.referenceCount) filesWithRefs.add(file);
+    if (r.basenameCount) filesWithBasenames.add(file);
+    referenceCount += r.referenceCount;
+    basenameCount += r.basenameCount;
+    findings.push(...r.findings);
+    for (const id of r.used) used.add(id);
   }
 
   const stale = findStaleEntries(allowlist, used);
 
   if (findings.length === 0 && stale.length === 0) {
     console.log(
-      `Doc reference check passed (${referenceCount} references across ${filesWithRefs.size} files ` +
-        `outside the docs corpus).`,
+      `Doc reference check passed, outside the docs corpus: ` +
+        `${referenceCount} path references across ${filesWithRefs.size} files, ` +
+        `${basenameCount} filename references across ${filesWithBasenames.size}.`,
     );
     return 0;
   }
@@ -184,7 +293,8 @@ function main() {
   console.error("");
   if (findings.length) {
     console.error(
-      "These files reference docs that do not exist. Nothing else checks them, so they rot silently:",
+      "These files reference docs that do not exist — by path, or by a filename that no tracked " +
+        "file carries. Nothing else checks them, so they rot silently:",
     );
     const byFile = new Map();
     for (const f of findings) {
@@ -197,7 +307,7 @@ function main() {
     }
     console.error("");
     console.error(
-      `Fix: point at the current path, or add an entry to ${ALLOWLIST_PATH} with a reason.`,
+      `Fix: point at the current path or filename, or add an entry to ${ALLOWLIST_PATH} with a reason.`,
     );
   }
   if (stale.length) {
