@@ -20,7 +20,7 @@ Hosted agent sessions may carry provider/research credentials and cloud-sandbox 
 
 ## ADR discipline
 
-One-off incidents and decisions are logged **once** as an immutable ADR in [`spec/architecture/README.md`](spec/architecture/README.md). Never edit an ADR in place; supersede it with an amendment or a new ADR. A rule graduates into **this file** only when it is (1) recurring, (2) still true, and (3) something an agent would not derive by reading the code. Incident narration stays in the ADR.
+One-off incidents and decisions are logged **once** as an immutable ADR in [`spec/architecture/README.md`](spec/architecture/README.md). Never edit an ADR in place; supersede it with an amendment or a new ADR. **What immutability governs is the text, not the filing.** Its decision, rationale and consequences are never reworded, never "corrected" against today's code, and its number and amendment chain never change. Relocating an ADR, changing its heading level, or retargeting a link path is mechanical and permitted, provided every word of the record survives the move intact — an ADR that reads identically in a new file is still logged once. Note the corollary: some ADRs describe their own filing (ADR-18 says "ADRs **in this file**"), so a move can make an ADR's own sentence false. That is fixed with a new dated amendment, never by editing the ADR. A rule graduates into **this file** only when it is (1) recurring, (2) still true, and (3) something an agent would not derive by reading the code. Incident narration stays in the ADR.
 
 ## Project overview
 
@@ -116,6 +116,9 @@ See [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md). 
 | API contract | `npm run check:api-contract`        |
 | Doc citations | `npm run check:doc-paths` — backticked repo paths in docs resolve; **required**, whole-tree |
 | Doc rosters  | `npm run check:doc-tables` — hand-copied required-check tables vs `CI_CHECKS`/`ci.yml`; advisory |
+| Doc references | `npm run check:doc-refs` — `docs/`/`spec/` references in SOURCE, workflows, migrations and shell resolve; advisory, whole-tree |
+| Doc structure | `npm run check:docs-structure` — every doc sits in a declared home and matches the naming rule ([`scripts/ci/lib/docs-structure.mjs`](scripts/ci/lib/docs-structure.mjs)); advisory, whole-tree |
+| Doc links    | `npm run check:links` — markdown links and heading anchors; needs `npm run install:lychee` first |
 | Migrations   | `npm run check:migration-safety`    |
 | Boundaries   | `npm run check:dep-cruiser` — required gate; existing violations grandfathered in `.dependency-cruiser-known-violations.json`, which exists to shrink |
 | Duplication  | `npm run check:duplication` — advisory; repo-wide threshold that only ratchets down |

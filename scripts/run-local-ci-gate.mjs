@@ -48,6 +48,23 @@ function runDocsSyncCheck(baseSha, headSha) {
   );
 }
 
+function runDocsStructureCheck(baseSha, headSha) {
+  // Whole-tree, so it can fail on a file this branch never touched — the same
+  // property the required doc-paths gate has. Passing the range only labels
+  // which violations this branch introduced.
+  //
+  // Ordered AFTER the secret scan on purpose. runCommand throws on a nonzero
+  // exit and runLocalGate exits on it, so putting a whole-tree check earlier
+  // would let an inherited structure violation stop gitleaks from ever running
+  // — and `PR_LABELS_JSON='["no-doc-change-needed"]'` does not waive this one
+  // (only check-docs-impact.mjs reads that variable), so the documented waiver
+  // would not get the developer past it either.
+  runCommand(
+    `node scripts/check-docs-structure.mjs --base "${baseSha}" --head "${headSha}"`,
+    "Run docs/spec structure check",
+  );
+}
+
 function runSecretScan(baseSha, headSha) {
   // gitleaks over the branch's commit range (ADR-13 push-protection mitigation).
   // --soft-missing keeps an offline dev unblocked; the CI secret-scan job is the hard gate.
@@ -68,6 +85,7 @@ function runLocalGate() {
   const headSha = execSync("git rev-parse HEAD", { encoding: "utf8" }).trim();
   runDocsSyncCheck(baseSha, headSha);
   runSecretScan(baseSha, headSha);
+  runDocsStructureCheck(baseSha, headSha);
 
   const gateChecks = [
     ["npm run lint", "Run monorepo lint"],
