@@ -658,6 +658,44 @@ After any rollback event:
   leave the column and index in place. They cost writes on insert and nothing on
   read, and they will be needed again.
 
+## Rollback the chat per-kind notification upsert target
+
+* **Migration**: `20260902170000_chat_notif_prefs_kind_upsert_target.sql`
+* **Action**:
+  ```sql
+  DROP INDEX IF EXISTS public.idx_chat_notif_prefs_kind_unique;
+  ```
+* **Order**: **redeploy the API first, then the database.** Same shape as the
+  channel entry below. The index exists so
+  `PUT /v1/channels/notification-preferences/kinds/:kind` can name it as an
+  `ON CONFLICT` target; dropping it under a running post-change API makes every
+  per-kind write fail with `42P10 there is no unique or exclusion constraint
+  matching the ON CONFLICT specification`. The pre-change revision has no
+  per-kind write path at all and does not reference it.
+* **Note**: **nothing is lost, and no constraint is loosened.** Additive, and it
+  duplicates for the `kind` arm only an invariant `idx_chat_notif_prefs_unique`
+  (20260527120000) already enforces on both arms. Dropping it leaves the
+  original expression index in place, so a duplicate (user, chapter, kind)
+  preference row still cannot be created. Channel-scoped writes are unaffected —
+  they target `idx_chat_notif_prefs_channel_unique`, a different index.
+* **Locks**: `create index` holds SHARE on `chat_notification_preferences` for
+  its duration; the table holds at most one row per user per scope key they have
+  deliberately configured, so it is small everywhere. Dropping is a catalog
+  operation.
+* **Why a third index**, when one already looks close enough: the channel index
+  is on `scope_id`, which is NULL on every `kind` row, and unique indexes treat
+  NULLs as distinct — so it constrains the kind arm not at all and cannot be an
+  `ON CONFLICT` target for it. `check:pglite-migrations` asserts both plain
+  indexes exist with the right shape, so the *migration set* is gated rather
+  than resting on a one-time manual observation: deleting or weakening either
+  migration file fails CI.
+* **That gate does not watch a live database.** It replays
+  `supabase/migrations/*.sql` into a fresh in-process PGlite, so a `DROP INDEX`
+  executed against staging or production is invisible to it — CI stays green
+  while the endpoint 500s. Performing the rollback above therefore requires
+  reverting the API yourself, in the stated order; nothing will catch it for
+  you.
+
 ## Rollback the chat-mute upsert target
 
 * **Migration**: `20260829011200_chat_notif_prefs_channel_upsert_target.sql`
