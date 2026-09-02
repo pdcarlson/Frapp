@@ -10,7 +10,7 @@
 import { ALUMNI_CHANNEL_PERMISSION, can } from "@repo/validation";
 
 export function shouldShowDonationCta(
-  permissions: string[],
+  permissions: readonly string[],
   donationUrl: string | null | undefined,
 ): donationUrl is string {
   return !!donationUrl && can(ALUMNI_CHANNEL_PERMISSION, permissions);

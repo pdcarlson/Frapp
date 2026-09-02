@@ -22,7 +22,7 @@ import {
   POINTS_COLUMNS,
   ROSTER_COLUMNS,
   SERVICE_COLUMNS,
-} from './report-columns';
+} from '../../domain/constants/report-columns';
 
 // Mock the toCSV utility function
 jest.mock('../../domain/utils/csv', () => ({
