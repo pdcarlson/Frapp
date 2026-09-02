@@ -525,10 +525,10 @@ export function ChatShell({
     [orgConfig],
   );
 
-  // Pins are a navigation affordance, not a list: the popover's rows were
-  // rendered as buttons but `onJump` was never wired, so every one of them was
-  // inert. The timeline exposes the scroll, the shell owns the wiring.
   const [threadParentId, setThreadParentId] = useState<string | null>(null);
+  // What had focus when a thread was opened (the row's Reply control, most
+  // often) — restored by `closeThread` below, per the keyboard-navigation
+  // acceptance criterion in #396.
   const threadTriggerRef = useRef<HTMLElement | null>(null);
   // A channel switch while a thread is open unmounts `ThreadPanel` the same
   // way `closeThread` does, but the trigger that opened it belongs to the
@@ -544,6 +544,9 @@ export function ChatShell({
   const showUnreachableNotice =
     unreachableTarget !== null &&
     unreachableTarget.channelId === activeChannelId;
+  // Pins are a navigation affordance, not a list: the popover's rows were
+  // rendered as buttons but `onJump` was never wired, so every one of them was
+  // inert. The timeline exposes the scroll, the shell owns the wiring.
   const timeline = useRef<MessageTimelineHandle | null>(null);
   const jumpToMessage = useCallback((messageId: string) => {
     timeline.current?.scrollToMessage(messageId);
@@ -652,11 +655,11 @@ export function ChatShell({
     if (!threadParentId) return null;
     return channel.messages.find((m) => m.id === threadParentId) ?? null;
   }, [channel.messages, threadParentId]);
-  // What had focus when a thread was opened (the row's Reply control, most
-  // often) — restored when the panel closes, per the keyboard-navigation
-  // acceptance criterion in #396. The thread panel is a persistent aside, not
-  // a dialog, so nothing else returns focus here for free the way Radix does
-  // for the slash palette.
+  // Captures the trigger (the row's Reply control, most often) on the way in,
+  // so `closeThread` can hand focus back. The thread panel is a persistent
+  // aside, not a dialog, so nothing returns focus here for free the way Radix
+  // does for the slash palette — hence the manual bookkeeping, per the
+  // keyboard-navigation acceptance criterion in #396.
   const openThread = useCallback((message: ChatMessage) => {
     threadTriggerRef.current =
       document.activeElement instanceof HTMLElement
