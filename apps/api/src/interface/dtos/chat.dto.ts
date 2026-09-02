@@ -16,7 +16,11 @@ import {
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { CHAT_MESSAGE_CONTENT_MAX_LENGTH } from '@repo/validation';
-import { CHAT_MESSAGE_KINDS } from '../../domain/entities/chat.entity';
+import {
+  CHAT_MESSAGE_KINDS,
+  SETTABLE_NOTIFICATION_KINDS,
+} from '../../domain/entities/chat.entity';
+import type { SettableNotificationKind } from '../../domain/entities/chat.entity';
 
 const CHANNEL_TYPES = ['PUBLIC', 'PRIVATE', 'ROLE_GATED'] as const;
 
@@ -358,6 +362,60 @@ export class ChannelNotificationPreferenceDto {
 
   @ApiProperty({ enum: CHAT_NOTIFICATION_LEVELS })
   level: (typeof CHAT_NOTIFICATION_LEVELS)[number];
+}
+
+export class SetKindNotificationLevelDto {
+  @ApiProperty({
+    enum: CHAT_NOTIFICATION_LEVELS,
+    description:
+      'all = every message of this kind; mentions = only when you are mentioned; off = muted, though @mentions still notify — the one exception is the system_audit kind, whose off a mention does not lift. A channel-scoped preference outranks this one for messages in that channel.',
+  })
+  @IsIn(CHAT_NOTIFICATION_LEVELS)
+  level: (typeof CHAT_NOTIFICATION_LEVELS)[number];
+}
+
+export class KindNotificationPreferenceDto {
+  @ApiProperty({
+    enum: SETTABLE_NOTIFICATION_KINDS,
+    description:
+      'A `chat_messages.kind`. `imported` and `loading` are absent by design — the first is refused by the push worker before any preference is read, and the second is an internal optimistic placeholder rather than a category of message a member receives.',
+  })
+  kind: SettableNotificationKind;
+
+  @ApiProperty({
+    enum: CHAT_NOTIFICATION_LEVELS,
+    type: String,
+    nullable: true,
+    description:
+      "The member's chapter-wide override for this kind, or null when they have set none. Null is not a level: what a kind falls back to depends on the channel a message lands in (an `announcement` resolves `all` in a channel named `announcements` and `mentions` elsewhere), so there is no single default to report here. For the effective level of a real message, read GET /v1/channels/notification-preferences.",
+  })
+  level: (typeof CHAT_NOTIFICATION_LEVELS)[number] | null;
+}
+
+/**
+ * The DELETE response, separate from {@link KindNotificationPreferenceDto}
+ * because its `kind` enum is genuinely wider. The clearer accepts any
+ * `chat_messages.kind`, not just the settable subset, so that a row written
+ * for a kind that has since become non-settable can still be removed; typing
+ * the echo on the narrow enum would either be a lie or force the route to
+ * refuse exactly the rows it exists to clean up.
+ */
+export class ClearedKindNotificationPreferenceDto {
+  @ApiProperty({
+    enum: CHAT_MESSAGE_KINDS,
+    description:
+      'The kind whose override was cleared. Wider than the settable set on purpose — see the DELETE route.',
+  })
+  kind: (typeof CHAT_MESSAGE_KINDS)[number];
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    enum: CHAT_NOTIFICATION_LEVELS,
+    description:
+      'Always null: the override is gone, and what the kind now falls back to depends on the channel.',
+  })
+  level: null;
 }
 
 /** Bounds one request to roughly one page of distinct message authors (#1231). */
