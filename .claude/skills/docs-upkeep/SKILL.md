@@ -13,7 +13,7 @@ the first routine that fixes what it finds instead of filing it — [`hygiene-sc
 (routine 5) now does the same for code.
 
 It exists because the repo's docs gates are all structural. `check-docs-impact.mjs` asserts that
-*some* doc changed, `check-docs-structure.mjs` that new files sit in allowed places, and
+*some* doc changed, `check-docs-structure.mjs` that every doc sits in a declared home, and
 `check-doc-paths.mjs` that cited paths resolve. [`DOCS_CI.md`](../../../docs/internal/ci-cd/DOCS_CI.md)
 says the quiet part itself: none of them check *whether a doc's claims are still true*. The
 [`check-our-docs`](../check-our-docs/SKILL.md) skill covers that, but only for whatever a session
@@ -187,7 +187,11 @@ Otherwise, in order:
 
 1. **Verify.** `npm run check:doc-paths`, and the two diff-scoped gates with real arguments —
    `node scripts/check-docs-impact.mjs --base "$(git merge-base origin/main HEAD)" --head HEAD` and
-   the same for `check-docs-structure.mjs`. **Both exit 2 with no `--base`/`--head`**, which reads
+   the same for `check-docs-structure.mjs`, which since 2026-09 is **whole-tree**: it accepts
+   `--base`/`--head` but no longer needs them, and a rename of a `LEGACY_NAMES` file — this
+   routine's literal job — fails until that entry is deleted too. Its **exit 2 now means the gate
+   did not run** (wrong working directory), so never wave it through. `check-docs-impact.mjs` exits 2
+   with no `--base`/`--head`, which reads
    like a failure and is not. `npm run ci:local-gate` runs the set but also lint, typecheck and API
    tests — heavier than a docs run needs.
    `check-doc-paths` is **whole-tree**: deleting a doc or renaming a heading can turn it red on a

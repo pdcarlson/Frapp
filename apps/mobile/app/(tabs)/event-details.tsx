@@ -108,6 +108,9 @@ export default function EventDetailsScreen() {
         // The deep link the filename contract exists for. Carries the id so a
         // calendar entry opens *this* event, not a bare screen.
         deepLinkUrl: `frapp://event-details?id=${event.id}`,
+        // Only a series parent describes the series. A materialized child
+        // carries its parent's id and exports as the single meeting it is.
+        recurrenceRule: event.parent_event_id ? null : event.recurrence_rule,
       });
 
       setCalendarState(exportStarted ? "exported" : "failed");

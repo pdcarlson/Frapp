@@ -238,6 +238,7 @@ Customization is the product: every chapter runs differently, so vocabulary, rol
 - **chapter_workflows** — `(id, chapter_id, key, enabled, threshold int, params jsonb)`. Each enabled workflow can configure a numeric threshold.
 - **chapter_dues_config** — `(chapter_id PK, cadence, active_amount_cents, new_member_amount_cents, alumni_amount_cents, installments_allowed, late_fee_cents, grace_days, scholarship_pool_cents)`. One singleton row per chapter. All cents columns are validated as non-negative integers at the boundary (see [`engineering.md`](../engineering.md)).
 - **chapter_service_config** — `(chapter_id PK, minutes_per_point int default 60 check >= 1, created_at, updated_at)`. One singleton row per chapter, holding the service-hours points conversion rate. An **absent row means the default rate**, so no chapter needs provisioning; rows are created lazily on first PATCH. Named to match `study_geofences.minutes_per_point`, the same conversion for study hours.
+- **chapter_points_config** — `(chapter_id PK, adjustment_rate_limit_per_hour int default 50 check >= 1, anomaly_threshold int default 100 check >= 1, created_at, updated_at)`. One singleton row per chapter, holding the two points anti-fraud limits [`points.md`](../behavior/points.md) § Anti-Fraud has always described as chapter-configurable. Same shape and lifecycle as `chapter_service_config`: an **absent row means the defaults** — which are exactly the constants `PointsService` hardcoded before #394 — so no chapter needs provisioning and no backfill was required; rows are created lazily on first PATCH. Both floors are `>= 1` rather than `>= 0`, for two different reasons: a rate limit of `0` would refuse every adjustment with no corrective write available through the append-only ledger, and a threshold of `0` would flag every row.
 - **chapter_audit_log** — `(id, chapter_id, actor_user_id, action, target_type, target_id, scope, diff jsonb, created_at, member_visible boolean)`. Append-only; mirrored into the `#chapter-audit` channel via the audit→chat bridge (ADR-08). Indexed on `(chapter_id, created_at desc)` and `(actor_user_id, created_at desc)`.
 
 Seed materialization deep-clones the shared archetype seeds (`ARCHETYPES`, `MODULE_CATALOG`, `ROLE_PACKS`, `CUSTOM_FIELDS_SEED`, `WORKFLOWS_SEED`, `VOCABULARY_DEFAULTS`) into the chapter's rows so per-chapter edits never mutate the shared reference (see [`engineering.md`](../engineering.md)).
@@ -601,6 +602,8 @@ The chosen path is Path D + Path C from #401. Path A (per-session Supabase branc
 - PGlite adds one npm dep (`@electric-sql/pglite`, WASM, no native code, no Docker). It does not replace integration testing against the hosted Supabase project — it complements unit + integration tiers.
 - Chunks that previously shipped with "Runtime checks BLOCKED — see #235" can drop the disclaimer once the migration completes. #235 closes-as-subsumed; the PGlite job in CI is the migration-validation deliverable.
 
+- **Amendment (2026-09-02, #472) — the moved Realtime broadcast emit is deleted; the move never brought its consumer with it.** The Consequences bullet above ("The Realtime broadcast emit previously in `chat-send` (`channel.send`) moved to `ChatService.broadcastNewMessage`") describes what #416 did and is retained as that record. What it did not say, because nobody checked at the time, is that **the client half never arrived**: the emit published `new_message` to a bespoke `chapter:<channel_id>` topic, while clients join `chat:channel:<id>` (ADR-10) and read messages through `postgres_changes` on `chat_messages`. In the tree as it stands, no `new_message` handler exists in `apps/web`, `apps/mobile` or `packages` — and both clients drive chat through the same `chat-core` realtime manager, so that covers both. So the emit was dead on **both** halves independently: wrong topic *and* no listener. (`git log -S"new_message"` over `apps/web apps/mobile packages` is also empty, but that was run in a sandbox holding a **shallow clone**, so it evidences the recent history it covers, not "never".) It also cost an HTTP round trip per message, and reported nothing when it failed. Both follow from the channel never being subscribed: `RealtimeChannel.send()` takes its REST fallback when `!canPush() && type === 'broadcast'` (`@supabase/realtime-js`), so each call POSTed to the broadcast endpoint, and that branch **catches internally and returns `'ok' | 'error' | 'timed out'` rather than throwing**. The return value was discarded. So the `catch` block was unreachable for a send failure and its `logger.debug` line never ran — which means #472's premise, that failures were "logged at `debug`", was itself wrong: they were logged nowhere. That is a stronger reason to remove the emit than to instrument it. `ChatService.broadcastNewMessage`, `realtimeTopicForChannel` and the now-unused `SUPABASE_CLIENT` injection are removed; `ChatService` no longer depends on the Supabase client at all. **This does not change message delivery**, which was already Postgres Changes and nothing else (`spec/ui/resilience.md` §3.2). The prompt was #472, which asked for the swallowed broadcast failure to be instrumented — a counter on a path that delivers to nobody could never indicate user-visible degradation, so the emit was removed rather than measured. Whether chat should have a *genuine* sub-second broadcast fast-path is a separate, open question (**#1613**). Note that no ADR forbids one: ADR-02 chose Broadcast *for* typing and presence rather than ruling it out for messages, and ADR-10 governs the presence topic. Building one is therefore a new decision, and it needs a client handler, de-duplication against the Postgres Changes echo of the same row, and ADR-10's coupling respected — the topic stays `chat:channel:<id>`, because the push worker reads Presence there. Pinned by `apps/api/src/application/services/chat-realtime-carrier.spec.ts`, which asserts the API emits no Broadcast; that guard describes today's architecture, not a prohibition.
+
 **Trigger to revisit:**
 
 - **Geography shift.** If Frapp's user base meaningfully expands outside US-East — measured by ≥15% of monthly active chapters resolving to a non-US-East region — re-evaluate moving the hot path back to Edge.
@@ -628,6 +631,12 @@ The chosen path is Path D + Path C from #401. Path A (per-session Supabase branc
 **Consequences:** CI gains a PGlite migration + RLS smoke job (no live Postgres needed). The `pglite-migrations` job (`scripts/check-pglite-migrations.mjs`) applies every migration to a fresh in-process Postgres-in-WASM and runs an RLS smoke tier: every `public` table enables RLS (the default-deny invariant, #360), the chat hot-path tables hold their posture (`chat_channels`/`chat_messages` default-deny with no policies; `chat_message_actions` reaction policies scoped to `auth.uid()`), and `chapter_audit_log` stays append-only. It verifies policy *presence and shape* — enforcement as the `authenticated` role (`SET ROLE` + real JWT) stays out of this tier (#423) and lives in the NestJS Jest + hosted-Supabase tiers. Agents verify the data layer in-loop cheaply and deterministically and stop handing off blind on the data layer. Work needing the full hot path is explicit, opt-in, and self-cleaning, so the MCP write-tool security surface stays closed by default. Continuing the Edge→NestJS migration is load-bearing: the more hot-path logic lives in NestJS, the more PGlite alone suffices and the rarer the branch escape hatch is needed. Implementation is tracked in dedicated follow-up issues (PGlite CI job #531 — shipped, subsumes #356/#360; Path-A SessionEnd teardown + scoped allowlist #532; continued Edge→NestJS migration #533).
 
 **Revisit-when:** PGlite proves insufficient for a recurring class of work (forcing the branch escape hatch to become routine), or Supabase branch cost/security posture shifts enough that Path A should become the default rather than an opt-in.
+
+- **Amendment (2026-09-02, #423) — the PGlite tier now verifies enforcement black-box, for four tables.** The Consequences text above says the tier verifies policy *presence and shape* and defers enforcement to the NestJS tier. That was true when written and is now only half true: the harness stands up its own non-owner `rls_probe` role, stubs `auth.uid()`/`auth.role()` to a signed-in client, and reads the tables for real. `chat_message_actions` and `chat_messages` are asserted as exact visibility *sets* (#977, #974); `members` and `financial_invoices` are asserted to return **zero rows**, since neither carries a policy any client role can reach and both must stay default-deny — so a migration that adds a permissive policy to either turns the job red. **The change that made this work at all** is that the harness now creates the **`authenticated` role before applying migrations**. Roughly 18 migrations wrap policy and grant statements in `if exists (select 1 from pg_roles where rolname = 'authenticated')` — the repo's dominant idiom for anything targeting a client role, since the role exists on hosted Supabase but not in a bare Postgres. Without it, every one of those blocks was silently skipped and the harness validated a schema the hosted project does not run: a `create policy … to authenticated using (true)` written that way left the entire job green while handing every signed-in client every row of the table. Creating the role also means the `to authenticated` clause (`v_role_clause`, `20260803150000_chat_message_actions_membership_rls.sql:154-168`) is real here rather than empty, closing a gap `SECURITY_FIXES.md` had recorded as promotion-time-only.
+
+  **A separate correction to the Consequences text, unrelated to enforcement:** it describes the chat posture as "`chat_channels`/`chat_messages` default-deny with no policies". That stopped being true for `chat_messages` on 2026-08-16, when `20260816140000_realtime_carrier_repair.sql` gave it the client-read `chat_messages_select` policy that is now the sole gate on Realtime chat delivery. `chat_channels` is still policy-less. Anyone adding a client read path over `chat_messages` should review that policy rather than assume the table is unreachable.
+
+  **Two limits worth stating, because the Consequences paragraph will otherwise be read as fully superseded.** First, this is *four* tables, not all 50: a permissive policy added to any other RLS-enabled table still changes no assertion here, and the every-table invariant remains a presence check only. Second, there is still no `anon` **role**, so a policy whose `TO` clause names `anon` does not bind the probe — `auth.role()` *is* stubbed to `'anon'` for the unauthenticated scenarios, so predicates that test the role are exercised, but grant-level `to anon` targeting is not. A real GoTrue JWT — any claim beyond `sub`/`role` — also remains out of reach. Roster: [`AUTHORIZATION_MODEL.md`](../../docs/internal/security/AUTHORIZATION_MODEL.md) §RLS enforcement.
 
 ### ADR-13: Repository visibility — public → private on GitHub Pro (2026-05-31)
 
@@ -716,6 +725,11 @@ The chosen path is Path D + Path C from #401. Path A (per-session Supabase branc
 - **Amendment (2026-08-21) — `web-visual-regression` is deleted, and lever B now applies to `web-responsive-floor`.** The Playwright snapshot job this ADR path-gated (lever D) and browser-cached (lever B) no longer exists. Its spec, its sixteen committed baselines and the `test:visual` script went with it. The reason is the reason it was never a required check: baselines pinned to CI's Chromium build drift with every Playwright bump, so the job's red X was normally answered by regenerating the fixture rather than fixing the page — a cost on every UI change with no enforcement to show for it. The `~/.cache/ms-playwright` cache from lever B is unchanged but now has a single consumer, `web-responsive-floor`, which also ends the concurrent-writer race that produced a harmless "Unable to reserve cache" annotation on cold keys. Every sentence above naming `web-visual-regression` is historical — both the 2026-06-01 decision text and the 2026-08-19 amendment's "`web-visual-regression` stays advisory". Pixel coverage, if it returns, belongs in a hosted service with per-PR baseline review rather than PNGs in the repo — see [`QUALITY_GATES.md`](../../docs/internal/ci-cd/QUALITY_GATES.md).
 
 - **Amendment (2026-08-20) — `web-tests` no longer covers a deleted unused UI workspace.** A later consolidation deleted the unused shared UI workspace under `packages/` (zero importers; dashboard primitives live in `apps/web/components/ui/`; landing uses inline Tailwind). `web-tests` still uniquely covers `packages/hooks` and `packages/chat-core` plus `apps/web`. The 2026-08-19 required-check rationale is unchanged for those remaining suites. The 2026-08-19 text naming the deleted workspace is historical.
+
+- **Amendment (2026-09-02) — lever (A) is now one composite action, and it has seven consumers, not six.** The decision text above says `packages-build` writes the cache and *"the six downstream jobs restore it read-only."* It is **seven** — `lint-and-typecheck`, `api-tests`, `web-tests`, `api-contract-check`, `dependency-cruiser`, `mobile-validate` and `web-responsive-floor`; the last was added after this ADR was written and nothing caught the count. All eight call sites (one producer, seven consumers) now `uses: ./.github/actions/turbo-packages-build`, the repo's first composite action, per stage 4 of the CI/CD redesign (#1382). The producer passes `save: "true"` and gets `actions/cache`, whose post-job hook writes `.turbo` back; consumers get `actions/cache/restore`, which has no post hook and so cannot race the producer for the same key — the split the eight hand-written blocks already made, now stated once. Collapsing to `cache/restore` + a conditional `cache/save` was considered and rejected — not on cost, which is identical either way (four declared steps, three run for a consumer), but because it cannot express `actions/cache`'s `post-if: success()`, and this extraction is meant to preserve the eight blocks' semantics exactly. **The cache key is byte-identical**, so existing entries stay warm.
+
+  **This buys no CI minutes, and it is worth being explicit about that under a cost ADR.** Key, producer/consumer split, `path` and build command are all unchanged, so hit rates are unchanged; the change is drift prevention, and it costs one extra step per job. Nor is the drift it prevents a *cold rebuild* — an earlier draft of this amendment said so and was wrong. Because `restore-keys` keeps the shared `turbo-pkgbuild-<os>-` prefix, a consumer whose exact key drifted would still restore the producer's most recent `.turbo` through the prefix, and turbo's own content hashing would still hit for unchanged packages: a stale-but-useful cache, not a cold build. A true cold rebuild needs the prefix itself to drift. The reason to single-source it is that either failure is **silent** — a cache miss is not an error — not that it is catastrophic. `clean-checkout-typecheck` and `web-production-build` deliberately do **not** use the action; their in-file comments say so, [`AGENT_INFRA.md`](../../docs/internal/ci-cd/AGENT_INFRA.md) repeats it, and `scripts/ci/__tests__/turbo-packages-build-action.test.mjs` fails if either acquires it.
+- **Amendment (2026-09-02) — the apply named above is a human step, and the bare command is no longer the narrow delta it describes.** Read "**Applying this needs a manual `npm run configure:branch-protection` run**" in the 2026-08-19 amendment as a record of what that rollout needed, not as a vetted command to run today. `npm run configure:branch-protection` with no flags prints `Mode: LIVE` and **PUTs the whole protection payload**, built from the roster arrays exactly as they stand at the moment it runs — not the small delta the 2026-08-19 text describes. Those arrays have changed since: `web-production-build` was added and `migration-drift` was swapped for `migration-order` in [`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs), so an apply today writes today's roster, whatever it has become. **Applying is a human step, run with an admin PAT, by policy.** From an agent session, run **`npm run configure:branch-protection:verify`** — it reads live protection back and diffs it, writes nothing, and exits non-zero on any difference — **and nothing else**. And note that `npm run configure:branch-protection --dry-run` is *not* a dry run: without the `--` separator npm swallows the flag, the script sees no argv, and it applies. `npm run configure:branch-protection -- --dry-run` is the form that does not write.
 
 ### ADR-16: Project management — retire the in-repo backlog, adopt Linear as canonical (2026-06-01)
 
@@ -1040,6 +1054,19 @@ in the flow ever named a commit. Three consequences, all measured rather than ar
   gone") and its 2026-08-28 correction both stand as written. This ADR does not revise
   them; it records that the pause was **kept deliberately** and is now the only human gate.
 
+- **Amendment (2026-09-02) — the Vercel half of this ADR is superseded by ADR-21.** The owner
+  disconnected both Vercel projects from Git — `frapp-landing` on 2026-09-01, `frapp-web` on
+  2026-09-02 — so the "Vercel Production Branch = `production`" row above and the consequence that
+  "neither Vercel project's Production Branch may be `main`" no longer describe anything the API
+  exposes: with no Git link there is no Production Branch setting and no auto-deploy-from-push path
+  at all, and Vercel's `list_projects` reports `link: null` for both projects. Of the two
+  load-bearing, dashboard-only, fail-open settings, **one remains asserted** — Render auto-deploy
+  must stay off. The Vercel one is not gone from the world, only from the API: the unlink is itself
+  unversioned dashboard state that a re-link would undo, which is why the fix tracked in **#1579**
+  is to **invert** `assertVercelProductionBranch` — a *present* Git link becomes the violation —
+  rather than to delete it. Both statements stand as the record of what was true on 2026-08-28;
+  ADR-21 is the canonical record of what replaces them and of the breakages the unlink left live.
+
 **Trigger to revisit:** collaborators are added (a merge-time review may then be worth its
 cost again), or a provider gains a writable API for the settings the guardrails can only
 assert.
@@ -1161,9 +1188,211 @@ the ones a later reader would otherwise re-litigate.
   facts are the class of thing a write-only script structurally could not report, which is the
   point of the read-back rather than a claim about this particular repository's settings.
 
+- **Amendment (2026-09-02) — the Vercel half of decision 3 is superseded by ADR-21, and the
+  `api.github.com` 403 is a property of the route, not of the session.**
+
+  **(a) Staging no longer builds from Git at all.** Decision 3 above records a deliberate
+  build-shape difference: production built under `npm ci --omit=dev`, staging verified through
+  Vercel preview deployments. The owner disconnected both Vercel projects from Git — landing
+  2026-09-01, web 2026-09-02 (ADR-21) — so the staging half of that trade-off no longer exists:
+  nothing deploys staging web or landing on merge, and both hosts are frozen at their last Git
+  build. **ADR-21 below is the canonical record** of the unlink, the per-project freeze points and
+  the breakages; read them there rather than restating them here. The `ignoreCommand: "exit 1"` row
+  in the table above governs nothing while the projects stay unlinked — but **keep the key**, and
+  `vercel.json`'s `git` block with it: they are the versioned form of settings that revert to
+  dashboard-only state the moment Git is re-linked.
+  `web-production-build` is unaffected — it runs in CI and never went through Vercel. #1381 also
+  gained a **seventh** stage on 2026-09-02 — **#1578**, ADR-21's CI-driven Vercel deploys, filed
+  that day as a native sub-issue of #1381 — so the "six sequenced stages" in the decision above,
+  decision row 4, and the completion condition in the trigger below all now read as seven. The
+  guardrail breakages the unlink left behind are **#1579**.
+
+  **(b) Reachability of `api.github.com` is route-dependent, not session-dependent.** The
+  consequence above states that branch protection "cannot be verified by an agent" because
+  `api.github.com` "returns 403 to authenticated and unauthenticated requests alike"; amendment
+  (2026-09-01, #1383)(b) narrowed that to a read that *sometimes* works, on #680's
+  *session-dependent* framing. The session was never the variable. Measured on 2026-09-02 from one
+  sandbox host, with one `GITHUB_PAT`, inside the same minute:
+
+  - `curl`, which honours `HTTPS_PROXY`, gets **403** `{"message":"GitHub access is not enabled
+    for this session"}` on **every** repo-scoped path, regardless of the `Authorization` header —
+    the agent proxy's GitHub-credential layer answers, GitHub is never reached;
+  - `curl` through that same proxy to `/user` gets **200**; the proxy allows non-repo paths;
+  - `curl --noproxy '*' .../repos/pdcarlson/Frapp/branches/main/protection` gets **200**;
+  - node's built-in `fetch` does not read `HTTPS_PROXY` (documented in the sandbox's agent-proxy
+    README at /root/.ccr/README.md), so it goes direct and gets **200 from GitHub itself** — the
+    response carries `server: github.com` and `x-github-request-id`.
+
+  Direct egress is subject only to the environment's network allowlist, which includes
+  `api.github.com`. So **reads are available to an agent as a ground-truth channel**:
+  `npm run configure:branch-protection:verify` exits 0 from this sandbox, and step 4 of a rollout
+  is evidenceable by an agent rather than only by a human's run output. Never respond to the 403 by
+  regenerating the PAT with broader scopes — scope is not what it is about — and never set
+  `NODE_USE_ENV_PROXY=1` for these scripts, which would push node onto the 403 route. What does
+  **not** change: applying branch protection stays a human step with an admin PAT **by policy**,
+  not because it is unreachable; and the GitHub MCP stays the sanctioned write path for issues, PRs
+  and comments. REST is a read channel for settings the MCP exposes no tool for — not a write
+  fallback, not an MCP replacement. This satisfies the read half of the trigger below; the write
+  half is a policy choice and stands.
+
+  The 2026-09-01 caution holds unchanged: a read reports what an admin last applied, so re-read
+  rather than cite. Re-read on 2026-09-02, `main` still carried 21 required contexts with
+  `strict: true`, `enforce_admins: true`, `required_linear_history: true`,
+  `required_pull_request_reviews: null`, and `allow_fork_syncing` live `false` against the roster's
+  `true` (**#1580**) — a dated observation, not a standing claim.
+
 **Trigger to revisit:** the six-stage program completes or is abandoned; production backups exist
 (retiring the decision-2 risk); or a provider gains a readable API for branch protection from an
 agent session, which would retire the write-only rollout step.
+
+---
+
+### ADR-21: Retire the Vercel Git integration — deploys move into CI (landing 2026-09-01, web 2026-09-02)
+
+This ADR is the **canonical record** of the Vercel Git unlink: the dates, the freeze points, the
+live breakages and the work that repairs them. Other docs carry a sentence of current state and
+link here; the detail belongs on this page only.
+
+**Decision:** Disconnect both Vercel projects — `frapp-web` and `frapp-landing` — from Git. The
+owner did this deliberately, and not as one event: `frapp-landing` was unlinked on **2026-09-01**
+and `frapp-web` roughly six and a half hours later, on **2026-09-02** (measured boundaries under
+**Consequences**). Vercel no longer observes the repository at all: no push produces a preview, no
+branch is a Production Branch, and no Vercel dashboard setting decides what ships from a push.
+Deploying moves into GitHub Actions.
+
+**Context.** The Git integration did two jobs, and both had become liabilities. It built a preview
+for every push to `main` — the staging verification path ADR-20 decision 3 recorded; both
+`vercel.json` files pin `git.deploymentEnabled` to `{"main": true, "**": false}`, so feature-branch
+and PR pushes never produced a deployment — and it held the settings that decided what a push to
+`main` did: the Production Branch, and auto-deploy from push.
+The Production Branch exists only in the Vercel dashboard: this repository could assert it
+(`assertVercelProductionBranch` in `scripts/ci/production-guardrails.mjs`, daily and again as a
+preflight before every deploy) but could never enforce it. It is the Vercel half of the pair ADR-19
+recorded as "load-bearing, dashboard-only, and **fail open**"; the other half is Render auto-deploy,
+which this ADR does not touch. Auto-deploy from push is the second liability the unlink removes — no
+guardrail ever asserted it, and it was partly repo-governed through `git.deploymentEnabled` in both
+`vercel.json` files. Removing the integration removes both.
+
+Evidence for the state as of 2026-09-02: Vercel's `list_projects` reports `link: null` for **both**
+projects. The last Git-sourced deployment each project accepted — its **freeze point**, and the
+build that staging host still serves — is **landing `2bf143b` at 2026-09-01T20:19Z** and **web
+`0372c6d` at 2026-09-02T02:41:42Z**; the web one carries `githubDeployment: 1` and
+`githubCommitRef: main` in Vercel's deployment list, and `verify-deployments.yml` run #436 verified
+it green. Nothing was failing beforehand — production-guardrails run #4 passed, and every push to
+`main` produced previews only. This is a decision taken, not a breakage worked around.
+
+**What it retires.** The Production Branch guardrail (`assertVercelProductionBranch` in
+`scripts/ci/production-guardrails.mjs`) now asserts a setting the API no longer exposes. The
+auto-deploy-from-push path is gone outright. The `git` settings and the `ignoreCommand: "exit 1"`
+pin in both `vercel.json` files — ADR-20's always-build row — have no integration left to govern
+while the projects stay unlinked, which makes the **premise** of **#1376** (that nothing enforces
+the `ignoreCommand` pin) moot for exactly as long as that holds. #1376 is open; its disposition is
+decided on the issue, not by this prose. **Do not delete either key.** `git.deploymentEnabled` and
+`ignoreCommand` are the versioned form of settings that are otherwise dashboard-only — re-link Git
+and branch filtering and the Ignored Build Step fall straight back to unversioned dashboard state.
+And `scripts/ci/deploy-vercel-production.mjs` passes a `gitSource` to Vercel's create-deployment
+API, an argument that only means anything while the integration exists.
+
+**What replaces it.** CI-driven deploys: `vercel build` in a GitHub Actions job, then
+`vercel deploy --prebuilt --prod` — or the `files` upload form of the create-deployment API —
+shipping the artifact that job produced. That model is **designed, not built**: no workflow does it
+today, and nothing in the repository deploys Vercel without the integration. It is tracked as
+**#1578**, filed 2026-09-02 as CI/CD stage 7 — a native sub-issue of the #1381 epic.
+
+**Consequences.** Four breakages are live as of 2026-09-02, recorded here as current known-broken
+state rather than as history:
+
+- **The daily 07:15 UTC production-guardrails run is red.** `assertVercelProductionBranch` reads
+  `project?.link?.productionBranch` and treats an absent value as a violation; with `link: null` it
+  is always absent. The same assertion runs as a preflight inside `deploy-production.yml`, so it
+  **blocks every production deploy** — including a `--migrations-only` run, which drops only
+  `frapp-landing`'s assertion and still makes `frapp-web`'s. Tracked as **#1579**.
+- **`verify-deployments.yml`'s two Vercel jobs fail on every push to `main`** — they look for a
+  deployment the integration used to create. The two jobs broke ~6.5 hours apart, one per project,
+  which is how the unlink itself is dated:
+
+  | Job | Last green run | First failing run |
+  | --- | --- | --- |
+  | `verify-vercel-landing` | #427, `2bf143b`, 2026-09-01T20:19:18Z | #428, `7f94528`, 2026-09-01T20:28:41Z |
+  | `verify-vercel-web` | #436, `0372c6d`, 2026-09-02T02:41:42Z | #437, `b62a142`, 2026-09-02T03:04:00Z |
+
+  Every run from #428 on has `verify-vercel-landing = failure`; `verify-vercel-web` kept succeeding
+  through #436, i.e. for six and a half hours after landing broke. **Only the verify step fails.**
+  `scripts/ci/ensure-vercel-staging-alias.mjs` is *not* failing and emits nothing to grep for: its
+  step is a plain sequential step after the verify step in the same job with no `if:` guard, so a
+  failed verify ends the job before it runs — measured `skipped` on both Vercel jobs of runs #437
+  and #443. (Run on its own it would exit 0 as a skip.) Tracked as **#1579** with the guardrail
+  above.
+- **`scripts/ci/deploy-vercel-production.mjs` is presumed broken**, because its `gitSource` argument
+  requires the integration. Presumed rather than measured, and structurally so rather than by
+  accident of scheduling: the `assertVercelProductionBranch` preflight in the bullet above fails
+  first, so `deploy-production.yml` never reaches this step — the `gitSource` path **cannot be
+  exercised at all until #1579 lands**. That is also the sequencing constraint on the replacement:
+  **#1579 has to land before #1578's production path can be tested at all.**
+- **Nothing deploys staging web or landing on merge any more.** Both staging hosts are frozen at
+  the freeze points named above, and stay there until stage 7 (**#1578**) exists.
+
+**A superseded auto-filed diagnosis: #1564.** The daily guardrails run auto-filed **#1564**
+("Production deploy guardrails have drifted") on 2026-09-02; it is open and P1. Its body reads the
+red run as Vercel falling back to "the repository default branch (main)", so that "every merge to
+main would become a production deployment", and tells the reader to fix it by setting a Production
+Branch in the dashboard. That was correct while the project was linked. It is **impossible** now —
+with `link: null` Vercel is not watching the repository at all — and its remedy would mean
+re-linking Git, reversing this ADR. **Do not act on #1564 as written**; the repair is **#1579**, the
+inversion described below.
+
+Against those four: the **Vercel half** of the fail-open risk ADR-19 and ADR-20 mitigated is now
+removed at the source rather than asserted after the fact. While the projects stay unlinked there is
+no Production Branch to point at `main` and no push path to deploy from. But *staying unlinked* is
+itself unversioned dashboard state — exactly the shape of thing this repo does not trust — so the
+guardrail is not moot, it is **pointed the other way**: #1579's fix is to **invert**
+`assertVercelProductionBranch` so that a **present** Git link is the violation, not to delete the
+assertion. An audit of Vercel keeps an item; the item is now "both projects are still unlinked".
+The Render half is untouched — `assertRenderService` still runs in the same daily job and the same
+`deploy-production.yml` preflight, and is why `production-guardrails.mjs` still exists. That
+Vercel-side removal is the durable gain, and it is why the breakages are worth carrying rather than
+undoing by re-linking. Repairing them is CI work, tracked separately in **#1579** (the guardrails)
+and **#1578** (the replacement deploys); this ADR records the state and changes no workflow and no
+script.
+
+**Amendment (2026-09-02) — two of the four breakages are repaired (#1579).** The bullets under
+*Consequences* above stand as the record of what the unlink left broken. Two of them no longer
+describe current state:
+
+- **The guardrail.** `assertVercelProductionBranch` was **inverted**, not deleted, exactly as this
+  ADR and #1579 called for. It is now `assertVercelNoGitLink` in
+  `scripts/ci/production-guardrails.mjs`: a **present** Git link is the violation, and an absent one
+  is the pass. The daily 07:15 run and the `deploy-production.yml` preflight therefore no longer
+  fail on the intended post-ADR-21 state.
+
+  Inverting flipped *absent* from meaning "violation" to meaning "pass", which converts a
+  fail-closed check into a fail-open one unless something else holds the line: an error envelope, an
+  empty body, or a future response shape has no `link` either, and would otherwise read as
+  unlinked-and-green on the only path to production. `looksLikeVercelProject` is that line — a
+  response that is not recognisably a project object is a violation. It is the load-bearing half of
+  the change, and is unit-tested separately from the assertion so the two cannot collapse into one
+  answer.
+
+- **The verify jobs.** `verify-vercel-web` and `verify-vercel-landing` were **removed** from
+  `verify-deployments.yml`. Nothing creates a Vercel deployment for a pushed SHA, so polling for one
+  could not detect a problem — only manufacture a red check, which is how a red `main` stops meaning
+  anything. `verify-vercel-deploy.mjs` and `ensure-vercel-staging-alias.mjs` are **kept**, referenced
+  by no workflow, for **#1578** to re-wire against a deployment CI creates; the alias script
+  mitigates a real Vercel behaviour (the staging hostname lagging a READY deployment) that returns
+  with it. Re-add the jobs keyed on the deployment id that workflow creates, not on the pushed SHA.
+
+The other two bullets are unchanged and still live: `deploy-vercel-production.mjs`'s `gitSource` call
+remains **presumed broken** (#1579 removed the preflight that blocked it, so it is now reachable and
+can finally be measured — but nothing has measured it yet), and **nothing deploys staging web or
+landing on merge**. Both wait on #1578.
+
+This amendment also supersedes the future-tense repair language left in ADR-19's 2026-09-02
+amendment and in the *Consequences* and closing paragraphs above ("#1579's fix is to invert…",
+"Repairing them is CI work, tracked separately in #1579"): that work has landed. #1578 has not.
+
+**Trigger to revisit:** CI-driven deploys prove unworkable and re-linking Git is considered. That
+supersedes this ADR rather than amending it — and re-linking restores both Vercel settings, the
+Production Branch and auto-deploy from push, along with the integration.
 
 ---
 

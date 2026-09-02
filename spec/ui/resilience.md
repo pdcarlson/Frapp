@@ -253,6 +253,18 @@ async function sendMessage(channelId: string, content: string) {
 
 **Primary channel:** Supabase Realtime (Postgres Changes subscription on `chat_messages` filtered by `channel_id`).
 
+**It is also the only *in-app* push carrier.** Postgres Changes is not a durable backstop behind a faster
+broadcast path — for messages there is no broadcast path at all. Realtime Broadcast in chat carries
+`typing` only (ADR-02; `packages/chat-core/src/realtime-manager.ts`), and Presence carries the
+online set on the same `chat:channel:<id>` topic (ADR-10). So an *open* client renders a new message
+when the Postgres Changes row arrives, or when the polling fallback below picks it up. (A member who
+is backgrounded or away learns of it a third way, outside this doc's scope: the push worker
+subscribes to the same `chat_messages` INSERT server-side and fans out an Expo notification — ADR-09,
+suppressed by the Presence read above.)
+The API used to emit a `new_message` broadcast that looked like a second delivery path and was not
+one; it was removed in #472 — see the ADR-11 amendment for why, and #1613 for whether a real
+sub-second path is wanted.
+
 **Fallback:** If Supabase Realtime disconnects or fails, fall back to polling.
 
 ```

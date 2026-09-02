@@ -14,6 +14,7 @@ import type {
   ChapterDocumentFolder,
   ChapterDuesConfig,
   ChapterServiceConfig,
+  ChapterPointsConfig,
   ChapterWorkflow,
   ChannelReadReceipt,
   ChatChannel,
@@ -21,6 +22,7 @@ import type {
   ChatMessage,
   ChatMessageAction,
   ChatMessageAttachment,
+  ChatMessageBookmark,
   ChatNotificationPreference,
   DiscordConnection,
   DiscordImport,
@@ -116,6 +118,7 @@ export interface Database {
       discord_import_files: TableDefinition<DiscordImportFile>;
       message_reactions: TableDefinition<MessageReaction>;
       channel_read_receipts: TableDefinition<ChannelReadReceipt>;
+      chat_message_bookmarks: TableDefinition<ChatMessageBookmark>;
       poll_votes: TableDefinition<PollVote>;
       push_tokens: TableDefinition<PushToken>;
       notifications: TableDefinition<Notification>;
@@ -137,6 +140,7 @@ export interface Database {
       chapter_workflows: TableDefinition<ChapterWorkflow>;
       chapter_dues_config: TableDefinition<ChapterDuesConfig>;
       chapter_service_config: TableDefinition<ChapterServiceConfig>;
+      chapter_points_config: TableDefinition<ChapterPointsConfig>;
       chapter_directory: TableDefinition<ChapterDirectoryEntry>;
       chapter_directory_requests: TableDefinition<ChapterDirectoryRequest>;
       chat_notification_preferences: TableDefinition<ChatNotificationPreference>;

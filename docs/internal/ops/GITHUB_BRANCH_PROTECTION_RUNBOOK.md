@@ -21,7 +21,9 @@ branch. This ensures:
 >
 > `configure-branch-protection.mjs` no longer writes a `production` payload, but it does
 > **not delete** one that already exists. Removing the orphaned rule is a manual step in
-> Settings → Branches.
+> Settings → Branches. Read 2026-09-02: `GET /repos/pdcarlson/Frapp/branches/production` and
+> `.../branches/production/protection` both return **404** — the branch itself is gone, so this
+> endpoint can no longer answer whether a pattern rule survives it; check Settings → Branches.
 
 ## Prerequisites
 
@@ -56,36 +58,44 @@ echo 'GITHUB_PAT=<token>' >> .env
 > The same files also supply `GITHUB_REPOSITORY`, since they are loaded before the slug is
 > resolved — `--repo` still overrides both.
 
-> **This script cannot be run from a Claude Code hosted session — it is a human step.** The hosted
-> environment does inject `GITHUB_PAT`, which is why this runbook used to claim the script "works there
-> without extra setup". It does not. That token authenticates (`GET /user` → 200) but **every
-> repo-scoped REST path is refused by the session gateway with 403** — the body reads
-> `GitHub access is not enabled for this session` — and the script talks to `api.github.com` directly
-> via `fetch` rather than through the GitHub MCP server that agent sessions use. Verified 2026-08-27 against
-> `GET /repos/pdcarlson/Frapp/branches/main/protection` → 403.
+> **Reads work from a hosted session; the apply is a human step by policy.** The hosted environment
+> injects `GITHUB_PAT`, and reaching `api.github.com` from a Claude Code cloud sandbox is
+> **route-dependent, not session-dependent**: the agent proxy's GitHub-credential layer answers
+> **403** `GitHub access is not enabled for this session` on every repo-scoped path, whatever
+> `Authorization` header is sent, while node's built-in `fetch` and `curl --noproxy '*'` go direct
+> and return **200** from GitHub itself. The measurement and its evidence live in
+> [`AGENT_INFRA.md` — the `api.github.com` route rule](../ci-cd/AGENT_INFRA.md#work-status); this
+> runbook only consumes the rule. The 2026-08-27 403 once recorded here — against
+> `GET /repos/pdcarlson/Frapp/branches/main/protection` — was a `curl` probe, so it measured the
+> proxy, not GitHub. [#680](https://github.com/pdcarlson/Frapp/issues/680)'s evidence table records
+> 403 and 200 for this endpoint class on the same day, and the route rule explains that pattern
+> without the session having to be the variable — but be honest about what that table says: it is a
+> **single row, and it attributes both the 403 and the 200 to `curl`**. So it does not corroborate
+> the route rule on its own; either the 200 was taken on a different route than the row implies, or
+> the row is imprecise. Today's direct measurement settles the rule either way.
 >
-> **The refusal happens at the session's egress gateway, not at GitHub — so do not go regenerate the PAT
-> with broader scopes.** The 403 carries no `Server: github.com` and no `X-Github-Request-Id`, while
-> `GET /user` from the same session returns both; the repo-scoped request never reaches GitHub at all.
-> The GitHub MCP server does hold repo write access — it is how agent sessions push branches, open PRs
-> and comment — but it exposes no branch-protection tool.
+> **Do not regenerate the PAT with broader scopes** — the 403 is not an auth failure. It looked
+> like one because `GET /user` *through* the proxy returns 200 (the proxy allows non-repo paths),
+> so the token appeared to work everywhere except the paths that mattered. To tell the layers
+> apart when you do hit a 403: a proxy 403 carries neither `server: github.com` nor
+> `x-github-request-id`, and a 403 that carries both came from GitHub and is a real permission
+> answer. And **do not set `NODE_USE_ENV_PROXY=1`** for these scripts: that puts node back on the
+> 403 route. Check with `npm run configure:branch-protection:verify`, which **fails loudly** rather
+> than passing when a read is refused — see `--verify` below for the dated result.
 >
-> **Amended 2026-09-01 (#1383): the read half of this is session-dependent, not settled.** The same
-> `GET .../branches/main/protection` returned **HTTP 200** from a cloud sandbox, using `GITHUB_PAT`
-> loaded from `.env.local` through `node`'s `fetch` — where the 2026-08-27 probe above was `curl`
-> through the agent proxy. #680's evidence table records this endpoint class answering 403 and 200
-> **on the same day in different sessions**, so neither observation is the general rule and the
-> sentence that used to sit here — "there is no sanctioned agent path to this setting at all" — was
-> too strong. What is unchanged: **applying** still needs a human with an admin PAT, and an agent
-> must never treat a successful read in one session as evidence the next will work. Try
-> `npm run configure:branch-protection:verify`; it fails loudly rather than passing when the read is
-> refused, so attempting it costs nothing and never produces a false green.
+> **Applying branch protection is still a human step with an admin PAT — by policy, not because it
+> is unreachable.** The GitHub MCP server is the sanctioned write path for issues, PRs and comments
+> and exposes no branch-protection tool; REST is a read channel for ground truth, not a write
+> fallback. That is why promoting a check to required is filed as a `[human]` issue rather than
+> picked up by `/next`. What an agent owns is the preparation: confirm every intended context has
+> reported green on the target branch, and confirm the job names match the array strings exactly —
+> the preconditions that make an apply safe, both checkable through the MCP server.
 >
-> What this leaves an agent is the preparation: confirm every intended context has reported green on the
-> target branch, and confirm the job names match the array strings exactly. Both are the preconditions
-> that make an apply safe, and both are checkable through the MCP server. But **applying it requires a
-> human running the script locally with an admin PAT**. That is why
-> promoting a check to required is filed as a `[human]` issue rather than picked up by `/next`.
+> **From an agent session the only sanctioned invocation is
+> `npm run configure:branch-protection:verify`, and nothing else.** Never the bare command — with no
+> flags it is a live `PUT` of the whole payload. Never `--dry-run` without the `--` separator —
+> npm swallows it and the script applies. Both traps are spelled out at the commands themselves in
+> Step 1 and Step 2; read them before running anything from this file.
 
 ## Step 1: Dry Run (Review Before Applying)
 
@@ -95,9 +105,23 @@ npm run configure:branch-protection -- --dry-run
 
 This prints the exact configuration that will be applied without making any changes. Review the output carefully.
 
-Since #1383 a dry run also **reads live protection back and prints the difference**, so the output
-answers "what would this actually change?" rather than only "what would this write?". A run that
-changes nothing says so explicitly:
+> **The `--` separator is load-bearing: without it, this command APPLIES.**
+> `npm run configure:branch-protection --dry-run` — no `--` — passes **zero** arguments through.
+> npm consumes `--dry-run` as its own option, so the script sees an empty `argv`: `hasFlag` is false
+> for both `--dry-run` and `--verify`, `assertKnownArgs` has nothing to reject, the script prints
+> `Mode: LIVE` and PUTs the entire protection payload. Reproduced on npm 10.9.7. The two spellings
+> differ by two characters and one is a governance write.
+>
+> **From an agent session, run `npm run configure:branch-protection:verify` and nothing else** —
+> never the bare command, never `--dry-run` without the `--`. Applying stays a human step with an
+> admin PAT (see **Prerequisites**).
+
+A dry run also **reads live protection back and prints the difference**, so the output answers
+"what would this actually change?" rather than only "what would this write?". That read-back is a
+**shipped capability of the script**, not something [#1383](https://github.com/pdcarlson/Frapp/issues/1383)
+delivered: that stage-5 issue asked for the read-back, is still open, and its body still describes
+the script as PUT-only — so cite the capability rather than the issue. A run that changes nothing
+says so explicitly:
 
 ```
   No changes — live protection already matches this roster.
@@ -113,12 +137,39 @@ Reads and diffs but never writes, and **exits non-zero** when live protection di
 roster. This is the mode that turns "the rollout step was run" into evidence: it produces an exit
 code and a printed delta rather than a checkmark.
 
-> **From an agent session this may or may not work, and that is expected.** Reaching
-> `api.github.com` from a cloud sandbox is session-dependent — see the ADR-20 amendment of
-> 2026-09-01 and the evidence table in #680. `--verify` **fails** rather than passes when the read
-> is refused, so an unreadable answer is never mistaken for a matching one.
+> **This works from an agent session as long as the environment allowlists `api.github.com`** — the
+> script reads it through node's `fetch`, which takes the direct route rather than the agent proxy
+> that 403s repo-scoped paths (see **Prerequisites** above). It is the only agent-usable live read
+> this runbook prescribes as a *command*: the `gh api` recipes further down are for laptops and
+> Actions, because `gh` is not installed in these sandboxes and honours `HTTPS_PROXY`, so it would
+> land on the 403 route. The dated `GET` observations elsewhere in this file were taken over that
+> same direct route and can be re-taken the same way. **A successful read in one session is not
+> evidence the next will work**: the direct route depends on that environment's network allowlist,
+> which this repository does not control — so try it, but never assume it.
+> `--verify` **fails** rather than passes when the read is refused, so an unreadable answer is
+> never mistaken for a matching one, and a refusal is never a licence to reach for the writing
+> command instead.
+>
+> **Verified 2026-09-02 from a cloud sandbox: exit 0.** Live `main` matched the roster on all 21
+> contexts — `migration-order` and `web-production-build` required, the demoted `migration-drift`
+> absent — with `strict`, `enforce_admins` and `required_linear_history` all `true` and
+> `required_pull_request_reviews` `null`. The single divergence is `allow_fork_syncing`
+> ([#1580](https://github.com/pdcarlson/Frapp/issues/1580)): the roster says `true`, live is
+> `false`. The diff deliberately skips it — GitHub honours fork-syncing only
+> on a locked branch and this payload pairs it with `lock_branch: false`, so `LOCK_DEPENDENT_FLAGS`
+> in [`scripts/configure-branch-protection.mjs`](../../../scripts/configure-branch-protection.mjs)
+> excludes it unless the branch is locked on either side. Like every count in this runbook, that is
+> a dated observation, not current state; re-run the command rather than citing this paragraph.
 
 ## Step 2: Apply
+
+> **Everything in this step is a LIVE write, and it is a human step with an admin PAT** — by
+> policy, not because it is unreachable (see **Prerequisites**). With no flags the script prints
+> `Mode: LIVE` and PUTs the **whole** protection payload, overwriting anything set by hand outside
+> the arrays. **An agent session must not run these commands**, and must not treat `--dry-run` as
+> the safe substitute: without the `--` separator npm swallows the flag and this same live apply is
+> what runs (Step 1). The only sanctioned agent invocation in this runbook is
+> `npm run configure:branch-protection:verify`.
 
 ```bash
 npm run configure:branch-protection
@@ -177,9 +228,9 @@ approval, not the merge.
 
 **Not required on branches (informational):** `pglite-migrations` is advisory, as is `duplicate-detection` — jscpd has no clone-level baseline, so its only lever is a repo-wide percentage, which is too coarse to block a merge on ([`QUALITY_GATES.md`](../ci-cd/QUALITY_GATES.md)). Both are intentionally omitted from [`scripts/ci/lib/required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs).
 
-> **`web-visual-regression` is gone — don't re-add it to any roster.** It ran Playwright **snapshots** and was advisory, because baselines pinned to CI's Chromium build drift with it. Until #1152 the 375px floor gate ran inside it and inherited that posture by sharing a directory, so a breached floor was a red mark a PR could merge past; #1152 split the floor into its own **required** `web-responsive-floor` job, and the snapshot job has since been deleted outright along with its spec and baselines ([`QUALITY_GATES.md`](../ci-cd/QUALITY_GATES.md)). If a stale live branch-protection config still lists it, a `npm run configure:branch-protection` run clears it — the script's arrays are the intent.
+> **`web-visual-regression` is gone — don't re-add it to any roster.** It ran Playwright **snapshots** and was advisory, because baselines pinned to CI's Chromium build drift with it. Until #1152 the 375px floor gate ran inside it and inherited that posture by sharing a directory, so a breached floor was a red mark a PR could merge past; #1152 split the floor into its own **required** `web-responsive-floor` job, and the snapshot job has since been deleted outright along with its spec and baselines ([`QUALITY_GATES.md`](../ci-cd/QUALITY_GATES.md)). If a stale live branch-protection config still lists it, a `npm run configure:branch-protection` run clears it — the script's arrays are the intent. **That run is a live `PUT` and a human step with an admin PAT; from an agent session run `npm run configure:branch-protection:verify` and nothing else** (see **Prerequisites**).
 
-> **Script vs live drift — check before you assume.** The arrays in the script are the *intended* state; the live config is whatever the last manual run applied, and the two drift apart silently because only a human re-run closes the gap. It has happened before: `main` sat at 12 contexts against 17 intended until a run on **2026-08-21** closed the gap. Verified **2026-08-27**: `main` carried all **19** intended contexts with nothing extra — script and live agreed, `web-responsive-floor` and `migration-drift` included. #1374 then raised the intent to **21** by adding `web-production-build`, and the migration-correctness pass swapped `migration-drift` out for `migration-order` — still **21**, but two entries different. This paragraph used to say no run had happened since, so live still lacked both new checks; a read on **2026-09-01** found the opposite — all 21 roster contexts present, `migration-drift` absent — so an apply evidently happened in between. **Do not trust either dated observation as current state.** That is the whole point of this section: the count here is a snapshot, the arrays are the intent, and only a re-run makes intent live. Read it rather than infer it — `npm run configure:branch-protection:verify` exits non-zero on any difference, or use the `gh api` call below.
+> **Script vs live drift — check before you assume.** The arrays in the script are the *intended* state; the live config is whatever the last manual run applied, and the two drift apart silently because only a human re-run closes the gap. It has happened before: `main` sat at 12 contexts against 17 intended until a run on **2026-08-21** closed the gap. Verified **2026-08-27**: `main` carried all **19** intended contexts with nothing extra — script and live agreed, `web-responsive-floor` and `migration-drift` included. #1374 then raised the intent to **21** by adding `web-production-build`, and the migration-correctness pass swapped `migration-drift` out for `migration-order` — still **21**, but two entries different. This paragraph used to say no run had happened since, so live still lacked both new checks; a read on **2026-09-01** found the opposite — all 21 roster contexts present, `migration-drift` absent — so an apply evidently happened in between. **Do not trust either dated observation as current state.** That is the whole point of this section: the count here is a snapshot, the arrays are the intent, and only a re-run makes intent live. Read it rather than infer it — `npm run configure:branch-protection:verify` exits non-zero on any difference (a later read, **2026-09-02**, still found all 21 and exit 0; see the `--verify` section above), or use the `gh api` call below from a laptop or Actions.
 >
 > **"Not applied yet" does NOT mean "not enforced anywhere".** `scripts/ci/validate-deploy-sha.mjs` imports `ALL_REQUIRED_CHECKS` from [`scripts/ci/lib/required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs) rather than reading GitHub's live config (until #1383 it imported the same roster from `configure-branch-protection.mjs`, which put a module that writes governance on the deploy path), so a check is **blocking on the production deploy path from the moment it is added to the array** — before any `configure:branch-protection` run, and whether or not branch protection has ever heard of it. The asymmetry is deliberate (a `workflow_dispatch` has no PR and therefore no required checks, so the deploy gate has to ask the checks API against some list) but it is easy to be surprised by: a PR can merge with `migration-order` red and then be undeployable. Read the array as the deploy gate's live config and branch protection's *intended* one. Any count written here is a dated observation, not a source of truth — the arrays are the intent, and only a re-run makes it live. Read live state from the API:
 >
@@ -187,7 +238,7 @@ approval, not the merge.
 > gh api repos/pdcarlson/Frapp/branches/main/protection/required_status_checks --jq '.contexts'
 > ```
 >
-> Running `npm run configure:branch-protection` applies **everything** in the arrays, not just the entry you added, and PUTs the whole payload — anything set by hand outside the arrays is overwritten. Read the `--dry-run` output in full before applying.
+> Running `npm run configure:branch-protection` applies **everything** in the arrays, not just the entry you added, and PUTs the whole payload — anything set by hand outside the arrays is overwritten. Read the `-- --dry-run` output in full before applying — **the `--` separator is load-bearing**; without it npm swallows the flag and the script applies. From an agent session run `npm run configure:branch-protection:verify` and nothing else (see Prerequisites).
 
 **Docs check (from `.github/workflows/docs.yml`):**
 
@@ -221,10 +272,29 @@ Vercel build quota while CI remains the merge gate. Production Vercel deployment
 branch-driven at all — `deploy-production.yml` creates them through the API for a named
 commit.
 
+> **Dated note, 2026-09-02: the Vercel Git integration was retired (a deliberate owner decision),
+> so the paragraph above describes a model that no longer holds.** Both projects report
+> `link: null`; with no integration left, `git.deploymentEnabled` limits nothing and the API path
+> above is **presumed broken, not observed failing** — but **keep the `git` block and the
+> `ignoreCommand` pin in both `vercel.json` files**, they are the versioned form of settings that
+> are otherwise dashboard-only and would fall back to unversioned dashboard state if Git is
+> re-linked. The canonical record of the unlink, its per-project dates and every live breakage is
+> **ADR-21** in [`spec/architecture/README.md`](../../../spec/architecture/README.md); the guardrail
+> repair is [#1579](https://github.com/pdcarlson/Frapp/issues/1579) and the CI-driven replacement
+> [#1578](https://github.com/pdcarlson/Frapp/issues/1578). None of this changes the
+> branch-protection policy stated here: Vercel deploys are not required checks either way.
+
 ### Deploy verification is no longer a branch-protection question
 
-`verify-deployments.yml` polls Render and Vercel after a push to `main` and emits
-`verify-render-api`, `verify-vercel-web`, `verify-vercel-landing`. This runbook used to
+`verify-deployments.yml` polls Render after a push to `main` and emits `verify-render-api`. It used
+to emit `verify-vercel-web` and `verify-vercel-landing` too; both were **removed on 2026-09-02** by
+[#1579](https://github.com/pdcarlson/Frapp/issues/1579), because ADR-21's Git unlink means no push
+produces a Vercel deployment for them to verify. They had failed on every push, and separately
+rather than together: `verify-vercel-landing` from run #428 (2026-09-01T20:28Z) onward,
+`verify-vercel-web` only from run #437 (2026-09-02T03:04Z), having still gone green on runs
+#428–#436 in between. The cause and the per-project boundaries are in **ADR-21**
+([`spec/architecture/README.md`](../../../spec/architecture/README.md)); Vercel verification
+returns with [#1578](https://github.com/pdcarlson/Frapp/issues/1578). This runbook used to
 carry a recipe for promoting those three to required checks **on `production`**, once the
 workflow had stabilised.
 
@@ -272,6 +342,12 @@ Common causes and fixes:
 - **Stale required check reference:** a required context name no longer exists because the underlying workflow was removed.  
   **Fix:** remove the orphan context from the arrays in `scripts/ci/lib/required-checks.mjs`, then `gh api -X DELETE repos/<owner>/<repo>/branches/main/protection/required_status_checks/contexts -f 'contexts[]=<orphan>'`, and re-run the branch-protection script.
 
+> **Both fixes above are human steps.** The bare `npm run configure:branch-protection` is a live
+> `PUT`, and `gh` is a laptop/Actions tool — it is not installed in a cloud sandbox and reads
+> `HTTPS_PROXY`, so it would take the 403 route from one. An agent diagnosing a stuck check runs
+> `npm run configure:branch-protection:verify` to establish what live protection actually holds,
+> edits the roster array in the same PR, and leaves the apply to a human with an admin PAT.
+
 ## Verification Checklist
 
 The script now re-reads protection after the PUT and reports whether the result actually matches
@@ -285,7 +361,7 @@ longer the only way to know. In the GitHub UI (Settings → Branches):
 - [ ] All required status checks are listed
 - [ ] "Include administrators" is checked
 - [ ] "Require linear history" is checked
-- [ ] No leftover rule for `production` (the script stopped writing one in #1340 but cannot delete an existing rule — remove it by hand)
+- [ ] No leftover rule for `production` (the script stopped writing one in #1340 but cannot delete an existing rule — remove it by hand; the branch itself was already gone when read on 2026-09-02, which the API reports as 404 either way)
 - [ ] Test: create a PR with a deliberate lint failure → verify merge is blocked
 
 Separately, in Settings → **Environments** → `production`:
@@ -294,6 +370,9 @@ Separately, in Settings → **Environments** → `production`:
       deploy since #1340. To confirm it is actually active, dispatch **Deploy production**
       with *Stop after the dry run* checked and watch the job: an environment-gated job
       parks on "Waiting for approval", while an ungated one starts in about two seconds.
+      Read 2026-09-02: `GET /repos/pdcarlson/Frapp/environments/production` reported
+      `protection_rules: ["required_reviewers"]`, which answers it directly rather than by
+      timing — a dated observation, re-read it rather than citing it.
 
 ## Emergency Override
 
@@ -302,7 +381,9 @@ If you need to merge urgently and a check is broken:
 1. Go to GitHub → Settings → Branches → Edit protection rule
 2. Temporarily remove the broken check from the required list
 3. Merge the PR
-4. **Immediately re-add the check** (run `npm run configure:branch-protection` again)
+4. **Immediately re-add the check** (run `npm run configure:branch-protection` again) — a human
+   step with an admin PAT; the bare command is a live `PUT`, and an agent must not run it even
+   under outage pressure
 5. Document the override in the PR description
 
 ## Updating Check Names
@@ -315,8 +396,11 @@ If CI job names change (e.g., renaming a workflow job), update:
 3. `CONTRIBUTING.md` — required checks section
 4. `spec/environments/README.md` — CI job matrix
 5. `docs/internal/ci-cd/DOCS_CI.md` — the docs-gate table and its **Required?** column
-6. Re-run `npm run configure:branch-protection` to apply the new names
-7. Confirm with `npm run configure:branch-protection:verify` — it exits non-zero if anything was missed
+6. Re-run `npm run configure:branch-protection` to apply the new names — **human step, admin PAT**;
+   the bare command is a live `PUT`, so an agent making the roster change in steps 1–5 opens the PR
+   and stops here
+7. Confirm with `npm run configure:branch-protection:verify` — it exits non-zero if anything was
+   missed, writes nothing, and is the one invocation an agent session may run
 
 This list is the drift engine, not a safety net — one source and four hand-kept copies is why
 `@repo/theme` and `packages/chat-integrations` went missing from every table at once. Steps 2–4 are

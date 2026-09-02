@@ -94,6 +94,13 @@ export interface MessageTimelineProps {
   ) => void;
   onEdit?: (messageId: string, content: string) => Promise<void>;
   onDelete?: (messageId: string) => void;
+  /**
+   * Message ids the viewer has bookmarked (#462). A set rather than a
+   * per-message flag so the virtualized list looks each row up in O(1) without
+   * the caller rebuilding an array of props per render.
+   */
+  bookmarkedMessageIds?: Set<string>;
+  onToggleBookmark?: (messageId: string, next: boolean) => void;
   canManageChannel?: boolean;
 }
 
@@ -131,6 +138,8 @@ export const MessageTimeline = forwardRef<
     onAct,
     onEdit,
     onDelete,
+    bookmarkedMessageIds,
+    onToggleBookmark,
     canManageChannel,
   },
   ref,
@@ -265,6 +274,8 @@ export const MessageTimeline = forwardRef<
               onAct={onAct}
               onEdit={onEdit}
               onDelete={onDelete}
+              isBookmarked={bookmarkedMessageIds?.has(entry.message.id)}
+              onToggleBookmark={onToggleBookmark}
               canManageChannel={canManageChannel}
               isTapRevealed={tapRevealed.isRevealed(entry.message)}
               onToggleTapReveal={() => tapRevealed.toggle(entry.message)}

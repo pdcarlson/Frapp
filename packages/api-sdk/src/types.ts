@@ -236,110 +236,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/roles": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List chapter roles */
-        get: operations["RbacController_list_v1"];
-        put?: never;
-        /** Create a custom role */
-        post: operations["RbacController_create_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/roles/permissions-catalog": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get system permissions catalog */
-        get: operations["RbacController_catalog_v1"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/roles/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Delete a custom role */
-        delete: operations["RbacController_delete_v1"];
-        options?: never;
-        head?: never;
-        /** Update a role */
-        patch: operations["RbacController_update_v1"];
-        trace?: never;
-    };
-    "/v1/roles/transfer-presidency": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Transfer presidency to another member */
-        post: operations["RbacController_transferPresidency_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/roles/presidency-claim-status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Whether the caller may claim the chapter's vacant presidency */
-        get: operations["RbacController_presidencyClaimStatus_v1"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/roles/claim-presidency": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Claim the chapter's vacant presidency */
-        post: operations["RbacController_claimPresidency_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/chapters/{id}/config": {
         parameters: {
             query?: never;
@@ -461,6 +357,110 @@ export interface paths {
         get: operations["ChapterAuditLogController_list_v1"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List chapter roles */
+        get: operations["RbacController_list_v1"];
+        put?: never;
+        /** Create a custom role */
+        post: operations["RbacController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/roles/permissions-catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get system permissions catalog */
+        get: operations["RbacController_catalog_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/roles/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a custom role */
+        delete: operations["RbacController_delete_v1"];
+        options?: never;
+        head?: never;
+        /** Update a role */
+        patch: operations["RbacController_update_v1"];
+        trace?: never;
+    };
+    "/v1/roles/transfer-presidency": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Transfer presidency to another member */
+        post: operations["RbacController_transferPresidency_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/roles/presidency-claim-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether the caller may claim the chapter's vacant presidency */
+        get: operations["RbacController_presidencyClaimStatus_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/roles/claim-presidency": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Claim the chapter's vacant presidency */
+        post: operations["RbacController_claimPresidency_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -829,6 +829,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/notification-preferences/kinds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's own per-message-kind notification overrides; level is null where none is set. For the level actually applied to a channel, read GET /v1/channels/notification-preferences. */
+        get: operations["ChatController_getKindNotificationPreferences_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/notification-preferences/kinds/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set the caller's notification level for one message kind */
+        put: operations["ChatController_setKindNotificationLevel_v1"];
+        post?: never;
+        /** Clear the caller's override for one message kind, returning it to the default */
+        delete: operations["ChatController_clearKindNotificationLevel_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/channels/{id}": {
         parameters: {
             query?: never;
@@ -1137,6 +1172,41 @@ export interface paths {
         put: operations["ChatController_setChannelNotificationLevel_v1"];
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/bookmarks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the caller's own bookmarked messages in this chapter */
+        get: operations["ChatBookmarkController_listBookmarks_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/bookmarks/messages/{messageId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bookmark a message (idempotent) */
+        post: operations["ChatBookmarkController_bookmarkMessage_v1"];
+        /** Remove the caller’s bookmark (idempotent) */
+        delete: operations["ChatBookmarkController_unbookmarkMessage_v1"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2851,30 +2921,6 @@ export interface components {
             /** @description Storage path returned from logo-url */
             storage_path: string;
         };
-        CreateRoleDto: {
-            name: string;
-            permissions: string[];
-            display_order?: number;
-            color?: string;
-        };
-        UpdateRoleDto: {
-            name?: string;
-            permissions?: string[];
-            display_order?: number;
-            color?: string;
-        };
-        TransferPresidencyDto: {
-            /** Format: uuid */
-            target_member_id: string;
-        };
-        PresidencyClaimStatusDto: {
-            /** @description Whether the chapter currently has no President. */
-            needs_president: boolean;
-            /** @description Whether the caller holds the chapter's next-highest-ranked role with a live member, and may call POST /v1/roles/claim-presidency right now. */
-            eligible: boolean;
-            /** @description Name of the eligible role, or null when no role below President has any member at all (the "Frapp support intervenes" case). */
-            next_role_name: string | null;
-        };
         BetaConfigDto: {
             enabled?: boolean;
             /** @enum {string} */
@@ -2905,6 +2951,18 @@ export interface components {
              */
             minutes_per_point?: number;
         };
+        PointsConfigDto: {
+            /**
+             * @description Maximum manual point adjustments one admin may create per rolling hour (default 50). Must be between 1 and 1000 — a limit of 0 would refuse every adjustment with no way back through the API.
+             * @example 50
+             */
+            adjustment_rate_limit_per_hour?: number;
+            /**
+             * @description Absolute point amount at or above which an adjustment is flagged for review (default 100). Must be between 1 and 100000 — a threshold of 0 would flag every transaction, and one above the ledger's own ±100000 ceiling could never fire.
+             * @example 100
+             */
+            anomaly_threshold?: number;
+        };
         WorkflowConfigDto: {
             /** @description Workflow key from the chapter catalog */
             key?: string;
@@ -2924,6 +2982,7 @@ export interface components {
             beta_config?: components["schemas"]["BetaConfigDto"];
             dues?: components["schemas"]["DuesConfigDto"];
             service?: components["schemas"]["ServiceConfigDto"];
+            points?: components["schemas"]["PointsConfigDto"];
             workflows?: components["schemas"]["WorkflowConfigDto"][];
             /** @description When true, disables pseudonymous product analytics for this chapter (data-retention.md #analytics-events-pseudonymous). */
             analytics_opt_out?: boolean;
@@ -3025,6 +3084,30 @@ export interface components {
             };
             member_visible: boolean;
             created_at: string;
+        };
+        CreateRoleDto: {
+            name: string;
+            permissions: string[];
+            display_order?: number;
+            color?: string;
+        };
+        UpdateRoleDto: {
+            name?: string;
+            permissions?: string[];
+            display_order?: number;
+            color?: string;
+        };
+        TransferPresidencyDto: {
+            /** Format: uuid */
+            target_member_id: string;
+        };
+        PresidencyClaimStatusDto: {
+            /** @description Whether the chapter currently has no President. */
+            needs_president: boolean;
+            /** @description Whether the caller holds the chapter's next-highest-ranked role with a live member, and may call POST /v1/roles/claim-presidency right now. */
+            eligible: boolean;
+            /** @description Name of the eligible role, or null when no role below President has any member at all (the "Frapp support intervenes" case). */
+            next_role_name: string | null;
         };
         MemberCustomFieldValueDto: {
             field_id: string;
@@ -3130,6 +3213,37 @@ export interface components {
             /** @enum {string} */
             level: "all" | "mentions" | "off";
         };
+        KindNotificationPreferenceDto: {
+            /**
+             * @description A `chat_messages.kind`. `imported` and `loading` are absent by design — the first is refused by the push worker before any preference is read, and the second is an internal optimistic placeholder rather than a category of message a member receives.
+             * @enum {string}
+             */
+            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "system_audit" | "announcement";
+            /**
+             * @description The member's chapter-wide override for this kind, or null when they have set none. Null is not a level: what a kind falls back to depends on the channel a message lands in (an `announcement` resolves `all` in a channel named `announcements` and `mentions` elsewhere), so there is no single default to report here. For the effective level of a real message, read GET /v1/channels/notification-preferences.
+             * @enum {string|null}
+             */
+            level: "all" | "mentions" | "off" | null;
+        };
+        SetKindNotificationLevelDto: {
+            /**
+             * @description all = every message of this kind; mentions = only when you are mentioned; off = muted, though @mentions still notify — the one exception is the system_audit kind, whose off a mention does not lift. A channel-scoped preference outranks this one for messages in that channel.
+             * @enum {string}
+             */
+            level: "all" | "mentions" | "off";
+        };
+        ClearedKindNotificationPreferenceDto: {
+            /**
+             * @description The kind whose override was cleared. Wider than the settable set on purpose — see the DELETE route.
+             * @enum {string}
+             */
+            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "system_audit" | "imported" | "loading" | "announcement";
+            /**
+             * @description Always null: the override is gone, and what the kind now falls back to depends on the channel.
+             * @enum {string|null}
+             */
+            level: "all" | "mentions" | "off" | null;
+        };
         CreateChannelDto: {
             name: string;
             description?: string;
@@ -3213,6 +3327,40 @@ export interface components {
              */
             level: "all" | "mentions" | "off";
         };
+        BookmarkedMessageDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            channel_id: string;
+            /** @description Null for an imported archive message, which names its author in author_name instead. */
+            sender_id: string | null;
+            author_name?: string | null;
+            author_avatar_path?: string | null;
+            author_external_id?: string | null;
+            /** @description Reads “[message deleted]” once the message is deleted — the bookmark keeps its row and surfaces that placeholder rather than disappearing. */
+            content: string;
+            is_deleted: boolean;
+            created_at: string;
+        };
+        BookmarkDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            message_id: string;
+            /** @description When the caller saved it — not when the message was sent. */
+            created_at: string;
+            message: components["schemas"]["BookmarkedMessageDto"];
+            message_available: boolean;
+        };
+        BookmarkRefDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            message_id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            created_at: string;
+        };
         GeofenceCoordinateDto: {
             lat: number;
             lng: number;
@@ -3235,9 +3383,9 @@ export interface components {
             check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
             /** @description Human-readable name for `check_in_zone`, shown on the mobile scanner ("Inside the Great Hall zone"). */
             check_in_zone_name?: string;
-            /** @description When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. */
+            /** @description When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. Rejected with a 400 when `required_role_ids` is non-empty, on this key or `client_message_id` alone — the card is broadcast to every reader of the channel, so a create cannot both target roles and post one. (`PATCH` can still add targeting to an event whose card already posted; that card is left as-is.) */
             channel_id?: string;
-            /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. */
+            /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Rejected with a 400 when `required_role_ids` is non-empty, even without `channel_id` — see that field. */
             client_message_id?: string;
         };
         UpdateEventDto: {
@@ -4116,160 +4264,6 @@ export interface operations {
             };
         };
     };
-    RbacController_list_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    RbacController_create_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateRoleDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    RbacController_catalog_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    RbacController_delete_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    RbacController_update_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateRoleDto"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    RbacController_transferPresidency_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TransferPresidencyDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    RbacController_presidencyClaimStatus_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PresidencyClaimStatusDto"];
-                };
-            };
-        };
-    };
-    RbacController_claimPresidency_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     ChapterConfigController_getConfig_v1: {
         parameters: {
             query?: never;
@@ -4549,6 +4543,160 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ChapterAuditLogEntryDto"][];
                 };
+            };
+        };
+    };
+    RbacController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RbacController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRoleDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RbacController_catalog_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RbacController_delete_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RbacController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRoleDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RbacController_transferPresidency_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransferPresidencyDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RbacController_presidencyClaimStatus_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PresidencyClaimStatusDto"];
+                };
+            };
+        };
+    };
+    RbacController_claimPresidency_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -5068,6 +5216,71 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChannelNotificationPreferenceDto"][];
+                };
+            };
+        };
+    };
+    ChatController_getKindNotificationPreferences_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KindNotificationPreferenceDto"][];
+                };
+            };
+        };
+    };
+    ChatController_setKindNotificationLevel_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetKindNotificationLevelDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KindNotificationPreferenceDto"];
+                };
+            };
+        };
+    };
+    ChatController_clearKindNotificationLevel_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClearedKindNotificationPreferenceDto"];
                 };
             };
         };
@@ -5593,6 +5806,65 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ChannelNotificationPreferenceDto"];
                 };
+            };
+        };
+    };
+    ChatBookmarkController_listBookmarks_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookmarkDto"][];
+                };
+            };
+        };
+    };
+    ChatBookmarkController_bookmarkMessage_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookmarkRefDto"];
+                };
+            };
+        };
+    };
+    ChatBookmarkController_unbookmarkMessage_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

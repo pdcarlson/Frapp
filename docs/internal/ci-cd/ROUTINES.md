@@ -85,7 +85,16 @@ this block. Policy detail: [`GITHUB_PM.md` → Ownership boundary](GITHUB_PM.md#
      net simpler, verified, one theme per run. It still never opens *feature* PRs, never merges,
      never touches migrations, CI workflows, dependency versions, or a frozen surface's visuals,
      and caps at one open PR at a time. Everything else in this list binds it as written.
-4. **GitHub MCP only.** If it is unavailable, stop and report — no `gh`, no REST, no scratch file.
+4. **GitHub MCP only. If it is unavailable, stop and report** — no `gh`, no REST, no scratch
+   file. **REST is never a substitute for the MCP on tracker work, read or write**: no routine
+   lists, searches, reads, files, labels, closes or comments on an issue or PR over REST, and a
+   missing MCP is a full stop, not a prompt to find another route. The carve-out is narrow and is
+   not tracker work: a **read** of provider *settings* the MCP exposes no tool for — branch
+   protection, environments, rulesets, repo visibility, vulnerability alerts (see
+   [Tracker access](#tracker-access-shared-by-all-routines)) — plus the one body-fidelity
+   verification read that
+   [`GITHUB_PM.md`](GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity)
+   licenses on its own terms. Neither makes REST a tracker path, and neither lifts the stop rule.
    Routines 4 and 5 are the exception: they write a PR rather than issues, so an unavailable MCP
    does not block the sweep or the scan — push the branch, report its name, and stop. They stop
    and report if **git push** fails.
@@ -121,9 +130,17 @@ is spelled in the triage skill; it does not widen destructive writes.
 
 Routine sessions run in the Frapp Claude Code web environment, whose harness **pre-approves the
 GitHub MCP** (`mcp__github__*`) — the same path `/next` uses. No API key, no REST, no secrets to
-manage (shell access to `api.github.com` is session-dependent and cannot be relied on). Each run
-starts by loading the
-GitHub MCP tool schemas (via `ToolSearch`, e.g.
+manage. (Direct REST to `api.github.com` *is* reachable from these sandboxes where the
+environment's network allowlist carries it — the 403 a proxied `curl` gets is the agent proxy's
+route answering, not GitHub; sent direct (`curl --noproxy '*'`, or node's built-in `fetch`, which
+does not read `HTTPS_PROXY`) the same call returns 200. Measured 2026-09-02 in a cloud sandbox; see
+the `api.github.com` route rule under [`AGENT_INFRA.md` → Work status](AGENT_INFRA.md#work-status).
+It is a **read** channel for provider *settings* the MCP exposes no tool for — branch protection,
+environments, rulesets, repo visibility, vulnerability alerts — and never a tracker path: nothing
+about it licenses listing, searching, filing, labelling, closing or commenting on issues or PRs
+over REST. Rule 4 above and the stop rule below are unchanged: if the MCP is unavailable the
+routine stops and reports, and REST is not the fallback.) Each run starts by loading the GitHub
+MCP tool schemas (via `ToolSearch`, e.g.
 `select:mcp__github__list_issues,mcp__github__issue_read,mcp__github__issue_write,mcp__github__add_issue_comment,mcp__github__search_issues`)
 and verifying access (e.g. `issue_read` on a known issue resolves). **If the MCP is unavailable,
 the routine stops and reports — there is no fallback tracker.** Routine 4 writes no issues, and
@@ -171,7 +188,13 @@ issue if anything looks off):
   `area:dx`; carries no label description, and its scope is likewise the owner's to define) ·
   `area:mobile` (same story, rostered 2026-08-24 — in use on #1237 for `apps/mobile` work that
   is neither `area:ux` nor `area:api`; carries no label description, and its scope is likewise
-  the owner's to define)
+  the owner's to define) · `area:chat` (same story, rostered 2026-09-02 — in use on #1499 for
+  chat dispatch work spanning `packages/chat-core` and its call sites; carries no label
+  description, and its scope is likewise the owner's to define. Note it **overlaps** the surface
+  labels rather than partitioning them, since chat ships on web, mobile and the API — #1499 alone
+  touches `packages/chat-core` plus `apps/web` and `apps/mobile` call sites — so an issue can
+  reasonably carry `area:chat` *and* a surface label. Whether that is intended is the owner's
+  call, not a routine's)
 - **Scope:** `scope:production` — work that only becomes relevant once a production environment
   exists (owner decision 2026-08-10; see
   [`GITHUB_PM.md` → Labels and priority](GITHUB_PM.md#labels-and-priority-lean-taxonomy) and the

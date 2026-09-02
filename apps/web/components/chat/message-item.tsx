@@ -6,7 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { CHIP, CHIP_HIT_AREA } from "./chip";
-import { PinGlyph, ThreadGlyph } from "./chat-glyphs";
+import { BookmarkGlyph, PinGlyph, ThreadGlyph } from "./chat-glyphs";
 import { ReactionChips, ReactionQuickPick } from "./reaction-bar";
 import { MessageAttachments } from "./message-attachments";
 import { MessageRenderer, rendersAsBubble } from "./renderers";
@@ -51,6 +51,23 @@ export interface MessageItemProps {
   onEdit?: (messageId: string, content: string) => Promise<void>;
   /** Own message, or any message when the viewer holds `channels:manage`. */
   onDelete?: (messageId: string) => void;
+  /**
+   * Whether the viewer has bookmarked this message (#462).
+   *
+   * The viewer's own state and nobody else's: there is no count and no "who
+   * bookmarked this", because `spec/behavior/chat/README.md` is explicit that
+   * not even a channel admin may see who bookmarked what. Pin, in the same
+   * cluster, is the opposite — chapter-public and visible to everyone.
+   */
+  isBookmarked?: boolean;
+  /**
+   * Toggles the viewer's bookmark. Optional so a surface that does not wire
+   * bookmarks hides the affordance rather than rendering a control that does
+   * nothing — both surfaces that render messages today (the timeline and the
+   * thread panel) do wire it, since a threaded reply is just as much a message
+   * the viewer can see.
+   */
+  onToggleBookmark?: (messageId: string, next: boolean) => void;
   /** Gates the Delete affordance on messages that aren't the viewer's own. */
   canManageChannel?: boolean;
   /** Card action invoker (Vote, RSVP, …). Required for kinds like `poll`. */
@@ -105,6 +122,8 @@ export function MessageItem({
   onAct,
   onEdit,
   onDelete,
+  isBookmarked,
+  onToggleBookmark,
   canManageChannel,
   isTapRevealed,
   onToggleTapReveal,
@@ -334,6 +353,20 @@ export function MessageItem({
         >
           <ThreadGlyph className="h-3.5 w-3.5" />
           Reply
+        </button>
+      ) : null}
+      {onToggleBookmark ? (
+        <button
+          type="button"
+          className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA, "gap-1")}
+          // The control is a toggle, so it announces its state rather than
+          // relying on the label flip alone — a screen reader otherwise hears
+          // two different buttons appear and disappear in the same slot.
+          aria-pressed={!!isBookmarked}
+          onClick={() => onToggleBookmark(message.id, !isBookmarked)}
+        >
+          <BookmarkGlyph className="h-3.5 w-3.5" active={isBookmarked} />
+          {isBookmarked ? "Saved" : "Save"}
         </button>
       ) : null}
       {canEdit ? (
