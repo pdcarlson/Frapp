@@ -39,7 +39,7 @@
 - **Customer:** The chapter (organization).
 - **Provider:** Stripe.
 - **Model:** Fixed monthly subscription (e.g. $150/mo flat).
-- **Enforcement:** If the chapter's subscription is not active, the "Invite Member" endpoint returns 402 Payment Required.
+- **Enforcement:** Subscription state gates **writes only** (reads always pass) and is applied by `ChapterGuard`, not by any service. Every refusal is a **403 with a structured code** — the API returns no 402 anywhere. Chat, members and **invites** form a free-tier wedge that keeps working while a chapter is `incomplete`, so a chapter fresh out of the onboarding wizard can invite before it has ever paid. A `past_due` chapter gets a 3-day grace window in which invite creation specifically is blocked (`chapter.subscription.invite_blocked`) while its other free-tier writes continue; after the window closes, and for `canceled`, every write is blocked and the chapter is read-only. Full matrix: [`docs/guides/api-architecture.md`](../../docs/guides/api-architecture.md) § Subscription enforcement (ChapterGuard).
 
 ### Internal Ledger (House Points)
 
