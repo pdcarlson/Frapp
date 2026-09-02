@@ -161,6 +161,26 @@ export function useChapterPresence({
    */
   const attachSeq = useRef(0);
 
+  /**
+   * Last user activity, and when it was last published.
+   *
+   * Refs rather than effect-locals, because a re-attach must not invent
+   * activity. As effect-locals these were re-seeded to `Date.now()` on every
+   * run of the attach effect — and `enabled` comes from `navigator.onLine`, so
+   * a two-second wifi blip or a laptop waking from sleep re-runs it with no
+   * user interaction whatsoever. A member who had been idle for ten minutes was
+   * republished as freshly active and flipped back to Online on every other
+   * member's screen, for another five minutes. Idle was effectively unreachable
+   * for anyone whose connection ever wobbled.
+   *
+   * The seeding intent still holds for the *first* attach, which is what the
+   * `null` sentinel is for: someone who opens the app and only reads is active,
+   * not idle. It is seeded there rather than here because `Date.now()` is
+   * impure and must not be called during render.
+   */
+  const lastActiveAtRef = useRef<number | null>(null);
+  const lastPublishedAtRef = useRef(0);
+
   const isCurrent =
     inputs !== null &&
     live !== null &&
@@ -246,10 +266,8 @@ export function useChapterPresence({
     let connectionId = -1;
     attachSeq.current += 1;
     const attachId = attachSeq.current;
-    // Last activity published for the viewer. Seeded now: a member who opens
-    // the app and reads without touching anything is active, not idle.
-    let lastActiveAt = Date.now();
-    let lastPublishedAt = 0;
+    // First attach only — a re-attach must never invent activity.
+    lastActiveAtRef.current ??= Date.now();
 
     function readState() {
       if (!channel || detached) return;
@@ -286,12 +304,15 @@ export function useChapterPresence({
     function publish() {
       const id = viewerIdRef.current;
       if (!channel || !id || detached) return;
-      lastPublishedAt = Date.now();
+      lastPublishedAtRef.current = Date.now();
       // Fire-and-forget, as chat's own track is. `RealtimeChannel.send`
       // resolves `'ok' | 'error' | 'timed out'` rather than rejecting once
       // joined, and the cost of a lost publish is one member's dot until the
       // next activity.
-      void channel.track({ userId: id, ts: lastActiveAt });
+      void channel.track({
+        userId: id,
+        ts: lastActiveAtRef.current ?? Date.now(),
+      });
     }
 
     function onActivity() {
@@ -300,9 +321,9 @@ export function useChapterPresence({
       // who alt-tabs 10s before crossing into Idle would read Online for a
       // further five minutes.
       if (document.visibilityState !== "visible") return;
-      const now = Date.now();
-      lastActiveAt = now;
-      if (now - lastPublishedAt < ACTIVITY_THROTTLE_MS) return;
+      const current = Date.now();
+      lastActiveAtRef.current = current;
+      if (current - lastPublishedAtRef.current < ACTIVITY_THROTTLE_MS) return;
       publish();
     }
 
@@ -326,6 +347,13 @@ export function useChapterPresence({
         // the session. Chat's manager re-tracks on each SUBSCRIBED for the same
         // reason.
         onSubscribed: () => {
+          // Symmetric with `readState` and `publish`. The helper already
+          // refuses to mint a detached attach, so this is defence in depth
+          // rather than a live path — but an unguarded SUBSCRIBED would
+          // overwrite `live` with a replaced attach's connection exactly as an
+          // unguarded CLOSED used to clear it, and leaving one of the three
+          // late callbacks asymmetric is how that class of bug comes back.
+          if (detached) return;
           connectionSeq.current += 1;
           connectionId = connectionSeq.current;
           setLive({ generation, attachId, connection: connectionId });

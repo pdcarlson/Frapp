@@ -95,11 +95,21 @@ beforeEach(() => {
   attachRealtimeChannel.mockImplementation((_topic, configure, options) => {
     // Mirrors `enqueue`: the channel is minted on a microtask, never in the
     // caller's synchronous frame, and SUBSCRIBED arrives after that.
+    let released = false;
     void Promise.resolve().then(() => {
+      // And mirrors the helper's own `if (detached) return` at the head of the
+      // queued operation: an attach released before its microtask runs never
+      // mints a channel at all. Ignoring the returned detach would make this
+      // fake easier to satisfy than the real collaborator — the exact gap that
+      // hid the first publish bug.
+      if (released) return;
       configure(fake.channel);
       options?.onSubscribed?.(fake.channel);
     });
-    return detach;
+    return () => {
+      released = true;
+      detach();
+    };
   });
 });
 
@@ -485,6 +495,45 @@ describe("useChapterPresence", () => {
 
     expect(result.current.isReady).toBe(true);
     expect(result.current.statusOf("u1")).toBe("online");
+  });
+
+  /**
+   * A re-attach must not invent activity.
+   *
+   * `enabled` comes from `navigator.onLine`, so a two-second wifi blip or a
+   * laptop waking from sleep re-runs the attach effect with no user interaction
+   * at all. While the activity timestamp was an effect-local it was re-seeded
+   * to `Date.now()` on each run, so a member idle for ten minutes was
+   * republished as freshly active and flipped back to Online on every other
+   * member's screen — making Idle unreachable for anyone whose connection ever
+   * wobbled.
+   */
+  test("a re-attach republishes the real activity time, not the reconnect time", async () => {
+    vi.useFakeTimers();
+    const start = Date.now();
+    const { rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) =>
+        useChapterPresence({ chapterId: CHAPTER, viewerId: "me", enabled }),
+      { initialProps: { enabled: true } },
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(fake.track.mock.calls[0]![0].ts).toBe(start);
+
+    // Ten minutes pass with no interaction at all, then the link blips.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+    });
+    rerender({ enabled: false });
+    rerender({ enabled: true });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    // The republish must carry the original activity time, so the member stays
+    // Idle rather than being resurrected as Online.
+    expect(fake.track.mock.calls.at(-1)![0].ts).toBe(start);
   });
 
   /**
