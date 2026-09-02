@@ -152,13 +152,25 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       // PostgREST `.or()` strings need explicit quoting; `.filter()` encodes values.
       const safeNowForOr = escapeFilterValue(nowIso);
       if (options.active === true) {
-        query = query.or(
-          `metadata->>expires_at.is.null,metadata->>expires_at.gt.${safeNowForOr}`,
-        );
-      } else {
+        // "Active" means neither expired nor manually closed (#379). The two
+        // are independent columns in `metadata`, so this is an AND of two
+        // conditions — `.is()` and `.or()` each add their own top-level filter,
+        // which PostgREST (and this query builder) already ANDs together; no
+        // nested `and()` inside the `.or()` string is needed.
         query = query
-          .not('metadata->>expires_at', 'is', null)
-          .filter('metadata->>expires_at', 'lte', nowIso);
+          .is('metadata->>closed_at', null)
+          .or(
+            `metadata->>expires_at.is.null,metadata->>expires_at.gt.${safeNowForOr}`,
+          );
+      } else {
+        // "Inactive" means closed OR expired — a single flat OR. `expires_at
+        // <= now` already excludes a null `expires_at` under normal SQL NULL
+        // semantics (`NULL <= x` is not true), so no separate "is not null"
+        // guard is needed on that leg, and this query builder's `.or()` cannot
+        // express a nested `and(...)` group anyway.
+        query = query.or(
+          `metadata->>closed_at.not.is.null,metadata->>expires_at.lte.${safeNowForOr}`,
+        );
       }
     }
 
