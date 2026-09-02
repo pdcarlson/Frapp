@@ -17,8 +17,18 @@
 
 import { readFileSync } from "node:fs";
 
+import { DIRECTORIES, ROOT_FILES } from "./ci/lib/docs-structure.mjs";
+
 const SCRIPT_SRC = "scripts/ci/lib/required-checks.mjs";
 const CI_YML = ".github/workflows/ci.yml";
+
+// The placement map. Its "Where things go" table is prose restating
+// scripts/ci/lib/docs-structure.mjs — the same hand-copied-roster shape this gate
+// already polices for the required checks, and the same drift risk.
+export const PLACEMENT_DOC = "docs/internal/DOCUMENTATION_CONVENTIONS.md";
+
+// Homes in that table that are deliberately not directories under docs/ or spec/.
+export const NON_DIRECTORY_HOMES = ["GitHub Issues", ".buildpad/", "REFACTOR-PLAN.md", "REFACTOR-PROGRESS.md"];
 
 // The docs that restate the roster. Each is checked against the same source.
 export const DOC_TABLES = [
@@ -176,6 +186,78 @@ export function tableBlocks(text) {
   return blocks;
 }
 
+/**
+ * A "canonical home" cell into the directory it names, or null.
+ *
+ * The column is written for readers, not parsers: `spec/behavior/<topic>.md`,
+ * `spec/product/`, `spec/architecture/README.md` and `docs/internal/ops/` all
+ * appear. Normalising to the DIRECTORY is what makes them comparable — the
+ * filename half is illustrative, the folder half is the actual claim.
+ */
+export function normalizeHome(token) {
+  let t = token.trim().replace(/^\.\//, "").replace(/\/+$/, "");
+  if (!t.startsWith("docs/") && !t.startsWith("spec/")) return null;
+  const segments = t.split("/");
+  const last = segments[segments.length - 1];
+  // Drop a filename or a `<placeholder>.md`; keep a bare folder name.
+  if (segments.length > 1 && (last.includes(".") || last.includes("<"))) segments.pop();
+  const dir = segments.join("/");
+  return dir === "docs" || dir === "spec" ? null : dir;
+}
+
+/** Every directory the placement-map table points at. */
+export function parsePlacementHomes(docText) {
+  const homes = new Set();
+  for (const block of tableBlocks(docText)) {
+    for (const line of block) {
+      for (const m of line.matchAll(/`([^`\n]+)`/g)) {
+        const dir = normalizeHome(m[1]);
+        if (dir) homes.add(dir);
+      }
+    }
+  }
+  return homes;
+}
+
+/**
+ * Both directions between the prose map and the manifest.
+ *
+ * Coverage, not equality: a row for `spec/ui/` legitimately speaks for
+ * `spec/ui/mobile/` too, and forcing one row per directory would bloat the table
+ * without telling a reader anything. What must not happen is a declared
+ * directory no row reaches — that is how `docs/hooks/` and `docs/performance/`
+ * existed for months with no documented reason to.
+ */
+export function comparePlacementMap({ text, directories = DIRECTORIES, rootFiles = ROOT_FILES }) {
+  const findings = [];
+  const homes = parsePlacementHomes(text);
+  const declared = new Set(directories.map((d) => d.dir));
+  const rootDirs = new Set(rootFiles.map((f) => f.slice(0, f.indexOf("/"))));
+
+  for (const home of homes) {
+    if (declared.has(home)) continue;
+    if (rootDirs.has(home)) continue;
+    findings.push({
+      file: PLACEMENT_DOC,
+      id: home,
+      detail: `named as a canonical home but not declared in DIRECTORIES (scripts/ci/lib/docs-structure.mjs)`,
+    });
+  }
+
+  for (const d of directories) {
+    const covered = [...homes].some((h) => d.dir === h || d.dir.startsWith(h + "/"));
+    if (!covered) {
+      findings.push({
+        file: PLACEMENT_DOC,
+        id: d.dir,
+        detail: `is a declared documentation home that no placement-map row reaches — add a row, or retire the directory`,
+      });
+    }
+  }
+
+  return findings;
+}
+
 function read(file) {
   try {
     return readFileSync(file, "utf8");
@@ -235,6 +317,13 @@ function main() {
     findings.push(...compareRoster({ file, text, required, known }));
   }
 
+  const placementText = read(PLACEMENT_DOC);
+  if (placementText === null) {
+    console.error(`check-doc-tables: could not read ${PLACEMENT_DOC} — is PLACEMENT_DOC stale?`);
+    return 2;
+  }
+  findings.push(...comparePlacementMap({ text: placementText }));
+
   for (const jobId of SUITE_JOBS) {
     const actual = parseJobSuites(ciYml, jobId);
     if (actual === null) {
@@ -260,7 +349,8 @@ function main() {
     }
     console.error("");
     console.error(
-      `Sources of truth: ${SCRIPT_SRC} (CI_CHECKS / DOCS_CHECKS / DRIFT_CHECKS) and ${CI_YML}.`,
+      `Sources of truth: ${SCRIPT_SRC} (CI_CHECKS / DOCS_CHECKS / DRIFT_CHECKS), ${CI_YML}, ` +
+        `and scripts/ci/lib/docs-structure.mjs (DIRECTORIES, for ${PLACEMENT_DOC}).`,
     );
     console.error("Fix: correct the doc — or, better, delete the copy and link to the source.");
     console.error("Run locally: `npm run check:doc-tables`.");
@@ -269,7 +359,8 @@ function main() {
 
   console.log(
     `Doc table check passed (${required.length} required checks across ${DOC_TABLES.length} docs; ` +
-      `suite lists for ${SUITE_JOBS.join(", ")}).`,
+      `suite lists for ${SUITE_JOBS.join(", ")}; ` +
+      `${DIRECTORIES.length} documentation homes against the placement map).`,
   );
   return 0;
 }

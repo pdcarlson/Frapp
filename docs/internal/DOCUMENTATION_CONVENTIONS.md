@@ -35,6 +35,7 @@ agents satisfy the docs-sync CI gate. Enforced (in part) by [`scripts/check-docs
 | UI requirements (design system, web, landing, mobile, brand, assets, resilience) | `spec/ui/` |
 | How to run locally / test / contribute | `docs/guides/` |
 | Ops runbooks (DB, incidents, branch protection, deploy) | `docs/internal/ops/` |
+| Documentation conventions and internal reference that is not a runbook | `docs/internal/` |
 | CI / agent infra / automations | `docs/internal/ci-cd/` |
 | Design-system (tokens, typography, icons, microcopy, accent engine) | `spec/ui/design-system/` |
 | Mobile testing / smoke | `docs/internal/mobile/` |
@@ -43,6 +44,8 @@ agents satisfy the docs-sync CI gate. Enforced (in part) by [`scripts/check-docs
 | Security implementation notes / fixes log | `docs/internal/security/` |
 | Visual design reference (committed design exports) | `spec/ui/design-system/reference/` |
 | Per-service performance notes | `docs/internal/services/` |
+| Per-optimization performance notes (one file per optimization) | `docs/performance/` |
+| Data-layer hook conventions (query keys, chapter scope, optimistic mutations) | `docs/hooks/` |
 | Work status / planning | **GitHub Issues** — not a doc; see [`ci-cd/GITHUB_PM.md`](ci-cd/GITHUB_PM.md) |
 | Product-planning canvas (Buildpad export) | `.buildpad/` — **read-only background, never a doc home**; see below |
 | In-flight consolidation scope + progress | `REFACTOR-PLAN.md` / `REFACTOR-PROGRESS.md` at repo root — **temporary scratch, never a doc home**; see below |
