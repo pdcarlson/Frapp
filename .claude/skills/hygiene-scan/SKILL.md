@@ -139,7 +139,10 @@ Before touching anything, run and **write down** the numbers you will compare ag
 | Coverage ledgers | read the backlog tables in [`tenant-scope-coverage.spec.ts`](../../../apps/api/src/infrastructure/supabase/repositories/tenant-scope-coverage.spec.ts), [`no-as-never.spec.ts`](../../../apps/api/src/infrastructure/supabase/repositories/no-as-never.spec.ts), [`dto-constraint-coverage.spec.ts`](../../../apps/api/src/interface/dtos/dto-constraint-coverage.spec.ts), [`signet.css.spec.ts`](../../../packages/theme/src/signet.css.spec.ts) | every deferred entry is a standing finding with its reason already written |
 
 `check-types` and `lint` are turbo tasks wired to `^build`, so they work on a fresh sandbox after
-the SessionStart install; the root `check:*` scripts are plain node and need no build.
+the SessionStart install; the root `check:*` scripts are plain node and need no build — **except**
+`check:dep-cruiser`, which resolves `@repo/*` imports through each package's built `dist/`. Run
+`npx turbo run build --filter='./packages/*'` first on a fresh sandbox, or every workspace import
+reports as `not-to-unresolvable`: dozens of "new violations" that are none (observed 2026-09-02).
 `check:api-contract` regenerates `openapi.json` and `packages/api-sdk/src/types.ts` — run it only
 in Phase 3, and read a changed artifact as "this fix changed the contract", i.e. behaviour.
 
