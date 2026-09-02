@@ -583,3 +583,66 @@ describe("MessageItem edit and delete", () => {
     expect(screen.getByText("[message deleted]")).toBeInTheDocument();
   });
 });
+
+describe("MessageItem bookmark toggle (#462)", () => {
+  it("renders no bookmark control when the surface does not wire one", () => {
+    // A control that silently does nothing is the dead end components.md §5
+    // bans — the pins panel already had to be rescued from exactly that. A
+    // surface without `onToggleBookmark` hides the affordance instead.
+    renderItemWithProps();
+
+    expect(
+      screen.queryByRole("button", { name: /^Save$|^Saved$/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers Save on an unbookmarked message and reports pressed state", async () => {
+    renderItemWithProps({ onToggleBookmark: vi.fn(), isBookmarked: false });
+
+    const button = screen.getByRole("button", { name: "Save" });
+    expect(button).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("reads Saved and pressed once bookmarked", () => {
+    // `aria-pressed` rather than label alone: a toggle whose only signal is the
+    // word flipping announces to a screen reader as one button disappearing and
+    // a different one arriving in the same slot.
+    renderItemWithProps({ onToggleBookmark: vi.fn(), isBookmarked: true });
+
+    const button = screen.getByRole("button", { name: "Saved" });
+    expect(button).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("asks for the opposite of the current state, not a blind toggle", async () => {
+    const onToggleBookmark = vi.fn();
+    renderItemWithProps({ onToggleBookmark, isBookmarked: true });
+
+    await userEvent.click(screen.getByRole("button", { name: "Saved" }));
+
+    expect(onToggleBookmark).toHaveBeenCalledWith("msg-1", false);
+  });
+
+  it("sends true when saving a message that is not yet bookmarked", async () => {
+    const onToggleBookmark = vi.fn();
+    renderItemWithProps({ onToggleBookmark, isBookmarked: false });
+
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(onToggleBookmark).toHaveBeenCalledWith("msg-1", true);
+  });
+
+  it("shows no bookmark control on a deleted message", () => {
+    // The whole action cluster is gated on `showActions`, which excludes
+    // tombstones. The spec's deletion rule is that an *existing* bookmark
+    // survives — not that a tombstone can be bookmarked fresh — and the
+    // Bookmarks panel is where that survival is asserted.
+    renderItemWithProps({
+      message: message({ is_deleted: true, content: "[message deleted]" }),
+      onToggleBookmark: vi.fn(),
+    });
+
+    expect(
+      screen.queryByRole("button", { name: /^Save$|^Saved$/ }),
+    ).not.toBeInTheDocument();
+  });
+});

@@ -19,6 +19,10 @@ import {
   useMemberDisplayNames,
   useMyPermissions,
   useOrgConfig,
+  useBookmarks,
+  useBookmarkedMessageIds,
+  useBookmarkMessage,
+  useUnbookmarkMessage,
 } from "@repo/hooks";
 import { can } from "@repo/validation";
 import { useChapterStore } from "@/lib/stores/chapter-store";
@@ -41,6 +45,7 @@ import {
 import { Composer } from "./composer";
 import { ThreadPanel } from "./thread-panel";
 import { PinsPopover } from "./pins-popover";
+import { BookmarksPopover, type BookmarkEntry } from "./bookmarks-popover";
 import { NotificationLevelPopover } from "./notification-level-popover";
 import { ReconnectPill } from "./reconnect-pill";
 import type { SlashCommand } from "@repo/chat-integrations";
@@ -197,6 +202,17 @@ export function ChatShell({
   // changes (a second message-only link into an already-active, already-
   // loaded channel touches nothing else the effect depends on).
   const [pendingMessageId, setPendingMessageId] = useState(initialMessageId);
+  // Which channel the pending jump's message actually lives in.
+  //
+  // Was read straight off `initialChannelId` (the URL param) until #462. That
+  // conflated "the channel this deep link named" with "the channel this jump
+  // targets", which were the same thing while the only jumps were deep links
+  // and the in-channel pins panel. The Bookmarks panel is chapter-wide, so its
+  // rows routinely target a *different* channel than the one the URL named —
+  // and against the old guard such a jump was silently dropped, because
+  // `activeChannelId` never equals a stale `initialChannelId` again.
+  const [pendingJumpChannelId, setPendingJumpChannelId] =
+    useState<string | null>(initialChannelId);
   // `initialChannelId`/`initialMessageId` are only read by `useState`'s
   // initializer on first mount. A second deep link (another notification, a
   // second command-palette hit) navigated to while `/chat` is already
@@ -222,6 +238,7 @@ export function ChatShell({
     setSelectedChannelId(initialChannelId);
     setChannelTargetDismissed(false);
     setPendingMessageId(initialMessageId);
+    setPendingJumpChannelId(initialChannelId);
   }, [initialChannelId, initialMessageId]);
 
   // `useChannels()` can serve a read up to its `staleTime` old. A channel
@@ -302,6 +319,45 @@ export function ChatShell({
   // surface to hide.
   const { data: permissionsPayload } = useMyPermissions();
   const canManageChannel = can("channels:manage", permissionsPayload?.permissions);
+
+  // Bookmarks (#462). One chapter-wide query backs both the panel and every
+  // row's toggle state, so the two can never disagree about what is saved.
+  const bookmarksQuery = useBookmarks();
+  const bookmarks = useMemo(
+    () => asArray<BookmarkEntry>(bookmarksQuery.data),
+    [bookmarksQuery.data],
+  );
+  const bookmarkedMessageIds = useBookmarkedMessageIds();
+  const bookmarkMessage = useBookmarkMessage();
+  const unbookmarkMessage = useUnbookmarkMessage();
+  const handleToggleBookmark = useCallback(
+    (messageId: string, next: boolean) => {
+      // Both routes are idempotent server-side, so a double-tap or a retry is
+      // a no-op rather than an error — no in-flight guard is needed here.
+      //
+      // A failure is NOT swallowed, though. There is no optimistic write, so a
+      // failed save leaves the chip reading "Save" exactly as if nothing had
+      // been tapped — the member gets silence and concludes the feature is
+      // broken. The sibling control in this same header (notification level)
+      // already surfaces its failure as a `role="alert"`; this follows it.
+      if (next) bookmarkMessage.mutate(messageId);
+      else unbookmarkMessage.mutate(messageId);
+    },
+    [bookmarkMessage, unbookmarkMessage],
+  );
+  const bookmarkWriteFailed =
+    bookmarkMessage.isError || unbookmarkMessage.isError;
+  const resetBookmarkMessage = bookmarkMessage.reset;
+  const resetUnbookmarkMessage = unbookmarkMessage.reset;
+  // Cleared on a channel switch, mirroring the notification-level control
+  // beside it. Both mutations live at the shell level and TanStack keeps
+  // `isError` set until the next attempt, so without this one failed save
+  // pins "Bookmark not saved" into every channel header for the rest of the
+  // session — an alert that outlives its cause is worse than none.
+  useEffect(() => {
+    resetBookmarkMessage();
+    resetUnbookmarkMessage();
+  }, [activeChannelId, resetBookmarkMessage, resetUnbookmarkMessage]);
 
   const { confirm, confirmDialog } = useConfirmDialog();
   const deleteMessage = channel.delete;
@@ -421,6 +477,28 @@ export function ChatShell({
     timeline.current?.scrollToMessage(messageId);
   }, []);
 
+  /**
+   * Jump to a bookmarked message, which may live in another channel (#462) —
+   * the Bookmarks panel is chapter-wide, unlike the in-channel pins panel.
+   *
+   * Routed through the same `pendingMessageId` machinery as a deep link rather
+   * than calling `jumpToMessage` directly: switching channel unmounts and
+   * refetches the timeline, so an immediate scroll would target a list that
+   * does not have the message yet. Leaving it pending gives it the same free
+   * retry as history loads that a deep link gets, and a message older than the
+   * backfill window stays pending instead of being spent on an id the timeline
+   * could not find.
+   */
+  const jumpToBookmark = useCallback(
+    (channelId: string, messageId: string) => {
+      setSelectedChannelId(channelId);
+      setChannelTargetDismissed(false);
+      setPendingJumpChannelId(channelId);
+      setPendingMessageId(messageId);
+    },
+    [],
+  );
+
   // A caller-supplied `?message=` jumps to that message once it's actually
   // present in the loaded window. `pendingMessageId` (declared above,
   // resynced whenever a new target arrives) is only cleared on success — a
@@ -433,7 +511,10 @@ export function ChatShell({
     // with one channel would be nonsense to look up in another. No channel
     // was named (message-only link): proceed against whatever channel ended
     // up active.
-    if (initialChannelId !== null && activeChannelId !== initialChannelId) {
+    if (
+      pendingJumpChannelId !== null &&
+      activeChannelId !== pendingJumpChannelId
+    ) {
       return;
     }
     if (channel.isLoading) return;
@@ -444,7 +525,7 @@ export function ChatShell({
   }, [
     pendingMessageId,
     activeChannelId,
-    initialChannelId,
+    pendingJumpChannelId,
     channel.isLoading,
     channel.messages,
     jumpToMessage,
@@ -675,6 +756,26 @@ export function ChatShell({
                 nameFor={nameFor}
                 onJump={jumpToMessage}
               />
+              {bookmarkWriteFailed ? (
+                // In the header rather than inside the popover, for the reason
+                // the notification-level alert beside it records: a popover
+                // unmounts its content when dismissed, so an alert in there is
+                // only seen by someone who happens to reopen it.
+                <p role="alert" className="text-[12.5px] text-destructive">
+                  {/* Covers both directions: the same alert fires for a failed
+                      save and a failed removal, and "not saved" would be wrong
+                      copy for the second. */}
+                  Bookmark not updated
+                </p>
+              ) : null}
+              <BookmarksPopover
+                bookmarks={bookmarks}
+                nameFor={nameFor}
+                isLoading={bookmarksQuery.isLoading}
+                isError={bookmarksQuery.isError}
+                onJump={jumpToBookmark}
+                onRemove={(messageId) => unbookmarkMessage.mutate(messageId)}
+              />
             </div>
           </div>
           {channel.typingUsers.length > 0 ? (
@@ -733,6 +834,8 @@ export function ChatShell({
             }
             onEdit={channel.edit}
             onDelete={handleDeleteMessage}
+            bookmarkedMessageIds={bookmarkedMessageIds}
+            onToggleBookmark={handleToggleBookmark}
             canManageChannel={canManageChannel}
           />
         </div>
@@ -806,6 +909,8 @@ export function ChatShell({
             onUnreact={channel.unreact}
             onEdit={channel.edit}
             onDelete={handleDeleteMessage}
+            bookmarkedMessageIds={bookmarkedMessageIds}
+            onToggleBookmark={handleToggleBookmark}
             canManageChannel={canManageChannel}
           />
         ) : (
