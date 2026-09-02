@@ -226,10 +226,13 @@ export class ReportController {
     const result = await this.reportService.getPointsReport(chapterId, {
       user_id: dto.user_id,
       window: dto.window,
+      semester_archive_id: dto.semester_archive_id,
     });
     return this.respond(chapterId, 'points', result, format, res, () =>
       scopeLine([
-        `Window: ${dto.window ?? 'all'}`,
+        dto.semester_archive_id
+          ? `Archive: ${dto.semester_archive_id}`
+          : `Window: ${dto.window ?? 'all'}`,
         dto.user_id ? 'Single member' : 'All members',
       ]),
     );
