@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { parseGuardedInt } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -91,13 +92,8 @@ export function SettingsDuesTab({
   const disabled = !canManage || isSaving;
 
   function setNumber(key: keyof OrgDues, raw: string, min: number) {
-    // Guard-parse: only commit a finite integer >= min. Anything else (empty,
-    // negative, decimal, NaN) preserves the previous value. The empty check is
-    // explicit because `Number("")` is `0`, not `NaN`.
-    const trimmed = raw.trim();
-    if (trimmed === "") return;
-    const parsed = Number(trimmed);
-    if (!Number.isInteger(parsed) || parsed < min) return;
+    const parsed = parseGuardedInt(raw, min);
+    if (parsed === undefined) return;
     setDraft((prev) => ({ ...prev, [key]: parsed }));
   }
 

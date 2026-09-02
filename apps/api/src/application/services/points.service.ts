@@ -19,11 +19,7 @@ import type {
 } from '../../domain/entities/point-transaction.entity';
 import { NotificationService } from './notification.service';
 import { ChatService } from './chat.service';
-import {
-  LIST_QUERY_LIMIT_DEFAULT,
-  LIST_QUERY_LIMIT_MAX,
-  LIST_QUERY_LIMIT_MIN,
-} from '../../domain/constants/list-query-limits';
+import { clampListLimit } from '../../domain/constants/list-query-limits';
 import {
   resolveWindowSince,
   type PointsWindow,
@@ -189,10 +185,7 @@ export class PointsService {
       limit?: number;
     } = {},
   ): Promise<PointTransaction[]> {
-    const limit = Math.max(
-      LIST_QUERY_LIMIT_MIN,
-      Math.min(options.limit ?? LIST_QUERY_LIMIT_DEFAULT, LIST_QUERY_LIMIT_MAX),
-    );
+    const limit = clampListLimit(options.limit);
 
     let beforeIso: string | undefined;
     if (options.before) {

@@ -6,8 +6,8 @@ import {
   useActiveChapterId,
   useCurrentUser,
   useLeaderboard,
-  useMyPermissions,
   useMyPoints,
+  usePermissionList,
   useTasks,
   useUpdateTaskStatus,
   useViewerUserId,
@@ -84,11 +84,7 @@ export default function TasksScreen() {
   // `can` from @repo/validation, not a bare `includes` — an owner's grant is the
   // wildcard `*`, so a membership test would hide the control from exactly the
   // people who assign work. The C2 pattern, verbatim.
-  const { data: permData } = useMyPermissions();
-  const permissions = useMemo(() => {
-    const raw = (permData as { permissions?: unknown } | undefined)?.permissions;
-    return Array.isArray(raw) ? (raw as string[]) : [];
-  }, [permData]);
+  const permissions = usePermissionList();
   const canManageTasks = can("tasks:manage", permissions);
 
   // One clock for the whole render, so the two sections cannot straddle a tick

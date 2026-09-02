@@ -8,7 +8,7 @@ import {
 import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 import { REPORT_PDF_RENDERER } from '../../domain/adapters/pdf.interface';
-import { ROSTER_COLUMNS } from '../../interface/controllers/report-columns';
+import { ROSTER_COLUMNS } from '../../domain/constants/report-columns';
 
 describe('ReportExportService', () => {
   let service: ReportExportService;

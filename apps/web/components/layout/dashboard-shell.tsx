@@ -146,31 +146,23 @@ function DashboardChapterPanel({ variant }: { variant: "sidebar" | "sheet" }) {
     );
   }
 
+  // Shared by every failure path below (fetch error, missing data, or a
+  // payload that fails schema validation) so the "could not load" card isn't
+  // rendered from three copy-pasted JSX blocks.
+  const errorPanel = (
+    <div className={shellClass}>
+      <p className={cn("text-[10px] uppercase tracking-[0.16em]", labelMuted)}>Subscription</p>
+      <p className="mt-1.5 text-[11px] text-muted-foreground">Could not load chapter details.</p>
+    </div>
+  );
+
   if (isError || !data) {
-    return (
-      <div className={shellClass}>
-        <p className={cn("text-[10px] uppercase tracking-[0.16em]", labelMuted)}>
-          Subscription
-        </p>
-        <p className="mt-1.5 text-[11px] text-muted-foreground">
-          Could not load chapter details.
-        </p>
-      </div>
-    );
+    return errorPanel;
   }
 
   const parsed = CurrentChapterPayloadSchema.safeParse(data);
   if (!parsed.success) {
-    return (
-      <div className={shellClass}>
-        <p className={cn("text-[10px] uppercase tracking-[0.16em]", labelMuted)}>
-          Subscription
-        </p>
-        <p className="mt-1.5 text-[11px] text-muted-foreground">
-          Could not load chapter details.
-        </p>
-      </div>
-    );
+    return errorPanel;
   }
 
   /*

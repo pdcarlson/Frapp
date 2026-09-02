@@ -126,10 +126,18 @@ export class BackworkService {
     // getSignedDownloadUrl/deleteFile. The storage layer rejects them too, but
     // this write path must not rely on that alone: it is what turns any future
     // gap in that guard into a cross-bucket read of a service-role-signed URL.
-    assertSafeStoragePath(
-      input.storage_path,
-      'storage_path must not contain relative path segments',
-    );
+    //
+    // `assertSafeStoragePath` is domain-layer code and throws a plain `Error`;
+    // this catch is what turns that into the `BadRequestException` (400) API
+    // consumers have always seen on an unsafe path.
+    try {
+      assertSafeStoragePath(
+        input.storage_path,
+        'storage_path must not contain relative path segments',
+      );
+    } catch (error) {
+      throw new BadRequestException((error as Error).message);
+    }
 
     const existing = await this.resourceRepo.findByFileHash(
       input.chapter_id,
