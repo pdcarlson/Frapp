@@ -217,7 +217,7 @@ Chapters that pre-date the `#chapter-audit` channel have no mirror; the bridge l
 | Chat          | DM received                                                        | NORMAL                      |
 | Chat          | New message in unmuted channel                                     | NORMAL                      |
 | Announcements | New announcement posted                                            | URGENT                      |
-| Events        | Upcoming event reminder (configurable: 1hr / 30min / 15min before) | NORMAL                      |
+| Events        | Upcoming event reminder (30min before — see below)                 | NORMAL                      |
 | Events        | New event created                                                  | SILENT                      |
 | Events        | Event updated (time/location change)                               | NORMAL                      |
 | Points        | Points awarded                                                     | NORMAL                      |
@@ -240,3 +240,21 @@ Chapters that pre-date the `#chapter-audit` channel have no mirror; the bridge l
 | Admin         | New member joined                                                  | NORMAL                      |
 | Admin         | Invite accepted                                                    | SILENT                      |
 | Admin         | Role change on a member                                            | SILENT                      |
+
+## Pre-Event Reminders
+
+`ScheduledJobsService.sweepEventReminders` runs every five minutes and pushes a NORMAL reminder for events starting inside `(now, now + 30min]`.
+
+**Who gets one.** The event's _required_ members, resolved by `AttendanceService.resolveRequiredMembers` — the same call the auto-absent sweep makes, deliberately shared rather than reimplemented:
+
+- **Role-targeted** (`required_role_ids` non-empty) → members holding an intersecting role, alumni included. This is what keeps the reminder inside the event's own visibility rule: a role-targeted event is invisible through `GET /v1/events` to a member without an intersecting role, and a reminder that resolved targeting differently would announce that event's name to them.
+- **Mandatory, untargeted** → every member except alumni, who can neither check in to a non-targeted event nor self-excuse.
+- **Optional and untargeted** → nobody. Such an event requires nothing of anyone, and knowing who _wants_ a reminder needs RSVP intent, which is not modelled yet (#1035).
+
+**Lead time.** One fixed 30-minute offset, `EVENT_REMINDER_LEAD_MINUTES`. The per-member 1hr / 15min choice this table used to promise needs a preference column that does not exist; it is tracked separately, and the sweep reads the constant rather than a literal so adding the preference changes the _source_ of the offset, not the sweep.
+
+**Delivery guarantees.** The sweep claims `(EVENT, event_id, 'EVENT_REMINDER', <event start date>)` in `scheduled_notification_dispatches` before sending, so a reminder survives multiple replicas and repeated ticks without duplicating — the same mechanism the invoice and task sweeps use. The claim key is derived from the event row, never from the clock, so every tick inside the window computes the same key. A claim is released only when _every_ delivery failed, so a transient outage retries on the next tick while a partial success does not re-notify the members who already got it.
+
+The window's lower bound is `now`, exclusive: a reminder is only ever early, never late. A backed-up or restarted worker therefore sends nothing about events already underway rather than a burst of "starting soon" pushes for events that have started.
+
+Quiet hours and the member's `events` category preference are **not** special-cased here. The sweep sends at `NotificationService.notifyUser`'s default NORMAL priority precisely so both apply — URGENT is the priority that bypasses them, and naming one here would silently opt reminders out of both.

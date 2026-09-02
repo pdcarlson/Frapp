@@ -31,6 +31,8 @@ describe('ScheduledJobsService', () => {
   let sweepExpiredReports: jest.Mock;
   let findExpiredPollsPendingNotice: jest.Mock;
   let announceExpiry: jest.Mock;
+  let findEventsStartingBetween: jest.Mock;
+  let resolveRequiredMembers: jest.Mock;
 
   const INVOICE = {
     id: 'inv-1',
@@ -67,6 +69,11 @@ describe('ScheduledJobsService', () => {
       .mockResolvedValue({ deleted: 0, failed: 0 });
     findExpiredPollsPendingNotice = jest.fn().mockResolvedValue([]);
     announceExpiry = jest.fn().mockResolvedValue(undefined);
+    findEventsStartingBetween = jest.fn().mockResolvedValue([]);
+    // Default: one member is required at the event.
+    resolveRequiredMembers = jest
+      .fn()
+      .mockResolvedValue([{ user_id: 'user-1', role_ids: [] }]);
 
     const mod = await Test.createTestingModule({
       providers: [
@@ -78,11 +85,15 @@ describe('ScheduledJobsService', () => {
             findOpenInvoicesDueBetween,
             findIncompleteTasksDueBetween,
             findExpiredPollsPendingNotice,
+            findEventsStartingBetween,
             claimDispatch,
             releaseDispatch,
           },
         },
-        { provide: AttendanceService, useValue: { markAutoAbsent } },
+        {
+          provide: AttendanceService,
+          useValue: { markAutoAbsent, resolveRequiredMembers },
+        },
         { provide: NotificationService, useValue: { notifyUser } },
         { provide: ChapterWorkflowsService, useValue: { getDuesGraceDays } },
         { provide: ReportRetentionService, useValue: { sweepExpiredReports } },
@@ -158,6 +169,160 @@ describe('ScheduledJobsService', () => {
       );
       // The sweep keeps going after the failure.
       expect(markAutoAbsent).toHaveBeenCalledWith('evt-ok', 'chap-1');
+    });
+  });
+
+  describe('sweepEventReminders', () => {
+    const UPCOMING = {
+      id: 'evt-1',
+      chapter_id: 'chap-1',
+      name: 'Chapter Meeting',
+      start_time: '2026-08-05T12:20:00Z',
+      is_mandatory: true,
+      required_role_ids: null,
+    };
+
+    it('notifies every required member that the event is starting soon', async () => {
+      findEventsStartingBetween.mockResolvedValue([UPCOMING]);
+      resolveRequiredMembers.mockResolvedValue([
+        { user_id: 'user-1', role_ids: [] },
+        { user_id: 'user-2', role_ids: [] },
+      ]);
+
+      await expect(service.sweepEventReminders(NOW)).resolves.toEqual({
+        sent: 1,
+      });
+
+      expect(notifyUser).toHaveBeenCalledTimes(2);
+      expect(notifyUser).toHaveBeenCalledWith('user-1', 'chap-1', {
+        title: 'Event starting soon',
+        body: '"Chapter Meeting" starts in 30 minutes.',
+        category: 'events',
+        data: { target: { screen: 'events', eventId: 'evt-1' } },
+      });
+      expect(notifyUser).toHaveBeenCalledWith(
+        'user-2',
+        'chap-1',
+        expect.anything(),
+      );
+    });
+
+    it('queries the window (now, now + lead] so a started event is never notified about', async () => {
+      await service.sweepEventReminders(NOW);
+
+      expect(findEventsStartingBetween).toHaveBeenCalledWith(
+        NOW,
+        new Date('2026-08-05T12:30:00Z'),
+      );
+    });
+
+    it('claims on the event start date, so every tick in the window computes the same key', async () => {
+      findEventsStartingBetween.mockResolvedValue([UPCOMING]);
+
+      await service.sweepEventReminders(NOW);
+
+      expect(claimDispatch).toHaveBeenCalledWith(
+        'chap-1',
+        'EVENT',
+        'evt-1',
+        'EVENT_REMINDER',
+        TODAY,
+      );
+    });
+
+    it('sends nothing when another replica already claimed the reminder', async () => {
+      findEventsStartingBetween.mockResolvedValue([UPCOMING]);
+      claimDispatch.mockResolvedValue(false);
+
+      await expect(service.sweepEventReminders(NOW)).resolves.toEqual({
+        sent: 0,
+      });
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('does not claim, or send, when the event requires nobody', async () => {
+      findEventsStartingBetween.mockResolvedValue([UPCOMING]);
+      resolveRequiredMembers.mockResolvedValue([]);
+
+      await expect(service.sweepEventReminders(NOW)).resolves.toEqual({
+        sent: 0,
+      });
+      expect(claimDispatch).not.toHaveBeenCalled();
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('resolves the audience through AttendanceService, not from the event row', async () => {
+      const targeted = {
+        ...UPCOMING,
+        is_mandatory: false,
+        required_role_ids: ['role-exec'],
+      };
+      findEventsStartingBetween.mockResolvedValue([targeted]);
+
+      await service.sweepEventReminders(NOW);
+
+      // The whole point of sharing the predicate: a role-targeted event's
+      // audience is never re-derived here, so it cannot drift from the
+      // visibility rule GET /v1/events enforces.
+      expect(resolveRequiredMembers).toHaveBeenCalledWith('chap-1', targeted);
+    });
+
+    it('releases the claim when every delivery failed, so the next tick retries', async () => {
+      findEventsStartingBetween.mockResolvedValue([UPCOMING]);
+      notifyUser.mockRejectedValue(new Error('push provider down'));
+
+      await expect(service.sweepEventReminders(NOW)).resolves.toEqual({
+        sent: 0,
+      });
+      expect(releaseDispatch).toHaveBeenCalledWith(
+        'chap-1',
+        'EVENT',
+        'evt-1',
+        'EVENT_REMINDER',
+        TODAY,
+      );
+    });
+
+    it('keeps the claim on partial delivery rather than re-notifying the members who got it', async () => {
+      findEventsStartingBetween.mockResolvedValue([UPCOMING]);
+      resolveRequiredMembers.mockResolvedValue([
+        { user_id: 'user-1', role_ids: [] },
+        { user_id: 'user-2', role_ids: [] },
+      ]);
+      notifyUser
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new Error('unreachable'));
+
+      await expect(service.sweepEventReminders(NOW)).resolves.toEqual({
+        sent: 1,
+      });
+      expect(releaseDispatch).not.toHaveBeenCalled();
+    });
+
+    it('sends at the default NORMAL priority so quiet hours and the events preference still apply', async () => {
+      findEventsStartingBetween.mockResolvedValue([UPCOMING]);
+
+      await service.sweepEventReminders(NOW);
+
+      // Passing no `priority` is load-bearing: NotificationService exempts
+      // URGENT from both the category preference and quiet hours, so naming a
+      // priority here would silently opt reminders out of both.
+      expect(notifyUser.mock.calls[0][2]).not.toHaveProperty('priority');
+    });
+
+    it('keeps sweeping after one event fails', async () => {
+      findEventsStartingBetween.mockResolvedValue([
+        UPCOMING,
+        { ...UPCOMING, id: 'evt-2', name: 'Rush Night' },
+      ]);
+      resolveRequiredMembers
+        .mockRejectedValueOnce(new Error('roster read failed'))
+        .mockResolvedValueOnce([{ user_id: 'user-1', role_ids: [] }]);
+
+      await expect(service.sweepEventReminders(NOW)).resolves.toEqual({
+        sent: 1,
+      });
+      expect(notifyUser).toHaveBeenCalledTimes(1);
     });
   });
 

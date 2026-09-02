@@ -213,6 +213,122 @@ describe('AttendanceService', () => {
     });
   });
 
+  // Pinned directly, not only through markAutoAbsent, because the pre-event
+  // reminder sweep (#391) is now a second caller. These three branches are the
+  // whole contract both callers rely on, and the role-targeted one doubles as
+  // the reminder's visibility guarantee.
+  describe('resolveRequiredMembers', () => {
+    const activeMember: Member = {
+      id: 'member-1',
+      user_id: 'user-active',
+      chapter_id: 'ch-1',
+      role_ids: ['role-member'],
+      custom_role_ids: [],
+      has_completed_onboarding: true,
+      created_at: '2026-02-01T00:00:00.000Z',
+      updated_at: '2026-02-01T00:00:00.000Z',
+    };
+    const alumniMember: Member = {
+      ...activeMember,
+      id: 'member-2',
+      user_id: 'user-alumni',
+      role_ids: ['role-alumni'],
+    };
+    const execMember: Member = {
+      ...activeMember,
+      id: 'member-3',
+      user_id: 'user-exec',
+      role_ids: ['role-exec'],
+    };
+
+    it('returns nobody for an optional, untargeted event', async () => {
+      const members = await service.resolveRequiredMembers('ch-1', {
+        is_mandatory: false,
+        required_role_ids: null,
+      });
+
+      expect(members).toEqual([]);
+      // Cheap by construction: no roster read at all for the common case.
+      expect(mockMemberRepo.findByChapter).not.toHaveBeenCalled();
+    });
+
+    // A cleared targeting list round-trips as [] rather than null, so
+    // emptiness — not nullness — has to be the test.
+    it('treats an empty required_role_ids as untargeted, not as targeting nobody', async () => {
+      mockMemberRepo.findByChapter.mockResolvedValue([activeMember]);
+      mockRbac.getAlumniRoleId.mockResolvedValue('role-alumni');
+
+      const members = await service.resolveRequiredMembers('ch-1', {
+        is_mandatory: true,
+        required_role_ids: [],
+      });
+
+      expect(members.map((m) => m.user_id)).toEqual(['user-active']);
+    });
+
+    it('returns only members holding an intersecting role for a targeted event', async () => {
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        activeMember,
+        execMember,
+      ]);
+
+      const members = await service.resolveRequiredMembers('ch-1', {
+        is_mandatory: false,
+        required_role_ids: ['role-exec'],
+      });
+
+      expect(members.map((m) => m.user_id)).toEqual(['user-exec']);
+    });
+
+    // Targeting names its audience explicitly, so alumni are not subtracted
+    // from it — this is what keeps an alumni-facing event reaching alumni.
+    it('keeps alumni in a role-targeted event that names their role', async () => {
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        activeMember,
+        alumniMember,
+      ]);
+      mockRbac.getAlumniRoleId.mockResolvedValue('role-alumni');
+
+      const members = await service.resolveRequiredMembers('ch-1', {
+        is_mandatory: false,
+        required_role_ids: ['role-alumni'],
+      });
+
+      expect(members.map((m) => m.user_id)).toEqual(['user-alumni']);
+      expect(mockRbac.getAlumniRoleId).not.toHaveBeenCalled();
+    });
+
+    it('excludes alumni from a mandatory untargeted event', async () => {
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        activeMember,
+        alumniMember,
+      ]);
+      mockRbac.getAlumniRoleId.mockResolvedValue('role-alumni');
+
+      const members = await service.resolveRequiredMembers('ch-1', {
+        is_mandatory: true,
+        required_role_ids: null,
+      });
+
+      expect(members.map((m) => m.user_id)).toEqual(['user-active']);
+    });
+
+    it('falls back to every member when the chapter has no alumni role', async () => {
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        activeMember,
+        alumniMember,
+      ]);
+      mockRbac.getAlumniRoleId.mockResolvedValue(null);
+
+      const members = await service.resolveRequiredMembers('ch-1', {
+        is_mandatory: true,
+        required_role_ids: null,
+      });
+
+      expect(members).toHaveLength(2);
+    });
+  });
+
   describe('checkIn', () => {
     it('should atomically create attendance and award points within the event window', async () => {
       const duringEvent = new Date('2026-02-26T18:30:00.000Z');

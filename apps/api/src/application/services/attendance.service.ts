@@ -339,7 +339,7 @@ export class AttendanceService {
     const allMembers = await this.memberRepo.findByChapter(chapterId);
 
     if (isRoleTargeted) {
-      const requiredRoleIdSet = new Set(event.required_role_ids!);
+      const requiredRoleIdSet = new Set(event.required_role_ids);
       return allMembers.filter((m) =>
         m.role_ids.some((roleId) => requiredRoleIdSet.has(roleId)),
       );
