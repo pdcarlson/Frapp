@@ -7,7 +7,10 @@ This guide explains how Frapp is configured across local, staging, and productio
 We maintain three main environments:
 
 - **Local** — developer machine, Supabase CLI + Docker, `.env.local` files
-- **Staging** — Supabase Cloud (staging project), containerized API, Vercel preview frontends
+- **Staging** — Supabase Cloud (staging project), containerized API, Vercel-hosted frontends —
+  but the frontends are **frozen since 2026-09-02**: both Vercel projects were unlinked from Git
+  (`frapp-landing` 2026-09-01, `frapp-web` 2026-09-02), so no merge deploys web or landing.
+  Canonical record: ADR-21 in [`spec/architecture/README.md`](../../spec/architecture/README.md)
 - **Production** — Supabase Cloud (prod project), API + frontends on production infrastructure
 
 ## 2. Secrets management

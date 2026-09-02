@@ -148,6 +148,39 @@ if (failed.length > 0) {
 
 const LANDMARKS = [
   {
+    // Every sweep in `modules/scheduled-jobs` dedups by inserting here, so a
+    // threshold missing from this CHECK is not a validation nicety — the claim
+    // raises 23505's cousin (23514), `claimDispatch` reads it as "not a unique
+    // violation", logs, and returns false, and that sweep silently never sends
+    // anything. The failure is indistinguishable from "nothing to do".
+    //
+    // Asserted as a set so adding a sweep without widening the constraint —
+    // or widening it and dropping an existing value — fails here rather than
+    // in production silence.
+    name: "scheduled_notification_dispatches admits every sweep's threshold",
+    sql: `select pg_get_constraintdef(oid) as def
+            from pg_constraint
+           where conname = 'scheduled_notification_dispatches_threshold_check'`,
+    ok: (rows) =>
+      rows.length === 1 &&
+      ["DUE_SOON", "OVERDUE", "AUTO_ABSENT", "EXPIRED", "EVENT_REMINDER"].every(
+        (threshold) => new RegExp(`'${threshold}'`).test(rows[0].def ?? ""),
+      ),
+  },
+  {
+    // Pins an index the **initial schema** owns, not one any later migration
+    // added — stated plainly because the reverse would be the more useful-
+    // sounding lie. The pre-event reminder sweep filters `events` on a bounded
+    // `start_time` window 288 times a day and the auto-absent sweep does the
+    // same on `end_time`, so both are load-bearing for a scheduler that
+    // otherwise sequentially scans the table; neither is referenced by the
+    // migration that introduced its sweep.
+    name: "events start_time/end_time stay indexed for the scheduled sweeps",
+    sql: `select indexname from pg_indexes
+           where indexname in ('idx_events_start_time', 'idx_events_end_time')`,
+    ok: (rows) => rows.length === 2,
+  },
+  {
     // `NULLS NOT DISTINCT` is load-bearing, not decoration. `sender_id` became
     // nullable for imported archive rows (20260823120000), and Postgres treats
     // NULLs in a unique index as distinct by default — so without it this index

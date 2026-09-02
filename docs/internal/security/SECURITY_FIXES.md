@@ -124,7 +124,7 @@ Two gotchas worth not re-learning:
 - Current allowlist: the four Expo-chain highs above, all `trackedBy: "#289"`, expiring 2026-11-15. **Zero critical entries.**
 - The threshold is effectively `--audit-level=high` (the level the #618 escalation asked for), made landable by the sweep above; anything newly disclosed at high/critical goes red on the next PR or push.
 - Unit tests: `scripts/ci/__tests__/check-npm-audit.test.mjs` (runs in `ci-scripts-tests`).
-- **Blocking status:** `dependency-audit` is listed in `CI_CHECKS` in `scripts/ci/lib/required-checks.mjs`, which is the intended required set. Whether it is live on a given branch depends on when an admin last ran `npm run configure:branch-protection`; read live state per [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md#required-status-checks) rather than from this page.
+- **Blocking status:** `dependency-audit` is listed in `CI_CHECKS` in `scripts/ci/lib/required-checks.mjs`, which is the intended required set. Whether it is live on a given branch depends on when an admin last ran `npm run configure:branch-protection` (a human step — an agent session runs `npm run configure:branch-protection:verify`, which writes nothing); read live state per [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md#required-status-checks) rather than from this page.
 
 ### Prevention
 
@@ -252,8 +252,9 @@ A critical-severity entitlement gap was fixed in `apps/api/src/interface/guards/
 ### Details
 `ChapterGuard` now loads `chapters.subscription_status` alongside the membership check and applies the spec's read/write lock at the request boundary. Reads (GET / HEAD / OPTIONS) remain allowed for every status (matching §26's "all data preserved indefinitely in read-only mode"). Writes are gated by status × route classification:
 
-- `canceled` — all chapter-scoped writes return `403` with code `chapter.subscription.canceled`. The hard lock applies even to free-tier modules, matching [`data-retention.md`](../../../spec/behavior/data-retention.md) ("cannot create new content, invite members, or perform any write operations").
-- `past_due` — paid-ops writes return `403 chapter.subscription.write_locked`. Free-tier writes (chat, members, invites, roles, chapter config, user profile, search, chapter admin) continue to work, honoring the Chunk 03 free-tier wedge in [`onboarding.md`](../../../spec/behavior/onboarding.md) ("Inviting members is free-tier and not billing-gated").
+- `canceled` — all chapter-scoped writes return `403` with code `chapter.subscription.canceled`. The hard lock applies even to free-tier modules, matching [`data-retention.md`](../../../spec/behavior/data-retention.md) ("cannot create new content, mint invites, or perform write operations on any `ChapterGuard`-protected route").
+- `past_due` — paid-ops writes return `403 chapter.subscription.write_locked`. Free-tier writes (chat, members, invites, roles, chapter config, user profile, search, chapter admin) continue to work, honoring the Chunk 03 free-tier wedge in [`onboarding.md`](../../../spec/behavior/onboarding.md).
+  > **Superseded (FRA-109).** As shipped, this fix let a `past_due` chapter keep _every_ free-tier write, invites included. The later grace-window work changed both halves. First, `@GraceBlocked()` blocks invite minting on `past_due` even _inside_ the 3-day window — FRA-109 marked the two invite-creating routes that existed then; `POST /invites/email` arrived later (#1461) and carries the marker too, so the current count is three. Second, once the window closes, **every** free-tier write hard-locks with `chapter.subscription.write_locked`, not just invites. The account above is kept as the record of _this_ fix; the current rules are in [`onboarding.md`](../../../spec/behavior/onboarding.md) § Invite Token Rules.
 - `incomplete` — paid-ops writes return `403 chapter.subscription.required`. Free-tier writes continue so a brand-new chapter can chat and invite before completing checkout.
 - `active` — all writes allowed.
 

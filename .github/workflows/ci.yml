@@ -61,6 +61,11 @@ jobs:
               - 'packages/**'
               - 'package-lock.json'
               - 'turbo.json'
+              # Both gated jobs build `packages/*` through this action, so it is
+              # as build-affecting as `turbo.json`. Omitting it would let a PR
+              # that edits only the action skip two REQUIRED checks, which
+              # report Success when skipped (see the header above).
+              - '.github/actions/**'
             pglite:
               - 'supabase/migrations/**'
               - 'scripts/check-pglite-migrations.mjs'
@@ -88,16 +93,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Cache turbo build outputs
-        uses: actions/cache@v4
-        with:
-          path: .turbo
-          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
-          restore-keys: |
-            turbo-pkgbuild-${{ runner.os }}-
-
+      # The one job that writes the cache; every other job restores it.
       - name: Build shared packages
-        run: npx turbo run build --filter='./packages/*'
+        uses: ./.github/actions/turbo-packages-build
+        with:
+          save: "true"
 
   # ── Lint + type check (full monorepo) ───────────────────────────────────
   lint-and-typecheck:
@@ -120,16 +120,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Restore turbo build outputs
-        uses: actions/cache/restore@v4
-        with:
-          path: .turbo
-          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
-          restore-keys: |
-            turbo-pkgbuild-${{ runner.os }}-
-
       - name: Build shared packages
-        run: npx turbo run build --filter='./packages/*'
+        uses: ./.github/actions/turbo-packages-build
 
       - name: Type check
         run: npm run check-types
@@ -204,9 +196,10 @@ jobs:
 
   # ── Clean-checkout guard (fresh-install path) ───────────────────────────
   # Reproduces a bare `npm install && npm run check-types` on a cold machine.
-  # Deliberately has NO `needs: packages-build`, NO turbo cache restore, and NO
-  # `turbo run build --filter='./packages/*'` step — every other Node job has one,
-  # which is exactly why they are all structurally blind to this failure mode.
+  # Deliberately has NO `needs: packages-build` and NO
+  # `./.github/actions/turbo-packages-build` step (which is what restores the
+  # turbo cache and builds `packages/*`) — the eight jobs that DO use it are
+  # structurally blind to this failure mode, which is why this one must not.
   #
   # The shared packages publish their types as `dist/index.d.ts`, and `dist/` is
   # gitignored, so a consumer resolving the `types` condition (`apps/api`, via
@@ -257,7 +250,8 @@ jobs:
   #     build cache (`up to date, audited 1958 packages`) while production
   #     installs cold (`added 1126 packages, and audited 1144`).
   #
-  # Deliberately has NO `needs:`, NO turbo cache restore and NO path filter:
+  # Deliberately has NO `needs:`, NO `./.github/actions/turbo-packages-build`
+  # step (the turbo cache restore + `packages/*` build) and NO path filter:
   #   - `needs: packages-build` would put prebuilt package `dist/` on disk
   #     from a dev tree and hide a package that cannot build under the prune.
   #   - the `changes.web` filter covers `apps/web/**` and `packages/**` but
@@ -389,16 +383,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Restore turbo build outputs
-        uses: actions/cache/restore@v4
-        with:
-          path: .turbo
-          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
-          restore-keys: |
-            turbo-pkgbuild-${{ runner.os }}-
-
       - name: Build shared packages
-        run: npx turbo run build --filter='./packages/*'
+        uses: ./.github/actions/turbo-packages-build
 
       - name: Run API tests
         run: npm run test -w apps/api
@@ -432,16 +418,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Restore turbo build outputs
-        uses: actions/cache/restore@v4
-        with:
-          path: .turbo
-          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
-          restore-keys: |
-            turbo-pkgbuild-${{ runner.os }}-
-
       - name: Build shared packages
-        run: npx turbo run build --filter='./packages/*'
+        uses: ./.github/actions/turbo-packages-build
 
       - name: Run web unit tests
         run: npm run test -w apps/web
@@ -574,16 +552,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Restore turbo build outputs
-        uses: actions/cache/restore@v4
-        with:
-          path: .turbo
-          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
-          restore-keys: |
-            turbo-pkgbuild-${{ runner.os }}-
-
       - name: Build shared packages
-        run: npx turbo run build --filter='./packages/*'
+        uses: ./.github/actions/turbo-packages-build
 
       - name: Check API contract freshness (PR)
         if: github.event_name == 'pull_request'
@@ -650,16 +620,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Restore turbo build outputs
-        uses: actions/cache/restore@v4
-        with:
-          path: .turbo
-          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
-          restore-keys: |
-            turbo-pkgbuild-${{ runner.os }}-
-
       - name: Build shared packages
-        run: npx turbo run build --filter='./packages/*'
+        uses: ./.github/actions/turbo-packages-build
 
       - name: Check architectural boundaries
         run: npm run check:dep-cruiser
@@ -846,16 +808,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Restore turbo build outputs
-        uses: actions/cache/restore@v4
-        with:
-          path: .turbo
-          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
-          restore-keys: |
-            turbo-pkgbuild-${{ runner.os }}-
-
       - name: Build shared packages
-        run: npx turbo run build --filter='./packages/*'
+        uses: ./.github/actions/turbo-packages-build
 
       - name: Lint mobile
         run: npm run lint -w apps/mobile
@@ -1035,16 +989,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Restore turbo build outputs
-        uses: actions/cache/restore@v4
-        with:
-          path: .turbo
-          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
-          restore-keys: |
-            turbo-pkgbuild-${{ runner.os }}-
-
       - name: Build shared packages
-        run: npx turbo run build --filter='./packages/*'
+        uses: ./.github/actions/turbo-packages-build
 
       - name: Resolve Playwright version
         id: pw
