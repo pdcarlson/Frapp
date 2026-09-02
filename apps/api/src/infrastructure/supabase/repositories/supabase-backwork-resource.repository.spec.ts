@@ -21,14 +21,70 @@ import {
 const RESOURCE_A = '0a000000-0000-4000-8000-0000000000e0';
 const RESOURCE_B = '0b000000-0000-4000-8000-0000000000e0';
 const FILE_HASH = 'sha256-identical-exam';
+const DEPT_A = '0a000000-0000-4000-8000-0000000000c0';
+const DEPT_A_TARGET = '0a000000-0000-4000-8000-0000000000c1';
+const DEPT_B = '0b000000-0000-4000-8000-0000000000c0';
+const DEPT_B_TARGET = '0b000000-0000-4000-8000-0000000000c1';
+const PROF_A = '0a000000-0000-4000-8000-0000000000d0';
+const PROF_A_TARGET = '0a000000-0000-4000-8000-0000000000d1';
+const PROF_B = '0b000000-0000-4000-8000-0000000000d0';
+const PROF_B_TARGET = '0b000000-0000-4000-8000-0000000000d1';
 
 const seed = () => ({
+  backwork_departments: [
+    inA({
+      id: DEPT_A,
+      code: 'CHEM',
+      name: 'Chemistry',
+      created_at: '2026-01-01T00:00:00.000Z',
+    }),
+    inA({
+      id: DEPT_A_TARGET,
+      code: 'CHM2',
+      name: 'Chemistry II',
+      created_at: '2026-01-01T00:00:00.000Z',
+    }),
+    inB({
+      id: DEPT_B,
+      code: 'CHEM',
+      name: 'Chemistry',
+      created_at: '2026-01-01T00:00:00.000Z',
+    }),
+    inB({
+      id: DEPT_B_TARGET,
+      code: 'CHM2',
+      name: 'Chemistry II',
+      created_at: '2026-01-01T00:00:00.000Z',
+    }),
+  ],
+  backwork_professors: [
+    inA({
+      id: PROF_A,
+      name: 'Dr. Rivera',
+      created_at: '2026-01-01T00:00:00.000Z',
+    }),
+    inA({
+      id: PROF_A_TARGET,
+      name: 'Dr. Rivera Jr.',
+      created_at: '2026-01-01T00:00:00.000Z',
+    }),
+    inB({
+      id: PROF_B,
+      name: 'Dr. Rivera',
+      created_at: '2026-01-01T00:00:00.000Z',
+    }),
+    inB({
+      id: PROF_B_TARGET,
+      name: 'Dr. Rivera Jr.',
+      created_at: '2026-01-01T00:00:00.000Z',
+    }),
+  ],
   backwork_resources: [
     inA({
       id: RESOURCE_A,
-      department_id: null,
+      department_id: DEPT_A,
       course_number: 'CHEM 101',
-      professor_id: null,
+      professor_id: PROF_A,
       uploader_id: USER_SHARED,
       title: 'Midterm 1',
       year: 2026,
@@ -44,9 +100,9 @@ const seed = () => ({
     }),
     inB({
       id: RESOURCE_B,
-      department_id: null,
+      department_id: DEPT_B,
       course_number: 'CHEM 101',
-      professor_id: null,
+      professor_id: PROF_B,
       uploader_id: USER_SHARED,
       title: 'Midterm 1',
       year: 2026,
@@ -70,7 +126,12 @@ describe('SupabaseBackworkResourceRepository — tenant scope', () => {
   beforeEach(() => {
     harness = createTenantHarness({
       tables: seed(),
-      collisionExempt: { backwork_resources: ['storage_path'] },
+      // department_id/professor_id are chapter-scoped foreign keys, so the
+      // twins necessarily point at different (per-chapter) rows — that's not
+      // the tenant-narrowing shortcut this guard exists to catch.
+      collisionExempt: {
+        backwork_resources: ['storage_path', 'department_id', 'professor_id'],
+      },
     });
     repo = new SupabaseBackworkResourceRepository(harness.client);
   });
@@ -112,5 +173,58 @@ describe('SupabaseBackworkResourceRepository — tenant scope', () => {
         .rows('backwork_resources')
         .filter((r) => r.chapter_id === CHAPTER_A),
     ).toHaveLength(1);
+  });
+
+  it('countByDepartment is scoped to the caller chapter', async () => {
+    // `expectTenantScoped` fails this test outright if the query is missing
+    // its `.eq('chapter_id', ...)` predicate, regardless of which ids are
+    // passed in — so this is a structural guarantee, not merely "these two
+    // particular ids don't collide."
+    const count = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.countByDepartment(CHAPTER_A, DEPT_A),
+    );
+
+    expect(count).toBe(1);
+  });
+
+  it('countByProfessor is scoped to the caller chapter', async () => {
+    const count = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.countByProfessor(CHAPTER_A, PROF_A),
+    );
+
+    expect(count).toBe(1);
+  });
+
+  it('reassignDepartment only moves the caller chapter resources', async () => {
+    const moved = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.reassignDepartment(CHAPTER_A, DEPT_A, DEPT_A_TARGET),
+    );
+
+    expect(moved).toBe(1);
+    expect(
+      harness.rows('backwork_resources').find((r) => r.id === RESOURCE_A)
+        ?.department_id,
+    ).toBe(DEPT_A_TARGET);
+    // Chapter B's resource, seeded with the same department code, is untouched.
+    expect(
+      harness.rows('backwork_resources').find((r) => r.id === RESOURCE_B)
+        ?.department_id,
+    ).toBe(DEPT_B);
+  });
+
+  it('reassignProfessor only moves the caller chapter resources', async () => {
+    const moved = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.reassignProfessor(CHAPTER_A, PROF_A, PROF_A_TARGET),
+    );
+
+    expect(moved).toBe(1);
+    expect(
+      harness.rows('backwork_resources').find((r) => r.id === RESOURCE_A)
+        ?.professor_id,
+    ).toBe(PROF_A_TARGET);
+    expect(
+      harness.rows('backwork_resources').find((r) => r.id === RESOURCE_B)
+        ?.professor_id,
+    ).toBe(PROF_B);
   });
 });

@@ -71,6 +71,16 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     mutateAsync: mockConfirmUpload,
     isPending: false,
   }),
+  // `<Can>` is mocked below to always render its children, so
+  // `BackworkTaxonomyDrawer` (gated on `backwork:admin`) mounts in every test
+  // in this file, not just ones that exercise it — these six need a stub the
+  // same as every other hook this component tree reaches.
+  useUpdateDepartment: () => ({ mutateAsync: vi.fn() }),
+  useDeleteDepartment: () => ({ mutateAsync: vi.fn() }),
+  useMergeDepartments: () => ({ mutateAsync: vi.fn() }),
+  useUpdateProfessor: () => ({ mutateAsync: vi.fn() }),
+  useDeleteProfessor: () => ({ mutateAsync: vi.fn() }),
+  useMergeProfessors: () => ({ mutateAsync: vi.fn() }),
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
