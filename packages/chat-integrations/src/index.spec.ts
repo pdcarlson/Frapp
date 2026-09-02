@@ -25,9 +25,9 @@ describe("filterSlashCommands", () => {
   const allEnabled = () => true;
   const noneEnabled = () => false;
 
-  it("returns every command for an empty query when all modules are enabled", () => {
+  it("returns every command, unmodified, for an empty query when all modules are enabled", () => {
     const result = filterSlashCommands("", allEnabled);
-    expect(result).toHaveLength(SLASH_COMMANDS.length);
+    expect(result).toEqual(SLASH_COMMANDS);
   });
 
   it("excludes commands whose required module is disabled", () => {
@@ -39,8 +39,8 @@ describe("filterSlashCommands", () => {
 
   it("always includes commands with a null requiredModule regardless of gating", () => {
     const result = filterSlashCommands("", noneEnabled);
-    expect(result).toHaveLength(1);
-    expect(result[0]?.name).toBe("announce");
+    expect(result.every((command) => command.requiredModule === null)).toBe(true);
+    expect(result.some((command) => command.name === "announce")).toBe(true);
   });
 
   it("matches by name prefix/substring", () => {
@@ -98,6 +98,15 @@ describe("parseSlashInput", () => {
       command: null,
       args: "",
       raw: "/",
+    });
+  });
+
+  it("treats a digit-led token as no command (SLASH_PATTERN requires a leading letter), falling back to the rest as args", () => {
+    expect(parseSlashInput("/123abc")).toEqual({
+      isSlash: true,
+      command: null,
+      args: "123abc",
+      raw: "/123abc",
     });
   });
 
