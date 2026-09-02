@@ -187,16 +187,18 @@ From each project's dashboard → Settings → API, note:
 > **2026-09-01** and `frapp-web` about six and a half hours later on **2026-09-02**. Vercel's
 > `list_projects` reports `link: null` for **both** projects, so Vercel no longer observes this
 > repository at all: no push produces a preview, there is no Production Branch setting, and no dashboard toggle decides what
-> ships. Four things are broken as a result — nothing deploys staging web or landing on merge (both
-> hosts are frozen at their last Git build); the daily 07:15 UTC production-guardrails run is red
-> and, running as a preflight, **blocks every production deploy**; `verify-deployments.yml`'s two
-> Vercel jobs fail on every push to `main` (only the **verify** step fails — the
-> `ensure-vercel-staging-alias.mjs` step after it is a plain sequential step with no `if:` guard, so
-> it is *skipped*, not failing); and `scripts/ci/deploy-vercel-production.mjs` is **presumed broken**
-> because it passes a `gitSource`. **ADR-21** in
+> ships. Four things broke as a result, and **#1579 repaired two of them on 2026-09-02**. Still
+> live: nothing deploys staging web or landing on merge (both hosts are frozen at their last Git
+> build), and `scripts/ci/deploy-vercel-production.mjs` is **presumed broken** because it passes a
+> `gitSource` — now reachable, since the preflight that blocked it is fixed, but still unmeasured.
+> Repaired: the daily 07:15 UTC production-guardrails run no longer fails on the intended state —
+> the assertion was **inverted** to require the *absence* of a Git link, so it no longer blocks
+> production deploys as a preflight; and `verify-deployments.yml`'s two Vercel jobs were **removed**,
+> since nothing creates a deployment for them to verify. **ADR-21** in
 > [`spec/architecture/README.md`](../../../spec/architecture/README.md) is the canonical record —
-> the per-project dates and freeze points, and each breakage in full. Read the detail there, not
-> here. The repairs are tracked in **#1579** (the guardrail and the verify jobs) and **#1578**
+> the per-project dates and freeze points, each breakage in full, and the 2026-09-02 amendment
+> recording what #1579 changed. Read the detail there, not
+> here. The remaining repairs are tracked in **#1578**
 > (CI-driven deploys — `vercel build` in a GitHub Actions job, then
 > `vercel deploy --prebuilt --prod`; **designed, not built**, CI/CD stage 7 under the #1381 epic).
 >
@@ -394,9 +396,11 @@ only assert after the fact. Pinning it in `vercel.json` keeps the decision in gi
 
 > **Does not apply since 2026-09-02.** There is no branch wiring left to verify: both projects are
 > unlinked from Git (ADR-21), so no push produces a `preview` deployment and `vercel.json`'s
-> `git.deploymentEnabled` governs nothing. Check 3 fails by construction — `link.productionBranch`
-> is absent because `link` itself is `null` — and that is exactly what makes the daily guardrails
-> run red. Checks 1–3 describe the retired model. Check 4 is still true, and now trivially so: a
+> `git.deploymentEnabled` governs nothing. Check 3 as written below is unrunnable —
+> `link.productionBranch` is absent because `link` itself is `null` — which is what made the daily
+> guardrails run red until **#1579** inverted the assertion on 2026-09-02. The guardrail now checks
+> the opposite condition (no Git link at all), so a red run once again means real drift, most
+> likely a project that has been re-linked. Checks 1–3 describe the retired model. Check 4 is still true, and now trivially so: a
 > production deployment can only come from `deploy-production.yml`, whose Vercel step is itself
 > presumed broken until CI/CD stage 7 (#1578) lands. The API read below is unchanged and is the
 > quickest way to confirm the unlink — with `link: null` it reports `productionBranch: null`.
@@ -733,19 +737,34 @@ of the three secrets or `API_URL` / `APP_URL` is unset in that environment — s
 4. **Staging pipeline**: DB migration (dry-run → apply) → API deploy (Render) → frontends auto-deploy to Preview (Vercel).
 
 > ⚠️ **2026-09-02:** step 4's "frontends auto-deploy to Preview (Vercel)" no longer happens — both
-> Vercel projects are unlinked from Git (ADR-21). For the same reason the provider preflight in
-> step 3 of the production list below now fails on every run, blocking production deploys. See the
-> dated note at the top of §4.
+> Vercel projects are unlinked from Git (ADR-21). The provider preflight in step 3 of the production
+> list below briefly failed on every run for the same reason, blocking production deploys; #1579
+> inverted that assertion the same day, so it passes against the unlinked state. See the dated note
+> at the top of §4.
 
 **Production** is gated behind a person, and runs only when asked. Dispatch **Deploy
 production** with a commit SHA:
 
 1. **Typed confirmation** (`DEPLOY TO PRODUCTION`) — checked before any secret is read.
 2. **Commit validation** — the SHA must be an ancestor of `main` *and* have green CI, asserted against the required-check list branch protection uses, intersected with the jobs that commit's own workflows define (`scripts/ci/validate-deploy-sha.mjs`).
-3. **Provider preflight** — Render auto-deploy is off; neither Vercel project promotes from `main` (`scripts/ci/production-guardrails.mjs`).
+3. **Provider preflight** — Render auto-deploy is off; neither Vercel project is linked to Git (`scripts/ci/production-guardrails.mjs`). The Vercel half asserted "does not promote from `main`" until #1579 inverted it on 2026-09-02; post-ADR-21 the safe condition is the *absence* of a Git link, so a **present** link is the violation.
 4. **Environment approval** — the job pauses on the `production` environment's Required reviewers. This is the only human gate, and it fires here, on a run that names the commit.
 5. **Migration rehearsal** → fence → dry-run → apply.
 6. **Render deploy by `commitId`** → health smoke check → **Vercel production builds** → **tag**.
+
+> ⚠️ **`scope: full` is expected to fail at step 6's Vercel builds until #1578 lands, and it fails
+> LATE.** Before #1579 the step-3 preflight failed first, so a full dispatch stopped before touching
+> anything. That block is now gone by design — the sequencing ADR-21 records is that #1579 had to
+> land before #1578's production path could even be exercised. But the step it unblocks is
+> `scripts/ci/deploy-vercel-production.mjs`, which POSTs a `gitSource` that only means anything
+> while the Git integration exists; ADR-21 records it as **presumed broken** and nothing has yet
+> measured it. In one job, so a failure there lands **after** step 5 has already applied production
+> migrations and step 6 has deployed and health-checked the Render API — leaving a migrated database
+> and a new API with no `vX.Y.Z` tag naming what is live, and no rollback.
+>
+> Until #1578: prefer **`scope: migrations-only`**, which stops after the apply and never reaches a
+> Vercel step. If you must run `full`, expect to finish the release by hand and to tag it yourself.
+> This is a known gap, not a regression to investigate.
 
 > **Deploying an OLDER commit.** That intersection in step 2 is deliberate, and it is what
 > keeps an incident rollback possible. A required check added *after* a commit was made could

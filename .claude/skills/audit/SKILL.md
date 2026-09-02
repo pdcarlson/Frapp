@@ -274,8 +274,8 @@ For each migration:
 | Release | `.github/workflows/release.yml` | Version bump logic, tag creation, `workflow_call` input plumbing |
 | Docs | `.github/workflows/docs.yml` (`docs-spec-sync` job) | Spec sync enforcement |
 
-Both Vercel projects were unlinked from Git (landing 2026-09-01, web 2026-09-02), so
-`assertVercelProductionBranch` reads an absent `project.link.productionBranch` and treats it as a
+Both Vercel projects were unlinked from Git (landing 2026-09-01, web 2026-09-02). The old
+`assertVercelProductionBranch` read an absent `project.link.productionBranch` and treated it as a
 violation — red daily, and red as the `deploy-production.yml` preflight, where it blocked production
 deploys (`--migrations-only` drops only frapp-landing's assertion; frapp-web's stays). **Repaired by
 #1579 on 2026-09-02** — the assertion is now `assertVercelNoGitLink`, and the two Vercel jobs in

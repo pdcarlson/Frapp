@@ -39,9 +39,10 @@ commit that is not an ancestor of `main` with green CI.
   auto-promotes — though that workflow's Vercel step passes a `gitSource` the integration used to
   supply and is therefore **presumed broken** (not observed failing). **ADR-21** in
   [`spec/architecture/README.md`](../../spec/architecture/README.md) is the canonical record of the
-  unlink — the per-project dates, the freeze points and every live breakage. The repairs are
-  tracked in **#1579** (the guardrail and `verify-deployments.yml`'s Vercel jobs; the fix
-  **inverts** the assertion so a *present* Git link is the violation, rather than deleting it) and
+  unlink — the per-project dates, the freeze points and every live breakage. **#1579** repaired the
+  guardrail and `verify-deployments.yml`'s Vercel jobs on 2026-09-02: the assertion was
+  **inverted** so a *present* Git link is the violation, rather than deleted, and the two Vercel
+  verify jobs were removed. What remains is
   **#1578** (CI-driven `vercel build` + `vercel deploy --prebuilt --prod`, CI/CD stage 7 under the
   #1381 epic — designed, not built). The `git` block and the `ignoreCommand: "exit 1"` pin in each
   app's `vercel.json` govern nothing while the projects stay unlinked, but **must not be deleted**

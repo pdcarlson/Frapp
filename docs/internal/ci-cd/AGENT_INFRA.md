@@ -100,16 +100,19 @@ summary before running anything from this family.
 > record is ADR-21.** The owner disconnected **both** Vercel projects from Git, deliberately and
 > **not as one event**: `frapp-landing` on 2026-09-01 and `frapp-web` roughly six and a half hours
 > later on 2026-09-02 (`list_projects` reports `link: null` for both, read 2026-09-02). The red
-> guardrail, the failing verify steps and the frozen staging hosts flagged in the rows above all
-> follow from those two unlinks — which is why the two projects' freeze points and their verify
-> jobs' first red runs carry different dates. Note the
-> failure is the **verify** step only: `scripts/ci/ensure-vercel-staging-alias.mjs` runs after it
-> as a plain sequential step with no `if:` guard, so a failed verify ends the job and the alias
-> step is *skipped* — that script has never failed and emits nothing to grep for. The full
+> guardrail, the failing verify steps and the frozen staging hosts that followed from those two
+> unlinks are why the two projects' freeze points and their verify jobs' first red runs carry
+> different dates. **The first two are repaired** ([#1579](https://github.com/pdcarlson/Frapp/issues/1579),
+> 2026-09-02): the guardrail assertion was inverted, and the two Vercel verify jobs were removed
+> outright — so **no Vercel job in `verify-deployments.yml` can produce a red `main` any more**, and
+> a red check there is something new. While those jobs existed the failure was the **verify** step
+> only: `scripts/ci/ensure-vercel-staging-alias.mjs` ran after it as a plain sequential step with no
+> `if:` guard, so a failed verify ended the job and the alias step was *skipped* — that script never
+> failed and emitted nothing to grep for. The full
 > breakage list, the evidence and the rationale live in **ADR-21** in
-> [`spec/architecture/README.md`](../../../spec/architecture/README.md) — read it there rather than
-> re-deriving it here. Repairing the guardrail and the verify jobs is
-> [#1579](https://github.com/pdcarlson/Frapp/issues/1579); the replacement model (`vercel build`
+> [`spec/architecture/README.md`](../../../spec/architecture/README.md), with its 2026-09-02
+> amendment — read it there rather than
+> re-deriving it here. The replacement model (`vercel build`
 > plus `vercel deploy --prebuilt --prod` driven from GitHub Actions) is **designed, not built** —
 > CI/CD stage 7, [#1578](https://github.com/pdcarlson/Frapp/issues/1578) under the
 > [#1381](https://github.com/pdcarlson/Frapp/issues/1381) epic. Nothing in this repo deploys Vercel

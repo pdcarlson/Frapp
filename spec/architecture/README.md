@@ -1059,9 +1059,9 @@ in the flow ever named a commit. Three consequences, all measured rather than ar
   at all, and Vercel's `list_projects` reports `link: null` for both projects. Of the two
   load-bearing, dashboard-only, fail-open settings, **one remains asserted** — Render auto-deploy
   must stay off. The Vercel one is not gone from the world, only from the API: the unlink is itself
-  unversioned dashboard state that a re-link would undo, which is why **#1579** (landed 2026-09-02)
-  **inverted** the assertion — `assertVercelNoGitLink`, where a *present* Git link is the
-  violation — rather than deleting it. Both statements stand as the record of what was true on 2026-08-28;
+  unversioned dashboard state that a re-link would undo, which is why the fix tracked in **#1579**
+  is to **invert** `assertVercelProductionBranch` — a *present* Git link becomes the violation —
+  rather than to delete it. Both statements stand as the record of what was true on 2026-08-28;
   ADR-21 is the canonical record of what replaces them and of the breakages the unlink left live.
 
 **Trigger to revisit:** collaborators are added (a merge-time review may then be worth its
@@ -1279,8 +1279,7 @@ it green. Nothing was failing beforehand — production-guardrails run #4 passed
 `main` produced previews only. This is a decision taken, not a breakage worked around.
 
 **What it retires.** The Production Branch guardrail (`assertVercelProductionBranch` in
-`scripts/ci/production-guardrails.mjs`) asserted a setting the API no longer exposes; **#1579
-replaced it on 2026-09-02** with `assertVercelNoGitLink`, described under *Consequences* below. The
+`scripts/ci/production-guardrails.mjs`) now asserts a setting the API no longer exposes. The
 auto-deploy-from-push path is gone outright. The `git` settings and the `ignoreCommand: "exit 1"`
 pin in both `vercel.json` files — ADR-20's always-build row — have no integration left to govern
 while the projects stay unlinked, which makes the **premise** of **#1376** (that nothing enforces
@@ -1297,28 +1296,17 @@ shipping the artifact that job produced. That model is **designed, not built**: 
 today, and nothing in the repository deploys Vercel without the integration. It is tracked as
 **#1578**, filed 2026-09-02 as CI/CD stage 7 — a native sub-issue of the #1381 epic.
 
-**Consequences.** Four breakages followed the unlink. **Two were repaired by #1579 on 2026-09-02**
-and are marked below; two remain live. They are recorded here as current state rather than as
-history:
+**Consequences.** Four breakages are live as of 2026-09-02, recorded here as current known-broken
+state rather than as history:
 
-- ~~**The daily 07:15 UTC production-guardrails run is red.**~~ **Repaired (#1579, 2026-09-02).**
-  `assertVercelProductionBranch` read `project?.link?.productionBranch` and treated an absent value
-  as a violation; with `link: null` it was always absent. Because the same assertion ran as a
-  preflight inside `deploy-production.yml`, it **blocked every production deploy** — including a
-  `--migrations-only` run, which drops only `frapp-landing`'s assertion and still makes
-  `frapp-web`'s. #1579 **inverted** it to `assertVercelNoGitLink`: a *present* Git link is now the
-  violation. Because absent flipped from meaning "violation" to meaning "pass", the new assertion
-  first confirms the response really is a project object (`looksLikeVercelProject`) — otherwise an
-  error envelope with no `link` would read as unlinked-and-safe, turning a fail-closed check into a
-  fail-open one on the only path to production.
-- ~~**`verify-deployments.yml`'s two Vercel jobs fail on every push to `main`**~~ **Repaired
-  (#1579, 2026-09-02)** by removing both jobs: nothing creates a Vercel deployment, so polling for
-  one could not detect a problem, only manufacture a red check. `verify-vercel-deploy.mjs` and
-  `ensure-vercel-staging-alias.mjs` are **kept unreferenced** for **#1578** to re-wire against a
-  deployment CI creates — the alias script in particular mitigates a real Vercel behaviour (the
-  staging hostname lagging a READY deployment) that returns with it. They looked for a deployment
-  the integration used to create, and broke ~6.5 hours apart, one per project, which is how the
-  unlink itself is dated:
+- **The daily 07:15 UTC production-guardrails run is red.** `assertVercelProductionBranch` reads
+  `project?.link?.productionBranch` and treats an absent value as a violation; with `link: null` it
+  is always absent. The same assertion runs as a preflight inside `deploy-production.yml`, so it
+  **blocks every production deploy** — including a `--migrations-only` run, which drops only
+  `frapp-landing`'s assertion and still makes `frapp-web`'s. Tracked as **#1579**.
+- **`verify-deployments.yml`'s two Vercel jobs fail on every push to `main`** — they look for a
+  deployment the integration used to create. The two jobs broke ~6.5 hours apart, one per project,
+  which is how the unlink itself is dated:
 
   | Job | Last green run | First failing run |
   | --- | --- | --- |
@@ -1334,11 +1322,10 @@ history:
   above.
 - **`scripts/ci/deploy-vercel-production.mjs` is presumed broken**, because its `gitSource` argument
   requires the integration. Presumed rather than measured, and structurally so rather than by
-  accident of scheduling: the `assertVercelProductionBranch` preflight in the bullet above failed
-  first, so `deploy-production.yml` never reached this step — the `gitSource` path could not be
-  exercised at all until #1579 landed. **It now can**, which was the sequencing constraint on the
-  replacement: #1579 had to land before #1578's production path could be tested at all. The
-  `gitSource` call remains presumed broken; #1578 replaces it.
+  accident of scheduling: the `assertVercelProductionBranch` preflight in the bullet above fails
+  first, so `deploy-production.yml` never reaches this step — the `gitSource` path **cannot be
+  exercised at all until #1579 lands**. That is also the sequencing constraint on the replacement:
+  **#1579 has to land before #1578's production path can be tested at all.**
 - **Nothing deploys staging web or landing on merge any more.** Both staging hosts are frozen at
   the freeze points named above, and stay there until stage 7 (**#1578**) exists.
 
@@ -1355,15 +1342,50 @@ Against those four: the **Vercel half** of the fail-open risk ADR-19 and ADR-20 
 removed at the source rather than asserted after the fact. While the projects stay unlinked there is
 no Production Branch to point at `main` and no push path to deploy from. But *staying unlinked* is
 itself unversioned dashboard state — exactly the shape of thing this repo does not trust — so the
-guardrail is not moot, it is **pointed the other way**: #1579 (landed 2026-09-02) **inverted**
-`assertVercelProductionBranch` into `assertVercelNoGitLink`, so that a **present** Git link is the
-violation, rather than deleting the assertion. An audit of Vercel keeps an item; the item is now "both projects are still unlinked".
+guardrail is not moot, it is **pointed the other way**: #1579's fix is to **invert**
+`assertVercelProductionBranch` so that a **present** Git link is the violation, not to delete the
+assertion. An audit of Vercel keeps an item; the item is now "both projects are still unlinked".
 The Render half is untouched — `assertRenderService` still runs in the same daily job and the same
 `deploy-production.yml` preflight, and is why `production-guardrails.mjs` still exists. That
 Vercel-side removal is the durable gain, and it is why the breakages are worth carrying rather than
 undoing by re-linking. Repairing them is CI work, tracked separately in **#1579** (the guardrails)
 and **#1578** (the replacement deploys); this ADR records the state and changes no workflow and no
 script.
+
+**Amendment (2026-09-02) — two of the four breakages are repaired (#1579).** The bullets under
+*Consequences* above stand as the record of what the unlink left broken. Two of them no longer
+describe current state:
+
+- **The guardrail.** `assertVercelProductionBranch` was **inverted**, not deleted, exactly as this
+  ADR and #1579 called for. It is now `assertVercelNoGitLink` in
+  `scripts/ci/production-guardrails.mjs`: a **present** Git link is the violation, and an absent one
+  is the pass. The daily 07:15 run and the `deploy-production.yml` preflight therefore no longer
+  fail on the intended post-ADR-21 state.
+
+  Inverting flipped *absent* from meaning "violation" to meaning "pass", which converts a
+  fail-closed check into a fail-open one unless something else holds the line: an error envelope, an
+  empty body, or a future response shape has no `link` either, and would otherwise read as
+  unlinked-and-green on the only path to production. `looksLikeVercelProject` is that line — a
+  response that is not recognisably a project object is a violation. It is the load-bearing half of
+  the change, and is unit-tested separately from the assertion so the two cannot collapse into one
+  answer.
+
+- **The verify jobs.** `verify-vercel-web` and `verify-vercel-landing` were **removed** from
+  `verify-deployments.yml`. Nothing creates a Vercel deployment for a pushed SHA, so polling for one
+  could not detect a problem — only manufacture a red check, which is how a red `main` stops meaning
+  anything. `verify-vercel-deploy.mjs` and `ensure-vercel-staging-alias.mjs` are **kept**, referenced
+  by no workflow, for **#1578** to re-wire against a deployment CI creates; the alias script
+  mitigates a real Vercel behaviour (the staging hostname lagging a READY deployment) that returns
+  with it. Re-add the jobs keyed on the deployment id that workflow creates, not on the pushed SHA.
+
+The other two bullets are unchanged and still live: `deploy-vercel-production.mjs`'s `gitSource` call
+remains **presumed broken** (#1579 removed the preflight that blocked it, so it is now reachable and
+can finally be measured — but nothing has measured it yet), and **nothing deploys staging web or
+landing on merge**. Both wait on #1578.
+
+This amendment also supersedes the future-tense repair language left in ADR-19's 2026-09-02
+amendment and in the *Consequences* and closing paragraphs above ("#1579's fix is to invert…",
+"Repairing them is CI work, tracked separately in #1579"): that work has landed. #1578 has not.
 
 **Trigger to revisit:** CI-driven deploys prove unworkable and re-linking Git is considered. That
 supersedes this ADR rather than amending it — and re-linking restores both Vercel settings, the
