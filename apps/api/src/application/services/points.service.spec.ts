@@ -21,6 +21,10 @@ import {
 import type { PointTransaction } from '../../domain/entities/point-transaction.entity';
 import { NotificationService } from './notification.service';
 import { ChatService } from './chat.service';
+import {
+  ChapterPointsConfigService,
+  POINTS_CONFIG_DEFAULTS,
+} from './chapter-points-config.service';
 
 describe('PointsService', () => {
   let service: PointsService;
@@ -31,6 +35,9 @@ describe('PointsService', () => {
   >;
   let mockUserRepo: jest.Mocked<IUserRepository>;
   let mockChatService: jest.Mocked<Pick<ChatService, 'sendMessage'>>;
+  let mockChapterPointsConfig: jest.Mocked<
+    Pick<ChapterPointsConfigService, 'getConfig'>
+  >;
 
   const txn1: PointTransaction = {
     id: 'pt-1',
@@ -113,6 +120,14 @@ describe('PointsService', () => {
         .mockResolvedValue({ message: {}, deduplicated: false }),
     };
 
+    // Default posture for every existing test: a chapter with no
+    // `chapter_points_config` row, which resolves to the values this service
+    // hardcoded before #394 (50/hr, flag at +/-100). Tests that care about a
+    // configured chapter override this per-case.
+    mockChapterPointsConfig = {
+      getConfig: jest.fn().mockResolvedValue({ ...POINTS_CONFIG_DEFAULTS }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PointsService,
@@ -124,6 +139,10 @@ describe('PointsService', () => {
         { provide: USER_REPOSITORY, useValue: mockUserRepo },
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: ChatService, useValue: mockChatService },
+        {
+          provide: ChapterPointsConfigService,
+          useValue: mockChapterPointsConfig,
+        },
       ],
     }).compile();
 
@@ -559,6 +578,133 @@ describe('PointsService', () => {
       });
 
       expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+    });
+
+    // #394 — both anti-fraud limits are chapter-configurable
+    // (spec/behavior/points.md § Anti-Fraud). The cases above cover the
+    // unconfigured chapter, which resolves to the defaults; these cover a
+    // chapter that has set its own.
+    describe('chapter-configurable anti-fraud limits', () => {
+      const created: PointTransaction = {
+        id: 'pt-new',
+        chapter_id: 'ch-1',
+        user_id: 'user-2',
+        amount: 10,
+        category: 'MANUAL',
+        description: 'Bonus',
+        metadata: { adjusted_by: 'admin-1', reason: 'Bonus' },
+        created_at: '2026-02-26T20:00:00.000Z',
+      };
+
+      const adjust = (amount = 10) =>
+        service.adjustPoints({
+          chapterId: 'ch-1',
+          targetUserId: 'user-2',
+          adminUserId: 'admin-1',
+          amount,
+          category: 'MANUAL',
+          reason: 'Bonus',
+        });
+
+      it('reads the limits for the acting chapter', async () => {
+        mockPointTxnRepo.create.mockResolvedValue(created);
+
+        await adjust();
+
+        expect(mockChapterPointsConfig.getConfig).toHaveBeenCalledWith('ch-1');
+      });
+
+      it('enforces a configured rate limit tighter than the default', async () => {
+        mockChapterPointsConfig.getConfig.mockResolvedValue({
+          ...POINTS_CONFIG_DEFAULTS,
+          adjustment_rate_limit_per_hour: 5,
+        });
+        // Well under the default 50, so this can only fail on the configured
+        // value — the assertion would pass vacuously against the old constant.
+        mockPointTxnRepo.countRecentAdjustments.mockResolvedValue(5);
+
+        await expect(adjust()).rejects.toMatchObject({
+          status: 429,
+          message: 'Rate limit exceeded: maximum 5 point adjustments per hour',
+        });
+        expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('allows past the default when a chapter configures a looser rate limit', async () => {
+        mockChapterPointsConfig.getConfig.mockResolvedValue({
+          ...POINTS_CONFIG_DEFAULTS,
+          adjustment_rate_limit_per_hour: 200,
+        });
+        // Above the old hardcoded 50, so this fails against the constant.
+        mockPointTxnRepo.countRecentAdjustments.mockResolvedValue(120);
+        mockPointTxnRepo.create.mockResolvedValue(created);
+
+        await expect(adjust()).resolves.toEqual(created);
+      });
+
+      it('flags on a configured threshold below the default', async () => {
+        mockChapterPointsConfig.getConfig.mockResolvedValue({
+          ...POINTS_CONFIG_DEFAULTS,
+          anomaly_threshold: 25,
+        });
+        mockPointTxnRepo.create.mockResolvedValue(created);
+
+        // 30 is under the default 100 and over the configured 25.
+        await adjust(30);
+
+        expect(mockPointTxnRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            metadata: expect.objectContaining({ flagged: true }),
+          }),
+        );
+      });
+
+      it('does not flag under a configured threshold above the default', async () => {
+        mockChapterPointsConfig.getConfig.mockResolvedValue({
+          ...POINTS_CONFIG_DEFAULTS,
+          anomaly_threshold: 500,
+        });
+        mockPointTxnRepo.create.mockResolvedValue(created);
+
+        // 150 flags under the default 100 but not under the configured 500.
+        await adjust(150);
+
+        const metadata = mockPointTxnRepo.create.mock.calls[0]?.[0]
+          ?.metadata as Record<string, unknown>;
+        expect(metadata.flagged).toBeUndefined();
+      });
+
+      it('flags exactly at the configured threshold, not only above it', async () => {
+        mockChapterPointsConfig.getConfig.mockResolvedValue({
+          ...POINTS_CONFIG_DEFAULTS,
+          anomaly_threshold: 40,
+        });
+        mockPointTxnRepo.create.mockResolvedValue(created);
+
+        await adjust(40);
+
+        expect(mockPointTxnRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            metadata: expect.objectContaining({ flagged: true }),
+          }),
+        );
+      });
+
+      it('applies the threshold to the absolute amount, so a large FINE flags too', async () => {
+        mockChapterPointsConfig.getConfig.mockResolvedValue({
+          ...POINTS_CONFIG_DEFAULTS,
+          anomaly_threshold: 25,
+        });
+        mockPointTxnRepo.create.mockResolvedValue(created);
+
+        await adjust(-30);
+
+        expect(mockPointTxnRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            metadata: expect.objectContaining({ flagged: true }),
+          }),
+        );
+      });
     });
 
     it('posts a server-originated points card when a channel + client id are given', async () => {

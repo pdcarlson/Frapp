@@ -19,6 +19,7 @@ import type {
 } from '../../domain/entities/point-transaction.entity';
 import { NotificationService } from './notification.service';
 import { ChatService } from './chat.service';
+import { ChapterPointsConfigService } from './chapter-points-config.service';
 import { clampListLimit } from '../../domain/constants/list-query-limits';
 import {
   resolveWindowSince,
@@ -59,6 +60,7 @@ export class PointsService {
     private readonly userRepo: IUserRepository,
     private readonly notificationService: NotificationService,
     private readonly chatService: ChatService,
+    private readonly chapterPointsConfig: ChapterPointsConfigService,
   ) {}
 
   private filterByWindow(
@@ -244,7 +246,6 @@ export class PointsService {
   }
 
   private static readonly RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
-  private static readonly RATE_LIMIT_MAX = 50;
 
   async adjustPoints(input: AdjustPointsInput): Promise<PointTransaction> {
     if (!input.reason || input.reason.trim().length === 0) {
@@ -255,15 +256,24 @@ export class PointsService {
       throw new ForbiddenException('Admins cannot adjust their own points');
     }
 
+    // Both anti-fraud limits are chapter-configurable (spec/behavior/points.md
+    // § Anti-Fraud). A chapter with no `chapter_points_config` row gets the
+    // defaults, which are the values this service used to hardcode — 50/hr and
+    // ±100 — so an unconfigured chapter behaves exactly as it always did.
+    // Read once, before the rate check, so the same snapshot decides both the
+    // refusal below and the flag further down.
+    const { adjustment_rate_limit_per_hour: rateLimit, anomaly_threshold } =
+      await this.chapterPointsConfig.getConfig(input.chapterId);
+
     const since = new Date(Date.now() - PointsService.RATE_LIMIT_WINDOW_MS);
     const recentCount = await this.pointTxnRepo.countRecentAdjustments(
       input.adminUserId,
       input.chapterId,
       since,
     );
-    if (recentCount >= PointsService.RATE_LIMIT_MAX) {
+    if (recentCount >= rateLimit) {
       throw new HttpException(
-        'Rate limit exceeded: maximum 50 point adjustments per hour',
+        `Rate limit exceeded: maximum ${rateLimit} point adjustments per hour`,
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
@@ -273,8 +283,7 @@ export class PointsService {
       reason: input.reason,
     };
 
-    const anomalyThreshold = 100;
-    if (Math.abs(input.amount) >= anomalyThreshold) {
+    if (Math.abs(input.amount) >= anomaly_threshold) {
       metadata.flagged = true;
     }
 
