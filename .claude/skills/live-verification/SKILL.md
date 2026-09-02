@@ -23,8 +23,9 @@ description: >
 > staging therefore tests an **old build**, not your change, so it can neither confirm nor refute
 > a claim about a commit merged since. The **API (Render staging) and hosted Supabase** halves of
 > this skill are unaffected and remain the reason to use it. Canonical record: **ADR-21** in
-> [`spec/architecture/README.md`](../../../spec/architecture/README.md); the failing verify jobs
-> are [#1579](https://github.com/pdcarlson/Frapp/issues/1579).
+> [`spec/architecture/README.md`](../../../spec/architecture/README.md). The Vercel verify jobs
+> that were failing on this are gone — [#1579](https://github.com/pdcarlson/Frapp/issues/1579)
+> removed them on 2026-09-02, so a red `main` is once again a real signal.
 
 Sandbox sessions can reach **deployed staging** when the cloud environment's network
 allowlist carries the live-egress lines
