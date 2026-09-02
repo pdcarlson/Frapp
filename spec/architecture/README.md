@@ -1353,6 +1353,41 @@ undoing by re-linking. Repairing them is CI work, tracked separately in **#1579*
 and **#1578** (the replacement deploys); this ADR records the state and changes no workflow and no
 script.
 
+**Amendment (2026-09-02) — two of the four breakages are repaired (#1579).** The bullets under
+*Consequences* above stand as the record of what the unlink left broken. Two of them no longer
+describe current state:
+
+- **The guardrail.** `assertVercelProductionBranch` was **inverted**, not deleted, exactly as this
+  ADR and #1579 called for. It is now `assertVercelNoGitLink` in
+  `scripts/ci/production-guardrails.mjs`: a **present** Git link is the violation, and an absent one
+  is the pass. The daily 07:15 run and the `deploy-production.yml` preflight therefore no longer
+  fail on the intended post-ADR-21 state.
+
+  Inverting flipped *absent* from meaning "violation" to meaning "pass", which converts a
+  fail-closed check into a fail-open one unless something else holds the line: an error envelope, an
+  empty body, or a future response shape has no `link` either, and would otherwise read as
+  unlinked-and-green on the only path to production. `looksLikeVercelProject` is that line — a
+  response that is not recognisably a project object is a violation. It is the load-bearing half of
+  the change, and is unit-tested separately from the assertion so the two cannot collapse into one
+  answer.
+
+- **The verify jobs.** `verify-vercel-web` and `verify-vercel-landing` were **removed** from
+  `verify-deployments.yml`. Nothing creates a Vercel deployment for a pushed SHA, so polling for one
+  could not detect a problem — only manufacture a red check, which is how a red `main` stops meaning
+  anything. `verify-vercel-deploy.mjs` and `ensure-vercel-staging-alias.mjs` are **kept**, referenced
+  by no workflow, for **#1578** to re-wire against a deployment CI creates; the alias script
+  mitigates a real Vercel behaviour (the staging hostname lagging a READY deployment) that returns
+  with it. Re-add the jobs keyed on the deployment id that workflow creates, not on the pushed SHA.
+
+The other two bullets are unchanged and still live: `deploy-vercel-production.mjs`'s `gitSource` call
+remains **presumed broken** (#1579 removed the preflight that blocked it, so it is now reachable and
+can finally be measured — but nothing has measured it yet), and **nothing deploys staging web or
+landing on merge**. Both wait on #1578.
+
+This amendment also supersedes the future-tense repair language left in ADR-19's 2026-09-02
+amendment and in the *Consequences* and closing paragraphs above ("#1579's fix is to invert…",
+"Repairing them is CI work, tracked separately in #1579"): that work has landed. #1578 has not.
+
 **Trigger to revisit:** CI-driven deploys prove unworkable and re-linking Git is considered. That
 supersedes this ADR rather than amending it — and re-linking restores both Vercel settings, the
 Production Branch and auto-deploy from push, along with the integration.

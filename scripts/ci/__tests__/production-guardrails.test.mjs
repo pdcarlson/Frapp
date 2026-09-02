@@ -3,9 +3,10 @@ import assert from "node:assert/strict";
 
 import {
   assertRenderService,
-  assertVercelProductionBranch,
+  assertVercelNoGitLink,
   buildSummary,
   collectFindings,
+  looksLikeVercelProject,
 } from "../production-guardrails.mjs";
 
 const RENDER_SERVICE_ID = "srv-test";
@@ -44,38 +45,70 @@ describe("assertRenderService", () => {
     assert.equal(assertRenderService({}).length, 2));
 });
 
-describe("assertVercelProductionBranch", () => {
-  // Not-main rather than equals-X, deliberately: after the branch is deleted,
-  // `production` points at nothing, so no push can match it and nothing
-  // auto-promotes. That is the SAFE state.
-  it("passes when Production Branch is the now-deleted production branch", () =>
-    assert.deepEqual(assertVercelProductionBranch({ link: { productionBranch: "production" } }, "frapp-web"), []));
+describe("looksLikeVercelProject", () => {
+  // This predicate is what keeps the inverted assertion from failing open. It
+  // is tested separately from the assertion because "absent link" and "response
+  // we did not understand" must never collapse into the same answer.
+  it("accepts a real project object", () =>
+    assert.equal(looksLikeVercelProject({ id: "prj_web", name: "frapp-web", link: null }), true));
 
-  it("fails when Production Branch is main", () => {
-    const findings = assertVercelProductionBranch({ link: { productionBranch: "main" } }, "frapp-web");
+  it("rejects an empty object", () => assert.equal(looksLikeVercelProject({}), false));
+  it("rejects an error envelope", () =>
+    assert.equal(looksLikeVercelProject({ error: { code: "forbidden", message: "no" } }), false));
+  it("rejects null and undefined", () => {
+    assert.equal(looksLikeVercelProject(null), false);
+    assert.equal(looksLikeVercelProject(undefined), false);
+  });
+  it("rejects a project whose id is present but empty", () =>
+    assert.equal(looksLikeVercelProject({ id: "" }), false));
+});
+
+describe("assertVercelNoGitLink", () => {
+  const UNLINKED = { id: "prj_web", name: "frapp-web", link: null };
+
+  // The live, intended state post-ADR-21: both projects unlinked, so there is
+  // no Production Branch and no push path to production.
+  it("passes when the project is unlinked (link: null)", () =>
+    assert.deepEqual(assertVercelNoGitLink(UNLINKED, "frapp-web"), []));
+
+  it("passes when link is absent entirely", () =>
+    assert.deepEqual(assertVercelNoGitLink({ id: "prj_landing", name: "frapp-landing" }, "frapp-landing"), []));
+
+  // The violation this assertion exists to catch. Re-linking restores both
+  // fail-open dashboard settings the unlink removed.
+  it("fails when the project has regained a Git link", () => {
+    const findings = assertVercelNoGitLink(
+      { id: "prj_web", name: "frapp-web", link: { type: "github", org: "pdcarlson", repo: "Frapp" } },
+      "frapp-web",
+    );
     assert.equal(findings.length, 1);
-    assert.match(findings[0], /bypassing deploy-production\.yml/);
+    assert.match(findings[0], /is linked to Git/);
+    assert.match(findings[0], /github pdcarlson\/Frapp/);
+    assert.match(findings[0], /ADR-21/);
   });
 
-  // Vercel falls back to the repository default branch when the field is unset,
-  // and the default branch is main. Absent is therefore the dangerous case, not
-  // a neutral one.
-  it("fails when Production Branch is absent", () => {
-    const findings = assertVercelProductionBranch({ link: {} }, "frapp-web");
+  it("fails on a link object with nothing identifying in it — a link is a link", () => {
+    const findings = assertVercelNoGitLink({ id: "prj_web", link: {} }, "frapp-web");
     assert.equal(findings.length, 1);
-    assert.match(findings[0], /falls back to the repository/);
+    assert.match(findings[0], /is linked to Git/);
   });
 
-  it("fails when there is no link object at all", () =>
-    assert.equal(assertVercelProductionBranch({}, "frapp-landing").length, 1));
-
-  it("fails on an empty string", () =>
-    assert.equal(assertVercelProductionBranch({ link: { productionBranch: "" } }, "frapp-web").length, 1));
+  // The regression the inversion could otherwise introduce. Under the OLD
+  // assertion absent meant violation, so a malformed body failed closed for
+  // free. Now absent means pass, so an unrecognised shape must be caught
+  // explicitly or the guardrail goes green having read nothing.
+  it("fails on an unrecognised response shape rather than reading it as unlinked", () => {
+    for (const body of [{}, { error: { code: "forbidden" } }, null, undefined, "nope"]) {
+      const findings = assertVercelNoGitLink(body, "frapp-web");
+      assert.equal(findings.length, 1, `expected a violation for ${JSON.stringify(body)}`);
+      assert.match(findings[0], /Unreadable is not a pass/);
+    }
+  });
 });
 
 describe("collectFindings", () => {
   const goodRender = { autoDeploy: "no", branch: "main" };
-  const goodVercel = { link: { productionBranch: "production" } };
+  const goodVercel = { id: "prj_test", name: "frapp-test", link: null };
 
   it("is clean when every provider is configured correctly", async () => {
     const findings = await collectFindings({
@@ -125,11 +158,35 @@ describe("collectFindings", () => {
       vercelProjects: VERCEL_PROJECTS,
       fetchImpl: async (url) => {
         if (url.includes("render.com")) return okJson(goodRender);
-        return okJson(url.includes("prj_landing") ? { link: { productionBranch: "main" } } : goodVercel);
+        return okJson(
+          url.includes("prj_landing")
+            ? { id: "prj_landing", name: "frapp-landing", link: { type: "github", org: "pdcarlson", repo: "Frapp" } }
+            : goodVercel,
+        );
       },
     });
     assert.equal(findings.length, 1);
     assert.match(findings[0], /frapp-landing/);
+  });
+
+  // The end-to-end shape of the #1579 regression, pinned so it cannot come
+  // back: the live provider state (both projects unlinked) must be a PASS.
+  it("is clean against the real post-ADR-21 provider state", async () => {
+    const findings = await collectFindings({
+      renderApiKey: "r",
+      vercelApiKey: "v",
+      renderServiceId: RENDER_SERVICE_ID,
+      vercelProjects: VERCEL_PROJECTS,
+      fetchImpl: async (url) =>
+        okJson(
+          url.includes("render.com")
+            ? { autoDeploy: "no", branch: "main" }
+            : url.includes("prj_landing")
+              ? { id: "prj_aAkER9EZJcxR51vUY0mwNDnCf8vy", name: "frapp-landing", link: null }
+              : { id: "prj_xkn32taKrJCgYRZoN6pZRfGfPT9T", name: "frapp-web", link: null },
+        ),
+    });
+    assert.deepEqual(findings, []);
   });
 });
 
@@ -159,7 +216,11 @@ describe("provider identifiers are inputs, never defaults", () => {
       vercelProjects: [{ projectId: "prj_only", label: "solo" }],
       fetchImpl: async (url) => {
         urls.push(url);
-        return okJson(url.includes("render.com") ? { autoDeploy: "no", branch: "main" } : { link: { productionBranch: "production" } });
+        return okJson(
+          url.includes("render.com")
+            ? { autoDeploy: "no", branch: "main" }
+            : { id: "prj_only", name: "solo", link: null },
+        );
       },
     });
 
@@ -176,15 +237,15 @@ describe("buildSummary — a pass must not assert what it did not read", () => {
   it("names both settings when both were checked", () => {
     const text = buildSummary([]);
     assert.match(text, /Render auto-deploy is off/);
-    assert.match(text, /neither Vercel project promotes from main/);
+    assert.match(text, /neither Vercel project is linked to Git/);
   });
 
   it("claims only frapp-web, never 'neither project', under --migrations-only", () => {
     // Two failures guarded at once.
     //
     // The first: a success line naming a setting nothing read. `migrations-only`
-    // skips frapp-landing, so claiming "neither Vercel project promotes from
-    // main" would be a written assurance about a project this run never
+    // skips frapp-landing, so claiming "neither Vercel project is linked to
+    // Git" would be a written assurance about a project this run never
     // fetched — on the only path to production, in the step whose entire job is
     // asserting the settings that fail open.
     //
@@ -194,12 +255,13 @@ describe("buildSummary — a pass must not assert what it did not read", () => {
     // promoted from `main` is wired straight to the schema a migrations-only
     // run is changing. An earlier cut of this flag dropped both projects on the
     // stated grounds that a Production Branch "bears on nothing a migration
-    // does". That was false for frapp-web.
+    // does". That was false for frapp-web, and stays false after #1579 inverted
+    // the assertion to a Git-link check — only the mechanism changed.
     const text = buildSummary([], { checked: ["render", "vercel-web"] });
     assert.match(text, /Render auto-deploy is off/);
-    assert.match(text, /frapp-web does not promote from main/);
-    assert.doesNotMatch(text, /neither Vercel project promotes from main/);
-    assert.match(text, /frapp-landing's Production Branch was NOT read/);
+    assert.match(text, /frapp-web is not linked to Git/);
+    assert.doesNotMatch(text, /neither Vercel project is linked to Git/);
+    assert.match(text, /frapp-landing's Git link was NOT read/);
     // And it must not claim completeness.
     assert.doesNotMatch(text, /All production deploy guardrails hold/);
   });
