@@ -2907,12 +2907,12 @@ export interface components {
         };
         PointsConfigDto: {
             /**
-             * @description Maximum manual point adjustments one admin may create per rolling hour (default 50). Must be at least 1 — a limit of 0 would refuse every adjustment with no way back through the API.
+             * @description Maximum manual point adjustments one admin may create per rolling hour (default 50). Must be between 1 and 1000 — a limit of 0 would refuse every adjustment with no way back through the API.
              * @example 50
              */
             adjustment_rate_limit_per_hour?: number;
             /**
-             * @description Absolute point amount at or above which an adjustment is flagged for review (default 100). Must be at least 1 — a threshold of 0 would flag every transaction.
+             * @description Absolute point amount at or above which an adjustment is flagged for review (default 100). Must be between 1 and 100000 — a threshold of 0 would flag every transaction, and one above the ledger's own ±100000 ceiling could never fire.
              * @example 100
              */
             anomaly_threshold?: number;

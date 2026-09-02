@@ -283,6 +283,13 @@ export const ChapterDuesConfigSchema = z.object({
 });
 
 /**
+ * Ceiling on the configurable hourly adjustment rate. An unbounded value would
+ * overflow `int4` on the upsert (a raw Postgres 22003 surfacing as a 500 after
+ * a partial write), and short of that would simply switch the control off.
+ */
+export const ADJUSTMENT_RATE_LIMIT_MAX = 1000;
+
+/**
  * A chapter's points anti-fraud limits (#394 — `spec/behavior/points.md`
  * § Anti-Fraud), persisted to `chapter_points_config`.
  *
@@ -291,9 +298,33 @@ export const ChapterDuesConfigSchema = z.object({
  * append-only ledger, and a threshold of 0 flags every row.
  */
 export const ChapterPointsConfigSchema = z.object({
-  adjustment_rate_limit_per_hour: z.number().int().min(1),
-  anomaly_threshold: z.number().int().min(1),
+  adjustment_rate_limit_per_hour: z
+    .number()
+    .int()
+    .min(1)
+    .max(ADJUSTMENT_RATE_LIMIT_MAX),
+  // Ceiling is the ledger's own per-row bound: an adjustment can never exceed
+  // +/-POINTS_ADJUSTMENT_MAX, so a threshold above it could never fire.
+  anomaly_threshold: z.number().int().min(1).max(POINTS_ADJUSTMENT_MAX),
 });
+
+/**
+ * What a chapter with no `chapter_points_config` row enforces — the values
+ * `PointsService` hardcoded before the limits became configurable, which is
+ * what makes the migration backfill-free.
+ *
+ * Lives here, in the package both `apps/api` and `packages/hooks` already
+ * depend on, so the API's enforcement default and the number the web renders
+ * cannot drift apart. They previously would have: a hand-copied frontend
+ * constant compiles fine forever while the server default moves, and the
+ * dashboard would then state an anti-fraud limit the server does not apply.
+ * The migration's column defaults are the third copy and the one that cannot
+ * import this; `chapter-points-config.service.spec.ts` pins them together.
+ */
+export const CHAPTER_POINTS_CONFIG_DEFAULTS: ChapterPointsConfig = {
+  adjustment_rate_limit_per_hour: 50,
+  anomaly_threshold: 100,
+};
 
 /**
  * A single workflow override submitted from Settings → Workflows. `key`

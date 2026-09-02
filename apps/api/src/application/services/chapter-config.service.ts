@@ -24,9 +24,8 @@ import {
   type ServiceConfig,
 } from './chapter-service-config.service';
 import {
-  POINTS_CONFIG_DEFAULTS,
+  ChapterPointsConfigService,
   POINTS_CONFIG_FIELDS,
-  POINTS_CONFIG_SELECT,
   type PointsConfig,
 } from './chapter-points-config.service';
 import { ActivationService } from './activation.service';
@@ -126,6 +125,7 @@ export class ChapterConfigService {
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
     private readonly activation: ActivationService,
+    private readonly pointsConfig: ChapterPointsConfigService,
   ) {}
 
   async getConfig(chapterId: string) {
@@ -204,17 +204,20 @@ export class ChapterConfigService {
     // Points anti-fraud limits are the same singleton shape
     // (chapter_points_config, PK = chapter_id); an unconfigured chapter falls
     // back to the table defaults, which are the values PointsService used to
-    // hardcode. This read is for *presentation* — PointsService.adjustPoints
-    // reads the same row through ChapterPointsConfigService to enforce.
-    const { data: pointsRow } = await this.supabase
-      .from('chapter_points_config')
-      .select(POINTS_CONFIG_SELECT)
-      .eq('chapter_id', chapterId)
-      .maybeSingle();
-    const points: PointsConfig = {
-      ...POINTS_CONFIG_DEFAULTS,
-      ...((pointsRow as Partial<PointsConfig> | null) ?? {}),
-    };
+    // hardcode.
+    //
+    // Routed through ChapterPointsConfigService rather than inlined like dues
+    // and service above, for two reasons the other two don't have. It applies
+    // the same per-field clamp enforcement uses, so what this endpoint reports
+    // is what adjustPoints will actually apply — when those diverged, a stored
+    // 0 rendered "up to 0 adjustments per hour" on a chapter the server was
+    // letting make 50. And it throws rather than silently defaulting on a read
+    // error, which matters because `patchConfig` uses this value as the prior
+    // state it merges a PATCH onto: a swallowed error would let an officer
+    // editing one limit overwrite the other back to the default and write an
+    // audit row recording a `from` the chapter never had.
+    const points: PointsConfig =
+      await this.pointsConfig.getConfigOrThrow(chapterId);
 
     return {
       id: chapterId,

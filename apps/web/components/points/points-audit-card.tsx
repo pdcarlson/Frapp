@@ -78,8 +78,19 @@ export function PointsAuditCard() {
   // "±100 points" it used to hardcode. Falls back to the documented defaults
   // while the config query is in flight, or if it fails: those are exactly
   // what an unconfigured chapter enforces, so the fallback is never a guess.
+  //
+  // Merged field-by-field rather than `?? DEFAULTS`: `applyOptimistic` can
+  // write a partial `points` into the cache after a single-dial PATCH, and an
+  // object-level fallback would then render a blank where a number belongs.
+  //
+  // `isSuccess` gates the sentence because this card renders for roles that
+  // cannot read the config at all — the seeded Treasurer holds points:view_all
+  // but not chapter-config:view, so GET /config 403s and `data` is undefined.
+  // Stating the defaults as this chapter's policy would be a guess, and a
+  // confident wrong number about a fraud limit is worse than no number.
   const orgConfig = useOrgConfig();
-  const pointsPolicy = orgConfig.data?.points ?? ORG_POINTS_DEFAULTS;
+  const pointsPolicy = { ...ORG_POINTS_DEFAULTS, ...orgConfig.data?.points };
+  const policyKnown = orgConfig.isSuccess;
 
   const transactionsQuery = usePointsTransactions({
     userId: userFilter === "ALL" ? undefined : userFilter,
@@ -123,10 +134,20 @@ export function PointsAuditCard() {
             </CardTitle>
             <CardDescription>
               Chapter-wide point transactions with optional flagged-only filter.
-              Flags are raised automatically when a single adjustment reaches ±
-              {pointsPolicy.anomaly_threshold} points. One admin may make up to{" "}
-              {pointsPolicy.adjustment_rate_limit_per_hour} adjustments per
-              hour. Both limits are set in Settings.
+              {policyKnown ? (
+                <>
+                  {" "}
+                  Flags are raised automatically when a single adjustment
+                  reaches ±{pointsPolicy.anomaly_threshold} points, and one
+                  admin may make up to{" "}
+                  {pointsPolicy.adjustment_rate_limit_per_hour} adjustments per
+                  hour. Both limits are chapter-configurable, and a flag records
+                  the threshold in force when the adjustment was made — changing
+                  it does not re-evaluate existing rows.
+                </>
+              ) : (
+                " Flags are raised automatically on large single adjustments, against a chapter-configurable threshold."
+              )}
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -214,7 +235,9 @@ export function PointsAuditCard() {
                     }
                     description={
                       flaggedOnly
-                        ? "Large single adjustments (|amount| ≥ 100) will appear here automatically."
+                        ? policyKnown
+                          ? `Single adjustments of |amount| ≥ ${pointsPolicy.anomaly_threshold} are flagged here automatically.`
+                          : "Large single adjustments are flagged here automatically."
                         : "Try relaxing the category or member filter."
                     }
                   />

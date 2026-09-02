@@ -54,6 +54,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ChapterConfigService } from './chapter-config.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { ActivationService } from './activation.service';
+import { ChapterPointsConfigService } from './chapter-points-config.service';
 
 const CHAPTER_ID = 'ch-1';
 
@@ -192,6 +193,11 @@ async function buildService(supabase: { from: jest.Mock }) {
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       ChapterConfigService,
+      // The real service, not a double: it only needs SUPABASE_CLIENT, which
+      // the stub above already provides, and wiring it for real means these
+      // specs exercise the per-field clamp the config endpoint now shares with
+      // enforcement rather than asserting against a mock that cannot drift.
+      ChapterPointsConfigService,
       { provide: SUPABASE_CLIENT, useValue: supabase },
       { provide: ActivationService, useValue: mockActivation },
     ],

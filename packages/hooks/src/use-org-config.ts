@@ -10,6 +10,7 @@ import {
 import { useFrappClient, useActiveChapterId } from "./use-frapp-client";
 import type { components } from "@repo/api-sdk";
 import { isModuleEnabled } from "@repo/validation";
+import { CHAPTER_POINTS_CONFIG_DEFAULTS } from "@repo/validation";
 import type {
   ChapterDuesConfig,
   ChapterPointsConfig,
@@ -39,14 +40,15 @@ export type OrgPoints = ChapterPointsConfig;
 
 /**
  * What `GET /chapters/:id/config` reports when a chapter has no
- * `chapter_points_config` row — the values `PointsService` enforced before the
- * limits became configurable. Kept here so a surface can render the active
- * limits before the config query resolves without inventing its own numbers.
+ * `chapter_points_config` row, so a surface can render the active limits
+ * before the config query resolves without inventing its own numbers.
+ *
+ * Re-exported from `@repo/validation`, which the API reads for the same
+ * defaults — a hand-copied number here would compile forever while the
+ * server's moved, and the dashboard would state an anti-fraud limit nobody
+ * enforces.
  */
-export const ORG_POINTS_DEFAULTS: OrgPoints = {
-  adjustment_rate_limit_per_hour: 50,
-  anomaly_threshold: 100,
-};
+export const ORG_POINTS_DEFAULTS: OrgPoints = CHAPTER_POINTS_CONFIG_DEFAULTS;
 
 /**
  * Merged chapter config returned by `GET /chapters/:id/config` (archetype

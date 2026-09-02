@@ -122,6 +122,61 @@ describe('ChapterPointsConfigService', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining(field));
   });
 
+  // The config endpoint both renders these and uses them as the prior state a
+  // PATCH merges onto, so unlike the enforcement read it must not invent a
+  // value: `patchConfig` upserts the full row, and a silent default here would
+  // overwrite the limit the officer did not touch and record a `from` the
+  // chapter never had.
+  describe('getConfigOrThrow', () => {
+    it('returns the configured limits when the read succeeds', async () => {
+      const { service } = await build({
+        data: { adjustment_rate_limit_per_hour: 10, anomaly_threshold: 250 },
+        error: null,
+      });
+
+      await expect(service.getConfigOrThrow('ch-1')).resolves.toEqual({
+        adjustment_rate_limit_per_hour: 10,
+        anomaly_threshold: 250,
+      });
+    });
+
+    it('still treats an absent row as the defaults', async () => {
+      const { service } = await build({ data: null, error: null });
+
+      await expect(service.getConfigOrThrow('ch-1')).resolves.toEqual(
+        POINTS_CONFIG_DEFAULTS,
+      );
+    });
+
+    it('throws on a read error rather than defaulting', async () => {
+      const { service } = await build({
+        data: null,
+        error: { message: 'connection reset' },
+      });
+
+      await expect(service.getConfigOrThrow('ch-1')).rejects.toMatchObject({
+        message: 'connection reset',
+      });
+    });
+
+    it('applies the same clamp as the enforcement read, so the two cannot disagree', async () => {
+      const { service } = await build({
+        data: { adjustment_rate_limit_per_hour: 0, anomaly_threshold: 250 },
+        error: null,
+      });
+
+      const [strict, lenient] = await Promise.all([
+        service.getConfigOrThrow('ch-1'),
+        service.getConfig('ch-1'),
+      ]);
+
+      expect(strict).toEqual(lenient);
+      expect(strict.adjustment_rate_limit_per_hour).toBe(
+        POINTS_CONFIG_DEFAULTS.adjustment_rate_limit_per_hour,
+      );
+    });
+  });
+
   it('keeps the defaults aligned with what PointsService used to hardcode', () => {
     expect(POINTS_CONFIG_DEFAULTS).toEqual({
       adjustment_rate_limit_per_hour: 50,
