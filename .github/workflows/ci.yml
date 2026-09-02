@@ -198,8 +198,8 @@ jobs:
   # Reproduces a bare `npm install && npm run check-types` on a cold machine.
   # Deliberately has NO `needs: packages-build` and NO
   # `./.github/actions/turbo-packages-build` step (which is what restores the
-  # turbo cache and builds `packages/*`) — every other Node job has one, which
-  # is exactly why they are all structurally blind to this failure mode.
+  # turbo cache and builds `packages/*`) — the eight jobs that DO use it are
+  # structurally blind to this failure mode, which is why this one must not.
   #
   # The shared packages publish their types as `dist/index.d.ts`, and `dist/` is
   # gitignored, so a consumer resolving the `types` condition (`apps/api`, via
