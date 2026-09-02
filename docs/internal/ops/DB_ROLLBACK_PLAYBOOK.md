@@ -1355,12 +1355,21 @@ or column (#462).
 DROP TABLE IF EXISTS public.chat_message_bookmarks;
 ```
 
-**Order matters.** `ChatBookmarkService` reads and writes this table on every
-`/v1/bookmarks*` request, and the web chat shell loads the list on every chat
-page view. With the table gone, the current build fails the bookmarks query and
-the chat header's Bookmarks panel renders its error state — the timeline itself
-keeps working, because bookmark state is a separate query from messages. Drop it
-only alongside or after deploying a build without #462.
+**Order matters, and it is wider than the feature.** Two consumers, not one:
+
+1. `ChatBookmarkService` reads and writes this table on every `/v1/bookmarks*`
+   request, and the web chat shell loads the list on every chat page view. With
+   the table gone the Bookmarks panel renders its error state; the timeline
+   keeps working, because bookmark state is a separate query from messages.
+2. **`anonymize_user` deletes from this table** (migration `20260902160000`).
+   plpgsql resolves the relation at execution time, so dropping the table while
+   that function definition is installed makes every `anonymize_user` call raise
+   `42P01` — and `DELETE /v1/users/me` stops working entirely. That is an
+   outage of the account-deletion path, not a degraded panel.
+
+So the order is: **revert `anonymize_user` to its `20260803140000` definition
+first** (see the entry below), deploy a build without #462, and only then drop
+the table. Dropping first takes account deletion down with it.
 
 **Dropping destroys member data that cannot be re-derived.** A bookmark is a
 member's own private note-to-self; nothing else in the schema records it, and

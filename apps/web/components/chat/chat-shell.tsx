@@ -345,6 +345,17 @@ export function ChatShell({
   );
   const bookmarkWriteFailed =
     bookmarkMessage.isError || unbookmarkMessage.isError;
+  const resetBookmarkMessage = bookmarkMessage.reset;
+  const resetUnbookmarkMessage = unbookmarkMessage.reset;
+  // Cleared on a channel switch, mirroring the notification-level control
+  // beside it. Both mutations live at the shell level and TanStack keeps
+  // `isError` set until the next attempt, so without this one failed save
+  // pins "Bookmark not saved" into every channel header for the rest of the
+  // session — an alert that outlives its cause is worse than none.
+  useEffect(() => {
+    resetBookmarkMessage();
+    resetUnbookmarkMessage();
+  }, [activeChannelId, resetBookmarkMessage, resetUnbookmarkMessage]);
 
   const { confirm, confirmDialog } = useConfirmDialog();
   const deleteMessage = channel.delete;
@@ -665,7 +676,10 @@ export function ChatShell({
                 // unmounts its content when dismissed, so an alert in there is
                 // only seen by someone who happens to reopen it.
                 <p role="alert" className="text-[12.5px] text-destructive">
-                  Bookmark not saved
+                  {/* Covers both directions: the same alert fires for a failed
+                      save and a failed removal, and "not saved" would be wrong
+                      copy for the second. */}
+                  Bookmark not updated
                 </p>
               ) : null}
               <BookmarksPopover
@@ -674,6 +688,7 @@ export function ChatShell({
                 isLoading={bookmarksQuery.isLoading}
                 isError={bookmarksQuery.isError}
                 onJump={jumpToBookmark}
+                onRemove={(messageId) => unbookmarkMessage.mutate(messageId)}
               />
             </div>
           </div>

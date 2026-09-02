@@ -19,6 +19,14 @@
 //
 // Run: `npm run test:integration -w apps/api` (needs a local Supabase stack;
 // skips cleanly without one).
+//
+// **Not run by CI today**, and worth knowing before relying on it: no workflow
+// invokes `test:integration`, so this suite guards a developer who runs it
+// locally with Docker and nothing else. A column renamed in
+// `BOOKMARK_MESSAGE_COLUMNS` therefore still passes the entire CI suite — the
+// unit harness ignores `select()` projections by its own docblock — and breaks
+// `GET /v1/bookmarks` in production. #1568 tracks wiring it in; until then this
+// file is a local guard, not a gate.
 
 import { randomUUID } from 'node:crypto';
 import { SupabaseChatMessageBookmarkRepository } from '../../src/infrastructure/supabase/repositories/supabase-chat-message-bookmark.repository';
@@ -182,8 +190,9 @@ describeIntegration('Bookmark queries against live PostgREST', () => {
 
   it('resolves the message embed — the column list names columns that exist', async () => {
     // The assertion the unit suite structurally cannot make. A renamed or
-    // dropped column in `CHAT_MESSAGE_COLUMNS` fails here with a PostgREST 400
-    // instead of in production.
+    // dropped column in `BOOKMARK_MESSAGE_COLUMNS` fails here with a PostgREST
+    // 400 — for whoever runs this locally; see the header on why that is not
+    // yet the same as "before production".
     await repo.create(userId, liveMessageId, chapterId);
 
     const rows = await repo.findByUserAndChapter(userId, chapterId);

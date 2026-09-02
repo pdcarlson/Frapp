@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BookmarkGlyph } from "./chat-glyphs";
 import {
@@ -49,6 +50,7 @@ export function BookmarksPopover({
   isLoading,
   isError,
   onJump,
+  onRemove,
 }: {
   bookmarks: BookmarkEntry[];
   /** Resolves `users.id` → display name; `null` when unresolvable. */
@@ -56,6 +58,17 @@ export function BookmarksPopover({
   isLoading?: boolean;
   isError?: boolean;
   onJump?: (channelId: string, messageId: string) => void;
+  /**
+   * Removes a bookmark from this panel.
+   *
+   * **Load-bearing, not a convenience.** The only other way to un-bookmark is
+   * the "Saved" chip on the message row, which is reachable only from a channel
+   * the member can still open — so without this control a bookmark in a channel
+   * they lost access to would be permanently stuck in their panel. The API was
+   * changed (#462) so that removing such a row succeeds; this is what lets a
+   * member actually ask for it.
+   */
+  onRemove?: (messageId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -135,7 +148,7 @@ export function BookmarksPopover({
                 </>
               );
               return (
-                <li key={bookmark.id}>
+                <li key={bookmark.id} className="relative">
                   {/*
                     A row whose channel the viewer can no longer read is a
                     static <div>, not a disabled <button>. Jumping would set the
@@ -171,6 +184,24 @@ export function BookmarksPopover({
                       {body}
                     </div>
                   )}
+                  {onRemove ? (
+                    <button
+                      type="button"
+                      // Absolutely positioned rather than a flex sibling so the
+                      // row's own hit area stays the full width for the jump —
+                      // shrinking it would make the common action harder to hit
+                      // to accommodate the rare one.
+                      className={cn(
+                        "absolute right-1.5 top-1.5 rounded-sm p-1 text-muted-foreground",
+                        "hover:bg-accent-subtle hover:text-accent-text",
+                        FOCUS_RING,
+                      )}
+                      aria-label="Remove bookmark"
+                      onClick={() => onRemove(bookmark.message_id)}
+                    >
+                      <X className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
+                  ) : null}
                 </li>
               );
             })}

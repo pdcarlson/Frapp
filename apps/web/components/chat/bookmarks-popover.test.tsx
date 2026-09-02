@@ -163,15 +163,76 @@ describe("BookmarksPopover", () => {
     expect(onJump).not.toHaveBeenCalled();
   });
 
-  it("still counts and lists a redacted row, so the member can see they saved it", () => {
+  it("still counts and lists a redacted row, so the member can see they saved it", async () => {
     // Redacting rather than dropping the row is the whole point: the member
-    // keeps the record of their own bookmark (and, in the API, the ability to
-    // delete it) even though the content is no longer theirs to read.
-    renderPanel({ bookmarks: [entry({ message_available: false })] });
+    // keeps the record of their own bookmark — and, crucially, the ability to
+    // remove it — even though the content is no longer theirs to read.
+    renderPanel({
+      bookmarks: [
+        entry({
+          message_available: false,
+          message: message({ content: "[unavailable]" }),
+        }),
+      ],
+    });
 
     expect(
       screen.getByRole("button", { name: "1 bookmarked messages" }),
     ).toBeInTheDocument();
+
+    // The "lists" half, actually asserted: the earlier version of this test
+    // only read the trigger label and would have passed on an empty panel.
+    await userEvent.click(screen.getByRole("button"));
+    expect(screen.getByText("[unavailable]")).toBeInTheDocument();
+  });
+
+  it("offers Remove on a row whose channel is no longer readable", async () => {
+    // The defect this closes. The API was changed so that un-bookmarking a
+    // lost-access row succeeds — but the only other un-bookmark control is the
+    // "Saved" chip on the message row, reachable only from a channel the member
+    // can still open. Without a control here, exactly the rows that need
+    // removing are the ones with no way to remove them.
+    const onRemove = vi.fn();
+    renderPanel({
+      bookmarks: [entry({ message_available: false })],
+      onRemove,
+    });
+
+    await userEvent.click(screen.getByRole("button"));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Remove bookmark" }),
+    );
+
+    expect(onRemove).toHaveBeenCalledWith("msg-1");
+  });
+
+  it("offers Remove on a readable row too", async () => {
+    const onRemove = vi.fn();
+    renderPanel({ bookmarks: [entry()], onRemove });
+
+    await userEvent.click(screen.getByRole("button"));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Remove bookmark" }),
+    );
+
+    expect(onRemove).toHaveBeenCalledWith("msg-1");
+  });
+
+  it("removing does not also fire the jump", async () => {
+    // The Remove control sits inside the row. If it were nested in the row's
+    // own button, or the click bubbled to it, every removal would also navigate
+    // — and the panel would close over the result.
+    const onRemove = vi.fn();
+    const onJump = vi.fn();
+    renderPanel({ bookmarks: [entry()], onRemove, onJump });
+
+    await userEvent.click(screen.getByRole("button"));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Remove bookmark" }),
+    );
+
+    expect(onRemove).toHaveBeenCalled();
+    expect(onJump).not.toHaveBeenCalled();
   });
 
   it("treats a row with no availability field as available", async () => {

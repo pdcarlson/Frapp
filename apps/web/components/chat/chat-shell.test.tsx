@@ -40,6 +40,12 @@ const mockBookmarks = vi.fn(() => ({
 }));
 const mockBookmarkMutate = vi.fn();
 const mockUnbookmarkMutate = vi.fn();
+const mockBookmarkReset = vi.fn();
+const mockUnbookmarkReset = vi.fn();
+// Drives the shell's `bookmarkWriteFailed` alert. The first version of this
+// mock had no `isError` at all, so the alert branch was unreachable from any
+// test and deleting it entirely would have passed CI.
+const mockBookmarkIsError = vi.fn(() => false);
 
 // ChatShell pulls a wide surface from @repo/hooks; stub every hook it reads
 // so the component renders from a controlled `channels`/message state
@@ -69,8 +75,16 @@ vi.mock("@repo/hooks", () => ({
   useBookmarks: () => mockBookmarks(),
   useBookmarkedMessageIds: () =>
     new Set(mockBookmarks().data.map((b: { message_id: string }) => b.message_id)),
-  useBookmarkMessage: () => ({ mutate: mockBookmarkMutate }),
-  useUnbookmarkMessage: () => ({ mutate: mockUnbookmarkMutate }),
+  useBookmarkMessage: () => ({
+    mutate: mockBookmarkMutate,
+    reset: mockBookmarkReset,
+    isError: mockBookmarkIsError(),
+  }),
+  useUnbookmarkMessage: () => ({
+    mutate: mockUnbookmarkMutate,
+    reset: mockUnbookmarkReset,
+    isError: false,
+  }),
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
@@ -196,6 +210,9 @@ beforeEach(() => {
   mockComposerMount.mockClear();
   mockUseMyPermissions.mockReset();
   mockUseMyPermissions.mockReturnValue({ data: { permissions: [] } });
+  mockBookmarkIsError.mockReturnValue(false);
+  mockBookmarkReset.mockClear();
+  mockUnbookmarkReset.mockClear();
 });
 
 describe("ChatShell deep-link targets", () => {
@@ -423,5 +440,41 @@ describe("ChatShell bookmark jump (#462)", () => {
     await waitFor(() => {
       expect(mockScrollToMessage).toHaveBeenCalledWith("msg-2");
     });
+  });
+});
+
+describe("ChatShell bookmark write failure (#462)", () => {
+  it("says nothing while writes are succeeding", () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.queryByText("Bookmark not updated")).toBeNull();
+  });
+
+  it("surfaces a failed bookmark write as an alert", () => {
+    // Without this the failure is completely silent: there is no optimistic
+    // write, so a failed save leaves the chip reading "Save" exactly as if
+    // nothing had been tapped, and the member concludes the feature is broken.
+    mockBookmarkIsError.mockReturnValue(true);
+
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Bookmark not updated",
+    );
+  });
+
+  it("clears the alert on a channel switch", async () => {
+    // Both mutations live at the shell level and TanStack keeps `isError` set
+    // until the next attempt, so an unreset alert would follow the member into
+    // every channel for the rest of the session.
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+    mockBookmarkReset.mockClear();
+
+    rerender(<ChatShell initialChannelId="chan-random" />);
+
+    await waitFor(() => {
+      expect(mockBookmarkReset).toHaveBeenCalled();
+    });
+    expect(mockUnbookmarkReset).toHaveBeenCalled();
   });
 });

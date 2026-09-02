@@ -10,21 +10,21 @@ import { ChannelAccessService } from './channel-access.service';
 /**
  * What a bookmark looks like once its channel is no longer readable.
  *
- * The row stays — the member saved it, and it is their row — but every field
- * that could carry content, identity, or *subsequent activity* is replaced.
- * That last category is the one worth being explicit about: an earlier cut
- * blanked the content but left `is_pinned`, `pinned_at`, `edited_at`, `kind`
- * and `reply_to_id` intact, which meant a member who had lost access could
- * still watch the message get pinned or edited. Redacting the body while
- * leaving a live activity side-channel is not redaction.
+ * **Built as an allowlist, not a denylist**, and that is the whole point of the
+ * shape. An earlier cut spread the message and overwrote thirteen named fields,
+ * which meant any column later added to the bookmark projection would be served
+ * automatically to a member who had lost access, with nothing failing. It also
+ * made the docblock's own enumeration of survivors wrong within one revision.
+ * Here the redacted message is constructed from scratch, so a new column is
+ * withheld by default and has to be added deliberately.
  *
- * Two fields deliberately survive:
- *
- * - `channel_id`, because it is not new information — the member chose to save
- *   from that channel and already knew which one it was.
- * - `created_at`, for the same reason: it is immutable and was visible when
- *   they saved. Nothing about it changes after revocation, so it carries no
- *   post-revocation signal.
+ * The four fields that survive are the four that cannot carry a
+ * post-revocation signal, because none of them changes after the member saved
+ * the row: the message's `id` and `channel_id` (which they already knew — they
+ * chose to save from that channel), and `created_at`. Everything mutable —
+ * content, author identity, mentions, payload, pin and edit state — is
+ * replaced, because each of those is something a member could otherwise keep
+ * watching in a channel they can no longer read.
  */
 export const BOOKMARK_REDACTED_CONTENT =
   '[unavailable — you no longer have access to this channel]';
@@ -36,7 +36,9 @@ function redactBookmarkedMessage(
     ...bookmark,
     message_available: false,
     message: {
-      ...bookmark.message,
+      id: bookmark.message.id,
+      channel_id: bookmark.message.channel_id,
+      created_at: bookmark.message.created_at,
       sender_id: null,
       author_name: null,
       author_avatar_path: null,

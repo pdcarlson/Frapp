@@ -6,39 +6,31 @@ import type {
   ChatMessageBookmark,
   ChatMessageBookmarkWithMessage,
 } from '../../../domain/entities/chat.entity';
-import { CHAT_MESSAGE_COLUMNS } from './supabase-chat-message.repository';
-
 /**
- * The embed reuses the sibling repository's column list rather than restating
- * it.
+ * The message columns this endpoint serves — deliberately NOT
+ * `CHAT_MESSAGE_COLUMNS`.
  *
- * An earlier cut copied the string with a rationale that a flat comma list was
- * not usable inside a `message:chat_messages(...)` selector. That was simply
- * wrong — a flat comma list is exactly what a PostgREST embed takes — and the
- * copy was a real hazard, not a cosmetic one: the sibling constant carries the
- * standing instruction "adding a column to `chat_messages` means adding it here
- * too", and a second copy meant there were two "here"s with only one of them
- * saying so. A column renamed in a later migration and updated in one place
- * would have produced a PostgREST 400 on this endpoint in production while
- * every unit test stayed green.
+ * Two earlier cuts got this wrong in opposite directions. The first copied the
+ * sibling's 19-column list verbatim with a false rationale; the second imported
+ * it, which fixed the duplication but kept serving all 19 columns against a
+ * `BookmarkedMessageDto` that calls itself "a narrow projection" and declares
+ * nine. That gap was a real disclosure, not a documentation nit:
+ * `ChatService.deleteMessage` blanks `content` and `metadata` but **not**
+ * `payload`, so a bookmarked poll or event card that had since been deleted
+ * shipped its full payload jsonb on an endpoint whose declared type says the
+ * message reads `[message deleted]`.
+ *
+ * So the projection is the DTO's field list, spelled here, and the two must
+ * stay in step. It is a genuinely different list from the sibling's — the
+ * timeline needs `payload`, `mentions` and `reply_to_id` to render a card; a
+ * bookmark row renders an author, a timestamp and a text preview, and jumps.
+ * Narrowing also makes the rows small, which is what lets this endpoint stay
+ * unpaginated for now.
  */
-const BOOKMARK_WITH_MESSAGE_SELECT = `id, user_id, message_id, chapter_id, created_at, message:chat_messages!inner(${CHAT_MESSAGE_COLUMNS})`;
+const BOOKMARK_MESSAGE_COLUMNS =
+  'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, is_deleted, created_at';
 
-/**
- * How many bookmarks one list read returns, newest first.
- *
- * Bounded because the row count is entirely caller-controlled — a member can
- * bookmark every message they can see — and every row drags a full embedded
- * message including `payload`/`metadata` jsonb. `useBookmarks` fires on every
- * chat page view, so an unbounded query turns a member's own bookmarking into
- * an API memory and latency problem nothing else limits. The sibling message
- * read applies `DEFAULT_MESSAGE_LIMIT` for the same reason.
- *
- * Generous rather than tuned: the panel is a scroll list, not a paged one, and
- * 200 saved messages per chapter is well past what a member accumulates. If it
- * ever binds, the fix is a cursor, not a bigger number.
- */
-export const BOOKMARK_LIST_LIMIT = 200;
+const BOOKMARK_WITH_MESSAGE_SELECT = `id, user_id, message_id, chapter_id, created_at, message:chat_messages!inner(${BOOKMARK_MESSAGE_COLUMNS})`;
 
 /**
  * Personal message bookmarks (#462).
@@ -128,6 +120,17 @@ export class SupabaseChatMessageBookmarkRepository implements IChatMessageBookma
    * like an obvious tidy-up here is precisely what would break the guarantee.
    * `chat-bookmark.service.spec.ts` pins the service half; the integration spec
    * pins that this query actually returns the row.
+   *
+   * **Unpaginated, deliberately, and this is a trade rather than an oversight.**
+   * A cap was added and then removed: the web client derives each message's
+   * bookmark chip state from this list, so a truncated list makes bookmark
+   * N+1 render "Save" forever — and because the write is an idempotent upsert,
+   * re-saving it is a no-op, so the member can never toggle it off. A silent
+   * correctness cliff at a fixed row count is worse than an unbounded read of
+   * rows this narrow, and the row count is self-inflicted rather than
+   * adversarial (a member can only bookmark messages they can see). #1567
+   * tracks paginating this properly alongside a per-page bookmark-state
+   * lookup, which is the shape that fixes both at once.
    */
   async findByUserAndChapter(
     userId: string,
@@ -138,8 +141,7 @@ export class SupabaseChatMessageBookmarkRepository implements IChatMessageBookma
       .select(BOOKMARK_WITH_MESSAGE_SELECT)
       .eq('user_id', userId)
       .eq('chapter_id', chapterId)
-      .order('created_at', { ascending: false })
-      .limit(BOOKMARK_LIST_LIMIT);
+      .order('created_at', { ascending: false });
     if (error) throw error;
     // PostgREST types an embed's rows as `T | GenericStringError`, which it
     // only ever is when `error` is set — already thrown above. The cast is to

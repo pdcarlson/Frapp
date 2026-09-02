@@ -145,7 +145,15 @@ every read, because the query re-reads `chat_messages` live — it returns the
 message as it is *now*, so without the check a member who left `#exec` would
 keep receiving edits made after they left. What they get instead is their own
 row with the message blanked (`message_available: false`), which the client
-renders non-interactively. Two things follow, and both are load-bearing:
+renders non-interactively but still offers a Remove control on — the panel is
+the only place such a row can be cleared, since the message-row chip is
+reachable only from a channel the member can open.
+
+The redaction is built as an **allowlist**: the redacted message is constructed
+from the four fields that cannot carry a post-revocation signal (the message's
+`id`, `channel_id` and `created_at`, all fixed at save time), and everything
+else is replaced. A denylist would serve any newly added column to a member who
+had lost access, with nothing failing. Two things follow, and both are load-bearing:
 
 - **Un-bookmarking does not authorize the message.** It cannot: the row exists
   precisely because access was lost, so authorizing would make a member's own
