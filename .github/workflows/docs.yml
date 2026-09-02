@@ -64,9 +64,31 @@ jobs:
           PR_LABELS_JSON: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: node scripts/check-docs-impact.mjs --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
 
-      - name: Enforce docs/spec structure (PR only)
-        if: github.event_name == 'pull_request'
-        run: node scripts/check-docs-structure.mjs --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
+  # Structure — a SEPARATE job, for the reason required-checks.mjs states next to
+  # doc-paths: "Deliberately NOT a step inside docs-spec-sync: this check is
+  # whole-tree, so as a required check it can block a PR over a citation in a doc
+  # that PR never touched."
+  #
+  # That applied to this gate the moment it stopped being diff-scoped. It used to
+  # read only the paths a PR ADDED, which is why living inside the required
+  # docs-spec-sync job was safe; whole-tree, the same placement would mean one
+  # stale LEGACY_NAMES entry — or a directory whose last file was deleted —
+  # turning EVERY open PR red on a required check with no admin override. That is
+  # the merge-freeze shape #1373 documents for migration-drift.
+  #
+  # So it gets its own job and the usual reporting-only rollout, and it no longer
+  # needs the `pull_request` guard: whole-tree means a push to main proves it
+  # green before any PR discovers a problem, which is the point of running it.
+  docs-structure:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # No Dependabot exemption needed: the check reads the tree, not the diff,
+      # so a lockfile-only PR simply passes.
+      - name: Enforce docs/spec structure
+        run: node scripts/check-docs-structure.mjs
 
   # Citation lint — a SEPARATE job, on purpose, for two reasons.
   #
@@ -91,6 +113,29 @@ jobs:
       # so a lockfile-only PR simply passes.
       - name: Enforce doc path citations
         run: node scripts/check-doc-paths.mjs
+
+  # Doc references OUTSIDE the docs corpus — a SEPARATE job, same reasoning.
+  #
+  # doc-paths is whole-tree but scoped to the documentation itself, so the many
+  # hundreds of references to docs/ and spec/ that live in source, tests,
+  # workflows, migrations and shell scripts were never checked. The previous restructure
+  # (epic #432) left dead pointers in `apps/api/README.md` and `supabase/seed.sql`
+  # that nothing caught for months.
+  #
+  # A failure should say *references*, not *citations*: doc-paths is about how a
+  # doc cites a path, this is about how CODE cites a doc, and the fix differs.
+  #
+  # Non-required to start, promoted the usual way once it has run green on the
+  # target branch — the same rollout doc-paths and doc-tables each had.
+  doc-refs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # No Dependabot exemption needed: the check reads the tree, not the diff.
+      - name: Enforce doc references outside the docs corpus
+        run: node scripts/check-doc-refs.mjs
 
   # Roster drift — also a SEPARATE job, for the same two reasons as doc-paths.
   #

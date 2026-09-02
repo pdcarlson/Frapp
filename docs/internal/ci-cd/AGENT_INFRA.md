@@ -80,9 +80,9 @@ summary before running anything from this family.
 | Composite actions   | `.github/actions/<name>/action.yml` — shared step sequences called as `uses: ./.github/actions/<name>`. Requires an `actions/checkout` earlier in the job. Currently one: **`turbo-packages-build`**, the ADR-15 Lever A turbo cache restore + `packages/*` build, used by all 8 jobs that need prebuilt packages. Its cache key is single-sourced there and **no workflow may spell it out again** — `scripts/ci/__tests__/turbo-packages-build-action.test.mjs` enforces that, and also that `clean-checkout-typecheck` and `web-production-build` never acquire the action. Add `.github/actions/**` to any `dorny/paths-filter` list that gates a job using one, or a PR touching only the action skips that job. |
 | API deploy (staging) | `.github/workflows/deploy-api.yml` — after CI (`workflow_run`) on `main`. Staging only since #1340. |
 | Production deploy   | `.github/workflows/deploy-production.yml` — `workflow_dispatch` ONLY, takes a `sha`. Validates the commit is an ancestor of `main` with green CI (`scripts/ci/validate-deploy-sha.mjs`) — the required-check roster intersected with the jobs that commit's own workflows define, so a check it predates reads *not applicable* instead of making an older commit undeployable (see the **Deploying an OLDER commit** callout in `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`) — preflights the provider guardrails, replays the migration against production's live applied state, applies, deploys that commit to Render by `commitId` and to Vercel with `target: production`, then calls `release.yml`. One job under `environment: production`, so one approval click. A `scope: migrations-only` input applies the migrations and stops — no Render deploy, no Vercel build, no tag — which is what the deleted `Migrate production` workflow used to do, minus that workflow's habit of skipping every gate in this sentence. |
-| Production guardrails | `.github/workflows/production-guardrails.yml` — **scheduled** (see § Scheduled conformance below for the time) + `workflow_dispatch`, and re-run as a preflight inside the production deploy. Asserts Render `frapp-api-prod` has auto-deploy **off** and tracks `main`, and that neither Vercel project's Production Branch is `main`. Both settings are dashboard-only and fail OPEN, so they can only be asserted, never enforced. **The Vercel assertion is red as of 2026-09-02** — both projects were unlinked from Git, so `project.link.productionBranch` is absent and the script reads an absent value as a violation; the daily run fails on it and so does the production-deploy preflight. [#1579](https://github.com/pdcarlson/Frapp/issues/1579) repairs it by **inverting** the assertion — a *present* Git link becomes the violation — not by deleting it. The Render assertion is unaffected. See the Vercel note under this table. Logic in `scripts/ci/production-guardrails.mjs`. **Not** a required check. |
+| Production guardrails | `.github/workflows/production-guardrails.yml` — **scheduled** (see § Scheduled conformance below for the time) + `workflow_dispatch`, and re-run as a preflight inside the production deploy. Asserts Render `frapp-api-prod` has auto-deploy **off** and tracks `main`, and that neither Vercel project is **linked to Git**. Both settings are dashboard-only and fail OPEN, so they can only be asserted, never enforced. The Vercel half was **inverted on 2026-09-02** ([#1579](https://github.com/pdcarlson/Frapp/issues/1579)): it used to assert that neither project's Production Branch was `main`, which ADR-21's unlink turned into a permanent self-inflicted failure — with `link: null` the branch is absent, and absent was coded as a violation, so the daily run AND the production-deploy preflight both failed. It now asserts the condition that actually keeps production safe post-ADR-21, that no Git link exists; a *present* link is the violation. Inverted rather than deleted, because staying unlinked is unversioned dashboard state a single click could undo. Because absent now means pass, the script first checks the response really is a project (`looksLikeVercelProject`) so an error envelope cannot read as "unlinked, therefore green". The Render assertion is unaffected. See the Vercel note under this table. Logic in `scripts/ci/production-guardrails.mjs`. **Not** a required check. |
 | Deploy outcome      | `.github/workflows/deploy-api.yml` → terminal `deploy-outcome` job — the only job in that workflow with a write scope (job-scoped `issues: write`; the workflow-level grant stays `contents: read`). Writes a step summary + annotation saying whether the run **deployed** or **declined to deploy**, and upserts one `routine-state` alert issue on failure, closing it on the next successful deploy. Logic in `scripts/ci/deploy-alert.mjs` (tests: `scripts/ci/__tests__/deploy-alert.test.mjs`). **Not** a required check. See "Deploy visibility" below. |
-| Deploy verification | `.github/workflows/verify-deployments.yml` — post-push Render + Vercel state polling, **staging only**. Its **Vercel verify steps fail on every push to `main`** — `verify-vercel-landing` since run #428 (2026-09-01T20:28Z), `verify-vercel-web` since run #437 (2026-09-02T03:04Z); they broke roughly six and a half hours apart, not together. See the Vercel note under this table; the Render half still polls. Production verifies itself inline inside `deploy-production.yml`, polling the deploy/deployment IDs it created, with stricter semantics: a `CANCELED` Vercel deployment is a failure there, never neutral. |
+| Deploy verification | `.github/workflows/verify-deployments.yml` — post-push Render state polling, **staging only**. Its two Vercel jobs (`verify-vercel-web`, `verify-vercel-landing`) were **removed on 2026-09-02** ([#1579](https://github.com/pdcarlson/Frapp/issues/1579)): ADR-21's unlink means no push produces a Vercel deployment, so polling for one was guaranteed to fail rather than able to detect anything, and both had been red on every push (landing since run #428, 2026-09-01T20:28Z; web since run #437, 2026-09-02T03:04Z — roughly six and a half hours apart, not together). `verify-vercel-deploy.mjs` and `ensure-vercel-staging-alias.mjs` are **kept** for [#1578](https://github.com/pdcarlson/Frapp/issues/1578) to re-wire against a deployment CI creates; they are unreferenced meanwhile. The Render half still polls. Production verifies itself inline inside `deploy-production.yml`, polling the deploy/deployment IDs it created, with stricter semantics: a `CANCELED` Vercel deployment is a failure there, never neutral. |
 | Migration drift     | `.github/workflows/check-migration-drift.yml` — **scheduled** (see § Scheduled conformance below for the time) + `workflow_dispatch`. Compares each deployed database's `schema_migrations` against `supabase/migrations/` and upserts one `routine-state` alert issue, closing it when every environment is back in sync. Job-scoped `issues: write`; workflow-level grant stays `contents: read`. Logic in `scripts/ci/check-migration-drift.mjs` (tests: `scripts/ci/__tests__/check-migration-drift.test.mjs`). **Not** a required check. See "Schema drift detection" below. |
 | Staging conformance | `.github/workflows/staging-conformance.yml` — **scheduled** (see § Scheduled conformance below for the time) + `workflow_dispatch`. Asserts live `frapp-staging` state rather than a push: project `ACTIVE_HEALTHY`, `custom_access_token_hook` enabled *and* pointed at the right function, every Infisical secret sync succeeded, and an end-to-end sign-in whose JWT carries `active_chapter_id`. **Migration parity is deliberately NOT checked here** — `check-migration-drift.yml` above owns it end to end; see "Scheduled conformance" below. Upserts its own `routine-state` alert issue on drift and closes it on recovery. Logic in `scripts/ci/staging-conformance.mjs` (tests: `scripts/ci/__tests__/staging-conformance.test.mjs`). **Not** a required check — it verifies an environment, not a diff. |
 | Release tags        | `.github/workflows/release.yml` — `workflow_call` from `deploy-production.yml` (plus `workflow_dispatch` for retry). Tags the deployed commit AFTER Render and Vercel report healthy, so a `v*` tag names something live. Bump is the highest `release:*` label across every PR merged since the last tag (`scripts/ci/resolve-release-bump.mjs`), overridable by a dispatch input. |
@@ -100,16 +100,19 @@ summary before running anything from this family.
 > record is ADR-21.** The owner disconnected **both** Vercel projects from Git, deliberately and
 > **not as one event**: `frapp-landing` on 2026-09-01 and `frapp-web` roughly six and a half hours
 > later on 2026-09-02 (`list_projects` reports `link: null` for both, read 2026-09-02). The red
-> guardrail, the failing verify steps and the frozen staging hosts flagged in the rows above all
-> follow from those two unlinks — which is why the two projects' freeze points and their verify
-> jobs' first red runs carry different dates. Note the
-> failure is the **verify** step only: `scripts/ci/ensure-vercel-staging-alias.mjs` runs after it
-> as a plain sequential step with no `if:` guard, so a failed verify ends the job and the alias
-> step is *skipped* — that script has never failed and emits nothing to grep for. The full
+> guardrail, the failing verify steps and the frozen staging hosts that followed from those two
+> unlinks are why the two projects' freeze points and their verify jobs' first red runs carry
+> different dates. **The first two are repaired** ([#1579](https://github.com/pdcarlson/Frapp/issues/1579),
+> 2026-09-02): the guardrail assertion was inverted, and the two Vercel verify jobs were removed
+> outright — so **no Vercel job in `verify-deployments.yml` can produce a red `main` any more**, and
+> a red check there is something new. While those jobs existed the failure was the **verify** step
+> only: `scripts/ci/ensure-vercel-staging-alias.mjs` ran after it as a plain sequential step with no
+> `if:` guard, so a failed verify ended the job and the alias step was *skipped* — that script never
+> failed and emitted nothing to grep for. The full
 > breakage list, the evidence and the rationale live in **ADR-21** in
-> [`spec/architecture/README.md`](../../../spec/architecture/README.md) — read it there rather than
-> re-deriving it here. Repairing the guardrail and the verify jobs is
-> [#1579](https://github.com/pdcarlson/Frapp/issues/1579); the replacement model (`vercel build`
+> [`spec/architecture/README.md`](../../../spec/architecture/README.md), with its 2026-09-02
+> amendment — read it there rather than
+> re-deriving it here. The replacement model (`vercel build`
 > plus `vercel deploy --prebuilt --prod` driven from GitHub Actions) is **designed, not built** —
 > CI/CD stage 7, [#1578](https://github.com/pdcarlson/Frapp/issues/1578) under the
 > [#1381](https://github.com/pdcarlson/Frapp/issues/1381) epic. Nothing in this repo deploys Vercel
@@ -117,9 +120,9 @@ summary before running anything from this family.
 >
 > This does **not** retire the "dashboard-only, fail-open settings" framing the guardrail row sits
 > inside. While the projects stay unlinked there is no Production Branch left to point at `main` —
-> but the unlink is itself unversioned dashboard state that a click could undo, so #1579's fix is
-> to **invert** the assertion (a *present* Git link becomes the violation), not to delete it, and
-> "the projects are still unlinked" stays an auditable Vercel item. The Render half of the framing
+> but the unlink is itself unversioned dashboard state that a click could undo, so #1579
+> **inverted** the assertion (a *present* Git link is now the violation) rather than deleting it,
+> and "the projects are still unlinked" stays an auditable Vercel item. The Render half of the framing
 > (auto-deploy off, tracking `main`) is untouched and still asserted.
 
 **PR review policy:** `main` — no required human approval (review is the local pre-push gate). There is no second branch. The human gate on what reaches users is the `production` **environment**'s Required reviewers, which pauses `deploy-production.yml`.
@@ -330,8 +333,11 @@ Two things to preserve if you ever edit that condition:
 - **Key on `github.event.pull_request.user.login`, not `github.actor`.** The actor changes when a
   human re-runs the workflow, which would silently flip the exemption off mid-PR.
 
-`check-docs-structure.mjs` needs no exemption — it only inspects newly *added* paths under `docs/`
-and `spec/`, of which a dependency bump has none, so it passes trivially.
+`check-docs-structure.mjs` needs no exemption, but not for the reason this line used to give. It is
+no longer a step in `docs-spec-sync` at all: since 2026-09 it reads the **whole tree** rather than
+newly added paths, so it moved to its own reporting-only `docs-structure` job
+([`DOCS_CI.md`](DOCS_CI.md)). A dependency bump passes it because the tree is clean, not because the
+diff is — and being non-required, it could not make a Dependabot PR unmergeable even if it failed.
 
 **There used to be a second copy, and keeping two in sync is exactly what failed.** `ci.yml` ran the
 same script as the last step of `lint-and-typecheck`, unguarded, so every Dependabot PR went green on

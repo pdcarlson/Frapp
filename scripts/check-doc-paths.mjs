@@ -145,10 +145,21 @@ export function makeResolver(trackedPaths) {
  */
 export function validateAllowlist(raw) {
   const errors = [];
+  // The three arrays differ by one key, so pasting an entry into the wrong one
+  // is the easy mistake. Checking only `reason` let that through: a `prefixes`
+  // entry parked in `paths` validated clean and then threw an uncaught
+  // TypeError out of normalizeCitation — a stack trace from a required gate,
+  // indistinguishable in CI from a real citation failure. The shape key is as
+  // load-bearing as the reason.
+  const required = { prefixes: "prefix", paths: "path", perFile: "path" };
   for (const key of ["prefixes", "paths", "perFile"]) {
     (raw[key] ?? []).forEach((entry, i) => {
       if (!entry.reason || !String(entry.reason).trim()) {
         errors.push(`${key}[${i}] is missing a non-empty "reason"`);
+      }
+      const shape = required[key];
+      if (!entry[shape] || !String(entry[shape]).trim()) {
+        errors.push(`${key}[${i}] is missing a non-empty "${shape}"`);
       }
       if (key === "perFile" && !entry.file) {
         errors.push(`perFile[${i}] is missing "file"`);
@@ -174,6 +185,36 @@ export function matchAllowlist(allowlist, token, sourceFile) {
     if (e.file === sourceFile && normalizeCitation(e.path) === t) return `perFile[${i}]`;
   }
   return null;
+}
+
+/**
+ * Read and validate an allowlist file. Shared with check-doc-refs.mjs so the two
+ * gates fail the same way on the same malformed input.
+ *
+ * Returns `{ ok: true, allowlist }` or `{ ok: false, message }`. A MISSING file
+ * is not an error — it simply means nothing is excused, which is fail-safe: the
+ * gate reports more, never less. Malformed JSON IS an error, and used not to be:
+ * this ran as a bare `JSON.parse`, so a stray comma threw an uncaught
+ * SyntaxError and exited 1 with a stack trace — indistinguishable, in CI, from a
+ * genuine citation failure in a required check.
+ */
+export function loadAllowlist(path, deps = {}) {
+  const exists = deps.exists ?? existsSync;
+  const read = deps.read ?? readFileSync;
+  const empty = { prefixes: [], paths: [], perFile: [] };
+  if (!exists(path)) return { ok: true, allowlist: empty };
+
+  let parsed;
+  try {
+    parsed = JSON.parse(read(path, "utf8"));
+  } catch (e) {
+    return { ok: false, message: `${path} is not valid JSON — ${e.message}` };
+  }
+  const errors = validateAllowlist(parsed);
+  if (errors.length > 0) {
+    return { ok: false, message: `${path} is invalid:\n${errors.map((e) => `  - ${e}`).join("\n")}` };
+  }
+  return { ok: true, allowlist: parsed };
 }
 
 /**
@@ -206,16 +247,12 @@ function main() {
   const docs = tracked.filter(inScope);
   const { resolves, suggestMove } = makeResolver(tracked);
 
-  let allowlist = { prefixes: [], paths: [], perFile: [] };
-  if (existsSync(ALLOWLIST_PATH)) {
-    allowlist = JSON.parse(readFileSync(ALLOWLIST_PATH, "utf8"));
-    const errors = validateAllowlist(allowlist);
-    if (errors.length > 0) {
-      console.error(`${ALLOWLIST_PATH} is invalid:`);
-      for (const e of errors) console.error(`  - ${e}`);
-      process.exit(2);
-    }
+  const loaded = loadAllowlist(ALLOWLIST_PATH);
+  if (!loaded.ok) {
+    console.error(loaded.message);
+    process.exit(2);
   }
+  const allowlist = loaded.allowlist;
 
   const findings = [];
   const used = new Set();
