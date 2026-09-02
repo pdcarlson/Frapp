@@ -50,9 +50,11 @@ substitute for the missing one does not work.**
 
 - **No login clock.** No `last_login` / `last_seen` / `last_active` column exists in any migration, and
   `auth.users.last_sign_in_at` is read nowhere in the API — the only `auth.admin` call is `deleteUser`
-  (`apps/api/src/infrastructure/supabase/supabase-auth-admin.service.ts`). It is also not a drop-in
-  substitute even if it were read: GoTrue stamps it at sign-in, not at token refresh, so a
-  continuously-active session leaves it stale and makes a live chapter look abandoned.
+  (`apps/api/src/infrastructure/supabase/supabase-auth-admin.service.ts`). It may also not be a
+  drop-in substitute even if it were read — **verify before relying on it**: if GoTrue stamps it only
+  at sign-in and not on token refresh, a continuously-active session leaves it stale and makes a live
+  chapter look abandoned. That is a property of a third-party system, so it needs checking against
+  hosted behavior rather than assuming; nothing in this repo establishes it either way.
 - **No cancellation clock.** `chapters.subscription_status` is a `text` column with a `CHECK`
   constraint and no accompanying timestamp
   (`supabase/migrations/00000000000000_initial_schema.sql`). `past_due_since`
