@@ -126,13 +126,16 @@ operation that can run away.
 
 None of these is optional, and each is independently useful:
 
-| # | Prerequisite |
-| --- | --- |
-| 1 | `chapters.canceled_at`, set and cleared by the billing webhook on the cancel/reactivate transitions, modelled on `past_due_since` |
-| 2 | A chapter-level activity timestamp that does not depend on `auth.users.last_sign_in_at` |
-| 3 | A general transactional-email capability on `IEmailProvider` (it can send exactly one kind of mail today) |
-| 4 | The retention-strategy decision above |
-| 5 | The dry-run/report-only mode, exercised for a full cycle before any send |
+| # | Prerequisite | Tracked |
+| --- | --- | --- |
+| 1 | `chapters.canceled_at`, set and cleared by the billing webhook on the cancel/reactivate transitions, modelled on `past_due_since` | #1559 |
+| 2 | A chapter-level activity timestamp that does not depend on `auth.users.last_sign_in_at` | with the eventual implementation |
+| 3 | A general transactional-email capability on `IEmailProvider` (it can send exactly one kind of mail today) | #1560 |
+| 4 | The retention-strategy decision above | #1561 |
+| 5 | The dry-run/report-only mode, exercised for a full cycle before any send | with the eventual implementation |
+
+Prerequisites 1 and 3 are independently useful and are not gated on the decision; 2 and 5 only become
+meaningful once it is made.
 
 ## Analytics Events (Pseudonymous)
 
