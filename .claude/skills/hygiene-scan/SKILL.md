@@ -140,9 +140,10 @@ Before touching anything, run and **write down** the numbers you will compare ag
 
 `check-types` and `lint` are turbo tasks wired to `^build`, so they work on a fresh sandbox after
 the SessionStart install; the root `check:*` scripts are plain node and need no build — **except**
-`check:dep-cruiser`, which resolves `@repo/*` imports through each package's built `dist/`. Run
-`npx turbo run build --filter='./packages/*'` first on a fresh sandbox, or every workspace import
-reports as `not-to-unresolvable`: dozens of "new violations" that are none (observed 2026-09-02).
+`check:dep-cruiser`, which resolves `@repo/*` imports through each package's `main`/`exports` —
+for most packages a built `dist/`. Run `npx turbo run build --filter='./packages/*'` first on a
+fresh sandbox, or those imports report as `not-to-unresolvable`: dozens of "new violations" that
+are none (observed 2026-09-02).
 `check:api-contract` regenerates `openapi.json` and `packages/api-sdk/src/types.ts` — run it only
 in Phase 3, and read a changed artifact as "this fix changed the contract", i.e. behaviour.
 

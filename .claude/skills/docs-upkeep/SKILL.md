@@ -8,8 +8,9 @@ description: >
 
 # Docs Upkeep (routine 4 of 5)
 
-The other three routines keep the **tracker** honest. This one keeps the **docs** honest, and it is
-the only routine that fixes what it finds instead of filing it.
+The tracker routines keep the **tracker** honest. This one keeps the **docs** honest, and it was
+the first routine that fixes what it finds instead of filing it — [`hygiene-scan`](../hygiene-scan/SKILL.md)
+(routine 5) now does the same for code.
 
 It exists because the repo's docs gates are all structural. `check-docs-impact.mjs` asserts that
 *some* doc changed, `check-docs-structure.mjs` that new files sit in allowed places, and

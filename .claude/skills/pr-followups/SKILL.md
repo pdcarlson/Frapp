@@ -209,7 +209,7 @@ The routine's completion notification is Paul's weekly digest — put the "Needs
 
 ## Self-maintenance
 
-Same binding contract as the other three routines —
+Same binding contract as the other routines —
 [`ROUTINES.md` → Self-maintenance](../../../docs/internal/ci-cd/ROUTINES.md#self-maintenance-the-update-themselves-contract):
 verify this file's tool names, doc links, and the state-marker format still match reality;
 mechanical drift → one docs-only PR (allowed paths include `.claude/skills/pr-followups/`);
