@@ -23,15 +23,5 @@
     "rule": "api-application-not-to-interface",
     "from": "apps/api/src/application/services/custom-role.service.ts",
     "to": "apps/api/src/interface/dtos/custom-role.dto.ts"
-  },
-  {
-    "rule": "api-application-not-to-interface",
-    "from": "apps/api/src/application/services/report-export.service.spec.ts",
-    "to": "apps/api/src/interface/controllers/report-columns.ts"
-  },
-  {
-    "rule": "api-application-not-to-interface",
-    "from": "apps/api/src/application/services/report-export.service.ts",
-    "to": "apps/api/src/interface/controllers/report-columns.ts"
   }
 ]
