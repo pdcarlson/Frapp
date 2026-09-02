@@ -17,12 +17,15 @@ import {
   useCategories,
   useChapterRoster,
   useMemberDisplayNames,
+  useMyPermissions,
   useOrgConfig,
 } from "@repo/hooks";
+import { can } from "@repo/validation";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { asArray } from "@/lib/utils";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
+import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import type { ResolveMember } from "@repo/chat-core/dispatch";
 import {
   ChannelList,
@@ -290,6 +293,37 @@ export function ChatShell({
   }, [membersQuery.data]);
 
   const channel = useChatChannel(activeChannelId);
+
+  // A custom role can hold `channels:manage` without also being a chapter
+  // admin — same gate `chat-admin-page.tsx` computes for its own page-level
+  // `<Can>`, done inline here since this is a per-row boolean, not a whole
+  // surface to hide.
+  const { data: permissionsPayload } = useMyPermissions();
+  const canManageChannel = can("channels:manage", permissionsPayload?.permissions);
+
+  const { confirm, confirmDialog } = useConfirmDialog();
+  const deleteMessage = channel.delete;
+  const handleDeleteMessage = useCallback(
+    (messageId: string) => {
+      void (async () => {
+        const confirmed = await confirm({
+          title: "Delete this message?",
+          description:
+            "This can't be undone. Everyone in the channel will see " +
+            '"[message deleted]" in its place.',
+          confirmLabel: "Delete message",
+          tone: "destructive",
+        });
+        if (!confirmed) return;
+        try {
+          await deleteMessage(messageId);
+        } catch {
+          // The delete action already toasted the failure.
+        }
+      })();
+    },
+    [confirm, deleteMessage],
+  );
 
   const setNotificationLevel = useSetChannelNotificationLevel();
 
@@ -585,6 +619,9 @@ export function ChatShell({
             onAct={(messageId, actionType, payload) =>
               void channel.act(messageId, actionType, payload)
             }
+            onEdit={channel.edit}
+            onDelete={handleDeleteMessage}
+            canManageChannel={canManageChannel}
           />
         </div>
         {activeChannel ? (
@@ -611,6 +648,12 @@ export function ChatShell({
               activeChannel.type === "DM" || activeChannel.type === "GROUP_DM"
             }
             isReadOnly={!!activeChannel.is_read_only}
+            // Undefined (not yet through the server's capability
+            // projection) is left to `Composer`'s own default, which
+            // resolves to `!isReadOnly` rather than an unconditional
+            // `true` — the safe fallback for a read-only channel whose
+            // `can_post` hasn't arrived yet.
+            canPost={activeChannel.can_post}
             draft={channel.draft}
             onChangeDraft={channel.setDraft}
             onSend={(body, attachments) => channel.send(body, { attachments })}
@@ -649,6 +692,9 @@ export function ChatShell({
             onClose={() => setThreadParentId(null)}
             onReact={channel.react}
             onUnreact={channel.unreact}
+            onEdit={channel.edit}
+            onDelete={handleDeleteMessage}
+            canManageChannel={canManageChannel}
           />
         ) : (
           <div className="px-3 py-3">
@@ -660,6 +706,7 @@ export function ChatShell({
           </div>
         )}
       </aside>
+      {confirmDialog}
     </div>
   );
 }

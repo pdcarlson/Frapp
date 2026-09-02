@@ -125,4 +125,73 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
       .eq('chapter_id', chapterId);
     if (error) throw error;
   }
+
+  async countByDepartment(
+    chapterId: string,
+    departmentId: string,
+  ): Promise<number> {
+    return this.countByColumn(chapterId, 'department_id', departmentId);
+  }
+
+  async countByProfessor(
+    chapterId: string,
+    professorId: string,
+  ): Promise<number> {
+    return this.countByColumn(chapterId, 'professor_id', professorId);
+  }
+
+  async reassignDepartment(
+    chapterId: string,
+    fromId: string,
+    toId: string,
+  ): Promise<number> {
+    return this.reassignColumn(chapterId, 'department_id', fromId, toId);
+  }
+
+  async reassignProfessor(
+    chapterId: string,
+    fromId: string,
+    toId: string,
+  ): Promise<number> {
+    return this.reassignColumn(chapterId, 'professor_id', fromId, toId);
+  }
+
+  /** Shared by `countByDepartment`/`countByProfessor` — same table, same shape, differing only by column. */
+  private async countByColumn(
+    chapterId: string,
+    column: 'department_id' | 'professor_id',
+    value: string,
+  ): Promise<number> {
+    const { count, error } = await this.supabase
+      .from('backwork_resources')
+      .select('id', { count: 'exact', head: true })
+      .eq('chapter_id', chapterId)
+      .eq(column, value);
+    if (error) throw error;
+    return count ?? 0;
+  }
+
+  /** Shared by `reassignDepartment`/`reassignProfessor` — same table, same shape, differing only by column. */
+  private async reassignColumn(
+    chapterId: string,
+    column: 'department_id' | 'professor_id',
+    fromId: string,
+    toId: string,
+  ): Promise<number> {
+    // A computed `{ [column]: toId }` key doesn't type-check against the
+    // generated (index-signature-free) update type, so the two columns are
+    // spelled out rather than cast away.
+    const updateData =
+      column === 'department_id'
+        ? { department_id: toId }
+        : { professor_id: toId };
+    const { data, error } = await this.supabase
+      .from('backwork_resources')
+      .update(updateData)
+      .eq('chapter_id', chapterId)
+      .eq(column, fromId)
+      .select('id');
+    if (error) throw error;
+    return data?.length ?? 0;
+  }
 }

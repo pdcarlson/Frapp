@@ -26,6 +26,16 @@ When a member provides a department or professor name that does not exist in the
 - Department records store the short code (e.g. "CS") and an optional full name (e.g. "Computer Science") that admins can fill in later.
 - Filling in that name (`PATCH /v1/backwork/departments/:id`, requires `backwork:admin`) is scoped to the caller's active chapter: a department ID belonging to another chapter matches no row and returns **404 Not Found** instead of being renamed.
 
+## Taxonomy Admin
+
+Uploads accumulate junk departments and professors — typos, duplicate spellings, one-off OCR misreads — that manual admin cleanup fixes. `backwork:admin` gets rename, delete, and merge for both, mirroring each other: `PATCH /v1/backwork/{departments,professors}/:id` (rename), `DELETE /v1/backwork/{departments,professors}/:id`, `POST /v1/backwork/{departments,professors}/:id/merge`.
+
+- **Delete blocks rather than orphaning.** `department_id`/`professor_id` on `backwork_resources` are `on delete set null`, so a bare delete would silently blank the field on every resource still tagged with it. The API instead counts referencing resources first and returns **400** naming the count when it's nonzero — merge is the guided path to clear that.
+- **Merge reassigns then deletes.** `POST .../:id/merge` with `{ target_id }` moves every resource tagged with the source to the target, then deletes the source, returning `{ reassigned: <count> }`. Not wrapped in a database transaction: the only failure window is a resource created between the reassign and the delete, which the same `on delete set null` FK degrades to a blank field on that one row rather than an orphaned reference — self-healing on the next re-tag, unlike the ledger-touching operations elsewhere in this codebase that do need an atomic RPC.
+- Both operations 404 when the source or target id belongs to another chapter, and 400 when merging an entry into itself.
+- Rename, delete, and merge all require `backwork:admin`; browsing and uploading only need `backwork:upload` or `backwork:admin`.
+- The web dashboard's "Manage taxonomy" drawer (`apps/web/components/backwork/backwork-taxonomy-drawer.tsx`) surfaces all three actions per department/professor.
+
 ## Duplicate Prevention
 
 Unique constraint on (chapter_id, file_hash). If the exact same file (by hash) has already been uploaded to the chapter, the API returns 409 Conflict with a reference to the existing resource.

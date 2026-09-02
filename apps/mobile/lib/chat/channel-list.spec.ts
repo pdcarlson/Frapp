@@ -4,6 +4,7 @@ import {
   indexUnread,
   isDirectChannel,
   selectChannels,
+  selectPostCapability,
 } from "./channel-list";
 
 /**
@@ -182,6 +183,42 @@ describe("displayChannelName", () => {
         NAMES,
       ),
     ).toBe(DM_NAME);
+  });
+});
+
+describe("selectPostCapability", () => {
+  it("reads can_post and is_read_only off the row", () => {
+    expect(
+      selectPostCapability({ can_post: false, is_read_only: true }),
+    ).toEqual({ canPost: false, isReadOnly: true });
+    expect(
+      selectPostCapability({ can_post: true, is_read_only: false }),
+    ).toEqual({ canPost: true, isReadOnly: false });
+  });
+
+  it("distinguishes the alumni case (can_post false, not read-only) from read-only", () => {
+    expect(
+      selectPostCapability({ can_post: false, is_read_only: false }),
+    ).toEqual({ canPost: false, isReadOnly: false });
+  });
+
+  it("defaults to postable, not-read-only while the payload hasn't loaded", () => {
+    // Matches web's `canPost = true` default — the initial-fetch window
+    // should not flash the composer disabled.
+    expect(selectPostCapability(undefined)).toEqual({
+      canPost: true,
+      isReadOnly: false,
+    });
+    expect(selectPostCapability(null)).toEqual({
+      canPost: true,
+      isReadOnly: false,
+    });
+  });
+
+  it("defaults can_post to true on a malformed value rather than locking the composer", () => {
+    expect(
+      selectPostCapability({ can_post: "no", is_read_only: true }),
+    ).toEqual({ canPost: true, isReadOnly: true });
   });
 });
 

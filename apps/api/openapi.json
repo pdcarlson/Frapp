@@ -3879,6 +3879,79 @@
         "tags": [
           "Backwork"
         ]
+      },
+      "delete": {
+        "operationId": "BackworkController_deleteDepartment_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a department (blocked while any resource references it)",
+        "tags": [
+          "Backwork"
+        ]
+      }
+    },
+    "/v1/backwork/departments/{id}/merge": {
+      "post": {
+        "operationId": "BackworkController_mergeDepartments_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergeBackworkTaxonomyDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MergeBackworkTaxonomyResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Merge a department into another, reassigning its resources",
+        "tags": [
+          "Backwork"
+        ]
       }
     },
     "/v1/backwork/professors": {
@@ -3896,6 +3969,118 @@
           }
         ],
         "summary": "List chapter professors",
+        "tags": [
+          "Backwork"
+        ]
+      }
+    },
+    "/v1/backwork/professors/{id}": {
+      "patch": {
+        "operationId": "BackworkController_updateProfessor_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProfessorDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update professor name",
+        "tags": [
+          "Backwork"
+        ]
+      },
+      "delete": {
+        "operationId": "BackworkController_deleteProfessor_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a professor (blocked while any resource references it)",
+        "tags": [
+          "Backwork"
+        ]
+      }
+    },
+    "/v1/backwork/professors/{id}/merge": {
+      "post": {
+        "operationId": "BackworkController_mergeProfessors_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergeBackworkTaxonomyDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MergeBackworkTaxonomyResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Merge a professor into another, reassigning its resources",
         "tags": [
           "Backwork"
         ]
@@ -5088,6 +5273,35 @@
           }
         ],
         "summary": "Remove vote from a poll",
+        "tags": [
+          "Polls"
+        ]
+      }
+    },
+    "/v1/polls/{messageId}/close": {
+      "post": {
+        "operationId": "PollController_close_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Manually close a poll early (creator only)",
         "tags": [
           "Polls"
         ]
@@ -8339,6 +8553,39 @@
           "name": {
             "type": "string",
             "description": "Full department name"
+          }
+        }
+      },
+      "MergeBackworkTaxonomyDto": {
+        "type": "object",
+        "properties": {
+          "target_id": {
+            "type": "string",
+            "description": "Id of the row to merge into; the source is deleted"
+          }
+        },
+        "required": [
+          "target_id"
+        ]
+      },
+      "MergeBackworkTaxonomyResponseDto": {
+        "type": "object",
+        "properties": {
+          "reassigned": {
+            "type": "number",
+            "description": "Count of resources reassigned from source to target"
+          }
+        },
+        "required": [
+          "reassigned"
+        ]
+      },
+      "UpdateProfessorDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Professor name"
           }
         }
       },
