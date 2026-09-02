@@ -78,6 +78,60 @@ describe('ChatNotificationPreferenceRepository — tenant scope', () => {
   });
 
   /**
+   * The kind arm's read (#500). Same reasoning as the channel read above: a
+   * `chapter_id` filter dropped from this one would be caught by neither of
+   * the other two tests.
+   */
+  it('findKindPreferencesForUser binds chapter_id too', async () => {
+    const rows = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findKindPreferencesForUser(USER_SHARED, CHAPTER_B),
+    );
+
+    // The seed holds only channel-scoped rows, so the scope filter must
+    // exclude both of them — an assertion that would fail if this method
+    // stopped filtering on `scope`, which is what keeps the two UI reads from
+    // reporting each other's rows.
+    expect(rows).toEqual([]);
+  });
+
+  /**
+   * The only DESTRUCTIVE method on this repository, and the one where a lost
+   * `chapter_id` filter is worst: RLS is bypassed on the service-role client,
+   * so these `.eq()` calls are the entire tenant boundary. A member of two
+   * chapters clearing an override in one must not lose it in the other.
+   *
+   * Pinned here rather than in `chat.service.spec.ts`, where the repository is
+   * mocked and the filter chain is therefore invisible.
+   */
+  it('deleteKindLevel binds user, chapter and scope', async () => {
+    await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.deleteKindLevel(USER_SHARED, CHAPTER_B, 'system_audit'),
+    );
+
+    const op = harness.ops.at(-1);
+    expect(op?.mode).toBe('delete');
+
+    const bound = Object.fromEntries(
+      (op?.filters ?? [])
+        .filter((f) => f.op === 'eq')
+        .map((f) => [f.column, f.value]),
+    );
+    expect(bound).toEqual({
+      user_id: USER_SHARED,
+      chapter_id: CHAPTER_B,
+      scope: 'kind',
+      scope_kind: 'system_audit',
+    });
+
+    // Chapter A's row for the same user is untouched. `expectTenantScoped`
+    // already proves no foreign row was written, but stating it directly is
+    // what makes this test readable as "the other chapter survives".
+    expect(
+      harness.rows('chat_notification_preferences').map((r) => r.id),
+    ).toContain(PREF_A);
+  });
+
+  /**
    * The two reads differ deliberately on error handling, and it is worth
    * pinning because it looks like an inconsistency.
    *
