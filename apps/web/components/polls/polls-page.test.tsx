@@ -287,6 +287,28 @@ describe("PollsPage status colour", () => {
     expect(badge.className).not.toContain("bg-destructive");
     expect(badge.className).not.toContain("bg-accent-subtle");
   });
+
+  it("shows a manually closed poll's own close date, not a still-future expires_at (#379)", () => {
+    // A poll closed early via `PollService.close` can have an expires_at
+    // that hasn't happened yet — showing that date next to "Closed" would
+    // tell a member the poll closed on a day that hasn't occurred.
+    pollsQuery.data = [
+      {
+        ...VOTED_POLL,
+        isExpired: true,
+        metadata: {
+          ...VOTED_POLL.metadata,
+          expires_at: "2099-06-01T00:00:00Z",
+          closed_at: "2026-08-15T00:00:00Z",
+        },
+      },
+    ];
+
+    render(<PollsPage />);
+
+    expect(screen.getAllByText(/Closed/).length).toBeGreaterThan(0);
+    expect(document.body.textContent).not.toContain("2099");
+  });
 });
 
 describe("PollsPage subscription gating", () => {
