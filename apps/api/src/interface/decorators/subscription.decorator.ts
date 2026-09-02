@@ -8,11 +8,13 @@ export const SUBSCRIPTION_GRACE_BLOCKED_KEY = 'subscription_grace_blocked';
  * Marks a controller or route as free-tier (the chat / members / invites
  * wedge, though ten controllers carry this today). Reads are unaffected.
  *
- * "Free-tier" does NOT mean "always allowed" — writes survive in exactly two
- * cases: `incomplete`, and `past_due` *within* the 3-day grace window. After
- * grace every write, free-tier included, throws `write_locked`, and the
- * `canceled` hard-lock always applies. A route additionally marked
- * `@GraceBlocked()` is blocked on `past_due` even inside grace.
+ * Under `active` every write passes before this marker is even read, so it
+ * only matters once a chapter lapses. And "free-tier" does NOT mean "always
+ * allowed": it buys writes under `incomplete`, and under `past_due` *within*
+ * the 3-day grace window. After grace every write, free-tier included, throws
+ * `write_locked`, and the `canceled` hard-lock always applies. A route
+ * additionally marked `@GraceBlocked()` is blocked on `past_due` even inside
+ * grace.
  */
 export const FreeTier = () => SetMetadata(SUBSCRIPTION_FREE_TIER_KEY, true);
 

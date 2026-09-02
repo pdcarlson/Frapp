@@ -175,7 +175,7 @@ Three of `chapter-document`'s six writes — folder create, rename and delete �
 
 **Exempt:** `billing` (whole class — the recovery path) and `POST /invoices/:id/payment-intent`.
 
-**Not chapter-guarded at all**, so never subscription-gated despite carrying writes: `analytics`, `notification`, `chapter-directory`, `webhook`, and `POST /chapters`, `POST /chapters/onboard`, `POST /chapters/:id/activate`, `POST /invites/redeem`. Gating these would lock a lapsed chapter out of settings and push registration it is entitled to — over-gating is a worse defect than the late 403. `redeem` is the subtle one: it sits on an otherwise-guarded controller, and the chapter it writes to is `invite.chapter_id`, which `ChapterGuard` never sees — guarding it would gate the redeemer's *current* chapter and 400 a user who has none.
+**Not chapter-guarded at all**, so never subscription-gated despite carrying writes: `analytics`, `notification`, `webhook`, and `POST /chapters`, `POST /chapters/onboard`, `POST /chapters/:id/activate`, `POST /invites/redeem`. (`chapter-directory` is also un-guarded but has no non-GET route, so it contributes no write surface.) Gating these would lock a lapsed chapter out of settings and push registration it is entitled to — over-gating is a worse defect than the late 403. `redeem` is the subtle one: it sits on an otherwise-guarded controller, and the chapter it writes to is `invite.chapter_id`, which `ChapterGuard` never sees — guarding it would gate the redeemer's _current_ chapter and 400 a user who has none.
 
 ### What "fail fast" means concretely
 
