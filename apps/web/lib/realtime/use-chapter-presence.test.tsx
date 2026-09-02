@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { StrictMode } from "react";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
@@ -444,6 +445,43 @@ describe("useChapterPresence", () => {
 
     // The replaced channel's teardown finally settles.
     act(() => stale?.onDisconnected?.("CLOSED"));
+
+    expect(result.current.isReady).toBe(true);
+    expect(result.current.statusOf("u1")).toBe("online");
+  });
+
+  /**
+   * The same hazard as the chapter-switch case, but reached without any input
+   * changing — so the attach *generation* cannot separate the two attaches.
+   *
+   * StrictMode (on by default in dev) mounts, tears down and re-mounts every
+   * effect with the inputs untouched, so both attaches share a generation. A
+   * generation-only guard would let the replaced attach's late `CLOSED` clear
+   * the live connection its own successor had just established: presence dead
+   * in development, intermittently. The guard is an exact per-attach identity
+   * for that reason.
+   */
+  test("a replaced attach at the same generation cannot clear its successor", async () => {
+    // The real thing, not an approximation: `StrictMode` double-invokes the
+    // effect on the *same* component instance, so both attaches share this
+    // hook's state and its generation. Two separate `renderHook` calls would
+    // not — they get independent state, and the bug would be invisible.
+    const { result } = renderHook(
+      () => useChapterPresence({ chapterId: CHAPTER, viewerId: "me" }),
+      { wrapper: StrictMode },
+    );
+    await settleAttach();
+
+    // Two attaches, one generation.
+    expect(attachRealtimeChannel.mock.calls.length).toBeGreaterThanOrEqual(2);
+    const replaced = attachRealtimeChannel.mock.calls[0]![2];
+
+    fake.setState({ a: [{ userId: "u1", ts: Date.now() }] });
+    act(() => fake.fire("sync"));
+    expect(result.current.isReady).toBe(true);
+
+    // The first attach's teardown finally settles, after its successor joined.
+    act(() => replaced?.onDisconnected?.("CLOSED"));
 
     expect(result.current.isReady).toBe(true);
     expect(result.current.statusOf("u1")).toBe("online");

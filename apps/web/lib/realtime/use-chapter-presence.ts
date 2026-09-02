@@ -140,11 +140,26 @@ export function useChapterPresence({
    */
   const [live, setLive] = useState<{
     generation: number;
+    attachId: number;
     connection: number;
   } | null>(null);
 
   /** Monotonic, so a rejoin is never mistaken for the connection it replaced. */
   const connectionSeq = useRef(0);
+
+  /**
+   * Identifies one *run of the attach effect*, which the generation cannot.
+   *
+   * The generation only moves when the inputs change, so two attaches can share
+   * one: StrictMode (on by default in dev) mounts, tears down and re-mounts
+   * every effect with the inputs untouched. The replaced attach's late `CLOSED`
+   * would then pass a generation-only guard and clear the live connection its
+   * own successor had just established — presence silently dead in development,
+   * intermittently, which is the worst place to spend debugging time. The
+   * generation stays for the render-visible comparison; this is the exact
+   * identity the late callbacks check.
+   */
+  const attachSeq = useRef(0);
 
   const isCurrent =
     inputs !== null &&
@@ -229,6 +244,8 @@ export function useChapterPresence({
     // which is a value no `live` connection ever takes — so a presence frame
     // arriving before the join reply could not be adopted as current.
     let connectionId = -1;
+    attachSeq.current += 1;
+    const attachId = attachSeq.current;
     // Last activity published for the viewer. Seeded now: a member who opens
     // the app and reads without touching anything is active, not idle.
     let lastActiveAt = Date.now();
@@ -311,7 +328,7 @@ export function useChapterPresence({
         onSubscribed: () => {
           connectionSeq.current += 1;
           connectionId = connectionSeq.current;
-          setLive({ generation, connection: connectionId });
+          setLive({ generation, attachId, connection: connectionId });
           publish();
         },
         // The roster stops being evidence the moment the channel does — but
@@ -319,7 +336,7 @@ export function useChapterPresence({
         // replaced must not clear the one that succeeded it.
         onDisconnected: () =>
           setLive((previous) =>
-            previous?.generation === generation ? null : previous,
+            previous?.attachId === attachId ? null : previous,
           ),
       },
     );
@@ -342,7 +359,7 @@ export function useChapterPresence({
       // Same guard as `onDisconnected`: clear only if this attach is still the
       // live one.
       setLive((previous) =>
-        previous?.generation === generation ? null : previous,
+        previous?.attachId === attachId ? null : previous,
       );
       detach();
     };
