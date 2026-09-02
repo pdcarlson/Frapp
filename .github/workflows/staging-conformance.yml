@@ -21,10 +21,13 @@ name: Staging conformance
 on:
   schedule:
     # 07:30 UTC daily — after any overnight provider maintenance window, early
-    # enough that a drifted staging is known before the working day, and staggered
-    # 30 minutes past the 07:00 check-migration-drift.yml / db-backup.yml at 06:30
-    # so this workflow's Management API reads never overlap the backup's pg_dump.
-    # Full schedule: docs/internal/ci-cd/AGENT_INFRA.md § Scheduled conformance.
+    # enough that a drifted staging is known before the working day, and the last
+    # of four staggered scheduled workflows: 15 minutes past its closest neighbor
+    # production-guardrails.yml (07:15), an hour past check-migration-drift.yml
+    # (07:00), and an hour past db-backup.yml's pg_dump (06:30) — so this
+    # workflow's Management API reads never overlap another watchdog's own reads
+    # or the backup. Full schedule: docs/internal/ci-cd/AGENT_INFRA.md § Scheduled
+    # conformance.
     #
     # ⚠️ GitHub DISABLES scheduled triggers in a repository with no activity for
     # 60 days, notifying the repo owner by email only. This is the one workflow

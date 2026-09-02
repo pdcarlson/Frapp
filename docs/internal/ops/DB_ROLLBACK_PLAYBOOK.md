@@ -121,7 +121,7 @@ Two consequences worth stating plainly:
 | Producer | [`.github/workflows/db-backup.yml`](../../../.github/workflows/db-backup.yml) — nightly 06:30 UTC, plus `workflow_dispatch` |
 | Script | [`scripts/db-backup.sh`](../../../scripts/db-backup.sh) |
 | Contents | three gzipped SQL files — roles, schema, data — plus a manifest carrying a SHA-256 per file |
-| Scope | `frapp-staging` only. Production is deferred by choice (#814 / `scope:production`) |
+| Scope | `frapp-staging` only — not deferred by choice: `frapp-prod` is `ACTIVE_HEALTHY` and serving traffic, but a `schedule:`-triggered job naming `environment: production` would suspend on ADR-19's required-reviewer gate every night. See #1435 (the design trap), #1403 (Supabase Pro / PITR) and #1421 (an offsite restore rehearsed at least once) |
 | Destination | A private Cloudflare R2 bucket, outside Supabase on purpose — Supabase deletes its own backups with the project. Provisioned 2026-08-27 (#1287): scoped API token (object read/write on that one bucket), `BACKUP_S3_*` secrets in Infisical `staging` at `/` — see [`ENV_REFERENCE.md`](../environment/ENV_REFERENCE.md) § Offsite Backup Secrets |
 | Retention | `BACKUP_RETENTION_DAYS`, default 30, pruned by the same workflow |
 | First verified run | [2026-08-27, run 1](https://github.com/pdcarlson/Frapp/actions/runs/33116113194) — upload plus independent read-back listing all 4 objects |
