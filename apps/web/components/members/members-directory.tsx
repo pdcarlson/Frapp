@@ -4,6 +4,7 @@ import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, LayoutGrid, List } from "lucide-react";
 import { InviteGlyph, SearchGlyph } from "@/components/members/directory-glyphs";
 import {
+  useActiveChapterId,
   useLeaderboard,
   useMemberSearch,
   useMembers,
@@ -28,6 +29,10 @@ import { useToast } from "@/hooks/use-toast";
 import { InviteMemberDialog } from "@/components/members/invite-member-dialog";
 import { MemberDetailSheet } from "@/components/members/member-detail-sheet";
 import { useNetwork } from "@/lib/providers/network-provider";
+import { AvatarPresenceDot } from "@/components/members/presence-dot";
+import { useChapterPresence } from "@/lib/realtime/use-chapter-presence";
+import type { PresenceStatus } from "@/lib/realtime/presence-status";
+import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { vocab } from "@/lib/vocabulary";
 import { asArray, initials } from "@/lib/utils";
 import { stateMicrocopy } from "@/lib/state-microcopy";
@@ -107,6 +112,32 @@ export function MembersDirectory() {
   const leaderboardQuery = useLeaderboard();
   const orgConfig = useOrgConfig();
   const updateRolesMutation = useUpdateMemberRoles();
+  // Presence is chapter-wide and ephemeral (ADR-02) — it rides the Realtime
+  // socket and touches no table, so this adds no query and no write. It is
+  // suppressed while the network provider says we are offline: the socket is
+  // down, so every member would otherwise read Offline, which is a claim about
+  // *them* made from a fault on *our* side.
+  const chapterId = useActiveChapterId();
+  const { userId: viewerId } = useFrappUser();
+  const presence = useChapterPresence({
+    chapterId,
+    viewerId,
+    enabled: !isOffline,
+  });
+
+  /**
+   * Status for a row, or `null` to render no dot at all.
+   *
+   * Absence is the honest answer until the first presence `sync` lands, and
+   * while the socket is suppressed. Defaulting to Offline instead would state
+   * something false about every member for as long as the join takes — and
+   * "Offline" is a claim about *them*, not about our connection.
+   */
+  function presenceStatusOf(member: MemberRow): PresenceStatus | null {
+    if (!presence.isReady) return null;
+    const id = typeof member.user_id === "string" ? member.user_id : "";
+    return id ? presence.statusOf(id) : null;
+  }
   const usingSearch = deferredQuery.length > 0;
   const activeQuery = usingSearch ? searchQuery : membersQuery;
 
@@ -569,12 +600,17 @@ export function MembersDirectory() {
                         </TableCell>
                         <TableCell className="font-semibold">
                           <div className="flex items-center gap-3">
-                            <Avatar className="h-8 w-8">
-                              {member.avatar_url ? (
-                                <AvatarImage src={member.avatar_url} alt={name} />
+                            <div className="relative">
+                              <Avatar className="h-8 w-8">
+                                {member.avatar_url ? (
+                                  <AvatarImage src={member.avatar_url} alt={name} />
+                                ) : null}
+                                <AvatarFallback>{initials(name)}</AvatarFallback>
+                              </Avatar>
+                              {presenceStatusOf(member) ? (
+                                <AvatarPresenceDot status={presenceStatusOf(member)!} />
                               ) : null}
-                              <AvatarFallback>{initials(name)}</AvatarFallback>
-                            </Avatar>
+                            </div>
                             <div>
                               <span>{name}</span>
                               {member.email ? (
@@ -610,12 +646,17 @@ export function MembersDirectory() {
                       onClick={() => openMember(id)}
                       className={`flex flex-col items-center gap-2 rounded-lg border border-border p-4 text-center transition-colors hover:bg-accent-subtle ${FOCUS_RING}`}
                     >
-                      <Avatar className="h-14 w-14">
-                        {member.avatar_url ? (
-                          <AvatarImage src={member.avatar_url} alt={name} />
+                      <div className="relative">
+                        <Avatar className="h-14 w-14">
+                          {member.avatar_url ? (
+                            <AvatarImage src={member.avatar_url} alt={name} />
+                          ) : null}
+                          <AvatarFallback>{initials(name)}</AvatarFallback>
+                        </Avatar>
+                        {presenceStatusOf(member) ? (
+                          <AvatarPresenceDot status={presenceStatusOf(member)!} />
                         ) : null}
-                        <AvatarFallback>{initials(name)}</AvatarFallback>
-                      </Avatar>
+                      </div>
                       <div>
                         <p className="font-semibold">{name}</p>
                         <p className="text-[12.5px] text-muted-foreground">{primaryRoleName(member)}</p>
