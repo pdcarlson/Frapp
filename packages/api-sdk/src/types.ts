@@ -1609,11 +1609,29 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete a department (blocked while any resource references it) */
+        delete: operations["BackworkController_deleteDepartment_v1"];
         options?: never;
         head?: never;
         /** Update department name */
         patch: operations["BackworkController_updateDepartment_v1"];
+        trace?: never;
+    };
+    "/v1/backwork/departments/{id}/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Merge a department into another, reassigning its resources */
+        post: operations["BackworkController_mergeDepartments_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/backwork/professors": {
@@ -1627,6 +1645,41 @@ export interface paths {
         get: operations["BackworkController_listProfessors_v1"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/backwork/professors/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a professor (blocked while any resource references it) */
+        delete: operations["BackworkController_deleteProfessor_v1"];
+        options?: never;
+        head?: never;
+        /** Update professor name */
+        patch: operations["BackworkController_updateProfessor_v1"];
+        trace?: never;
+    };
+    "/v1/backwork/professors/{id}/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Merge a professor into another, reassigning its resources */
+        post: operations["BackworkController_mergeProfessors_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3314,6 +3367,18 @@ export interface components {
         };
         UpdateDepartmentDto: {
             /** @description Full department name */
+            name?: string;
+        };
+        MergeBackworkTaxonomyDto: {
+            /** @description Id of the row to merge into; the source is deleted */
+            target_id: string;
+        };
+        MergeBackworkTaxonomyResponseDto: {
+            /** @description Count of resources reassigned from source to target */
+            reassigned: number;
+        };
+        UpdateProfessorDto: {
+            /** @description Professor name */
             name?: string;
         };
         RequestProofUploadUrlDto: {
@@ -6194,6 +6259,25 @@ export interface operations {
             };
         };
     };
+    BackworkController_deleteDepartment_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     BackworkController_updateDepartment_v1: {
         parameters: {
             query?: never;
@@ -6217,6 +6301,31 @@ export interface operations {
             };
         };
     };
+    BackworkController_mergeDepartments_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MergeBackworkTaxonomyDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MergeBackworkTaxonomyResponseDto"];
+                };
+            };
+        };
+    };
     BackworkController_listProfessors_v1: {
         parameters: {
             query?: never;
@@ -6231,6 +6340,73 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    BackworkController_deleteProfessor_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    BackworkController_updateProfessor_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateProfessorDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    BackworkController_mergeProfessors_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MergeBackworkTaxonomyDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MergeBackworkTaxonomyResponseDto"];
+                };
             };
         };
     };
