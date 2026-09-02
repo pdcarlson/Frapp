@@ -35,6 +35,20 @@ export class SupabaseSemesterArchiveRepository implements ISemesterArchiveReposi
     return data;
   }
 
+  async findById(
+    id: string,
+    chapterId: string,
+  ): Promise<SemesterArchive | null> {
+    const { data, error } = await this.supabase
+      .from('semester_archives')
+      .select('*')
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
   async create(
     data: TablesInsert<'semester_archives'>,
   ): Promise<SemesterArchive> {

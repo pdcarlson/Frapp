@@ -3,6 +3,7 @@ import {
   BadRequestException,
   ForbiddenException,
   HttpException,
+  NotFoundException,
 } from '@nestjs/common';
 import { PointsService } from './points.service';
 import {
@@ -83,6 +84,7 @@ describe('PointsService', () => {
     mockSemesterArchiveRepo = {
       findByChapter: jest.fn().mockResolvedValue([]),
       findLatestByChapter: jest.fn().mockResolvedValue(null),
+      findById: jest.fn().mockResolvedValue(null),
       create: jest.fn(),
     };
 
@@ -211,6 +213,53 @@ describe('PointsService', () => {
         expect(result.balance).toBe(10);
       });
     });
+
+    describe('semester_archive_id (#377)', () => {
+      const archive = {
+        id: 'sa-1',
+        chapter_id: 'ch-1',
+        label: 'Spring 2026',
+        start_date: '2026-01-15',
+        end_date: '2026-06-15',
+        created_at: '2026-06-15T12:00:00.000Z',
+      };
+
+      it('overrides `window` and filters to the archive’s own [start_date, end_date] range', async () => {
+        mockSemesterArchiveRepo.findById.mockResolvedValue(archive);
+        const inRange: PointTransaction = {
+          ...txn1,
+          created_at: '2026-06-15T18:00:00.000Z', // on end_date day
+        };
+        const beforeRange: PointTransaction = {
+          ...txn1b,
+          created_at: '2026-01-14T23:59:59.999Z', // day before start_date
+        };
+        mockPointTxnRepo.findByUser.mockResolvedValue([inRange, beforeRange]);
+
+        // window: 'all' would normally return both — semester_archive_id wins.
+        const result = await service.getUserSummary(
+          'ch-1',
+          'user-1',
+          'all',
+          'sa-1',
+        );
+
+        expect(mockSemesterArchiveRepo.findById).toHaveBeenCalledWith(
+          'sa-1',
+          'ch-1',
+        );
+        expect(result.transactions).toHaveLength(1);
+        expect(result.transactions[0].id).toBe('pt-1');
+      });
+
+      it('throws NotFoundException for an archive id that is unknown or belongs to another chapter', async () => {
+        mockSemesterArchiveRepo.findById.mockResolvedValue(null);
+
+        await expect(
+          service.getUserSummary('ch-1', 'user-1', 'all', 'not-a-real-id'),
+        ).rejects.toThrow(NotFoundException);
+      });
+    });
   });
 
   describe('getLeaderboard', () => {
@@ -233,6 +282,31 @@ describe('PointsService', () => {
       const result = await service.getLeaderboard('ch-1');
 
       expect(result).toEqual([]);
+    });
+
+    it('filters to a semester_archive_id, reproducing that period’s totals regardless of `window`', async () => {
+      mockSemesterArchiveRepo.findById.mockResolvedValue({
+        id: 'sa-1',
+        chapter_id: 'ch-1',
+        label: 'Spring 2026',
+        start_date: '2026-01-15',
+        end_date: '2026-06-15',
+        created_at: '2026-06-15T12:00:00.000Z',
+      });
+      const inRange: PointTransaction = {
+        ...txn1,
+        created_at: '2026-03-01T00:00:00.000Z',
+      };
+      const outOfRange: PointTransaction = {
+        ...txn2,
+        created_at: '2026-07-01T00:00:00.000Z',
+      };
+      mockPointTxnRepo.findByChapter.mockResolvedValue([inRange, outOfRange]);
+
+      const result = await service.getLeaderboard('ch-1', 'all', 'sa-1');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].user_id).toBe(txn1.user_id);
     });
   });
 

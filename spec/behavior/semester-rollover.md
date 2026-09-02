@@ -20,7 +20,12 @@ Admins with `semester:rollover` permission can trigger a "New Semester" action f
 
 ## Historical Data
 
-- All historical semesters are viewable in the leaderboard, reports, and attendance views via a semester/period selector.
+- All historical semesters are queryable by `semester_archive_id` — `GET
+  /v1/points/{me,leaderboard,members/:userId}` and `POST /v1/reports/points`
+  all accept it, resolved against the archive's own `[start_date, end_date]`
+  range (see `points.md`). The web Points page exposes this as an "Archived
+  period" selector for the leaderboard and balance summary. The Reports page,
+  attendance, and mobile do not yet surface a selector for it (#1526).
 - Point transactions, attendance records, and service entries are timestamped and can always be filtered by date range regardless of semester archives.
 
 ## Edge Cases
