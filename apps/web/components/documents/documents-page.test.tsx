@@ -44,7 +44,7 @@ const {
   // What the page last asked `useDocuments` for — the search wiring is only
   // observable through this, since the mock never reaches the network.
   documentsArgs: { value: undefined as { search?: string } | undefined },
-  foldersQuery: { data: [] as unknown[] },
+  foldersQuery: { data: [] as unknown[], isError: false },
 }));
 
 // Only the chapter payload is stubbed — `useSubscriptionWriteState` and
@@ -107,6 +107,7 @@ function resolvedDocumentsQuery() {
     { id: "f-1", name: "Governance", sort_order: 0 },
     { id: "f-2", name: "Rush", sort_order: 1 },
   ];
+  foldersQuery.isError = false;
 }
 
 const uploadTrigger = () =>
@@ -793,5 +794,126 @@ describe("DocumentsPage folder management (#791)", () => {
     expect(
       screen.getByRole("button", { name: /delete folder governance/i }),
     ).toBeDisabled();
+  });
+});
+
+describe("DocumentsPage search and folder resilience", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOffline.value = false;
+    resolvedDocumentsQuery();
+    chapter.active();
+  });
+
+  it("keeps a cached library reachable when a search is typed offline", async () => {
+    // Server-side search made every query string its own cache key, so an
+    // offline search lands on a key that was never fetched and `documents`
+    // empties. The plain offline card would then replace a library the member
+    // still has — the exact discard this page's state comment forbids.
+    const user = userEvent.setup();
+    const { rerender } = render(<DocumentsPage />);
+    await user.type(screen.getByLabelText("Search documents"), "bylaws");
+
+    // The connection drops with the query still in the box: the search key was
+    // never fetched, so the list empties even though the unfiltered library is
+    // still cached under its own key.
+    mockOffline.value = true;
+    documentsQuery.data = [];
+    rerender(<DocumentsPage />);
+
+    expect(
+      await screen.findByText("Search needs a connection"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Documents unavailable offline"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("still shows the plain offline state when nothing is being searched", () => {
+    mockOffline.value = true;
+    documentsQuery.data = [];
+    render(<DocumentsPage />);
+
+    expect(
+      screen.getByText("Documents unavailable offline"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Search needs a connection"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("falls back to folders derived from documents when the endpoint fails", () => {
+    // Failing to an empty rail would claim the chapter has no folders while
+    // rows keep printing "· Governance", promising a tab that isn't there.
+    foldersQuery.data = [];
+    foldersQuery.isError = true;
+    render(<DocumentsPage />);
+
+    expect(
+      screen.getByRole("button", { name: /^Governance$/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/couldn't load the folder list/i)).toBeInTheDocument();
+  });
+
+  it("offers no folder management for a derived fallback row", () => {
+    // A derived name has no folder record behind it, so there is nothing to
+    // rename, reorder or delete — offering the controls would 404.
+    foldersQuery.data = [];
+    foldersQuery.isError = true;
+    render(<DocumentsPage />);
+
+    expect(
+      screen.queryByRole("button", { name: /rename governance/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /delete folder governance/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("surfaces the API's 409 message rather than a permissions guess", async () => {
+    // #791's acceptance criterion. The fallback copy talks about permissions,
+    // which would be a misleading thing to show for a duplicate name.
+    mockCreateFolder.mockRejectedValueOnce({
+      message: 'A folder named "Finance" already exists',
+    });
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.click(screen.getByRole("button", { name: /new folder/i }));
+    await user.type(await screen.findByLabelText(/folder name/i), "Finance");
+    await user.click(screen.getByRole("button", { name: /^create folder$/i }));
+
+    await waitFor(() => expect(mockCreateFolder).toHaveBeenCalled());
+    // The dialog stays open on failure so the name can be corrected in place.
+    expect(await screen.findByLabelText(/folder name/i)).toHaveValue("Finance");
+  });
+
+  it("composes search with the No folder tab", async () => {
+    // A distinct branch of the `visible` memo (`!doc.folder`) from the
+    // named-folder one, and the only search test that reaches it.
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.click(screen.getByRole("button", { name: /^No folder$/ }));
+    await user.type(screen.getByLabelText("Search documents"), "bylaws");
+
+    // BYLAWS is filed under Governance, so the uncategorized bucket has no
+    // match and must show the search-aware empty state.
+    await waitFor(() =>
+      expect(
+        screen.getByText("No documents match that search"),
+      ).toBeInTheDocument(),
+    );
+    expect(documentsArgs.value).toEqual({ search: "bylaws" });
+  });
+
+  it("keeps folder controls at the 44px touch floor", () => {
+    // `button.tsx` sizes `icon` at 44 deliberately; these four sit adjacent in
+    // a 240px rail, where an undersized target puts delete next to move-down.
+    render(<DocumentsPage />);
+
+    const move = screen.getByRole("button", { name: /move governance down/i });
+    expect(move.className).toContain("pointer-coarse:h-11");
+    expect(move.className).toContain("pointer-coarse:w-11");
   });
 });

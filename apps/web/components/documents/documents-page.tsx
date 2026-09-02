@@ -1,6 +1,6 @@
 "use client";
 
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
   ChevronUp,
@@ -8,7 +8,6 @@ import {
   FolderPlus,
   Loader2,
   Pencil,
-  Search,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -55,6 +54,7 @@ import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import {
   DocumentsGlyph,
   FolderGlyph,
+  SearchGlyph,
 } from "@/components/documents/resources-glyphs";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import {
@@ -88,6 +88,17 @@ type ChapterDocument = {
 
 type ChapterDocumentFolder = {
   id: string;
+  name: string;
+  sort_order: number | null;
+};
+
+/**
+ * A row in the folder rail. `id` is `null` for a name recovered from the
+ * documents themselves when the folder endpoint is unreachable — those rows
+ * filter but cannot be managed, because there is no record to address.
+ */
+type FolderRow = {
+  id: string | null;
   name: string;
   sort_order: number | null;
 };
@@ -230,6 +241,31 @@ export function DocumentsPage() {
       );
   }, [foldersQuery.data]);
 
+  /*
+    What the rail actually renders.
+
+    The folder list is now its own request, which means it can fail on its own —
+    a state that could not exist while the list was derived from the documents
+    already in hand. Failing to [] would be the worst answer: the rail would
+    quietly claim the chapter has no folders while document rows keep printing
+    `· Governance` in their meta line, promising a tab that isn't there.
+
+    So on error we fall back to exactly the pre-#791 behaviour, deriving names
+    from the loaded documents. Those entries carry no `id`, which is precisely
+    right — without a folder record there is nothing to rename, reorder or
+    delete, and the management controls key on `id` being present.
+  */
+  const railFolders = useMemo<FolderRow[]>(() => {
+    if (!foldersQuery.isError) return folders;
+    const names = new Set<string>();
+    for (const doc of documents) {
+      if (doc.folder) names.add(doc.folder);
+    }
+    return Array.from(names)
+      .sort((a, b) => a.localeCompare(b))
+      .map((name) => ({ id: null, name, sort_order: null }));
+  }, [folders, foldersQuery.isError, documents]);
+
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
 
   /*
@@ -295,8 +331,29 @@ export function DocumentsPage() {
     name: string;
   }>({ id: null, name: "" });
   const [folderBusy, setFolderBusy] = useState(false);
+  /*
+    The same guard `deletingIds` provides for document deletes, in the shape a
+    single shared flag needs. `setFolderBusy(true)` only disables the controls
+    on the *next* commit, so a fast double-click — or a click on delete while a
+    reorder is still in flight — passes the state check twice and runs two
+    folder writes under one guard. A ref flips synchronously, so the second call
+    sees it before React has painted anything.
+  */
+  const folderWriteInFlight = useRef(false);
 
-  function openFolderDialog(folder: ChapterDocumentFolder | null) {
+  function beginFolderWrite(): boolean {
+    if (folderWriteInFlight.current) return false;
+    folderWriteInFlight.current = true;
+    setFolderBusy(true);
+    return true;
+  }
+
+  function endFolderWrite() {
+    folderWriteInFlight.current = false;
+    setFolderBusy(false);
+  }
+
+  function openFolderDialog(folder: FolderRow | null) {
     setFolderDraft({ id: folder?.id ?? null, name: folder?.name ?? "" });
     folderDialog.setOpen(true);
   }
@@ -316,7 +373,7 @@ export function DocumentsPage() {
     const previousName = renaming
       ? (folders.find((folder) => folder.id === folderDraft.id)?.name ?? null)
       : null;
-    setFolderBusy(true);
+    if (!beginFolderWrite()) return;
     try {
       if (renaming) {
         await updateFolder.mutateAsync({ id: folderDraft.id!, name });
@@ -347,11 +404,14 @@ export function DocumentsPage() {
         variant: "destructive",
       });
     } finally {
-      setFolderBusy(false);
+      endFolderWrite();
     }
   }
 
-  async function handleDeleteFolder(folder: ChapterDocumentFolder) {
+  async function handleDeleteFolder(folder: FolderRow) {
+    // Unreachable from the UI — the controls only render for a row that has a
+    // record — but it is what makes the nullable id honest rather than asserted.
+    if (!folder.id) return;
     const confirmed = await confirm({
       title: `Delete ${folder.name}?`,
       description:
@@ -360,7 +420,7 @@ export function DocumentsPage() {
       tone: "destructive",
     });
     if (!confirmed) return;
-    setFolderBusy(true);
+    if (!beginFolderWrite()) return;
     try {
       await deleteFolder.mutateAsync(folder.id);
       toast({
@@ -380,7 +440,7 @@ export function DocumentsPage() {
         variant: "destructive",
       });
     } finally {
-      setFolderBusy(false);
+      endFolderWrite();
     }
   }
 
@@ -409,22 +469,36 @@ export function DocumentsPage() {
       .filter(({ folder, position }) => folder.sort_order !== position);
     if (changed.length === 0) return;
 
-    setFolderBusy(true);
+    if (!beginFolderWrite()) return;
+    /*
+      Applied one PATCH at a time, and `applied` counts how far it got. There is
+      no transaction across these rows, so a failure partway leaves some folders
+      moved — reporting a flat "nothing happened" would be a false claim about
+      the list the member is looking at. Say which it is, and refetch so the rail
+      shows the order that actually persisted rather than the one we attempted.
+    */
+    let applied = 0;
     try {
       for (const { folder, position } of changed) {
+        if (!folder.id) continue;
         await updateFolder.mutateAsync({ id: folder.id, sort_order: position });
+        applied += 1;
       }
     } catch (error) {
       toast({
         title: "Couldn't reorder folders",
-        description: getErrorMessage(
-          error,
-          "Requires chapter_docs:manage. Retry or confirm your permissions.",
-        ),
+        description:
+          applied > 0
+            ? "Some folders moved before this failed — the list below shows the order that saved."
+            : getErrorMessage(
+                error,
+                "Requires chapter_docs:manage. Retry or confirm your permissions.",
+              ),
         variant: "destructive",
       });
+      void foldersQuery.refetch();
     } finally {
-      setFolderBusy(false);
+      endFolderWrite();
     }
   }
 
@@ -585,9 +659,20 @@ export function DocumentsPage() {
     has nothing else to say. Gated on `documents`, not `visible`: a folder
     filter that matches nothing is the empty case, not the offline one.
   */
+  /*
+    `offline-search` is its own state, and it exists because server-side search
+    reintroduced the hazard the comment above rules out. Each query string is a
+    distinct cache key, so an offline member who types one lands on a key that
+    was never fetched — `documents` goes empty and the plain offline branch
+    would replace a library they had cached moments earlier. Naming the state
+    keeps the recovery honest: the search is what needs a connection, and
+    clearing it brings their documents straight back.
+  */
   const listState =
-    isOffline && documents.length === 0
-      ? "offline"
+    isOffline && documents.length === 0 && deferredSearch
+      ? "offline-search"
+      : isOffline && documents.length === 0
+        ? "offline"
       : documentsQuery.isPending
         ? "loading"
         : documentsQuery.isError
@@ -825,14 +910,12 @@ export function DocumentsPage() {
               />{" "}
               No folder
             </button>
-            {folders.map((folder, index) => (
-              <div key={folder.id} className="flex items-center gap-1">
+            {railFolders.map((folder, index) => (
+              <div key={folder.id ?? `derived:${folder.name}`}>
                 <button
                   type="button"
                   onClick={() => setActiveFolder(folder.name)}
-                  className={`${folderRowClassName(
-                    activeFolder === folder.name,
-                  )} min-w-0 flex-1`}
+                  className={folderRowClassName(activeFolder === folder.name)}
                 >
                   <FolderGlyph
                     className="h-4 w-4 shrink-0"
@@ -840,60 +923,91 @@ export function DocumentsPage() {
                   />
                   <span className="truncate">{folder.name}</span>
                 </button>
-                <Can permission="chapter_docs:manage">
-                  {/*
-                    Reorder, rename and delete sit beside the row rather than
-                    behind a menu: three controls do not earn a popover, and a
-                    menu would put the whole group behind one gated trigger,
-                    losing the per-control disabled explanation §5 rule 4 wants.
-                  */}
-                  <div className="flex shrink-0 items-center">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      aria-label={`Move ${folder.name} up`}
-                      onClick={() => void handleMoveFolder(index, -1)}
-                      {...gate.controlProps(folderBusy || index === 0)}
-                    >
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      aria-label={`Move ${folder.name} down`}
-                      onClick={() => void handleMoveFolder(index, 1)}
-                      {...gate.controlProps(
-                        folderBusy || index === folders.length - 1,
-                      )}
-                    >
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      aria-label={`Rename ${folder.name}`}
-                      onClick={() => openFolderDialog(folder)}
-                      {...gate.controlProps(folderBusy)}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      aria-label={`Delete folder ${folder.name}`}
-                      onClick={() => void handleDeleteFolder(folder)}
-                      {...gate.controlProps(folderBusy)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </Can>
+                {/*
+                  `id === null` means this name was recovered from the documents
+                  because the folder endpoint is down — there is no record to
+                  rename, reorder or delete, so the row filters and nothing more.
+                */}
+                {folder.id ? (
+                  <Can permission="chapter_docs:manage">
+                    {/*
+                      A second line under the name rather than a trailing cluster
+                      on the same row: at the rail's 240px these four controls
+                      cannot sit beside a folder name and still clear §2's
+                      44px touch floor, and shrinking them below it is what
+                      `button.tsx`'s `icon` size exists to prevent. Four controls
+                      also do not earn a popover, and hiding them behind one
+                      gated trigger would lose the per-control disabled
+                      explanation §5 rule 4 asks for.
+                    */}
+                    <div className="flex items-center justify-end gap-0.5 pb-1 pl-6">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11"
+                        aria-label={`Move ${folder.name} up`}
+                        onClick={() => void handleMoveFolder(index, -1)}
+                        {...gate.controlProps(folderBusy || index === 0)}
+                      >
+                        <ChevronUp className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11"
+                        aria-label={`Move ${folder.name} down`}
+                        onClick={() => void handleMoveFolder(index, 1)}
+                        {...gate.controlProps(
+                          folderBusy || index === railFolders.length - 1,
+                        )}
+                      >
+                        <ChevronDown className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11"
+                        aria-label={`Rename ${folder.name}`}
+                        onClick={() => openFolderDialog(folder)}
+                        {...gate.controlProps(folderBusy)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11"
+                        aria-label={`Delete folder ${folder.name}`}
+                        onClick={() => void handleDeleteFolder(folder)}
+                        {...gate.controlProps(folderBusy)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </Can>
+                ) : null}
               </div>
             ))}
+            {/*
+              Said once, under the rail, rather than replacing it: the names
+              above are the pre-#791 derived fallback and still filter correctly,
+              so the honest report is that management is unavailable — not that
+              the chapter has no folders.
+            */}
+            {foldersQuery.isError ? (
+              <p className="px-2 pt-2 text-xs text-muted-foreground">
+                Couldn&apos;t load the folder list, so these are read from the
+                documents shown. Empty folders and folder management are
+                unavailable until it loads.{" "}
+                <button
+                  type="button"
+                  className={`underline ${FOCUS_RING_OFFSET}`}
+                  onClick={() => void foldersQuery.refetch()}
+                >
+                  Retry
+                </button>
+              </p>
+            ) : null}
           </CardContent>
         </Card>
 
@@ -924,23 +1038,27 @@ export function DocumentsPage() {
               clear affordance and the correct role, so no hand-rolled X button
               is owed. The visible <Label> is `sr-only` rather than absent — a
               placeholder is not an accessible name.
+
+              Icon placement follows the dashboard's existing search inputs
+              (`events-page.tsx`, `alumni-directory.tsx`): the shared glyph at a
+              fixed `top-2.5` against an `h-11` field. The wrapper carries the
+              spacing so the icon offset never has to compensate for it.
             */}
-            <div className="relative pt-2">
-              <Label htmlFor="doc-search" className="sr-only">
-                Search documents
-              </Label>
-              <Search
-                aria-hidden="true"
-                className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 translate-y-[calc(-50%+0.25rem)] text-muted-foreground"
-              />
-              <Input
-                id="doc-search"
-                type="search"
-                className="pl-8"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search by title"
-              />
+            <div className="pt-2">
+              <div className="relative">
+                <Label htmlFor="doc-search" className="sr-only">
+                  Search documents
+                </Label>
+                <SearchGlyph className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="doc-search"
+                  type="search"
+                  className="h-11 pl-9"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search by title"
+                />
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -950,7 +1068,13 @@ export function DocumentsPage() {
               card composites to exactly 1.00:1 and the region disappears
               (`components.md` §10).
             */}
-            {listState === "offline" ? (
+            {listState === "offline-search" ? (
+              <NestedOffline
+                sole
+                title="Search needs a connection"
+                description="Clear the search to browse the documents already on this device."
+              />
+            ) : listState === "offline" ? (
               <NestedOffline
                 sole
                 title="Documents unavailable offline"
