@@ -13,9 +13,13 @@ import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.i
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 import { AuthModule } from '../auth/auth.module';
 import { ActivationModule } from '../activation/activation.module';
+// Exports `ChapterAuditLogService`, which `ChapterService` uses to audit
+// chapter-profile saves (#486). Safe to import: `ChapterConfigModule` imports
+// only `ActivationModule`, so this introduces no cycle.
+import { ChapterConfigModule } from '../chapter-config/chapter-config.module';
 
 @Module({
-  imports: [AuthModule, ActivationModule],
+  imports: [AuthModule, ActivationModule, ChapterConfigModule],
   controllers: [ChapterController],
   providers: [
     AuthSyncInterceptor,
