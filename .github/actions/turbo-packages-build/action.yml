@@ -33,12 +33,14 @@ runs:
     # silence, not the magnitude, is why this is single-sourced.
     #
     # Considered and rejected: collapsing to `cache/restore` + a conditional
-    # `cache/save`, which is one step shorter. `actions/cache` carries
-    # `post-if: success()`, so it skips the save when a LATER step in the job
-    # fails; an inline save cannot express that, and has already run by then.
-    # This action is a faithful extraction of eight hand-written blocks, so it
-    # keeps their exact semantics. It also does not dedupe anything: `path`
-    # appears twice in both shapes.
+    # `cache/save`. It is NOT shorter -- key, restore, build, save is the same
+    # four declared steps, and one more than this shape runs for a consumer --
+    # and it dedupes nothing, since `path` appears twice either way. What it
+    # would cost is real: `actions/cache` carries `post-if: success()`, so it
+    # skips the save when a LATER step in the job fails, and an inline save
+    # cannot express that because it has already run by then. This action is a
+    # faithful extraction of eight hand-written blocks and keeps their exact
+    # semantics.
     - name: Compute turbo cache key
       id: cache-key
       shell: bash

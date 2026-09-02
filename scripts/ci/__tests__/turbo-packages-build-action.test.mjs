@@ -26,18 +26,46 @@ const ACTIONS = join(REPO, ".github", "actions");
 const ACTION_DIR = "turbo-packages-build";
 const ACTION = join(ACTIONS, ACTION_DIR, "action.yml");
 
-const USES_RE = /^\s*uses:\s*\.\/\.github\/actions\/turbo-packages-build\s*$/;
+// Tolerates every legal spelling of the same step: the name-less `- uses:`
+// form, a quoted path, and a trailing comment. A stricter regex here is not
+// "safer" -- it silently fails OPEN on the negative assertions, so a
+// `- uses: ./...` added to `clean-checkout-typecheck` would disarm the
+// cold-build canary with the suite still green.
+const USES_RE =
+  /^\s*(-\s+)?uses:\s*["']?\.\/\.github\/actions\/turbo-packages-build["']?\s*(#.*)?$/;
 
-// Quote-tolerant: `--filter='./packages/*'`, `--filter="./packages/*"` and
-// `--filter=./packages/*` are the same instruction to bash, so a guard that
-// matched only the first spelling could be evaded by retyping it.
-const BUILD_CMD_RE = /turbo\s+run\s+build\s+--filter[=\s]['"]?\.\/packages\/\*/;
+// `turbo build` is Turborepo's documented shorthand for `turbo run build`, and
+// the flag may be separated by a line continuation inside a `run: |` block, so
+// neither the `run ` nor a single space can be required. Quote-tolerant too:
+// `--filter='./packages/*'`, `--filter="./packages/*"` and `--filter=./packages/*`
+// are one instruction to bash.
+const BUILD_CMD_RE = /turbo\s+(run\s+)?build[\s\S]{0,40}?--filter[=\s]['"]?\.\/packages\/\*/;
 
-// GitHub stringifies action inputs, so `save: true`, `save: 'true'` and
-// `save: "true"` all arrive as "true" and all select the write branch. Matching
-// only the double-quoted spelling would let an unquoted second producer through
-// -- which is the exact race this file's producer assertion exists to forbid.
-const SAVE_TRUE_RE = /^\s*save:\s*["']?true["']?\s*$/;
+/** `save:` lines in a block, as `{ line, value }` with comments and quotes stripped. */
+function saveValues(text) {
+  const out = [];
+  for (const line of text.split("\n")) {
+    const m = line.match(/^\s*-?\s*save:\s*(.*)$/);
+    if (!m) continue;
+    const value = m[1]
+      .replace(/\s+#.*$/, "")
+      .trim()
+      .replace(/^(["'])(.*)\1$/, "$2");
+    out.push({ line, value });
+  }
+  return out;
+}
+
+/**
+ * Whether a `save:` value selects the write branch.
+ *
+ * Deliberately case-insensitive: YAML resolves `TRUE` and `True` to boolean
+ * true, GitHub stringifies action inputs, and GitHub's `==` compares strings
+ * case-insensitively -- so `save: TRUE` reaches `inputs.save == 'true'` as
+ * true down either path. A case-sensitive check would let a second cache
+ * WRITER through while still counting one producer.
+ */
+const isTruthySave = (value) => value.toLowerCase() === "true";
 
 /** `{ name, text }` for every YAML file under a directory tree. */
 function yamlFilesUnder(root, rel = "") {
@@ -77,18 +105,30 @@ function guardedFiles() {
 /**
  * Lines of one `  <jobId>:` block in a workflow, comments stripped.
  *
- * Comments are stripped for two independent reasons, both of which produced a
- * false result in an earlier draft: a job's explanatory comment block sits
- * ABOVE its header and therefore inside the PREVIOUS job's slice, so a comment
- * naming the action would otherwise read as that job using it; and the
- * next-job regex must tolerate an inline comment on a header (`  foo: # bar`)
- * or the block silently bleeds into the following job.
+ * Comments are stripped for two independent reasons. Neither has ever produced
+ * a wrong result on this repo's actual `ci.yml` -- both are latent, and were
+ * demonstrated by mutating the file rather than observed in the committed
+ * state. They are guarded anyway because each fails silently and toward
+ * "green": a job's explanatory comment block sits ABOVE its header and so
+ * lands inside the PREVIOUS job's slice, where a comment naming the action
+ * would read as that job using it; and the next-job regex must tolerate an
+ * inline comment on a header (`  foo: # bar`) or the block bleeds into the
+ * following job.
  */
 function jobBlock(text, jobId) {
   const lines = text.split("\n");
   const key = (l) => l.replace(/\s+$/, "");
-  const isHeader = (l) => /^ {2}[a-zA-Z0-9_-]+:(\s*#.*)?$/.test(key(l));
-  const start = lines.findIndex((l) => key(l).replace(/\s*#.*$/, "") === `  ${jobId}:`);
+  // Quotes are permitted because `"api-tests":` is valid YAML for the same job
+  // id. Without them the header is invisible, the previous job's block bleeds
+  // through it, and a consumer gets reported as violating the cold-build guard
+  // using its neighbour's `uses:` line.
+  const isHeader = (l) => /^ {2}["']?[a-zA-Z0-9_-]+["']?:(\s*#.*)?$/.test(key(l));
+  const start = lines.findIndex(
+    (l) =>
+      key(l)
+        .replace(/\s*#.*$/, "")
+        .replace(/^( {2})["'](.+)["']:$/, "$1$2:") === `  ${jobId}:`,
+  );
   if (start === -1) return null;
   let end = lines.length;
   for (let i = start + 1; i < lines.length; i++) {
@@ -198,17 +238,27 @@ describe("turbo-packages-build composite action", () => {
 
   it("has exactly one producer, and it is packages-build", () => {
     const text = ci();
-    const savers = text.split("\n").filter((l) => SAVE_TRUE_RE.test(l));
+    const saves = saveValues(text);
+    // A block scalar (`save: >-` / `save: |`) folds to a value this line-based
+    // scan cannot see, so it is refused outright rather than mis-parsed: `>-`
+    // yields exactly "true" and would select the write branch invisibly.
+    const blockScalars = saves.filter((s) => /^[>|]/.test(s.value));
+    assert.deepEqual(
+      blockScalars.map((s) => s.line.trim()),
+      [],
+      "spell `save` inline (`save: \"true\"`), not as a block scalar -- a folded value " +
+        "still selects the write branch but is invisible to this guard",
+    );
     assert.equal(
-      savers.length,
+      saves.filter((s) => isTruthySave(s.value)).length,
       1,
-      'exactly one job may pass a truthy `save` -- a second writer races the first ' +
+      "exactly one job may pass a truthy `save` -- a second writer races the first " +
         "for the same cache key",
     );
     const producer = jobBlock(text, PRODUCER);
     assert.ok(producer, `ci.yml must still define a \`${PRODUCER}\` job`);
     assert.ok(
-      producer.split("\n").some((l) => SAVE_TRUE_RE.test(l)),
+      saveValues(producer).some((s) => isTruthySave(s.value)),
       `${PRODUCER} is the job that writes the cache`,
     );
   });
@@ -251,11 +301,25 @@ describe("turbo-packages-build composite action", () => {
       return block && block.includes("needs.changes.outputs.web");
     });
     assert.ok(gated.length > 0, "expected at least one web-gated consumer");
+    // Sliced to the `web:` filter specifically. Regexing the whole file would
+    // pass just as happily with the entry sitting under `pglite:`, which
+    // restores the exact hole this assertion exists to hold shut.
+    const lines = text.split("\n");
+    const start = lines.findIndex((l) => /^ {12}web:\s*$/.test(l));
+    assert.ok(start !== -1, "ci.yml must still define a `web:` paths-filter");
+    let end = lines.length;
+    for (let i = start + 1; i < lines.length; i++) {
+      if (/^ {12}\S/.test(lines[i])) {
+        end = i;
+        break;
+      }
+    }
+    const webFilter = lines.slice(start, end).join("\n");
     assert.match(
-      text,
-      /^\s*- '\.github\/actions\/\*\*'$/m,
+      webFilter,
+      /^\s*- ["']?\.github\/actions\/\*\*["']?\s*$/m,
       `${gated.join(", ")} are gated on changes.web and build through the action, so ` +
-        "'.github/actions/**' must be in that filter or a PR editing only the action " +
+        "'.github/actions/**' must be in the WEB filter or a PR editing only the action " +
         "skips required checks that report Success when skipped",
     );
   });

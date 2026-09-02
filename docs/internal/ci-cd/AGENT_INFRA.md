@@ -163,10 +163,12 @@ packages themselves and need no `npx turbo run build --filter='./packages/*'` be
 `npm install && npm run check-types` works on a cold clone. The CI job **`clean-checkout-typecheck`**
 exists solely to keep that true: it runs `npm ci`, `npm run check-types` and `npm run lint` with no
 `needs:` and no `uses: ./.github/actions/turbo-packages-build` — the composite action that restores
-the turbo cache and prebuilds the packages. Every other Node job uses it (ADR-15 Lever A), which
-makes them all blind to this regression — so do not "optimize" that one-line `uses:` into this job.
-`web-production-build` is under the same prohibition for the same reason, and
-`scripts/ci/__tests__/turbo-packages-build-action.test.mjs` fails if either acquires it.
+the turbo cache and prebuilds the packages. Every job that *does* use it (ADR-15 Lever A — eight of
+them) is blind to this regression, which is why this one must not — so do not "optimize" that
+one-line `uses:` into this job. `web-production-build` carries the same prohibition for a
+**different** reason: it guards the pruned `npm ci --omit=dev` production install shape, where
+`clean-checkout-typecheck` guards unbuilt package types on a dev tree. `scripts/ci/__tests__/turbo-packages-build-action.test.mjs`
+fails if either acquires the action.
 
 **That guarantee stops at the turbo tasks.** `^build` applies to `build`, `lint` and `check-types`
 only; the root `check:*` scripts above are plain node scripts turbo never schedules, so they cannot
