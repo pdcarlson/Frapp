@@ -1,15 +1,16 @@
 ---
 name: docs-upkeep
 description: >
-  Run the Docs Upkeep routine (4 of 4) — sweep a rotating fifth of the docs corpus, verify its
+  Run the Docs Upkeep routine (4 of 5) — sweep a rotating fifth of the docs corpus, verify its
   claims against code and providers, and fix what is wrong in a single docs-only PR. Use when the
   scheduled "Docs Upkeep" routine fires, or when asked to sweep, audit, or refresh the docs.
 ---
 
-# Docs Upkeep (routine 4 of 4)
+# Docs Upkeep (routine 4 of 5)
 
-The other three routines keep the **tracker** honest. This one keeps the **docs** honest, and it is
-the only routine that fixes what it finds instead of filing it.
+The tracker routines keep the **tracker** honest. This one keeps the **docs** honest, and it was
+the first routine that fixes what it finds instead of filing it — [`hygiene-scan`](../hygiene-scan/SKILL.md)
+(routine 5) now does the same for code.
 
 It exists because the repo's docs gates are all structural. `check-docs-impact.mjs` asserts that
 *some* doc changed, `check-docs-structure.mjs` that new files sit in allowed places, and

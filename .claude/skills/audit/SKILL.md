@@ -14,7 +14,9 @@ description: >
 > (e.g. the [Issue Curator](../issue-curator/SKILL.md)'s engineering-gaps lens). In read-only
 > runs, findings are filed as GitHub issues rather than fixed in place — except in
 > [`docs-upkeep`](../docs-upkeep/SKILL.md) (routine 4), which fixes documentation in a docs-only PR
-> and never files `area:docs` issues (ADR-16 amendment 6). `npm run lint` is read-only in
+> and never files `area:docs` issues (ADR-16 amendment 6), and
+> [`hygiene-scan`](../hygiene-scan/SKILL.md) (routine 5), which fixes code hygiene in a
+> product-code PR (ADR-16 amendment 7). `npm run lint` is read-only in
 > every workspace and will not touch your tree — `npm run lint:api:fix` is the only *lint* script
 > that writes, and no audit needs it. `npm run check:api-contract` does regenerate `openapi.json`
 > and `packages/api-sdk/src/types.ts` when API-related files changed; treat those edits as throwaway
