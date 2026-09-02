@@ -83,8 +83,9 @@ fail — that is how this was caught, and each of the four rule families has bee
 ### The baseline
 
 `.dependency-cruiser-known-violations.json` holds the violations that existed when the gate landed —
-7 then, 5 since #1539 moved `apps/api/src/domain/constants/report-columns.ts` out of the interface
-layer and the baseline was re-recorded (all `api-application-not-to-interface` — services importing
+7 then, 5 since #1549 re-recorded it after #1539 had moved
+`apps/api/src/domain/constants/report-columns.ts` out of the interface layer without shrinking it
+(all `api-application-not-to-interface` — services importing
 DTOs from the interface layer). They are
 grandfathered; anything new fails. **The baseline exists to shrink.** Re-record only after *fixing*
 violations:

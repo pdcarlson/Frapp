@@ -18,7 +18,8 @@ It exists for the reason [`docs-upkeep`](../docs-upkeep/SKILL.md) exists: hygien
 ages. The [Issue Curator](../issue-curator/SKILL.md)'s engineering lens turns duplication and
 layering drift into `suggestion` issues, and `/next` reaches them after everything ranked above
 them. Meanwhile the repo has **no dead-code tooling at all**, its anti-pattern catalogue
-([`spec/engineering.md`](../../../spec/engineering.md) § Correctness rules) is enforced only by
+(the rule sections of [`spec/engineering.md`](../../../spec/engineering.md), which it says to read
+as a checklist) is enforced only by
 whoever happens to be reading, [`.dependency-cruiser-known-violations.json`](../../../.dependency-cruiser-known-violations.json)
 "exists to shrink" and does not, and the [`.jscpd.json`](../../../.jscpd.json) threshold only
 ratchets down when someone consolidates. This routine is the scheduled hand that does the
@@ -51,8 +52,10 @@ form", not "this has a typo". Unattended, that judgement is bounded (Phase 2), n
 **3. Never trade one smell for another.** A hygiene fix leaves the codebase with **fewer copies,
 fewer lines, fewer ways to do the same thing, or stricter types** — at least one, and never the
 reverse of any. #1539's cautionary case: to remove one `@nestjs/common` import from `domain/`, it
-wrapped the same call in four copies of a try/catch, then filed #1538 to dedupe what it had just
-written. The "clean" fix that adds duplication is the wrong fix; the right one there is a typed
+wrapped the same call in a try/catch at four sites — three byte-identical copies in application
+services, plus one inside the storage adapter's existing local helper — then filed #1538 to
+dedupe the three (the fourth is passed as a bare `forEach` callback and must stay as it is; #1538
+says so). The "clean" fix that adds duplication is the wrong fix; the right one there is a typed
 domain error translated once at the boundary. If you cannot see the right fix, **file it with the
 design question** — do not ship the mechanical half.
 
@@ -62,8 +65,8 @@ design question** — do not ship the mechanical half.
 
 | | |
 | --- | --- |
-| **May edit** | `apps/**` and `packages/**` product code and their tests; `scripts/**` for the same hygiene rules (dedupe, dead code, a stale baseline entry) — never what a gate *enforces*; the gate baselines (`.dependency-cruiser-known-violations.json` via `--update-baseline`, the `.jscpd.json` threshold, downward only); the **relevant** `docs/` or `spec/` file when a fix moves or renames something a doc cites; this skill directory (self-maintenance) |
-| **Never** | `supabase/migrations/**` · `.github/workflows/**` · any dependency version (`package.json` deps, `package-lock.json`) · `apps/landing` **visuals** (frozen — [`spec/ui/landing/README.md`](../../../spec/ui/landing/README.md); dead code and correctness there are fair game) · the seven frozen mobile files ([`spec/ui/mobile/navigation.md`](../../../spec/ui/mobile/navigation.md) § Hotspot freeze) · the legacy `@repo/theme` exports landing consumes · `spec/behavior/**` and `spec/product/**` (intent — never "corrected" to match code) · ADRs (append-only) · `.buildpad/**` · a gate's posture (required ↔ advisory is the owner's call: [`QUALITY_GATES.md`](../../../docs/internal/ci-cd/QUALITY_GATES.md)) · `FRAPP_SKIP_REVIEW_GATE` |
+| **May edit** | `apps/**` and `packages/**` product code and their tests; under `scripts/**`, dead code and stale allowlist entries only — the check, CI and deploy scripts there *are* the gates, so their logic is never in scope; the gate baselines, downward only (`.dependency-cruiser-known-violations.json` via `--update-baseline` after a clean run, the `.jscpd.json` threshold); **path citations** in any doc — `spec/behavior/**` included — when a fix moves or renames a file (that is doc-sync, not intent), and the **relevant** `docs/` file when a fact it states moved; this skill directory (self-maintenance) |
+| **Never** | `supabase/migrations/**` · `.github/workflows/**` · any dependency version (`package.json` deps, `package-lock.json`) · `apps/landing` **visuals** (frozen — [`spec/ui/landing/README.md`](../../../spec/ui/landing/README.md); dead code and correctness there are fair game) · the seven frozen mobile files ([`spec/ui/mobile/navigation.md`](../../../spec/ui/mobile/navigation.md) § Hotspot freeze) · the legacy `@repo/theme` exports landing consumes · `spec/behavior/**` and `spec/product/**` prose (intent — never "corrected" to match code; only a path citation there may change, per the row above) · ADRs (append-only) · `.buildpad/**` · a gate's posture (required ↔ advisory is the owner's call: [`QUALITY_GATES.md`](../../../docs/internal/ci-cd/QUALITY_GATES.md)) · `FRAPP_SKIP_REVIEW_GATE` |
 | **Volume** | at most **one** PR per run, on `claude/hygiene-scan-YYYY-MM-DD` (append `-2` if that branch exists); at most **one open** Hygiene Scan PR at a time; at most **~3** net-new issues per run. Never merge — a human does. |
 
 **Behaviour change is out of scope**, with one exception. Observable behaviour is anything a test,
@@ -71,9 +74,14 @@ an API consumer, a user, or the database can see: response status, shape or mess
 output; persisted data; the order or timing of side effects. A hygiene fix preserves all of it. The
 exception is a **bug found inside the pattern you are already cleaning**, small enough to carry a
 test that fails before and passes after: fix it, and give it its own heading in the PR body so the
-reviewer sees a behaviour change and not a refactor. A security or tenant-isolation bug is never
-"hygiene": file it `P1`/`P2` immediately with the evidence, lead the run report with it, and fix it
-in this PR only when it is a one-line change the new test covers.
+reviewer sees a behaviour change and not a refactor. "Bug" here means code that violates what its
+own tests, its own comments, or the spec *already* require, in a way no caller could be relying on
+— an off-by-one, a guard that can never fire, a `catch` that swallows the error it logs. Where spec
+and code disagree about what *should* happen, that is a contradiction to file, never a bug to fix
+(`AGENTS.md` § Spec vs code). A security or tenant-isolation bug is never "hygiene": file it
+`P1`/`P2` immediately with the evidence and lead the run report with it; fix it in this run's PR
+only when there is one and the change is a single line the new test covers, otherwise leave it to
+`/next`, which picks a `P1` first.
 
 ---
 
@@ -85,7 +93,9 @@ In this order, and actually read them — the run's findings are only as good as
 
 1. `AGENTS.md` § Tech debt protocol, § Spec vs code, § Documentation sync mandate.
 2. [`spec/engineering.md`](../../../spec/engineering.md) § Changing existing code (the rebuild-not-patch
-   standard and its sequencing rule) and § Correctness rules (the anti-pattern checklist).
+   standard and its sequencing rule) and the rule sections after it — Identity and ownership,
+   Catalog lookups and defaults, Seeds and shared state, Input handling, Empty states,
+   Accessibility, Aggregations, Privacy — which the doc itself says to treat as a checklist.
 3. [`signet-cutover`](../signet-cutover/SKILL.md) — what is Signet, what is legacy, what is frozen.
    The `apps/web` migration window is **closed** ([`ui-development`](../ui-development/SKILL.md)):
    a legacy class or a live `dark:` variant on a dashboard screen is a defect now, not a pending slice.
@@ -114,7 +124,7 @@ cycle is stable across years; a leap year shifts it by one day, which is accepte
 | Group | Slice (read it whole) | Grounding skill |
 | --- | --- | --- |
 | 0 | `apps/api/src/domain`, `apps/api/src/application` | `api-development` |
-| 1 | `apps/api/src/interface`, `apps/api/src/infrastructure`, `apps/api/src/modules`, `apps/api/src/config`, `packages/api-sdk`, `packages/validation` | `api-development` |
+| 1 | `apps/api/src/interface`, `apps/api/src/infrastructure`, `apps/api/src/modules`, `apps/api/src/config`, the `apps/api/src/*.ts` bootstrap files, `apps/api/test`, `packages/api-sdk` (hand-written code only), `packages/validation`; `supabase/` is read for context and is **flag-only** | `api-development` |
 | 2 | `apps/web`, `packages/theme`, `packages/color`, `packages/chapter-theme`, `packages/brand-assets`, `packages/formatting` | `ui-development`, `signet-cutover` |
 | 3 | `apps/mobile`, `packages/chat-core`, `packages/chat-integrations`, `packages/hooks` | `ui-development`, `signet-cutover`, `realtime-resilience` |
 | 4 | `packages/org-archetypes`, `packages/eslint-config`, `packages/typescript-config`, `scripts/`, `apps/landing` (dead code and correctness only — never visuals), and the gates' own baselines | `testing`, `QUALITY_GATES.md` |
@@ -124,6 +134,14 @@ occurs (Phase 2's whole-pattern rule), and the repo-wide lenses in Phase 1 run e
 differ in reading weight; budget for it and say in the report where you stopped. **Do not re-scope
 the slice to balance it** — a slice that depends on judgement is not reproducible, and
 `ROUTINES.md` § Verify asserts that two runs on one day take the same one.
+
+**Read the slice in a fixed order and record where you stopped.** Take `git ls-files` over the
+group's directories in its own order, skip generated files (`packages/api-sdk/src/types.ts`,
+`apps/api/openapi.json`, `*.d.ts`, snapshots — `check:api-contract` regenerates the first two, so
+"unused" there is not a finding), and read top to bottom. When the run budget ends before the list
+does, the ledger's `carry:` line names the last file reached, and the next run of the same group
+starts from the file after it rather than from the top. Not finishing group 2 or 3 in one pass is
+normal; a group that is never finished is a finding for the owner.
 
 ### 0.3 Run the gates and record their baselines
 
@@ -149,13 +167,19 @@ in Phase 3, and read a changed artifact as "this fix changed the contract", i.e.
 
 ### 0.4 Read what earlier runs already decided
 
-- **The ledger.** `search_issues query:"Hygiene Scan — ledger in:title"` — a `routine-state` issue
-  (create it on first run, labelled `routine-state` and nothing else, and ask the owner to pin it).
-  Read its last ~10 comments (`issue_read get_comments`). A `declined:` line is a standing decision
-  for 30 days unless `git log` shows the file changed since; a `carry:` line is the previous run
-  talking to you. Never rewrite the ledger's body — it is append-only (Phase 5).
-- **The open PR.** `list_pull_requests state:open` filtered to `head` starting `claude/hygiene-scan-`.
-  If one is open, this run **services it and files only** — see 0.5.
+- **The ledger.** `search_issues query:"Hygiene Scan — ledger"` — a `routine-state` issue. The
+  matcher is semantic, so **a hit counts only if its title is exactly `Hygiene Scan — ledger` and
+  it carries `routine-state`**; the PR Follow-ups tracking issue is the near-match it will offer
+  you. No such issue → create it (`issue_write`, labelled `routine-state` and nothing else — the
+  carve-out `GITHUB_PM.md` grants routine infrastructure, the same one `pr-followups` uses — and
+  ask the owner to pin it). Read the **newest** comments: `issue_read get` gives the `comments`
+  count, and `get_comments` pages oldest-first, so fetch `perPage: 30` at `page: ceil(count / 30)`
+  (and the page before it when that one holds fewer than ten). A `declined:` line is a standing
+  decision for 30 days unless `git log` shows the file changed since; a `carry:` line is the
+  previous run talking to you. Never rewrite the ledger's body — it is append-only (Phase 5).
+- **The open PR.** `list_pull_requests state:open base:main` — the `head` filter is an exact
+  `owner:branch`, not a prefix, so page through and filter client-side on `head.ref` starting
+  `claude/hygiene-scan-`. If one is open, this run **services it and files only** — see 0.5.
 - **Open issues.** `search_issues` for `fp=hygiene/` (open **and** closed) so you never re-file, and
   for the key terms of each candidate so you find the Curator's `suggestion` that already tracks
   it — fixing that one and writing `Fixes #N` is the best outcome a run can have. Confirm a hit
@@ -168,7 +192,9 @@ in Phase 3, and read a changed artifact as "this fix changed the contract", i.e.
 Reviewer bandwidth is the scarce resource, and stacked hygiene PRs conflict with each other. So:
 check the open PR's mergeability, CI on its head, and unresolved review threads, and act on every
 one per `AGENTS.md` § Autonomous PR lifecycle — merge `origin/main` into it, fix a real failure,
-answer or implement review asks. Then run Phase 0–1 and Phase 5 in full, but **open no second PR**:
+answer or implement review asks. Every push to that branch goes through Phase 4's review gate
+exactly as a new PR would, and never widens it beyond its theme. Then run Phase 0–1 and Phase 5
+in full, but **open no second PR**:
 findings go to the ledger (and up to the filing cap to the tracker), and the report says which PR
 is still waiting on a human.
 
@@ -185,8 +211,8 @@ consumers, name the rule. A candidate without a rule and a consumer check is not
 - **Gate output.** Every grandfathered `dependency-cruiser` entry, every `jscpd` clone above
   `minLines`, every `apps/api` lint warning, every coverage-ledger backlog entry. These are
   findings the repo has *already made* — you are choosing which one to close.
-- **Named anti-patterns, by grep.** The canonical bad forms from `spec/engineering.md`
-  § Correctness rules (`+e.target.value`, an unguarded `ARCHETYPES[…]` subscript, a hardcoded actor
+- **Named anti-patterns, by grep.** The canonical bad forms from `spec/engineering.md`'s rule
+  sections (`+e.target.value`, an unguarded `ARCHETYPES[…]` subscript, a hardcoded actor
   id, a `<div onClick>`, a division without a zero guard, a `.single()` where the row may be
   absent, an `as never` write cast, a bare `SupabaseClient` injection, a raw `fetch` where
   `@repo/hooks` owns the data layer) and the layering red flags from
@@ -296,14 +322,19 @@ decision" and says why is a pass; a run that manufactures a change to show work 
    are fine when the files are disjoint; each reports a diff description, not "done".
 2. **Verify against the Phase 0.3 baselines**, in the sandbox, and record the outcome for the PR body:
    `npm run check-types`; `npm run lint` (the `apps/api` warning count did not rise);
-   `npm run test -w <workspace>` for every workspace touched; `npm run check:dep-cruiser` (no new
-   violation; run with `-- --update-baseline` when a grandfathered or stale entry is gone);
-   `npm run check:duplication` (the percentage did not rise; lower the `.jscpd.json` threshold to
-   just above the new number when a consolidation moved it); `npm run check:api-contract` when
-   any file under `apps/api/src` changed (a changed artifact means the contract changed — back the
-   fix out); `npm run test:ci-scripts` when `scripts/` changed; `npm run check:doc-paths` when
-   anything a doc cites moved. `npm run ci:local-gate` runs lint, types, API tests, the contract
-   check and the audit gate in one go and is the parity run to do last.
+   `npm run test -w <workspace> --if-present` for every workspace touched (some packages have no
+   suite — say so, don't record a missing script as a failure); `npm run check:dep-cruiser` **plain
+   first**, and only when it reports `0 new` run `-- --update-baseline` for a grandfathered or
+   stale entry that is gone — the runner re-records *every* current violation, so a re-record with
+   a new violation present grows the baseline without a red signal; the JSON diff must be
+   **deletions only**, and anything else is a fix to back out; `npm run check:duplication` (the
+   percentage did not rise; lower the `.jscpd.json` threshold to just above the new number when a
+   consolidation moved it, never below it); `npm run check:api-contract` when any file under
+   `apps/api/src` changed (a changed artifact means the contract changed — back the fix out);
+   `npm run test:ci-scripts` when `scripts/` changed; `npm run check:doc-paths` when anything a
+   doc cites moved. `npm run ci:local-gate` runs lint, types, API tests, the contract check, the
+   docs-sync and secret scans, migration safety and the audit gate in one go and is the parity
+   run to do last.
 3. **A check you could not run is reported as not run**, never as passed — the same honesty rule
    every routine carries. If the sandbox cannot run a suite, say so in the PR body and the report.
 4. **Doc-sync.** A moved or renamed file that a doc cites gets the doc fixed in the same PR
@@ -331,11 +362,16 @@ decision" and says why is a pass; a run that manufactures a change to show work 
    run). Any behaviour change sits under its own heading. Close tracked work with `Fixes #N`. Label
    `release:patch` (and `no-doc-change-needed` when that is honest). If the GitHub MCP is
    unavailable, push the branch, report its name, and stop — there is no sanctioned fallback.
-3. **Subscribe and drive it to green** (`subscribe_pr_activity`, then `AGENTS.md` § Autonomous
-   PR lifecycle): a real failure is in code you just touched and is yours; an infra death is a
-   re-run; a review comment is addressed or answered. Never widen the PR to chase a red check
-   outside your theme, never push an empty commit to kick CI, and **never merge**. The Routines
-   setting *Autofix on PR create* is the backstop for a run that ends before CI does.
+3. **Fix your own CI, then stop — do not subscribe.** `AGENTS.md` § Autonomous PR lifecycle
+   (`doneMeansMerged`, subscribe, babysit) is written for interactive sessions and does not apply
+   here: merging is forbidden, and the Routines setting *Autofix on PR create* is **on** for this
+   routine, so a routine session that also subscribes puts two drivers on one branch pushing
+   different fixes. Instead, before the report, read the PR's check runs once
+   (`pull_request_read get_check_runs`); a failure in code you just touched is yours — fix it,
+   re-review (the marker keys on HEAD), push; an infra death is a re-run. Never widen the PR to
+   chase a red check outside your theme, never push an empty commit to kick CI, and **never
+   merge**. Then the run ends with the report; autofix is the single driver after that, and a
+   review comment waits for the next run's Phase 0.5.
 
 ---
 
@@ -362,7 +398,7 @@ and never rewrite its body (no MCP read returns a body faithfully — `ROUTINES.
 ```text
 hygiene-scan run: v1 date=YYYY-MM-DD slice=<0-4> pr=#<N>|none filed=#<a>,#<b>|none
 fixed:    <one line per theme or cleanup, rule restored, sites>
-declined: fp=hygiene/<slug> file=<path> — <reason>        (one per line; standing for 30 days)
+declined: fp=hygiene/<slug> file=<path> — <reason>        (new this run only, one per line; standing for 30 days)
 found:    fp=hygiene/<slug> file=<path> — <one line>      (past the filing cap; a later run may promote)
 carry:    <what the next run should know: where you stopped, a baseline that can ratchet, a PR waiting on a human>
 ```

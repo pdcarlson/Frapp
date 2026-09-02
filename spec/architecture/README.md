@@ -902,14 +902,15 @@ routine may not rewrite one to match today's code.
 **Context:** amendment 6 left four Routines that between them keep the tracker and the docs
 honest and never touch product code. Code hygiene had the problem docs had before amendment 6:
 the Curator's engineering lens *files* it, and filed hygiene ages. The repo has no dead-code
-tooling at all; its anti-pattern catalogue (`spec/engineering.md` § Correctness rules) is
+tooling at all; its anti-pattern catalogue (the rule sections of `spec/engineering.md`) is
 enforced only by whoever happens to be reading; `dependency-cruiser` carries seven grandfathered
 violations that "exist to shrink"; and `jscpd` is a repo-wide percentage that only ratchets down
 when someone consolidates. A first scheduled sweep landed with #1539 as a skill plus eight fixes,
 without a runbook entry or an ADR, so the docs contradicted the repo: `ROUTINES.md` still said
 four routines under a product-code ban that the fifth skill on `main` broke. Its fixes also showed
-what an ungrounded sweep does: it traded one domain-layer import for four copies of a try/catch
-(then filed #1538 to dedupe what it had just written), restyled a line of the frozen `apps/landing`
+what an ungrounded sweep does: it traded one domain-layer import for a try/catch at four sites,
+three of them byte-identical (then filed #1538 to dedupe those three), restyled a line of the
+frozen `apps/landing`
 surface on the strength of an "established idiom" that exists nowhere in the repo, and moved a file
 out of a grandfathered violation without shrinking the baseline.
 
