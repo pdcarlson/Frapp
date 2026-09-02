@@ -51,6 +51,20 @@ export class SupabaseBackworkDepartmentRepository implements IBackworkDepartment
     return created;
   }
 
+  async findById(
+    id: string,
+    chapterId: string,
+  ): Promise<BackworkDepartment | null> {
+    const { data, error } = await this.supabase
+      .from('backwork_departments')
+      .select('*')
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
   async update(
     id: string,
     chapterId: string,
@@ -69,5 +83,14 @@ export class SupabaseBackworkDepartmentRepository implements IBackworkDepartment
       .maybeSingle();
     if (error) throw error;
     return updated;
+  }
+
+  async delete(id: string, chapterId: string): Promise<void> {
+    const { error } = await this.supabase
+      .from('backwork_departments')
+      .delete()
+      .eq('id', id)
+      .eq('chapter_id', chapterId);
+    if (error) throw error;
   }
 }
