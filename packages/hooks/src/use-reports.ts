@@ -121,7 +121,11 @@ export function usePointsReport() {
       body,
     }: {
       format?: ReportFormat;
-      body: { user_id?: string; window?: "all" | "semester" | "month" };
+      body: {
+        user_id?: string;
+        window?: "all" | "semester" | "month";
+        semester_archive_id?: string;
+      };
     }) => {
       const { data, error, response } = await client.POST(
         "/v1/reports/points",
