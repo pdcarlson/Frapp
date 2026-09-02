@@ -10,9 +10,11 @@
 // (unique indexes, generated columns), and a two-part RLS tier:
 //
 //   - POSTURE, from the catalog — every public table has RLS enabled (Frapp's
-//     default-deny invariant), plus the chat hot-path posture (default-deny
-//     channels/messages; ownership-scoped reaction policies) and an exact
-//     policy inventory.
+//     default-deny invariant), plus the chat hot-path posture (`chat_channels`
+//     default-deny with no policies; `chat_messages` and `chat_message_actions`
+//     carry client-read policies that must stay scoped to `auth.uid()` — "no
+//     policies" stopped being the invariant for `chat_messages` when
+//     20260816140000 gave it one) and an exact policy inventory.
 //   - ENFORCEMENT, black-box — a non-owner `rls_probe` role with `auth.uid()`
 //     and `auth.role()` stubbed to a signed-in client reads the tables for
 //     real. Positive sets for `chat_messages` / `chat_message_actions`, which
@@ -1824,6 +1826,26 @@ if (readSeeded) {
       { who: "an anonymous reader (no JWT, auth.role() = 'anon')", uid: null },
     ];
 
+    // Asserted once, before any table: every `reads 0 rows` line below is only
+    // meaningful because `rls_probe` is a MEMBER of `authenticated`. Without
+    // that membership a `to authenticated` policy simply does not bind the
+    // probe, so the read is answered by default-deny and the assertion passes
+    // while testing nothing. Today that membership is also load-bearing for the
+    // chat visibility sets, which would fail loudly — but this tier must not
+    // borrow its validity from another tier's failure.
+    {
+      const name = "rls_probe is a member of authenticated (so `to authenticated` policies bind it)";
+      const res = await db.query(
+        `select pg_has_role('rls_probe', 'authenticated', 'member') as ok`,
+      );
+      if (res.rows[0].ok === true) {
+        console.log(`OK    ${name}`);
+      } else {
+        missing += 1;
+        console.log(`MISS  ${name}\n        ↳ every deny assertion below is vacuous for such a policy`);
+      }
+    }
+
     for (const table of denySeeded ? DENY_TABLES : []) {
       // Both guards below `continue` on failure rather than falling through.
       // Printing four confident `OK ... reads 0 rows` lines underneath a MISS
@@ -1867,10 +1889,17 @@ if (readSeeded) {
       // command. `supabase_auth_admin` is excluded: it is a Supabase-internal
       // role, not a client, and `members` legitimately carries one such policy
       // on hosted projects.
+      // `permissive = 'PERMISSIVE'` is not optional, and every sibling policy
+      // check in this file filters it for the same reason: a RESTRICTIVE policy
+      // can only ever NARROW access, so flagging one would fail CI on a
+      // legitimate hardening — e.g. `as restrictive for all to authenticated
+      // using (false)` — and the path of least resistance out of a red build is
+      // to delete the hardening.
       const clientPolicies = await db.query(
         `select policyname, cmd, roles::text as roles
            from pg_policies
           where schemaname = 'public' and tablename = '${table}'
+            and permissive = 'PERMISSIVE'
             and roles <> '{supabase_auth_admin}'`,
       );
       const anyCmdName = `${table} carries no client-reachable policy of ANY command (covers the write path)`;
