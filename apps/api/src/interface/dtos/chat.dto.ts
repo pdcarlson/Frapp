@@ -392,6 +392,32 @@ export class KindNotificationPreferenceDto {
   level: (typeof CHAT_NOTIFICATION_LEVELS)[number] | null;
 }
 
+/**
+ * The DELETE response, separate from {@link KindNotificationPreferenceDto}
+ * because its `kind` enum is genuinely wider. The clearer accepts any
+ * `chat_messages.kind`, not just the settable subset, so that a row written
+ * for a kind that has since become non-settable can still be removed; typing
+ * the echo on the narrow enum would either be a lie or force the route to
+ * refuse exactly the rows it exists to clean up.
+ */
+export class ClearedKindNotificationPreferenceDto {
+  @ApiProperty({
+    enum: CHAT_MESSAGE_KINDS,
+    description:
+      'The kind whose override was cleared. Wider than the settable set on purpose — see the DELETE route.',
+  })
+  kind: (typeof CHAT_MESSAGE_KINDS)[number];
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    enum: CHAT_NOTIFICATION_LEVELS,
+    description:
+      'Always null: the override is gone, and what the kind now falls back to depends on the channel.',
+  })
+  level: null;
+}
+
 /** Bounds one request to roughly one page of distinct message authors (#1231). */
 export const MAX_AUTHOR_AVATAR_PATHS_PER_REQUEST = 50;
 

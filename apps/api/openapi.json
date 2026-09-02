@@ -1999,7 +1999,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/KindNotificationPreferenceDto"
+                  "$ref": "#/components/schemas/ClearedKindNotificationPreferenceDto"
                 }
               }
             }
@@ -8011,6 +8011,42 @@
           }
         },
         "required": [
+          "level"
+        ]
+      },
+      "ClearedKindNotificationPreferenceDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text",
+              "event",
+              "task",
+              "poll",
+              "dues",
+              "points",
+              "hours",
+              "system_audit",
+              "imported",
+              "loading",
+              "announcement"
+            ],
+            "description": "The kind whose override was cleared. Wider than the settable set on purpose — see the DELETE route."
+          },
+          "level": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "all",
+              "mentions",
+              "off"
+            ],
+            "description": "Always null: the override is gone, and what the kind now falls back to depends on the channel."
+          }
+        },
+        "required": [
+          "kind",
           "level"
         ]
       },

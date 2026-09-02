@@ -71,6 +71,15 @@ export type SettableNotificationKind =
   (typeof SETTABLE_NOTIFICATION_KINDS)[number];
 
 /**
+ * Is this string any known message kind at all? Broader than
+ * {@link isSettableNotificationKind}, and the right check wherever accepting a
+ * non-settable kind is harmless — clearing a stored preference, notably.
+ */
+export function isChatMessageKind(kind: string): kind is ChatMessageKind {
+  return (CHAT_MESSAGE_KINDS as readonly string[]).includes(kind);
+}
+
+/**
  * Type predicate, not a bare boolean helper, so a caller that validates a
  * path parameter also *narrows* it — the response DTO is typed on the union,
  * and without the narrowing the only way to satisfy it would be a cast, which

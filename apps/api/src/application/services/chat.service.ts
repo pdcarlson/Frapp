@@ -58,7 +58,9 @@ import type {
   ChannelUnreadCount,
 } from '../../domain/entities/chat.entity';
 import {
+  CHAT_MESSAGE_KINDS,
   SETTABLE_NOTIFICATION_KINDS,
+  isChatMessageKind,
   isSettableNotificationKind,
 } from '../../domain/entities/chat.entity';
 import { NotificationService } from './notification.service';
@@ -1329,9 +1331,17 @@ export class ChatService {
    * The counterpart to the setter, and not optional surface: because a kind
    * override outranks every channel's name-derived default, an override a
    * member cannot remove is a permanent, invisible downgrade of
-   * `#announcements`. The channel arm needs no equivalent — writing a
-   * channel's own default back is behaviourally identical to having no row,
-   * so that arm has no unreachable state.
+   * `#announcements`.
+   *
+   * **Validated against every `CHAT_MESSAGE_KIND`, not the settable subset**,
+   * which is deliberate and is the one place these two routes disagree.
+   * Deleting a row is never harmful, and gating the delete on settability
+   * creates exactly the unremovable state this route exists to prevent:
+   * moving a kind into {@link NON_SETTABLE_NOTIFICATION_KINDS} — as `loading`
+   * just was — would strand any row already written for it, unreachable by
+   * both the setter (400) and the clearer (400), while the worker went on
+   * consulting it. The kind is still checked, so a typo cannot silently
+   * delete nothing.
    *
    * Idempotent: clearing an override that is not set is a no-op, not a 404.
    * The caller's intent ("I want no override for this kind") is satisfied
@@ -1343,10 +1353,10 @@ export class ChatService {
     userId: string,
     kind: string,
   ) {
-    if (!isSettableNotificationKind(kind)) {
+    if (!isChatMessageKind(kind)) {
       throw new BadRequestException(
-        `Unsupported notification kind '${kind}'. Settable kinds: ` +
-          SETTABLE_NOTIFICATION_KINDS.join(', '),
+        `Unknown message kind '${kind}'. Known kinds: ` +
+          CHAT_MESSAGE_KINDS.join(', '),
       );
     }
 

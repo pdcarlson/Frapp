@@ -3184,6 +3184,18 @@ export interface components {
              */
             level: "all" | "mentions" | "off";
         };
+        ClearedKindNotificationPreferenceDto: {
+            /**
+             * @description The kind whose override was cleared. Wider than the settable set on purpose — see the DELETE route.
+             * @enum {string}
+             */
+            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "system_audit" | "imported" | "loading" | "announcement";
+            /**
+             * @description Always null: the override is gone, and what the kind now falls back to depends on the channel.
+             * @enum {string|null}
+             */
+            level: "all" | "mentions" | "off" | null;
+        };
         CreateChannelDto: {
             name: string;
             description?: string;
@@ -5186,7 +5198,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["KindNotificationPreferenceDto"];
+                    "application/json": components["schemas"]["ClearedKindNotificationPreferenceDto"];
                 };
             };
         };

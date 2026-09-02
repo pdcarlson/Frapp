@@ -649,9 +649,15 @@ After any rollback event:
   is on `scope_id`, which is NULL on every `kind` row, and unique indexes treat
   NULLs as distinct — so it constrains the kind arm not at all and cannot be an
   `ON CONFLICT` target for it. `check:pglite-migrations` asserts both plain
-  indexes exist with the right shape, so this is a standing gate rather than a
-  one-time observation — a rollback that drops the index without reverting the
-  API will fail that check.
+  indexes exist with the right shape, so the *migration set* is gated rather
+  than resting on a one-time manual observation: deleting or weakening either
+  migration file fails CI.
+* **That gate does not watch a live database.** It replays
+  `supabase/migrations/*.sql` into a fresh in-process PGlite, so a `DROP INDEX`
+  executed against staging or production is invisible to it — CI stays green
+  while the endpoint 500s. Performing the rollback above therefore requires
+  reverting the API yourself, in the stated order; nothing will catch it for
+  you.
 
 ## Rollback the chat-mute upsert target
 

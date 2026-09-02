@@ -49,6 +49,7 @@ import {
   ChannelNotificationPreferenceDto,
   SetKindNotificationLevelDto,
   KindNotificationPreferenceDto,
+  ClearedKindNotificationPreferenceDto,
   ResolveAuthorAvatarsDto,
 } from '../dtos/chat.dto';
 import type { ChannelType } from '../../domain/entities/chat.entity';
@@ -152,12 +153,12 @@ export class ChatController {
     summary:
       "Clear the caller's override for one message kind, returning it to the default",
   })
-  @ApiOkResponse({ type: KindNotificationPreferenceDto })
+  @ApiOkResponse({ type: ClearedKindNotificationPreferenceDto })
   async clearKindNotificationLevel(
     @Param('kind') kind: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-  ): Promise<KindNotificationPreferenceDto> {
+  ): Promise<ClearedKindNotificationPreferenceDto> {
     return this.chatService.clearKindNotificationLevel(chapterId, userId, kind);
   }
 

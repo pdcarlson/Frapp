@@ -2698,9 +2698,29 @@ describe('ChatService', () => {
       expect(mockChatNotificationPrefs.deleteKindLevel).not.toHaveBeenCalled();
     });
 
-    it('refuses a non-settable kind', async () => {
+    /**
+     * Deliberately NOT symmetric with the setter, which refuses these. A row
+     * for a kind that has since left the settable set is exactly the state
+     * this route exists to clear: refusing it here would strand the row,
+     * unreachable by both routes, while the worker went on consulting it.
+     */
+    it('clears a kind that is no longer settable, so no row is ever stranded', async () => {
+      mockChatNotificationPrefs.deleteKindLevel.mockResolvedValue(undefined);
+
       await expect(
-        service.clearKindNotificationLevel('ch-1', 'user-1', 'imported'),
+        service.clearKindNotificationLevel('ch-1', 'user-1', 'loading'),
+      ).resolves.toEqual({ kind: 'loading', level: null });
+
+      expect(mockChatNotificationPrefs.deleteKindLevel).toHaveBeenCalledWith(
+        'user-1',
+        'ch-1',
+        'loading',
+      );
+    });
+
+    it('still refuses a string that is not a message kind at all', async () => {
+      await expect(
+        service.clearKindNotificationLevel('ch-1', 'user-1', 'not_a_kind'),
       ).rejects.toThrow(BadRequestException);
 
       expect(mockChatNotificationPrefs.deleteKindLevel).not.toHaveBeenCalled();
