@@ -229,7 +229,10 @@ not from an agent session.
   [`AGENT_INFRA.md`](../../../docs/internal/ci-cd/AGENT_INFRA.md).
 - **Provider APIs** (Render, Vercel, Sentry, PostHog) — blocked to direct
   `fetch`, reached via **MCP**, which does not go through the network allowlist at all. Use
-  [`infrastructure-research`](../infrastructure-research/SKILL.md). Exception: **Infisical
+  [`infrastructure-research`](../infrastructure-research/SKILL.md). (The live allowlist carries
+  an unexplained bare `vercel.com` line — drift, not a sanctioned direct-`fetch` path; see
+  [`CLOUD_SANDBOX.md`](../../../docs/internal/environment/CLOUD_SANDBOX.md#whats-configured-in-the-web-ui).)
+  Only sanctioned exception: **Infisical
   has no MCP connector** — it is reached by direct `fetch` via the allowlisted
   `app.infisical.com` instead ([#1279](https://github.com/pdcarlson/Frapp/issues/1279)); in
   an environment without that allowlist line, report Infisical state as unverified.

@@ -58,14 +58,25 @@ by the service token — scoped `dev` + `staging` **read-only**, never `prod` �
 network. Omit it and secrets stay unreadable from the sandbox
 (credential details: [`AGENT_CREDENTIALS.md`](./AGENT_CREDENTIALS.md)).
 
-The eighth, `vercel.com`, was **observed in the live environment on 2026-09-02** while
-confirming the allowlist for [#1447](https://github.com/pdcarlson/Frapp/issues/1447); it was
-not previously recorded here, and this entry documents what is configured rather than a
-requirement anything is known to depend on. It is a **bare apex**, so by the matching rules in
-[Wildcard semantics](#wildcard-semantics--weaker-than-the-docs-imply) it permits `vercel.com`
-alone — not `*.vercel.com`, and no Frapp production host. Do not delete it on the assumption it
-is stray without first checking what breaks; do not treat its presence as precedent for adding
-undocumented entries.
+The eighth, `vercel.com`, is **unexplained**, and is recorded here only because it is
+**observed in the live environment as of 2026-09-02** — read out of the settings box while
+confirming the allowlist for [#1447](https://github.com/pdcarlson/Frapp/issues/1447). Nothing in
+this repo asks for it, no script or workflow is known to depend on it, and it is not probed by
+`scripts/cloud-sandbox-egress-probe.sh`, so its absence would not be noticed either. It also sits
+against the posture in [What this does not unlock](#what-this-does-not-unlock) below, which says
+provider APIs are reached over MCP rather than the allowlist.
+
+Two things are worth separating. It grants **no reach to any Frapp production host** — none of
+`api.frapp.live`, `app.frapp.live`, or the `frapp-prod` Supabase ref is under `vercel.com` — so it
+is not a second instance of the [#1447](https://github.com/pdcarlson/Frapp/issues/1447)
+regression, which is why documenting it does not reopen that issue. But whether a **bare** entry
+also permits its subdomains is **not known**: the observations under
+[Wildcard semantics](#wildcard-semantics--weaker-than-the-docs-imply) probed `*.` entries only,
+and nothing here establishes the converse. Do not cite that section for a bare-entry rule.
+
+**This entry needs an owner decision, not further documentation:** confirm what it is for and
+record that here, or remove it from the environment and delete this paragraph. Until then, treat
+it as drift rather than as precedent for adding undocumented entries.
 
 **Three of the staging four are literal hosts on purpose.** Both wildcards a reader reaches for —
 `*.frapp.live` and `*.supabase.co` — silently include **production**, because prod and
@@ -443,7 +454,11 @@ configuration change apart. Staging is the blast radius we accept. **Enumerate.*
   a staging user; `scripts/ci/staging-conformance.mjs` already defines the convention
   (`STAGING_SMOKE_USER_EMAIL` / `STAGING_SMOKE_USER_PASSWORD`). Use a dedicated smoke
   account, never a real member's.
-- **Provider APIs.** Render, Vercel, Sentry, and PostHog stay blocked to direct `fetch`;
+- **Provider APIs.** Render, Vercel, Sentry, and PostHog stay blocked to direct `fetch` — with
+  one **unexplained** exception, a bare `vercel.com` line the live allowlist carries and this
+  repo never asked for (see [What's configured in the web
+  UI](#whats-configured-in-the-web-ui)); it is drift pending removal or justification, not a
+  sanctioned path, so do not build on it. Otherwise
   agents fall back to **MCP connectors**, which do not go through this allowlist at all —
   those parts of the MCP-based
   [`infrastructure-research`](../../../.claude/skills/infrastructure-research/SKILL.md)
@@ -463,8 +478,10 @@ configuration change apart. Staging is the blast radius we accept. **Enumerate.*
   (see [`AGENT_CREDENTIALS.md`](./AGENT_CREDENTIALS.md)). Only raw-`fetch` scripts
   like `staging-conformance.mjs` notice the difference for the other four, and those run in
   CI, where the allowlist does not apply.
-- **Per-deployment Vercel URLs.** Only the aliased staging hostnames are allowlisted, not
-  the unique `*.vercel.app` URL each deployment also gets. When the alias lags behind the
+- **Per-deployment Vercel URLs.** Of the deployment surfaces, only the aliased staging
+  hostnames are allowlisted, not the unique `*.vercel.app` URL each deployment also gets.
+  (The unexplained bare `vercel.com` entry noted above is the dashboard apex and does not
+  cover `*.vercel.app` either.) When the alias lags behind the
   latest `main` build — the known Vercel behaviour described in
   [`../ops/DEPLOYMENT.md`](../ops/DEPLOYMENT.md) — you can reach what the alias currently
   points at, not the newer deployment behind it. Check the alias state via the Vercel MCP
