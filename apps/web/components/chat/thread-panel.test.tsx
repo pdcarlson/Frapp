@@ -185,3 +185,81 @@ describe("ThreadPanel keyboard behavior (#396)", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Thread replies are real messages too — edit/delete are wired through the
+ * panel exactly like `MessageTimeline` wires them for the centre pane, so a
+ * moderator (or the author) doesn't lose the affordance just because a
+ * message happens to be a reply.
+ */
+describe("ThreadPanel edit/delete wiring", () => {
+  it("offers Edit on the viewer's own parent message and Delete on the other's reply with channels:manage", () => {
+    const parent = message({
+      id: "parent-1",
+      client_message_id: "parent-1",
+      sender_id: VIEWER,
+    });
+    const reply = message({
+      id: "reply-1",
+      client_message_id: "reply-1",
+      reply_to_id: "parent-1",
+      sender_id: OTHER,
+      content: "a reply",
+    });
+
+    render(
+      <ThreadPanel
+        channelId={parent.channel_id}
+        parent={parent}
+        allMessages={[parent, reply]}
+        viewerId={VIEWER}
+        nameFor={nameFor}
+        onClose={vi.fn()}
+        onReact={vi.fn()}
+        onUnreact={vi.fn()}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        canManageChannel
+      />,
+    );
+
+    expect(screen.getAllByRole("button", { name: /edit/i })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: /delete/i })).toHaveLength(2);
+  });
+
+  it("calls onDelete with the reply's id, not the parent's", async () => {
+    const user = userEvent.setup();
+    const parent = message({
+      id: "parent-1",
+      client_message_id: "parent-1",
+      sender_id: VIEWER,
+    });
+    const reply = message({
+      id: "reply-1",
+      client_message_id: "reply-1",
+      reply_to_id: "parent-1",
+      sender_id: VIEWER,
+      content: "a reply",
+    });
+    const onDelete = vi.fn();
+
+    render(
+      <ThreadPanel
+        channelId={parent.channel_id}
+        parent={parent}
+        allMessages={[parent, reply]}
+        viewerId={VIEWER}
+        nameFor={nameFor}
+        onClose={vi.fn()}
+        onReact={vi.fn()}
+        onUnreact={vi.fn()}
+        onDelete={onDelete}
+      />,
+    );
+
+    const deleteButtons = screen.getAllByRole("button", { name: /delete/i });
+    await user.click(deleteButtons[1]!);
+
+    expect(onDelete).toHaveBeenCalledWith("reply-1");
+  });
+});

@@ -30,7 +30,7 @@ import {
   dashboardCheckboxHitAreaClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
-import { getErrorMessage } from "@/lib/utils";
+import { getErrorMessage, parseGuardedInt } from "@/lib/utils";
 import { RolesAndPermissionsPage } from "@/components/roles/roles-page";
 import {
   useCustomRoles,
@@ -326,11 +326,8 @@ function CustomView({
   );
 
   function setRank(raw: string) {
-    // Guard-parse: only commit a nonnegative integer (matches Workflows/Dues).
-    const trimmed = raw.trim();
-    if (trimmed === "") return;
-    const parsed = Number(trimmed);
-    if (!Number.isInteger(parsed) || parsed < 0) return;
+    const parsed = parseGuardedInt(raw, 0);
+    if (parsed === undefined) return;
     setDraft((prev) => ({ ...prev, rank: parsed }));
   }
 

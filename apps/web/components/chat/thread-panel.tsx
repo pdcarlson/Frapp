@@ -19,6 +19,9 @@ interface ThreadPanelProps {
   onClose: () => void;
   onReact: (messageId: string, emoji: string) => void;
   onUnreact: (messageId: string, emoji: string) => void;
+  onEdit?: (messageId: string, content: string) => Promise<void>;
+  onDelete?: (messageId: string) => void;
+  canManageChannel?: boolean;
 }
 
 /**
@@ -36,6 +39,9 @@ export function ThreadPanel({
   onClose,
   onReact,
   onUnreact,
+  onEdit,
+  onDelete,
+  canManageChannel,
 }: ThreadPanelProps) {
   const replies = useMemo(() => {
     if (!parent) return [];
@@ -134,6 +140,9 @@ export function ThreadPanel({
             showHeader
             onReact={onReact}
             onUnreact={onUnreact}
+            onEdit={onEdit}
+            onDelete={onDelete}
+            canManageChannel={canManageChannel}
             isTapRevealed={tapRevealed.isRevealed(parent)}
             onToggleTapReveal={() => tapRevealed.toggle(parent)}
           />
@@ -156,6 +165,9 @@ export function ThreadPanel({
                 showHeader
                 onReact={onReact}
                 onUnreact={onUnreact}
+                onEdit={onEdit}
+                onDelete={onDelete}
+                canManageChannel={canManageChannel}
                 isTapRevealed={tapRevealed.isRevealed(message)}
                 onToggleTapReveal={() => tapRevealed.toggle(message)}
               />

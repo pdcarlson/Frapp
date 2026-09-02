@@ -7,6 +7,8 @@ import {
   useLeaderboard,
   useMemberDisplayNames,
   useMyPoints,
+  useSemesters,
+  type SemesterArchive,
 } from "@repo/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,7 +26,7 @@ import {
 } from "@/components/shared/table-controls";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
-import { downloadCsv } from "@/lib/utils";
+import { asArray, downloadCsv } from "@/lib/utils";
 import { PointsAdjustmentDialog } from "@/components/points/points-adjustment-dialog";
 import {
   SubscriptionNotice,
@@ -59,9 +61,14 @@ type PointTransactionRow = {
   created_at: string;
 };
 
+
 export default function PointsPage() {
   const { isOffline } = useNetwork();
   const [window, setWindow] = useState<"all" | "semester" | "month">("all");
+  // Selecting a specific archived period overrides `window` entirely (see
+  // PointsService.getLeaderboard) — "" means "use the window buttons", not "no
+  // filter", so it never collides with a real archive id.
+  const [semesterArchiveId, setSemesterArchiveId] = useState("");
   const [leaderboardSearch, setLeaderboardSearch] = useState("");
   const [transactionSearch, setTransactionSearch] = useState("");
   const [amountFilter, setAmountFilter] = useState<"all" | "positive" | "negative">("all");
@@ -72,8 +79,16 @@ export default function PointsPage() {
   // has to be enforced at this trigger (#841).
   const adjustGate = useSubscriptionGate();
   const adjustDialog = useGatedDialog(adjustGate);
-  const leaderboardQuery = useLeaderboard(window);
-  const summaryQuery = useMyPoints(window);
+  const leaderboardQuery = useLeaderboard(
+    window,
+    semesterArchiveId || undefined,
+  );
+  const summaryQuery = useMyPoints(window, semesterArchiveId || undefined);
+  const semestersQuery = useSemesters();
+  const archives = useMemo(
+    () => asArray<SemesterArchive>(semestersQuery.data),
+    [semestersQuery.data],
+  );
   // `GET /v1/points/leaderboard` returns `{ user_id, total }` and no name, so the
   // roster is what turns a rank into a person (#1197). `useMemberDisplayNames`
   // rather than `useMembers`: this cell needs one string per row, and the full
@@ -189,7 +204,7 @@ export default function PointsPage() {
   /* eslint-disable react-hooks/set-state-in-effect -- reset selection when the visible transaction set changes */
   useEffect(() => {
     setSelectedTransactionIds([]);
-  }, [window, transactionSearch, amountFilter, categoryFilter]);
+  }, [window, semesterArchiveId, transactionSearch, amountFilter, categoryFilter]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const transactionIds = filteredTransactions.map((transaction) => transaction.id);
@@ -316,13 +331,38 @@ export default function PointsPage() {
             {windows.map((item) => (
               <Button
                 key={item.value}
-                variant={window === item.value ? "default" : "secondary"}
+                // Selecting an archived period below overrides `window`
+                // entirely, so none of these read as "active" while one is
+                // chosen — reselecting one here is what returns to live mode.
+                variant={
+                  !semesterArchiveId && window === item.value
+                    ? "default"
+                    : "secondary"
+                }
                 size="sm"
-                onClick={() => setWindow(item.value)}
+                onClick={() => {
+                  setWindow(item.value);
+                  setSemesterArchiveId("");
+                }}
               >
                 {item.label}
               </Button>
             ))}
+            {archives.length > 0 ? (
+              <select
+                aria-label="View an archived semester"
+                value={semesterArchiveId}
+                onChange={(event) => setSemesterArchiveId(event.target.value)}
+                className={dashboardFilterSelectClassName}
+              >
+                <option value="">Archived period…</option>
+                {archives.map((archive) => (
+                  <option key={archive.id} value={archive.id}>
+                    {archive.label}
+                  </option>
+                ))}
+              </select>
+            ) : null}
           </div>
         </CardHeader>
         <CardContent>

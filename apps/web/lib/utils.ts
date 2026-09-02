@@ -16,6 +16,23 @@ export function initials(name: string | null | undefined): string {
   return parts.map((part) => part[0]?.toUpperCase() ?? "").join("") || "?";
 }
 
+/**
+ * Guard-parse a raw text-input string into a nonnegative-by-default integer:
+ * trim, then only commit a finite integer >= `min` (default 0). Anything else
+ * (empty, negative, decimal, NaN) returns `undefined` so the caller can leave
+ * the previous value in place. The empty check is explicit because
+ * `Number("")` is `0`, not `NaN`. Shared by the settings tabs' numeric-field
+ * guards (Roles rank, Dues amounts, Workflows threshold, Fields max length)
+ * so the identical parse/validate shape lives in one place.
+ */
+export function parseGuardedInt(raw: string, min = 0): number | undefined {
+  const trimmed = raw.trim();
+  if (trimmed === "") return undefined;
+  const parsed = Number(trimmed);
+  if (!Number.isInteger(parsed) || parsed < min) return undefined;
+  return parsed;
+}
+
 /** Human-readable message for caught errors (e.g. toast descriptions). */
 export function getErrorMessage(error: unknown, fallback: string): string {
   if (error && typeof error === "object" && "message" in error) {

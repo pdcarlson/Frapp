@@ -222,7 +222,7 @@ Same read-only inversion [`audit`](../audit/SKILL.md) uses: routines don't edit 
 issues** (`triage` + `area:docs` + priority, with an Agent brief). Include what you verified, against
 which source, and on what date — a docs issue without its evidence gets re-litigated from scratch.
 
-Two exceptions, and the second is a full inversion:
+Three exceptions; the second is a full inversion:
 
 - A skill's own docs-only self-maintenance PR.
 - **[`docs-upkeep`](../docs-upkeep/SKILL.md) (routine 4) fixes rather than files, and is forbidden
@@ -230,6 +230,10 @@ Two exceptions, and the second is a full inversion:
   does not work — those issues age instead of getting done — so the sweep that finds a stale claim
   is the one that repairs it (ADR-16 amendment 6). If you are running *that* routine, follow its
   skill, not this paragraph.
+- **[`hygiene-scan`](../hygiene-scan/SKILL.md) (routine 5) edits product code and touches docs
+  only as doc-sync** — a path citation its fix moved, or the doc that states a fact its fix
+  changed. A stale claim it merely *reads* goes in its run report, never an `area:docs` issue
+  (ADR-16 amendment 7).
 
 ---
 

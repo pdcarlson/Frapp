@@ -12,6 +12,7 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import type { JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
+import Mention from "@tiptap/extension-mention";
 import { Extension } from "@tiptap/core";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING_WITHIN } from "@/components/ui/focus";
@@ -28,7 +29,11 @@ import {
   SlashCommandGlyph,
 } from "./chat-glyphs";
 import { cn } from "@/lib/utils";
-import { useRequestChatUploadUrl, useUploadSignedUrl } from "@repo/hooks";
+import {
+  useChapterRoster,
+  useRequestChatUploadUrl,
+  useUploadSignedUrl,
+} from "@repo/hooks";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -38,6 +43,10 @@ import {
 } from "@repo/validation";
 import { EmojiPicker } from "./emoji-picker";
 import { SlashPalette } from "./slash-palette";
+import {
+  createMentionSuggestion,
+  type MentionRosterEntry,
+} from "./mention-suggestion";
 import {
   getSlashCommand,
   parseSlashInput,
@@ -178,7 +187,21 @@ export function Composer({
   const { toast } = useToast();
   const requestUploadUrl = useRequestChatUploadUrl();
   const uploadSignedUrl = useUploadSignedUrl();
+  const chapterRoster = useChapterRoster();
   const fileInput = useRef<HTMLInputElement | null>(null);
+  /**
+   * Live roster for `@`-mention autocomplete, read through a ref rather than
+   * closed over directly. `useEditor`'s extensions array is only evaluated
+   * once (this composer passes no deps array), so a plain closure would see
+   * whichever roster page had loaded — usually none — at first render and
+   * never again. The `suggestion.items()` callback inside
+   * `createMentionSuggestion` reads `rosterRef.current` on every keystroke
+   * instead, so it always sees the latest fetched roster.
+   */
+  const rosterRef = useRef<MentionRosterEntry[]>([]);
+  useEffect(() => {
+    rosterRef.current = chapterRoster.data ?? [];
+  }, [chapterRoster.data]);
   /**
    * Files uploaded and waiting to be claimed by the next send.
    *
@@ -203,6 +226,16 @@ export function Composer({
       }),
       Placeholder.configure({
         placeholder: composerPlaceholder(channelName, isDirect),
+      }),
+      Mention.configure({
+        HTMLAttributes: {
+          class: "rounded bg-accent-subtle px-1 text-accent-text",
+        },
+        // Same shape as the submit keymap below: `createMentionSuggestion`
+        // only reads `rosterRef.current` later, inside `items()` callbacks
+        // invoked from keystroke events — never synchronously during render.
+        // eslint-disable-next-line react-hooks/refs -- suggestion.items() reads the ref from a keystroke callback, not render
+        suggestion: createMentionSuggestion(rosterRef),
       }),
       // Tiptap registers this shortcut while constructing the editor. The
       // closure reads `sendRef.current` only on Enter, not during render.

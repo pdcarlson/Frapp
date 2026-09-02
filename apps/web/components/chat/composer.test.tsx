@@ -29,6 +29,7 @@ vi.mock("@tiptap/react", async () => {
 vi.mock("@repo/hooks", () => ({
   useRequestChatUploadUrl: () => ({ mutateAsync: vi.fn() }),
   useUploadSignedUrl: () => ({ mutateAsync: vi.fn() }),
+  useChapterRoster: () => ({ data: [] }),
 }));
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 
@@ -115,5 +116,20 @@ describe("Composer slash-command trigger (#396)", () => {
 
     expect(trigger).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("dialog")).toHaveAttribute("aria-modal", "true");
+  });
+});
+
+describe("Composer mention wiring", () => {
+  it("registers the @-mention extension with a suggestion.items callback", () => {
+    capturedExtensions.length = 0;
+    render(<Composer {...baseProps()} />);
+    const mention = capturedExtensions.at(-1)!.find(
+      (extension) => (extension as { name?: string } | null)?.name === "mention",
+    ) as
+      | { options: { suggestion: { char: string; items: unknown } } }
+      | undefined;
+    expect(mention).toBeDefined();
+    expect(mention!.options.suggestion.char).toBe("@");
+    expect(typeof mention!.options.suggestion.items).toBe("function");
   });
 });

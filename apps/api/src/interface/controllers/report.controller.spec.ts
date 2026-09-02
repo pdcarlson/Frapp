@@ -22,7 +22,7 @@ import {
   POINTS_COLUMNS,
   ROSTER_COLUMNS,
   SERVICE_COLUMNS,
-} from './report-columns';
+} from '../../domain/constants/report-columns';
 
 // Mock the toCSV utility function
 jest.mock('../../domain/utils/csv', () => ({
@@ -187,6 +187,22 @@ describe('ReportController', () => {
       );
       expect(toCSV).toHaveBeenCalledWith(mockData, POINTS_COLUMNS);
       expect(result).toBe('mocked,csv,content');
+    });
+
+    it('forwards semester_archive_id to the service (#377)', async () => {
+      reportService.getPointsReport.mockResolvedValue(complete(mockData));
+      const archiveDto: PointsReportDto = {
+        user_id: 'user-123',
+        semester_archive_id: 'sa-1',
+      };
+
+      await controller.points(chapterId, archiveDto);
+
+      expect(reportService.getPointsReport).toHaveBeenCalledWith(chapterId, {
+        user_id: archiveDto.user_id,
+        window: undefined,
+        semester_archive_id: 'sa-1',
+      });
     });
   });
 

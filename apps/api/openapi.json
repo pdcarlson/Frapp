@@ -3124,6 +3124,16 @@
                 "month"
               ]
             }
+          },
+          {
+            "name": "semester_archive_id",
+            "required": false,
+            "in": "query",
+            "description": "Select one specific archived semester by id (from GET /v1/semesters), overriding `window` entirely. 404s if the id does not belong to this chapter.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -3158,6 +3168,16 @@
                 "semester",
                 "month"
               ]
+            }
+          },
+          {
+            "name": "semester_archive_id",
+            "required": false,
+            "in": "query",
+            "description": "Select one specific archived semester by id (from GET /v1/semesters), overriding `window` entirely. 404s if the id does not belong to this chapter.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
             }
           }
         ],
@@ -3286,6 +3306,16 @@
                 "semester",
                 "month"
               ]
+            }
+          },
+          {
+            "name": "semester_archive_id",
+            "required": false,
+            "in": "query",
+            "description": "Select one specific archived semester by id (from GET /v1/semesters), overriding `window` entirely. 404s if the id does not belong to this chapter.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
             }
           }
         ],
@@ -3879,6 +3909,79 @@
         "tags": [
           "Backwork"
         ]
+      },
+      "delete": {
+        "operationId": "BackworkController_deleteDepartment_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a department (blocked while any resource references it)",
+        "tags": [
+          "Backwork"
+        ]
+      }
+    },
+    "/v1/backwork/departments/{id}/merge": {
+      "post": {
+        "operationId": "BackworkController_mergeDepartments_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergeBackworkTaxonomyDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MergeBackworkTaxonomyResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Merge a department into another, reassigning its resources",
+        "tags": [
+          "Backwork"
+        ]
       }
     },
     "/v1/backwork/professors": {
@@ -3896,6 +3999,118 @@
           }
         ],
         "summary": "List chapter professors",
+        "tags": [
+          "Backwork"
+        ]
+      }
+    },
+    "/v1/backwork/professors/{id}": {
+      "patch": {
+        "operationId": "BackworkController_updateProfessor_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProfessorDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update professor name",
+        "tags": [
+          "Backwork"
+        ]
+      },
+      "delete": {
+        "operationId": "BackworkController_deleteProfessor_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a professor (blocked while any resource references it)",
+        "tags": [
+          "Backwork"
+        ]
+      }
+    },
+    "/v1/backwork/professors/{id}/merge": {
+      "post": {
+        "operationId": "BackworkController_mergeProfessors_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergeBackworkTaxonomyDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MergeBackworkTaxonomyResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Merge a professor into another, reassigning its resources",
         "tags": [
           "Backwork"
         ]
@@ -8371,6 +8586,39 @@
           }
         }
       },
+      "MergeBackworkTaxonomyDto": {
+        "type": "object",
+        "properties": {
+          "target_id": {
+            "type": "string",
+            "description": "Id of the row to merge into; the source is deleted"
+          }
+        },
+        "required": [
+          "target_id"
+        ]
+      },
+      "MergeBackworkTaxonomyResponseDto": {
+        "type": "object",
+        "properties": {
+          "reassigned": {
+            "type": "number",
+            "description": "Count of resources reassigned from source to target"
+          }
+        },
+        "required": [
+          "reassigned"
+        ]
+      },
+      "UpdateProfessorDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Professor name"
+          }
+        }
+      },
       "RequestProofUploadUrlDto": {
         "type": "object",
         "properties": {
@@ -8885,6 +9133,10 @@
               "semester",
               "month"
             ]
+          },
+          "semester_archive_id": {
+            "type": "string",
+            "description": "Select one specific archived semester by id (from GET /v1/semesters), overriding `window` entirely. 404s if the id does not belong to this chapter."
           }
         }
       },

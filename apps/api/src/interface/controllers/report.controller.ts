@@ -38,7 +38,10 @@ import {
 } from '../dtos/report.dto';
 import { SystemPermissions } from '../../domain/constants/permissions';
 import { toCSV } from '../../domain/utils/csv';
-import { REPORT_COLUMNS, type ReportKind } from './report-columns';
+import {
+  REPORT_COLUMNS,
+  type ReportKind,
+} from '../../domain/constants/report-columns';
 
 /** Export formats every /v1/reports route accepts. Anything else is a 400. */
 const REPORT_FORMATS = ['json', 'csv', 'pdf'];
@@ -223,10 +226,13 @@ export class ReportController {
     const result = await this.reportService.getPointsReport(chapterId, {
       user_id: dto.user_id,
       window: dto.window,
+      semester_archive_id: dto.semester_archive_id,
     });
     return this.respond(chapterId, 'points', result, format, res, () =>
       scopeLine([
-        `Window: ${dto.window ?? 'all'}`,
+        dto.semester_archive_id
+          ? `Archive: ${dto.semester_archive_id}`
+          : `Window: ${dto.window ?? 'all'}`,
         dto.user_id ? 'Single member' : 'All members',
       ]),
     );

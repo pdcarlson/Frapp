@@ -109,10 +109,18 @@ export class ChapterDocumentService {
     // See the equivalent guard in BackworkService.confirmUpload: a prefix check
     // alone lets relative segments through, and this value is persisted and
     // later signed for download.
-    assertSafeStoragePath(
-      input.storage_path,
-      'storage_path must not contain relative path segments',
-    );
+    //
+    // `assertSafeStoragePath` is domain-layer code and throws a plain `Error`;
+    // this catch is what turns that into the `BadRequestException` (400) API
+    // consumers have always seen on an unsafe path.
+    try {
+      assertSafeStoragePath(
+        input.storage_path,
+        'storage_path must not contain relative path segments',
+      );
+    } catch (error) {
+      throw new BadRequestException((error as Error).message);
+    }
 
     // `requestUploadUrl` validates the declared content type before minting a
     // signed URL, but that validation is not carried into this call — the two

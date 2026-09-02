@@ -909,6 +909,22 @@ After any rollback event:
 * **⚠️ Note**: Additive DDL only — no existing table's data is touched, so nothing that predates the migration can be lost. But **redeploy the API at the pre-FRA-24 revision first**, or disable the sweeps. `ScheduledJobsService` claims a row before *every* unit of work, and `ScheduledJobsRepository` treats an unexpected insert error as "not claimed", so with the table gone **all three claim-based sweeps silently stop doing anything** (report retention takes no claim and is unaffected) — reminders send nothing, and attendance auto-absent stops marking. They fail safe (no crash, no double-send) but they also fail *quietly*: the only signal is a `dispatch claim failed` line per item. Auto-absent is not exempt — it claims under `entity_type = 'EVENT'` so it runs once per event instead of once per replica per hour.
 * **Data caveat**: the rows are delivery bookkeeping — which reminder has already gone out for which invoice/task. Dropping the table erases that memory, so **re-applying the migration and re-enabling the sweeps re-sends every reminder still inside the 7-day `OVERDUE_LOOKBACK_DAYS` window** (and any invoice/task due the next day). Members see duplicates for anything in that window; older items stay silent because the lookback bound excludes them. If that matters, snapshot the table before dropping and restore it alongside the re-apply.
 
+## Rollback poll-expiry dispatch support
+
+* **Migration**: `20260902010000_poll_expiry_dispatch.sql`
+* **Action**: the migration widens two `CHECK` constraints on the existing `scheduled_notification_dispatches` table and adds one partial index on `chat_messages`. Reverting narrows the constraints back and drops the index:
+  ```sql
+  DELETE FROM scheduled_notification_dispatches WHERE entity_type = 'POLL' OR threshold = 'EXPIRED'; -- see data caveat
+  ALTER TABLE scheduled_notification_dispatches DROP CONSTRAINT scheduled_notification_dispatches_entity_type_check;
+  ALTER TABLE scheduled_notification_dispatches ADD CONSTRAINT scheduled_notification_dispatches_entity_type_check CHECK (entity_type IN ('INVOICE', 'TASK', 'EVENT'));
+  ALTER TABLE scheduled_notification_dispatches DROP CONSTRAINT scheduled_notification_dispatches_threshold_check;
+  ALTER TABLE scheduled_notification_dispatches ADD CONSTRAINT scheduled_notification_dispatches_threshold_check CHECK (threshold IN ('DUE_SOON', 'OVERDUE', 'AUTO_ABSENT'));
+  DROP INDEX IF EXISTS idx_chat_messages_poll_expires_at;
+  ```
+  The narrowed `CHECK`s will reject the rollback outright while any `entity_type = 'POLL'` or `threshold = 'EXPIRED'` row still exists, hence the `DELETE` first.
+* **Note**: Additive DDL only — no existing constraint value, table, or row is removed by the forward migration, so nothing that predates it can be lost. **Redeploy the API at the pre-#404 revision first**, or disable `ScheduledJobsService.handlePollExpirySweep` — with the narrowed `CHECK` back in place, `claimDispatch('POLL', …, 'EXPIRED', …)` fails the insert (constraint violation, not `23505`) and `ScheduledJobsRepository` treats that as "not claimed," so the poll-expiry sweep fails safe (no crash, no double-post) but silently stops announcing expired polls — the only signal is a `dispatch claim failed` line per poll.
+* **Data caveat**: same shape as the base `scheduled_notification_dispatches` rollback above — the deleted rows are delivery bookkeeping for which expired polls have already been announced. Re-applying the migration and re-enabling the sweep re-announces every poll still inside the 24-hour `POLL_EXPIRY_LOOKBACK_HOURS` window; polls that expired earlier stay silent. Snapshot the `entity_type = 'POLL'` rows before deleting if that matters.
+
 ## Rollback custom-role member assignment
 
 * **Migration**: `20260804230000_member_custom_role_ids.sql`
@@ -1061,6 +1077,11 @@ After any rollback event:
   $$;
   ```
 * **Note**: Grant-only change, no data loss and no function body change — restores the pre-migration Postgres-default EXECUTE-to-PUBLIC behavior for `anon`/`authenticated`. Should not be needed: all three RPCs are `security invoker` (RLS still applies under the caller's own privileges) and both callers (`ReportService.getPointsReport`, `SupabasePollVoteRepository`) already go through the API's `service_role` client, which keeps EXECUTE regardless. Only relevant if some other caller was found to invoke these RPCs directly as `anon`/`authenticated` (e.g. via PostgREST) after this migration shipped — confirm that caller's actual need before rolling back, since re-opening the grant is exactly the convention gap #678 closed.
+
+## Rollback `get_points_report` RPC `p_until` bound
+* **Migration**: `20260902010001_get_points_report_until.sql` (supersedes `20260604140000_get_points_report_window_filter.sql`)
+* **Action**: Run `DROP FUNCTION IF EXISTS get_points_report(uuid, uuid, timestamptz, timestamptz);`, then recreate the 3-arg `(uuid, uuid, timestamptz)` overload from `20260604140000`, and re-apply its EXECUTE lock-down (revoke from `public`/`anon`/`authenticated`, grant to `service_role`) per `20260901173000`.
+* **Note**: Additive/no data loss — the migration drops the 3-arg overload and recreates the RPC with an added `p_until timestamptz` upper bound (#377), used to filter to one specific archived semester's `[start_date, end_date]` calendar-day range rather than only "since the latest archive, through now". The API calls the new 4-arg overload from `ReportService.getPointsReport` on every path (the `window`-based path always passes `p_until: null`; the new `semester_archive_id` path passes a real bound), so a forward-fix — deploy an API revision that reverts to the prior 3-arg call — is required before dropping the 4-arg overload, or every points report request fails. The migration also re-applies the EXECUTE lock-down to the new signature, since `DROP FUNCTION` removes the old signature's grants along with it; a rollback that skips re-applying the lock-down leaves the recreated 3-arg function on Postgres's EXECUTE-to-PUBLIC default.
 
 ## Rollback Group DM leave + archive (20260901180000)
 * **Migration**: `20260901180000_chat_channels_archived_at.sql`
