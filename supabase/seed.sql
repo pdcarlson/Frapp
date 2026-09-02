@@ -7,7 +7,7 @@
 -- In production, the API handles all seeding logic.
 
 -- The system role templates below are for reference only.
--- They document the default permission sets defined in spec/behavior.md Section 2.
+-- They document the default permission sets defined in spec/behavior/rbac.md.
 
 /*
 Default system roles seeded on chapter creation:
