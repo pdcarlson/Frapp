@@ -57,7 +57,16 @@
 
 - Events display an "Add to Calendar" action.
 - Tapping it generates an `.ics` file (or deep-links to the device's calendar app on mobile) with event name, description, location, start/end time, and a link back to the event in Frapp.
-- Recurring events generate recurring calendar entries.
+- Recurring events generate recurring calendar entries. Exporting a **series parent** carries an RFC 5545 `RRULE`, so one "Add to Calendar" puts the whole series on the member's calendar rather than only that one meeting.
+  - **Only a series parent carries the rule.** A materialized child occurrence exports as the single meeting it is — describing the series from a child would mean re-using the parent's `UID`, which an importing calendar reads as an override of a series it may never have seen.
+  - `WEEKLY` → `FREQ=WEEKLY;COUNT=13`, `BIWEEKLY` → `FREQ=WEEKLY;INTERVAL=2;COUNT=7`, `MONTHLY` → `FREQ=MONTHLY;COUNT=7`. `BIWEEKLY` is not an RFC 5545 frequency; the standard spells it as a weekly rule with an interval. The counts are the generator's own occurrence counts **plus one**, because RFC 5545 §3.8.5.3 counts the `DTSTART` occurrence itself and the series parent *is* that occurrence — the rule catalog, the child counts and the `RRULE` mapping therefore live in one module (`@repo/validation` → `recurrence.ts`) so an exported series cannot describe different meetings from the generated one.
+  - A stored rule the generator cannot expand exports as a plain single `VEVENT` rather than failing the download, matching the generator's own tolerance for such a value.
+  - **The `RRULE` is synthesized from the rule, not read back from the occurrence rows**, and that is the root of every known limit below. None of these is fixed; they are recorded so the next reader does not rediscover them (tracked in #1590):
+    - **`COUNT` is the catalog's count, not the surviving one.** `promoteSuccessor` and the non-regenerating branch of `splitStartedHead` hand `recurrence_rule` to a successor without regenerating, and an `instance`-scope delete removes a child outright — in each case fewer occurrences exist than `COUNT` promises, so the export trails phantom dates past the real end of the series.
+    - **No `EXDATE`.** An individually cancelled or rescheduled occurrence is still described by the parent's rule, so a cancelled meeting reappears on the member's calendar.
+    - **Month end.** For a `MONTHLY` series starting on the 29th–31st, generation *clamps* to the last day of a short month (Jan 31 → Feb 28) while `FREQ=MONTHLY` *skips* months lacking that day (Jan 31 → Mar 31). A plain `RRULE` cannot express clamping.
+    - **Parent and child exports do not reconcile.** They carry unrelated `UID`s and no `RECURRENCE-ID`, so a member who exports the series and then also exports one occurrence gets that meeting twice.
+    - **Mobile reaches the parent only until the first occurrence closes.** The Events tab lists only what is current or upcoming (`selectEventRows`), and the parent *is* the first occurrence — so after it ends, every row a mobile member can open is a child, and a child exports as a single `VEVENT`. Web is unaffected: it downloads from `GET /v1/events/:id/ics`.
 
 ## Chat Integration
 

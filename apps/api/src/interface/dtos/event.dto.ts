@@ -15,7 +15,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { POINTS_ADJUSTMENT_MAX } from '@repo/validation';
+import { POINTS_ADJUSTMENT_MAX, RECURRENCE_RULES } from '@repo/validation';
 import { GeofenceCoordinateDto } from './study.dto';
 
 /**
@@ -73,7 +73,7 @@ export class CreateEventDto {
   // and then silently generated nothing; on a series edit that meant deleting
   // the future occurrences and rebuilding none of them. `null` still clears a
   // series (@IsOptional short-circuits this).
-  @IsIn(['WEEKLY', 'BIWEEKLY', 'MONTHLY'])
+  @IsIn(RECURRENCE_RULES)
   recurrence_rule?: string;
 
   @ApiPropertyOptional({ type: [String] })
@@ -185,7 +185,7 @@ export class UpdateEventDto {
   // and then silently generated nothing; on a series edit that meant deleting
   // the future occurrences and rebuilding none of them. `null` still clears a
   // series (@IsOptional short-circuits this).
-  @IsIn(['WEEKLY', 'BIWEEKLY', 'MONTHLY'])
+  @IsIn(RECURRENCE_RULES)
   recurrence_rule?: string;
 
   @ApiPropertyOptional({ type: [String] })

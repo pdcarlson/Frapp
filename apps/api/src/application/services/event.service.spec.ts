@@ -11,6 +11,7 @@ import { ChatService } from './chat.service';
 import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import { RbacService } from './rbac.service';
+import { recurrenceChildCount } from '@repo/validation';
 
 describe('EventService', () => {
   let service: EventService;
@@ -653,6 +654,95 @@ describe('EventService', () => {
       const ics = await service.generateIcs('evt-1', 'ch-1', 'user-1');
 
       expect(ics).toContain('SUMMARY:Exec Meeting');
+    });
+
+    it.each([
+      ['WEEKLY', 'RRULE:FREQ=WEEKLY;COUNT=13'],
+      ['BIWEEKLY', 'RRULE:FREQ=WEEKLY;INTERVAL=2;COUNT=7'],
+      ['MONTHLY', 'RRULE:FREQ=MONTHLY;COUNT=7'],
+    ])('exports %s as a series', async (rule, expected) => {
+      mockEventRepo.findById.mockResolvedValue({
+        ...baseEvent,
+        recurrence_rule: rule,
+        parent_event_id: null,
+      });
+
+      const ics = await service.generateIcs('evt-1', 'ch-1');
+
+      expect(ics).toContain(expected);
+    });
+
+    // COUNT must exceed occurrenceCountFor's child count by exactly one: the
+    // parent row is the DTSTART occurrence. A COUNT equal to the child count
+    // would silently drop the final meeting from every member's calendar.
+    it('counts the parent occurrence on top of the generated children', async () => {
+      mockEventRepo.findById.mockResolvedValue({
+        ...baseEvent,
+        recurrence_rule: 'WEEKLY',
+        parent_event_id: null,
+      });
+
+      const ics = await service.generateIcs('evt-1', 'ch-1');
+
+      const children = recurrenceChildCount('WEEKLY') as number;
+      expect(ics).toContain(`COUNT=${children + 1}`);
+      expect(ics).not.toContain(`COUNT=${children}\r\n`);
+    });
+
+    it('omits RRULE for a non-recurring event', async () => {
+      mockEventRepo.findById.mockResolvedValue(baseEvent);
+
+      const ics = await service.generateIcs('evt-1', 'ch-1');
+
+      expect(ics).not.toContain('RRULE');
+    });
+
+    // A materialized child is its own meeting. Re-describing the series here
+    // would need the parent's UID and would read as an override of a series
+    // the importing calendar may never have seen.
+    it('omits RRULE for a materialized child occurrence', async () => {
+      mockEventRepo.findById.mockResolvedValue({
+        ...baseEvent,
+        recurrence_rule: 'WEEKLY',
+        parent_event_id: 'evt-parent',
+      });
+
+      const ics = await service.generateIcs('evt-1', 'ch-1');
+
+      expect(ics).not.toContain('RRULE');
+      expect(ics).toContain('UID:evt-1@frapp.live');
+    });
+
+    // generateIcs runs against arbitrary stored rows; a rule the generator
+    // cannot expand already yields zero occurrences rather than an error, so
+    // the export degrades the same way instead of failing the download.
+    it('degrades to a plain VEVENT for a rule it cannot express', async () => {
+      mockEventRepo.findById.mockResolvedValue({
+        ...baseEvent,
+        recurrence_rule: 'DAILY',
+        parent_event_id: null,
+      });
+
+      const ics = await service.generateIcs('evt-1', 'ch-1');
+
+      expect(ics).not.toContain('RRULE');
+      expect(ics).toContain('BEGIN:VEVENT');
+      expect(ics).toContain('END:VCALENDAR');
+    });
+
+    it('places RRULE inside the VEVENT block', async () => {
+      mockEventRepo.findById.mockResolvedValue({
+        ...baseEvent,
+        recurrence_rule: 'WEEKLY',
+        parent_event_id: null,
+      });
+
+      const ics = await service.generateIcs('evt-1', 'ch-1');
+      const lines = ics.split('\r\n');
+
+      const rruleAt = lines.findIndex((l) => l.startsWith('RRULE:'));
+      expect(rruleAt).toBeGreaterThan(lines.indexOf('BEGIN:VEVENT'));
+      expect(rruleAt).toBeLessThan(lines.indexOf('END:VEVENT'));
     });
   });
 
