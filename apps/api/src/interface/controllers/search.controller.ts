@@ -34,17 +34,29 @@ export class SearchController {
     summary: 'Cross-domain search (backwork, events, members, messages)',
   })
   @ApiQuery({ name: 'q', required: true, description: 'Search query' })
+  @ApiQuery({
+    name: 'channelId',
+    required: false,
+    description:
+      'Narrow the search to one chat channel. This is the single-channel form ' +
+      'of search specified in spec/behavior/chat/README.md: only the `messages` ' +
+      'source runs and `backwork`, `events` and `members` come back empty. The ' +
+      'channel is still resolved through the caller’s accessible-channel set, ' +
+      'so an unreadable or unknown id returns no matches rather than an error.',
+  })
   async search(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Query('q') query: string,
     @Res({ passthrough: true }) res: Response,
+    @Query('channelId') channelId?: string,
   ) {
     const { results, timedOut, timedOutSources } =
       await this.searchService.searchWithinBudget(
         chapterId,
         userId,
         query ?? '',
+        channelId?.trim() || undefined,
       );
     if (timedOut) {
       res.setHeader('x-search-timeout', '1');

@@ -34,14 +34,25 @@ function isSearchSource(value: string): value is SearchSource {
   );
 }
 
-export function useSearch(query: string) {
+/**
+ * Cross-domain search, or — when `channelId` is given — the single-channel
+ * message search `spec/behavior/chat/README.md` specifies.
+ *
+ * The channel filter is deliberately **not** something a caller can do by
+ * filtering this hook's results: `SEARCH_LIMIT` is applied by the database
+ * across every channel the caller can read, so a channel whose matches rank
+ * below that cut would come back empty and be indistinguishable from a channel
+ * with no matches at all. Narrowing has to reach SQL, which is why it is a
+ * request parameter and part of the query key.
+ */
+export function useSearch(query: string, channelId?: string) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   return useQuery({
-    queryKey: ["search", chapterId, query],
+    queryKey: ["search", chapterId, query, channelId ?? null],
     queryFn: async (): Promise<SearchResponse<unknown>> => {
       const { data, error, response } = await client.GET("/v1/search", {
-        params: { query: { q: query } },
+        params: { query: channelId ? { q: query, channelId } : { q: query } },
       });
       if (error) throw error;
       return {

@@ -187,6 +187,7 @@ export class SearchService {
     chapterId: string,
     userId: string,
     query: string,
+    channelId?: string,
   ): Promise<SearchResult> {
     const q = query.trim();
     // Spec default: queries shorter than 3 characters return an empty result
@@ -194,7 +195,7 @@ export class SearchService {
     if (q.length < MIN_QUERY_LENGTH) {
       return emptyResult();
     }
-    return this.collect(chapterId, userId, q, (_source, work) => work);
+    return this.collect(chapterId, userId, q, (_source, work) => work, channelId);
   }
 
   /**
@@ -214,6 +215,7 @@ export class SearchService {
     chapterId: string,
     userId: string,
     query: string,
+    channelId?: string,
   ): Promise<{
     results: SearchResult;
     timedOut: boolean;
@@ -231,6 +233,7 @@ export class SearchService {
       q,
       (source, work, fallback) =>
         withinBudget(source, work, fallback, timedOutSources, this.logger),
+      channelId,
     );
     return {
       results,
@@ -245,13 +248,31 @@ export class SearchService {
    * Shared by {@link search} and {@link searchWithinBudget} so the two cannot
    * drift on which sources exist or what each one is handed — the only
    * difference between them is the `wrap` they pass.
+   *
+   * `channelId` narrows this to the **single-channel** form of search that
+   * `spec/behavior/chat/README.md` specifies ("full-text search within a single
+   * channel or across all channels the user can access"). When it is present
+   * only the message source runs and the other three return empty, because a
+   * channel-scoped query is definitionally a chat search: firing the backwork,
+   * event and member scans would be three queries no such caller renders, on a
+   * route carrying `@ThrottleExpensiveRead()`, once per debounced keystroke.
+   * The response shape is unchanged either way.
    */
   private async collect(
     chapterId: string,
     userId: string,
     q: string,
     wrap: SourceWrapper,
+    channelId?: string,
   ): Promise<SearchResult> {
+    if (channelId) {
+      const messages = await wrap(
+        'messages',
+        this.searchMessages(chapterId, userId, q, channelId),
+        [],
+      );
+      return { backwork: [], events: [], members: [], messages };
+    }
     // Every source takes the raw query: all four parse it as a full-text query
     // rather than matching it as a substring.
     const [backwork, events, members, messages] = await Promise.all([
@@ -444,8 +465,20 @@ export class SearchService {
     chapterId: string,
     userId: string,
     query: string,
+    channelId?: string,
   ): Promise<ChatMessage[]> {
-    const channelIds = await this.accessibleChannelIds(chapterId, userId);
+    const accessible = await this.accessibleChannelIds(chapterId, userId);
+    // A channel-scoped search is still resolved through `accessibleChannelIds`
+    // rather than trusting the caller's id — intersecting is what keeps the one
+    // access path this method's comment below insists on. A channel that does
+    // not exist, sits in another chapter, or is simply not readable by this
+    // caller intersects to nothing and returns empty. That is deliberate: a 403
+    // here would answer "does this channel id exist?" for a member who cannot
+    // read it, turning search into a channel-existence oracle (the 403-vs-404
+    // distinction #1565 is open about elsewhere in chat).
+    const channelIds = channelId
+      ? accessible.filter((id) => id === channelId)
+      : accessible;
     if (!channelIds.length) return [];
 
     const { data, error } = (await this.supabase
