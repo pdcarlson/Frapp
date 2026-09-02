@@ -8,7 +8,13 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { ChatBookmarkService } from '../../application/services/chat-bookmark.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -20,6 +26,7 @@ import {
   CurrentUser,
 } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '../../domain/constants/permissions';
+import { BookmarkDto, BookmarkRefDto } from '../dtos/chat.dto';
 
 /**
  * Personal message bookmarks (#462).
@@ -50,6 +57,10 @@ export class ChatBookmarkController {
   @ApiOperation({
     summary: "List the caller's own bookmarked messages in this chapter",
   })
+  // Declared rather than inferred: without it the generated SDK types this
+  // response `never` (the #1049 defect), which is a compile error at the first
+  // client that reads a field off it.
+  @ApiOkResponse({ type: BookmarkDto, isArray: true })
   async listBookmarks(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
@@ -59,6 +70,7 @@ export class ChatBookmarkController {
 
   @Post('messages/:messageId')
   @ApiOperation({ summary: 'Bookmark a message (idempotent)' })
+  @ApiCreatedResponse({ type: BookmarkRefDto })
   async bookmarkMessage(
     @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,

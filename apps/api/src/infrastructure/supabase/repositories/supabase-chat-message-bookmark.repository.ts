@@ -32,9 +32,7 @@ const BOOKMARK_WITH_MESSAGE_SELECT = `id, user_id, message_id, chapter_id, creat
  * enables RLS with zero policies, so there is no client-reachable path at all).
  */
 @Injectable()
-export class SupabaseChatMessageBookmarkRepository
-  implements IChatMessageBookmarkRepository
-{
+export class SupabaseChatMessageBookmarkRepository implements IChatMessageBookmarkRepository {
   constructor(
     @Inject(SUPABASE_CLIENT)
     private readonly supabase: FrappSupabaseClient,

@@ -102,6 +102,38 @@ Chat is not a module — it is the spine of the app, and every other capability 
 - A bookmark does not affect the underlying message's lifecycle. If the original message is deleted, the bookmark surfaces a "[message deleted]" placeholder.
 - Bookmarks are the right answer for "I want to remember this myself" without elevating to chapter-wide visibility.
 
+**How the privacy is enforced (#462).** Bookmarks live in their own
+`chat_message_bookmarks` table, unique on `(user_id, message_id)` — not as state
+on the message, because a bookmark is a fact about a *(viewer, message)* pair
+rather than about the message. Three things make "not even a channel admin can
+see who bookmarked what" structural rather than a matter of review, and all
+three have to hold:
+
+- **No route accepts a caller-supplied user id.** `ChatBookmarkController`
+  derives the owner from `@CurrentUser('id')` on every route, so there is no
+  parameter to escalate through.
+- **`IChatMessageBookmarkRepository` offers no by-message query.** There is
+  deliberately no "who bookmarked this" and no count, so the question cannot be
+  asked. Adding one is what would quietly make this section false.
+- **The table enables RLS with zero policies**, like `channel_read_receipts` and
+  `message_reactions`, so there is no client-reachable read path at all. That is
+  not a missing policy — it is the guarantee.
+
+`channels:manage` grants nothing here: a moderator can pin, delete and moderate
+a message and still cannot learn that anyone saved it. That asymmetry with pin
+is the point.
+
+Bookmarking authorizes the message at **`read`**, not `post` — a bookmark
+authors nothing in the channel, so an announcement in a read-only channel (which
+is exactly the kind of message members want to keep) stays bookmarkable. Both
+write routes are idempotent, so a double-tap or an offline retry is a no-op.
+
+The deletion rule above is load-bearing on an implementation detail worth
+stating: `deleteMessage` soft-deletes, rewriting `content` to
+`[message deleted]` and keeping the row, so the placeholder *is* the message's
+own content. The bookmarks query therefore must **not** filter `is_deleted` —
+adding that filter would make the bookmark vanish, the opposite of this rule.
+
 **No sender-extend on ephemerality.** Senders cannot extend the lifetime of their own message past channel retention rules. The two ways content becomes durable are a chapter-elevated **pin** (visible to everyone who can see the channel) or a **bookmark** (private to the bookmarker). This keeps ephemerality real — there's no third path that lets a sender unilaterally make their own content stick around.
 
 **Typing indicators:**

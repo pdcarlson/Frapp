@@ -75,7 +75,7 @@ describe('ChannelAccessService', () => {
     };
     mockMessageRepo = {
       findById: jest.fn(),
-    } as unknown as jest.Mocked<IChatMessageRepository>;
+    };
     mockMemberRepo = {
       findById: jest.fn(),
       findByUser: jest.fn(),

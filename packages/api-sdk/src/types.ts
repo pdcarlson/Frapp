@@ -3248,6 +3248,38 @@ export interface components {
              */
             level: "all" | "mentions" | "off";
         };
+        BookmarkedMessageDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            channel_id: string;
+            /** @description Null for an imported archive message, which names its author in author_name instead. */
+            sender_id: string | null;
+            author_name?: string | null;
+            author_avatar_path?: string | null;
+            /** @description Reads “[message deleted]” once the message is deleted — the bookmark keeps its row and surfaces that placeholder rather than disappearing. */
+            content: string;
+            is_deleted: boolean;
+            created_at: string;
+        };
+        BookmarkDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            message_id: string;
+            /** @description When the caller saved it — not when the message was sent. */
+            created_at: string;
+            message: components["schemas"]["BookmarkedMessageDto"];
+        };
+        BookmarkRefDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            message_id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            created_at: string;
+        };
         GeofenceCoordinateDto: {
             lat: number;
             lng: number;
@@ -5642,7 +5674,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["BookmarkDto"][];
+                };
             };
         };
     };
@@ -5661,7 +5695,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["BookmarkRefDto"];
+                };
             };
         };
     };

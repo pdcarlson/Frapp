@@ -1345,3 +1345,45 @@ SELECT id, chapter_id, name, check_in_zone, check_in_zone_name
 **Re-applying is safe.** Both `ADD COLUMN` statements are `IF NOT EXISTS`, so the
 migration is idempotent; the CHECK constraint is not, so re-running against a
 table that still carries it needs the `DROP CONSTRAINT` above first.
+
+## Rollback personal message bookmarks (20260902120000)
+
+Additive DDL: one new table plus two indexes, no changes to any existing table
+or column (#462).
+
+```sql
+DROP TABLE IF EXISTS public.chat_message_bookmarks;
+```
+
+**Order matters.** `ChatBookmarkService` reads and writes this table on every
+`/v1/bookmarks*` request, and the web chat shell loads the list on every chat
+page view. With the table gone, the current build fails the bookmarks query and
+the chat header's Bookmarks panel renders its error state — the timeline itself
+keeps working, because bookmark state is a separate query from messages. Drop it
+only alongside or after deploying a build without #462.
+
+**Dropping destroys member data that cannot be re-derived.** A bookmark is a
+member's own private note-to-self; nothing else in the schema records it, and
+`chat_messages` carries no trace of who saved what (deliberately — see the
+migration's own comment on why the privacy guarantee lives in the absence of a
+policy). Prefer leaving the table in place if the rollback is only about hiding
+the feature: the surface is client-side, so a build without #462 simply stops
+reading it.
+
+**Snapshot before dropping:**
+
+```sql
+SELECT id, user_id, message_id, chapter_id, created_at
+  FROM public.chat_message_bookmarks ORDER BY created_at DESC;
+```
+
+**Re-applying is safe.** `CREATE TABLE IF NOT EXISTS`, both indexes
+`IF NOT EXISTS`, and `ENABLE ROW LEVEL SECURITY` is idempotent — so the
+migration re-runs cleanly against a database that already has it.
+
+**RLS note for anyone auditing after a restore.** The table enables RLS with
+**zero policies**, which is correct and matches `channel_read_receipts`,
+`message_reactions` and `poll_votes`. It is not a missing-policy defect: the API
+reaches the table only through the service-role client, and the absence of a
+client-reachable policy is what makes "not even a channel admin can see who
+bookmarked what" hold structurally. Do not "fix" it by adding one.

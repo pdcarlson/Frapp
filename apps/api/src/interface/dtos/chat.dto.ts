@@ -375,3 +375,97 @@ export class ResolveAuthorAvatarsDto {
   @IsUUID(undefined, { each: true })
   message_ids: string[];
 }
+
+/**
+ * The message a bookmark points at, as the Bookmarks view renders it (#462).
+ *
+ * A narrow projection rather than the whole `ChatMessage`: the panel draws an
+ * author, a timestamp and a preview, and jumps to the message in its channel.
+ * Declaring it explicitly is what keeps the generated SDK from typing this
+ * endpoint's response `never` — the defect #1049 tracks across the
+ * member-facing reads that never got a response schema.
+ */
+export class BookmarkedMessageDto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({ format: 'uuid' })
+  channel_id: string;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'Null for an imported archive message, which names its author in author_name instead.',
+  })
+  sender_id: string | null;
+
+  @ApiProperty({ type: String, nullable: true, required: false })
+  author_name?: string | null;
+
+  @ApiProperty({ type: String, nullable: true, required: false })
+  author_avatar_path?: string | null;
+
+  @ApiProperty({
+    type: String,
+    description:
+      'Reads “[message deleted]” once the message is deleted — the bookmark keeps its row and surfaces that placeholder rather than disappearing.',
+  })
+  content: string;
+
+  @ApiProperty({ type: Boolean })
+  is_deleted: boolean;
+
+  @ApiProperty()
+  created_at: string;
+}
+
+/**
+ * One of the caller's own bookmarks (#462).
+ *
+ * There is deliberately no `user_id` on the wire and no count of who else
+ * bookmarked the message: every row this endpoint returns already belongs to
+ * the caller, and `spec/behavior/chat/README.md` is explicit that nobody —
+ * channel admins included — may see who bookmarked what. Putting an owner
+ * field here would be the first step toward a client rendering one.
+ */
+export class BookmarkDto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({ format: 'uuid' })
+  message_id: string;
+
+  @ApiProperty({
+    type: String,
+    description: 'When the caller saved it — not when the message was sent.',
+  })
+  created_at: string;
+
+  @ApiProperty({ type: BookmarkedMessageDto })
+  message: BookmarkedMessageDto;
+}
+
+/**
+ * What `POST /v1/bookmarks/messages/{id}` returns: the bookmark row itself,
+ * with no joined message.
+ *
+ * Separate from {@link BookmarkDto} rather than reusing it with an optional
+ * `message`, because the two really are different shapes and an optional field
+ * would push the "is it there?" question onto every client. The caller already
+ * holds the message it just bookmarked; re-sending it would be bytes for
+ * nothing.
+ */
+export class BookmarkRefDto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({ format: 'uuid' })
+  message_id: string;
+
+  @ApiProperty({ format: 'uuid' })
+  chapter_id: string;
+
+  @ApiProperty()
+  created_at: string;
+}

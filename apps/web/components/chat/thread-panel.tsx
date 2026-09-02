@@ -21,6 +21,14 @@ interface ThreadPanelProps {
   onUnreact: (messageId: string, emoji: string) => void;
   onEdit?: (messageId: string, content: string) => Promise<void>;
   onDelete?: (messageId: string) => void;
+  /**
+   * Bookmarks (#462). Threaded replies are messages the viewer can see, so the
+   * spec's "any member can bookmark any message they can see" covers them —
+   * leaving them out would make the affordance depend on which pane a message
+   * happens to be read in.
+   */
+  bookmarkedMessageIds?: Set<string>;
+  onToggleBookmark?: (messageId: string, next: boolean) => void;
   canManageChannel?: boolean;
 }
 
@@ -41,6 +49,8 @@ export function ThreadPanel({
   onUnreact,
   onEdit,
   onDelete,
+  bookmarkedMessageIds,
+  onToggleBookmark,
   canManageChannel,
 }: ThreadPanelProps) {
   const replies = useMemo(() => {
@@ -112,6 +122,8 @@ export function ThreadPanel({
             onUnreact={onUnreact}
             onEdit={onEdit}
             onDelete={onDelete}
+            isBookmarked={bookmarkedMessageIds?.has(parent.id)}
+            onToggleBookmark={onToggleBookmark}
             canManageChannel={canManageChannel}
             isTapRevealed={tapRevealed.isRevealed(parent)}
             onToggleTapReveal={() => tapRevealed.toggle(parent)}
@@ -137,6 +149,8 @@ export function ThreadPanel({
                 onUnreact={onUnreact}
                 onEdit={onEdit}
                 onDelete={onDelete}
+                isBookmarked={bookmarkedMessageIds?.has(message.id)}
+                onToggleBookmark={onToggleBookmark}
                 canManageChannel={canManageChannel}
                 isTapRevealed={tapRevealed.isRevealed(message)}
                 onToggleTapReveal={() => tapRevealed.toggle(message)}

@@ -205,9 +205,7 @@ describe('SupabaseChatMessageBookmarkRepository — tenant scope', () => {
     expect(
       harness
         .rows('chat_message_bookmarks')
-        .filter(
-          (r) => r.user_id === USER_SHARED && r.message_id === MESSAGE_A,
-        ),
+        .filter((r) => r.user_id === USER_SHARED && r.message_id === MESSAGE_A),
     ).toHaveLength(1);
   });
 

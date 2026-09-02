@@ -14,22 +14,21 @@ const CHAPTER = 'chap-1';
 const USER = 'user-1';
 const MESSAGE = 'msg-1';
 
-const message = (overrides: Partial<ChatMessage> = {}): ChatMessage =>
-  ({
-    id: MESSAGE,
-    channel_id: 'ch-1',
-    sender_id: 'user-2',
-    content: 'keep this',
-    type: 'TEXT',
-    reply_to_id: null,
-    metadata: {},
-    is_pinned: false,
-    pinned_at: null,
-    edited_at: null,
-    is_deleted: false,
-    created_at: '2026-01-01T00:00:00.000Z',
-    ...overrides,
-  }) as ChatMessage;
+const message = (overrides: Partial<ChatMessage> = {}): ChatMessage => ({
+  id: MESSAGE,
+  channel_id: 'ch-1',
+  sender_id: 'user-2',
+  content: 'keep this',
+  type: 'TEXT',
+  reply_to_id: null,
+  metadata: {},
+  is_pinned: false,
+  pinned_at: null,
+  edited_at: null,
+  is_deleted: false,
+  created_at: '2026-01-01T00:00:00.000Z',
+  ...overrides,
+});
 
 const bookmark: ChatMessageBookmark = {
   id: 'bm-1',

@@ -310,6 +310,14 @@ it lands with the surface it measures, not before.
    (dismissing a digest is low-stakes); add a private store; or drop dismissal from v1 and rely on
    the metrics to tell us whether it is needed. Dropping it is the cheapest and loses least.
 
+   **The "private store" option now has a shipped precedent** rather than being
+   hypothetical: #462 built one for bookmarks — `chat_message_bookmarks`, its own
+   table, RLS enabled with zero policies, and a repository interface that offers
+   no by-message query so "who did this" cannot be asked. Copying that shape for
+   dismissal is a small table and a service, not a design problem. It does not
+   settle the question — dropping dismissal from v1 may still be right — but the
+   cost side of the trade is now known rather than estimated.
+
 ## Implementation follow-ups
 
 Tracked separately so this spec can be accepted independently of any build:

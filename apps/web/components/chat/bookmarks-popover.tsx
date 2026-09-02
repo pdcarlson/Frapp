@@ -1,0 +1,142 @@
+"use client";
+
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { BookmarkGlyph } from "./chat-glyphs";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { FOCUS_RING } from "@/components/ui/focus";
+import { cn } from "@/lib/utils";
+import type { ChatMessage } from "@repo/chat-core/types";
+import { resolveAuthorLabel } from "@repo/hooks";
+import { formatClock } from "@repo/formatting";
+
+export interface BookmarkEntry {
+  id: string;
+  message_id: string;
+  created_at: string;
+  message: ChatMessage;
+}
+
+/**
+ * The viewer's personal Bookmarks view (#462), scoped to the active chapter.
+ *
+ * **Chapter-wide, not channel-scoped** — that is the one structural difference
+ * from the sibling `PinsPopover` and it is what the spec asks for: "Bookmarked
+ * messages appear in a personal 'Bookmarks' view, scoped per chapter." So a row
+ * here may belong to a channel the viewer is not currently looking at, which is
+ * why `onJump` takes the channel id too and the shell switches channel before
+ * scrolling.
+ *
+ * Two things this panel deliberately never shows, because showing either would
+ * break the privacy guarantee the feature exists for: a count of who else
+ * bookmarked a message, and any other member's bookmarks. The API cannot answer
+ * those questions, so there is nothing to render even by accident.
+ */
+export function BookmarksPopover({
+  bookmarks,
+  nameFor,
+  isLoading,
+  isError,
+  onJump,
+}: {
+  bookmarks: BookmarkEntry[];
+  /** Resolves `users.id` → display name; `null` when unresolvable. */
+  nameFor: (userId: string) => string | null;
+  isLoading?: boolean;
+  isError?: boolean;
+  onJump?: (channelId: string, messageId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="secondary"
+          size="sm"
+          aria-label={`${bookmarks.length} bookmarked messages`}
+        >
+          <BookmarkGlyph className="h-5 w-5" />
+          {bookmarks.length > 0 ? <span>{bookmarks.length}</span> : null}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-0" align="end">
+        <p className="border-b border-border px-3 py-3 text-[12.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+          Your bookmarks
+        </p>
+        {/*
+          Loading and error are distinct states rather than both collapsing to
+          the empty copy: "you have no bookmarks" is a claim about the member's
+          data, and asserting it while the request is in flight or has failed is
+          the false-empty defect components.md §5 bans.
+        */}
+        {isLoading ? (
+          <p className="px-3 py-4 text-[12.5px] text-muted-foreground">
+            Loading your bookmarks…
+          </p>
+        ) : isError ? (
+          <p className="px-3 py-4 text-[12.5px] text-muted-foreground">
+            Couldn’t load your bookmarks. Reopen this panel to try again.
+          </p>
+        ) : bookmarks.length === 0 ? (
+          <p className="px-3 py-4 text-[12.5px] text-muted-foreground">
+            Nothing saved yet. Save a message to keep it here — only you can see
+            your bookmarks.
+          </p>
+        ) : (
+          <ul className="max-h-72 divide-y divide-border overflow-y-auto">
+            {bookmarks.map((bookmark) => (
+              <li key={bookmark.id}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Dismiss on jump, for the reason the pins panel records:
+                    // a 320px panel left open over the pane it just scrolled
+                    // hides the message it navigated to.
+                    setOpen(false);
+                    onJump?.(bookmark.message.channel_id, bookmark.message_id);
+                  }}
+                  className={cn(
+                    "block w-full px-3 py-3 text-left text-[12.5px] transition-colors",
+                    "hover:bg-accent-subtle hover:text-accent-text",
+                    FOCUS_RING,
+                  )}
+                >
+                  <span className="block font-semibold text-foreground">
+                    {/* viewerId null, matching the pins panel: this list names
+                        every author including the viewer rather than "You". */}
+                    {resolveAuthorLabel(bookmark.message, nameFor, null)}
+                  </span>
+                  <span className="block text-muted-foreground">
+                    {formatClock(bookmark.created_at)}
+                  </span>
+                  {/*
+                    A deleted message keeps its row here carrying the
+                    `[message deleted]` placeholder the API returns — the spec
+                    requires the bookmark to survive the deletion rather than
+                    vanish. It is italicised so it reads as a tombstone rather
+                    than as somebody having typed that.
+
+                    foundations §7 is a hard MUST NOT on body text below 16, and
+                    a bookmark's body is a message.
+                  */}
+                  <span
+                    className={cn(
+                      "mt-1 line-clamp-3 block whitespace-pre-wrap text-base text-muted-foreground",
+                      bookmark.message.is_deleted && "italic",
+                    )}
+                  >
+                    {bookmark.message.content}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
