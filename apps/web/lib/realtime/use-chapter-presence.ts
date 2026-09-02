@@ -85,9 +85,9 @@ export function useChapterPresence({
    * below, so it can never be rendered against a different attach.
    */
   const [roster, setRoster] = useState<{
-    attach: number;
+    connection: number;
     byUser: Map<string, number>;
-  }>(() => ({ attach: -1, byUser: EMPTY }));
+  }>(() => ({ connection: -1, byUser: EMPTY }));
 
   /**
    * A generation counter for "which attach are we on", bumped during render
@@ -115,23 +115,42 @@ export function useChapterPresence({
   }
 
   /**
-   * Whether the channel is currently delivering.
+   * The live connection — which attach it belongs to, and a globally unique id
+   * for this particular join — or `null` when nothing is delivering.
    *
-   * The generation counter covers a teardown we initiated. It does *not* cover
-   * a channel that simply stopped: a socket drop that never flips
-   * `navigator.onLine` (a proxy dying, a server-side close, an errored re-join
-   * loop) leaves `enabled` true and the chapter unchanged, so without this the
-   * last roster we happened to see would render as current for the rest of the
-   * session — naming people Online who left hours ago. A quiet channel and a
-   * dead one are indistinguishable from the inside, which is why the transport
-   * has to say so.
+   * Two things forced this to be an identity rather than a boolean, and each
+   * was a real defect:
+   *
+   *   1. *A boolean cannot tell a rejoin's roster from the pre-drop one.* A
+   *      socket drop leaves `enabled` and the chapter unchanged, so the
+   *      generation never moves; clearing a flag hides the stale roster, but
+   *      the flag goes true again on the join reply — which arrives strictly
+   *      *before* the server's `presence_state` — so the pre-drop roster was
+   *      republished as current in the gap. A laptop waking after two hours
+   *      showed everyone who had been online two hours ago. Stamping the roster
+   *      with the connection it was read on closes that: a new join is a new
+   *      id, so the old roster simply stops matching until a fresh sync lands.
+   *   2. *A shared boolean lets a dead channel silence a live one.* Release and
+   *      attach are queued under different topics, so they run concurrently on
+   *      a chapter switch, and the old channel's `CLOSED` can land after the
+   *      new one has joined. An ungated `setConnected(false)` there turned
+   *      presence off for the rest of the session — no dots at all in the new
+   *      chapter, with nothing to re-enable it. Carrying the generation lets a
+   *      late callback recognise that it is no longer the live attach.
    */
-  const [connected, setConnected] = useState(false);
+  const [live, setLive] = useState<{
+    generation: number;
+    connection: number;
+  } | null>(null);
+
+  /** Monotonic, so a rejoin is never mistaken for the connection it replaced. */
+  const connectionSeq = useRef(0);
 
   const isCurrent =
     inputs !== null &&
-    connected &&
-    roster.attach === attachState.generation;
+    live !== null &&
+    live.generation === attachState.generation &&
+    roster.connection === live.connection;
   const presentSince = isCurrent ? roster.byUser : EMPTY;
 
   /**
@@ -206,6 +225,10 @@ export function useChapterPresence({
     const topic = chapterPresenceTopic(chapterId);
     let channel: RealtimeChannel | null = null;
     let detached = false;
+    // The join this attach is currently on. `-1` until the first SUBSCRIBED,
+    // which is a value no `live` connection ever takes — so a presence frame
+    // arriving before the join reply could not be adopted as current.
+    let connectionId = -1;
     // Last activity published for the viewer. Seeded now: a member who opens
     // the app and reads without touching anything is active, not idle.
     let lastActiveAt = Date.now();
@@ -222,10 +245,25 @@ export function useChapterPresence({
         // replace the roster with a structurally identical Map and re-render
         // the whole directory — search box, sorts, every row — to change
         // nothing on screen.
-        previous.attach === generation && sameRoster(previous.byUser, next)
+        previous.connection === connectionId && sameRoster(previous.byUser, next)
           ? previous
-          : { attach: generation, byUser: next },
+          : { connection: connectionId, byUser: next },
       );
+      // The Idle clock only ticks while there is a roster to age, so it freezes
+      // whenever the roster is empty or the channel is down — for as long as
+      // that lasts. Re-reading it here is what keeps a resumed roster from
+      // being judged against a clock from before the gap: a member who has
+      // genuinely been inactive for six minutes would otherwise read Online,
+      // because a ten-minute-stale `now` puts their timestamp in the future.
+      //
+      // Moved only once it has drifted by a whole interval, though. Presence
+      // frames are frequent, and advancing the clock on each one would change
+      // `statusOf`'s identity every time — re-rendering the whole directory and
+      // undoing the `sameRoster` bailout immediately above it.
+      setNow((previous) => {
+        const current = Date.now();
+        return current - previous >= PRESENCE_HEARTBEAT_MS ? current : previous;
+      });
     }
 
     function publish() {
@@ -271,11 +309,18 @@ export function useChapterPresence({
         // the session. Chat's manager re-tracks on each SUBSCRIBED for the same
         // reason.
         onSubscribed: () => {
-          setConnected(true);
+          connectionSeq.current += 1;
+          connectionId = connectionSeq.current;
+          setLive({ generation, connection: connectionId });
           publish();
         },
-        // The roster stops being evidence the moment the channel does.
-        onDisconnected: () => setConnected(false),
+        // The roster stops being evidence the moment the channel does — but
+        // only this attach's roster. A late `CLOSED` from a channel we already
+        // replaced must not clear the one that succeeded it.
+        onDisconnected: () =>
+          setLive((previous) =>
+            previous?.generation === generation ? null : previous,
+          ),
       },
     );
 
@@ -294,7 +339,11 @@ export function useChapterPresence({
       document.removeEventListener("visibilitychange", onActivity);
       channel = null;
       publishRef.current = null;
-      setConnected(false);
+      // Same guard as `onDisconnected`: clear only if this attach is still the
+      // live one.
+      setLive((previous) =>
+        previous?.generation === generation ? null : previous,
+      );
       detach();
     };
   }, [enabled, chapterId, generation]);

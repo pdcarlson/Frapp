@@ -397,6 +397,87 @@ describe("useChapterPresence", () => {
   });
 
   /**
+   * The join reply arrives strictly *before* the server's `presence_state`, so
+   * a flag flipped on SUBSCRIBED republishes the pre-drop roster in the gap.
+   * A laptop waking after two hours would show everyone who was online then.
+   * The roster is stamped with the connection it was read on, so a new join is
+   * a new id and the old roster simply stops matching.
+   */
+  test("a re-join does not republish the pre-drop roster before a fresh sync", async () => {
+    fake.setState({ a: [{ userId: "u1", ts: Date.now() }] });
+    const { result } = renderHook(() =>
+      useChapterPresence({ chapterId: CHAPTER, viewerId: "me" }),
+    );
+    await settleAttach();
+    act(() => fake.fire("sync"));
+    const options = attachRealtimeChannel.mock.calls[0]![2];
+
+    act(() => options?.onDisconnected?.("CHANNEL_ERROR"));
+    act(() => options?.onSubscribed?.(fake.channel));
+
+    // Joined again, but nothing fresh has been delivered yet.
+    expect(result.current.isReady).toBe(false);
+    expect(result.current.statusOf("u1")).toBe("offline");
+  });
+
+  /**
+   * Release and attach are queued under different topics, so on a chapter
+   * switch they run concurrently and the replaced channel's `CLOSED` can land
+   * after the new one has joined. Ungated, that turned presence off for the
+   * rest of the session — no dots at all, and nothing to re-enable them.
+   */
+  test("a late CLOSED from a replaced channel does not silence the live one", async () => {
+    const { result, rerender } = renderHook(
+      ({ chapterId }: { chapterId: string }) =>
+        useChapterPresence({ chapterId, viewerId: "me" }),
+      { initialProps: { chapterId: CHAPTER } },
+    );
+    await settleAttach();
+    const stale = attachRealtimeChannel.mock.calls[0]![2];
+
+    const OTHER = "99999999-8888-7777-6666-555555555555";
+    rerender({ chapterId: OTHER });
+    await settleAttach();
+    fake.setState({ a: [{ userId: "u1", ts: Date.now() }] });
+    act(() => fake.fire("sync"));
+    expect(result.current.isReady).toBe(true);
+
+    // The replaced channel's teardown finally settles.
+    act(() => stale?.onDisconnected?.("CLOSED"));
+
+    expect(result.current.isReady).toBe(true);
+    expect(result.current.statusOf("u1")).toBe("online");
+  });
+
+  /**
+   * The Idle clock only advances while there is a roster to age, so it freezes
+   * across a gap. A roster that resumes after one must not be judged against
+   * the pre-gap clock — a member genuinely inactive for six minutes would read
+   * Online, because a stale `now` puts their timestamp in the future.
+   */
+  test("a roster arriving after a long gap is judged against a fresh clock", async () => {
+    vi.useFakeTimers();
+    const start = Date.now();
+    const { result } = renderHook(() =>
+      useChapterPresence({ chapterId: CHAPTER, viewerId: "me" }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    // No roster for ten minutes, so nothing advances the clock.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+    });
+
+    // Now a member appears who has been inactive for six minutes.
+    fake.setState({ a: [{ userId: "u1", ts: start + 4 * 60 * 1000 }] });
+    act(() => fake.fire("sync"));
+
+    expect(result.current.statusOf("u1")).toBe("idle");
+  });
+
+  /**
    * A peer re-publishing produces a presence diff whose reduced result is
    * identical. Swapping in an equal Map would churn identity and re-render the
    * whole directory to change nothing on screen.
