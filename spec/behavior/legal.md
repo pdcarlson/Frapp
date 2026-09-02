@@ -5,6 +5,7 @@
 - Displayed on the landing site (frapp.live/terms) and linked from the app footer.
 - Accepted during chapter creation (onboarding step): the admin must check a "I agree to the Terms of Service and Privacy Policy" checkbox before proceeding to payment.
 - Covers: acceptable use policy, data ownership (chapters own their data; Frapp has a license to host and process it), limitation of liability, subscription terms and auto-renewal, account termination conditions.
+- **Known gap:** [`data-retention.md` § Inactive Chapter Cleanup](data-retention.md#inactive-chapter-cleanup) states that the right to delete data from chapters inactive for more than 2 years "is documented in the Terms of Service". The shipped terms page carries no such clause — no inactivity reservation, no 2-year window, no 30-day warning. Nothing implements the cleanup, so there is no live exposure, but the two must be reconciled before anything does (#1562). Do not describe the ToS as covering inactivity deletion until the page itself does.
 
 ## Privacy Policy
 
