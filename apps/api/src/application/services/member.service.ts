@@ -23,6 +23,12 @@ import { RbacService } from './rbac.service';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
 import { allowedVisibilities } from './custom-field-visibility';
 import type { MemberCustomFieldValue } from '../../domain/entities/chapter-custom-field.entity';
+import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
+import type { IStorageProvider } from '../../domain/adapters/storage.interface';
+import {
+  PROFILES_BUCKET,
+  profileFolderPrefix,
+} from '../../domain/constants/storage';
 
 export interface AlumniFilter {
   graduation_year?: number;
@@ -83,6 +89,8 @@ export class MemberService {
     private readonly customRoleService: CustomRoleService,
     private readonly rbacService: RbacService,
     private readonly auditLogService: ChapterAuditLogService,
+    @Inject(STORAGE_PROVIDER)
+    private readonly storageProvider: IStorageProvider,
   ) {}
 
   async findByChapter(chapterId: string): Promise<MemberSummary[]> {
@@ -306,6 +314,23 @@ export class MemberService {
     if (!member) throw new NotFoundException('Member not found');
     if (member.chapter_id !== chapterId) {
       throw new ForbiddenException('Member not in current chapter');
+    }
+    // #711: purge this chapter's profile-photo folder before the row goes —
+    // the prefix is derived from chapter_id + user_id (not the membership row
+    // itself), but leaving it until after the delete would mean a purge
+    // failure on retry has no membership left to re-derive it from safely.
+    // No independent sweep reaps orphaned profile photos (unlike generated
+    // report exports, which the 24h retention sweep covers regardless), so a
+    // storage failure here throws and blocks the removal — retryable, same
+    // as the account-deletion avatar purge — rather than silently orphaning
+    // the objects. A missing bucket/prefix is "nothing to purge", not a
+    // failure (`IStorageProvider.listFiles`'s own contract).
+    const photoPaths = await this.storageProvider.listFiles(
+      PROFILES_BUCKET,
+      profileFolderPrefix(chapterId, member.user_id),
+    );
+    if (photoPaths.length > 0) {
+      await this.storageProvider.deleteFiles(PROFILES_BUCKET, photoPaths);
     }
     await this.memberRepo.delete(memberId);
     // Written before the orphan-presidency check below, not after: that check

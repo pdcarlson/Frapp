@@ -16,6 +16,7 @@ import { CustomFieldService } from './custom-field.service';
 import { CustomRoleService } from './custom-role.service';
 import { RbacService } from './rbac.service';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
+import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 
 describe('MemberService', () => {
   let service: MemberService;
@@ -33,6 +34,7 @@ describe('MemberService', () => {
     flagIfPresidentRemoved: jest.Mock;
   };
   let mockAuditLogService: { record: jest.Mock };
+  let mockStorageProvider: { listFiles: jest.Mock; deleteFiles: jest.Mock };
 
   beforeEach(async () => {
     mockRepo = {
@@ -81,6 +83,10 @@ describe('MemberService', () => {
     mockAuditLogService = {
       record: jest.fn().mockResolvedValue(undefined),
     };
+    mockStorageProvider = {
+      listFiles: jest.fn().mockResolvedValue([]),
+      deleteFiles: jest.fn().mockResolvedValue(undefined),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -92,6 +98,7 @@ describe('MemberService', () => {
         { provide: CustomRoleService, useValue: mockCustomRoleService },
         { provide: RbacService, useValue: mockRbacService },
         { provide: ChapterAuditLogService, useValue: mockAuditLogService },
+        { provide: STORAGE_PROVIDER, useValue: mockStorageProvider },
       ],
     }).compile();
 
@@ -841,6 +848,75 @@ describe('MemberService', () => {
       expect(mockRepo.delete).not.toHaveBeenCalled();
       expect(mockAuditLogService.record).not.toHaveBeenCalled();
       expect(mockRbacService.flagIfPresidentRemoved).not.toHaveBeenCalled();
+    });
+
+    // #711: closes the ex-chapter avatar residue — removal used to delete
+    // only the membership row and leave every profile photo behind.
+    describe('profile-photo purge', () => {
+      it("lists and deletes the removed member's photo folder in this chapter", async () => {
+        mockRepo.findById.mockResolvedValue(existingMember);
+        mockRepo.delete.mockResolvedValue(undefined);
+        mockStorageProvider.listFiles.mockResolvedValue([
+          'chapters/chapter-1/profiles/user-1/photo.jpg',
+        ]);
+
+        await service.remove('member-1', 'chapter-1', 'actor-1');
+
+        expect(mockStorageProvider.listFiles).toHaveBeenCalledWith(
+          'profiles',
+          'chapters/chapter-1/profiles/user-1',
+        );
+        expect(mockStorageProvider.deleteFiles).toHaveBeenCalledWith(
+          'profiles',
+          ['chapters/chapter-1/profiles/user-1/photo.jpg'],
+        );
+      });
+
+      it('skips deleteFiles when the folder is empty', async () => {
+        mockRepo.findById.mockResolvedValue(existingMember);
+        mockRepo.delete.mockResolvedValue(undefined);
+        mockStorageProvider.listFiles.mockResolvedValue([]);
+
+        await service.remove('member-1', 'chapter-1', 'actor-1');
+
+        expect(mockStorageProvider.deleteFiles).not.toHaveBeenCalled();
+      });
+
+      it('purges storage before deleting the membership row', async () => {
+        mockRepo.findById.mockResolvedValue(existingMember);
+        mockRepo.delete.mockResolvedValue(undefined);
+        mockStorageProvider.listFiles.mockResolvedValue([
+          'chapters/chapter-1/profiles/user-1/photo.jpg',
+        ]);
+        const order: string[] = [];
+        mockStorageProvider.deleteFiles.mockImplementation(async () => {
+          order.push('storage-purged');
+        });
+        mockRepo.delete.mockImplementation(async () => {
+          order.push('member-deleted');
+        });
+
+        await service.remove('member-1', 'chapter-1', 'actor-1');
+
+        expect(order).toEqual(['storage-purged', 'member-deleted']);
+      });
+
+      // No independent sweep reaps orphaned profile photos (unlike report
+      // exports, which the 24h retention sweep covers), so a purge failure
+      // must block the removal rather than silently orphan the objects.
+      it('blocks the removal — does not delete the row or write an audit entry — when the purge fails', async () => {
+        mockRepo.findById.mockResolvedValue(existingMember);
+        mockStorageProvider.listFiles.mockRejectedValue(
+          new Error('storage unavailable'),
+        );
+
+        await expect(
+          service.remove('member-1', 'chapter-1', 'actor-1'),
+        ).rejects.toThrow('storage unavailable');
+        expect(mockRepo.delete).not.toHaveBeenCalled();
+        expect(mockAuditLogService.record).not.toHaveBeenCalled();
+        expect(mockRbacService.flagIfPresidentRemoved).not.toHaveBeenCalled();
+      });
     });
   });
 
