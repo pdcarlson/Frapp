@@ -447,7 +447,17 @@ both fold self-maintenance into that PR rather than opening a second one.
 - Behavior changes go in the routines' `.claude/skills/*/SKILL.md` files; only re-paste a routine
   prompt if the prompt block itself changes.
 - Keep the label roster above current if the taxonomy changes (self-maintenance automates the
-  check).
+  check). **The roster above is the only copy, deliberately** —
+  [`GITHUB_PM.md`](GITHUB_PM.md#labels-and-priority-lean-taxonomy) and the
+  [`file-follow-up`](../../../.claude/skills/file-follow-up/SKILL.md) and
+  [`issue-curator`](../../../.claude/skills/issue-curator/SKILL.md) skills all link here rather
+  than restating the area list, because a duplicated enum drifts: it did in #1077, and again when
+  `area:chat` was rostered here on 2026-09-02 while the curator skill still carried its own inline
+  list. That list was removed in the same change that added this note, so adding an area is a
+  one-place edit — keep it that way, and resist re-inlining the names anywhere. An enum also
+  cannot carry the scope caveats
+  several roster entries have (`area:chat` overlaps the surface labels rather than partitioning
+  them), which is the second reason to send readers to the roster itself.
 - **Keep a routine's lens commands pointed at the command CI actually gates on**, not at the
   underlying tool. A routine reads a check's output as evidence for filing an issue, so a command
   that reports more than the gate blocks on turns accepted decisions back into new issues. The
