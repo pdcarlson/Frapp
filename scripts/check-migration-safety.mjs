@@ -5,7 +5,15 @@ import { readdirSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 
-const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
+// Resolved from this file, never `process.cwd()`. Every path this gate reasons
+// about is repo-root-relative — `git diff --name-only` emits them that way, and
+// the migrations live at a fixed place in the tree — so anchoring on the cwd
+// only creates a second root for the same question. Run from a subdirectory the
+// cwd form died with ENOENT on `supabase/migrations`, which reads as a broken
+// checkout rather than "you are standing in the wrong folder".
+const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
+
+const MIGRATIONS_DIR = join(REPO_ROOT, "supabase", "migrations");
 const MIGRATION_FILENAME = /^\d{14}_[a-z0-9_]+\.sql$/;
 
 function getArg(name) {
@@ -161,13 +169,6 @@ export function satisfiesPromotionDocs(changedFiles) {
 export function staleDocs(isTracked = tracked) {
   return MIGRATION_DOCS.filter((doc) => !isTracked(doc));
 }
-
-// Resolved from this file, never `process.cwd()`. The paths this adjudicates
-// come from `git diff --name-only`, which is repo-root-relative whatever the
-// cwd; resolving the manifest against the cwd instead would make the two halves
-// of one decision use two different roots, and running the gate from a
-// subdirectory would report every declared doc "renamed" when nothing moved.
-const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 function tracked(doc) {
   try {

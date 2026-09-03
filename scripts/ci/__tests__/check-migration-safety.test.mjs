@@ -1,12 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+const REPO_ROOT = join(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..");
+
 
 // check-migration-safety.mjs is a general-purpose script under scripts/ (a peer
 // of the other check-*.mjs gates); its test lives here so the existing
 // `test:ci-scripts` glob (scripts/ci/__tests__/*.test.mjs) runs it — hence the
 // ../../ reach up.
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   MIGRATION_DOCS,
@@ -76,6 +80,19 @@ test("every declared doc is tracked today", () => {
     `MIGRATION_DOCS names ${missing.join(", ")}, which are no longer tracked. ` +
       "Repoint the list in the same change set as the rename.",
   );
+});
+
+test("the whole gate runs from any directory, not just the repo root", () => {
+  // Not merely the manifest: MIGRATIONS_DIR was cwd-relative too, so running
+  // the gate from a subdirectory died with ENOENT on supabase/migrations —
+  // a broken-checkout message for what was really "you are standing in the
+  // wrong folder". Both roots are resolved from the script now; pin it.
+  const script = join(REPO_ROOT, "scripts", "check-migration-safety.mjs");
+  const out = execFileSync(process.execPath, [script], {
+    cwd: join(REPO_ROOT, "scripts"),
+    encoding: "utf8",
+  });
+  assert.match(out, /Migration safety check passed\./);
 });
 
 test("the shipped resolver is repo-root anchored, not cwd-relative", () => {
