@@ -3,9 +3,10 @@
  *
  * Three copies of this arithmetic used to exist: `packages/theme/src/accent.ts`,
  * `packages/chapter-theme/src/index.ts` (which inlined it deliberately, to avoid
- * importing theme's private helpers), and `apps/api/src/domain/utils/wcag.ts`.
- * The first two now import from here (#797). The API's copy stays independent on
- * purpose — see the note at the bottom of this file.
+ * importing theme's private helpers), and a copy in the API. The first two now
+ * import from here (#797). The API's copy was deleted as dead code once the
+ * contrast gate moved into `@repo/chapter-theme`'s `deriveSignetPalette`, so
+ * this is now the only implementation, with no second copy to keep in agreement.
  *
  * No DOM, no dependencies. The API is a CommonJS consumer, so this package does
  * not declare `"type": "module"` and its `dist` is CJS.
@@ -191,12 +192,13 @@ function toHex({ r, g, b }: Rgb): string {
 }
 
 /*
- * Why `apps/api/src/domain/utils/wcag.ts` does not import this package.
+ * Why `apps/api` does not import this package directly.
  *
  * It would resolve through `exports.require` to `./dist/index.js`, which is
- * gitignored and only exists after a build. `chapter.service.spec.ts` exercises
- * the real contrast gate rather than mocking it, so `npm test -w apps/api` on a
- * clean clone would fail before anything had been built. The API keeps its own
- * copy; a comment there names this file as canonical and the two are pinned to
- * agree by test.
+ * gitignored and only exists after a build, so `npm test -w apps/api` on a clean
+ * clone would fail before anything had been built. The API used to keep its own
+ * copy of this math for that reason; that copy is gone, because the contrast gate
+ * it served moved into `@repo/chapter-theme`'s `deriveSignetPalette` and the API
+ * no longer computes contrast at all. The build-order constraint above still
+ * applies to any future direct import from `apps/api`.
  */

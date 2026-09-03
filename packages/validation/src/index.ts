@@ -138,8 +138,6 @@ export const CreateCheckoutSchema = z.object({
   cancel_url: z.string().url(),
 });
 
-// ── Financial Invoices ───────────────────────────────────────────────────────
-
 // ── Backwork ─────────────────────────────────────────────────────────────────
 
 export const SEMESTERS = ["Spring", "Summer", "Fall", "Winter"] as const;

@@ -262,14 +262,17 @@ Two new decorators in `apps/api/src/interface/decorators/subscription.decorator.
 
 The `canPerformWriteAction` / `canPerformReadAction` utilities in `apps/api/src/domain/utils/subscription.ts` (previously dead code referenced only by tests) now back the live enforcement path.
 
-> **Superseded.** That sentence stopped being true. `ChapterGuard` classifies each request
-> with its own private `enforceSubscription`, and the grace-window half reads
-> `subscriptionWriteState` / `isWithinSubscriptionGrace` from `@repo/validation` so the web
-> and mobile clients gate on the identical rules. Neither helper was ever called from the
-> guard, so `apps/api/src/domain/utils/subscription.ts` fell back to being referenced only by
-> its own spec — and its docblock ("during the grace period (past_due), writes are blocked")
-> had drifted from what the guard actually does. The module was deleted as dead code; the
-> account above is kept as the record of *this* fix.
+> **Superseded.** That sentence stopped being true. Enforcement is entirely inside
+> `ChapterGuard`: its private `enforceSubscription` classifies the request, and its private
+> `isWithinGrace` reads a local `GRACE_PERIOD_MS`. `@repo/validation`'s `subscriptionWriteState`
+> / `isWithinSubscriptionGrace` are the **client-side mirror** of that logic — consumed only by
+> `apps/web` and `apps/mobile`, never by the API, and kept in step with the guard by hand (see
+> that module's own header, and `SUBSCRIPTION_GRACE_PERIOD_MS`'s "the two must move together").
+> Neither `canPerformWriteAction` nor `canPerformReadAction` was ever called from the guard, so
+> `apps/api/src/domain/utils/subscription.ts` fell back to being referenced only by its own
+> spec — and its docblock ("during the grace period (past_due), writes are blocked") had drifted
+> from what the guard actually does. The module was deleted as dead code; the account above is
+> kept as the record of *this* fix.
 
 ### Prevention
 New chapter-scoped controllers default to paid-ops (fail-closed): writes are blocked when the chapter is `past_due`, `incomplete`, or `canceled` unless the controller is explicitly marked `@FreeTier()` or `@SubscriptionExempt()`. The subscription decorator wiring is asserted by `apps/api/src/interface/decorators/subscription.decorator.spec.ts` so any drift between the spec classification and the actual decorators trips a unit test.
