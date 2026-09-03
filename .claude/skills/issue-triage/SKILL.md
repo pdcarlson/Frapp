@@ -109,7 +109,7 @@ each:
    disqualifies a candidate on *"a `Blocked by #N` **body line** whose #N is still open"*, and §1.1
    then re-verifies **those body lines** against the repo. It does not discover blockers from
    comments. So a commented `Blocked by` is **not** honored by the selection filter: the issue
-   still ranks as claimable on every run. (Verified 2026-08-28 against `next.md:193` and `:329`.)
+   still ranks as claimable on every run. (Verified 2026-09-03 against `next.md:199` and `:335`.)
 
    That leaves two cases:
    - **A body you authored this run** — write the line into the body. This is the only delivery
