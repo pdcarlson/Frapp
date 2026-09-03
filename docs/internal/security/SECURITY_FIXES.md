@@ -265,8 +265,9 @@ The `canPerformWriteAction` / `canPerformReadAction` utilities in `apps/api/src/
 > **Superseded.** That sentence stopped being true. Enforcement is entirely inside
 > `ChapterGuard`: its private `enforceSubscription` classifies the request, and its private
 > `isWithinGrace` reads a local `GRACE_PERIOD_MS`. `@repo/validation`'s `subscriptionWriteState`
-> / `isWithinSubscriptionGrace` are the **client-side mirror** of that logic — consumed only by
-> `apps/web` and `apps/mobile`, never by the API, and kept in step with the guard by hand (see
+> / `isWithinSubscriptionGrace` are the **client-side mirror** of that logic — the only production
+> consumer is `apps/web/lib/hooks/use-subscription-write-state.ts`, never the API, and the two
+> copies of the 3-day window are kept in step with the guard by hand (see
 > that module's own header, and `SUBSCRIPTION_GRACE_PERIOD_MS`'s "the two must move together").
 > Neither `canPerformWriteAction` nor `canPerformReadAction` was ever called from the guard, so
 > `apps/api/src/domain/utils/subscription.ts` fell back to being referenced only by its own
