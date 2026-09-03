@@ -195,9 +195,12 @@ Every issue this routine **creates**:
 
 - Labels: **`triage`** (intake — the triage routine prioritizes and promotes it) +
   **`suggestion`** (always — the ownership/dedup/lifecycle anchor) + exactly one **`area:<x>`**
-  (`api`/`web`/`db`/`deps`/`security`/`ci`/`docs`/`product`/`ux`/`research`/`dx`/`infra`/`mobile`
-  — [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md#tracker-access-shared-by-all-routines)
-  holds the canonical roster; check it rather than trusting this copy) + a **priority
+  (canonical roster in
+  [`ROUTINES.md` → Tracker access](../../../docs/internal/ci-cd/ROUTINES.md#tracker-access-shared-by-all-routines)
+  — don't restate it here; a second copy is how it drifted before, in #1077 and again when
+  `area:chat` was rostered. **Read the roster rather than an enum**: several entries carry scope
+  caveats a list of names cannot, including which labels overlap the others rather than
+  partitioning them) + a **priority
   label** (`P1`–`P4`) from impact — promotion out of triage requires one, so propose it now.
   **Don't inflate:** a routine suggestion is `P3`/`P4`; reserve `P1`/`P2` for genuine high-impact
   (security, data-loss, broken core flows). `/next` ranks by priority, so inflated suggestions
