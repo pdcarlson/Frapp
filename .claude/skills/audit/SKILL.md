@@ -245,7 +245,12 @@ Implemented by `scripts/check-migration-safety.mjs`. It validates **only**:
 
 - Filenames match `{14-digit-timestamp}_{snake_case}.sql`
 - No duplicate timestamps
-- Promotion docs updated when migrations change
+- A migration change also updates one of the two runbooks named by
+  `MIGRATION_DOCS` in that script — either one satisfies it, so it backs the
+  habit without proving the promotion log complete
+- Those declared runbooks are still tracked. This arm exits **2**, not 1: it
+  means the gate cannot do its job (a rename outran the manifest), not that
+  your change is wrong
 
 It does **not** inspect migration SQL for RLS. For per-table RLS coverage, use the **RLS coverage** section above and its Python verification script.
 

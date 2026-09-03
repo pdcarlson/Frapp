@@ -251,7 +251,8 @@ Two other refusals, both deliberate:
       repo excludes and why
 - [ ] PR includes migration SQL + rollback plan (`DB_ROLLBACK_PLAYBOOK.md`)
 - [ ] PR appends an entry to the promotion log at the bottom of this file
-      (`check:migration-safety` enforces that migration PRs touch this doc)
+      (`check:migration-safety` requires touching this doc or the rollback
+      playbook — it cannot tell which one you owed)
 - [ ] Query/index/policy changes reviewed by at least one backend reviewer
 - [ ] Supabase backups/snapshots confirmed before a **production** promotion
 
@@ -371,8 +372,10 @@ Post-apply production checks:
 ## Promotion log
 
 Every migration below records what it does, how it was promoted, and anything a
-promoter must do by hand. `check:migration-safety` requires migration PRs to
-touch this file, which is what keeps the log complete.
+promoter must do by hand. `check:migration-safety` requires a migration PR to
+touch this file **or** [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md) — it
+backs the habit, it does not prove the log complete. Appending here stays the
+promoter's job.
 
 ## 2026-08-31: `chapter_documents` metadata — mime type, size, document type, effective date (#716)
 
