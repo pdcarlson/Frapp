@@ -12,8 +12,8 @@ import { getSignetCssVars, signetDarkTokens } from "./signet";
  * `tsc` only proves these fields are `string` and `number`. What actually
  * matters is that each one still carries the value
  * `spec/ui/design-system/foundations.md` pins — that file is canonical
- * (foundations §1), and `signet.ts` says in its own header that its values are
- * transcribed from it.
+ * (its "Sources & Scope" section), and `signet.ts` says in its own header that
+ * its values are transcribed from it.
  *
  * So this suite reads the spec and compares, rather than restating the numbers
  * a second time. Restating them would only prove `signet.ts` matches this file;
@@ -39,28 +39,63 @@ const spec = (() => {
   }
 })();
 
+// The four tables that together pin every fixed color token. Named, not
+// numbered, for the reason `section()` explains.
+const COLOR_LADDERS = [
+  "Surface Ladder",
+  "Borders & Hairlines",
+  "Text Ladder",
+  "Semantic Colors",
+];
+
 // ── Markdown helpers ─────────────────────────────────────────────────────────
 
 /**
- * Body text of a `## <n>. ...` section, up to the next `## ` heading.
+ * Body text of the `## ` section with this title, up to the next `## ` heading.
+ *
+ * Keyed on the TITLE, never the ordinal `foundations.md` currently writes in
+ * front of it (`## 2. Surface Ladder (Neutrals)`). Renumbering is editorial and
+ * happens whenever a section is inserted or split; binding to `2.` means such an
+ * edit either breaks this suite for no reason or, worse, silently matches a
+ * different table and asserts the wrong values. A title is the part that only
+ * changes when the spec really changes, and then failing loudly is correct.
  *
  * Split rather than matched with an end-anchored lookahead: JavaScript has no
  * `\Z`, so the obvious `(?=^## |\Z)` silently degrades to "next heading, or the
  * first literal capital Z" — which happens to work on today's document and
  * would truncate a section the moment someone wrote "Zones" above a table.
  */
-function section(n: number): string {
-  const body = spec
-    .split(/^## /m)
-    .slice(1)
-    .find((chunk) => chunk.startsWith(`${n}.`));
-  if (!body) throw new Error(`foundations.md has no section ${n}`);
-  return body;
+function section(title: string): string {
+  const chunks = spec.split(/^## /m).slice(1);
+  const heading = (chunk: string) =>
+    (chunk.split("\n")[0] ?? "").replace(/^\s*\d+\.\s*/, "").trim().toLowerCase();
+  const key = title.toLowerCase();
+
+  // Prefix, because a title is written `Surface Ladder` and the heading reads
+  // `Surface Ladder (Neutrals)`. But ALL matches, never the first: `.find()`
+  // would silently bind `Semantic Colors` to a newly inserted
+  // `Semantic Colors (Legacy)` sitting above it and assert the tokens against
+  // the wrong rows — the same silent-wrong-table failure that keying on the
+  // ordinal had, reintroduced one layer down. Ambiguity is a spec change worth
+  // stopping on, so it fails rather than picks.
+  const matches = chunks.filter((chunk) => heading(chunk).startsWith(key));
+  if (matches.length === 1) return matches[0]!;
+
+  const present = chunks.map(heading).join(", ");
+  throw new Error(
+    matches.length === 0
+      ? `foundations.md has no section titled "${title}" (headings present: ` +
+        `${present}). If it was renamed, update this suite; if it was deleted, ` +
+        "the tokens it pinned are now covered by nothing."
+      : `foundations.md has ${matches.length} sections starting with ` +
+        `"${title}" (headings present: ${present}). Disambiguate this suite's ` +
+        "title, or the assertions below silently bind to whichever comes first.",
+  );
 }
 
 /** Table rows of a section as trimmed, backtick-stripped cells (header dropped). */
-function rows(n: number): string[][] {
-  const parsed = section(n)
+function rows(title: string): string[][] {
+  const parsed = section(title)
     .split("\n")
     .filter((line) => line.trimStart().startsWith("|"))
     .map((line) =>
@@ -76,9 +111,9 @@ function rows(n: number): string[][] {
   return parsed.slice(1); // drop the header row
 }
 
-/** `--token` → value, for the two-column-plus token tables (§2–§5). */
-function tokenTable(n: number): Map<string, string> {
-  return new Map(rows(n).map((cells) => [cells[0] ?? "", cells[1] ?? ""]));
+/** `--token` → value, for the two-column-plus token tables (the four color ladders). */
+function tokenTable(title: string): Map<string, string> {
+  return new Map(rows(title).map((cells) => [cells[0] ?? "", cells[1] ?? ""]));
 }
 
 /**
@@ -87,14 +122,15 @@ function tokenTable(n: number): Map<string, string> {
  * Worth the four lines: a bare `map.get(key)!` hands `undefined` to the
  * comparison below, which dies with `Cannot read properties of undefined
  * (reading 'toLowerCase')` naming neither the token nor the section. The row
- * most likely to be edited is §5's `Mention/DM red`, which is prose rather than
- * a token name — so this is the realistic failure, not a hypothetical one.
+ * most likely to be edited is Semantic Colors' `Mention/DM red`, which is prose
+ * rather than a token name — so this is the realistic failure, not a
+ * hypothetical one.
  */
-function pin(table: Map<string, string>, key: string, section: number): string {
+function pin(table: Map<string, string>, key: string, section: string): string {
   const value = table.get(key);
   if (value === undefined) {
     throw new Error(
-      `foundations.md §${section} no longer has a row for "${key}" ` +
+      `foundations.md "${section}" no longer has a row for "${key}" ` +
         `(rows present: ${[...table.keys()].join(", ")}). If it was renamed, ` +
         "update this suite; if it was deleted, the token it pinned is now " +
         "covered by nothing.",
@@ -119,10 +155,9 @@ function numbers(cell: string): number[] {
   return (cell.match(/\d+(?:\.\d+)?/g) ?? []).map(Number);
 }
 
-/** Every `--token` foundations.md names in its §2–§5 tables. */
+/** Every `--token` foundations.md names in its four color-ladder tables. */
 function documentedTokens(): string[] {
-  return [2, 3, 4, 5]
-    .flatMap((n) => [...tokenTable(n).keys()])
+  return COLOR_LADDERS.flatMap((title) => [...tokenTable(title).keys()])
     .filter((name) => name.startsWith("--"));
 }
 
@@ -133,23 +168,23 @@ function expectColor(actual: string, specValue: string, label: string): void {
   ).toBe(true);
 }
 
-// ── §2–§5: the fixed color tokens ────────────────────────────────────────────
+// ── The four color ladders: the fixed color tokens ────────────────────────────────────────────
 
 describe("Signet colors match foundations.md", () => {
   const { color } = signetDarkTokens;
 
-  it("§2 surface ladder", () => {
-    const t = tokenTable(2);
-    expectColor(color.surface.background, pin(t, "--background", 2), "--background");
-    expectColor(color.surface.surface1, pin(t, "--surface-1", 2), "--surface-1");
-    expectColor(color.surface.card, pin(t, "--card", 2), "--card");
-    expectColor(color.surface.popover, pin(t, "--popover", 2), "--popover");
+  it("surface ladder", () => {
+    const t = tokenTable("Surface Ladder");
+    expectColor(color.surface.background, pin(t, "--background", "Surface Ladder"), "--background");
+    expectColor(color.surface.surface1, pin(t, "--surface-1", "Surface Ladder"), "--surface-1");
+    expectColor(color.surface.card, pin(t, "--card", "Surface Ladder"), "--card");
+    expectColor(color.surface.popover, pin(t, "--popover", "Surface Ladder"), "--popover");
   });
 
-  it("§3 hairlines are low-opacity white, not fixed hex", () => {
-    const t = tokenTable(3);
-    expectColor(color.border.hairline, pin(t, "--border", 3), "--border");
-    expectColor(color.border.input, pin(t, "--input", 3), "--input");
+  it("hairlines are low-opacity white, not fixed hex", () => {
+    const t = tokenTable("Borders & Hairlines");
+    expectColor(color.border.hairline, pin(t, "--border", "Borders & Hairlines"), "--border");
+    expectColor(color.border.input, pin(t, "--input", "Borders & Hairlines"), "--input");
 
     // The spec does not merely pin these two values, it bans the alternative:
     // "Borders MUST be low-opacity white. Fixed-hex border colors are banned."
@@ -160,35 +195,35 @@ describe("Signet colors match foundations.md", () => {
     }
   });
 
-  it("§4 text ladder", () => {
-    const t = tokenTable(4);
-    expectColor(color.text.foreground, pin(t, "--foreground", 4), "--foreground");
+  it("text ladder", () => {
+    const t = tokenTable("Text Ladder");
+    expectColor(color.text.foreground, pin(t, "--foreground", "Text Ladder"), "--foreground");
     expectColor(
       color.text.mutedForeground,
-      pin(t, "--muted-foreground", 4),
+      pin(t, "--muted-foreground", "Text Ladder"),
       "--muted-foreground",
     );
-    expectColor(color.text.muted, pin(t, "--muted", 4), "--muted");
-    expectColor(color.text.disabled, pin(t, "--disabled", 4), "--disabled");
+    expectColor(color.text.muted, pin(t, "--muted", "Text Ladder"), "--muted");
+    expectColor(color.text.disabled, pin(t, "--disabled", "Text Ladder"), "--disabled");
   });
 
-  it("§5 semantic colors, including the fixed mention red", () => {
-    const t = tokenTable(5);
-    expectColor(color.semantic.success, pin(t, "--success", 5), "--success");
-    expectColor(color.semantic.warning, pin(t, "--warning", 5), "--warning");
+  it("semantic colors, including the fixed mention red", () => {
+    const t = tokenTable("Semantic Colors");
+    expectColor(color.semantic.success, pin(t, "--success", "Semantic Colors"), "--success");
+    expectColor(color.semantic.warning, pin(t, "--warning", "Semantic Colors"), "--warning");
     expectColor(
       color.semantic.destructive,
-      pin(t, "--destructive", 5),
+      pin(t, "--destructive", "Semantic Colors"),
       "--destructive",
     );
-    expectColor(color.semantic.info, pin(t, "--info", 5), "--info");
+    expectColor(color.semantic.info, pin(t, "--info", "Semantic Colors"), "--info");
 
     // Locked by the Canvas header rather than panel 4h, and load-bearing: it
     // states "you were addressed" identically in every chapter, so it must not
     // track the tenant accent.
     expectColor(
       color.semantic.mention,
-      pin(t, "Mention/DM red", 5),
+      pin(t, "Mention/DM red", "Semantic Colors"),
       "mention/DM red",
     );
     expect(color.semantic.mentionForeground.toLowerCase()).toBe("#ffffff");
@@ -213,13 +248,13 @@ describe("Signet colors match foundations.md", () => {
   });
 });
 
-// ── §7–§10: the non-color scales ─────────────────────────────────────────────
+// ── Typography, radius, spacing, elevation: the non-color scales ─────────────────────────────────────────────
 
 describe("Signet scales match foundations.md", () => {
-  it("§7 type scale, with body pinned at 16/25", () => {
+  it("type scale, with body pinned at 16/25", () => {
     const { role } = signetDarkTokens.typography;
     const specRoles = new Map(
-      rows(7).map((cells) => [
+      rows("Typography").map((cells) => [
         (cells[0] ?? "").toLowerCase(),
         { size: numbers(cells[1] ?? ""), weight: numbers(cells[2] ?? "")[0] },
       ]),
@@ -227,7 +262,7 @@ describe("Signet scales match foundations.md", () => {
 
     for (const [name, actual] of Object.entries(role)) {
       const pinned = specRoles.get(name);
-      expect(pinned, `foundations.md §7 has no row for "${name}"`).toBeDefined();
+      expect(pinned, `foundations.md "Typography" has no row for "${name}"`).toBeDefined();
       expect(actual.size, `${name} size`).toBe(pinned!.size[0]);
       expect(actual.weight, `${name} weight`).toBe(pinned!.weight);
       // Only `body` carries a line height in the spec; signet.ts documents that
@@ -241,14 +276,14 @@ describe("Signet scales match foundations.md", () => {
     expect(signetDarkTokens.typography.family.sans).toBe("Figtree");
   });
 
-  it("§8 radius map", () => {
+  it("radius map", () => {
     const { radius } = signetDarkTokens;
-    const table = rows(8);
+    const table = rows("Radius");
     const byRow = (needle: string): number[] => {
       const row = table.find((cells) =>
         (cells[0] ?? "").toLowerCase().includes(needle),
       );
-      if (!row) throw new Error(`foundations.md §8 has no "${needle}" row`);
+      if (!row) throw new Error(`foundations.md "Radius" has no "${needle}" row`);
       return numbers(row[1] ?? "");
     };
 
@@ -261,8 +296,8 @@ describe("Signet scales match foundations.md", () => {
     expect(radius.avatar).toBe("50%");
   });
 
-  it("§9 spacing grid and touch minimums", () => {
-    const body = section(9);
+  it("spacing grid and touch minimums", () => {
+    const body = section("Spacing & Touch Targets");
 
     const steps = numbers(body.match(/Steps:\s*([\d\s/]+)/)?.[1] ?? "");
     expect(Object.values(signetDarkTokens.spacing)).toEqual(steps);
@@ -286,8 +321,8 @@ describe("Signet scales match foundations.md", () => {
     }
   });
 
-  it("§10 focus ring", () => {
-    const body = section(10);
+  it("focus ring", () => {
+    const body = section("Elevation & Focus");
     const [width] = numbers(body.match(/(\d+)px spread/)?.[1] ?? "");
     const [percent] = numbers(body.match(/~?(\d+)% opacity/)?.[1] ?? "");
 
@@ -305,7 +340,7 @@ describe("getSignetCssVars", () => {
    * The tokens `getSignetCssVars()` emits that foundations.md's tables do NOT
    * name as `--tokens`, so they cannot be derived from the spec parsed here.
    * The gold family is owned by `brand-identity.md`; the mention pair appears in
-   * §5 as the prose row "Mention/DM red" rather than under a token name.
+   * Semantic Colors as the prose row "Mention/DM red", not under a token name.
    */
   const UNDOCUMENTED_HERE = [
     "--gold-ask-border",
@@ -339,17 +374,17 @@ describe("getSignetCssVars", () => {
   });
 
   it("omits the per-tenant accent family", () => {
-    // §6: the accent slot is resolved per chapter from a seed by the accent
+    // Accent Slot: resolved per chapter from a seed by the accent
     // engine, so it cannot be a constant here. If one of these ever appears in
     // this map, a chapter's branding has been hard-coded to house gold.
-    // `[a-z0-9-]+`, not `[a-z-]+`: §6 defers scale-step mapping to
+    // `[a-z0-9-]+`, not `[a-z-]+`: that section defers scale-step mapping to
     // accent-engine.md, so the day this list gains `--primary-500` a
     // digit-blind pattern would drop it and quietly stop checking the very
     // token most likely to be hard-coded to house gold.
-    const listed = section(6).match(/`--[a-z0-9-]+`/g);
+    const listed = section("Accent Slot").match(/`--[a-z0-9-]+`/g);
     expect(
       listed,
-      "foundations.md §6 no longer names the accent-slot tokens in backticks — " +
+      'foundations.md "Accent Slot" no longer names the accent-slot tokens in backticks — ' +
         "this test cannot check what it cannot find",
     ).not.toBeNull();
     const accentSlot = listed!.map((name) => name.replace(/`/g, ""));

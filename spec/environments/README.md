@@ -434,7 +434,7 @@ Two workflows exist for pushing migrations to remote projects:
 
 Migrations run automatically as part of the deploy pipeline, after CI passes and before app deployments:
 
-1. **Pre-flight validation** (CI): `check:migration-safety` validates filenames, ordering, and promotion docs.
+1. **Pre-flight validation** (CI): `check:migration-safety` validates filenames and promotion docs; `scripts/ci/check-migration-order.mjs` validates ordering.
 2. **Dry run** (CD): `supabase db push --dry-run` shows what will change before applying.
 3. **Apply** (CD): `supabase db push` applies pending migrations.
 4. **Failure handling**: If migration fails, the pipeline stops — no app deploy happens.
