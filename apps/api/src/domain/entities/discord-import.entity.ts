@@ -41,21 +41,6 @@ export type DiscordImportStatus =
   | 'purging'
   | 'purged';
 
-export const DISCORD_IMPORT_STATUSES: readonly DiscordImportStatus[] = [
-  'draft',
-  'ready',
-  'running',
-  'completed',
-  'failed',
-  'cancelled',
-  'purging',
-  'purged',
-] as const;
-
-/** Statuses from which nothing further happens without an admin acting. */
-export const DISCORD_IMPORT_TERMINAL_STATUSES: readonly DiscordImportStatus[] =
-  ['completed', 'failed', 'cancelled', 'purged'] as const;
-
 /** What the admin chose to do with one Discord channel. */
 export type DiscordChannelMappingAction =
   'create_new' | 'use_existing' | 'skip';

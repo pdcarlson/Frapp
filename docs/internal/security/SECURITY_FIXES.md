@@ -64,7 +64,7 @@ A second round of `overrides`/bump triage over the same tree as #245, closing 15
 
 Bumping `platform-express` alone was **not** sufficient, and this is the part worth remembering. `@nestjs/core` declares an *optional peer* dependency on `@nestjs/platform-express@^11.0.0`; with `core` still at `11.1.24`, npm satisfied that peer with a second, hoisted `platform-express@11.1.24` that kept the vulnerable `multer@2.1.1` in the tree. `npm audit` stayed red while the direct dependency looked fixed. Bumping `@nestjs/common`, `core`, `platform-express`, and `testing` together to `^11.1.28` collapses that back to a single hoisted copy. (This matches the lockstep set #245 already established for these packages.)
 
-`body-parser` rides the same `express@5.2.1` chain; GHSA-v422-hmwv-36x6 (LOW, size enforcement silently disabled by an invalid `limit`) clears at `2.3.0`, which express's existing `^2.2.1` range already permitted. The Stripe `rawBody: true` path (`apps/api/src/main.ts`, consumed by `stripe-webhook.guard.ts`) is unaffected — body-parser's `verify`-callback contract is unchanged across 2.2.2 → 2.3.0.
+`body-parser` rides the same `express@5.2.1` chain; GHSA-v422-hmwv-36x6 (LOW, size enforcement silently disabled by an invalid `limit`) clears at `2.3.0`, which express's existing `^2.2.1` range already permitted. The Stripe `rawBody: true` path (`apps/api/src/main.ts`, consumed by `apps/api/src/interface/controllers/webhook.controller.ts`) is unaffected — body-parser's `verify`-callback contract is unchanged across 2.2.2 → 2.3.0.
 
 The declared floor was moved to `^11.1.28` rather than left at `^11.1.24`. The old range already *permitted* 11.1.28, so `npm ci` would have installed the patched tree either way — but because Nest pins `multer` exactly, any fresh resolution under `^11.1.24` is free to land back on 11.1.24 and silently reintroduce `multer@2.1.1`. The floor is what records the security intent.
 
@@ -261,6 +261,15 @@ A critical-severity entitlement gap was fixed in `apps/api/src/interface/guards/
 Two new decorators in `apps/api/src/interface/decorators/subscription.decorator.ts` classify controllers: `@FreeTier()` marks the chat / members / invites wedge plus chapter admin (so admins can still manage the chapter while past_due / incomplete); `@SubscriptionExempt()` is used on `BillingController` so admins can always reach Checkout / portal to recover from a locked state. Default (unmarked) controllers are paid-ops and fail closed.
 
 The `canPerformWriteAction` / `canPerformReadAction` utilities in `apps/api/src/domain/utils/subscription.ts` (previously dead code referenced only by tests) now back the live enforcement path.
+
+> **Superseded.** That sentence stopped being true. `ChapterGuard` classifies each request
+> with its own private `enforceSubscription`, and the grace-window half reads
+> `subscriptionWriteState` / `isWithinSubscriptionGrace` from `@repo/validation` so the web
+> and mobile clients gate on the identical rules. Neither helper was ever called from the
+> guard, so `apps/api/src/domain/utils/subscription.ts` fell back to being referenced only by
+> its own spec — and its docblock ("during the grace period (past_due), writes are blocked")
+> had drifted from what the guard actually does. The module was deleted as dead code; the
+> account above is kept as the record of *this* fix.
 
 ### Prevention
 New chapter-scoped controllers default to paid-ops (fail-closed): writes are blocked when the chapter is `past_due`, `incomplete`, or `canceled` unless the controller is explicitly marked `@FreeTier()` or `@SubscriptionExempt()`. The subscription decorator wiring is asserted by `apps/api/src/interface/decorators/subscription.decorator.spec.ts` so any drift between the spec classification and the actual decorators trips a unit test.
