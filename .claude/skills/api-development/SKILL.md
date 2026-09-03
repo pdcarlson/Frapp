@@ -238,7 +238,11 @@ subscription-status write gating.
 
 - `/health` — no guards at all
 - `POST /v1/chapters` — `SupabaseAuthGuard` + `AuthSyncInterceptor` only (no chapter exists yet)
-- `POST /v1/webhooks/stripe` — `StripeWebhookGuard` (signature verification, no JWT)
+- `POST /v1/webhooks/stripe` — no guard. Signature verification happens inside
+  `WebhookController.handleStripeWebhook` itself, which calls
+  `IBillingProvider.constructWebhookEvent` on the raw body and answers `401` when it throws
+  (no JWT). The controller also carries `@SkipThrottle({ read: true, write: true })`, because
+  Stripe delivers from a shared IP pool that the global throttler would otherwise 429.
 
 ---
 

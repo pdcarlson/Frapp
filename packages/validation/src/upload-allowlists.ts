@@ -95,7 +95,6 @@ export type UploadKind = "image" | "proof" | "document" | "archive";
  * exception for script-bearing markup.
  */
 export const MAX_ARCHIVE_UPLOAD_BYTES = 100 * 1024 * 1024;
-export const MAX_ARCHIVE_UPLOAD_LABEL = "100 MB";
 
 /**
  * Ceiling on one uploaded DiscordChatExporter JSON partition.
@@ -191,7 +190,6 @@ const OFFICE_AND_TEXT_BINDINGS: readonly MimeBinding[] = [
 interface KindTable {
   mimes: ReadonlySet<string>;
   extensions: ReadonlySet<string>;
-  dotted: ReadonlySet<string>;
   byExtension: Record<string, string>;
   accept: string;
   mimeList: readonly string[];
@@ -215,7 +213,6 @@ function freezeKind(bindings: readonly MimeBinding[]): KindTable {
   return {
     mimes,
     extensions,
-    dotted: new Set([...extensions].map((ext) => `.${ext}`)),
     byExtension,
     accept: [...extensions].map((ext) => `.${ext}`).join(","),
     mimeList,
@@ -261,11 +258,6 @@ export function uploadMimeList(kind: UploadKind): readonly string[] {
 /** Extensions without a leading dot, lowercase. */
 export function uploadExtensions(kind: UploadKind): ReadonlySet<string> {
   return KINDS[kind].extensions;
-}
-
-/** Extensions with a leading dot — the form most API services historically used. */
-export function uploadExtensionsDotted(kind: UploadKind): ReadonlySet<string> {
-  return KINDS[kind].dotted;
 }
 
 export function contentTypeByExtension(

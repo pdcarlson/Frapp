@@ -236,6 +236,11 @@
       "file": "spec/architecture/README.md",
       "path": "migrate-production.yml",
       "reason": "ADR text recording the state at the time it was written, when `migrate-production.yml` still existed. ADRs are immutable (AGENTS.md § ADR discipline), so the deletion is recorded as an appended `Correction (2026-08-29)` sub-bullet under the same consequence rather than by rewriting it — the form the 2026-08-28 correction at ADR-13 already set."
+    },
+    {
+      "file": "docs/internal/security/SECURITY_FIXES.md",
+      "path": "apps/api/src/domain/utils/subscription.ts",
+      "reason": "Names the module deleted as dead code by the 2026-09-03 hygiene scan. The citing sentence is the historical record of the subscription read/write-lock fix, and the Superseded note directly below it records the removal."
     }
   ]
 }

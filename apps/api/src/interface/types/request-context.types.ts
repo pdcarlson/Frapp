@@ -3,7 +3,6 @@ import type {
   JwtPayload,
 } from '@supabase/supabase-js';
 import type { Request } from 'express';
-import type Stripe from 'stripe';
 import type { SubscriptionStatus } from '../../domain/entities/chapter.entity';
 
 export interface AppUserContext {
@@ -38,18 +37,7 @@ export interface RequestContext extends Request {
   chapterId?: string;
   subscriptionStatus?: SubscriptionStatus;
   rawBody?: Buffer;
-  stripeEvent?: Stripe.Event;
 }
-
-export type AuthenticatedRequest = RequestContext & {
-  supabaseUser: SupabaseAuthUser;
-};
-
-export type ChapterScopedRequest = AuthenticatedRequest & {
-  appUser: AppUserContext;
-  member: MemberContext;
-  chapterId: string;
-};
 
 export type WebhookRequest = RequestContext & {
   rawBody: Buffer;
