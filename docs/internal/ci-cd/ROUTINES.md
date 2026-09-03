@@ -119,7 +119,7 @@ this block. Policy detail: [`GITHUB_PM.md` → Ownership boundary](GITHUB_PM.md#
    *reported*, never enforced, and the issue keeps ranking as claimable. Comment anyway (a `/next`
    session sees it during §1.2 and saves the re-derivation), then surface it in the run report as
    needing an owner body edit. #1293 is the standing example — #460 has burned repeated ranked
-   sessions for exactly this reason. Verified 2026-08-28 against `next.md:193` and `:329`.
+   sessions for exactly this reason. Verified 2026-09-03 against `next.md:199` and `:335`.
 
 Triage (only) may *organize* any `triage` item (priority, `Blocked by`, promote). That exception
 is spelled in the triage skill; it does not widen destructive writes.
