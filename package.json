@@ -78,7 +78,7 @@
     "@typescript/old": "npm:typescript@6.0.3"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "packageManager": "npm@11.6.2",
   "workspaces": [

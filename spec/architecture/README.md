@@ -355,16 +355,13 @@ A unique `x-request-id` header is generated for each incoming request (or preser
 
 ### Health Check
 
-`GET /health` — No authentication required. Returns:
+Two unauthenticated endpoints — `GET /health` (liveness, always 2xx while the
+process is up) and `GET /health/ready` (readiness, 503 when a dependency is
+degraded, which is what the post-deploy smoke checks poll).
 
-```json
-{
-  "status": "ok",
-  "database": "connected",
-  "supabase": "connected",
-  "uptime": 3600
-}
-```
+The response bodies and the reason the two differ are owned by
+[`spec/behavior/observability.md`](../behavior/observability.md) § Health Check
+and are not restated here.
 
 ### Error Tracking
 

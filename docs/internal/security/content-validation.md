@@ -3,7 +3,7 @@
 ## Overview
 When generating signed URLs for secure file uploads (such as uploading to Supabase Storage), we must validate the content before handing out a signed URL to prevent malicious uploads or storage abuse.
 
-The allowlists live in **one place**: `@repo/validation` (`packages/validation/src/upload-allowlists.ts`), kinds `image`, `proof`, and `document`. API services, web upload pages, and the chat composer import those helpers. Do not copy the MIME or extension lists into a service or page — that is how `image/gif` drifted (Documents accepted it; Backwork silently refused it client-side).
+The allowlists live in **one place**: `@repo/validation` (`packages/validation/src/upload-allowlists.ts`), kinds `image`, `proof`, `document`, and `archive`. API services, web upload pages, and the chat composer import those helpers. Do not copy the MIME or extension lists into a service or page — that is how `image/gif` drifted (Documents accepted it; Backwork silently refused it client-side).
 
 ## Validations Required
 
