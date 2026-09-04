@@ -110,5 +110,10 @@ try {
   if (error instanceof Error && error.message) {
     console.error(error.message);
   }
-  process.exit(1);
+  // Propagate the failing check's own code rather than flattening every
+  // failure to 1. The audit gate distinguishes 1 (the repo violates the rule)
+  // from 2 (the gate reached no verdict), and collapsing them here made that
+  // split invisible to anyone running the gate locally — sending them to hunt
+  // an allowlist entry for an advisory that was never found.
+  process.exit(typeof error?.status === "number" && error.status !== 0 ? error.status : 1);
 }
