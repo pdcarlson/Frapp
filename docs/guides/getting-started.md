@@ -116,9 +116,4 @@ This starts API, web, and landing in one terminal (prefixed logs). It matches wh
 
 ## 6. Verify everything is healthy
 
-- **API health check**: `http://localhost:3001/health`
-- **Web app**: `http://localhost:3000`
-- **Landing**: `http://localhost:3002`
-- **Supabase Studio**: `http://127.0.0.1:54323`
-
-If `/health` responds with a JSON status and no errors appear in the API logs, your local environment is ready.
+Hit the API health check at `http://localhost:3001/health`. If it responds with a JSON status and no errors appear in the API logs, your local environment is ready. Then open web, landing and Supabase Studio at the URLs in [`docs/internal/environment/LOCAL_DEV.md`](../internal/environment/LOCAL_DEV.md) § Ports and URLs.

@@ -46,7 +46,7 @@ Files are stored in Supabase Storage under `chapters/{chapter_id}/backwork/{reso
 
 As with chapter documents, the signed URL comes back on `GET /v1/backwork/{id}` under the key **`downloadUrl`**, and clients read it through `selectDownloadUrl` in `@repo/hooks` rather than naming a spelling at the call site — see [`chapter-docs.md`](./chapter-docs.md) § Storage for why (#1040).
 
-The file-type allowlist is the `document` kind in `@repo/validation`, shared with chapter documents and chat — including `image/gif` and legacy Office (`.doc` / `.xls` / `.ppt`). See [`chapter-docs.md`](chapter-docs.md) § Upload allowlist.
+The file-type allowlist is the `document` kind in `@repo/validation`, shared with chapter documents and chat — including `image/gif` and legacy Office (`.doc` / `.xls` / `.ppt`). Membership and the rationale: [`content-validation.md`](../../docs/internal/security/content-validation.md) § Validations Required.
 
 ## Browsing and Search
 

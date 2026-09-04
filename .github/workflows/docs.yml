@@ -93,10 +93,11 @@ jobs:
 
   # Roster drift — also a SEPARATE job, for the same two reasons as doc-paths.
   #
-  # It compares the required-check rosters and per-job test-suite lists that
-  # CONTRIBUTING.md, spec/environments/README.md and the branch-protection
-  # runbook each restate by hand against their source: the CI_CHECKS /
-  # DOCS_CHECKS arrays and ci.yml. Whole-tree, not diff-scoped — a table goes
+  # It compares the required-check roster and per-job test-suite lists that the
+  # branch-protection runbook restates by hand — the last remaining copy, since
+  # CONTRIBUTING.md and spec/environments/README.md now point at it — against
+  # their source: the CI_CHECKS / DOCS_CHECKS arrays and ci.yml. Whole-tree,
+  # not diff-scoped — a table goes
   # stale when a *workflow* changes, which is the other side of the reference.
   #
   # A failure should say *tables*, not *docs sync* or *citations*: three

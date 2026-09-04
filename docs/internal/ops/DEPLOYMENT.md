@@ -236,7 +236,7 @@ The `vercel.json` in each app adds `git.deploymentEnabled` (auto-deploy only `ma
 Vercel scopes env vars to **Production** and **Preview**. The `main` branch triggers Preview deploys, which use Preview env vars. Production deploys are created by `deploy-production.yml` with `target: production`, so they build against Production env vars — which is the whole reason the workflow rebuilds a commit rather than promoting its preview. (Since the unlink — `frapp-landing` 2026-09-01, `frapp-web` 2026-09-02 — no push creates a Preview deployment at all; see the note at the top of §4. Unlinking does not delete environment variables, and neither scope nor its Infisical sync was changed, but neither was re-read after the unlink. The Preview scope is keyed to branch `main`, which no longer produces a deployment, so nothing consumes those values until CI-driven staging builds land — CI/CD stage 7, #1578.)
 
 **These values are not typed into the Vercel dashboard.** Infisical is the canonical store and its
-syncs push the values into each project's Production and Preview scopes (§11, rows 1–4); the
+syncs push the values into each project's Production and Preview scopes (the four `vercel-*` syncs); the
 dashboard is the destination, not the place a human enters anything. The authoritative sync map and
 the setup procedure live in
 [`../environment/SECRETS_MANAGEMENT.md`](../environment/SECRETS_MANAGEMENT.md), and the complete
@@ -444,23 +444,14 @@ Create **two** Render Web Services: one for production, one for staging.
 ### 5.2 Environment Variables
 
 As with Vercel (§4.2), these are **not entered by hand in the Render dashboard**. Infisical holds
-the canonical values and its syncs push them into `frapp-api-staging` and `frapp-api-prod` (§11,
-rows 5 and 6); the dashboard is the destination. See
+the canonical values and its syncs push them into `frapp-api-staging` and `frapp-api-prod`
+(`render-api-staging` and `render-api-production`); the dashboard is the destination. See
 [`../environment/SECRETS_MANAGEMENT.md`](../environment/SECRETS_MANAGEMENT.md) for the sync setup
 and [`../environment/ENV_REFERENCE.md`](../environment/ENV_REFERENCE.md) for the full variable list.
-The table below is the expected end state per environment, not a data-entry checklist.
-
-| Variable                    | Production                       | Staging                             |
-| --------------------------- | -------------------------------- | ----------------------------------- |
-| `SUPABASE_URL`              | `https://<PROD_REF>.supabase.co` | `https://<STAGING_REF>.supabase.co` |
-| `SUPABASE_SERVICE_ROLE_KEY` | `<prod service role key>`        | `<staging service role key>`        |
-| `SUPABASE_ANON_KEY`         | `<prod anon key>`                | `<staging anon key>`                |
-| `STRIPE_SECRET_KEY`         | `sk_live_...`                    | `sk_test_...`                       |
-| `STRIPE_WEBHOOK_SECRET`     | `whsec_...` (prod)               | `whsec_...` (test)                  |
-| `STRIPE_PRICE_ID`           | `price_...` (prod)               | `price_...` (test)                  |
-| `SENTRY_DSN`                | `<prod sentry dsn>`              | `<staging sentry dsn>`              |
-| `PORT`                      | `3001`                           | `3001`                              |
-| `NODE_ENV`                  | `production`                     | `staging`                           |
+The full per-environment grid — every variable the API reads, with its `dev` / `staging` / `prod` value — is
+[`ENV_REFERENCE.md` § "Canonical Variables — The Complete Grid"](../environment/ENV_REFERENCE.md#canonical-variables--the-complete-grid),
+plus its § "API-Only Settings" and § "CD Secrets (Deploy Workflows Only)" subsections. Do not restate it here:
+each sync reads path `/` and pushes the **whole** source environment ([`SECRETS_MANAGEMENT.md`](../environment/SECRETS_MANAGEMENT.md#5-configure-secret-syncs) § 5), so any short list understates what the service holds.
 
 ### 5.3 Custom Domains
 
@@ -796,13 +787,16 @@ human is actually looking at what is about to ship.
 
 ### Required Status Checks
 
-See `CONTRIBUTING.md` for the full list of CI jobs required for merge.
+The full list of CI jobs required for merge is in
+[`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](GITHUB_BRANCH_PROTECTION_RUNBOOK.md) **§ Required Status
+Checks** — the single hand-kept copy of the `CI_CHECKS` / `DOCS_CHECKS` / `DRIFT_CHECKS` arrays in
+[`scripts/ci/lib/required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs).
 
 ### API build parity (Render / Docker)
 
 Render builds the API with `nest build` inside `apps/api/Dockerfile` (see the builder stage). That uses `tsconfig.build.json`, which can surface TypeScript errors that never ran in CI if the API workspace had no `check-types` task aligned with that config.
 
-CI now runs **`npm run build -w apps/api`** in `lint-and-typecheck` (same `nest build` as production) and **`docker build -f apps/api/Dockerfile .`** in a separate `api-docker-build` job so the image layer that compiles the API is exercised on every push and PR. **`api-docker-build`** is a required status check for merge (listed in `CONTRIBUTING.md` and applied by [`scripts/configure-branch-protection.mjs`](../../../scripts/configure-branch-protection.mjs); after changing CI job names the roster has to be re-applied — a **human step**, run with an admin PAT). **From an agent session run `npm run configure:branch-protection:verify` and nothing else.** The bare `npm run configure:branch-protection` is a LIVE `PUT` of the whole protection payload, and `npm run configure:branch-protection --dry-run` **without the `--` separator** is swallowed by npm — the script then sees no flags and applies. Procedure: [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
+CI now runs **`npm run build -w apps/api`** in `lint-and-typecheck` (same `nest build` as production) and **`docker build -f apps/api/Dockerfile .`** in a separate `api-docker-build` job so the image layer that compiles the API is exercised on every push and PR. **`api-docker-build`** is a required status check for merge (listed in `scripts/ci/lib/required-checks.mjs` and applied by [`scripts/configure-branch-protection.mjs`](../../../scripts/configure-branch-protection.mjs); after changing CI job names the roster has to be re-applied — a **human step**, run with an admin PAT). **From an agent session run `npm run configure:branch-protection:verify` and nothing else.** The bare `npm run configure:branch-protection` is a LIVE `PUT` of the whole protection payload, and `npm run configure:branch-protection --dry-run` **without the `--` separator** is swallowed by npm — the script then sees no flags and applies. Procedure: [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
 
 **A green build is not a startable image.** `api-docker-build` compiles the image; it long said
 nothing about whether the container can start. #1160 is what that gap costs: the runner stage
@@ -872,18 +866,13 @@ All secrets are centrally managed in [Infisical](https://infisical.com) (free ti
 - **No environment suffixes** — `RENDER_DEPLOY_HOOK_URL` has different values per Infisical environment.
 - **No `.env.local` files needed** — local dev defaults to `npm run dev:stack` (Infisical CLI injects `dev` secrets). See [`docs/internal/environment/LOCAL_DEV.md`](../environment/LOCAL_DEV.md).
 
-### Sync Map (6 of 10 free-tier integrations; docs Vercel project retired)
+### Sync Map
 
-| #   | Infisical env | Destination                               |
-| --- | ------------- | ----------------------------------------- |
-| 1   | staging       | Vercel → frapp-web (Preview scope)        |
-| 2   | production    | Vercel → frapp-web (Production scope)     |
-| 3   | staging       | Vercel → frapp-landing (Preview scope)    |
-| 4   | production    | Vercel → frapp-landing (Production scope) |
-| 5   | staging       | Render → frapp-api-staging                |
-| 6   | production    | Render → frapp-api-prod                   |
-
-See `docs/internal/environment/SECRETS_MANAGEMENT.md` for the full setup guide and `docs/internal/environment/ENV_REFERENCE.md` for the complete variable list.
+The six live syncs — which Infisical environment feeds which Render/Vercel destination, plus each
+sync's secret path, destination scope, git branch filter, and the date the dashboard was last read —
+are inventoried in exactly one place: [`SECRETS_MANAGEMENT.md` §5 "Configure Secret Syncs"](../environment/SECRETS_MANAGEMENT.md#5-configure-secret-syncs). They occupy 6 of the 10 free-tier
+integration slots; that row is derived from the same inventory, in [`SECRETS_MANAGEMENT.md` § Free Tier Limits](../environment/SECRETS_MANAGEMENT.md#free-tier-limits). The retired `frapp-docs` project and its
+integration row are covered in § Retired: `frapp-docs` and docs.frapp.live above. Complete variable list: [`ENV_REFERENCE.md`](../environment/ENV_REFERENCE.md).
 
 ---
 
