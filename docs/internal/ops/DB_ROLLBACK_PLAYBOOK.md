@@ -1358,9 +1358,22 @@ DROP TABLE IF EXISTS chapter_service_config;
 after) deploying an API build without #273. `ServiceEntryService.approve` reads
 `chapter_service_config` on every approval and
 `GET /v1/service-entries/leaderboard` calls the function, so dropping either
-while the current build is serving turns those into 500s. The read path
-tolerates a *failed* read (it falls back to the default rate and logs a
-warning), but not a missing relation on the leaderboard route.
+while the current build is serving turns those into 500s. The two read paths do
+not degrade the same way, and only one of them is safe — the same split the
+points-config rollback above spells out:
+
+* `ServiceEntryService.approve` reads through `ChapterServiceConfigService.getConfig`,
+  which **fails open** — it logs a warning and applies the default 60 min/point.
+  Approvals keep working through the drop, at the wrong rate.
+* `GET /chapters/:id/config` reads `chapter_service_config` inline and **fails
+  closed** since [#1626](https://github.com/pdcarlson/Frapp/issues/1626) (it is
+  also the baseline a config PATCH merges onto, so it must not invent a prior
+  state). A dropped table is a read error, so that endpoint returns **500** —
+  and it backs the whole web Settings page, not just service hours.
+
+`GET /v1/service-entries/leaderboard` calls the function and does not tolerate a
+missing relation either. So **redeploy the API first**, to a build from before
+the migration, exactly as for `chapter_points_config`.
 
 **Data caveat — rolling back silently changes point awards.** Any chapter that
 configured a non-default rate loses it: approvals revert to 60 minutes per

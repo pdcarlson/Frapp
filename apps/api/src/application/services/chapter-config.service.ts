@@ -112,7 +112,10 @@ const DUES_SELECT = DUES_FIELDS.join(', ');
  * table's column defaults (migration 20260530193000): an unconfigured chapter
  * reports zero amounts on a per-semester cadence with no installment plan.
  */
-const DUES_DEFAULTS: DuesConfig = {
+// Exported for the spec, so a test asserting "an unconfigured chapter gets the
+// defaults" pins THESE values rather than a hand-copied duplicate that can
+// drift from them silently.
+export const DUES_DEFAULTS: DuesConfig = {
   cadence: 'per_semester',
   active_amount_cents: 0,
   new_member_amount_cents: 0,
@@ -143,7 +146,21 @@ export class ChapterConfigService {
       .eq('id', chapterId)
       .maybeSingle();
 
-    if (error || !chapter) {
+    // Split, not `error || !chapter`. Collapsing them reports a failed read as
+    // "this chapter does not exist" — the same error-is-indistinguishable-from-
+    // absence bug as the three reads below (#1626), and its most invisible
+    // instance: AllExceptionsFilter routes <500 to recordSecurityEvent, whose
+    // SECURITY_EVENT_KINDS covers only 401/403/429, so a 404 emits no error
+    // log, no security event and no Sentry capture. A PostgREST schema-cache
+    // reload would turn every config read into a silent 404 on a live chapter.
+    if (error) {
+      this.logger.error(
+        `chapters read failed for chapter ${chapterId}; refusing to report a ` +
+          `read failure as a missing chapter: ${error.message}`,
+      );
+      throw error;
+    }
+    if (!chapter) {
       throw new NotFoundException('Chapter not found');
     }
 

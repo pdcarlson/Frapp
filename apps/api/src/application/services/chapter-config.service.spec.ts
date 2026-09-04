@@ -51,8 +51,10 @@ jest.mock('@repo/chapter-theme', () => ({
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException } from '@nestjs/common';
-import { ChapterConfigService } from './chapter-config.service';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { ChapterConfigService, DUES_DEFAULTS } from './chapter-config.service';
+import { SERVICE_CONFIG_DEFAULTS } from './chapter-service-config.service';
+import { POINTS_CONFIG_DEFAULTS } from './chapter-points-config.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { ActivationService } from './activation.service';
 import { ChapterPointsConfigService } from './chapter-points-config.service';
@@ -88,7 +90,21 @@ function makeSupabase(
       workflows?: { message: string } | null;
       dues?: { message: string } | null;
       service?: { message: string } | null;
+      // `points` is here even though ChapterConfigService does not read that
+      // table directly: it routes through ChapterPointsConfigService's
+      // getConfigOrThrow, the fail-closed precedent the other three now follow.
+      // Without this key, rewriting that call as `.catch(() => DEFAULTS)` —
+      // the exact #1626 bug, on the read whose whole reason for existing is to
+      // fail closed — left all 46 tests green.
+      points?: { message: string } | null;
+      // The `chapters` read. Its bug was the same shape but reported through a
+      // different door: `error || !chapter` answered 404, and a 404 emits no
+      // error log, no security event and no Sentry capture.
+      chapters?: { message: string } | null;
     };
+    // Model a chapter id that resolves to no row at all — the legitimate 404,
+    // which must stay distinguishable from a failed read.
+    chapterRowOverride?: null;
   } = {},
 ) {
   const readErrors = options.readErrors ?? {};
@@ -122,9 +138,13 @@ function makeSupabase(
       // `eq` is the terminal for updates (awaited) and a passthrough for selects.
       builder.eq = jest.fn().mockReturnValue(
         Object.assign(Promise.resolve({ error: null }), {
-          maybeSingle: jest
-            .fn()
-            .mockResolvedValue({ data: chapterRow, error: null }),
+          maybeSingle: jest.fn().mockResolvedValue({
+            data:
+              readErrors.chapters || options.chapterRowOverride === null
+                ? null
+                : chapterRow,
+            error: readErrors.chapters ?? null,
+          }),
         }),
       );
       return builder;
@@ -173,9 +193,10 @@ function makeSupabase(
       const builder: Record<string, jest.Mock> = {};
       builder.select = jest.fn().mockReturnValue(builder);
       builder.eq = jest.fn().mockReturnValue({
-        maybeSingle: jest
-          .fn()
-          .mockResolvedValue({ data: pointsRow, error: null }),
+        maybeSingle: jest.fn().mockResolvedValue({
+          data: readErrors.points ? null : pointsRow,
+          error: readErrors.points ?? null,
+        }),
       });
       builder.upsert = jest.fn((rows: unknown, opts: unknown) =>
         pointsUpsert(rows, opts),
@@ -1029,17 +1050,63 @@ describe('ChapterConfigService — a failed read is never a default (#1626)', ()
       });
     });
 
-    it('still returns defaults with a 200 when the chapter simply has no rows', async () => {
+    it('still returns the real defaults when the chapter simply has no rows', async () => {
       // The other half of the contract, and why this cannot be `if (!data)
-      // throw`: an unconfigured chapter is a legitimate 200-with-defaults.
+      // throw`: an unconfigured chapter is a legitimate success-with-defaults.
+      //
+      // Asserted against the actual default objects, not `toBeDefined()` — a
+      // presence check passes for any non-throwing implementation, and dropping
+      // the `...SERVICE_CONFIG_DEFAULTS` spread (so an unconfigured chapter
+      // reports `service: {}`) slipped straight through the earlier version.
       const supabase = makeSupabase([]);
       const service = await buildService(supabase);
 
       const config = await service.getConfig(CHAPTER_ID);
 
-      expect(config.dues.active_amount_cents).toBe(0);
-      expect(config.service).toBeDefined();
+      expect(config.dues).toMatchObject(DUES_DEFAULTS);
+      expect(config.service).toMatchObject(SERVICE_CONFIG_DEFAULTS);
+      expect(config.points).toMatchObject(POINTS_CONFIG_DEFAULTS);
       expect(config.workflows.length).toBeGreaterThan(0);
+    });
+
+    it('reports a failed chapters read as an error, not as a missing chapter', async () => {
+      // `error || !chapter` answered 404 for both. That is the same
+      // error-is-absence bug, through the quietest door in the filter: a <500
+      // goes to recordSecurityEvent, which only knows 401/403/429, so a
+      // PostgREST schema-cache reload would have turned every config read into
+      // a silent 404 on a live chapter with nothing in Sentry.
+      const supabase = makeSupabase([], null, {}, null, null, {
+        readErrors: { chapters: READ_ERROR },
+      });
+      const service = await buildService(supabase);
+
+      const err: unknown = await service.getConfig(CHAPTER_ID).catch((e) => e);
+      expect(err).toMatchObject({ message: READ_ERROR.message });
+      expect(err).not.toBeInstanceOf(NotFoundException);
+    });
+
+    it('still reports a genuinely missing chapter as 404', async () => {
+      const supabase = makeSupabase([], null, {}, null, null, {
+        chapterRowOverride: null,
+      });
+      const service = await buildService(supabase);
+
+      await expect(service.getConfig(CHAPTER_ID)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    it('throws when the points read fails, via getConfigOrThrow', async () => {
+      // The precedent read. It is not one of the three this issue names, but it
+      // is the one the fix is modelled on, and nothing pinned it.
+      const supabase = makeSupabase([], CONFIGURED_DUES, {}, null, null, {
+        readErrors: { points: READ_ERROR },
+      });
+      const service = await buildService(supabase);
+
+      await expect(service.getConfig(CHAPTER_ID)).rejects.toMatchObject({
+        message: READ_ERROR.message,
+      });
     });
   });
 
