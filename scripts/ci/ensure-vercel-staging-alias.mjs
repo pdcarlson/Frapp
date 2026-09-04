@@ -6,20 +6,39 @@
 // without this, GitHub / Slack links show only the unique *.vercel.app URL.
 //
 // Env:
-//   VERCEL_API_KEY       — required
-//   VERCEL_PROJECT_ID    — required
-//   GITHUB_SHA           — required
-//   VERCEL_STAGING_ALIAS — required (hostname only, e.g. app.staging.frapp.live)
+//   VERCEL_API_KEY        — required
+//   VERCEL_PROJECT_ID     — required unless VERCEL_DEPLOYMENT_ID is given
+//   VERCEL_STAGING_ALIAS  — required (hostname only, e.g. app.staging.frapp.live)
+//   VERCEL_DEPLOYMENT_ID  — optional; when set, alias THIS deployment and skip
+//                           the search entirely (the preferred path — see below)
+//   DEPLOY_SHA            — the commit to search for; required unless
+//                           VERCEL_DEPLOYMENT_ID is given
+//   GITHUB_SHA            — fallback for DEPLOY_SHA. Prefer DEPLOY_SHA: a
+//                           step-level `env: GITHUB_SHA:` is SILENTLY IGNORED
+//                           by Actions (`GITHUB_` is a reserved prefix), so a
+//                           caller naming a commit other than the ambient one
+//                           reads as correct and gets the ambient value
+//   SERVICE_LABEL         — optional, used only for logs
 //
-// Exits 0 on success or skip (no deployment for SHA, CANCELED, or other
-// verifier-neutral terminal states). Exits 1 on failure.
+// Exits 0 on success or skip, 1 on failure.
 //
-// Skipping stays non-fatal here because this script only points a hostname at a
-// build; it is not the gate. `verify-vercel-deploy.mjs` runs as the preceding
-// step in `verify-deployments.yml` and FAILS when no deployment exists for the
-// SHA, so that job ends there and this script is never reached in that case —
-// its no-deployment branch survives for direct runs and for any future caller
-// that does not gate on the verifier.
+// ── Two ways in, and why the id one is preferred (#1578) ───────────────────
+// Historically this script only knew a SHA, and it searched Vercel's paged
+// deployment list for a deployment whose `meta.githubCommitSha` matched. On no
+// match it exits 0 — non-fatal, because it only points a hostname at a build
+// and was never the gate: `verify-vercel-deploy.mjs` ran as the preceding step
+// in `verify-deployments.yml` and FAILED when no deployment existed for the
+// SHA, so the job ended before reaching this script.
+//
+// That gate is gone. #1579 removed those jobs (nothing created a deployment for
+// them to find), so a caller relying on the search would get a silent exit 0
+// and a staging hostname still serving the previous build — the exact symptom
+// #1578 exists to end.
+//
+// So the caller that creates the deployment passes `VERCEL_DEPLOYMENT_ID` and
+// the search never runs. The search path is kept for a caller that genuinely
+// has only a SHA, and it keeps its non-fatal skip; it is no longer how the
+// staging workflow reaches this file.
 
 import { findVercelDeploymentBySha, vercelDeploymentCreatedAt } from "./lib/providers.mjs";
 import { VERCEL_NEUTRAL_TERMINAL_STATES } from "./verify-vercel-deploy.mjs";
@@ -44,8 +63,34 @@ export async function ensureVercelStagingAlias({
   projectId,
   sha,
   stagingAlias,
+  deploymentId: knownDeploymentId = null,
   fetchImpl = fetch,
 }) {
+  // A caller that CREATED the deployment passes its id, and then none of the
+  // search below runs. That is the difference between this being a best-effort
+  // step and a real one:
+  //
+  //   * The search matches on `meta.githubCommitSha` across a paged deployment
+  //     list, and answers "no match" for reasons that have nothing to do with
+  //     the deployment being wrong — an index that has not caught up, a lost
+  //     `--meta` flag, a commit deployed to both channels. "No match" then
+  //     exits 0 (see below), so the hostname silently keeps the previous build.
+  //   * It also has no channel filter, so with one SHA deployed to both
+  //     production and staging the newest match can be the PRODUCTION
+  //     deployment — and the staging hostname would be pointed at a bundle
+  //     compiled against production env vars.
+  //
+  // An id from the deployer has neither problem. `deploy-vercel-staging.yml`
+  // supplies one; the search path stays for a caller that has no id to give.
+  if (knownDeploymentId) {
+    return assignStagingAlias({
+      apiKey,
+      deploymentId: knownDeploymentId,
+      stagingAlias,
+      fetchImpl,
+    });
+  }
+
   let matches;
   let pagesSearched;
   let exhausted;
@@ -99,6 +144,17 @@ export async function ensureVercelStagingAlias({
     };
   }
 
+  return assignStagingAlias({ apiKey, deploymentId, stagingAlias, fetchImpl });
+}
+
+/**
+ * Point `stagingAlias` at a deployment already known to exist.
+ *
+ * Split out so the id-supplied path above and the search path share one
+ * implementation of the alias assignment itself — the half that talks to the
+ * alias API. Only the way the deployment is *identified* differs between them.
+ */
+export async function assignStagingAlias({ apiKey, deploymentId, stagingAlias, fetchImpl = fetch }) {
   let listResponse;
   try {
     listResponse = await fetchImpl(LIST_ALIASES_URL(deploymentId), {
@@ -178,24 +234,27 @@ export async function ensureVercelStagingAlias({
 
 async function main() {
   const apiKey = requireEnv("VERCEL_API_KEY");
-  const projectId = requireEnv("VERCEL_PROJECT_ID");
-  // DEPLOY_SHA wins over GITHUB_SHA, for the same reason it does in
-  // `verify-vercel-deploy.mjs`: a step-level `env: GITHUB_SHA:` is SILENTLY
-  // IGNORED by Actions — `GITHUB_` is a reserved prefix — so a caller that
-  // needs to name a commit other than the ambient one reads as correct and gets
-  // the ambient value anyway. `deploy-vercel-staging.yml` is exactly that
-  // caller: it runs on `workflow_run`, where `github.sha` is the default
-  // branch's tip rather than `workflow_run.head_sha`, which is the commit CI
-  // verified and the one that was actually deployed.
-  const sha = process.env.DEPLOY_SHA || requireEnv("GITHUB_SHA");
   const stagingAlias = requireEnv("VERCEL_STAGING_ALIAS");
-  const label = process.env.SERVICE_LABEL ?? projectId;
+  const deploymentId = process.env.VERCEL_DEPLOYMENT_ID || null;
+
+  // Only the search path needs a project and a commit; the id path needs
+  // neither. Demanding them anyway would make the better caller carry inputs it
+  // does not use, and `requireEnv` exits 1 on a missing one.
+  const projectId = deploymentId
+    ? (process.env.VERCEL_PROJECT_ID ?? null)
+    : requireEnv("VERCEL_PROJECT_ID");
+  // DEPLOY_SHA wins over GITHUB_SHA — see the reserved-prefix note in the
+  // header. `deploy-vercel-staging.yml` runs on `workflow_run`, where
+  // `github.sha` is the default branch's tip rather than the commit CI verified.
+  const sha = deploymentId ? null : process.env.DEPLOY_SHA || requireEnv("GITHUB_SHA");
+  const label = process.env.SERVICE_LABEL ?? projectId ?? deploymentId;
 
   const result = await ensureVercelStagingAlias({
     apiKey,
     projectId,
     sha,
     stagingAlias,
+    deploymentId,
   });
 
   if (result.status === "success") {

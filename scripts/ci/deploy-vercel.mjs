@@ -63,6 +63,12 @@
 //   VERCEL_LANDING_PROJECT_ID — required
 //   DEPLOY_SHA                — required, the commit being shipped
 //   DEPLOY_TARGET             — optional, `production` (default) or `preview`
+//   DEPLOY_REF                — optional, the BRANCH stamped as
+//                               `meta.githubCommitRef` (default `main`). Both
+//                               current callers deploy `main` and leave it
+//                               unset; `wasSupersededByLaterDeployment` scopes
+//                               supersession on this field, so a caller
+//                               deploying some other branch must set it
 //
 // Semantics: the pure functions below. Unit tests:
 // `scripts/ci/__tests__/deploy-vercel.test.mjs`.
@@ -70,6 +76,8 @@
 import { createClock, pollUntilTerminal } from "./lib/polling.mjs";
 import {
   VERCEL_NEUTRAL_TERMINAL_STATES,
+  VERCEL_OVERALL_TIMEOUT_MS,
+  VERCEL_POLL_INTERVAL_MS,
   VERCEL_TERMINAL_FAILURE_STATES,
   VERCEL_TERMINAL_SUCCESS_STATES,
 } from "./verify-vercel-deploy.mjs";
@@ -81,18 +89,17 @@ import {
 import { requireEnv } from "./lib/env.mjs";
 import { resilientFetch } from "./lib/http.mjs";
 
-export const VERCEL_POLL_INTERVAL_MS = 20 * 1000;
-// Longer than the observer's 15 minutes on purpose. This account is on a Hobby
-// plan with limited build concurrency, and this path creates two deployments at
-// once. Timing out reports failure, so a timeout that is merely "slower than we
-// guessed" costs a re-dispatch of a deploy that actually succeeded; the extra
-// headroom is cheaper than that.
+// Imported from the observer rather than re-declared, and re-exported so this
+// file's own callers still see them. They were duplicated here with a comment
+// claiming this path needed "longer than the observer's 15 minutes" — which had
+// stopped being true: the observer was itself raised to 30 minutes, and its
+// comment now reads "matching the production deploy path". Two files asserting
+// opposite facts about each other's budgets is how someone tuning one of them
+// silently breaks the other, so there is now one number.
 //
-// The build itself now happens on the GitHub runner rather than on Vercel, so
-// the remote half is an upload rather than a compile and should be much faster.
-// The budget is deliberately NOT tightened to match: nothing depends on it
-// being tight, and being wrong in that direction reds a good release.
-export const VERCEL_OVERALL_TIMEOUT_MS = 30 * 60 * 1000;
+// Imported AND re-exported, not `export … from`: a bare re-export does not bind
+// the names in this module's scope, and the poll defaults below reference them.
+export { VERCEL_POLL_INTERVAL_MS, VERCEL_OVERALL_TIMEOUT_MS };
 
 const GET_DEPLOYMENT_URL = (deploymentId, teamId) =>
   `https://api.vercel.com/v13/deployments/${deploymentId}${teamId ? `?teamId=${teamId}` : ""}`;
@@ -160,7 +167,12 @@ export async function resolveDeploymentByHost({
     );
   }
 
-  return { deploymentId: body.id, target: body.target ?? null, url: body.url ?? null };
+  return {
+    deploymentId: body.id,
+    target: body.target ?? null,
+    url: body.url ?? null,
+    sha: body.meta?.githubCommitSha ?? null,
+  };
 }
 
 /**
@@ -208,6 +220,29 @@ export async function createVercelDeployment({
     );
   }
 
+  // Prove the deployment we resolved is the one we just built, and that the
+  // commit metadata landed on it. Two distinct failures are caught here, and
+  // the target check above catches neither:
+  //
+  //   * A WRONG deployment. The id came from a hostname the CLI printed, and
+  //     `GET /v13/deployments/{idOrUrl}` resolves an alias to whatever
+  //     deployment currently serves it. A stale alias on the production path
+  //     resolves to the PREVIOUS release, which is `production` and `READY` —
+  //     green, having verified nothing. `parseDeploymentHost` takes the first
+  //     URL to avoid that; this is the assertion that would catch it anyway.
+  //   * MISSING metadata. If `--meta` is dropped by a CLI upgrade or `sha`
+  //     arrives empty, the deploy still succeeds and everything downstream
+  //     that reads `githubCommitSha` degrades silently — ADR-19's named-commit
+  //     guarantee first among them.
+  if (resolved.sha !== sha) {
+    throw new Error(
+      `Vercel deployment ${resolved.deploymentId} for ${label} reports ` +
+        `githubCommitSha '${resolved.sha ?? "null"}', not the commit just built ('${sha}'). ` +
+        `Either the deployment metadata did not land or ${host} resolved to a different ` +
+        `deployment; refusing to report either as a successful ${target} deploy.`,
+    );
+  }
+
   return { deploymentId: resolved.deploymentId, host, url: resolved.url };
 }
 
@@ -231,16 +266,38 @@ export async function pollVercelDeployment({
     overallTimeoutMs,
     logger,
     fetchOne: async () => {
-      const response = await fetchImpl(GET_DEPLOYMENT_URL(deploymentId, teamId), {
-        headers: { Authorization: `Bearer ${apiKey}` },
-      });
-      if (!response.ok) {
-        return { httpStatus: response.status };
+      // Wrapped, exactly as `verify-vercel-deploy.mjs` wraps its own fetchOne.
+      // `pollUntilTerminal` does not catch, so a throw here escapes all the way
+      // out of `deployVercel`'s `Promise.all` and rejects it — and the create
+      // loop's careful per-project error reporting never runs. Two things
+      // throw: `resilientFetch` rethrows after its attempts are exhausted (a
+      // DNS blip during a 30-minute poll is ~90 requests' worth of chances),
+      // and `response.json()` throws on a non-JSON body such as an HTML error
+      // page returned with HTTP 200. Either would turn a release that actually
+      // shipped into "Unhandled error", with both deployment ids unprinted and
+      // an operator about to re-dispatch a deploy that already succeeded.
+      try {
+        const response = await fetchImpl(GET_DEPLOYMENT_URL(deploymentId, teamId), {
+          headers: { Authorization: `Bearer ${apiKey}` },
+        });
+        if (!response.ok) {
+          return { httpStatus: response.status };
+        }
+        const deployment = await response.json();
+        return { state: deploymentState(deployment) };
+      } catch (error) {
+        return { error };
       }
-      const deployment = await response.json();
-      return { state: deploymentState(deployment) };
     },
     classify: (fetched) => {
+      if (fetched.error) {
+        return {
+          status: "failure",
+          message:
+            `Vercel API error polling deployment ${deploymentId} (${label}): ` +
+            `${fetched.error.message}`,
+        };
+      }
       if (fetched.httpStatus) {
         return {
           status: "failure",
@@ -314,7 +371,29 @@ export async function deployVercel({
   logger = console,
 }) {
   const created = [];
+  let aborted = null;
   for (const project of projects) {
+    // Stop at the first failure instead of shipping the rest. The builds are
+    // sequential, so when web's build fails landing has not been uploaded yet —
+    // and uploading it would put the new landing live on `frapp.live` while
+    // `app.frapp.live` stays on the previous release. A half-shipped production
+    // release, behind an already-applied migration, is strictly worse than one
+    // that stopped: the overall result is a failure either way, so the only
+    // question is how much of production moved before we admitted it.
+    //
+    // The skipped projects are still REPORTED, as failures with a reason. A
+    // project that silently vanishes from the results is how "we deployed" and
+    // "we deployed everything" come apart.
+    if (aborted) {
+      created.push({
+        project,
+        deploymentId: null,
+        error:
+          `Not attempted: ${aborted} failed earlier in this run, and shipping only some ` +
+          `projects would leave a half-updated environment.`,
+      });
+      continue;
+    }
     try {
       const result = await createVercelDeployment({
         apiKey,
@@ -335,6 +414,7 @@ export async function deployVercel({
       created.push({ project, ...result });
     } catch (error) {
       created.push({ project, deploymentId: null, error: error.message });
+      aborted = project.label;
     }
   }
 
@@ -410,16 +490,23 @@ async function main() {
   for (const result of outcome.results) {
     if (result.deploymentId) console.log(`vercel_deployment_id[${result.label}]=${result.deploymentId}`);
     if (result.status === "success") console.log(`✅ ${result.message}`);
-    else console.error(`::error::${result.message}`);
+    // `%0A` because a `::error::` annotation stops at the first newline, and
+    // these messages carry a multi-line stderr tail from the CLI — the useful
+    // part starts exactly where an unescaped annotation would truncate.
+    else console.error(`::error::${String(result.message).replaceAll("\n", "%0A")}`);
   }
 
-  process.exit(outcome.ok ? 0 : 1);
+  // `process.exitCode`, not `process.exit()`. Writes to stdout/stderr are
+  // asynchronous when they are pipes, which is what a runner attaches, so
+  // exiting on the line after the loop can drop the annotations it just
+  // queued — a red job with nothing saying why.
+  process.exitCode = outcome.ok ? 0 : 1;
 }
 
 const invokedDirectly = import.meta.url === `file://${process.argv[1]}`;
 if (invokedDirectly) {
   main().catch((error) => {
-    console.error(`Unhandled error: ${error.stack ?? error.message}`);
-    process.exit(1);
+    console.error(`::error::${String(error.stack ?? error.message).replaceAll("\n", "%0A")}`);
+    process.exitCode = 1;
   });
 }

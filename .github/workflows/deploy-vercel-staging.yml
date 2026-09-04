@@ -105,36 +105,53 @@ jobs:
       - name: Install Vercel CLI
         run: npm install --global vercel@59.11.7
 
+      # The deployment ids are captured from stdout, the same shape
+      # `deploy-production.yml` uses for `render_deploy_id=`. They are what the
+      # alias step below keys on — see its comment.
       - name: Build and deploy web + landing to staging
+        id: deploy
         env:
           VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
           DEPLOY_TARGET: preview
           DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
-        run: node scripts/ci/deploy-vercel.mjs
+        run: |
+          set -euo pipefail
+          node scripts/ci/deploy-vercel.mjs | tee "${RUNNER_TEMP:-/tmp}/vercel.log"
+          {
+            echo "web_id=$(grep -oP '^vercel_deployment_id\[frapp-web\]=\K.*' "${RUNNER_TEMP:-/tmp}/vercel.log" | tail -n1)"
+            echo "landing_id=$(grep -oP '^vercel_deployment_id\[frapp-landing\]=\K.*' "${RUNNER_TEMP:-/tmp}/vercel.log" | tail -n1)"
+          } >> "$GITHUB_OUTPUT"
 
       # Vercel does not always attach the custom hostname to a new deployment,
-      # so the staging domain can lag a READY build. This script points it at
-      # the deployment for this SHA — which it finds via `meta.githubCommitSha`,
-      # the metadata `deploy-vercel.mjs` sets on every upload for exactly this.
+      # so the staging domain can lag a READY build.
       #
-      # Runs per project because each has its own hostname. Not `if: always()` —
-      # a failed deploy has nothing worth aliasing.
+      # Keyed on the deployment ID the step above created, NOT on a search by
+      # commit SHA. The search answers "no match" for reasons unrelated to the
+      # deployment being wrong (a list index that has not caught up, a lost
+      # `--meta` flag) and then exits 0, which would leave the hostname on the
+      # previous build with this job green — the exact symptom #1578 exists to
+      # end. It also has no channel filter, so for a commit deployed to both
+      # channels it could alias the staging hostname to the PRODUCTION build.
+      # An id has neither problem. See the header of the alias script.
       #
-      # DEPLOY_SHA, never GITHUB_SHA: `GITHUB_` is a reserved prefix, so a
-      # step-level `env: GITHUB_SHA:` is silently ignored and the script would
-      # read the ambient value — which on a `workflow_run` event is the default
-      # branch's tip, not the commit this job just deployed.
+      # An empty id here is a failure, not a skip: `set -u` makes the empty
+      # expansion fatal before the script runs.
       - name: Point the staging hostnames at the new deployments
         env:
           VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
-          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+          WEB_DEPLOYMENT_ID: ${{ steps.deploy.outputs.web_id }}
+          LANDING_DEPLOYMENT_ID: ${{ steps.deploy.outputs.landing_id }}
         run: |
           set -euo pipefail
-          VERCEL_PROJECT_ID="$VERCEL_WEB_PROJECT_ID" \
+          if [ -z "${WEB_DEPLOYMENT_ID:-}" ] || [ -z "${LANDING_DEPLOYMENT_ID:-}" ]; then
+            echo "::error::The deploy step reported no deployment id for one or both projects (web='${WEB_DEPLOYMENT_ID:-}', landing='${LANDING_DEPLOYMENT_ID:-}'). Refusing to alias a staging hostname without knowing what to point it at."
+            exit 1
+          fi
+          VERCEL_DEPLOYMENT_ID="$WEB_DEPLOYMENT_ID" \
             VERCEL_STAGING_ALIAS=app.staging.frapp.live \
             SERVICE_LABEL=frapp-web \
             node scripts/ci/ensure-vercel-staging-alias.mjs
-          VERCEL_PROJECT_ID="$VERCEL_LANDING_PROJECT_ID" \
+          VERCEL_DEPLOYMENT_ID="$LANDING_DEPLOYMENT_ID" \
             VERCEL_STAGING_ALIAS=staging.frapp.live \
             SERVICE_LABEL=frapp-landing \
             node scripts/ci/ensure-vercel-staging-alias.mjs

@@ -163,7 +163,7 @@ describe("parseDeployTarget", () => {
 describe("resolveDeploymentByHost", () => {
   it("resolves the hostname the CLI printed to a deployment id", async () => {
     const { fetchImpl, calls } = makeFetchStub([
-      okJson({ id: "dpl_1", target: "production", url: HOST }),
+      okJson({ id: "dpl_1", target: "production", url: HOST, meta: { githubCommitSha: SHA } }),
     ]);
     const result = await resolveDeploymentByHost({
       apiKey: API_KEY,
@@ -173,6 +173,7 @@ describe("resolveDeploymentByHost", () => {
     });
     assert.equal(result.deploymentId, "dpl_1");
     assert.equal(result.target, "production");
+    assert.equal(result.sha, SHA, "the commit metadata must be carried back for the assertion");
     assert.ok(calls[0].url.includes(HOST));
     assert.ok(calls[0].url.includes(`teamId=${TEAM_ID}`));
   });
@@ -197,7 +198,7 @@ describe("resolveDeploymentByHost", () => {
 describe("createVercelDeployment", () => {
   it("builds, uploads and identifies a production deployment", async () => {
     const { runCommand, calls } = makeRunStub();
-    const { fetchImpl } = makeFetchStub([okJson({ id: "dpl_1", target: "production" })]);
+    const { fetchImpl } = makeFetchStub([okJson({ id: "dpl_1", target: "production", meta: { githubCommitSha: SHA } })]);
 
     const result = await createVercelDeployment({
       apiKey: API_KEY,
@@ -224,7 +225,7 @@ describe("createVercelDeployment", () => {
   // report READY — a release that shipped nothing and said it worked.
   it("throws when a production deploy comes back as a preview", async () => {
     const { runCommand } = makeRunStub();
-    const { fetchImpl } = makeFetchStub([okJson({ id: "dpl_1", target: null })]);
+    const { fetchImpl } = makeFetchStub([okJson({ id: "dpl_1", target: null, meta: { githubCommitSha: SHA } })]);
 
     await assert.rejects(
       createVercelDeployment({
@@ -245,7 +246,7 @@ describe("createVercelDeployment", () => {
   it("throws when a staging deploy comes back as production", async () => {
     // The inverse mistake is worse: a staging run that took production traffic.
     const { runCommand } = makeRunStub();
-    const { fetchImpl } = makeFetchStub([okJson({ id: "dpl_1", target: "production" })]);
+    const { fetchImpl } = makeFetchStub([okJson({ id: "dpl_1", target: "production", meta: { githubCommitSha: SHA } })]);
 
     await assert.rejects(
       createVercelDeployment({
@@ -265,7 +266,7 @@ describe("createVercelDeployment", () => {
 
   it("accepts a staging deploy reported with target null", async () => {
     const { runCommand, calls } = makeRunStub();
-    const { fetchImpl } = makeFetchStub([okJson({ id: "dpl_2", target: null })]);
+    const { fetchImpl } = makeFetchStub([okJson({ id: "dpl_2", target: null, meta: { githubCommitSha: SHA } })]);
 
     const result = await createVercelDeployment({
       apiKey: API_KEY,
@@ -360,7 +361,7 @@ describe("deployVercel", () => {
       order.push(`${env.VERCEL_PROJECT_ID}:${args[0]}`);
       return { code: 0, stdout: args[0] === "deploy" ? `https://${HOST}\n` : "", stderr: "" };
     };
-    const { fetchImpl } = makeFetchStub([okJson({ id: "dpl_x", target: null, state: "READY" })]);
+    const { fetchImpl } = makeFetchStub([okJson({ id: "dpl_x", target: null, state: "READY", meta: { githubCommitSha: SHA } })]);
 
     await deployVercel({
       apiKey: API_KEY,
@@ -390,7 +391,7 @@ describe("deployVercel", () => {
     const fetchImpl = async () => {
       call += 1;
       // resolve web, resolve landing, then poll each.
-      if (call <= 2) return okJson({ id: `dpl_${call}`, target: null });
+      if (call <= 2) return okJson({ id: `dpl_${call}`, target: null, meta: { githubCommitSha: SHA } });
       if (call === 3) return okJson({ id: "dpl_1", state: "READY" });
       return okJson({ id: "dpl_2", state: "ERROR" });
     };
@@ -421,7 +422,7 @@ describe("deployVercel", () => {
       }
       return { code: 0, stdout: args[0] === "deploy" ? `https://${HOST}\n` : "", stderr: "" };
     };
-    const { fetchImpl } = makeFetchStub([okJson({ id: "dpl_1", target: null, state: "READY" })]);
+    const { fetchImpl } = makeFetchStub([okJson({ id: "dpl_1", target: null, state: "READY", meta: { githubCommitSha: SHA } })]);
 
     const outcome = await deployVercel({
       apiKey: API_KEY,
@@ -440,5 +441,201 @@ describe("deployVercel", () => {
     assert.equal(landing.status, "failure");
     assert.equal(landing.deploymentId, null);
     assert.match(landing.message, /build failed/);
+  });
+});
+
+describe("the commit-metadata assertion", () => {
+  // The id comes from a hostname the CLI printed, and GET /v13/deployments/
+  // {idOrUrl} resolves an ALIAS to whatever deployment currently serves it. On
+  // the production path a stale alias resolves to the previous release, which is
+  // `production` and `READY` — so the target guard and the poll both pass and
+  // the run reports success having verified a deployment it did not create.
+  it("rejects a deployment whose githubCommitSha is a different commit", async () => {
+    const { runCommand } = makeRunStub();
+    const { fetchImpl } = makeFetchStub([
+      okJson({ id: "dpl_previous", target: "production", meta: { githubCommitSha: "f".repeat(40) } }),
+    ]);
+
+    await assert.rejects(
+      createVercelDeployment({
+        apiKey: API_KEY,
+        projectId: "prj_web",
+        label: "frapp-web",
+        sha: SHA,
+        target: VERCEL_TARGET_PRODUCTION,
+        teamId: TEAM_ID,
+        runCommand,
+        fetchImpl,
+        logger: quiet,
+      }),
+      /not the commit just built/,
+    );
+  });
+
+  // If `--meta` is dropped by a CLI upgrade the deploy still succeeds, and
+  // everything downstream that reads githubCommitSha degrades silently —
+  // ADR-19's named-commit guarantee first among them.
+  it("rejects a deployment carrying no commit metadata at all", async () => {
+    const { runCommand } = makeRunStub();
+    const { fetchImpl } = makeFetchStub([okJson({ id: "dpl_1", target: "production" })]);
+
+    await assert.rejects(
+      createVercelDeployment({
+        apiKey: API_KEY,
+        projectId: "prj_web",
+        label: "frapp-web",
+        sha: SHA,
+        target: VERCEL_TARGET_PRODUCTION,
+        teamId: TEAM_ID,
+        runCommand,
+        fetchImpl,
+        logger: quiet,
+      }),
+      /githubCommitSha 'null'/,
+    );
+  });
+
+  // End-to-end wiring: the old file pinned `gitSource.sha` at this same seam.
+  // Without this, a refactor that drops `sha` on the way into
+  // buildAndDeployVercelProject passes every other test in this file.
+  it("forwards the sha and the branch into the deploy args", async () => {
+    const { runCommand, calls } = makeRunStub();
+    const { fetchImpl } = makeFetchStub([
+      okJson({ id: "dpl_1", target: "production", meta: { githubCommitSha: SHA } }),
+    ]);
+
+    await createVercelDeployment({
+      apiKey: API_KEY,
+      projectId: "prj_web",
+      label: "frapp-web",
+      sha: SHA,
+      target: VERCEL_TARGET_PRODUCTION,
+      teamId: TEAM_ID,
+      runCommand,
+      fetchImpl,
+      logger: quiet,
+    });
+
+    const deployArgs = calls.find((c) => c.step === "deploy").args;
+    assert.ok(deployArgs.includes(`githubCommitSha=${SHA}`));
+    assert.ok(deployArgs.includes("githubCommitRef=main"));
+  });
+});
+
+describe("a throwing poll does not collapse the run", () => {
+  // `pollUntilTerminal` does not catch, so before the fetchOne try/catch a
+  // rejection escaped Promise.all and rejected deployVercel itself — the
+  // reporting loop never ran, both deployment ids went unprinted, and an
+  // operator would re-dispatch a deploy that had already shipped.
+  it("reports a network error as a per-project failure, not an unhandled rejection", async () => {
+    const { runCommand } = makeRunStub();
+    let call = 0;
+    const fetchImpl = async () => {
+      call += 1;
+      if (call <= 2) return okJson({ id: `dpl_${call}`, target: null, meta: { githubCommitSha: SHA } });
+      throw new Error("ECONNRESET");
+    };
+
+    const outcome = await deployVercel({
+      apiKey: API_KEY,
+      projects: [
+        { projectId: "prj_web", label: "frapp-web" },
+        { projectId: "prj_landing", label: "frapp-landing" },
+      ],
+      sha: SHA,
+      target: VERCEL_TARGET_PREVIEW,
+      teamId: TEAM_ID,
+      clock: makeFakeClock(),
+      runCommand,
+      fetchImpl,
+      logger: quiet,
+    });
+
+    assert.equal(outcome.ok, false);
+    assert.equal(outcome.results.length, 2, "both projects must still be reported");
+    for (const result of outcome.results) {
+      assert.equal(result.status, "failure");
+      assert.match(result.message, /ECONNRESET/);
+      assert.ok(result.deploymentId, "the id it created must still be reported");
+    }
+  });
+
+  it("reports a non-JSON body as a failure rather than throwing", async () => {
+    const { runCommand } = makeRunStub();
+    let call = 0;
+    const fetchImpl = async () => {
+      call += 1;
+      if (call <= 2) return okJson({ id: `dpl_${call}`, target: null, meta: { githubCommitSha: SHA } });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => {
+          throw new SyntaxError("Unexpected token '<'");
+        },
+        text: async () => "<!DOCTYPE html>",
+      };
+    };
+
+    const outcome = await deployVercel({
+      apiKey: API_KEY,
+      projects: [{ projectId: "prj_web", label: "frapp-web" }],
+      sha: SHA,
+      target: VERCEL_TARGET_PREVIEW,
+      teamId: TEAM_ID,
+      clock: makeFakeClock(),
+      runCommand,
+      fetchImpl,
+      logger: quiet,
+    });
+
+    assert.equal(outcome.ok, false);
+    assert.match(outcome.results[0].message, /Unexpected token/);
+  });
+});
+
+describe("fail-fast across projects", () => {
+  // Builds are sequential, so when web's build fails landing has not been
+  // uploaded yet. Uploading it anyway would put new landing live on frapp.live
+  // while app.frapp.live stays on the previous release — a half-shipped
+  // production release behind an already-applied migration.
+  it("does not deploy landing after web's build fails", async () => {
+    const attempted = [];
+    const runCommand = async ({ args, env }) => {
+      attempted.push(`${env.VERCEL_PROJECT_ID}:${args[0]}`);
+      if (env.VERCEL_PROJECT_ID === "prj_web" && args[0] === "build") {
+        return { code: 1, stdout: "", stderr: "type error" };
+      }
+      return { code: 0, stdout: args[0] === "deploy" ? `https://${HOST}\n` : "", stderr: "" };
+    };
+    const { fetchImpl } = makeFetchStub([
+      okJson({ id: "dpl_1", target: "production", state: "READY", meta: { githubCommitSha: SHA } }),
+    ]);
+
+    const outcome = await deployVercel({
+      apiKey: API_KEY,
+      projects: [
+        { projectId: "prj_web", label: "frapp-web" },
+        { projectId: "prj_landing", label: "frapp-landing" },
+      ],
+      sha: SHA,
+      target: VERCEL_TARGET_PRODUCTION,
+      teamId: TEAM_ID,
+      clock: makeFakeClock(),
+      runCommand,
+      fetchImpl,
+      logger: quiet,
+    });
+
+    assert.ok(
+      !attempted.some((step) => step.startsWith("prj_landing")),
+      `landing must not be touched after web failed, got ${attempted.join(", ")}`,
+    );
+    assert.equal(outcome.ok, false);
+
+    // Skipped, but still REPORTED. A project that silently vanishes from the
+    // results is how "we deployed" and "we deployed everything" come apart.
+    const landing = outcome.results.find((r) => r.label === "frapp-landing");
+    assert.equal(landing.status, "failure");
+    assert.match(landing.message, /Not attempted.*frapp-web failed/s);
   });
 });

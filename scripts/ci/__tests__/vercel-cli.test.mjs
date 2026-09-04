@@ -127,12 +127,16 @@ describe("parseDeploymentHost", () => {
     );
   });
 
-  it("takes the LAST url when the CLI printed more than one", () => {
-    // Not an assumption worth betting a release on: take the last rather than
-    // requiring there be exactly one.
+  it("takes the FIRST url when the CLI printed more than one", () => {
+    // The deployment URL is printed first; anything after it is an alias line.
+    // An alias is a STABLE hostname, and GET /v13/deployments/{idOrUrl} resolves
+    // one to whatever deployment currently serves it — on the production path,
+    // the PREVIOUS release, which is `production` and `READY` and so passes both
+    // the target assertion and the poll. Taking the last URL would turn a future
+    // CLI that prints "Aliased to https://frapp.live" into a silent false green.
     assert.equal(
-      parseDeploymentHost("https://old.vercel.app\nhttps://new.vercel.app\n"),
-      "new.vercel.app",
+      parseDeploymentHost("https://dpl-new.vercel.app\nhttps://frapp.live\n"),
+      "dpl-new.vercel.app",
     );
   });
 

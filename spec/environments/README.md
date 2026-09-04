@@ -16,13 +16,13 @@
 | **Stripe**   | Test mode (`sk_test_`)            | Test mode (`sk_test_`)                  | Live mode (`sk_live_`)                |
 | **Push**     | Expo Go (dev)                     | EAS internal builds                     | Production builds                     |
 
-Each Supabase project (local, staging, production) is fully isolated: separate database, auth users, storage buckets, and API keys. The staging Landing and Web App cells describe the intended model: as of 2026-09-02 both Vercel projects are unlinked from Git (ADR-21), so those two hosts are frozen at their last Git build — see §6 **Web and Landing (Vercel)**.
+Each Supabase project (local, staging, production) is fully isolated: separate database, auth users, storage buckets, and API keys. Both Vercel projects are unlinked from Git (ADR-21), so the staging Landing and Web App hosts are deployed by CI rather than by a push — see §6 **Web and Landing (Vercel)**.
 
 ### Branch-to-environment mapping
 
 | Branch      | Purpose                              | Deployment behavior                                    |
 | ----------- | ------------------------------------ | ------------------------------------------------------ |
-| `main`      | Pre-production / staging integration | Triggers staging and Vercel Preview domain deployments — Vercel Preview retired (ADR-21; landing 2026-09-01, web 2026-09-02), see §6 |
+| `main`      | Pre-production / staging integration | Green CI on `main` triggers the Render staging deploy and the Vercel staging deploys (`deploy-vercel-staging.yml`, #1578). Push-triggered Vercel Previews were retired with the Git unlink (ADR-21) — see §6 |
 | `feature/*` | Short-lived feature work             | No automatic Vercel deployments; merged into `main`    |
 
 Production is **not** mapped to a branch. It is deployed by running the **Deploy
@@ -117,7 +117,7 @@ After changing an API endpoint, regenerate and commit both contract artifacts. C
 - **Purpose:** QA, stakeholder demos, mobile TestFlight/internal builds.
 - **Git branch:** `main` — pushes trigger staging/pre-production deployments.
 - **Supabase:** Dedicated staging project (separate from production). Create via Supabase dashboard or CLI.
-- **Web / Landing:** Vercel Preview deployments with staging domains (`app.staging.frapp.live`, `staging.frapp.live`), filtered to the `main` branch. **Not running as of 2026-09-02:** both Vercel projects are unlinked from Git (ADR-21), so no push produces a preview and both staging hosts are frozen at their last Git build — see §6 **Web and Landing (Vercel)**.
+- **Web / Landing:** Vercel Preview deployments with staging domains (`app.staging.frapp.live`, `staging.frapp.live`). Both projects are unlinked from Git (ADR-21), so no push produces a preview; `deploy-vercel-staging.yml` builds and uploads them after CI succeeds on `main`, then aliases both hostnames (#1578) — see §6 **Web and Landing (Vercel)**.
 - **API:** Render staging service (`frapp-api-staging`), auto-deploys from `main`, pointing at Supabase staging.
 - **Mobile:** EAS internal distribution builds (`eas build --profile preview`).
 - **Stripe:** Test mode keys (`sk_test_`).
@@ -131,11 +131,11 @@ After changing an API endpoint, regenerate and commit both contract artifacts. C
   `.github/workflows/deploy-production.yml` (`workflow_dispatch`, typed confirmation,
   and the `production` environment's Required reviewers).
 - **Supabase:** Dedicated production project. Fully isolated users, database, storage.
-- **Web App:** `app.frapp.live` (Vercel, production deployment created by the workflow
-  through the API with `target: production`) — the guardrail preflight no longer blocks the
-  dispatch (#1579, 2026-09-02), but the workflow's Vercel step still passes a `gitSource` that
-  needs the retired integration, so the production Vercel deploy is expected to fail until #1578.
-  See §6 **Web and Landing (Vercel)**, 2026-09-02.
+- **Web App:** `app.frapp.live` (Vercel, production deployment created by the workflow, which
+  builds the named commit on the runner with `vercel build --prod` and uploads it with
+  `vercel deploy --prebuilt --prod`). The guardrail preflight stopped blocking the dispatch with
+  #1579, and #1578 replaced the `gitSource` call the retired integration used to serve. See §6
+  **Web and Landing (Vercel)**.
 - **Landing:** `frapp.live` (Vercel, same).
 - **API:** Render production service (`frapp-api-prod`), deployed by commit id through
   the Render API, pointing at Supabase production + Stripe live keys. Render-side

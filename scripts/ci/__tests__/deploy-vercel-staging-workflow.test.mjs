@@ -110,6 +110,29 @@ describe("deploy-vercel-staging.yml", () => {
     assert.match(uncommented, /VERCEL_STAGING_ALIAS=staging\.frapp\.live/);
   });
 
+  it("aliases by DEPLOYMENT ID, never by a search for the commit SHA", () => {
+    // The alias script's search path answers "no deployment for this SHA" by
+    // exiting 0 — safe only while verify-vercel-deploy.mjs gated it, and #1579
+    // removed those jobs. A search that comes up empty for an unrelated reason
+    // (a lagging list index, a lost --meta flag) would leave the hostname on
+    // the previous build with this job green: the exact symptom #1578 exists to
+    // end. The search also has no channel filter, so it can resolve the
+    // PRODUCTION deployment of a commit released earlier.
+    assert.match(uncommented, /VERCEL_DEPLOYMENT_ID="\$WEB_DEPLOYMENT_ID"/);
+    assert.match(uncommented, /VERCEL_DEPLOYMENT_ID="\$LANDING_DEPLOYMENT_ID"/);
+    assert.doesNotMatch(
+      uncommented,
+      /VERCEL_PROJECT_ID="\$VERCEL_(WEB|LANDING)_PROJECT_ID"[\s\\]*\n\s*VERCEL_STAGING_ALIAS/,
+      "the alias step must not fall back to the SHA search path",
+    );
+  });
+
+  it("refuses to alias when the deploy step reported no deployment id", () => {
+    // An empty id must be a failure, not a silently skipped alias.
+    assert.match(uncommented, /if \[ -z "\$\{WEB_DEPLOYMENT_ID:-\}" \]/);
+    assert.match(uncommented, /Refusing to alias a staging hostname/);
+  });
+
   it("installs workspace dependencies before building", () => {
     // Both apps import from `packages/`, so `vercel build` needs the workspace
     // installed; without this the build fails on a missing module.

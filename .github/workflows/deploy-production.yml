@@ -348,6 +348,34 @@ jobs:
       - name: Stop the disposable Supabase stack
         run: supabase stop --no-backup
 
+      # ── Installed BEFORE anything is applied, deliberately ───────────────
+      # `vercel build` runs each app's own build, which needs the workspace's
+      # dependencies present: this is a monorepo and both apps import from
+      # `packages/`. Nothing else in this job needs `node_modules` — the
+      # migration half runs through the Supabase CLI and `node scripts/…`.
+      #
+      # So the natural place for these was next to the Vercel step at the end of
+      # the job. That is the wrong place. Both steps can fail for reasons that
+      # have nothing to do with this commit — a registry 5xx, a lockfile/registry
+      # mismatch, a full disk — and down there a failure lands AFTER the
+      # production migration has applied and the Render API has shipped, leaving
+      # a migrated database and a half-updated production with no tag naming
+      # what is live. Up here the same failure costs nothing: nothing has been
+      # applied yet.
+      #
+      # They run before the stack is even needed, and are skipped on the paths
+      # that never reach a Vercel build.
+      - name: Install dependencies for the Vercel build
+        if: ${{ !inputs.dry_run_only && inputs.scope != 'migrations-only' }}
+        run: npm ci
+
+      # Pinned, exactly like the Supabase CLI above. An unpinned `@latest` would
+      # make the only path to production depend on whatever Vercel published
+      # this morning.
+      - name: Install Vercel CLI
+        if: ${{ !inputs.dry_run_only && inputs.scope != 'migrations-only' }}
+        run: npm install --global vercel@59.11.7
+
       # Always runs, including when this is not a dry run: the log then records
       # what WAS pending immediately before the apply, so a failure in the next
       # step is readable without guessing at the prior state.
@@ -437,24 +465,6 @@ jobs:
           done
           echo "::error::Production health check failed after 6 attempts (2 min)."
           exit 1
-
-      # `vercel build` runs each app's own build, which needs the workspace's
-      # dependencies present — this is a monorepo and both apps import from
-      # `packages/`. Nothing earlier in this job installs them: the migration
-      # half runs through the Supabase CLI and `node scripts/…`, which need
-      # nothing from `node_modules`. So the install belongs here, after the
-      # migration has already applied, rather than at the top where it would
-      # delay the confirmation-phrase and validation gates.
-      - name: Install dependencies for the Vercel build
-        if: ${{ !inputs.dry_run_only && inputs.scope != 'migrations-only' }}
-        run: npm ci
-
-      # Pinned, exactly like the Supabase CLI above. An unpinned `@latest` would
-      # make the only path to production depend on whatever Vercel published
-      # this morning.
-      - name: Install Vercel CLI
-        if: ${{ !inputs.dry_run_only && inputs.scope != 'migrations-only' }}
-        run: npm install --global vercel@59.11.7
 
       # A fresh production BUILD of this commit, not a promotion of its staging
       # build: NEXT_PUBLIC_* are inlined at build time, so promoting a preview

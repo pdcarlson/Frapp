@@ -112,11 +112,23 @@ export function vercelDeployArgs({ target, sha, ref = "main" }) {
  * The deployment hostname the CLI printed, from its stdout.
  *
  * `vercel deploy` writes progress, the inspect URL and any warnings to stderr
- * and the deployment URL alone to stdout — but "alone" is not something to bet
- * a release on, so this takes the LAST `https://` line rather than assuming
- * there is exactly one. The protocol and any trailing slash are stripped
- * because every consumer wants a hostname: `GET /v13/deployments/{idOrUrl}`
- * takes one, and so does the alias API.
+ * and the deployment URL alone to stdout. "Alone" is not something to bet a
+ * release on, so this picks deliberately rather than assuming there is exactly
+ * one line.
+ *
+ * It takes the **FIRST** URL, and the direction matters. The deployment URL is
+ * printed first; anything that follows is an alias or custom-domain line. An
+ * alias is a *stable* hostname, and `GET /v13/deployments/{idOrUrl}` accepts a
+ * hostname — so resolving one does not error, it silently returns whichever
+ * deployment currently serves that domain. On the production path that is the
+ * PREVIOUS release: `target` is `production` and the state is `READY`, so both
+ * the target assertion and the poll pass and the run reports success having
+ * verified a deployment it did not create. Taking the last URL would make a
+ * future CLI version that prints "Aliased to https://frapp.live" into a silent
+ * false green; taking the first cannot.
+ *
+ * The protocol and any trailing slash are stripped because every consumer wants
+ * a hostname.
  *
  * Returns null when there is nothing that looks like a URL, which the caller
  * must treat as a failure — a deploy whose result cannot be identified cannot
@@ -125,14 +137,14 @@ export function vercelDeployArgs({ target, sha, ref = "main" }) {
 export function parseDeploymentHost(stdout) {
   if (typeof stdout !== "string") return null;
 
-  const urls = stdout
+  const url = stdout
     .split("\n")
     .map((line) => line.trim())
-    .filter((line) => line.startsWith("https://"));
+    .find((line) => line.startsWith("https://"));
 
-  if (urls.length === 0) return null;
+  if (!url) return null;
 
-  return urls[urls.length - 1].replace(/^https:\/\//, "").replace(/\/+$/, "");
+  return url.replace(/^https:\/\//, "").replace(/\/+$/, "");
 }
 
 /**
@@ -165,7 +177,13 @@ export async function runCommandCapturing({ command, args, env, cwd, logger = co
     });
 
     child.on("error", reject);
-    child.on("close", (code) => resolve({ code, stdout, stderr }));
+    // `signal` is kept, not discarded. A child killed by a signal reports
+    // `code: null`, and the exit-code check below still fires — but the message
+    // would read "exited null" with no cause. The OOM killer taking `next build`
+    // is the most common CI build failure of all, and moving both app builds
+    // onto a runner is exactly what this change did, so SIGKILL is the one word
+    // that turns an unreadable failure into an obvious one.
+    child.on("close", (code, signal) => resolve({ code, signal, stdout, stderr }));
   });
 }
 

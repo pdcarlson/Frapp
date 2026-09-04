@@ -1406,7 +1406,7 @@ ADR called *designed, not built* is built. All four *Consequences* bullets are n
   into two implementations. It never measured the old `gitSource` call — the call was removed rather
   than exercised, since ADR-21 already establishes it cannot work without the integration.
 
-Two properties worth recording because they are not obvious from the diff:
+Two consequences this ADR's own requirements produce, recorded here because this is where they are decided rather than merely implemented:
 
 - **Every CI-created deployment is stamped `--meta githubCommitSha` (and `githubCommitRef`).** A
   `--prebuilt` upload carries no git metadata at all, and three things read it back: ADR-19's
