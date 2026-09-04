@@ -15,6 +15,7 @@ Kinds:
 - `image` — avatars and chapter logos: `image/jpeg`, `image/png`, `image/gif`, `image/webp`
 - `proof` — service-hour receipts: images plus `application/pdf`
 - `document` — chapter files, backwork, and chat attachments: images, PDF, Open XML Office (`.docx`/`.xlsx`/`.pptx`), **legacy Office** (`application/msword`, `application/vnd.ms-excel`, `application/vnd.ms-powerpoint` — `.doc`/`.xls`/`.ppt`), `text/plain`, `text/csv`
+- `archive` — Discord archive import only (`DiscordImportService`): a wider set including video and audio, and a 100 MB ceiling (`MAX_ARCHIVE_UPLOAD_BYTES`). It is held **off** `MAX_UPLOAD_BYTES` and off the `document` list on purpose — widening those to cover a one-off import would raise the ceiling on every member upload. SVG stays absent here too. See the header comment in `packages/validation/src/upload-allowlists.ts`.
 
 Legacy Office stays on `document` because the API and every matching storage bucket already accept those types. The web clients had omitted them from `accept`/maps; completing the client is the decision. Dropping them server-side would reject files the buckets still store.
 

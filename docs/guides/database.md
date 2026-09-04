@@ -146,8 +146,11 @@ alter table public.polls enable row level security;
 3. Apply the migration locally:
 
 ```bash
-npx supabase db reset
+npx supabase db push --local
 ```
+
+   Use `npx supabase db reset` only when you want the full rebuild described in
+   §1 — it drops the reference data with it.
 
 4. Update:
 

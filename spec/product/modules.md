@@ -38,7 +38,7 @@
 
 - **Customer:** The chapter (organization).
 - **Provider:** Stripe.
-- **Model:** Fixed monthly subscription, flat per chapter. The price is a commercial commitment pinned in [`spec/product/positioning.md`](positioning.md) § Paid tier — Chapter Pro, which the public site sells; it is not restated here.
+- **Model:** Fixed monthly subscription, flat per chapter. The price is a commercial commitment pinned in [`spec/product/positioning.md`](positioning.md) § Paid tier (Chapter Pro), which the public site sells; it is not restated here.
 - **Enforcement:** Subscription state gates **writes**, applied by `ChapterGuard` at the request boundary. Its refusals are **403** — the API returns no 402 anywhere — though `BillingService` layers its own **400** refusals on top (a duplicate checkout while a live subscription exists, or a portal session for a chapter with no Stripe customer yet). A free-tier wedge (the `@FreeTier()` routes — chat / members / **invites** among them) keeps writing while a chapter is `incomplete`, so a chapter fresh out of the onboarding wizard can invite before it has ever paid. A `past_due` chapter gets a 3-day grace window in which invite _minting_ is blocked while its other free-tier writes continue; after that window, and for `canceled`, **guarded** writes are blocked. Two things deliberately survive that lock, so "read-only" describes the guarded surface rather than the whole API: `@SubscriptionExempt()` billing-recovery routes, so a lapsed chapter can pay its way back; and routes carrying no `ChapterGuard` at all — invite redeem, notification preferences, analytics events — which were never subscription-gated in the first place. Full matrix, including the exact codes and the `GET`/`HEAD`/`OPTIONS` definition of a read: [`docs/guides/api-architecture.md`](../../docs/guides/api-architecture.md) § Subscription enforcement (ChapterGuard).
 
 ### Internal Ledger (House Points)
@@ -188,7 +188,7 @@
 
 - Chapters upload a logo (displayed in app header, directory, PDF reports, onboarding).
 - Chapters set a custom accent color (hex) for buttons, links, and highlights.
-- Default accent: a chapter with no custom accent runs the house seed through the same pipeline rather than getting a separate palette. The seed value lives in [`spec/ui/design-system/accent-engine.md`](../ui/design-system/accent-engine.md) § Default seed.
+- Default accent: two different "defaults" are in play — the value a chapter *holds* until an accent is chosen (the `chapters.accent_color` column default) and the value a client *paints* when the stored one is absent or illegible. They are not interchangeable; [`spec/behavior/branding.md`](../behavior/branding.md) owns both and this file does not restate either.
 - Chapter branding applies only within the chapter context; Frapp branding is unaffected.
 
 ---

@@ -158,4 +158,4 @@ defaults only fill gaps.
 
 `responsive-floor.spec.ts` asserts the landed URL still matches the route it
 requested, which is what stops a regressed bypass from silently turning the whole
-suite into fifteen green measurements of the sign-in card.
+suite into green measurements of the sign-in card, one per dashboard route.

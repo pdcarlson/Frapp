@@ -61,7 +61,7 @@ test.describe("dashboard routes hold the 375px floor", () => {
       // this, a regressed `SUPABASE_AUTH_BYPASS` (or a run against an external
       // `PLAYWRIGHT_BASE_URL`, where the config skips `webServer` and never
       // applies the bypass env) redirects every route to `/sign-in`, whose
-      // centred card holds 375px unconditionally — and all fifteen tests go
+      // centred card holds 375px unconditionally — and every one of these tests goes
       // green having never rendered the dashboard shell at all.
       await expect(page).toHaveURL(new RegExp(`${route}/?$`));
       await expect(page.locator("main")).toBeVisible();
