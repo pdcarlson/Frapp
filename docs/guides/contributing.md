@@ -30,12 +30,16 @@ Examples:
 - `refactor: switch api auth to supabase`
 - `docs(guides): add docker guide`
 
-Types:
+Types — this list is canonical; `CONTRIBUTING.md` points here rather than
+restating it:
 
 - `feat` — new user-visible feature
 - `fix` — bug fix
 - `refactor` — code change that doesn't alter behavior
 - `docs` — documentation only
+- `test` — adding or changing tests
+- `ci` — workflows, CI scripts, and gates
+- `style` — formatting only, no behavior change
 - `chore` — tooling, config, or misc maintenance
 
 ## 3. Spec-first development
